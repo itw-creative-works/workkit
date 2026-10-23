@@ -16,6 +16,7 @@ const {
   WORKFLOW_DIR, JOB, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, write, gitRm, unlink, commit, proveTree,
   judge, denyOf, blocks, passes, realRewrite,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 // A repo with a committed settings.json: the stamp arm only exempts an edit
 // that touches nothing but the version key.
@@ -46,7 +47,7 @@ const scratchFile = (text) => {
 // The heal's push trigger over a body, the heal's own answer.
 const withPushTrigger = (body) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"\nwk_checks_push_trigger "$2"', 'bash', shellPath(JOB), shellPath(scratchFile(body))],
-    { encoding: 'utf8', timeout: 30000 });
+    { encoding: 'utf8', timeout: SPAWN_DEADLINE });
   assertEq(res.status, 0, `wk_checks_push_trigger answers, stderr: ${res.stderr}`);
   return res.stdout;
 };
@@ -245,7 +246,7 @@ const run = async () => {
   await test('given the run of `changelog-job.sh rewrite a b` and `wk_changelog_job_rewrite a b`: the same text', () => {
     for (const body of [oldChecks('.github/changelog-lint.cjs'), PR_ONLY]) {
       const a = scratchFile(body);
-      const entry = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', shellPath(a), shellPath(TEMPLATE)], { encoding: 'utf8', timeout: 30000 });
+      const entry = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', shellPath(a), shellPath(TEMPLATE)], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
       const fn = realRewrite(a, TEMPLATE);
       assert(fn !== null && fn !== body, 'the function rewrites the file');
       assertEq(entry.status, 0, `the entry exits 0, stderr: ${entry.stderr}`);

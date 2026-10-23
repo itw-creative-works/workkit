@@ -83,7 +83,7 @@ The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to
 
 | Part | Count | What it does |
 |---|---|---|
-| [Hooks](docs/hooks.md) | 28 | Run by themselves: at session start, before edits and commits, and when a reply ends. All of them run inside Claude Code as one module |
+| [Hooks](docs/hooks.md) | 29 | Run by themselves: at session start, before edits and commits, and when a reply ends. All of them run inside Claude Code as one module |
 | [Agents](docs/agents.md) | 5 | The crew your chat delegates to, each briefed from a role template in [`briefs/`](briefs/) |
 | Skills | 9 | Procedures Claude follows when your words match, or when you type `/workkit:<name>` |
 | [Dashboard](tower/README.md) | 7 pages | `workkit tower` opens a local view of every board, the running agents, token spend, and repo health |
@@ -92,7 +92,7 @@ The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to
 ### Skills
 
 `workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:ship`.
-Each is one `SKILL.md` of bullets, at most 120 non-blank lines with no line over 400 bytes; the test suite fails a skill that grows past that.
+Each is one `SKILL.md` of bullets.
 
 ## Requirements
 
@@ -110,6 +110,7 @@ It runs on macOS, on Linux, and on Windows under Git Bash. The 9am schedule on y
 - [docs/project-state.md](docs/project-state.md): the rules: labels, capture and triage, specs, the proof, shipping
 - [docs/agents.md](docs/agents.md): the crew, how big a crew each job gets, and how work is handed to it
 - [docs/hooks.md](docs/hooks.md): what each hook does, when it fires, and where it stands down
+- [docs/tests.md](docs/tests.md): what a test must be worth and may cost, and the shape every repo's test runner keeps
 - [workflow/README.md](workflow/README.md): the engine behind the `workkit` command
 - [AGENTS.md](AGENTS.md): the architecture, for agent sessions
 

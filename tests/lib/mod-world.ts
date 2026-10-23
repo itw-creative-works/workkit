@@ -112,7 +112,7 @@ const commitGit = (args: string[], git: any) => {
  * (what reached the spawn), `reached` (each classic event past the module), `messages`
  * ($.session.messages(), `opts.messages`: `row` rows). `opts.links`: link to target, every
  * read goes through it, a resolving stat answers `realPath`. `opts.origins`: a root's
- * origin url, null for none; `opts.npm`: `{ taken, known }`, `offline` or `broken`;
+ * origin url, null for none; `opts.npm`: `{ taken, known }` or `offline`;
  * `opts.releases`: `{ tags }` or `offline`; `opts.treeId`. `opts.status`, `opts.diff`: a
  * root's `git status --porcelain` and `git diff HEAD` text; `opts.ignored`: the paths
  * `git check-ignore` answers for, one ending in `/` a whole folder. `opts.git`,
@@ -304,8 +304,6 @@ export const mkWorld = (on: any, opts: any = {}) => {
     // `npm view <name>@<version> version`, the registry answering as npm does:
     // the version when taken, nothing for a known package without it, E404 else.
     if (cmd === 'npm' && argv[1] === 'view') {
-      // `broken`: a run that resolves to no result at all, so its reader throws.
-      if (world.npm === 'broken') return { value: undefined }
       if (world.npm === 'offline') return ok('', 'npm error code ENOTFOUND request to https://registry.npmjs.org failed\n', 1)
       const spec = argv.slice(2).filter((a) => !a.startsWith('-') && a !== 'version').pop() || ''
       if (world.npm.taken.includes(spec)) return ok(`${spec.slice(spec.lastIndexOf('@') + 1)}\n`)

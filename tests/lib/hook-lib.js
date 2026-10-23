@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath } = require('./platform');
+const { SPAWN_DEADLINE } = require('./process');
 
 const LIB = shellPath(path.join(__dirname, '..', '..', 'hooks', '_lib.sh'));
 
@@ -20,7 +21,7 @@ const runLib = (snippet, env = {}) => {
   const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${LIB}"\n${snippet}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
-    timeout: 10000,
+    timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };

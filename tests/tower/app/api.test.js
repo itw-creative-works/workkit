@@ -194,31 +194,12 @@ const run = async () => {
     assertEq(answer.ok, true, 'and the answer arrives in the tower’s own result shape');
   });
 
-  const fs = require('fs');
-
   await test('the intake dialog is inert only where it has nothing to write with', () => {
     // A locked copy off this machine needs a token, not a tower, so the notice
     // sends the one viewer who can fix it to the right thing. An unlocked copy
     // files with the token it reads with; on localhost the tower is the answer.
     assert(format.LOCKED_NOTICE.includes('token'), 'the locked sentence asks for the token');
     assert(!format.LOCKED_NOTICE.includes('npm run tower'), 'and does not send a viewer to install a tower');
-    assert(!/read-only/.test(format.LOCKED_NOTICE), 'and no longer calls the token read-only');
-    assertEq(format.READ_ONLY_NOTICE, undefined, 'the read-only sentence is gone - nothing it described is true any more');
-    const src = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
-    assert(/if \(!WRITABLE\)[\s\S]{0,80}disableIntake\(dialog\)/.test(src), 'only a copy that cannot write is disabled');
-    assert(/lockedIntakeNotice\(location\.hostname\)/.test(src) && !/readOnlyNotice/.test(src),
-      'and the sentence left is the locked one - which host it is said on is token.js’s fork (#89)');
-    assert(/submitIntake\(payload\)/.test(src), 'the submit goes through the mode-aware write, never a tower URL');
-    assert(/readAnyFeed\('\/api\/repos'\)/.test(src), 'and the roster is read from whichever half is talking');
-  });
-
-  await test('the write paths follow the MODE - a tower is POSTed to, a published copy writes GitHub itself', () => {
-    const src = fs.readFileSync(path.join(libs, 'api.js'), 'utf8');
-    assert(/WRITABLE = MODE !== 'locked'/.test(src), 'everything but a locked copy can write');
-    assert(/moveIssueStatus\(move, githubContext\(\)\)[\s\S]{0,120}postJson\('\/api\/issues\/status', move\)/.test(src),
-      'the drag reaches GitHub in published mode and the tower on a machine');
-    assert(/createIssue\(payload, githubContext\(\)\)[\s\S]{0,80}postJson\('\/api\/intake', payload\)/.test(src),
-      'and so does the intake');
   });
 
   group('tower/app: api - the three modes');

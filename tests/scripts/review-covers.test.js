@@ -12,6 +12,7 @@ const {
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPTS = path.join(__dirname, '..', '..', 'scripts');
 const SCRIPT = path.join(SCRIPTS, 'review-covers.sh');
@@ -38,7 +39,7 @@ const mkWorld = () => {
 
 const spawnIn = (w, script, cwd = w.repo, args = []) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(script), ...args], {
-    cwd, env: w.env, encoding: 'utf8', timeout: 20000,
+    cwd, env: w.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `the script finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -199,7 +200,7 @@ const run = async () => {
     }
     assert(!which('shasum', bin) && !which('sha1sum', bin), 'the PATH holds neither hash command');
     const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
-      cwd: w.repo, env: { ...w.env, PATH: bin }, encoding: 'utf8', timeout: 20000,
+      cwd: w.repo, env: { ...w.env, PATH: bin }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 2, `exit 2: ${res.stdout}${res.stderr}`);
     assertEq(res.stdout, '', 'nothing on stdout');

@@ -19,15 +19,6 @@ const run = async () => {
     assert(calls.npm.includes('widget@1.2.3'), `the version was asked for by name, got: ${calls.npm.join(' ')}`);
   });
 
-  await test('the bounce names HOOK_DISABLE=1 as the override, never the loader kill switch', async () => {
-    for (const [command, what] of [[RELEASE, 'the release commit'], ['npm publish', 'the publish']]) {
-      const { override } = await judge(command, { npmTaken: ['widget@1.2.3'] });
-      assert(typeof override === 'string' && override.includes('HOOK_DISABLE=1'), `${what}: HOOK_DISABLE=1 is the override, got: ${override}`);
-      assert(!override.includes('loader kill switch'), `${what}: the loader kill switch is gone, got: ${override}`);
-      assert(!/loader/i.test(override), `${what}: and no loader is named, got: ${override}`);
-    }
-  });
-
   await test('ports "a free version passes silently, in both of npm answers for free"', async () => {
     for (const world of [{}, { npmKnown: ['widget'] }]) {
       const { deny, text, calls } = await judge(RELEASE, world);

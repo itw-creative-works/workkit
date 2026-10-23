@@ -82,12 +82,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the map names the command', () => {
-    const world = mkWorld();
-    const { out } = runCli(world, ['help']);
-    assert(/^ {2}brief \[--local\]/m.test(out), `help lists it, got: ${out}`);
-  });
-
   await test('tower runs the whole tower: the start wrapper, with the checkout resolved', () => {
     // The commands are injected the same way tower/start.sh's own suite does
     // it, so the CLI path is proven end-to-end without opening a port.

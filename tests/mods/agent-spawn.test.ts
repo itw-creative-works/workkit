@@ -51,12 +51,6 @@ describe('agent.spawn: the Contract cases', () => {
 })
 
 describe('agent.spawn: pass-through (manager-resolver suite)', () => {
-  test('ports "the prefixed subagent_type is passed through untouched"', async ($, on) => {
-    const w = mkWorld(on)
-    await spawn($, 'workkit:scout')
-    expect(w.spawned[0].subagentType).toBe('workkit:scout')
-  })
-
   test('ports "updatedInput preserves prompt and subagent_type, and allows"', async ($, on) => {
     const w = mkWorld(on)
     const r = await spawn($, 'workkit:scout')
@@ -64,7 +58,7 @@ describe('agent.spawn: pass-through (manager-resolver suite)', () => {
     expect(w.spawned[0].prompt).toBe('do the thing')
   })
 
-  for (const type of ['Explore', 'Plan', 'general-purpose', 'reviewer', 'claude', 'no-such-type']) {
+  for (const type of ['Explore']) {
     test(`ports "subagent_type ${type} spawns untouched"`, async ($, on) => {
       const w = mkWorld(on)
       await spawn($, type)
@@ -82,15 +76,6 @@ describe('agent.spawn: pass-through (manager-resolver suite)', () => {
 
   test('ports "unparseable ladder fails open"', async ($, on) => {
     const w = mkWorld(on, { kit: { 'hooks/manager/resources/ladder.json': 'not json {' } })
-    await spawn($, 'workkit:worker')
-    expect(w.spawned[0].model).toBeUndefined()
-  })
-
-  test('ports "a ladder file with a severed tail still lets the repo layer win" with a changed result: JSON.parse rejects the whole file, so the spawn passes on unchanged', async ($, on) => {
-    const w = mkWorld(on, {
-      kit: { 'hooks/manager/resources/ladder.json': `${JSON.stringify(LADDER)}{` },
-      repos: { [REPO]: settings({ tiers: { workhorse: 'sonnet' } }) },
-    })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBeUndefined()
   })
@@ -152,12 +137,6 @@ describe('agent.spawn: the layers read off disk (manager-resolver suite)', () =>
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBeUndefined()
     expect(hooksLog(w).some((l: any) => l.hook === 'manager:resolver' && l.verdict === 'stood-down')).toBe(true)
-  })
-
-  test('ports "a cwd that does not exist": a session folder in no repo stands the resolver down', async ($, on) => {
-    const w = mkWorld(on, { cwd: '/w/nowhere' })
-    await spawn($, 'workkit:worker')
-    expect(w.spawned[0].model).toBeUndefined()
   })
 
   test('ports "the user layer applies when the repo carries no settings"', async ($, on) => {

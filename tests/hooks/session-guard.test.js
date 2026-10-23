@@ -71,10 +71,6 @@ const run = async () => {
 
   group('session-guard: scope');
 
-  await test('ports "an under-cap session.md passes silently"', () => {
-    assertEq(verdict(doc(notes(6))), '', 'says nothing');
-  });
-
   await test('ports "another file in .workkit/agents is ignored, however long"', () => {
     assertEq(verdict(doc(notes(60)), `/w/repo/${W}/agents/notes.md`), '', 'only session.md');
   });

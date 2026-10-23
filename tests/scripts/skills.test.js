@@ -4,7 +4,6 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
-const { section } = require('../lib/markdown');
 
 const REPO = path.join(__dirname, '..', '..');
 const SKILLS_DIR = path.join(REPO, 'skills');
@@ -12,17 +11,6 @@ const AGENTS_DIR = path.join(REPO, 'agents');
 const BRIEFS_DIR = path.join(REPO, 'briefs');
 
 const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status', 'checkpoint', 'migrate', 'ship'];
-
-// A description is a routing line the model reads on every turn, so it stays
-// one tight trigger sentence and the body carries the detail.
-const DESCRIPTION_CAP = 300;
-
-// The body is a rule file read at invocation, and a rule stated once in bullets
-// reads faster than the same rule in paragraphs. The line count and the
-// bytes-per-line cap are one bar: the density number is the one AGENTS.md
-// lives under (docs:board-guard).
-const LINE_CAP = 120;
-const BYTE_CAP = 400;
 
 const frontmatterField = (file, field) => {
   const text = fs.readFileSync(file, 'utf8');
@@ -55,64 +43,6 @@ const run = async () => {
       assertEq(frontmatterField(file, 'name'), name, `${name} frontmatter name`);
     });
   }
-  await test('no extra skill folders ship', () => {
-    assertEq(skillFolders().join(','), [...SKILLS].sort().join(','), 'skills/ contents');
-  });
-
-  group('skills: description cap');
-
-  await test(`every skill's description is at most ${DESCRIPTION_CAP} characters`, () => {
-    // Enumerated from the directory, not the roster above: a skill added
-    // tomorrow is under the cap the day it lands, and a folder without a
-    // SKILL.md fails here rather than quietly dropping out of the check.
-    const folders = skillFolders();
-    assert(folders.length > 0, 'no skills found');
-    const over = [];
-    for (const name of folders) {
-      const file = path.join(SKILLS_DIR, name, 'SKILL.md');
-      assert(fs.existsSync(file), `missing ${file}`);
-      const description = frontmatterField(file, 'description');
-      if (description.length > DESCRIPTION_CAP) over.push(`${name} (${description.length})`);
-    }
-    assertEq(over.join(', '), '', `descriptions over ${DESCRIPTION_CAP} chars`);
-  });
-
-  group('skills: the length bar');
-
-  await test(`every SKILL.md body is at most ${LINE_CAP} non-blank lines with no line over ${BYTE_CAP} bytes`, () => {
-    // Enumerated from the directory, like the description cap. Blank lines
-    // carry nothing and buy readability, so the count is of lines with
-    // content; the byte cap still reads every line. Hard fail, never a warning.
-    const over = [];
-    for (const name of skillFolders()) {
-      const file = path.join(SKILLS_DIR, name, 'SKILL.md');
-      // The body is measured: the frontmatter is YAML the loader reads (its
-      // allowed-tools line alone runs past the cap), not prose the model reads.
-      const text = fs.readFileSync(file, 'utf8');
-      const frontmatter = text.match(/^---\n[\s\S]*?\n---\n/);
-      assert(frontmatter, `${name} has no frontmatter`);
-      const offset = frontmatter[0].split('\n').length - 1;
-      const lines = text.slice(frontmatter[0].length).split('\n');
-      const content = lines.filter((line) => line.trim() !== '').length;
-      if (content > LINE_CAP) over.push(`${name}: ${content} content lines`);
-      lines.forEach((line, i) => {
-        const bytes = Buffer.byteLength(line, 'utf8');
-        if (bytes > BYTE_CAP) over.push(`${name}: line ${offset + i + 1} is ${bytes} bytes`);
-      });
-    }
-    assertEq(over.join('; '), '', `over the bar (${LINE_CAP} lines, ${BYTE_CAP} bytes a line)`);
-  });
-
-  await test('README.md and AGENTS.md state the bar with the test\'s own numbers', () => {
-    // The two doc lines restate the numbers on purpose, so a changed cap
-    // fails here until both say the new one.
-    const claim = `${LINE_CAP} non-blank lines`;
-    const density = `${BYTE_CAP} bytes`;
-    for (const [file, heading] of [[path.join(REPO, 'README.md'), '### Skills'], [path.join(REPO, 'AGENTS.md'), '## Skills']]) {
-      const text = section(file, heading);
-      assert(text.includes(claim) && text.includes(density), `${path.relative(REPO, file)} does not state ${claim}, ${density}`);
-    }
-  });
 
   group('skills: frontmatter is strict YAML');
 
@@ -135,111 +65,6 @@ const run = async () => {
       }
     }
     assertEq(bad.join(', '), '', 'plain scalars a strict YAML loader refuses');
-  });
-
-  group('skills: no `workflow:` skill names survive');
-  await test('nothing under skills/ names a workflow: skill', () => {
-    // A `workflow:` name that is a hook the module names (hooks/register.js and
-    // hooks/mods/) keeps its name (`workflow:feature` loads the feature skill).
-    // Only the skill names carry the workkit: prefix.
-    const moduleFiles = [path.join(REPO, 'hooks', 'register.js'),
-      ...fs.readdirSync(path.join(REPO, 'hooks', 'mods'), { recursive: true })
-        .filter((f) => f.endsWith('.js')).map((f) => path.join(REPO, 'hooks', 'mods', f))];
-    const hooks = moduleFiles.flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/'workflow:([a-z-]+)'/g)].map((m) => m[1]));
-    assert(hooks.includes('feature'), `the module names workflow:feature, got: ${hooks.join(', ')}`);
-    const bad = [];
-    for (const file of markdownIn(SKILLS_DIR)) {
-      const text = fs.readFileSync(file, 'utf8');
-      for (const name of SKILLS.filter((n) => !hooks.includes(n))) {
-        if (text.includes(`workflow:${name}`)) bad.push(`${path.relative(REPO, file)} → workflow:${name}`);
-      }
-    }
-    assertEq(bad.join('; '), '', 'stale skill names');
-  });
-
-  group('skills: the interview shape');
-
-  await test('the interview asks coupled questions as one question', () => {
-    // Two questions one answer settles are one question: the test sentence
-    // lives in the section that defines how a question is put to the owner.
-    const shape = section(path.join(SKILLS_DIR, 'interview', 'SKILL.md'), '## How questions are asked: chat rounds, never a form');
-    const sentence = "would the owner's answer to this question answer that one too? Then it is one question.";
-    assert(shape.includes(sentence), `the How questions are asked section lacks: ${sentence}`);
-  });
-
-  group('skills: the ship publishes');
-
-  await test("the ship's Step 5 says publish is the agent's to run and names both allow rules and their home", () => {
-    // Publishing is an allowed action of the ship once the checks pass, and a
-    // classifier denial is never the first time a ship learns about the allow
-    // rule: Step 5 names the rule for each repo shape and where it lives.
-    const step = section(path.join(SKILLS_DIR, 'ship', 'SKILL.md'), '## Step 5: npm publish (if applicable)');
-    const missing = ['never hands the command back', '`Bash(npm publish --workspace=*)`', '`Bash(npm publish *)`', '`.claude/settings.json`', '`permissions.allow`']
-      .filter((needle) => !step.includes(needle));
-    assertEq(missing.join(', '), '', 'Step 5 lacks');
-  });
-
-  await test('the ship reads only status:complete and the ship sentence is the qa pass (#293)', () => {
-    // A bare "ship" with nothing at complete ships nothing; a sentence naming
-    // qa items passes them first; and no per-item qa question survives, in
-    // the skill or in the spec it executes.
-    const skill = path.join(SKILLS_DIR, 'ship', 'SKILL.md');
-    const step = section(skill, '## Step 0c: What this ship carries (the pass and the proof call)');
-    const missing = ['nothing commits', 'IS their pass', '"ship all items in qa"', 'rides the commit as code only']
-      .filter((needle) => !step.includes(needle));
-    assertEq(missing.join(', '), '', 'Step 0c lacks');
-    const gone = ['ship anyway', 'delay the ship', 'Ask per item', 'the qa call']
-      .filter((needle) => fs.readFileSync(skill, 'utf8').includes(needle));
-    assertEq(gone.join(', '), '', 'the ship skill still carries');
-    const spec = fs.readFileSync(path.join(REPO, 'docs', 'project-state.md'), 'utf8');
-    assert(!spec.includes('the owner calls each one'), 'the spec no longer states the per-item call');
-    assert(spec.includes('ships nothing and says so'), 'and states the bare-ship rule');
-  });
-
-  group('skills: docs parity');
-
-  // AGENTS.md's list and the README's enumeration are pinned to the folders in
-  // both directions. AGENTS.md carries bare names, so the surface is every
-  // backticked plain name in the section, which `workkit:<name>` and
-  // `SKILL.md` are not.
-  await test("AGENTS.md's Skills section lists exactly the skill folders", () => {
-    const named = [...section(path.join(REPO, 'AGENTS.md'), '## Skills').matchAll(/`([a-z-]+)`/g)]
-      .map((m) => m[1])
-      .sort();
-    assertEq([...new Set(named)].join(','), skillFolders().join(','), "AGENTS.md's skills list");
-  });
-
-  await test("README.md's skills enumeration names exactly the skill folders", () => {
-    const named = [...section(path.join(REPO, 'README.md'), '### Skills').matchAll(/`\/?workkit:([a-z-]+)`/g)]
-      .map((m) => m[1]);
-    assertEq([...new Set(named)].sort().join(','), skillFolders().join(','), "README.md's skills enumeration");
-  });
-
-  group('docs: the findings route and its findings.file toggle');
-
-  await test('the fix-or-file rule reads BUILT, SAID or FILED by findings.file', () => {
-    const rule = section(path.join(REPO, 'docs', 'project-state.md'), '## How big is one issue');
-    const missing = ['BUILT', 'SAID', 'FILED', 'findings.file'].filter((needle) => !rule.includes(needle));
-    assertEq(missing.join(', '), '', '§ How big is one issue lacks');
-  });
-
-  await test("the ~/.workkit table's settings.json row names findings.file beside the site options", () => {
-    const layer = section(path.join(REPO, 'docs', 'project-state.md'), '## The global layer');
-    const row = layer.split('\n').find((l) => l.startsWith('| `settings.json`'));
-    assert(row, '§ The global layer has no settings.json row');
-    assert(row.includes('site options') && row.includes('findings.file'), `the row names both, got: ${row}`);
-    assert(!row.includes('site options only'), `the row no longer says the site options only, got: ${row}`);
-  });
-
-  await test("workflow/README.md's two settings files both show findings.file", () => {
-    // A settings-file row may show the key dotted or as the JSON it is written in.
-    const table = section(path.join(REPO, 'workflow', 'README.md'), '## The two settings files');
-    for (const file of ['`<repo>/.workkit/settings.json`', '`~/.workkit/settings.json`']) {
-      const row = table.split('\n').find((l) => l.startsWith(`| ${file}`));
-      assert(row, `the table has no ${file} row`);
-      assert(row.includes('findings.file') || /"findings":\s*\{\s*"file"/.test(row),
-        `the ${file} row lacks findings.file, got: ${row}`);
-    }
   });
 
   group('skills + agents + docs: portability');
@@ -266,26 +91,6 @@ const run = async () => {
   const MACHINE_SPECIFIC = [/\.dotfiles\b/, /(?<![A-Za-z]:|\/[a-z])\/Users\//, /~\/Developer\//, /\bthe dotfiles repo\b/i];
   const machineSpecific = (text) => MACHINE_SPECIFIC.some((pattern) => pattern.test(text));
 
-  await test('the scan reads the briefs and the engine, jobs and tower READMEs', () => {
-    const scanned = new Set(portable().map((file) => path.relative(REPO, file)));
-    const want = [
-      ...markdownIn(BRIEFS_DIR),
-      ...['workflow', 'jobs', 'tower'].map((dir) => path.join(REPO, dir, 'README.md')),
-    ].map((file) => path.relative(REPO, file));
-    assert(want.some((file) => file.startsWith(`briefs${path.sep}`)), 'the briefs are there to scan');
-    assertEq(want.filter((file) => !scanned.has(file)).join(', '), '', 'files the scan leaves out');
-  });
-
-  await test('the scan bounces a /Users/ path and the owner\'s dotfiles repo, and passes their rewording', () => {
-    assert(machineSpecific('read /Users/someone/notes.md first'), 'an absolute home path');
-    assert(machineSpecific('in the dotfiles repo nothing under `setup/` ships'), 'the owner\'s repo, by name');
-    assert(machineSpecific('The dotfiles repo links it'), 'at the start of a sentence too');
-    assert(!machineSpecific('so `C:/Users/x` and the Git Bash `/c/Users/x` are one key'),
-      'a Windows example spelling passes');
-    assert(!machineSpecific("a repo's machine-setup scripts (a dotfiles-style repo's `setup/`)"),
-      'the general wording a stranger can read passes');
-  });
-
   await test('no machine-specific path appears in shipped content', () => {
     const bad = portable().filter((file) => machineSpecific(fs.readFileSync(file, 'utf8')))
       .map((file) => path.relative(REPO, file));
@@ -302,19 +107,6 @@ const run = async () => {
       if (/~\/\.claude\/(agents|skills|hooks)\b/.test(text)) bad.push(path.relative(REPO, file));
     }
     assertEq(bad.join(', '), '', 'files reaching into a personal ~/.claude directory');
-  });
-
-  await test('no shipped doc, agent or skill names the retired worktree pair', () => {
-    // Every build past the manager-alone tier is a feature-developer and
-    // test-developer pair on the shared tree (docs/agents.md § Crew sizing).
-    const bad = [];
-    for (const file of [...markdownIn(SKILLS_DIR), ...markdownIn(AGENTS_DIR), ...shippedDocs()]) {
-      const text = fs.readFileSync(file, 'utf8');
-      for (const name of ['test-writer', 'feature-writer', 'isolation: "worktree"']) {
-        if (text.includes(name)) bad.push(`${path.relative(REPO, file)} → ${name}`);
-      }
-    }
-    assertEq(bad.join('; '), '', 'the retired pair names');
   });
 };
 

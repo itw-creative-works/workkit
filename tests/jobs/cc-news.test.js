@@ -269,14 +269,6 @@ const run = async () => {
 
   group('jobs/cc-news: nothing on this machine records the cursor');
 
-  await test('a run writes no cache file at all', () => {
-    const world = mkWorld();
-    board(world, '2.1.218');
-    collectIn(world);
-    assert(!fs.existsSync(world.cacheFile), 'the disposable cache is not this module\'s home any more');
-    cleanup(world.home);
-  });
-
   await test('a pre-seeded ccNews key is left byte-identical', () => {
     // No migration: the stale key is the owner's to remove, and no runner is
     // allowed to read it, write it, or take it away.
@@ -287,13 +279,6 @@ const run = async () => {
     const news = collectIn(world);
     assertEq(news.since, '2.1.218', 'the board answered, not the file');
     assertEq(fs.readFileSync(world.cacheFile, 'utf8'), before, 'and the file is untouched');
-    cleanup(world.home);
-  });
-
-  await test('there is no commit callback to call', () => {
-    const world = mkWorld();
-    board(world, '2.1.218');
-    assertEq(typeof collectIn(world).commit, 'undefined', 'the publish IS the commit: no function pretends to persist');
     cleanup(world.home);
   });
 

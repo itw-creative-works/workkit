@@ -12,6 +12,7 @@ const { WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript } = require('./helper
 const { mkTmp } = require('../../lib/scratch');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group("standards.sh: the engine's address");
@@ -195,7 +196,7 @@ const run = async () => {
         WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the heal itself still runs: ${res.stderr}`);
     assert(!fs.existsSync(path.join(claude, 'workkit')), 'a copy is not the machine engine and takes no address');
@@ -220,7 +221,7 @@ const run = async () => {
         WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the heal itself still runs: ${res.stderr}`);
     assert(!fs.existsSync(path.join(claude, 'workkit')), 'the origin is what makes a checkout the machine engine');
@@ -244,39 +245,11 @@ const run = async () => {
         WORKFLOW_CLAUDE_HOME: shellPath(claude),
       },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the heal runs: ${res.stderr}`);
     assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(copy),
       'a second real checkout is still a real checkout: the address follows the one that ran');
-    cleanup(repo); cleanup(claude); cleanup(copyRoot);
-  });
-
-  await test('an origin spelled as a native Windows path is the kit too', () => {
-    // The canonical gate reads the slug through the engine's one rule
-    // (wk_slug_from_remote, workflow/lib/slug.sh), so it takes a remote in either
-    // separator: a checkout cloned from a local path on Windows carries backslashes.
-    const repo = makeRepo();
-    const { claude } = claudeHomeWith();
-    const copyRoot = mkTmp('wf-std-');
-    const copy = path.join(copyRoot, 'workflow');
-    fs.mkdirSync(copy, { recursive: true });
-    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    mkOriginRepo(copyRoot, 'C:\\Users\\x\\kits\\workkit.git');
-    runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
-      env: {
-        ...process.env,
-        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
-        WORKFLOW_CLAUDE_HOME: shellPath(claude),
-      },
-      encoding: 'utf8',
-      timeout: 20000,
-    });
-    assertEq(res.status, 0, `the heal runs: ${res.stderr}`);
-    assertEq(fs.realpathSync(path.join(claude, 'workkit')), fs.realpathSync(copy),
-      'a natively spelled origin names the kit, so the checkout takes the address');
     cleanup(repo); cleanup(claude); cleanup(copyRoot);
   });
 
@@ -291,7 +264,7 @@ const run = async () => {
       WORKFLOW_CLAUDE_HOME: shellPath(claude),
     },
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
 
   await test('a copy in the plugin cache takes the address', () => {

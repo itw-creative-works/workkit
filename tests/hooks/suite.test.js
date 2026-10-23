@@ -13,17 +13,6 @@ const OTHER_ID = '2222222222222222222222222222222222222222';
 const suite = () => mods('suite');
 
 const run = async () => {
-  group('suite.js: factOf');
-
-  await test('factOf hands back a plain fact, and calls a function fact with the arguments, awaited', async () => {
-    assertEq(await suite().factOf('a tree'), 'a tree', 'a value is itself');
-    assertEq(await suite().factOf(null), null, 'and a null fact stays null');
-    const seen = [];
-    const got = await suite().factOf(async (...args) => { seen.push(args); return 'asked'; }, 'x', 2);
-    assertEq(got, 'asked', 'a function fact is asked');
-    assertEq(JSON.stringify(seen), JSON.stringify([['x', 2]]), 'once, with the arguments');
-  });
-
   group('suite.js: treeHash');
 
   await test('treeHash runs bash <kit>/workflow/lib/tree-hash.sh <root> [flags] with the long timeout, answering the trimmed id or null', async () => {
@@ -47,6 +36,12 @@ const run = async () => {
     assertEq(suiteProved(`${ID}\n`, ID), true, 'the recorded tree is proved');
     assertEq(suiteProved(`${ID}\n`, OTHER_ID), false, 'another tree is not');
     assertEq(suiteProved(`${ID}\n`, ''), false, 'an empty tree (a failed hash) is never a match');
+  });
+
+  await test('suiteProved reads the first line of a record carrying the run\'s ms', () => {
+    const { suiteProved } = suite();
+    assertEq(suiteProved(`${ID}\nms=312000\n`, ID), true, 'the tree, then ms=, proves the tree');
+    assertEq(suiteProved(`${OTHER_ID}\nms=312000\n`, ID), false, 'another tree first proves nothing');
   });
 
   group('suite.js: the package record');

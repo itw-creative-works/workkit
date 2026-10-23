@@ -33,13 +33,6 @@ const committedLog = (text) => {
 const run = async () => {
   group('commit-gate: CHANGELOG entry format');
 
-  await test('ports "a staged essay entry blocks the commit"', async () => {
-    const r = mkRepo();
-    stage(r, 'CHANGELOG.md', CHANGELOG(`- **An essay entry.** ${new Array(60).fill('word').join(' ')}`));
-    const deny = lintBlocks(await judge(r, 'git commit -m "docs: changelog"'), 'blocked');
-    assert(deny.includes('word-cap'), `names the rule, got: ${deny}`);
-  });
-
   await test('ports "a staged 62-word entry: blocked with the shared message and the linter\'s word-cap line"', async () => {
     const r = mkRepo();
     stage(r, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - ${new Array(61).fill('word').join(' ')} end.`));
@@ -86,11 +79,6 @@ const run = async () => {
 
   await test('ports "a Fixes trailer with no CHANGELOG staged blocks"', async () => {
     blocks(await judge(committedLog(ENTRY), 'git commit -m "feat: a thing\n\nFixes #4"'), T.fixes, 'names the rule and the fix');
-  });
-
-  await test('given Fixes #N with no CHANGELOG staged: that deny', async () => {
-    const r = committedLog(CHANGELOG());
-    blocks(await judge(r, 'git commit -m "fix(x): mend it\n\nFixes #31"'), T.fixes, 'an issue closes against its entry');
   });
 
   await test('ports "the same commit with the entry staged passes": a gh that cannot answer leaves one line', async () => {

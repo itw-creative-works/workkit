@@ -13,6 +13,7 @@ const {
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'standards.sh');
@@ -24,9 +25,6 @@ const W_RE = W.replace(/\./g, '\\.');
 const IGNORE_GLOB = new RegExp(`^${W_RE}/\\*$`, 'm');
 const IGNORE_GLOB_ALL = new RegExp(`^${W_RE}/\\*$`, 'gm');
 const IGNORE_NEGATION = new RegExp(`^!${W_RE}/settings\\.json$`, 'm');
-
-// The hooks' copy of the name, checked against the harness by the drift test.
-const HOOK_LIB = path.join(__dirname, '..', '..', '..', 'hooks', '_lib.sh');
 
 // Every group:value pair the manifest asks for, with its resolved color.
 const desiredLabels = () => {
@@ -200,7 +198,7 @@ const runScript = (repoDir, {
       ...env,
     },
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   // The engine keeps stdout for machine-readable answers (--state, --announce)
   // and sends every diagnostic to stderr. `output` is what a human sees in a
@@ -218,7 +216,7 @@ const STANDARD_VERSION = Number(
 const repoVersion = (dir) => JSON.parse(readFile(path.join(dir, W, 'settings.json'))).version;
 
 module.exports = {
-  WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION, HOOK_LIB,
+  WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
   desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
   binDirWithout, runScript, STANDARD_VERSION, repoVersion,
 };

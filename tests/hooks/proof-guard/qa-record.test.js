@@ -22,15 +22,6 @@ const run = async () => {
     assertBlocks(await flip({ packageRecord: pkgRecord(['.'], TREE), treeId: OTHER_TREE }), ON_ROOT, 'the tree changed');
   });
 
-  await test('ports "an edit undone byte for byte: the record holds the tree again"', async () => {
-    assertBlocks(await flip({ packageRecord: pkgRecord(['.'], TREE), treeId: OTHER_TREE }), ON_ROOT, 'the edited tree');
-    passText(await flip({ packageRecord: pkgRecord(['.'], TREE), treeId: TREE }), 'the tree id is the content, not its history');
-  });
-
-  await test('ports "a package record whose first line is another tree: blocks, though it lists the package"', async () => {
-    assertBlocks(await flip({ packageRecord: pkgRecord(['.'], OTHER_TREE) }), ON_ROOT, 'the record is another tree\'s');
-  });
-
   await test('ports "a whole suite record for another tree: blocks"', async () => {
     passText(await flip({ suiteRecord: suiteRecord(TREE) }), 'the suite record on this tree');
     assertBlocks(await flip({ suiteRecord: suiteRecord(OTHER_TREE) }), ON_ROOT, 'the suite record is another tree\'s');

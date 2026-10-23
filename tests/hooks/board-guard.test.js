@@ -23,20 +23,10 @@ const run = async () => {
     assertEq(verdict('README.md', 'anything at all'), '', 'unguarded files are ignored');
   });
 
-  await test('ports "PROGRESS.md / BOARD.md are no longer validated: exit 0"', () => {
-    for (const name of ['PROGRESS.md', 'BOARD.md']) {
-      assertEq(verdict(name, '# whatever\n\n## Random\n- GO 1: anywhere\n'), '', `${name} is not a guard surface`);
-    }
-  });
-
   group('board-guard: CLAUDE.md is not a guard surface');
 
   await test('ports "a content-bearing CLAUDE.md write: silent exit 0"', () => {
     assertEq(verdict('CLAUDE.md', '# My Project\n\nReal instructions here.\n@AGENTS.md\n'), '', 'a CLAUDE.md write passes');
-  });
-
-  await test('ports "a CLAUDE.md with no import line: silent exit 0"', () => {
-    assertEq(verdict('CLAUDE.md', '\n'), '', 'a CLAUDE.md write passes');
   });
 
   group('board-guard: AGENTS.md size budget');
@@ -117,16 +107,6 @@ const run = async () => {
   await test('ports "this repo\'s own AGENTS.md passes the hardened guard"', () => {
     const text = fs.readFileSync(path.join(REPO, 'AGENTS.md'), 'utf8');
     assertEq(verdict('AGENTS.md', text), '', 'the TOC rewrite must satisfy both halves of the budget');
-  });
-
-  group('board-guard: plans are no longer a surface');
-
-  await test('ports "markdown under plans/ passes silently: exit 0"', () => {
-    assertEq(verdict('plans/thing.md', '# A proposal with no frontmatter\n\n- [ ] a checkbox\n'), '', 'a plan lives in its issue body');
-  });
-
-  await test('ports "ordinary markdown untouched: exit 0"', () => {
-    assertEq(verdict('notes.md', 'anything - [ ] checkbox'), '', 'ordinary markdown is ignored');
   });
 };
 

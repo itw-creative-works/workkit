@@ -6,12 +6,13 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, skip, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath, homeEnv, stubTool, pathWith,
+  BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'ship-items.sh');
 
@@ -57,7 +58,7 @@ const runScript = (w, args = []) => {
     cwd: w.dir,
     env: homeEnv(w.home, { PATH: pathWith(w.bin) }),
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `the script finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -214,26 +215,6 @@ const run = async () => {
     }
     assertList(w.calls(), [], 'gh was never asked');
     cleanup(w.dir);
-  });
-
-  group('ship-items.sh: the script itself');
-
-  await test('its Proof: pattern is the one hooks/mods/proof.js reads', () => {
-    // The pattern has four homes (hooks/mods/proof.js, this script, and PROOF_LINE in
-    // tower/api/server/validate.js and the dashboard's libs/tower/github/writes.js). The tower's
-    // two are pinned to hooks/mods/proof.js in tests/tower/app/github-writes.test.js; this pins the ship's,
-    // so a change to one cannot leave the ship and the gate disagreeing.
-    const pattern = '(^|\\n)[ \\t]*Proof:';
-    const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'mods', 'proof.js'), 'utf8');
-    assert(libSrc.includes(pattern), `hooks/mods/proof.js carries ${pattern}`);
-    assert(fs.readFileSync(SCRIPT, 'utf8').includes(pattern), `ship-items.sh carries ${pattern}`);
-  });
-
-  await test('it is executable and parses', () => {
-    // eslint-disable-next-line no-bitwise
-    if (IS_WINDOWS) skip('ship-items.sh carries the executable bit', NO_EXEC_BIT);
-    else assert((fs.statSync(SCRIPT).mode & 0o111) !== 0, 'the executable bit is set');
-    assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
   });
 
   return summary();

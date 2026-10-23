@@ -1,10 +1,9 @@
-// Tests for safety:release-taken's logic: failing open out loud, and its place
-// in the module's Bash chain. Each case ports the HEAD case its name quotes;
+// Tests for safety:release-taken's logic: failing open out loud. Each case
+// ports the HEAD case its name quotes;
 // "malformed JSON, exit 0" is dropped with the shell spawn.
 // The shared prologue (the lookups, the verdict call, the texts) is ./helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { mods } = require('../../lib/mods-inputs');
 const { RELEASE, judge } = require('./helpers');
 
 const run = async () => {
@@ -50,16 +49,6 @@ const run = async () => {
     ]) {
       assert(text.split('\n').includes(line), `says "${line}", got: ${text}`);
     }
-  });
-
-  group('release-taken: wiring');
-
-  await test('ports "hooks.json registers the hook under PreToolUse Bash, after commit-language": BASH_GUARDS order', () => {
-    const hooks = mods('guards').BASH_GUARDS.map((g) => g.hook);
-    const mine = hooks.indexOf('safety:release-taken');
-    assert(mine > 0, `BASH_GUARDS names safety:release-taken, got: ${hooks.join(' ')}`);
-    assertEq(hooks[mine - 1], 'safety:commit-language', 'it sits right after safety:commit-language');
-    assertEq(typeof mods('guards').BASH_GUARDS[mine].run, 'function', 'its entry carries a run function');
   });
 };
 

@@ -14,7 +14,7 @@
 # runs is never proved. A failed hash is its own answer, never an empty id read
 # as a changed tree.
 recorded_run() {
-  local root="$1" pkg="$2" what=suite record=record hashed=1 before after rc=0
+  local root="$1" pkg="$2" what=suite record=record hashed=1 before after rc=0 started ms
   local changed='the tree changed during the run, so no record was written; run npm test again'
   shift 2
   if [ -n "$pkg" ]; then
@@ -22,7 +22,9 @@ recorded_run() {
     changed='the tree changed during it, so no record was written; run it again'
   fi
   before=$(wk_tree_hash "$root") || hashed=0
+  started=$SECONDS
   sh "$@" || rc=$?
+  ms=$(wk_elapsed_ms "$started")
   [ "$rc" -eq 0 ] || exit "$rc"
   after=$(wk_tree_hash "$root") || hashed=0
   if [ "$hashed" -eq 0 ]; then
@@ -36,7 +38,7 @@ recorded_run() {
   if [ -n "$pkg" ]; then
     wk_pkg_marker_write "$root" "$before" "$pkg" || rc=1
   else
-    wk_suite_marker_write "$root" "$before" || rc=1
+    wk_suite_marker_write "$root" "$before" "$ms" || rc=1
   fi
   if [ "$rc" -ne 0 ]; then
     printf 'script-shell: the %s passed, but the %s of %s could not be written\n' "$what" "$record" "$root" >&2

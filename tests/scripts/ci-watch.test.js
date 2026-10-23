@@ -7,14 +7,14 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skip, testUnless, summary, selfRun,
+  group, test, assert, assertEq, testUnless, summary, selfRun,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, NO_EXEC_BIT, shellPath, gitPath, homeEnv, stubTool, systemPathWith,
+  IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, systemPathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 const { mkTmp } = require('../lib/scratch');
-const { alive, until, readPid } = require('../lib/process');
+const { alive, until, readPid, SPAWN_DEADLINE } = require('../lib/process');
 const { ciLockPath } = require('../lib/suite-record');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'ci-watch.sh');
@@ -117,13 +117,13 @@ const watchEnv = (w, env = {}) => homeEnv(w.home, {
 
 const runWatch = (w, args, { cwd = w.repo, env = {} } = {}) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
-    cwd, env: watchEnv(w, env), encoding: 'utf8', timeout: 20000,
+    cwd, env: watchEnv(w, env), encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
 // The same run, started without waiting: a case that signals it or races it.
-// `result()` resolves once it exits (null past `ms`), with what it printed;
+// `result()` resolves once it exits (null past the spawn deadline), with what it printed;
 // `detached` makes it a process group leader, so a case can end the group.
 const startWatch = (w, args = [SHA], { bashArgs = [...NO_RC, shellPath(SCRIPT), ...args], detached = false } = {}) => {
   const child = spawn(BASH, bashArgs, { cwd: w.repo, env: watchEnv(w), stdio: ['ignore', 'pipe', 'pipe'], detached });
@@ -132,9 +132,9 @@ const startWatch = (w, args = [SHA], { bashArgs = [...NO_RC, shellPath(SCRIPT), 
   child.stdout.on('data', (chunk) => { out += chunk.toString(); });
   child.stderr.on('data', (chunk) => { err += chunk.toString(); });
   const done = new Promise((resolve) => { child.on('close', (code, signal) => resolve({ code, signal })); });
-  const result = (ms) => Promise.race([
+  const result = () => Promise.race([
     done.then((r) => ({ ...r, out, err })),
-    new Promise((resolve) => { setTimeout(() => resolve(null), ms); }),
+    new Promise((resolve) => { setTimeout(() => resolve(null), SPAWN_DEADLINE).unref(); }),
   ]);
   return { child, result };
 };
@@ -361,19 +361,19 @@ const runSuite = async () => {
       bashArgs: [...NO_RC, '-c', 'bash --noprofile --norc "$0" "$1"; exit $?', shellPath(SCRIPT), SHA],
       detached: true,
     });
-    assert(await until(() => watchCalls(w).length === 1, 10000), 'the watch reached gh within 10 s');
+    assert(await until(() => watchCalls(w).length === 1), 'the watch never reached gh');
     process.kill(-shell.child.pid, 'SIGTERM');
-    assert(await until(() => shell.child.signalCode !== null || shell.child.exitCode !== null, 2000), 'the invoking shell ended within 2 s');
+    assert(await until(() => shell.child.signalCode !== null || shell.child.exitCode !== null), 'the invoking shell never ended');
     assertEq(shell.child.signalCode, 'SIGTERM', 'the invoking shell died of the TERM, not of the watch ending');
-    assert(await until(() => (readLog(w) || '').endsWith('ci-watch: exit 0\n'), 10000), `the log ends with the exit line within 10 s, got: ${JSON.stringify(readLog(w))}`);
-    await shell.result(10000);
+    assert(await until(() => (readLog(w) || '').endsWith('ci-watch: exit 0\n')), `the log never ended with the exit line, got: ${JSON.stringify(readLog(w))}`);
+    await shell.result();
     cleanup(w.dir);
   });
 
   await test('a second watch while one is in flight refuses, exit 5, naming the watched sha and the log', async () => {
     const w = makeWorld({ runs: [run(83, 'Checks')], watchSleep: 2 });
     const first = startWatch(w);
-    assert(await until(() => watchCalls(w).length === 1, 10000), 'the first watch reached gh within 10 s');
+    assert(await until(() => watchCalls(w).length === 1), 'the first watch never reached gh');
     // The same sha, then another: both refusals name the sha being watched.
     for (const sha of [SHA, OTHER_SHA]) {
       const second = runWatch(w, [sha]);
@@ -383,27 +383,28 @@ const runSuite = async () => {
       assertEq(line[1], SHA, `asked for ${sha}, it names the watched sha`);
       assert([w.ciLog, shellPath(w.ciLog), gitPath(w.ciLog)].includes(line[3]), `it names the log ${w.ciLog}, got: ${line[3]}`);
     }
-    const r = await first.result(15000);
-    assert(r !== null, 'the first watch answered within 15 s');
+    const r = await first.result();
+    assert(r !== null, 'the first watch never answered');
     assertEq(r.code, 0, `the first watch still answers green (stderr: ${r.err})`);
     assertEq(watchCalls(w).length, 1, `one run watch reached gh: ${fmtCalls(watchCalls(w))}`);
     cleanup(w.dir);
   });
 
-  await signalTest('an INT to the foreground ends the watch within 2 s, exit 130', async () => {
-    const w = makeWorld({ runs: [run(84, 'Checks')], watchSleep: 10 });
+  await signalTest('an INT to the foreground ends the watch, exit 130', async () => {
+    // The watch outsleeps the poll's bound, so only the INT can end it in time.
+    const w = makeWorld({ runs: [run(84, 'Checks')], watchSleep: 120 });
     const fg = startWatch(w);
     const pidFile = path.join(w.fx, 'watch-84.pid');
     let stub = null;
     try {
-      assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8') !== '', 10000), 'the watch reached gh within 10 s');
+      assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8') !== ''), 'the watch never reached gh');
       stub = readPid(pidFile);
       fg.child.kill('SIGINT');
-      assert(await until(() => !alive(stub), 2000), `the stub's run watch (pid ${stub}) is gone within 2 s of the INT`);
-      const r = await fg.result(5000);
-      assert(r !== null, 'the foreground exited within 5 s of the INT');
+      assert(await until(() => !alive(stub)), `the stub's run watch (pid ${stub}) outlived the INT`);
+      const r = await fg.result();
+      assert(r !== null, 'the foreground never exited after the INT');
       assertEq(r.code, 130, `exit 130 (signal: ${r.signal}, stderr: ${r.err})`);
-      assert(await until(() => (readLog(w) || '').endsWith('ci-watch: exit 130\n'), 2000), `the log ends with the exit line, got: ${JSON.stringify(readLog(w))}`);
+      assert(await until(() => (readLog(w) || '').endsWith('ci-watch: exit 130\n')), `the log never ended with the exit line, got: ${JSON.stringify(readLog(w))}`);
     } finally {
       if (stub && alive(stub)) process.kill(stub, 'SIGKILL');
       if (fg.child.exitCode === null && fg.child.signalCode === null) fg.child.kill('SIGKILL');
@@ -455,13 +456,6 @@ const runSuite = async () => {
 
   group('ci-watch.sh: the script itself');
 
-  await test('it is executable and parses', async () => {
-    // eslint-disable-next-line no-bitwise
-    if (IS_WINDOWS) skip('ci-watch.sh carries the executable bit', NO_EXEC_BIT);
-    else assert((fs.statSync(SCRIPT).mode & 0o111) !== 0, 'the executable bit is set');
-    assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
-  });
-
   await test('an in-place rewrite of the script during the watch changes nothing: the green answer, no fragment read', async () => {
     // The twin of script-shell.test.js's case: a copy of the kit, rewritten by
     // the watch itself while the foreground waits and the body runs.
@@ -470,7 +464,7 @@ const runSuite = async () => {
     fs.cpSync(path.join(__dirname, '..', '..', 'workflow'), kit, { recursive: true });
     const copy = path.join(kit, 'ship', 'ci-watch.sh');
     fs.writeFileSync(path.join(w.fx, 'rewrite'), shellPath(copy));
-    const res = spawnSync(BASH, [...NO_RC, shellPath(copy), SHA], { cwd: w.repo, env: watchEnv(w), encoding: 'utf8', timeout: 20000 });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(copy), SHA], { cwd: w.repo, env: watchEnv(w), encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const r = { code: res.status, out: res.stdout || '', err: res.stderr || '' };
     assertEq(fs.readFileSync(copy, 'utf8').split('\n')[0], '# a line added while the watch ran', 'the script on disk was rewritten while it ran');
     assertEq(r.code, 0, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`);

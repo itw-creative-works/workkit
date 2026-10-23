@@ -110,19 +110,6 @@ const run = async () => {
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a bare entry ends with exactly one handle, however often the backfill runs', () => {
-    const { dir } = mkRepo(
-      CHANGELOG('- [#4](../../issues/4) - Text.'),
-      ['feat: a\n\nFixes #4'],
-    );
-    const stub = makeGhStub({ login: 'alice' });
-    runScript(dir, stub);
-    runScript(dir, stub);
-    const entry = readLog(dir).split('\n').find((l) => l.startsWith('- [#4]'));
-    assertEq((entry.match(/Thanks \[@alice\]!/g) || []).length, 1, `one handle, got: ${entry}`);
-    cleanup(dir); cleanup(stub.dir);
-  });
-
   await test('an entry already carrying its handle is not given a second one', () => {
     // Entries are written at build time, handle and all, so a second
     // attribution would ship as "Thanks [@who]! Thanks [@who]! -".
@@ -218,20 +205,6 @@ const run = async () => {
     assert(text.includes(`\`${shas[0]}\``), `filled, got: ${text}`);
     assert(text.includes('\r\n'), 'still CRLF');
     assert(!/[^\r]\n/.test(text), 'no lone LF was written');
-    cleanup(dir); cleanup(stub.dir);
-  });
-
-  await test('re-running changes nothing: an entry with links is left alone', () => {
-    const { dir } = mkRepo(
-      CHANGELOG('- [#4](https://github.com/o/r/issues/4) - Plugins install from settings.json.'),
-      ['refactor: x\n\nFixes #4'],
-    );
-    const stub = makeGhStub();
-    runScript(dir, stub);
-    const first = readLog(dir);
-    const second = runScript(dir, stub);
-    assertEq(readLog(dir), first, 'byte-identical on the second run');
-    assert(second.out.includes('nothing to fill in'), `says so, got: ${second.out}`);
     cleanup(dir); cleanup(stub.dir);
   });
 

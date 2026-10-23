@@ -1,5 +1,5 @@
 /**
- * hooks/register.js: the workkit hooks module, the twenty-eight in-process
+ * hooks/register.js: the workkit hooks module, the twenty-nine in-process
  * hooks on nine events (docs/hooks.md § The hooks module). The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
  * and this file gathers their facts (or hands a mods gatherer the engine calls
@@ -26,6 +26,7 @@ import { sessionGuardVerdict } from './mods/session-guard.js';
 import { spawnGuardWarning } from './mods/spawn-guard.js';
 import { standardsGather } from './mods/standards.js';
 import { inboxCount, stateCheckContext } from './mods/state-check.js';
+import { testBarContext } from './mods/test-bar.js';
 import { isCodePath, isTestPath, testReminderContext } from './mods/test-reminder.js';
 
 // Each hook as settings and the hooks log name it.
@@ -34,6 +35,7 @@ const HOOK = {
   changelogGuard: 'docs:changelog-guard',
   sessionGuard: 'docs:session-guard',
   testReminder: 'safety:test-reminder',
+  testBar: 'safety:test-bar',
   stateCheck: 'docs:state-check',
   session: 'docs:session',
   standards: 'workflow:standards',
@@ -279,14 +281,21 @@ async function changelogGuardHook($, env, file, text) {
   return lint.isStarted === false ? null : changelogGuardVerdict(file, lint);
 }
 
-async function testReminderHook($, e, file) {
+// A written file in the session's own repo as `{ root, rel }`, else null: the
+// gate test-reminder and test-bar share.
+async function repoRel($, e, file) {
   if (!file || !(await exists($, file))) return null;
   const dir = dirOf(file);
   const [root, fileRoot] = await Promise.all([gitTop($, e.cwd || (await sessionCwd($))), gitTop($, dir)]);
   if (!root || root !== fileRoot) return null;
   const prefix = await run($, ['git', 'rev-parse', '--show-prefix'], { cwd: dir });
   if (prefix.exitCode !== 0) return null;
-  const rel = `${prefix.stdout.trim()}${file.split('/').pop()}`;
+  return { root, rel: `${prefix.stdout.trim()}${file.split('/').pop()}` };
+}
+
+async function testReminderHook($, e, where) {
+  if (!where) return null;
+  const { root, rel } = where;
   const seen = (await storeGet($, e.session_id, 'test-reminder')) ?? [];
   if (!isCodePath(rel) || seen.includes(`${root}/${rel}`)) return null;
   const listing = await run($, ['git', '-c', 'core.quotePath=false', 'ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root });
@@ -298,6 +307,10 @@ async function testReminderHook($, e, file) {
   const context = testReminderContext({ root, rel, files, tests }, seen);
   if (context) await storeSet($, e.session_id, 'test-reminder', [...seen, `${root}/${rel}`]);
   return context;
+}
+
+async function testBarHook(where, text) {
+  return where ? testBarContext({ ...where, text }) : null;
 }
 
 // The open inbox count; only silence is cached, about 30 minutes per repo,
@@ -470,9 +483,9 @@ export function register(on) {
     const opted = await folderOpted(ioOf($, env), file ? dirOf(file) : e.cwd);
     const fires = [];
     let block = null;
-    let context = null;
+    const contexts = [];
     if (!opted) {
-      for (const hook of [HOOK.boardGuard, HOOK.changelogGuard, HOOK.sessionGuard, HOOK.testReminder]) fires.push([hook, 'stood-down']);
+      for (const hook of [HOOK.boardGuard, HOOK.changelogGuard, HOOK.sessionGuard, HOOK.testReminder, HOOK.testBar]) fires.push([hook, 'stood-down']);
     } else {
       // In order: the first block wins and the hooks after it do not run.
       const text = file ? await readText($, file) : null;
@@ -487,14 +500,18 @@ export function register(on) {
         block = sessionGuardVerdict(file, text);
       }
       if (!block) {
+        // The two nudges share one repo read; neither blocks.
+        const where = await caught($, `${HOOK.testReminder}, ${HOOK.testBar} (repo read)`, repoRel($, e, file));
         fires.push([HOOK.testReminder, 'run']);
-        context = await caught($, HOOK.testReminder, testReminderHook($, e, file));
+        contexts.push(await caught($, HOOK.testReminder, testReminderHook($, e, where)));
+        fires.push([HOOK.testBar, 'run']);
+        contexts.push(await caught($, HOOK.testBar, testBarHook(where, text)));
       }
     }
     await logFires($, env, 'PostToolUse', e, fires);
     const result = await next(e);
     if (block) return { ...result, block: [block, result?.block].filter(Boolean).join('\n\n') };
-    return withContext(result, context ? [context] : []);
+    return withContext(result, contexts.filter(Boolean));
   }).catch(($, e, next) => (next.called
     ? next(e)
     : { block: 'workkit: the PostToolUse guards failed before they could judge this write; check the file by hand.' }));

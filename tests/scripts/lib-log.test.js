@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const LIB = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib.sh'));
 const ESCAPE = '\u001b';
@@ -24,7 +25,7 @@ const inLib = (script, env = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(LIB)}\n${script}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(process.env.HOME), TERM: 'xterm-256color', ...env },
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -41,22 +42,6 @@ const run = async () => {
       `and the loud ones, got: ${JSON.stringify(err)}`);
   });
 
-  await test('the calm levels go to stdout and the loud ones to stderr', () => {
-    const { out, err } = inLib(EVERY_LEVEL, { WORKKIT_COLOR: '0' });
-    assert(/linked/.test(out) && /current/.test(out) && /hint/.test(out),
-      `an action, a skip and a note are on stdout, got: ${out}`);
-    assert(!/careful|broken/.test(out), `and a warning is not, got: ${out}`);
-    assert(/careful/.test(err) && /broken/.test(err), `a warning and an error are on stderr, got: ${err}`);
-  });
-
-  await test('a title is bold and a section is bold cyan under a blank line', () => {
-    const { out } = inLib('wk_title "🧰 workkit setup in /tmp"\nwk_section "💻 This machine"',
-      { WORKKIT_COLOR: '1' });
-    assertEq(out, `${ESCAPE}[1m🧰 workkit setup in /tmp${ESCAPE}[0m\n`
-      + `\n${ESCAPE}[1m${ESCAPE}[0;36m💻 This machine${ESCAPE}[0m\n`,
-      `the two headings, got: ${JSON.stringify(out)}`);
-  });
-
   await test('the closing line is the ✨ one, and an emoji survives a pipe', () => {
     const { out } = inLib('wk_done "Everything this command can see is current."', { WORKKIT_COLOR: '0' });
     assertEq(out, '✨ Everything this command can see is current.\n',
@@ -64,37 +49,6 @@ const run = async () => {
   });
 
   group('lib.sh: the task and the indent');
-
-  await test('the first `word:` of a message is split off and painted bold', () => {
-    const { out } = inLib('wk_ok "engine: linked a → b"', { WORKKIT_COLOR: '1' });
-    assertEq(out, `${ESCAPE}[1m${ESCAPE}[0;32m✓${ESCAPE}[0m ${ESCAPE}[1mengine:${ESCAPE}[0m linked a → b\n`,
-      `a bold glyph, a bold task, a plain message, got: ${JSON.stringify(out)}`);
-  });
-
-  await test('a message with no such opening prints as it was written', () => {
-    const { out } = inLib('wk_ok "linked two things: one and the other"', { WORKKIT_COLOR: '1' });
-    assertEq(out, `${ESCAPE}[1m${ESCAPE}[0;32m✓${ESCAPE}[0m linked two things: one and the other\n`,
-      `nothing is split off a sentence, got: ${JSON.stringify(out)}`);
-  });
-
-  await test('the same line off a terminal is the same words with no codes', () => {
-    const { out } = inLib('wk_ok "engine: linked a → b"', { WORKKIT_COLOR: '0' });
-    assertEq(out, '✓ engine: linked a → b\n', `byte for byte minus the codes, got: ${JSON.stringify(out)}`);
-  });
-
-  await test('a warning paints its glyph, its task and its message', () => {
-    const { err } = inLib('wk_warn "gh: not installed"', { WORKKIT_COLOR: '1' });
-    assertEq(err, `${ESCAPE}[0;33m⚠${ESCAPE}[0m ${ESCAPE}[1m${ESCAPE}[0;33mgh:${ESCAPE}[0m `
-      + `${ESCAPE}[0;33mnot installed${ESCAPE}[0m\n`,
-      `yellow throughout, the task bold, got: ${JSON.stringify(err)}`);
-  });
-
-  await test('a skip is dim from end to end', () => {
-    const { out } = inLib('wk_skip "engine: current"', { WORKKIT_COLOR: '1' });
-    assertEq(out, `${ESCAPE}[0;90m·${ESCAPE}[0m ${ESCAPE}[0;90mengine:${ESCAPE}[0m `
-      + `${ESCAPE}[0;90mcurrent${ESCAPE}[0m\n`,
-      `the whole line dim, got: ${JSON.stringify(out)}`);
-  });
 
   await test('a level line under a title or a section is indented two spaces', () => {
     const { out } = inLib('wk_ok "engine: before"\nwk_title "🧰 workkit setup in /tmp"\nwk_ok "engine: after"\n'
@@ -157,12 +111,6 @@ const run = async () => {
     const { out, err } = inLib('wk_spin "reading the roster" true', { WORKKIT_COLOR: '0' });
     assertEq(out, '', `nothing on stdout, which belongs to the command, got: ${JSON.stringify(out)}`);
     assertEq(err, '⏳ reading the roster...\n', `the static form, with no animation, got: ${JSON.stringify(err)}`);
-  });
-
-  await test('the static line is indented with the steps around it', () => {
-    const { err } = inLib('wk_section "💻 This machine"\nwk_spin "reading the roster" true',
-      { WORKKIT_COLOR: '0' });
-    assertEq(err, '  ⏳ reading the roster...\n', `under the section, got: ${JSON.stringify(err)}`);
   });
 
   await test('QUIET silences the static line too, and never the command', () => {

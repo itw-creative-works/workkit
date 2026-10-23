@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { SPAWN_DEADLINE } = require('./process');
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -90,7 +91,7 @@ let tmpMount;
 const tmpMountRoot = () => {
   if (tmpMount !== undefined) return tmpMount;
   const res = spawnSync(IS_WINDOWS ? path.join(SYSTEM_DIR, 'cygpath.exe') : 'cygpath', ['-w', '/tmp'],
-    { encoding: 'utf8', timeout: 30000 });
+    { encoding: 'utf8', timeout: SPAWN_DEADLINE });
   if (res.status !== 0 && IS_WINDOWS) {
     throw new Error(`tests/lib/platform: cygpath -w /tmp failed: ${res.error || res.stderr}`);
   }

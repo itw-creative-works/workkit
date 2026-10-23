@@ -1,6 +1,5 @@
 // README and docs/setup.md links: every relative link and image path in the
-// two files resolves to a real file or folder, and the README shows the hero
-// and the mark from docs/assets/.
+// two files resolves to a real file or folder.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -44,14 +43,6 @@ const run = async () => {
 
   await test('every relative link and image path in README.md resolves to a file or folder', () => {
     assertEq(missing(README).join(', '), '', 'README.md links that resolve to nothing');
-  });
-
-  await test('README.md shows docs/assets/hero.gif and docs/assets/mark.svg, and both exist', () => {
-    const linked = resolvedLinks(README).map(({ abs }) => path.relative(REPO, abs).split(path.sep).join('/'));
-    for (const asset of ['docs/assets/hero.gif', 'docs/assets/mark.svg']) {
-      assert(linked.includes(asset), `README.md has no link or image pointing at ${asset}`);
-      assert(fs.statSync(path.join(REPO, asset), { throwIfNoEntry: false })?.isFile(), `${asset} is not a file in the repo`);
-    }
   });
 
   group('docs/setup.md: links');

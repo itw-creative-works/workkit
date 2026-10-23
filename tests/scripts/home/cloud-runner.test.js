@@ -10,6 +10,7 @@ const {
   KIT_DIR, cleanup, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
   dropRunnerLine,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('workflow/home: the cloud brief runner');
@@ -52,7 +53,7 @@ const run = async () => {
     seeded(world);
     const entry = path.join(world.tower, 'brief', 'jobs', 'morning', 'brief', 'brief-payload.js');
     const res = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(entry)})`], {
-      encoding: 'utf8', timeout: 30000,
+      encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the seeded composer loads from the clone alone: ${res.stderr}`);
     cleanup(world.root);
@@ -67,7 +68,7 @@ const run = async () => {
     const engine = path.join(world.tower, 'brief', 'workflow');
     const driver = ['lib.sh', 'lib/discussions.sh', 'home.sh']
       .map((lib) => `. ${JSON.stringify(shellPath(path.join(engine, lib)))}`).concat('declare -F wk_home_setup >/dev/null').join('\n');
-    const res = spawnSync(BASH, [...NO_RC, '-c', `set -euo pipefail\n${driver}`], { cwd: '/', encoding: 'utf8', timeout: 30000 });
+    const res = spawnSync(BASH, [...NO_RC, '-c', `set -euo pipefail\n${driver}`], { cwd: '/', encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(res.status, 0, `the seeded engine loads from the clone alone: ${res.stderr}`);
     cleanup(world.root);
   });

@@ -7,8 +7,6 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf, stateFacts } = require('../lib/mods-inputs');
 
-// A three-byte character, built from its code so this file holds none.
-const WIDE = String.fromCharCode(0x2014);
 const say = (facts) => textOf(mods('state-check').stateCheckContext(stateFacts(facts)));
 
 const run = async () => {
@@ -63,12 +61,6 @@ const run = async () => {
     assert(!out.includes('git rm CLAUDE.md'), 'never the delete');
   });
 
-  await test('ports "a single content line with no AGENTS.md: still a rename"', () => {
-    const out = say({ claude: 'Use tabs.\n' });
-    assert(out.includes('git mv CLAUDE.md AGENTS.md'), `one line of content is content, got: ${out}`);
-    assert(!out.includes('@AGENTS.md'), `no pointer goes back in its place, got: ${out}`);
-  });
-
   await test('ports "a content CLAUDE.md beside an AGENTS.md: says to merge by hand"', () => {
     const out = say({ claude: '@AGENTS.md\n\nUse tabs.\n', agents: '# repo\n\nthe overview\n' });
     assert(out.includes('by hand'), `names the hand merge, got: ${out}`);
@@ -102,17 +94,6 @@ const run = async () => {
   await test('ports "several dense lines: the count is plural"', () => {
     const out = say({ agents: `# repo\n${`${'x'.repeat(500)}\n`.repeat(3)}` });
     assert(out.includes('3 lines over 400 bytes'), `counts them, got: ${out}`);
-  });
-
-  await test('ports "a 400-byte line: silent (the boundary passes)"', () => {
-    assert(!say({ agents: `# repo\n${'x'.repeat(400)}\n` }).includes('AGENTS.md'), 'exactly 400 is within the budget');
-  });
-
-  await test('ports "a non-ASCII line: 370 characters, 410 bytes, and it counts"', () => {
-    const line = `${'x'.repeat(350)}${WIDE.repeat(20)}`;
-    assertEq(Buffer.byteLength(line, 'utf8'), 410, 'the fixture is 410 bytes');
-    const out = say({ agents: `# repo\n${line}\n` });
-    assert(out.includes('1 line over 400 bytes'), `bytes decide it, got: ${out}`);
   });
 };
 

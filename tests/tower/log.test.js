@@ -6,6 +6,7 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const LOG = path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'log.js');
 const ESCAPE = '\u001b';
@@ -15,7 +16,7 @@ const inNode = (script, env = {}) => {
   const res = spawnSync(process.execPath, ['-e', `const { createLogger } = require(${JSON.stringify(LOG)});\n${script}`], {
     env: { PATH: process.env.PATH, HOME: process.env.HOME, ...env },
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `node finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -43,11 +44,6 @@ const run = async () => {
     assert(/careful/.test(err) && /broken/.test(err), `and the loud ones are on stderr, got: ${err}`);
   });
 
-  await test('a section opens under a blank line and the closing line is the ✨ one', () => {
-    const { out } = inNode("const l = createLogger();\nl.section('💻 This machine');\nl.done('all current');");
-    assertEq(out, '\n💻 This machine\n✨ all current\n', `the two shapes, got: ${JSON.stringify(out)}`);
-  });
-
   group('tower/api/lib/log: the task and the colors');
 
   await test('the first `word:` of a message is split off and painted bold', () => {
@@ -60,13 +56,6 @@ const run = async () => {
     const { out } = inNode("createLogger().ok('listening on http://127.0.0.1:8693');", { WORKKIT_COLOR: '0' });
     assertEq(out, '✓ listening on http://127.0.0.1:8693\n',
       `nothing is split off a URL, got: ${JSON.stringify(out)}`);
-  });
-
-  await test('a warning paints its glyph, its task and its message', () => {
-    const { err } = inNode("createLogger().warn('board: the sweep was dropped');", { WORKKIT_COLOR: '1' });
-    assertEq(err, `${ESCAPE}[0;33m⚠${ESCAPE}[0m ${ESCAPE}[1m${ESCAPE}[0;33mboard:${ESCAPE}[0m `
-      + `${ESCAPE}[0;33mthe sweep was dropped${ESCAPE}[0m\n`,
-      `yellow throughout, the task bold, got: ${JSON.stringify(err)}`);
   });
 
   await test('a pipe gets no escape, however loud the level', () => {

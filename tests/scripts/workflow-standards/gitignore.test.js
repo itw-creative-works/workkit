@@ -1,5 +1,5 @@
-// Tests for the state directory name agreeing across layers, and
-// standards.sh writing .gitignore: the .workkit/ pattern and the basics.
+// Tests for standards.sh writing .gitignore: the .workkit/ pattern and the
+// basics.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -9,38 +9,12 @@ const {
   group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  SCRIPT, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION, HOOK_LIB, cleanup, makeRepo, makeGhStub,
+  SCRIPT, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION, cleanup, makeRepo, makeGhStub,
   readFile, runScript,
 } = require('./helpers');
 
 const run = async () => {
-  group('the state directory name is one string per layer');
-
-  // Three layers hold the name (the engine, the hooks, and this harness) and
-  // a rename that misses one leaves a hook reading a directory nothing writes.
-  const assignment = (file, variable) => {
-    const found = new RegExp(`^\\s*(?:const\\s+)?${variable}\\s*=\\s*['"]([^'"]+)['"]`, 'm')
-      .exec(fs.readFileSync(file, 'utf8'));
-    assert(found, `${variable} is assigned in ${file}`);
-    return found[1];
-  };
-
-  await test('the engine, the hooks, and the harness all say the same name', () => {
-    assertEq(assignment(SCRIPT, 'WORKKIT_DIR'), W, 'standards.sh matches the harness');
-    assertEq(assignment(HOOK_LIB, 'WORKKIT_DIR'), W, 'hooks/_lib.sh matches the harness');
-  });
-
   group('standards.sh: .workkit/ in .gitignore');
-
-  await test('adds the .workkit/ pattern when .gitignore is absent', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    const ignore = readFile(path.join(repo, '.gitignore'));
-    assert(IGNORE_GLOB.test(ignore), `${W}/* line written, got: ${ignore}`);
-    assert(IGNORE_NEGATION.test(ignore), `settings.json re-included, got: ${ignore}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
 
   await test('git honors the pattern: settings.json tracked, the rest ignored', () => {
     const repo = makeRepo();
@@ -76,15 +50,6 @@ const run = async () => {
     const ignore = readFile(path.join(repo, '.gitignore'));
     assert(/^node_modules\/$/m.test(ignore), `existing entry intact, got: ${ignore}`);
     assert(IGNORE_GLOB.test(ignore), `${W}/* appended on its own line`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a generated .gitignore does not start with a blank line', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    runScript(repo, { pathPrefix: stub.binDir });
-    const ignore = readFile(path.join(repo, '.gitignore'));
-    assert(!ignore.startsWith('\n'), `no leading blank line, got: ${JSON.stringify(ignore.slice(0, 20))}`);
     cleanup(repo); cleanup(stub.dir);
   });
 

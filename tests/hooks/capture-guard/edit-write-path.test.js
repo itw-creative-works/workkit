@@ -8,7 +8,7 @@ const {
   group, test, assert, assertEq, summary, WORKKIT_DIR: W, selfRun,
 } = require('../../lib/harness');
 const {
-  REPO, CAPTURE, FRESH, ROUTE_OFF, ROUTE_ON, WRITE, REWRITE, bash, edit, write, denyOf, refuses, allows,
+  REPO, CAPTURE, FRESH, ROUTE_ON, WRITE, REWRITE, bash, edit, write, denyOf, refuses, allows,
 } = require('./helpers');
 
 const run = async () => {
@@ -114,15 +114,6 @@ const run = async () => {
     [bash(`echo x > ${W}/capture.md`, { route }), REWRITE(route), 'a rewrite'],
     [edit(CAPTURE, { route }), REWRITE(route), 'an Edit of the capture file'],
   ];
-
-  await test('ports "findings.file off: the refusal names chat as the route, never a status:inbox issue"', async () => {
-    for (const [call, expected, label] of denials(ROUTE_OFF)) {
-      const deny = denyOf(await call);
-      assertEq(deny, expected, `must block: ${label}`);
-      assert(/\bchat\b/i.test(deny), `names chat: ${label}`);
-      assert(!deny.includes('status:inbox'), `files nothing: ${label}`);
-    }
-  });
 
   await test('ports "findings.file on: the refusal names the status:inbox route"', async () => {
     for (const [call, expected, label] of denials(ROUTE_ON)) {

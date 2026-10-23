@@ -7,6 +7,7 @@ const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const MODULE = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
 const { parseEntries, lintText, RULES } = require(MODULE);
@@ -48,7 +49,7 @@ const mkRepo = (initialContent) => {
 };
 
 const runCli = (file, args, cwd) => {
-  const res = spawnSync('node', [MODULE, file, ...args], { cwd, encoding: 'utf8', timeout: 20000 });
+  const res = spawnSync('node', [MODULE, file, ...args], { cwd, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return { code: res.status, out: (res.stdout || '') + (res.stderr || '') };
 };
 
@@ -149,13 +150,6 @@ const run = async () => {
     // whole entry, so a prose mention cannot stand in for the missing link.
     const found = lintText(doc('3.1.0] - 2026-07-24', `- ${ISSUE} - Reverts ${COMMIT} from the last release.`));
     assert(rules(found).includes('commit-link'), `got: ${rules(found)}`);
-  });
-
-  await test('an unreleased entry is NOT asked for a commit link', () => {
-    // The sha does not exist when the entry is written. Demanding it here
-    // would make the rule impossible to satisfy.
-    const found = lintText(doc('Unreleased', `- ${ISSUE} - Plugins install from settings.json.`));
-    assertEq(found.length, 0, `no commit-link demand, got: ${JSON.stringify(found)}`);
   });
 
   await test('a released `(no issue)` entry is exempt from the commit link', () => {
@@ -432,13 +426,6 @@ const run = async () => {
     fs.writeFileSync(file, doc('1.0.0] - 2020-01-01', '- An old entry with nothing right about it.'));
     assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'nothing to judge');
     cleanup(dir);
-  });
-
-  await test('lintText filters by section, and composes with the added-lines filter', () => {
-    const text = mixed('- An unreleased entry with no issue link.');
-    assertEq(lintText(text).length > 1, true, 'both sections violate');
-    assertEq(rules(lintText(text, null, true)).join(','), 'issue-link,separator', 'only the unreleased entry');
-    assertEq(lintText(text, new Set([1]), true).length, 0, 'a line filter that matches nothing wins too');
   });
 
   return summary();

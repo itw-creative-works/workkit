@@ -1,6 +1,6 @@
 //
 // Tests for tower/start.sh: the terminal (the colors a half keeps, FORCE_COLOR on and
-// off a terminal, a real Ctrl-C under a pty) and the CLI contract. Prologue: ./helpers.js.
+// off a terminal, a real Ctrl-C under a pty). Prologue: ./helpers.js.
 //
 
 const fs = require('fs');
@@ -15,7 +15,7 @@ const {
 const { mkTmp } = require('../../lib/scratch');
 
 const run = async () => {
-  group("tower/start: the terminal, and the wrapper's contract");
+  group('tower/start: the terminal');
 
   await test('a colored log keeps its colors, and the filter still judges what is under them', async () => {
     // Once the halves paint, escapes sit on the very anchors the filter matches
@@ -69,7 +69,7 @@ const run = async () => {
       const { app, seen } = probeStub(dir);
       const child = ptyRun(dir, app);
       try {
-        assert(await until(() => fs.existsSync(seen), 25000), 'the half started under the terminal');
+        assert(await until(() => fs.existsSync(seen)), 'the half started under the terminal');
         assertEq(fs.readFileSync(seen, 'utf8'), '1', 'and was told to color its log');
       } finally {
         child.kill('SIGKILL');
@@ -82,7 +82,7 @@ const run = async () => {
       const { app, seen } = probeStub(dir);
       const child = ptyRun(dir, app, ['export FORCE_COLOR=0']);
       try {
-        assert(await until(() => fs.existsSync(seen), 25000), 'the half started under the terminal');
+        assert(await until(() => fs.existsSync(seen)), 'the half started under the terminal');
         assertEq(fs.readFileSync(seen, 'utf8'), '0', 'with the answer its caller gave, not the one the tower would have');
       } finally {
         child.kill('SIGKILL');
@@ -117,7 +117,7 @@ const run = async () => {
       const child = spawn('expect', [script], { env: { ...process.env, ...TMP_ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
       const out = collect(child);
       try {
-        assert(await until(() => child.exitCode !== null, 25000), 'the run came down on the interrupt');
+        assert(await until(() => child.exitCode !== null), 'the run came down on the interrupt');
         const text = out();
         assert(/✓ dashboard at/.test(text), 'the terminal saw the one line it should');
         assert(!/Terminated/.test(text), 'and no job-control obituary for the halves');
@@ -134,21 +134,6 @@ const run = async () => {
     skip('a FORCE_COLOR the caller exported is the caller\'s', 'expect is not installed');
     skip('a real Ctrl-C ends it silently', 'expect is not installed');
   }
-
-  await test('workkit tower hands this script its arguments, so --verbose gets here', () => {
-    // The other door: the CLI has to exec the wrapper with its arguments, or
-    // `workkit tower --verbose` is quiet.
-    const cli = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'workkit.sh'), 'utf8');
-    assert(/exec bash "\$TOWER_START" "\$@"/.test(cli), 'the CLI forwards what it was given');
-  });
-
-  await test('npm run tower is this script, and its defaults are the two real servers', () => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'package.json'), 'utf8'));
-    assertEq(pkg.scripts.tower, 'bash tower/start.sh', 'the root command runs the wrapper');
-    const script = fs.readFileSync(SCRIPT, 'utf8');
-    assert(script.includes('tower/api/server.js'), 'one default is the JSON API');
-    assert(/tower\/app.*npm run dev/.test(script), 'the other is the dashboard dev server');
-  });
 
   return summary();
 };

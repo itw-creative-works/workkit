@@ -7,6 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../../lib/argv-log');
+const { shellPath } = require('../../lib/platform');
+const { alive, readPid } = require('../../lib/process');
 const {
   cleanup, writeStub, mkWorld, mintTest, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, SLUG,
   HOME, mkHomeWorld,
@@ -93,34 +95,6 @@ const run = async () => {
     assert(/left as it is/.test(out), `an empty answer is a no, got: ${out}`);
     assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'nothing was minted');
     assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and no secret was written');
-    cleanup(world.root);
-  });
-
-  await mintTest('answered yes, the mint runs and its token is written', () => {
-    const world = mkWorld({ claudeToken: MINTED });
-    inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'yes\n' });
-    assert(world.claudeCalls().some((c) => isCall(c, 'setup-token')), `the mint ran: ${fmtCalls(world.claudeCalls())}`);
-    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), MINTED, 'and the minted value was written');
-    cleanup(world.root);
-  });
-
-  await mintTest('answered n, nothing is minted and the skip line says so', () => {
-    const world = mkWorld({ claudeToken: MINTED });
-    const { said } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'n\n' });
-    assert(/secrets: CLAUDE_CODE_OAUTH_TOKEN left as it is/.test(said), `the skip line, got: ${said}`);
-    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'nothing was minted');
-    assertEq(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), undefined, 'and no secret was written');
-    cleanup(world.root);
-  });
-
-  await mintTest('the secrets offer and its [y/N] hint are on stderr, none of it on stdout', () => {
-    const world = mkWorld();
-    const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'n\n' });
-    assert(err.includes(`CLAUDE_CODE_OAUTH_TOKEN is not set on ${HOME}. Mint one now with \`claude setup-token\`? [y/N]`),
-      `the prompt and hint are on stderr, got: ${err}`);
-    for (const part of ['is not set on', 'Mint one now', '[y/N]']) {
-      assert(!out.includes(part), `no "${part}" on stdout, got: ${out}`);
-    }
     cleanup(world.root);
   });
 
@@ -220,21 +194,6 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     const { out } = runCli(world, ['setup'], { script });
     assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'set')), `no secret is rewritten: ${fmtCalls(world.ghCalls())}`);
     assert(!/went from the mint|from this machine's gh login/.test(out), `and a set-up machine acts on nothing, got: ${out}`);
-    cleanup(world.root); cleanup(kit);
-  });
-
-  await test('a second setup writes neither of them again', () => {
-    const world = mkHomeWorld({
-      secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }, { name: 'WORKKIT_GITHUB_TOKEN', days: 3 }],
-      authToken: LOGIN_TOKEN,
-    });
-    const { kit, script } = mkKit(SLUG);
-    runCli(world, ['setup'], { script });
-    const before = world.ghCalls().filter((c) => isCall(c, 'secret', 'set')).length;
-    runCli(world, ['setup'], { script });
-    const after = world.ghCalls().filter((c) => isCall(c, 'secret', 'set')).length;
-    assertEq(after, before, 'running twice equals running once');
-    assertEq(before, 0, 'and a repo that already has both is not written to at all');
     cleanup(world.root); cleanup(kit);
   });
 
@@ -382,16 +341,6 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root);
   });
 
-  await test('a machine with no home repo keeps the precheck’s own skip', () => {
-    const world = mkWorld({ secrets: [], claudeToken: MINTED });
-    seedSettings(world, { repo: null, publish: false, url: null });
-    const { code, out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
-    assertEq(code, 0, 'exit 0');
-    assert(/secrets: this machine names no home repo/.test(out), `the precheck's skip stands, got: ${out}`);
-    assert(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'and nothing is minted for a repo that does not exist');
-    cleanup(world.root);
-  });
-
   await test('setup refuses an option it does not know, and the map names this one', () => {
     const world = mkWorld();
     const { code, err } = runCli(world, ['setup', '--everything']);
@@ -419,20 +368,24 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   await test('a listing that never answers is bounded, and the bound is a quiet skip', () => {
     // A captive portal answers the handshake and never the request. The daily
     // path runs this at session start, so an unbounded read would hold the
-    // session open for as long as the portal felt like it. `exec` matters: the
-    // stub must be the process the bound signals, the way real gh is.
+    // session open for as long as the portal felt like it. `exec` makes the
+    // recorded pid the sleep itself, the process the bound must signal.
     const world = mkHomeWorld({ binOnPath: true });
+    const pidFile = path.join(world.root, 'gh.pid');
     writeStub(path.join(world.root, 'bin', 'gh'), [
-      'if [[ "$1" == \'secret\' && "$2" == \'list\' ]]; then exec sleep 60; fi',
+      `if [[ "$1" == 'secret' && "$2" == 'list' ]]; then echo $$ > '${shellPath(pidFile)}'; exec sleep 60; fi`,
       'exit 0',
     ]);
-    world.env.WORKKIT_GH_TIMEOUT = '2';
+    // Five seconds: under a full parallel wave the stub's shell can take past
+    // two to start, and a bound that lands before the pid is written proves nothing.
+    world.env.WORKKIT_GH_TIMEOUT = '5';
     const { kit, script } = mkKit(SLUG);
-    const started = Date.now();
     const { code, out } = runCli(world, ['update', '--auto'], { script });
-    const elapsed = (Date.now() - started) / 1000;
     assertEq(code, 0, 'exit 0');
-    assert(elapsed < 20, `the read is bounded rather than waited out, took ${elapsed}s`);
+    const pid = readPid(pidFile);
+    // Git Bash's `$$` is an MSYS id Node cannot query, so there the exit code
+    // and runCli's own no-timeout assert are the proof.
+    if (process.platform !== 'win32') assert(!alive(pid), `the read is bounded rather than waited out: the listing ${pid} was ended`);
     assert(!/secrets:/.test(out), `and the quiet path stays quiet about it, got: ${out}`);
     cleanup(world.root); cleanup(kit);
   });

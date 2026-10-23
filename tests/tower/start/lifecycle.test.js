@@ -9,7 +9,6 @@ const {
   group, test, testUnless, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
 const { IS_WINDOWS } = require('../../lib/platform');
-const { elapsedUntil } = require('../../lib/process');
 const {
   cleanup, alive, until, readPid, pidIn, pidOnSight, start, standIn, collect, STARTING, pidTest,
 } = require('./helpers');
@@ -98,10 +97,10 @@ const run = async () => {
   });
 
   await pidTest('a signal the instant a grandchild appears ends every tree promptly, ten times over', async () => {
-    // The signal goes the moment the app's grandchild records itself, and the
-    // trees must be gone well inside a second: a trap held behind a foreground
-    // wait still ends them, just late. Both halves carry a grandchild, so the
-    // case holds whichever half spawns first.
+    // The signal goes the moment the app's grandchild records itself, while a
+    // trap may still sit behind a foreground wait: by the time the wrapper has
+    // exited, every tree must already be gone. Both halves carry a grandchild,
+    // so the case holds whichever half spawns first.
     for (let round = 1; round <= 10; round += 1) {
       const dir = mkTmp('tower-start-');
       const kids = [path.join(dir, 'api-kid.pid'), path.join(dir, 'app-kid.pid')];
@@ -110,9 +109,9 @@ const run = async () => {
         const pid = await pidOnSight(kids[1]);
         child.kill('SIGTERM');
         assert(pid > 0, `round ${round}: the app's grandchild started`);
-        const took = await elapsedUntil(() => recorded(kids).every((kid) => !alive(kid)));
-        assert(took !== Infinity, `round ${round}: every grandchild died with its tree, none orphaned`);
-        assert(took < 800, `round ${round}: and within 800 ms of the signal, not ${took} ms`);
+        assert(await until(() => child.exitCode !== null || child.signalCode !== null), `round ${round}: the wrapper never exited`);
+        assert(recorded(kids).every((kid) => !alive(kid)),
+          `round ${round}: every grandchild was gone when the wrapper exited, none orphaned`);
       } finally {
         child.kill('SIGKILL');
         recorded(kids).forEach((kid) => { try { process.kill(kid, 'SIGKILL'); } catch {} });
@@ -156,9 +155,9 @@ const run = async () => {
     const dir = mkTmp('tower-start-');
     const child = start(dir, 'exec sleep 0.5', 'exec sleep 0.5', port.trim());
     try {
-      assert(await until(() => listener.exitCode !== null || listener.signalCode !== null, 15000),
+      assert(await until(() => listener.exitCode !== null || listener.signalCode !== null),
         'the wrapper ended it anyway - the escalation exists');
-      assert(await until(() => child.exitCode !== null, 15000), 'and the run completed');
+      assert(await until(() => child.exitCode !== null), 'and the run completed');
       assertEq(child.exitCode, 0, 'cleanly, on the freed port');
     } finally {
       child.kill('SIGKILL');
@@ -189,7 +188,7 @@ const run = async () => {
       try {
         assert(await until(() => signalled), 'the tower said it was starting');
         assert(await until(() => child.exitCode !== null || child.signalCode !== null), 'the wrapper ended on the signal');
-        await until(() => closed, 3000);
+        await until(() => closed);
         assertEq(`${child.exitCode}/${child.signalCode}`, '0/null', 'with status 0, its own exit rather than the signal\'s');
         const errors = out().split('\n').filter((line) => line.trim() && !STARTING.test(line));
         assertEq(errors.join('\n'), '', 'and it printed no error line, only that it was starting');

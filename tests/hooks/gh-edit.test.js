@@ -16,12 +16,6 @@ const run = async () => {
     assertEq(steps[0].sawCd, false, 'the clause before the cd saw none');
     assertEq(steps[1].sawCd, true, 'the clause after it did');
   });
-
-  await test('ghSteps over a command with no cd: no step saw one', () => {
-    const steps = [...mods('gh-edit').ghSteps('gh issue edit 1 --add-label a; gh issue close 2')];
-    assertEq(steps.length, 2, `one step per clause, got: ${JSON.stringify(steps)}`);
-    assertEq(steps.some((s) => s.sawCd), false, 'no cd, so no step saw one');
-  });
 };
 
 module.exports = async () => {

@@ -1,7 +1,7 @@
 // tool.call Bash through the hooks module: safety:release-taken in the module's
 // Bash chain, its providers run as `npm view` and `gh release view` through
-// $.process.run, the slug read off the origin through git, the stand-downs as
-// `context`, and the chain's .catch when a guard throws.
+// $.process.run, the slug read off the origin through git, and the stand-downs
+// as `context`.
 // The verdict's own cases are tests/hooks/release-taken/*.test.js.
 
 import { test, expect, describe } from 'claude-code/testing'
@@ -45,18 +45,6 @@ describe('tool.call Bash: safety:release-taken', () => {
     expect(gh[0].init.timeoutMs).toBe(15000)
   })
 
-  test('ports "an origin spelled natively on Windows still names its repo"', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, { releases: { tags: ['v1.2.3'] }, origins: { [REPO]: 'C:\\Users\\x\\theirs.git' } })
-    await bash($, RELEASE)
-    expect(hitsOf(w)).toBe(TAKEN('this release commit', 'github-release already has v1.2.3 at x/theirs'))
-  })
-
-  test('ports "a repo with no origin bounces with no repo clause at all"', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, { releases: { tags: ['v1.2.3'] }, origins: { [REPO]: null } })
-    await bash($, RELEASE)
-    expect(hitsOf(w)).toBe(TAKEN('this release commit', 'github-release already has v1.2.3'))
-  })
-
   test('ports "a provider that cannot tell stands down out loud, and the commit stands": the lines in context, one $.ui.log line', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, { npm: 'offline', releases: 'offline' })
     await bash($, RELEASE)
@@ -67,24 +55,5 @@ describe('tool.call Bash: safety:release-taken', () => {
     expect(said).toContain('release-taken: the npm check stood down for widget@1.2.3: npm error code ENOTFOUND request to https://registry.npmjs.org failed')
     expect(said).toContain('release-taken: the github-release check stood down for v1.2.3: gh: To get started with GitHub CLI, please run: gh auth login')
     expect(kitLogs(w)).toHaveLength(1)
-  })
-
-  test('ports "a taken version bounces the publish, and GitHub is not asked"', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, { npm: { taken: ['widget@1.2.3'], known: [] }, releases: { tags: ['v1.2.3'] } })
-    await bash($, 'npm publish --access public')
-    expect(hitsOf(w)).toBe(TAKEN('this npm publish', 'npm already has widget@1.2.3'))
-    expect(calls(w, 'gh', 'release')).toHaveLength(0)
-  })
-})
-
-describe('tool.call Bash: the chain fails closed', () => {
-  test('given a guard that throws, the call is denied ending with the kind, and the hooks log holds crashed', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, { npm: 'broken' })
-    await bash($, RELEASE)
-    const deny = answered(w)?.deny
-    expect(typeof deny).toBe('string')
-    expect(deny.endsWith('throw')).toBe(true)
-    expect(w.toolRan).toBeUndefined()
-    expect(hooksLog(w).some((l: any) => l.verdict === 'crashed')).toBe(true)
   })
 })

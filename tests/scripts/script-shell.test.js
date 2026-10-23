@@ -14,7 +14,7 @@ const {
 } = require('../lib/platform');
 const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
 const {
-  scratchNpmrc, WRAPPER, EXE_ENV, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged,
+  scratchNpmrc, WRAPPER, EXE_ENV, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged, assertRecord,
 } = require('../lib/script-shell');
 const { gateOn: gateIn } = require('../lib/real-gate');
 
@@ -53,7 +53,7 @@ const run = async () => {
     const res = npm(world, repo, ['test']);
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
     assert(res.out.includes('streamed-green'), `the script's output reaches the caller, got: ${res.out}`);
-    assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the working tree it proved');
+    assertRecord(recorded(world, repo), tree, 'the record holds the working tree it proved');
     assertEq(packaged(world, repo), undefined, 'the whole root suite never writes the package record');
     cleanup(world.root); cleanup(repo);
   });
@@ -118,7 +118,7 @@ const run = async () => {
     const shellLines = res.out.split('\n').filter((l) => l.startsWith('script-shell:'));
     assert(!`${res.out}${res.err}`.includes('command not found') && !res.err.includes('script-shell:')
       && shellLines.every((l) => l === 'script-shell: exit 0'), `the running shell read no fragment, got: ${res.out} ${res.err}`);
-    assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the tree it proved');
+    assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
     cleanup(world.root); cleanup(repo);
   });
 

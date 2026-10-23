@@ -17,6 +17,7 @@ const { mkTmp } = require('../lib/scratch');
 const { mods, runResult } = require('../lib/mods-inputs');
 const { recordArgv, readArgv } = require('../lib/argv-log');
 const commitGate = require('./commit-gate/helpers');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const KIT = path.join(__dirname, '..', '..');
 const lib = (...parts) => shellPath(path.join(KIT, ...parts));
@@ -30,7 +31,7 @@ const bashAnswers = (file, fn, fixtures) => {
   const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), FIXTURES: fixtures.join('\n') },
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   const answers = (res.stdout || '').split('\n').filter(Boolean);
   assertEq(answers.length, fixtures.length, `one answer per fixture from ${fn}, stderr: ${res.stderr}`);
@@ -46,7 +47,7 @@ const bashLines = (file, fn, fixtures, env = {}) => {
   const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), FIXTURES: fixtures.join('\n'), ...env },
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   const lines = (res.stdout || '').replace(/\r/g, '').split('\n').slice(0, -1);
   assertEq(lines.length, fixtures.length, `one line per fixture from ${fn}, stderr: ${res.stderr}`);
@@ -150,7 +151,7 @@ const run = async () => {
     for (const [workflowHome, home] of HOMES) {
       const env = { PATH: SYSTEM_PATH, HOME: home, ...(workflowHome === undefined ? {} : { WORKFLOW_HOME: workflowHome }) };
       const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_user_dir`], {
-        env, encoding: 'utf8', timeout: 10000,
+        env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const shell = (res.stdout || '').replace(/\r?\n$/, '');
       const label = `WORKFLOW_HOME ${JSON.stringify(workflowHome)}, HOME ${JSON.stringify(home)}`;
@@ -200,7 +201,7 @@ const run = async () => {
       fs.writeFileSync(file, text);
       const shellEnv = { PATH: SYSTEM_PATH, HOME: shellPath(env.HOME), ...(env.WORKFLOW_HOME ? { WORKFLOW_HOME: shellPath(env.WORKFLOW_HOME) } : {}) };
       const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_hooks_log; printf '%s\\n' "$WK_HOOKS_LOG"; cat "$WK_HOOKS_LOG"`], {
-        env: shellEnv, encoding: 'utf8', timeout: 10000,
+        env: shellEnv, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const [where, ...rest] = (res.stdout || '').split('\n');
       const label = env.WORKFLOW_HOME ? 'WORKFLOW_HOME set' : 'WORKFLOW_HOME unset';
@@ -252,7 +253,7 @@ const run = async () => {
     const found = src.match(/test\("([^"]*Proof:[^"]*)"\)/);
     assert(found, 'ship-items.sh tests each comment against a Proof: pattern');
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', 'jq -c "map(test(\\"$PATTERN\\"))"'], {
-      env: { PATH: SYSTEM_PATH, PATTERN: found[1] }, input: JSON.stringify(BODIES), encoding: 'utf8', timeout: 10000,
+      env: { PATH: SYSTEM_PATH, PATTERN: found[1] }, input: JSON.stringify(BODIES), encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `jq ran the ship's pattern, stderr: ${res.stderr}`);
     const shell = JSON.parse(res.stdout);
@@ -279,7 +280,7 @@ const run = async () => {
     const node = mkTmp('twins-node-');
     stubTool(node, 'node', ['#!/bin/bash', `printf '%b\\n' '${SAID.replace(/\n/g, '\\n')}' >&2`, 'exit 1']);
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'changelog.sh')}"; wk_changelog_lint /w/repo --staged CHANGELOG.md`], {
-      env: { PATH: systemPathWith(node), HOME: shellPath(os.homedir()), WORKFLOW_DIR: lib('workflow') }, encoding: 'utf8', timeout: 10000,
+      env: { PATH: systemPathWith(node), HOME: shellPath(os.homedir()), WORKFLOW_DIR: lib('workflow') }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 1, `the shell lint fails, stderr: ${res.stderr}`);
     const r = commitGate.mkRepo();
@@ -295,7 +296,7 @@ const run = async () => {
   await test('hook_working_paths and the qa check make the same two git reads', async () => {
     const git = recordingTool('git');
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('hooks', 'lib', 'tree.sh')}"; hook_working_paths /w/repo`], {
-      env: { PATH: git.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 10000,
+      env: { PATH: git.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the shell reads ran, stderr: ${res.stderr}`);
     const shell = git.calls().map((argv) => (argv[0] === '-C' ? argv.slice(2) : argv));
@@ -322,7 +323,7 @@ const run = async () => {
     for (const repo of ['', 'acme/widgets']) {
       const gh = recordingTool('gh', '[]');
       const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('hooks', '_lib.sh')}"; hook_issues_building ${repo}`], {
-        env: { PATH: gh.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 10000,
+        env: { PATH: gh.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const shell = gh.calls();
       assertEq(shell.length, 1, `${repo || 'no repo'}: the shell asks gh once, stderr: ${res.stderr}`);

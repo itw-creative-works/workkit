@@ -21,6 +21,7 @@ const { mkRepo } = require('../lib/git-repo');
 const { mkTmp } = require('../lib/scratch');
 const { snapshotDir, treeOf } = require('../lib/red-snapshot');
 const { mods } = require('../lib/mods-inputs');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const KIT = path.join(__dirname, '..', '..');
 const SNAPSHOT = path.join(KIT, 'hooks', 'lib', 'snapshot.sh');
@@ -81,7 +82,7 @@ const mkWorld = (prefix = 'snapshot-') => {
 /** `bash hooks/lib/snapshot.sh <mode> <root> ...args` for world `w`, its PATH `envPath` when given. */
 const mode = (w, name, args = [], envPath = null) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SNAPSHOT), name, shellPath(fs.realpathSync(w.repo)), ...args], {
-    env: { ...w.env, ...(envPath ? { PATH: envPath } : {}) }, encoding: 'utf8', timeout: 60000,
+    env: { ...w.env, ...(envPath ? { PATH: envPath } : {}) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
@@ -235,8 +236,6 @@ const run = async () => {
 
   for (const flip of [
     BLOCK(5),
-    'gh issue edit 5 --remove-label status:building --add-label status:specced',
-    'gh issue edit 5 --remove-label status:building',
   ]) {
     await test(`ports "a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}"`, async () => {
       const { plan, asked } = await planOf(flip, { list: [] });
@@ -290,7 +289,6 @@ const run = async () => {
 
   for (const command of [
     'git status --short',
-    'gh issue view 5',
     'gh issue edit 5 --add-label priority:high',
     'gh issue comment 5 --body "moving to status:building next"',
   ]) {

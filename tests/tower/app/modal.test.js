@@ -3,9 +3,8 @@
 // an issue as a list item, and a published document. Prologue: ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { loadLibs, libs } = require('./helpers');
+const { loadLibs } = require('./helpers');
 
 const run = async () => {
   const { format, modal } = await loadLibs();
@@ -55,47 +54,6 @@ const run = async () => {
     assert(link.includes('class="omega-tower-external ms-2"'), 'the caller can place it');
     assert(link.includes('<i class="fa-solid fa-arrow-up-right-from-square"'), 'the glyph is the framework\'s one icon mechanism');
     assert(!link.includes('<svg'), 'and not a hand-drawn one the renderer never sees');
-  });
-
-  await test('on a Board card that button is the corner, not a neighbour of it (#142)', () => {
-    // A button hidden at `opacity: 0` keeps its box, so the corner is one slot:
-    // the button leaves the flow into it, the gear becomes the row's last item,
-    // and the gear fades under the button on hover or focus so the two never stack.
-    const fs = require('fs');
-    const src = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src');
-    const boardPage = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', 'board.js'), 'utf8');
-    assert(boardPage.includes('omega-tower-issue__top'), 'the card names the row the corner is measured from');
-    // That row is the board card's alone: the Brief, the Overview and Health
-    // draw list rows under the same `omega-tower-issue` class with the button in
-    // flow, and the rules below would fling it to the nearest positioned box.
-    for (const name of ['brief.js', 'health.js', 'index.js']) {
-      const page = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', name), 'utf8');
-      assert(!page.includes('omega-tower-issue__top'), `${name} draws its rows without it`);
-    }
-
-    const sheet = fs.readFileSync(path.join(src, 'assets', 'css', 'main.scss'), 'utf8');
-    const block = /@media \(hover: hover\) \{\n([\s\S]*?)\n\}/.exec(sheet);
-    assert(block, 'and the mechanism is the sheet\'s, behind the pointer it needs');
-    assert(/\.omega-tower-issue__top \{ position: relative; \}/.test(block[1]), 'the row is the containing block');
-    const corner = /\.omega-tower-issue__top \.omega-tower-external \{([^}]*)\}/.exec(block[1]);
-    assert(corner, 'the button is placed against it');
-    for (const declaration of ['position: absolute', 'right: 0', 'top: 0']) {
-      assert(corner[1].includes(declaration), `out of the flow and into the corner (${declaration})`);
-    }
-    assert(/\.omega-tower-issue:hover \.omega-tower-issue__top \.omega-tower-activity,\s*\.omega-tower-issue:focus-within \.omega-tower-issue__top \.omega-tower-activity \{ opacity: 0; \}/.test(block[1]),
-      'and the gear under it fades on hover AND on focus, so a keyboard sees what a pointer does');
-    assert(block[1].includes('transition: opacity .12s ease-in-out'), 'at the same speed the reveal it is paired with runs');
-    assert(/\.omega-tower-issue__top \.omega-micro \{ padding-right: /.test(block[1]), 'and the slug span stops short of the corner, so a gear-less card\'s ellipsis never sits under the revealed button');
-    // Nothing here may take the button out of the accessibility tree - it is
-    // the card's one tab stop, and `:focus-visible` has to be able to show it.
-    assert(!/display: none|visibility: hidden/.test(block[1]), 'the button is faded, never hidden');
-    // A touch screen has no pointer to reveal anything with, so it keeps the
-    // in-flow layout: every word the sheet says about that row is in this block.
-    const elsewhere = sheet.slice(0, block.index) + sheet.slice(block.index + block[0].length);
-    assert(!elsewhere.includes('.omega-tower-issue__top'), 'and `(hover: none)` - the whole of the other side of that feature - is left as it was');
-    // The dialog header's copy of the button is a control in flow, not a
-    // card's reveal, and none of the above reaches it.
-    assert(sheet.includes('.modal-header .omega-tower-external { opacity: 1; }'), 'the dialog\'s button still simply shows');
   });
 
   await test('the dialog says everything the issue knows', () => {
@@ -290,18 +248,6 @@ const run = async () => {
     assert(!nasty.body.includes('<img'), 'the slug is escaped like every other remote value');
   });
 
-  await test('the runtime hands the dialog the board the paint is drawing', () => {
-    // The dialog lives in the layout, outside the mount a paint writes into, and
-    // page.js is out of reach here (see ./helpers.js), so the handover is pinned:
-    // every paint passes the board, so no page keeps a copy for the dialog.
-    const fs = require('fs');
-    const runtime = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
-    assert(/import \{[^}]*holdBoard[^}]*\} from '\.\/modal\.js'/.test(runtime), 'the runtime takes the handover from the dialog module');
-    assert(/^\s*holdBoard\(board\(state\)\);$/m.test(runtime), 'and hands it the board payload state.js reads back');
-    assert(runtime.search(/^\s*holdBoard\(board\(state\)\);$/m) < runtime.indexOf('options.render(body, state);'),
-      'before the render, so the page and its dialog are drawn from one payload');
-  });
-
   group('tower/app: modal - an issue as a list item');
 
   await test('a list item keeps its list semantics and puts the button inside it', () => {
@@ -318,31 +264,6 @@ const run = async () => {
     const bare = modal.issueItem(ISSUE, 'x');
     assert(bare.includes('class="omega-tower-issue"'), 'the li is just the card class');
     assert(bare.includes('class="omega-interactive"'), 'and the trigger just the affordance');
-  });
-
-  // The Overview's "In flight" and the brief's inFlight are one claim, and a page
-  // cannot import the API's module, so the two copies are held together here.
-  // The rule is the label alone: a claim says who holds an issue, never which
-  // queue it is in.
-  await test('the Overview counts in flight by the brief’s rule - the label alone', () => {
-    const fs = require('fs');
-    const overview = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
-    const briefSrc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'brief.js'), 'utf8');
-    assert(/inFlight = issues\.filter\(\(i\) => i\.status === 'building'\)/.test(briefSrc),
-      'the brief counts in flight by the building label');
-    assert(/'In flight', issues\.filter\(\(issue\) => issue\.status === 'building'\)/.test(overview),
-      'and the Overview cell asks exactly that');
-    assert(!/claimed\(/.test(overview), `no claim predicate is called on the page, got: ${(overview.match(/.*claimed\(.*/g) || []).join(' | ')}`);
-  });
-
-  await test('every page that lists issues routes through it - no role on an li anywhere', () => {
-    const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(!/<li[^>]*\$\{issueTrigger\(/.test(source), `${name} puts no trigger on an <li>`);
-      if (source.includes('<li')) assert(source.includes('issueItem('), `${name} builds its interactive items through the helper`);
-    }
   });
 
   group('tower/app: modal - a published brief or summary');

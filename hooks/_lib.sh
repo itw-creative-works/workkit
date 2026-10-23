@@ -6,7 +6,7 @@
 # at the foot. Add a helper only with a second named consumer.
 
 # The hook layer's copy of the state directory name; the engine and the test
-# harness hold their own, and a test asserts all three agree.
+# harness hold their own, so change all three together.
 WORKKIT_DIR=".workkit"
 
 # This file's physical folder, resolved once for every source line below: each

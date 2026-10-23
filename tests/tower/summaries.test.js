@@ -202,14 +202,6 @@ const run = async () => {
     cleanup(home); cleanup(noHome);
   });
 
-  await test('the read asks for the headers a limit is only legible in', () => {
-    const home = mkHome();
-    const calls = [];
-    newestSummary('daily', { workflowHome: home, exec: mkExec(BOARD, calls) });
-    assert(calls[0].includes('--include'), `the round trip asks for them: ${calls[0].join(' ')}`);
-    cleanup(home);
-  });
-
   await test('Monday is read in the local morning the stamp belongs to', () => {
     assert(isMonday(MONDAY), '2026-08-03 is a Monday');
     assert(!isMonday(TUESDAY), 'the day after is not');

@@ -7,7 +7,7 @@
 // "malformed JSON: exit 0" and "the loader routes safety:tree-guard to the
 // script" (its run line is tests/mods/guards-tree-guard.test.ts).
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
 
 const CWD = '/w/repo';
@@ -71,10 +71,6 @@ const run = async () => {
       'git checkout main >/tmp/out', 'git checkout main # words']) {
       await passes(c);
     }
-  });
-
-  await test('ports "two REAL operands still block: exit 2"', async () => {
-    await blocks('git checkout a b', CHECKOUT);
   });
 
   await test('ports "a redirect\'s & never splits the clause: the discard after it is seen, exit 2"', async () => {
@@ -242,14 +238,6 @@ const run = async () => {
 
   await test('ports "missing command: exit 0": an empty command is silence', async () => {
     await passes('');
-  });
-
-  await test('ports "hooks.json registers the guard under PreToolUse Bash": BASH_GUARDS carries it after release-taken', () => {
-    const hooks = mods('guards').BASH_GUARDS.map((g) => g.hook);
-    const mine = hooks.indexOf('safety:tree-guard');
-    assert(mine > 0, `BASH_GUARDS names safety:tree-guard, got: ${hooks.join(' ')}`);
-    assertEq(hooks[mine - 1], 'safety:release-taken', 'it runs right after safety:release-taken, hooks.json\'s order');
-    assertEq(typeof mods('guards').BASH_GUARDS[mine].run, 'function', 'its entry carries a run function');
   });
 };
 

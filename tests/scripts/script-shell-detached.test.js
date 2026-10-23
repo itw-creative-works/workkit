@@ -19,7 +19,7 @@ const {
 } = require('../lib/process');
 const { CHANGELOG, ISSUE } = require('../hooks/commit-gate/helpers');
 const {
-  WRAPPER, cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded,
+  WRAPPER, cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord,
 } = require('../lib/script-shell');
 
 // The suite log of a repo that does not ignore .workkit/, the lock's pid, and
@@ -112,16 +112,16 @@ const run = async () => {
       const log = tmpLog(world, repo);
       const { child, output } = npmStart(world, repo, ['test'], out.env);
       try {
-        assert(await until(() => (read(log) || '').includes('start'), 20000),
+        assert(await until(() => (read(log) || '').includes('start')),
           `the suite never wrote "start" to ${log}; npm said: ${output()}`);
         child.kill('SIGTERM');
-        assert(await until(() => ended(child), 10000), 'npm never ended after TERM');
+        assert(await until(() => ended(child)), 'npm never ended after TERM');
         assert(!read(log).split('\n').includes('end'), 'npm ended while the suite still ran');
-        assert(await until(() => read(log).endsWith('script-shell: exit 0\n'), 20000),
+        assert(await until(() => read(log).endsWith('script-shell: exit 0\n')),
           `the suite never finished; log: ${JSON.stringify(read(log))}`);
         assert(read(log).endsWith('\nend\nscript-shell: exit 0\n'),
           `the log holds the suite's last line, then the closing line, got: ${JSON.stringify(read(log))}`);
-        assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the tree it proved');
+        assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
       } finally {
         reap(child.pid);
       }
@@ -136,14 +136,14 @@ const run = async () => {
     const counter = path.join(out.dir, 'counter');
     const { child, output } = npmStart(world, repo, ['test'], out.env);
     try {
-      assert(await until(() => fs.existsSync(counter), 20000), `the first suite never started; npm said: ${output()}`);
+      assert(await until(() => fs.existsSync(counter)), `the first suite never started; npm said: ${output()}`);
       const second = npm(world, repo, ['test'], WRAPPER, out.env);
       assertEq(second.code, 1, `the second run refuses, got: ${second.code} ${second.err}`);
       const pid = read(lockPid(world, repo));
       assert(pid !== undefined, `the lock holds a pid at ${lockPid(world, repo)}`);
       const line = `script-shell: a root npm test is already running (pid ${pid.trim()}); its output is in ${shellPath(tmpLog(world, repo))}\n`;
       assert(second.err.includes(line), `the line names the pid and the log: ${JSON.stringify(line)}, got: ${second.err}`);
-      assert(await until(() => ended(child), 20000), `the first run never ended; npm said: ${output()}`);
+      assert(await until(() => ended(child)), `the first run never ended; npm said: ${output()}`);
       assertEq(child.exitCode, 0, `the first run is green; npm said: ${output()}`);
       assertEq(lineCount(counter), 1, 'the script ran once');
     } finally {
@@ -153,7 +153,7 @@ const run = async () => {
   });
 
   await testUnless(IS_WINDOWS, 'Windows delivers no INT to one process')(
-    'the wrapper sent INT mid-run: the suite is gone within 2 s, exit 130, no record',
+    'the wrapper sent INT mid-run: the suite is gone, exit 130, no record',
     async () => {
       const world = mkWorld();
       const out = mkOut(world);
@@ -163,14 +163,14 @@ const run = async () => {
       let wrapper;
       let suite;
       try {
-        assert(await until(() => fs.existsSync(pidFile) && read(pidFile).trim() !== '', 20000),
+        assert(await until(() => fs.existsSync(pidFile) && read(pidFile).trim() !== ''),
           `the suite never wrote its pid; npm said: ${output()}`);
         suite = readPid(pidFile);
-        assert(await until(() => (wrapper = childPid(child.pid, 'script-shell')) !== undefined, 5000),
+        assert(await until(() => (wrapper = childPid(child.pid, 'script-shell')) !== undefined),
           `npm (pid ${child.pid}) never showed a script-shell child`);
         process.kill(wrapper, 'SIGINT');
-        assert(await until(() => !alive(suite), 2000), `the suite (pid ${suite}) still ran 2 s after INT`);
-        assert(await until(() => ended(child), 10000), `npm never ended after the wrapper's INT; npm said: ${output()}`);
+        assert(await until(() => !alive(suite)), `the suite (pid ${suite}) outlived the INT`);
+        assert(await until(() => ended(child)), `npm never ended after the wrapper's INT; npm said: ${output()}`);
         assertEq(child.exitCode, 130, `the run's code is 130; npm said: ${output()}`);
         assertEq(recorded(world, repo), undefined, 'an interrupted run proves nothing');
         assertEq(lineCount(path.join(out.dir, 'counter')), 0, 'the suite never reached its end');
@@ -193,8 +193,8 @@ const run = async () => {
     assertEq(read(tmpLog(world, ignored)), undefined, 'and not under TMPDIR');
     assert((read(tmpLog(world, plain)) || '').includes('logged-in-tmp'), `the log is ${tmpLog(world, plain)}`);
     assertEq(read(repoLog(plain)), undefined, 'and not in the repo, where it would change the tree');
-    assertEq(recorded(world, ignored), `${ignoredTree}\n`, 'the ignored log leaves the tree as it was proved');
-    assertEq(recorded(world, plain), `${plainTree}\n`, 'the TMPDIR log leaves the tree as it was proved');
+    assertRecord(recorded(world, ignored), ignoredTree, 'the ignored log leaves the tree as it was proved');
+    assertRecord(recorded(world, plain), plainTree, 'the TMPDIR log leaves the tree as it was proved');
     cleanup(world.root); cleanup(ignored); cleanup(plain);
   });
 
@@ -210,13 +210,13 @@ const run = async () => {
       const { child, output } = npmStart(world, repo, ['test'], out.env);
       let supervisor;
       try {
-        assert(await until(() => (read(log) || '').includes('start') && read(lockPid(world, repo)) !== undefined, 20000),
+        assert(await until(() => (read(log) || '').includes('start') && read(lockPid(world, repo)) !== undefined),
           `the first suite never started under its lock; npm said: ${output()}`);
         supervisor = readPid(lockPid(world, repo));
         child.kill('SIGTERM');
-        assert(await until(() => ended(child), 10000), 'npm never ended after TERM');
+        assert(await until(() => ended(child)), 'npm never ended after TERM');
         // The supervisor writes the done file and then exits, so its exit is the done file's arrival.
-        assert(await until(() => !alive(supervisor), 20000), `the first run's supervisor (pid ${supervisor}) never ended`);
+        assert(await until(() => !alive(supervisor)), `the first run's supervisor (pid ${supervisor}) never ended`);
         const second = npm(world, repo, ['test'], WRAPPER, out.env);
         assertEq(second.code, 0, `the second run goes green, got: ${second.code} ${second.out} ${second.err}`);
         assertEq(lineCount(path.join(out.dir, 'counter')), 2, 'the suite ran twice, once per run');
@@ -243,7 +243,7 @@ const run = async () => {
     assertEq(res.code, 0, `the stale lock does not refuse the run, got: ${res.code} ${res.out} ${res.err}`);
     assert(!res.err.includes('already running'), `no refusal, got: ${res.err}`);
     assert((read(tmpLog(world, repo)) || '').includes('after-takeover'), 'the suite ran and logged');
-    assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the tree it proved');
+    assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
     cleanup(world.root); cleanup(repo);
   });
 
@@ -275,7 +275,7 @@ const run = async () => {
     assertEq(res.code, 0, `the run is green, got: ${res.code} ${res.err}`);
     assertEq(node.lintCalls().length, 1, 'the CHANGELOG linter ran once');
     assertEq(lineCount(path.join(out.dir, 'counter')), 1, 'the suite ran once');
-    assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the tree it proved');
+    assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
     cleanup(world.root); cleanup(repo);
   });
 
@@ -290,7 +290,7 @@ const run = async () => {
     assertEq(res.code, 0, `the run is green, got: ${res.code} ${res.err}`);
     assertEq(node.lintCalls().length, 0, 'no CHANGELOG linter ran');
     assertEq(lineCount(path.join(out.dir, 'counter')), 1, 'the suite ran once');
-    assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the tree it proved');
+    assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
     cleanup(world.root); cleanup(repo);
   });
 
@@ -322,7 +322,7 @@ const run = async () => {
     const res = npm(world, repo, ['test'], WRAPPER, { ...out.env, WORKFLOW_DIR: shellPath(empty) });
     assertEq(res.code, 0, `the run is green, got: ${res.code} ${res.out} ${res.err}`);
     assertEq(lineCount(path.join(out.dir, 'counter')), 1, 'the suite ran once');
-    assertEq(recorded(world, repo), `${tree}\n`, 'the record holds the tree it proved');
+    assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
     cleanup(world.root); cleanup(repo);
   });
 

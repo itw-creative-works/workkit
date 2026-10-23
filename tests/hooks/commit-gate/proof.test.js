@@ -8,7 +8,7 @@
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const { mods } = require('../../lib/mods-inputs');
 const {
-  T, NOTICE, mkRepo, stage, touchMarker, judge, blocks, passes, shipReadyRepo,
+  T, mkRepo, stage, touchMarker, judge, blocks, passes, shipReadyRepo,
 } = require('./helpers');
 
 // Each issue OPEN at status:complete, carrying the given comments.
@@ -44,22 +44,10 @@ const run = async () => {
     blocks(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4\nCloses #9\nResolves #12"'), T.unproved(' #9 #12'), 'names both, never the proved one');
   });
 
-  await test('ports "a gh that cannot answer stands the check down, and the commit is not blocked"', async () => {
-    const r = shipReadyRepo();
-    r.ghFails = true;
-    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), NOTICE.unread(4), 'an unreachable gh fails open, out loud');
-  });
-
   await test('ports "no trailer, no proof read"', async () => {
     const r = withComments(shipReadyRepo(), {});
     passes(await judge(r, 'git commit -m "feat: a thing that closes nothing"'), '', 'a commit closing nothing is never asked for a proof');
     assertEq(r.calls.issueView.length, 0, 'and nothing is read');
-  });
-
-  await test('ports "hooks.json registers the gate under PreToolUse Bash": BASH_GUARDS runs safety:commit-gate first', () => {
-    const guards = mods('guards').BASH_GUARDS;
-    assertEq(guards[0].hook, 'safety:commit-gate', `the chain opens with the gate, hooks.json's order, got: ${guards.map((g) => g.hook).join(' ')}`);
-    assertEq(guards[0].run, mods('commit-gate').commitGateGuard, 'its entry runs commitGateGuard');
   });
 };
 

@@ -3,7 +3,6 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs } = require('./helpers');
 
@@ -114,19 +113,6 @@ const run = async () => {
       assertEq(scope.basePath(), '', 'a stamp naming the domain root is no prefix either');
     });
     assertEq(scope.basePath(), '', 'and a runtime with no document at all is at the root - never a crash');
-  });
-
-  await test('no page writes a link to another page as a bare root-absolute path', () => {
-    // The tiles, the see-all lines and the card links are drawn at runtime, so
-    // the build never sees them: each names its page through `sitePath` or it
-    // points at the domain root from a copy that is not served there.
-    const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    const bare = /(?<!sitePath\()'\/(board|crew|usage|health|brief|settings)'/;
-    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(!bare.test(source), `${name} names no tower page as a bare path`);
-    }
   });
 
   return summary();

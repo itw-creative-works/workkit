@@ -9,7 +9,8 @@
 export const CODE_EXT = /\.(js|cjs|mjs|ts|jsx|tsx|sh|zsh|py|rb)$/;
 const WORD = 'A-Za-z0-9_';
 
-const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** A text with every regex metacharacter escaped, for a literal inside a built RegExp. */
+export const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Whether the basename is test-shaped (`*.test.*`, `*.spec.*`, `*_test.*`).

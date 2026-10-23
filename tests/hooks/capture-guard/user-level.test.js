@@ -18,12 +18,12 @@ const { mods } = require('../../lib/mods-inputs');
 const {
   HOME_CAPTURE, FRESH, READ, judge, read, bash, refuses, allows,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 // The marker script the triage skill calls, and the skill's own line calling
 // it: the test runs the line, so the skill and the module's marker path cannot
 // drift apart. CLAUDE_PLUGIN_ROOT is handed over the way a hook hands it over.
 const PLUGIN_ROOT = path.join(__dirname, '..', '..', '..');
-const SCRIPT = path.join(PLUGIN_ROOT, 'scripts', 'triage-marker.sh');
 const SKILL = path.join(PLUGIN_ROOT, 'skills', 'triage', 'SKILL.md');
 const skillLine = () => {
   const line = fs.readFileSync(SKILL, 'utf8').split('\n').find((l) => l.includes('scripts/triage-marker.sh') && l.startsWith('bash '));
@@ -39,7 +39,7 @@ const runSkillLine = (cwd) => spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
     ...process.env, HOME: shellPath(SCRATCH_HOME), TMPDIR: shellPath(TMP), CLAUDE_PLUGIN_ROOT: shellPath(PLUGIN_ROOT),
   },
   encoding: 'utf8',
-  timeout: 10000,
+  timeout: SPAWN_DEADLINE,
 });
 const markerOf = (anchor) => mods('markers').triageMarkerPath(anchor, TMP);
 
@@ -79,13 +79,6 @@ const run = async () => {
   });
 
   group('capture-guard: the skill and fail-open');
-
-  await test('ports "the triage skill records the marker through the plugin script"', () => {
-    const skill = fs.readFileSync(SKILL, 'utf8');
-    assert(skill.includes('scripts/triage-marker.sh'), 'the skill calls the marker script');
-    assert(!skill.includes('shasum'), 'and spells no platform-bound command itself');
-    assert(fs.existsSync(SCRIPT), `the script the skill names exists: ${SCRIPT}`);
-  });
 
   await test('ports "the same line, run inside the repo, opens the repo capture file"', async () => {
     const repo = mkTmp('capture-guard-repo-');

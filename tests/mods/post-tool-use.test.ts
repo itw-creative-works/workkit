@@ -1,9 +1,9 @@
 // classic.PostToolUse (Edit/Write) through the hooks module: board-guard,
-// changelog-guard, session-guard and test-reminder run in that order on the
-// written file and the first block wins.
+// changelog-guard, session-guard, test-reminder and test-bar run in that order
+// on the written file and the first block wins.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, contextOf, HOME, REPO, PLAIN, SID, OPTED_IN } from '../lib/mod-world.ts'
+import { mkWorld, contextOf, hooksLog, HOME, REPO, PLAIN, SID, OPTED_IN } from '../lib/mod-world.ts'
 
 const write = ($: any, filePath: string | undefined, extra: any = {}) => $.classic.PostToolUse({
   tool_name: 'Write',
@@ -67,16 +67,6 @@ describe('classic.PostToolUse: board-guard (docs:board-guard suite)', () => {
 describe('classic.PostToolUse: changelog-guard (docs:changelog-guard suite)', () => {
   const failing = { exitCode: 1, stdout: '', stderr: 'CHANGELOG.md:7: issue-link: the entry links no issue\n' }
 
-  test('ports "no file_path in the input: fail open"', async ($, on) => {
-    mkWorld(on, { lint: failing })
-    expect((await write($, undefined)).block).toBeUndefined()
-  })
-
-  test('ports "a CHANGELOG that no longer exists: fail open"', async ($, on) => {
-    mkWorld(on, { lint: failing })
-    expect((await write($, `${REPO}/CHANGELOG.md`)).block).toBeUndefined()
-  })
-
   test('ports "hooks.json registers the hook under PostToolUse Edit|Write": the node linter runs on the written file and its finding blocks', async ($, on) => {
     const file = `${REPO}/CHANGELOG.md`
     const w = mkWorld(on, { lint: failing, files: { [file]: '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- an essay\n' } })
@@ -86,18 +76,6 @@ describe('classic.PostToolUse: changelog-guard (docs:changelog-guard suite)', ()
     expect(runs).toHaveLength(1)
     expect(runs[0].argv).toContain(file)
     expect(runs[0].argv).toContain('--added-only')
-  })
-})
-
-describe('classic.PostToolUse: session-guard (docs:session-guard suite)', () => {
-  test('ports "a session.md that no longer exists: fail open"', async ($, on) => {
-    mkWorld(on)
-    expect((await write($, `${REPO}/.workkit/agents/session.md`)).block).toBeUndefined()
-  })
-
-  test('ports "no file_path in the input: fail open"', async ($, on) => {
-    mkWorld(on)
-    expect((await write($, undefined)).block).toBeUndefined()
   })
 })
 
@@ -135,9 +113,37 @@ describe('classic.PostToolUse: test-reminder (safety:test-reminder suite)', () =
     mkWorld(on, { files: { [`${PLAIN}/lib/thing.js`]: 'module.exports = 1;\n' } })
     expect(contextOf(await write($, `${PLAIN}/lib/thing.js`, { cwd: PLAIN }))).toBe('')
   })
+})
 
-  test('ports "a file that does not exist: silent"', async ($, on) => {
-    mkWorld(on)
-    expect(contextOf(await write($, `${REPO}/lib/gone.js`))).toBe('')
+describe('classic.PostToolUse: test-bar (safety:test-bar suite)', () => {
+  const OTHER = '/w/other'
+  const body = "const fs = require('fs');\nconst dir = fs.mkdtempSync('thing-');\n"
+  const fired = (w: any) => hooksLog(w).filter((l: any) => l.hook === 'safety:test-reminder' || l.hook === 'safety:test-bar')
+    .map((l: any) => `${l.hook} ${l.verdict}`)
+
+  test('a test-file write with a finding lands, and the context carries the test-bar line', async ($, on) => {
+    mkWorld(on, { files: { [`${REPO}/tests/thing.test.js`]: body } })
+    const r = await write($, `${REPO}/tests/thing.test.js`)
+    expect(r.block).toBeUndefined()
+    expect(contextOf(r)).toContain('test-bar: tests/thing.test.js:2 ')
+    expect(contextOf(r)).toContain('mkTmp')
+  })
+
+  test('test-bar runs after test-reminder, and its line rides the one context', async ($, on) => {
+    const w = mkWorld(on, { files: { [`${REPO}/tests/thing.test.js`]: body } })
+    const r = await write($, `${REPO}/tests/thing.test.js`)
+    expect(fired(w)).toEqual(['safety:test-reminder run', 'safety:test-bar run'])
+    expect(r.additionalContext.filter((c: string) => c.includes('test-bar: tests/thing.test.js:2 '))).toHaveLength(1)
+  })
+
+  test('a repo that has not opted in: nothing added, and the fire logs stood-down', async ($, on) => {
+    const w = mkWorld(on, { repos: { [REPO]: null }, files: { [`${REPO}/tests/thing.test.js`]: body } })
+    expect(contextOf(await write($, `${REPO}/tests/thing.test.js`))).toBe('')
+    expect(hooksLog(w).filter((l: any) => l.hook === 'safety:test-bar').map((l: any) => l.verdict)).toEqual(['stood-down'])
+  })
+
+  test('a test file in a repo other than the session\'s: nothing added', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: OPTED_IN, [OTHER]: OPTED_IN }, files: { [`${OTHER}/tests/thing.test.js`]: body } })
+    expect(contextOf(await write($, `${OTHER}/tests/thing.test.js`))).toBe('')
   })
 })

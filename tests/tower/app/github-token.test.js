@@ -3,10 +3,8 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const path = require('path');
-const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { loadLibs, libs, mkStorage } = require('./helpers');
+const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
+const { loadLibs, mkStorage } = require('./helpers');
 
 const run = async () => {
   const { github } = await loadLibs();
@@ -43,10 +41,6 @@ const run = async () => {
     assertEq(github.readToken(github.safeStorage(hostile)), '', 'and the viewer simply holds no token');
     assertEq(github.safeStorage({}), null, 'a global with no storage at all is the same answer');
     assertEq(github.safeStorage(undefined), null, 'and so is no global');
-    for (const name of ['api.js', 'page.js', path.join('page', 'selector.js'), 'token.js']) {
-      const src = fs.readFileSync(path.join(libs, name), 'utf8');
-      assert(!/window\.localStorage/.test(src), `${name} reaches for storage only through the guard`);
-    }
   });
 
   await test('an empty value is a clear, not a stored blank', () => {

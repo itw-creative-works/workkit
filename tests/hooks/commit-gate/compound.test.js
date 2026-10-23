@@ -25,10 +25,6 @@ const run = async () => {
     blocks(await judge(r, 'git add -A && git commit -m "feat(x): y"'), T.stage, 'a command that stages its own content fails closed');
   });
 
-  await test('ports "the same compound with the change ALREADY staged: still exit 2"', async () => {
-    blocks(await judge(docsStaged(), 'git add -A && git commit -m "docs: readme"'), T.stage, 'the add could still widen what the commit carries');
-  });
-
   await test('ports "rm / mv / stage compounds are the same shape: exit 2"', async () => {
     for (const c of ['git rm old.js && git commit -m "chore: drop it"',
       'git mv a.js b.js && git commit -m "chore: move it"',

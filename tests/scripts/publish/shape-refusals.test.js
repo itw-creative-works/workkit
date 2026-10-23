@@ -1,26 +1,16 @@
-// Tests for workflow/publish.sh: the shape of the script, and the reasons
-// not to publish (no home repo, no clone, no tooling, a clone that cannot
-// move, a settings file that does not parse, a build that fails).
+// Tests for workflow/publish.sh: the reasons not to publish (no home repo,
+// no clone, no tooling, a clone that cannot move, a settings file that does
+// not parse, a build that fails).
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, skip, summary, selfRun } = require('../../lib/harness');
-const { IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath } = require('../../lib/platform');
-const { REPO_ROOT, cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
+const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { shellPath } = require('../../lib/platform');
+const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
 const run = async () => {
-  group('workflow/publish: shape');
-
-  await test('it parses and is executable', () => {
-    const script = path.join(REPO_ROOT, 'workflow', 'publish.sh');
-    assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(script)], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
-    // eslint-disable-next-line no-bitwise
-    if (IS_WINDOWS) skip('publish.sh carries the executable bit', NO_EXEC_BIT);
-    else assert((fs.statSync(script).mode & 0o111) !== 0, 'the executable bit is set');
-  });
-
   group('workflow/publish: the reasons not to');
 
   await test('no home repo is a named skip, and nothing is built', () => {

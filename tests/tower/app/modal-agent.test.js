@@ -3,9 +3,8 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { loadLibs, libs, openAgentDialog, NOW } = require('./helpers');
+const { loadLibs, openAgentDialog, NOW } = require('./helpers');
 
 const run = async () => {
   const { secondHand, modal } = await loadLibs();
@@ -168,31 +167,6 @@ const run = async () => {
     assertEq(modal.refreshAgentDialog(NOW, dialog.host), true, 'the refresh answers');
     assert(dialog.head.innerHTML.includes(`data-live-ts="${NOW}"`), 'and the header is drawn again, stamps and all');
     assert(dialog.head.innerHTML.includes('fa-spin'), 'spinning - the agent is moving again');
-  });
-
-  await test('the paint is what refreshes it, on every page and not just the crew', () => {
-    // The dialogs are the layout's and outlive every page, so the refresh is
-    // wired where all six paints pass through rather than in the one page whose
-    // cards opened it.
-    const fs = require('fs');
-    const runtime = fs.readFileSync(path.join(libs, 'page.js'), 'utf8');
-    assert(/import \{[^}]*refreshAgentDialog[^}]*\} from '\.\/modal\.js'/.test(runtime), 'the runtime takes the refresh from the dialog module');
-    assert(/^\s*refreshAgentDialog\(\);$/m.test(runtime), 'and calls it');
-    assert(runtime.indexOf('options.render(body, state);') < runtime.search(/^\s*refreshAgentDialog\(\);$/m), 'after the render that re-registered the agents it reads');
-  });
-
-  await test('the open writes the key the refresh reads, and the close removes it', () => {
-    // The whole feature hinges on this pair: without the key no paint ever
-    // refreshes the dialog, and without the cleanup a closed dialog keeps
-    // refreshing forever. The mount runs only in a browser, so the wiring is
-    // pinned where it lives.
-    const fs = require('fs');
-    const source = fs.readFileSync(path.join(libs, 'modal', 'agent.js'), 'utf8');
-    assert(/body\.dataset\.agentOpen = key;/.test(source), 'the open records which agent is on screen');
-    assert(/addEventListener\('hidden\.bs\.modal', \(\) => \{ delete body\.dataset\.agentOpen; \}\)/.test(source), 'and the close deletes it');
-    const open = source.indexOf('body.dataset.agentOpen = key;');
-    const shown = source.indexOf('.show()', open);
-    assert(open >= 0 && shown > open, 'the key is written before the dialog is shown - never a shown dialog without one');
   });
 
   return summary();

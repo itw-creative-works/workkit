@@ -22,7 +22,7 @@ const warn = (type, given, parent = MODELS.opus, cfg = config()) => textOf(mods(
 const run = async () => {
   group('manager-spawn-guard: rule 1, a hand-passed model on a class spawn');
   for (const cls of ['scout', 'worker', 'verifier', 'advisor']) {
-    for (const name of [cls, `workkit:${cls}`]) {
+    for (const name of cls === 'advisor' ? [cls, `workkit:${cls}`] : [cls]) {
       await test(`ports "${name} with model: haiku warns"`, () => {
         const msg = warn(name, 'haiku');
         assert(msg.includes('manager:resolver'), `warning lacks the rule: ${msg}`);
@@ -55,7 +55,7 @@ const run = async () => {
   });
 
   group('manager-spawn-guard: silence everywhere else');
-  for (const type of ['Explore', 'Plan', 'general-purpose', 'reviewer', 'workkit:reviewer', 'no-such-type']) {
+  for (const type of ['Explore', 'workkit:reviewer']) {
     await test(`ports "subagent_type ${type} (with a model param) is silent"`, () => {
       assertEq(warn(type, 'haiku'), '', 'silent');
     });

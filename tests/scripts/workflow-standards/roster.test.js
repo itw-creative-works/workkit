@@ -15,6 +15,7 @@ const {
   runScript,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('standards.sh: the roster');
@@ -275,7 +276,7 @@ const run = async () => {
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(home), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')) },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the heal runs without it: ${res.stderr}`);
     assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], undefined, 'no jq, no edit, and no half-written file');

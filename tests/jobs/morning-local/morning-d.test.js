@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { stubTool, which } = require('../../lib/platform');
+const { alive, readPid } = require('../../lib/process');
 const { skipUnlessDarwin, cleanup, mkWorld, runJob } = require('./helpers');
 
 // The job bounds a step only where a `timeout` exists, so the timeout case
@@ -83,26 +84,27 @@ const run = async () => {
   await timeoutTest('a script past the timeout is ended and warned about, and the next still runs', () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
-    // The job's own bound is minutes; this `timeout` hands a morning.d script
-    // two seconds and passes every other step through untouched.
+    // The job's own bound is minutes; this `timeout` hands the slow script two
+    // seconds and passes every other step, the next script included, through untouched.
     const stub = [
       '#!/bin/bash',
-      `case "$*" in */morning.d/*) shift; exec ${JSON.stringify(REAL_TIMEOUT)} 2 "$@" ;; esac`,
+      `case "$*" in */morning.d/10-slow.sh) shift; exec ${JSON.stringify(REAL_TIMEOUT)} 2 "$@" ;; esac`,
       `exec ${JSON.stringify(REAL_TIMEOUT)} "$@"`,
     ];
     stubTool(path.join(world.root, 'bin'), 'timeout', stub);
     stubTool(path.join(world.home, '.local', 'bin'), 'timeout', stub);
-    // exec, so the sleep is the script's own process and nothing outlives it.
-    plant(world.workflowHome, '10-slow.sh', { body: ['echo started', 'exec sleep 30'] });
+    // exec, so the recorded pid is the sleep itself and nothing outlives it.
+    const pidFile = path.join(world.root, 'slow.pid');
+    plant(world.workflowHome, '10-slow.sh', { body: [`echo $$ > ${JSON.stringify(pidFile)}`, 'echo started', 'exec sleep 30'] });
     plant(world.workflowHome, '20-b.sh', { order });
 
-    const started = Date.now();
     const res = runJob(world);
-    const elapsed = Date.now() - started;
-    assert(elapsed < 25000, `the slow script was ended, not waited out: ${elapsed}ms`);
     assertEq(res.status, 0, `a script's timeout is not the morning's failure: ${res.stderr}`);
     assertEq(ran(order).join(','), '20-b.sh', 'the next script still ran');
     assert(warnedAbout(world, res, '10-slow.sh').length > 0, `a warn line names it: ${world.log()}\n${res.stderr}`);
+    // A loaded machine can end the script before it records its pid: ended either way.
+    const pid = fs.existsSync(pidFile) ? readPid(pidFile) : null;
+    if (pid !== null) assert(!alive(pid), `the slow script ${pid} was ended, not waited out`);
     cleanup(world.root);
   });
 

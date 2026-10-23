@@ -10,6 +10,7 @@ const { fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, kitCommitted,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('workflow/home: the clone’s own heal');
@@ -126,7 +127,7 @@ const run = async () => {
     fs.mkdirSync(other, { recursive: true });
     spawnSync('git', ['init', '-q', other], { encoding: 'utf8' });
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--home', shellPath(other)], {
-      env: world.env, encoding: 'utf8', timeout: 30000,
+      env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 1, 'it refuses');
     assert(/not the tower clone/.test(res.stderr || ''), `and says why, got: ${res.stderr}`);

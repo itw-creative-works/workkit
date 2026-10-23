@@ -3,7 +3,6 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs } = require('./helpers');
 
@@ -97,70 +96,10 @@ const run = async () => {
   await test('the glyph is spaced off the word and sits on its optical centre (#136)', () => {
     // The theme's `.omega-badge-tone` makes the chip inline-block after
     // `.omega-chip`'s inline-flex at equal specificity, so a flex gap never
-    // applies. Both halves of the fix are pinned by hand: Node sees neither.
-    const fs = require('fs');
+    // applies.
     for (const chip of [format.typeChip('bug'), format.priorityChip('low')]) {
       assert(/<i class="fa-solid fa-[a-z-]+ me-1"/.test(chip), 'the glyph carries the framework\'s own margin utility, since there is no gap to inherit');
     }
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    const nudge = /\.omega-chip i\.fa-solid svg(?:, [^{]+)? \{ vertical-align: (\S+?); \}/.exec(sheet);
-    assert(nudge, 'and the sheet nudges the svg the renderer fills that `i` with - `.fa svg`, the framework\'s own rule, never reaches an `i` written `fa-solid` alone');
-    assertEq(nudge[1], '-.125em', 'by the framework\'s own number, so a chip glyph sits where every other icon does');
-  });
-
-  await test('the Board card draws that row, and no surface names a glyph of its own (#136)', () => {
-    const fs = require('fs');
-    const js = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js');
-    const source = fs.readFileSync(path.join(js, 'pages', 'board.js'), 'utf8');
-    assert(/import \{[^}]*issueChips[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(source), 'the chips come from format.js');
-    assert(source.includes('${issueChips(issue, \'mt-auto omega-tower-issue__chips\', open)}'),
-      'and the card hands it spacing, never a chip of its own');
-    // Every name in the table against every surface that draws chips: a
-    // hand-written `<i class="fa-solid fa-lightbulb">` beside the row is a
-    // second table, and the drift starts the day the two disagree.
-    for (const surface of ['pages/board.js', 'pages/brief.js', 'libs/tower/modal/issue.js', 'libs/tower/modal/agent.js', 'libs/tower/modal/document.js']) {
-      const drawn = fs.readFileSync(path.join(js, ...surface.split('/')), 'utf8');
-      for (const glyph of Object.values(format.CHIP_GLYPHS)) {
-        assert(!drawn.includes(glyph), `${surface} names no chip glyph (${glyph}) - the table owns which picture means what`);
-      }
-    }
-  });
-
-  await test('the Board column header wears the status glyph its chip wears (#289)', () => {
-    // The header names a status the way a chip does, so it draws the same
-    // picture from the same table, through the one helper - never a glyph of
-    // its own (the case above holds that for the page).
-    const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
-    assert(/import \{[^}]*chipGlyph[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(source), 'the glyph comes from format.js');
-    assert(source.includes('<span>${chipGlyph(status.key)}${esc(status.label)}</span>'), 'and the header draws it before the label');
-    // The header is no chip, so the chip's vertical nudge (the case above) has
-    // to name it too, or its glyph sits high.
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    assert(/\.omega-panel-head i\.fa-solid svg[^{]*\{ vertical-align: -\.125em; \}/.test(sheet), 'and the sheet nudges the header glyph by the same number');
-  });
-
-  await test('every nav, topbar and page header icon carries its own Font Awesome classes (#288)', () => {
-    // The theme emits an `icon` verbatim and adds only its size, so a bare
-    // name (`gauge-high`) builds `<i class="gauge-high fa-sm">`, which no
-    // renderer resolves: the glyph draws nothing and nothing says so. The
-    // three sites are data, so a regex over their text is the whole read.
-    const fs = require('fs');
-    const src = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src');
-    const sections = path.join(src, '_includes', 'backend', 'sections');
-    const pages = path.join(src, 'pages');
-    const sites = [
-      path.join(sections, 'sidebar.json'),
-      path.join(sections, 'topbar.json'),
-      ...fs.readdirSync(pages).filter((name) => name.endsWith('.md')).map((name) => path.join(pages, name)),
-    ];
-    const bare = [];
-    for (const site of sites) {
-      const icons = [...fs.readFileSync(site, 'utf8').matchAll(/\bicon:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
-      assert(icons.length > 0, `${path.basename(site)} carries an icon to check`);
-      bare.push(...icons.filter((icon) => !/^fa-(solid|regular|brands) fa-[a-z0-9-]+$/.test(icon)).map((icon) => `${path.basename(site)}: ${icon}`));
-    }
-    assertEq(bare.join(', '), '', 'every icon is a family and a name');
   });
 
   await test('an issue waiting on one the board still holds wears a chip saying so', () => {

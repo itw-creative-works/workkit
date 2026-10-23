@@ -11,7 +11,10 @@ const { assert } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
+// Aliased: `seeded` here is the runner-seeded world below.
+const { seeded: seedOnce } = require('../../lib/seed');
 const { STAMP } = require('../../lib/version-stamp');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 // The plugin checkout the cloud brief's runner is seeded from: the real one,
@@ -293,7 +296,7 @@ const inHome = (world, script, { input = '' } = {}) => {
   // off the cwd (as npm does) must key it off a scratch directory rather
   // than this checkout.
   const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
-    cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: 30000,
+    cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   // `out` is both streams in the order a terminal shows them, since what these
@@ -358,6 +361,22 @@ const commitKit = (kit, subject) => {
   assert(res.status === 0, `the kit copy committed: ${res.stdout}${res.stderr}`);
 };
 
+// The folder a world's committed kit sits in, under the world's root.
+const KIT_REPO = 'kit-repo';
+
+// Built once per process and copied per world: the git init and commit are
+// the cost a world would repeat. Packed, so a copy is a few files, not one per
+// object.
+const copyKitRepo = seedOnce((seed) => {
+  const kit = mkKitCopy(seed, KIT_REPO);
+  const manifest = path.join('.claude-plugin', 'plugin.json');
+  fs.mkdirSync(path.join(kit, '.claude-plugin'), { recursive: true });
+  fs.copyFileSync(path.join(KIT_DIR, manifest), path.join(kit, manifest));
+  git(kit, 'init', '-q', '-b', 'main');
+  commitKit(kit, 'chore: the kit');
+  git(kit, 'repack', '-adq');
+});
+
 /**
  * A kit copy a git repo tracks: the runner sources, the workflow/ folder and
  * the plugin manifest (the stamp's version) as they sit on disk, committed on
@@ -365,13 +384,8 @@ const commitKit = (kit, subject) => {
  * folder can differ.
  */
 const mkKitRepo = (root) => {
-  const kit = mkKitCopy(root, 'kit-repo');
-  const manifest = path.join('.claude-plugin', 'plugin.json');
-  fs.mkdirSync(path.join(kit, '.claude-plugin'), { recursive: true });
-  fs.copyFileSync(path.join(KIT_DIR, manifest), path.join(kit, manifest));
-  git(kit, 'init', '-q', '-b', 'main');
-  commitKit(kit, 'chore: the kit');
-  return kit;
+  copyKitRepo(root);
+  return path.join(root, KIT_REPO);
 };
 
 /** A file as the world's kit committed it: what the runner is read from. */

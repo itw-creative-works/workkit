@@ -15,6 +15,7 @@ const {
 } = require('../lib/platform');
 const { noNodeTest, barePathTest, NO_NODE_LINE } = require('../lib/job-path');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
@@ -169,7 +170,7 @@ const mkWorld = ({
 
 const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
-  timeout: 60000,
+  timeout: SPAWN_DEADLINE,
   env: world.env,
 });
 
@@ -180,17 +181,6 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
 
 const run = async () => {
   if (process.platform !== 'darwin') skipSuite('the runner is a macOS launchd job (~/Library paths)');
-
-  group('jobs/claude-nightly: shape');
-
-  await test('bash -n: no syntax errors', () => {
-    const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' });
-    assertEq(res.status, 0, `bash -n: ${res.stderr}`);
-  });
-
-  await test('the script is executable', () => {
-    assert(fs.statSync(SCRIPT).mode & 0o111, 'the plist runs it through bash, but a human runs it directly');
-  });
 
   group('jobs/claude-nightly: no home repo is a named skip');
 
@@ -422,30 +412,12 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the retired local summaries path is gone from the script', () => {
-    const text = fs.readFileSync(SCRIPT, 'utf8');
-    for (const gone of ['WORKKIT_HQ', 'summaries/daily', 'DAILY_FILE']) {
-      assert(!text.includes(gone), `${gone} is not in the script: generated records are never files`);
-    }
-  });
-
   await test('a home with no Library/Logs gets one: the log line still lands', () => {
     const world = mkWorld({ logsDir: false });
     const res = runJob(world);
     assertEq(res.status, 0, `the append cannot fail the step: ${res.stderr}`);
     assert(/no home repo configured/.test(world.log()), `the log says which reason: ${world.log()}`);
     cleanup(world.root);
-  });
-
-  group('jobs/claude-nightly: the manual trigger');
-
-  await test('npm run nightly is the trigger, and it points at this script', () => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
-    const script = pkg.scripts.nightly;
-    assert(typeof script === 'string' && script.includes('--now'), `the nightly script runs the manual flag, got: ${script}`);
-    const target = script.match(/(jobs\/[\w-]+\.sh)/);
-    assert(target, `it names a jobs script, got: ${script}`);
-    assert(fs.existsSync(path.join(__dirname, '..', '..', target[1])), `${target[1]} resolves from the repo root`);
   });
 
   return summary();

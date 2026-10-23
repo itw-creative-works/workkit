@@ -12,6 +12,12 @@ Spec: the `### Contract` and the Description of {{issue}}. Where this brief and 
 
 Write one test per Contract case, from the Contract and the Description, never from the source: a feature-developer builds the source at the same time, and its files are not yours to read. Red first.
 
+## The bar
+
+Worth: a case earns its place only if its failure means real behavior broke; never a test of a test helper, an expected value computed from the implementation, a language or library guarantee, a removed string's absence or any removed feature, a file's existence or bit, a regex over source text, a prose pin, a wording repeat, a duplicate break or a log-line check. What a look can check once goes in the `Proof:` line.
+Cost: in-process through a seam unless the wiring is under test; a world from `seeded()`, copied per case; scratch from `mkTmp()`; no fixed path, port or sleep; a timing case asserts order, never a duration; a live probe behind a named flag that skips with its reason.
+The full lists: `docs/tests.md` § The bar.
+
 ## Paths
 
 Yours: {{paths}}

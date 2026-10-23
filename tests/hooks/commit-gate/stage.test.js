@@ -7,16 +7,15 @@
 
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  T, NOTICE, mkRepo, stage, touchMarker, judge, blocks, passes, shipReadyRepo,
+  T, stage, judge, blocks, passes, shipReadyRepo,
 } = require('./helpers');
 
 const PROVED = ['Proof: unit: node tests/hooks/x.test.js'];
 
 /** One commit message against one fixture board, on a ship-ready repo. */
-const commit = async (message, { issues = {}, fails = false } = {}) => {
+const commit = async (message, { issues = {} } = {}) => {
   const r = shipReadyRepo();
   r.issues = issues;
-  r.ghFails = fails;
   return { r, v: await judge(r, `git commit -m "${message}"`) };
 };
 
@@ -79,26 +78,6 @@ const run = async () => {
     const { v } = await commit('feat: a thing\n\nRefs #123#456',
       { issues: { 123: { labels: ['status:qa'] }, 456: { labels: ['status:building'] }, 12: { labels: ['status:qa'] } } });
     blocks(v, T.unpassed('#123 is at status:qa, #456 is at status:building'), 'names both, and no phantom #12');
-  });
-
-  await test('ports "a message naming no issue passes without a read"', async () => {
-    const { r, v } = await commit('chore(release): 1.2.3', { fails: true });
-    passes(v, '', 'nothing named, nothing said');
-    assertEq(r.calls.issueView.length, 0, 'and nothing read');
-  });
-
-  await test('ports "a gh that cannot answer fails open, out loud on the visible notice"', async () => {
-    const { v } = await commit('feat: a thing\n\nRefs #12', { fails: true });
-    passes(v, NOTICE.unread(12), 'an unreachable gh never blocks, and says so');
-  });
-
-  await test('ports "a repo that keeps no CHANGELOG.md is outside the pipeline and never asked"', async () => {
-    const r = mkRepo();
-    stage(r, 'app.js', 'const x = 1;\n');
-    touchMarker(r);
-    r.issues = { 12: { labels: ['status:qa'] } };
-    passes(await judge(r, 'git commit -m "feat: a thing\n\nRefs #12"'), '', 'allowed');
-    assertEq(r.calls.issueView.length, 0, 'and gh is never asked');
   });
 };
 

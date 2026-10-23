@@ -12,6 +12,7 @@ const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mkTmp } = require('../lib/scratch');
 const { mods, textOf, runResult } = require('../lib/mods-inputs');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const LINTER = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
 const ISSUE = '[#4](https://github.com/o/r/issues/4)';
@@ -23,7 +24,7 @@ const doc = (...bullets) => ['# Changelog', '', '## [Unreleased]', '', '### Adde
 
 /** The linter's run on `file`, as the process.run result the module receives. */
 const lint = (file) => {
-  const res = spawnSync(process.execPath, [LINTER, file, '--added-only'], { cwd: path.dirname(file), encoding: 'utf8', timeout: 20000 });
+  const res = spawnSync(process.execPath, [LINTER, file, '--added-only'], { cwd: path.dirname(file), encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
 };
 const verdict = (file, result = lint(file)) => textOf(mods('changelog-guard').changelogGuardVerdict(file, result));

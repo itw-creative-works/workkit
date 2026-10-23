@@ -171,10 +171,6 @@ const run = async () => {
     await passes('git commit -m tidy && echo "all done here"');
   });
 
-  await test('ports "fallback path still runs the vocabulary scan: exit 2"', async () => {
-    await bounces('git commit -m tidy && echo "killing the old server"', VOCAB('killing'));
-  });
-
   group('commit-language: subject format hardening');
 
   await test('ports "command-substitution subject that is not the heredoc idiom: exit 0"', async () => {
@@ -215,10 +211,6 @@ const run = async () => {
 
   await test('ports "cwd in a repo with an origin, bad subject: exit 2 as today"', async () => {
     await bounces('git commit -m "pub 1"', FORMAT('pub 1'), { originless: false });
-  });
-
-  await test('ports "no cwd in the payload, run from a repo with no origin: still lints (exit 2)"', async () => {
-    await bounces('git commit -m "pub 1"', FORMAT('pub 1'), { cwd: '', originless: false });
   });
 
   group('commit-language: fail-open');

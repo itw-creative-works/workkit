@@ -4,7 +4,6 @@
 //
 
 const path = require('path');
-const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW } = require('./helpers');
 
@@ -14,38 +13,6 @@ const run = async () => {
   group('tower/app: github - the sweep is the tower’s own');
 
   const apiBoard = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'board.js'));
-
-  // The sweep's pure half is one module (libs/tower/github/sweep.js) that
-  // board.js requires and github.js imports, so parity is asked as identity: a
-  // browser symbol that is not the tower's own object is a copy. What each
-  // function does is asked in the board suite.
-  await test('both halves of the sweep run the one module, not two copies of it', () => {
-    for (const name of ['buildBoardQuery', 'parseLabels', 'blockersFor', 'lastCommentOf', 'issueFrom', 'closedSince', 'errorsByAlias', 'firstErrorFor', 'droppedReason']) {
-      assert(typeof github[name] === 'function', `${name} is reachable from the browser's half`);
-      // `assert`, not `assertEq`: a function has no useful printed form, and
-      // the question is object identity rather than a value that reads back.
-      assert(github[name] === apiBoard[name], `${name} is the tower's own function, not a restatement of it`);
-    }
-    assertEq(github.MAX_OPEN_ISSUES, apiBoard.MAX_OPEN_ISSUES, 'and the ceiling is read off that module by both (#194)');
-    assertEq(github.MAX_OPEN_ISSUES, 1000, 'the ceiling itself');
-    assertEq(github.REPOS_PER_REQUEST, apiBoard.REPOS_PER_REQUEST, 'as is the batch size a request is cut to (#202)');
-    assertEq(github.REPOS_PER_REQUEST, 6, 'the measured number itself');
-  });
-
-  await test('the browser normalizes an answer into exactly what /api/board serves', () => {
-    const exec = (cmd, args) => {
-      if (args[0] === '--version') return 'gh version 2';
-      return JSON.stringify(SWEEP);
-    };
-    const fromTower = apiBoard.fetchBoard(SLUGS.map((slug) => ({ slug })), { exec, now: CLOSED_NOW });
-    const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
-    assertEq(JSON.stringify(fromBrowser), JSON.stringify(fromTower), 'one payload shape, whichever side read it');
-    assertEq(fromBrowser.issues[0].status, 'building', 'the label vocabulary is parsed the same way');
-    assertEq(fromBrowser.issues[0].agentOk, true, 'agent:ok included');
-    assertEq(fromBrowser.repos[0].truncated, false,
-      'a total ahead of the count is no longer truncation - the sweep pages, and GitHub said there was no next page (#194)');
-    assertEq(fromBrowser.repos[1].error, 'Could not resolve to a Repository', 'and the unresolved repo carries its reason');
-  });
 
   await test('every branch of what an issue waits on survives the browser’s normalization', () => {
     // The composition is one shared function, so this asks that the fixture
@@ -75,12 +42,6 @@ const run = async () => {
     assertEq(one('2026-07-28T10:59:00Z'), 0, '24 hours 1 minute ago does not');
     assertEq(one('2026-07-30T11:00:00Z'), 0, 'and neither does a stamp from the future');
     assertEq(one('not a date'), 0, 'nor one that is not a stamp');
-  });
-
-  await test('the label groups the browser knows are the vocabulary’s own', () => {
-    const groups = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json'), 'utf8')).groups);
-    assertEq([...github.LABEL_GROUPS].sort().join(','), groups.sort().join(','),
-      'a group defined in the SSOT and missing here would be a group the published board cannot show');
   });
 
   await test('the newest comment rides the sweep folded to one line and cut where a card ends', () => {

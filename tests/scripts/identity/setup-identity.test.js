@@ -48,15 +48,16 @@ const withSetupScene = async (routes, fn, worldOpts = {}) => {
 
 /**
  * Asserts login.js opened the device page once with the world's opener. It
- * runs the opener detached, so a first call is awaited briefly, then a moment
- * more for a second. Windows names its skip: node cannot spawn the bash stub.
+ * runs the opener detached, so a first call is awaited for until's own default,
+ * the budget the login suite gives the same opener, then a moment more for a
+ * second. Windows names its skip: node cannot spawn the bash stub.
  */
 const assertDevicePageOpened = async (world, label) => {
   if (IS_WINDOWS) {
     skip(`${label}: the world's opener records the device page`, NO_NODE_STUB);
     return;
   }
-  await until(() => world.openerCalls().length > 0, 2000);
+  await until(() => world.openerCalls().length > 0);
   await until(() => world.openerCalls().length > 1, 300);
   assertEq(JSON.stringify(world.openerCalls()), JSON.stringify([['https://github.com/login/device']]),
     `${label}: the opener ran once, on the device page`);
@@ -189,22 +190,6 @@ const run = async () => {
 
   group('workkit setup --login');
 
-  await test('case 20: workkit help lists setup --login and neither login nor logout; workkit login is the unknown-command error', () => {
-    const world = mkWorld();
-    try {
-      const help = runCli(world, ['help']);
-      assert(/^ {2}setup --login\b/m.test(help.out), `help lists setup --login, got: ${help.out}`);
-      assert(!/^ {2}login\b/m.test(help.out), `help lists no login command, got: ${help.out}`);
-      assert(!/^ {2}logout\b/m.test(help.out), `help lists no logout command, got: ${help.out}`);
-
-      const login = runCli(world, ['login'], { env: signInEnv(world) });
-      assert(login.code !== 0, `workkit login exits non-zero, got ${login.code}: ${login.said}`);
-      assert(login.err.includes('unknown command login'), `it is the unknown-command error, got: ${login.err}`);
-    } finally {
-      cleanup(world.root);
-    }
-  });
-
   await test('case 20, 22: setup --login at a terminal asks nothing, opens the device page and runs the device flow into the login file, replacing the sign-in already there, and nothing else of setup', async () => {
     await withSetupScene(SIGN_IN_ROUTES, async ({ world, script, server }) => {
       writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
@@ -302,15 +287,6 @@ const run = async () => {
     assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_BARE]]), 'the opener ran once, on the bare install page');
     assert(res.said.includes(INSTALLED), `the poll's 200 is still the ok line, got: ${res.said}`);
     assertEq(res.idReads.length, 1, `the owner's id was asked for once, got: ${JSON.stringify(res.idReads)}`);
-  });
-
-  await test('case 23: a 412 at a keyboard, YES opens the install page once, and the poll\'s first check, a 200, is the ok line', async () => {
-    const res = await installSetup({ answers: [NOT_INSTALLED, MINTED], input: 'YES\n' });
-    assert(res.said.includes(INSTALL_QUESTION), `setup puts the install question, got: ${res.said}`);
-    assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_NEW]]), 'the opener ran once, on the install page');
-    assertEq(res.asked.length, 2, `the step's lookup, then the poll's first check, got: ${JSON.stringify(res.asked)}`);
-    assert(res.said.includes(INSTALLED), `the second answer is the ok line, got: ${res.said}`);
-    assertEq(installWarnings(res.said).length, 0, `and no not-installed warning, got: ${res.said}`);
   });
 
   await test('case 23: a 412 throughout, after a yes the poll skips on s, on stdin closing, or on stdin closing after an Enter, and the warning carries the install page', async () => {

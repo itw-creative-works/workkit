@@ -13,6 +13,7 @@ const {
 } = require('../../lib/harness');
 const { IS_WINDOWS } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 const {
   INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf, startServer,
   startService, scratchKit, scratchEnv, PTY, atTerminal,
@@ -85,7 +86,7 @@ const tokenKit = () => {
   const home = mkTmp('wk-identity-kit-home-');
   const tokenJs = path.join(kit, 'workflow', 'identity', 'token.js');
   const command = (args, extra = {}) => spawnSync(process.execPath, [tokenJs, ...args],
-    { env: scratchEnv(home, extra), encoding: 'utf8', timeout: 30000 });
+    { env: scratchEnv(home, extra), encoding: 'utf8', timeout: SPAWN_DEADLINE });
   const atKeyboard = (args, extra = {}) => atTerminal([process.execPath, tokenJs, ...args], { env: scratchEnv(home, extra), dir: home });
   return {
     kit, home, command, atKeyboard,

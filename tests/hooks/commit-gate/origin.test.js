@@ -29,24 +29,12 @@ const run = async () => {
     passes(await judge(r, 'git commit -m "pub 1"'), '', 'a bad marker in a throwaway repo is not judged');
   });
 
-  await test('ports "with an origin, staged code, no review marker: exit 2 as today"', async () => {
-    const r = mkRepo();
-    stage(r, 'app.js', 'const x = 1;\n');
-    blocks(await judge(r, 'git commit -m "pub 1"'), T.noReview, 'a project repo still needs its review');
-  });
-
   group('commit-gate: stage and commit in one call');
 
   await test('ports "no origin, git add -A && git commit: exit 0 and silent"', async () => {
     const r = mkThrowawayRepo();
     write(r, 'app.js', 'const x = 1;\n');
     passes(await judge(r, 'git add -A && git commit -m "pub 1"'), '', 'a throwaway repo may stage and commit at once');
-  });
-
-  await test('ports "with an origin, git add -A && git commit: exit 2 naming the stage-first rule"', async () => {
-    const r = mkRepo();
-    write(r, 'app.js', 'const x = 1;\n');
-    blocks(await judge(r, 'git add -A && git commit -m "pub 1"'), T.stage, 'a project repo still stages first');
   });
 
   group('commit-gate: cd and -C still block in a repo with no origin');

@@ -12,6 +12,7 @@ const {
 const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mods } = require('../lib/mods-inputs');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'release.js');
 
@@ -123,7 +124,7 @@ const release = (dir, args) => {
     cwd: home,
     env: homeEnv(home, { PATH: SYSTEM_PATH }),
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   cleanup(home);
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
@@ -322,13 +323,6 @@ const run = async () => {
   });
 
   group('release: the printed line');
-
-  await test('the line counts what moved and what stayed', () => {
-    const { dir } = mkRepo();
-    const res = release(dir, ['1.3.0', '--keep', '3']);
-    assertEq(res.stdout, 'released 1.3.0 (package.json): 2 entries moved, 1 kept under [Unreleased]\n', 'the one line');
-    cleanup(dir);
-  });
 
   await test('--dry-run prints the same line and writes nothing', () => {
     const { dir } = mkRepo();

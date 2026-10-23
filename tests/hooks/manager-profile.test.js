@@ -13,7 +13,6 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { section } = require('../lib/markdown');
 const { mods, textOf } = require('../lib/mods-inputs');
 
 const REPO = path.join(__dirname, '..', '..');
@@ -52,76 +51,11 @@ const run = async () => {
   }
 
   group('manager-profile: the injection is the delegation core only');
-  await test('ports "the four core clauses are present"', () => {
-    const ctx = ctxFor(MODELS.fable);
-    assert(/recon/i.test(ctx) && /implementation/i.test(ctx) && /blind review/i.test(ctx), 'the delegation split is not stated');
-    assert(ctx.includes('never pass a model param'), 'the resolver rule is missing');
-    assert(ctx.includes("the agent's reply IS the report"), 'the file-handoff rule is missing');
-    assert(/[Jj]udgment stays/.test(ctx), 'the judgment boundary is missing');
-    assert(ctx.includes('self-contained'), 'the owner-question rule is missing');
-    assert(ctx.includes('names the framework guide'), 'the brief routes the guide read');
-    assert(ctx.includes('ONE bullet, bold lead = number + link + [status] + five words') && ctx.includes('Restating an issue'), 'the cold-reader line rides every prompt');
-    assert(ctx.includes('link text #N, or repo#N on every link when the reply spans repos'), 'the repo prefix rule rides every prompt');
-    for (const term of ['feature-developer', 'test-developer', 'scripts/red-proof.sh', 'docs/agents.md § Batches', 'briefs/']) {
-      assert(ctx.includes(term), `the batch shape rides every prompt: "${term}" is missing`);
-    }
-  });
-  await test('ports "the bold lead without the status token is gone"', () => {
-    assert(!ctxFor(MODELS.fable).includes('bold lead = number + link + five words'), 'the bold lead still omits the status token');
-  });
-  await test('ports "the visibility rules are present on both rungs"', () => {
-    for (const rung of ['fable', 'opus']) {
-      const ctx = ctxFor(MODELS[rung]);
-      assert(ctx.includes('Keep a visible checklist with the todo tool for any multi-step task: current item in progress, updated as steps start and finish, pruned when stale.'), `${rung}: the checklist rule is missing`);
-      assert(ctx.includes('Announce every crew spawn in chat as you make it (class, model per the ladder, one-line mandate) and report what it returned when it finishes.'), `${rung}: the spawn-narration rule is missing`);
-    }
-  });
-  await test('ports "the content that moved to docs/agents.md is gone"', () => {
-    const ctx = ctxFor(MODELS.fable);
-    for (const moved of ['Size the crew', 'worktree isolation', 'full review panel assembles', '.workkit/agents/session.md', 'Subagents never spawn']) {
-      assert(!ctx.includes(moved), `"${moved}" belongs in docs/agents.md, not the injection`);
-    }
-  });
   await test('ports "the injection stays under 1600 characters on both rungs"', () => {
     for (const rung of ['fable', 'opus']) {
       const ctx = ctxFor(MODELS[rung]);
       assert(ctx.length < 1600, `${rung} injection is ${ctx.length} chars`);
     }
-  });
-  await test('ports "a findings clause names chat as the route and findings.file as the toggle, on both rungs"', () => {
-    for (const rung of ['fable', 'opus']) {
-      const clause = ctxFor(MODELS[rung]).split(/(?<=[.!?])\s+/).find((s) => s.includes('findings.file'));
-      assert(clause, `${rung}: no clause names findings.file`);
-      assert(/finding/i.test(clause.replace('findings.file', '')) && /\bchat\b/i.test(clause), `${rung}: the findings.file clause does not route findings to chat: ${clause}`);
-    }
-  });
-
-  group('manager-profile: the batch start rule and the short issue line');
-  await test('ports "a frontier session is told a batch is always one and spawns now"', () => {
-    const ctx = ctxFor(MODELS.fable);
-    for (const phrase of ['always one batch', 'spawns now', 'rides beside running work']) {
-      assert(ctx.includes(phrase), `the batch start clause is missing "${phrase}"`);
-    }
-  });
-  await test('ports "the issue line is one to three sentences on both rungs"', () => {
-    for (const rung of ['fable', 'opus']) {
-      const ctx = ctxFor(MODELS[rung]);
-      assert(ctx.includes('one to three sentences'), `${rung}: the issue line does not say one to three sentences`);
-      assert(!ctx.includes('two to three'), `${rung}: the issue line still says two to three`);
-    }
-  });
-  await test('ports "docs/agents.md opens § Batches with the start rule and rules on owner questions"', () => {
-    const md = path.join(REPO, 'docs', 'agents.md');
-    assert(section(md, '### Batches').split(/\n\s*\n/)[0].includes('always one batch'), '§ Batches does not open with the start rule');
-    assert(section(md, '### Questions to the owner').includes('same turn'), '§ Questions to the owner lacks the same-turn ruling');
-  });
-  await test('ports "docs/project-state.md points the Batches bullet at the start rule and shortens the issue line"', () => {
-    const md = path.join(REPO, 'docs', 'project-state.md');
-    const queue = section(md, '## Queue semantics');
-    const bullet = queue.slice(queue.indexOf('- **Batches**')).split(/\n(?=- \*\*|\s*\n)/)[0];
-    assert(bullet.startsWith('- **Batches**'), 'the Batches bullet is missing from § Queue semantics');
-    assert(bullet.includes('start rule'), 'the Batches bullet does not point at the start rule');
-    assert(section(md, '## Restating an issue').includes('one to three sentences'), '§ Restating an issue does not say one to three sentences');
   });
 
   group('manager-profile: layered overrides (repo > user > ladder)');

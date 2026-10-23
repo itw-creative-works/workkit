@@ -22,6 +22,7 @@ STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 PROVE="$SCRIPT_DIR/prove.sh"
+TEST_RUNNER="$SCRIPT_DIR/test/run.js"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
 # The same two files the 9am schedule runs, so `workkit brief` is that morning
@@ -129,6 +130,8 @@ usage: workkit <command> [args]
                        pass a session makes once a day, without the wait
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
+  test [paths]         run the kit's test runner over this repo's tests/, or
+                       only the suite paths named
   prove                run the root suite on exactly the staged tree, in a copy
                        outside the repo, and record it on green, so a commit
                        of it passes the gate while other work stays unstaged
@@ -216,6 +219,7 @@ case "${1:-help}" in
   publish) shift; cmd_publish "$@" ;;
   brief)   shift; cmd_brief "$@" ;;
   log)     shift; cmd_log "$@" ;;
+  test)    shift; cmd_test "$@" ;;
   tower)
     shift
     # The tower lives in the kit, not the engine: a partial copy that holds

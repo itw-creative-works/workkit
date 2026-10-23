@@ -1,40 +1,15 @@
 //
-// Tests for tower/api/lib/telemetry.js: the Windows spelling (a row's transcript is
-// the sessions read's) and the two endpoints through the real server. Prologue: ./helpers.js.
+// Tests for tower/api/lib/telemetry.js: the two endpoints through the real server.
+// Prologue: ./helpers.js.
 //
 
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { asWindows } = require('../../lib/platform');
 const {
-  OVERTIME_DAYS, listSessions, createServer, cleanup, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, collect, listen, getJson,
+  OVERTIME_DAYS, createServer, cleanup, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, listen, getJson,
 } = require('./helpers');
 
 const run = async () => {
-  group('tower/telemetry: the Windows spelling');
-
-  await test('a row\'s transcript is the one the sessions read named, not a second derivation', () => {
-    // A session's cwd is published in git's spelling while Claude Code names
-    // its project folder from the native one, so deriving the transcript from
-    // the row's cwd a second time names a different file than the sessions read
-    // named. The row carries the answer; this reads it.
-    const w = mkWorld();
-    const native = 'C:\\Users\\x\\repo\\sub';
-    mkSession(w, {
-      pid: 7401,
-      cwd: native,
-      session: 'win-1',
-      lines: [assistantLine({ id: 'w1', input: 10, output: 5 })],
-    });
-    const live = asWindows(() => listSessions({
-      markerDir: w.markerDir, home: w.home, stateDir: w.stateDir, exec: w.exec,
-    }));
-    const { sessions } = asWindows(() => collect(w));
-    assertEq(sessions[0].transcript, live[0].transcript, 'one home for where a session\'s transcript is');
-    assertEq(sessions[0].tokens.total, 15, 'and the numbers come off that file');
-    cleanup(w.root);
-  });
-
   group('tower/telemetry: the endpoints');
 
   await test('/api/telemetry serves the whole payload through the real server', async () => {

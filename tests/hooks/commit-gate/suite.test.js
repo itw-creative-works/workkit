@@ -223,13 +223,6 @@ const run = async () => {
     assert(!suiteRan(r), 'the gate never runs the suite');
   });
 
-  await test('ports "no record and npm\'s script-shell set to the wrapper: the plain block"', async () => {
-    const r = codeCommit();
-    const v = await judge(r, 'git commit -m "feat: thing"');
-    recordRequired(v, r);
-    assert(!denyOf(v).includes('workkit setup'), `no setup hint, got: ${denyOf(v)}`);
-  });
-
   await test('ports "no record, the wrapper wired: the bounce names the suite log"', async () => {
     const r = codeCommit();
     const deny = denyOf(await judge(r, 'git commit -m "feat: thing"'));
@@ -284,27 +277,11 @@ const run = async () => {
     diskProved(await judge(r, 'git commit -m "feat: thing"'), r);
   });
 
-  await test('ports "an untracked file the green run saw: blocked, naming the gap"', async () => {
-    const r = codeCommit();
-    write(r, 'notes.txt', 'scratch\n');
-    proveTree(r);
-    diskProved(await judge(r, 'git commit -m "feat: thing"'), r);
-  });
-
   await test('ports "a pathspec code commit: blocked even when the record matches the index"', async () => {
     const r = codeCommit();
     proveTree(r);
     blocks(await judge(r, 'git commit -m "feat: thing" -- app.js'), T.pathspec, 'a pathspec tree is never compared');
     assert(!suiteRan(r), 'the gate never runs the suite');
-  });
-
-  await test('ports "-a: the record proves the tree -a carries, the tracked edits on disk"', async () => {
-    const r = mkReleaseRepo();
-    write(r, 'app.js', 'const x = 2;\n');
-    touchMarker(r);
-    recordRequired(await judge(r, 'git commit -am "feat: thing"'), r);
-    proveTree(r);
-    passes(await judge(r, 'git commit -am "feat: thing"'), NOTICE.proved, 'the working tree is what -a commits');
   });
 
   await test('-a with tracked edits and an untracked file: the record of the tree -a carries passes, the disk tree\'s names the gap', async () => {

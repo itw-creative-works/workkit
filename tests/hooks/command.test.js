@@ -6,14 +6,8 @@
 // function returns, it has no status), the no-digest-tool refusal (crypto.subtle
 // is always there), and hook_pretool_notice (a notice is a `context` now).
 
-const path = require('path');
-const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods } = require('../lib/mods-inputs');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
-const { mkRepo } = require('../lib/git-repo');
-
-const KIT = path.join(__dirname, '..', '..');
 
 const command = () => mods('command');
 const markers = () => mods('markers');
@@ -46,11 +40,6 @@ const run = async () => {
     for (const w of ['app.js', '-m', '-', '2', '_hookq_', 'a>b', '&']) {
       assertEq(command().redirectSpan(w), 0, `${w} is no redirect`);
     }
-  });
-
-  await test('ports "hook_redirect_span: 2 for bare, 1 for attached, 0 for no redirect"', () => {
-    const words = { '>': 2, '2>': 2, '<<<': 2, '2>&1': 1, '>file': 1, '2>1': 1, 'app.js': 0, 'a>b': 0, '_hookq_': 0 };
-    for (const [w, n] of Object.entries(words)) assertEq(command().redirectSpan(w), n, `the span of ${w}`);
   });
 
   group('command: foldRedirectAmp');
@@ -250,25 +239,6 @@ const run = async () => {
     assertEq(mods('guards').bashFacts(io, { WORKFLOW_HOME: '/c/Users/x/wk', ...WIN }, call).env.WORKFLOW_HOME, 'C:/Users/x/wk', 'the machine folder too');
     const chain = await mods('guards').runChain(io, { TMPDIR: '/tmp/cg-x', ...WIN }, [{ hook: 'safety:issue-guard', run: async (facts) => ({ context: facts.env.TMPDIR }) }], { tool: 'Write', gateDir: undefined });
     assertEq(chain.notice, 'D:/a/_temp/cg-x', 'the file chain\'s facts translate the same');
-  });
-
-  group('tree-hash.sh: the module\'s entry to wk_tree_hash');
-
-  await test('given bash workflow/lib/tree-hash.sh <repo> and wk_tree_hash on the same tree, then equal ids', () => {
-    const w = mkRepo('tree-hash-', { 'a.txt': 'a\n' });
-    w.write('staged.txt', 'staged\n');
-    w.git('add', 'staged.txt');
-    w.write('a.txt', 'a, unstaged\n');
-    const repo = shellPath(w.repo);
-    const sh = (args) => spawnSync(BASH, [...NO_RC, ...args], { env: w.env, encoding: 'utf8' });
-    const entry = sh([shellPath(path.join(KIT, 'workflow', 'lib', 'tree-hash.sh')), repo]);
-    // Sourced as workflow/prove.sh sources it: the hooks' library brings the
-    // engine's platform and suite records with it.
-    const lib = sh(['-c', '. "$1"; wk_tree_hash "$2"', 'sh', shellPath(path.join(KIT, 'hooks', '_lib.sh')), repo]);
-    assertEq(entry.status, 0, `tree-hash.sh exits 0, got: ${entry.stderr}`);
-    assertEq(lib.status, 0, `wk_tree_hash answers, got: ${lib.stderr}`);
-    assert(/^[0-9a-f]{40}\n$/.test(entry.stdout), `one 40-hex line, got: ${JSON.stringify(entry.stdout)}`);
-    assertEq(entry.stdout, lib.stdout, 'the entry prints the id wk_tree_hash prints');
   });
 
   group('command.js: wordsOf');

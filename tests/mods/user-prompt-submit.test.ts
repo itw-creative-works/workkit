@@ -15,7 +15,7 @@ const LINE = '[Issue work detected (#374): load the workkit:feature skill before
 const noticed = (r: any) => contextOf(r).includes('/reload-plugins')
 
 describe('classic.UserPromptSubmit: the Contract cases', () => {
-  for (const [name, settings] of [['"enabled": false', OPTED_OUT], ['no .workkit/settings.json', null]] as const) {
+  for (const [name, settings] of [['"enabled": false', OPTED_OUT]] as const) {
     test(`a repo with ${name}: no handler adds context and the gated lines read stood-down`, async ($, on) => {
       const w = mkWorld(on, { model: MODELS.fable, repos: { [REPO]: settings } })
       const r = await prompt($, BOTH)
@@ -127,12 +127,6 @@ describe('classic.UserPromptSubmit: workflow:feature markers (workflow-feature s
     expect(feature(await prompt($, 'continue'))).toEqual([])
   })
 
-  test('ports "an issue number with `#` is strong on its own: it writes the marker"', async ($, on) => {
-    mkWorld(on)
-    expect(feature(await prompt($, '#42'))).toEqual([LINE])
-    expect(feature(await prompt($, 'work on #43'))).toEqual([])
-  })
-
   test('ports "a task notification holding "work on #12" prints nothing; the owner\'s line fires"', async ($, on) => {
     mkWorld(on)
     const notice = '<task-notification>\n<task-id>b1</task-id>\n<summary>the worker said: work on #12</summary>\n</task-notification>'
@@ -188,16 +182,6 @@ describe('classic.SessionStart + UserPromptSubmit: workflow:reload-guard (reload
   test('ports "editing an existing hook script is not a change: those edits are already live"', async ($, on) => {
     const w = await stamped($, on, { kit: { 'hooks/docs/state-check/run.sh': '#!/bin/bash\nexit 0\n' } })
     w.touchKit('hooks/docs/state-check/run.sh', '#!/bin/bash\n# rewritten\nexit 0\n')
-    expect(noticed(await prompt($, 'hello'))).toBe(false)
-  })
-
-  test('ports "rewired hooks.json: one notice, then silence"', async ($, on) => {
-    const w = await stamped($, on)
-    w.touchKit('hooks/hooks.json', JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'x' }] }] } }))
-    const first = await prompt($, 'hello')
-    expect(noticed(first)).toBe(true)
-    expect(contextOf(first)).toContain('already live')
-    expect(noticed(await prompt($, 'hello'))).toBe(false)
     expect(noticed(await prompt($, 'hello'))).toBe(false)
   })
 

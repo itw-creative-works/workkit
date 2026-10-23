@@ -10,12 +10,12 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, testUnless, summary, selfRun } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, NO_NODE_STUB, shellPath, cygpathStub, homeEnv,
-  stubTool, which, pathWith, systemPathWith, asWindows,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
+  stubTool, pathWith, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
-const { until, alive } = require('../lib/process');
+const { until, alive, SPAWN_DEADLINE } = require('../lib/process');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 const DETACH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'detach.js');
@@ -27,7 +27,7 @@ const inPlatform = (script, env = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(PLATFORM)}\n${script}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -99,7 +99,7 @@ const listener = (ignoreTerm = false) => new Promise((resolve, reject) => {
 });
 
 /** Whether the child is gone within the deadline. */
-const ended = (child, ms = 10000) => new Promise((resolve) => {
+const ended = (child, ms = SPAWN_DEADLINE) => new Promise((resolve) => {
   if (child.exitCode !== null || child.signalCode !== null) { resolve(true); return; }
   const timer = setTimeout(() => resolve(false), ms);
   child.on('exit', () => { clearTimeout(timer); resolve(true); });
@@ -334,9 +334,9 @@ const run = async () => {
   });
 
   await testUnless(IS_WINDOWS, 'the process-group arm is the off-Windows one; Windows ends the tree through taskkill')(
-    'off Windows a detached run, its command and its supervisor, is gone within 4 s and the call returns 0',
+    'off Windows a detached run, its command and its supervisor, is gone and the call returns 0',
     async () => {
-      // The command rides out INT and TERM, so only the whole escalation ends it in time.
+      // The command rides out INT and TERM, so only the whole escalation ends it.
       const dir = mkTmp('wf-platform-');
       const pidFile = path.join(dir, 'cmd.pid');
       const cmd = [process.execPath, '-e', [
@@ -345,18 +345,17 @@ const run = async () => {
         'setInterval(() => {}, 1000);',
       ].join(' ')];
       const launched = spawnSync(process.execPath, [DETACH, path.join(dir, 'log'), path.join(dir, 'done'), '--', ...cmd],
-        { encoding: 'utf8', timeout: 30000 });
+        { encoding: 'utf8', timeout: SPAWN_DEADLINE });
       assertEq(launched.status, 0, `detach.js launched the run, stderr: ${launched.stderr}`);
       const supervisor = Number(launched.stdout.trim());
       let command;
       try {
-        assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8') !== '', 10000), 'the command started');
+        assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8') !== ''), 'the command never started');
         command = Number(fs.readFileSync(pidFile, 'utf8'));
-        const start = Date.now();
         const res = inPlatform(`wk_end_run ${supervisor}`);
         assertEq(res.code, 0, `the call returns 0, stderr: ${res.err}`);
-        const gone = await until(() => !alive(command) && !alive(supervisor), Math.max(0, 4000 - (Date.now() - start)));
-        assert(gone, `the command (pid ${command}) and the supervisor (pid ${supervisor}) are gone within 4 s`);
+        assert(await until(() => !alive(command) && !alive(supervisor)),
+          `the command (pid ${command}) or the supervisor (pid ${supervisor}) outlived wk_end_run`);
       } finally {
         for (const pid of [command, supervisor].filter(Boolean)) { try { process.kill(pid, 'SIGKILL'); } catch {} }
         cleanup(dir);
@@ -372,142 +371,6 @@ const run = async () => {
     const dead = spawnSync(process.execPath, ['-e', '0']).pid;
     const gone = inPlatform(`wk_pid_alive ${dead}`, env);
     assert(gone.code !== 0 && gone.code !== null, `a pid that has ended answers non-zero, got: ${gone.code}`);
-  });
-
-  // The seam the suites spawn through (tests/lib/platform.js) rather than the
-  // one the engine sources, because the two answer the same question for the
-  // two halves of this repo and neither has another home. A suite that got
-  // these wrong would reach the developer's own machine to pass.
-  group('tests/lib/platform: the world a spawn gets');
-
-  /** A PATH directory holding one stub, written the one way the seam writes them. */
-  const stubWorld = () => {
-    const dir = mkTmp('wf-platform-');
-    stubTool(dir, 'wkstub', ['#!/usr/bin/env bash', `printf 'stub says %s\n' "$1"`]);
-    return dir;
-  };
-
-  await test('a stub the seam wrote answers by name in a shell, on every platform', () => {
-    const dir = stubWorld();
-    const res = spawnSync(BASH, [...NO_RC, '-c', 'wkstub hello'], {
-      env: { PATH: systemPathWith(dir) }, encoding: 'utf8', timeout: 30000,
-    });
-    assertEq((res.stdout || '').trim(), 'stub says hello', `the stub answered, stderr: ${res.stderr}`);
-    cleanup(dir);
-  });
-
-  // The other half of that question, which only one platform can answer. The
-  // rule and its reason live with the helper that writes the stub; every case
-  // that cannot be answered for it names the same sentence.
-  const nodeSpawn = testUnless(IS_WINDOWS, NO_NODE_STUB);
-
-  await nodeSpawn('a stub the seam wrote is startable by name from Node', () => {
-    const dir = stubWorld();
-    const res = spawnSync('wkstub', ['hello'], {
-      env: { ...process.env, PATH: pathWith(dir) }, encoding: 'utf8', timeout: 30000,
-    });
-    assertEq((res.stdout || '').trim(), 'stub says hello',
-      `the stub answered, error: ${res.error && res.error.message}`);
-    cleanup(dir);
-  });
-
-  await test('the scratch home the builder names is the one a child answers with', () => {
-    // HOME alone is not a scratch home on Windows: os.homedir() there reads
-    // USERPROFILE, so a child given only HOME sweeps the developer's own.
-    const home = mkTmp('wf-platform-');
-    const res = spawnSync(process.execPath, ['-p', 'require("os").homedir()'], {
-      env: homeEnv(home, { PATH: process.env.PATH }), encoding: 'utf8', timeout: 30000,
-    });
-    assertEq((res.stdout || '').trim(), home, `the child's home, stderr: ${res.stderr}`);
-    assert(home !== os.homedir(), 'which is not the one this machine runs under');
-    cleanup(home);
-  });
-
-  await test('gh is pointed at a config under that same home, on every platform', () => {
-    const home = mkTmp('wf-platform-');
-    const env = homeEnv(home, {});
-    assertEq(env.GH_CONFIG_DIR, path.join(home, '.config', 'gh'), 'the key the seal is made of');
-    // Not "outside the real home": a Windows temp directory sits inside the
-    // profile, so the only thing that has to miss is the config gh would have
-    // read on its own.
-    assert(env.GH_CONFIG_DIR !== path.join(os.homedir(), '.config', 'gh'),
-      `never the developer's own: ${env.GH_CONFIG_DIR}`);
-    cleanup(home);
-  });
-
-  await test('a child started in that home writes no compile cache, the leftover npm 10 would leave', () => {
-    const home = mkTmp('wf-platform-');
-    const cache = path.join(home, 'compile-cache');
-    const script = "require('node:module').enableCompileCache(process.argv[1]); require('node:path');";
-    const res = spawnSync(process.execPath, ['-e', script, cache], { env: homeEnv(home, {}), encoding: 'utf8', timeout: 30000 });
-    assertEq(res.status, 0, `the child ran, got: ${res.stderr}`);
-    const left = fs.existsSync(cache) ? fs.readdirSync(cache) : [];
-    assertEq(left.length, 0, `nothing cached under the scratch home, got: ${left.join(', ')}`);
-    cleanup(home);
-  });
-
-  const ghTest = testUnless(!which('gh'), 'this machine has no gh to ask');
-
-  await ghTest('a gh spawned in that world is a gh with no account', () => {
-    // The whole point, end to end: whichever gh a spawn resolved, the real one
-    // included, it can reach nothing of the developer's, even when the shell
-    // this suite was started from carries a token of its own.
-    const home = mkTmp('wf-platform-');
-    const res = spawnSync(which('gh'), ['auth', 'status'], {
-      env: homeEnv(home, { ...process.env, GH_TOKEN: 'gho_a_token_the_shell_carried' }),
-      encoding: 'utf8',
-      timeout: 30000,
-    });
-    const said = `${res.stdout || ''}${res.stderr || ''}`;
-    assert(/not logged in|gh auth login/i.test(said), `no account answered: ${said}`);
-    assert(!/Logged in to/i.test(said), `and nobody's account was reached: ${said}`);
-    cleanup(home);
-  });
-
-  group('tests/lib/platform: the spelling a shell reads');
-
-  await test('a native path becomes the one Git Bash reads, and one already in it is returned as it came', () => {
-    // `asWindows` is how a Mac reaches that branch at all, so the answer has to
-    // come from the platform as it is when the question is asked. A path with
-    // spaces, because a Windows profile directory has them and a translation
-    // that quoted or split would eat them.
-    assertEq(asWindows(() => shellPath('C:\\Users\\My Name\\t mp')), '/c/Users/My Name/t mp',
-      'the drive becomes a mount and every separator turns');
-    assertEq(asWindows(() => shellPath('/c/Users/My Name/t mp')), '/c/Users/My Name/t mp',
-      'nothing is translated twice');
-  });
-
-  await test('a path under the folder Git Bash mounts at /tmp reads as /tmp, any other keeps its drive', () => {
-    // The mount is asked of Git Bash once per process, so a fresh node asks it: a
-    // Mac through the seam's cygpath (which mounts /tmp at C:\tmp), Windows
-    // through the real one, whose mount a child's TEMP does not move.
-    const dir = cygpathWorld();
-    const root = IS_WINDOWS
-      ? spawnSync(which('cygpath'), ['-w', '/tmp'], { encoding: 'utf8', timeout: 30000 }).stdout.trim()
-      : 'C:\\tmp';
-    const probe = [
-      `const { shellPath, asWindows } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'platform.js'))});`,
-      'const root = process.argv[1];',
-      'const asked = asWindows(() => [`${root}\\\\wf\\\\x y`, `${root.toUpperCase()}\\\\x`,',
-      "  `${root.replace(/\\\\/g, '/')}/x`, root, `${root}x\\\\y`, 'C:\\\\Windows\\\\x'].map(shellPath));",
-      "const native = process.platform === 'win32' ? null : shellPath(`${root}\\\\x`);",
-      'process.stdout.write(JSON.stringify({ asked, native }));',
-    ].join('\n');
-    const res = spawnSync(process.execPath, ['-e', probe, root], {
-      env: { ...process.env, PATH: pathWith(dir) },
-      encoding: 'utf8',
-      timeout: 30000,
-    });
-    assertEq(res.status, 0, `the probe ran, stderr: ${res.stderr}`);
-    const { asked: [under, upper, slashed, itself, sibling, other], native } = JSON.parse(res.stdout);
-    assertEq(under, '/tmp/wf/x y', 'a path under the mount reads as /tmp');
-    assertEq(upper, '/tmp/x', 'the drive and folder names compare without case');
-    assertEq(slashed, '/tmp/x', 'forward slashes compare the same as backslashes');
-    assertEq(itself, '/tmp', 'the mount root itself is /tmp');
-    assert(/^\/[a-z]\/.*x\/y$/.test(sibling), `a sibling sharing the prefix keeps its drive, got: ${sibling}`);
-    assertEq(other, '/c/Windows/x', 'any other path keeps its drive');
-    if (!IS_WINDOWS) assertEq(native, 'C:\\tmp\\x', 'macOS leaves the path as it came');
-    cleanup(dir);
   });
 
   return summary();

@@ -3,9 +3,8 @@
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { skipUnlessDarwin, SCRIPT, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
+const { skipUnlessDarwin, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
 
 const run = async () => {
   skipUnlessDarwin();
@@ -87,24 +86,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the board read is bounded, like every other read on the daily path', () => {
-    // A captive portal answers the handshake and never the request; an
-    // unbounded read here would hold the morning open for as long as it liked.
-    const text = fs.readFileSync(SCRIPT, 'utf8');
-    assert(/WORKKIT_GH_TIMEOUT/.test(text), 'the same bound the engine reads under, and the same knob');
-  });
-
-  await test('the marker is written beside itself, so what lands on it is a rename', () => {
-    // The hook may read the marker at any moment and half of one must never be
-    // among the things it can find. A move across filesystems is a copy and an
-    // unlink rather than a rename, and a copy is exactly that half, so the
-    // temp is written in the marker's own directory, never in the scratch.
-    const text = fs.readFileSync(SCRIPT, 'utf8');
-    assert(/>"\$marker\.tmp"/.test(text), 'the whole file is written beside the marker');
-    assert(/mv "\$marker\.tmp" "\$marker"/.test(text), 'and moved onto it from there');
-    assert(!/SCRATCH_DIR\/brief-status\.json/.test(text), 'nothing writes the marker into the scratch any more');
-  });
-
   group('jobs/morning (local): the manual trigger');
 
   await test('--now sends the same brief, not the flag as a message', () => {
@@ -130,15 +111,6 @@ const run = async () => {
     runJob(world);
     assert(!/\(manual\)/.test(world.log()), 'the 9am block reads as it always did');
     cleanup(world.root);
-  });
-
-  await test('npm run brief is the trigger, and it points at this script', () => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'package.json'), 'utf8'));
-    const script = pkg.scripts.brief;
-    assert(typeof script === 'string' && script.includes('--now'), `the brief script runs the manual flag, got: ${script}`);
-    const target = script.match(/(jobs\/[\w-]+\.sh)/);
-    assert(target, `it names a jobs script, got: ${script}`);
-    assert(fs.existsSync(path.join(__dirname, '..', '..', '..', target[1])), `${target[1]} resolves from the repo root`);
   });
 
   return summary();

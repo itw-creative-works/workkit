@@ -93,10 +93,12 @@ function envPair(line) {
   return { key, value };
 }
 
-// An obviously non-secret value: too short to be a key, a boolean, a bare
-// number or version, or a local URL carrying no credentials.
+// An obviously non-secret value: too short to be a key, one lowercase word
+// (prose uses it by chance), a boolean, a bare number or version, or a local
+// URL carrying no credentials.
 function isPlain(value) {
   if ([...value].length < 8) return true;
+  if (/^[a-z]+$/.test(value)) return true;
   if (/^([Tt]rue|[Ff]alse|TRUE|FALSE)$/.test(value)) return true;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(value) && !value.includes('@')) return true;
   return /^[0-9.]*$/.test(value);

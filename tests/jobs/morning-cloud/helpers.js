@@ -12,10 +12,11 @@ const { spawnSync } = require('child_process');
 const { testUnless } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
-  IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, NO_NODE_STUB, shellPath, which, homeEnv, linkTool,
+  IS_WINDOWS, BASH, NO_RC, NO_NODE_STUB, shellPath, which, homeEnv, linkTool,
   stubTool, pathWith, joinPath,
 } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
@@ -207,7 +208,7 @@ const withoutJq = (root, bin) => {
 
 const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
-  timeout: 60000,
+  timeout: SPAWN_DEADLINE,
   env: world.env,
 });
 
@@ -216,9 +217,6 @@ const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT
 // (`stubTool`), so there the sealed machine gh answers those reads.
 const composerTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
-// The whole case is the file's mode, which Windows has none of.
-const execBitTest = testUnless(IS_WINDOWS, NO_EXEC_BIT);
-
 module.exports = {
-  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, today, mkWorld, withoutJq, runJob, composerTest, execBitTest,
+  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, today, mkWorld, withoutJq, runJob, composerTest,
 };

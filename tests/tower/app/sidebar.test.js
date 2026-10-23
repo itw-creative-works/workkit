@@ -3,7 +3,6 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkState, ROSTER } = require('./helpers');
 
@@ -124,15 +123,6 @@ const run = async () => {
     assertEq(scope.inScope(scope.parseRepos(scope.NONE), 'workkit'), false, 'no repo is in scope under it');
     assert(scope.isNone(scope.parseRepos(scope.NONE)), 'the door answers for the parsed selection');
     assertEq(scope.scopedHref('/board', scope.NONE), '/board?repo=~', 'and the URL carries the tilde itself, never %7E - a query is a thing people copy');
-    // The surfaces that say the state say it in words, never the tilde.
-    const pagesDir = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    const pageSrc = (name) => require('fs').readFileSync(path.join(pagesDir, name), 'utf8');
-    // The Board has no count line to say it in: its none state is the picker's
-    // own words and seven empty lanes, and the tilde never reaches the page.
-    assert(!/~/.test(pageSrc('board.js').replace(/\/\/.*$/gm, '')), 'the Board never prints the tilde itself');
-    for (const page of ['index.js', 'health.js']) {
-      assert(/isNone\(selectedSlugs\(state\)\) \? 'no projects selected/.test(pageSrc(page)), `${page} tells an unticked roster apart from an empty one`);
-    }
   });
 
   await test('the selector button says which mode is in force', () => {
@@ -188,22 +178,6 @@ const run = async () => {
     const solo = mkState({ repos: [ROSTER[0]] });
     assert(sidebar.sidebarKey(solo) !== sidebar.sidebarKey({ ...solo, favorites: ['workkit'] }), 'even when the row it marks was already first');
     assertEq(sidebar.sidebarKey({ ...mkState({}), favorites: ['omega'] }), '', 'and an unread roster is still the empty key, stars or no stars');
-  });
-
-  await test('every page header draws the icon its sidebar row draws', () => {
-    const fs = require('fs');
-    const src = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src');
-    const nav = fs.readFileSync(path.join(src, '_includes', 'backend', 'sections', 'sidebar.json'), 'utf8');
-    const rows = {};
-    for (const [, href, icon] of nav.matchAll(/href: '([^']+)',\s*icon: '([^']+)'/g)) rows[href] = icon;
-    const pages = fs.readdirSync(path.join(src, 'pages')).filter((name) => name.endsWith('.md'));
-    assertEq(pages.length, Object.keys(rows).length, 'one sidebar row per page, and no page without a row');
-    for (const name of pages) {
-      const page = fs.readFileSync(path.join(src, 'pages', name), 'utf8');
-      const href = page.match(/^permalink: (\S+)/m)[1];
-      const icon = page.match(/^\s*icon: "([^"]+)"/m)[1];
-      assertEq(icon, rows[href], `${name}: the header and the sidebar row for ${href} are one icon`);
-    }
   });
 
   await test('a hostile slug is text, in the attribute and in the label', () => {

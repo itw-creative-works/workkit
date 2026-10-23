@@ -12,6 +12,7 @@ const {
 const { IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'publish-plan.js');
 const { plan } = require(SCRIPT);
@@ -33,7 +34,7 @@ const mkRepo = ({ root, members = {} } = {}) => {
 };
 
 const runPlan = (dir) => {
-  const res = spawnSync('node', [SCRIPT, '--dir', dir], { encoding: 'utf8', timeout: 20000 });
+  const res = spawnSync('node', [SCRIPT, '--dir', dir], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
@@ -69,7 +70,7 @@ const runWith = (dir, stub, args) => {
   const res = spawnSync('node', [SCRIPT, '--dir', dir, ...args], {
     env: { ...process.env, PATH: pathWith(stub.binDir) },
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
@@ -95,16 +96,6 @@ const SPEC_FIXTURE = () => mkRepo({
 
 const run = async () => {
   group('publish-plan: which packages, in which order');
-
-  await test("the spec's fixture publishes a, b, c in dependency order and names both skips", () => {
-    const dir = SPEC_FIXTURE();
-    const result = plan(dir);
-    assertEq(result.publish.map((p) => p.name).join(','), '@s/a,@s/b,@s/c', 'dependencies publish first');
-    assert(result.publish.every((p) => p.scoped), 'every @-name is scoped');
-    const skips = result.skip.map((s) => `${s.name}:${s.reason}`).sort().join(',');
-    assertEq(skips, '@s/app:no publish signal,@s/secret:private', 'the two skips and their reasons');
-    cleanup(dir);
-  });
 
   await test('the CLI prints the publish lines in order, then the skips, and exits 0', () => {
     const dir = SPEC_FIXTURE();

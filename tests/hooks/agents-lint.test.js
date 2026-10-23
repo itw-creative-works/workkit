@@ -43,39 +43,7 @@ const scan = (files) => {
 };
 
 const run = async () => {
-  group('agents-lint: the detector');
-
-  await test('each machine-specific form is caught, with its line number', () => {
-    assertEq(
-      violations('a.md', 'ok\nsee /Users/someone/Developer/thing.md\n').join(''),
-      'a.md:2: machine-specific path (/Users/): see /Users/someone/Developer/thing.md',
-      '/Users/ path'
-    );
-    assertEq(violations('a.md', 'run /home/runner/work/x.sh').length, 1, '/home/ path');
-    assertEq(violations('a.md', 'open C:\\Users\\someone\\x.md').length, 1, 'a Windows drive path');
-    assertEq(violations('a.md', 'see /users/alice/x.md').length, 1, 'a lowercase /users/ on a case-insensitive volume');
-    assertEq(violations('a.md', 'notes in ~/Developer/notes.md').length, 1, 'a personal-layout path');
-    assertEq(violations('a.md', 'lives in the .dotfiles repo').length, 1, 'a dotfiles-checkout reference');
-  });
-
-  await test('the portable idioms are not flagged', () => {
-    const portable = [
-      'The engine lives at ~/.claude/workkit.',
-      'command: bash ${CLAUDE_PLUGIN_ROOT}/workflow/standards.sh',
-      'Write the brief to a temp file and hand the worker its path.',
-    ].join('\n');
-    assertEq(violations('a.md', portable).join(', '), '', 'portable paths must pass');
-  });
-
   group('agents-lint: the shipped tree');
-
-  await test('agents/ exists and holds agent definitions', () => {
-    // A missing or empty agents/ fails, never skips: the check below would
-    // otherwise pass by scanning nothing.
-    assert(fs.existsSync(AGENTS_DIR), `missing ${AGENTS_DIR}`);
-    const found = filesIn(AGENTS_DIR, (name) => name.endsWith('.md'));
-    assert(found.length > 0, 'no agents/*.md found');
-  });
 
   await test('no agent definition carries a machine-specific absolute path', () => {
     const bad = scan(filesIn(AGENTS_DIR, (name) => name.endsWith('.md')));

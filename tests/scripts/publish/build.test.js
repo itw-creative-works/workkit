@@ -12,6 +12,7 @@ const {
 } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const { REPO_ROOT, writeStub, readJson5 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const SCRIPT = path.join(REPO_ROOT, 'workflow', 'publish', 'build.sh');
 const SIDEBAR_REL = path.join('targets', 'web', 'src', '_includes', 'backend', 'sections', 'sidebar.json');
@@ -90,7 +91,7 @@ const mkProject = ({
 // project got there by entering it.
 const build = (world, args) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
-    cwd: world.root, env: world.env, encoding: 'utf8', timeout: 30000,
+    cwd: world.root, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `build.sh finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };

@@ -13,6 +13,7 @@ const {
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { mkOriginRepo } = require('../lib/git-repo');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SLUG = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'slug.sh'));
 
@@ -27,7 +28,7 @@ const inSeam = (script, args = [], home = null) => {
     {
       env: home ? { PATH: systemPathWith(NODE_DIR), HOME: shellPath(home) } : { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) },
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: SPAWN_DEADLINE,
     },
   );
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
@@ -65,7 +66,7 @@ const run = async () => {
     const vars = (first) => spawnSync(
       BASH,
       [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
-      { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 },
+      { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE },
     );
     const before = vars(':');
     const after = vars(`. ${JSON.stringify(SLUG)}`);

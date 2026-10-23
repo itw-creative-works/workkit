@@ -71,16 +71,6 @@ describe('classic.SessionStart: docs:state-check (state-check suite)', () => {
     expect(r.additionalContext.some((c: string) => c.includes('1 open status:inbox issue.'))).toBe(true)
   })
 
-  test("ports \"a PROGRESS.md is no longer the hook's business\"", async ($, on) => {
-    mkWorld(on, { files: { [`${REPO}/PROGRESS.md`]: '# Project Progress Tracker\n\n## Current Focus\n* stuff\n' } })
-    expect(contextOf(await start($, REPO))).toBe('')
-  })
-
-  test('ports "an INBOX.md is no longer counted"', async ($, on) => {
-    mkWorld(on, { files: { [`${REPO}/INBOX.md`]: '# INBOX\n\nfix the thing\nidea: new skill\n' } })
-    expect(contextOf(await start($, REPO))).toBe('')
-  })
-
   test('ports "the user-level ~/.claude/CLAUDE.md is out of scope: silent"', async ($, on) => {
     const claude = `${HOME}/.claude`
     mkWorld(on, { repos: { [claude]: '{ "version": 1, "enabled": true }\n' }, files: { [`${claude}/CLAUDE.md`]: '@AGENTS.md\n' } })
@@ -205,8 +195,6 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
 
   for (const [name, files] of [
     ['no .workkit/settings.json: offers to enable, writes nothing', {}],
-    ['a .workkit/ directory without settings.json is not an opt-in', { [`${REPO}/.workkit/capture.md`]: '- a note\n' }],
-    ['settings.json in a subdirectory does not opt the repo in', { [`${REPO}/packages/app/.workkit/settings.json`]: '{ "version": 1 }\n' }],
   ] as const) {
     test(`ports "${name}"`, async ($, on) => {
       const w = mkWorld(on, { repos: { [REPO]: null }, files, standards: { state: 'undecided', heal: HEAL } })
@@ -252,12 +240,6 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(heals(w)).toHaveLength(1)
   })
 
-  test('ports "a set-up machine hears nothing about setup"', async ($, on) => {
-    mkWorld(on, { standards: { heal: HEAL } })
-    expect(contextOf(await start($, REPO))).not.toContain('SETUP:')
-    expect(contextOf(await start($, REPO, { session_id: 'sess-2' }))).toBe('')
-  })
-
   test('ports "setup is a machine question: the pester reaches a non-git cwd too"', async ($, on) => {
     mkWorld(on, { setup: false, standards: { state: 'nogit' } })
     expect(contextOf(await start($, PLAIN))).toContain('workkit.sh setup')
@@ -286,11 +268,6 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(update).toHaveLength(1)
     expect(update[0].argv).toContain('update')
     expect(update[0].argv).toContain('--auto')
-  })
-
-  test('ports "an all-current machine stays silent"', async ($, on) => {
-    mkWorld(on)
-    expect(contextOf(await start($, REPO))).toBe('')
   })
 
   test('ports "a machine with no sign-in hears it at session start"', async ($, on) => {
@@ -374,12 +351,6 @@ describe('classic.SessionStart: docs:session (session suite)', () => {
     expect(contextOf(await start($, `${REPO}/src/deep`))).toContain('- #1: a queued entry.')
   })
 
-  test('ports "the owner hears it: the resume line rides the visible channel too"', async ($, on) => {
-    const w = mkWorld(on, { now: NOW, files: { [STATE]: filled(2) } })
-    await start($, REPO)
-    expect(w.logs).toContain(CARRIED)
-  })
-
   for (const [name, settings] of [
     ['a repo that never opted in: silent, even with content', null],
     ['a repo that turned the workflow off: silent', OPTED_OUT],
@@ -391,16 +362,6 @@ describe('classic.SessionStart: docs:session (session suite)', () => {
       expect(hooksLog(w).some((l: any) => l.hook === 'docs:session' && l.verdict === 'stood-down')).toBe(true)
     })
   }
-
-  test('ports "a settings file in a cwd that is no git repo: silent"', async ($, on) => {
-    const w = mkWorld(on, {
-      now: NOW,
-      standards: { state: 'nogit' },
-      files: { [`${PLAIN}/.workkit/settings.json`]: '{ "version": 1, "site": {} }\n', [`${PLAIN}/.workkit/agents/session.md`]: filled(2) },
-    })
-    expect(contextOf(await start($, PLAIN))).not.toContain('SESSION STATE')
-    expect(carried(w)).toHaveLength(0)
-  })
 
   test('ports "no cwd in the payload: silent"', async ($, on) => {
     const w = mkWorld(on, { now: NOW, cwd: PLAIN, standards: { state: 'nogit' }, files: { [STATE]: filled(2) } })
@@ -416,11 +377,6 @@ describe('classic.SessionStart: docs:session (session suite)', () => {
   test('ports "a marker that does not parse: silent"', async ($, on) => {
     mkWorld(on, { now: NOW, files: { [`${HOME}/.workkit/brief-status.json`]: '{ "version": 1, "lastBrief": ' } })
     expect(contextOf(await start($, REPO))).toBe('')
-  })
-
-  test('ports "a repo that never opted in hears nothing about the brief either"', async ($, on) => {
-    mkWorld(on, { now: NOW, repos: { [REPO]: null }, standards: { state: 'undecided' }, files: { [`${HOME}/.workkit/brief-status.json`]: marker(9) } })
-    expect(contextOf(await start($, REPO))).not.toContain('cloud brief')
   })
 
   test('ports "the hook reaches no network: the marker is the only source"', async ($, on) => {

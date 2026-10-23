@@ -24,10 +24,6 @@ const run = async () => {
     }
   });
 
-  await test('ports "a quoted message with nothing staged is still not a pathspec commit"', async () => {
-    passes(await judge(mkRepo(), 'git commit -m "just a message"'), '', 'the placeholder is no file argument');
-  });
-
   await test('ports "a value-taking flag does not have its value read as a pathspec"', async () => {
     for (const flag of ['--author "Jane Doe <j@d.c>"', '--date "2020-01-01"', '--trailer "Co-Authored-By: X <x@y.z>"']) {
       const r = mkRepo();

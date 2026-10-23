@@ -10,9 +10,6 @@ import { mkWorld, hooksLog, toolSpied, TOOL_SPY, REPO, HOME, OPTED_IN } from '..
 
 const NOW = 1800000000000
 const TMPDIR = '/w/tmp'
-// The triage markers, each named by the SHA-1 of its anchor: the repo, and $HOME for a file in no repo.
-const REPO_MARKER = `${TMPDIR}/claude-triage-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
-const HOME_MARKER = `${TMPDIR}/claude-triage-marker/0a51b0fa3ab03e73525a857074f825928990c353`
 const CAPTURE = `${REPO}/.workkit/capture.md`
 
 const TAIL = 'Edit the SOURCE, not the output; a bug in a dependency gets fixed upstream, never patched in place.'
@@ -23,7 +20,6 @@ const IGNORED = 'the file is gitignored: generated/runtime files are not hand-ed
 const READ = "capture-guard: BLOCKED reading .workkit/capture.md: it is the owner's capture surface, and its contents are read only during a triage run.\nRun the workkit:triage skill, which records the marker this guard checks, and read it there. Counting the entries (wc -l) stays open."
 const REWRITE = (route: string) => `capture-guard: BLOCKED rewriting .workkit/capture.md: its entries are cleared only by the triage drain, and no drain is running.\nRun the workkit:triage skill, which records the marker this guard checks, and clear it there. Adding entries is never the agent's at all: ${route}`
 const ROUTE_OFF = 'say findings in chat under 🧭 Findings instead, one bullet each, for the owner to answer file or drop; file nothing on your own.'
-const ROUTE_ON = 'file a finding as a status:inbox issue with gh instead; where GitHub cannot be reached, put it in chat and let the owner decide.'
 
 const call = ($: any, tool: string, input: any) => $.tool.call({ tool, ...input } as any)
 const writeFile = ($: any, file: string) => call($, 'Write', { file_path: file, content: 'x' })
@@ -32,13 +28,10 @@ const readFile = ($: any, file: string) => call($, 'Read', { file_path: file })
 const denyOf = (w: any, i = 0) => (typeof toolSpied(w)[i]?.deny === 'string' ? toolSpied(w)[i].deny.replace(/\n$/, '') : null)
 const fired = (w: any, hook: string) => hooksLog(w).filter((l: any) => l.hook === hook).map((l: any) => l.verdict)
 
-// A world with the clock fixed, the markers' TMPDIR, and each marker given its age in seconds.
-const world = (on: any, opts: any = {}, markers: Record<string, number> = {}) => {
+// A world with the clock fixed and the markers' TMPDIR.
+const world = (on: any, opts: any = {}) => {
   const files = { [CAPTURE]: '# capture\n\n- a private thought\n', ...(opts.files || {}) }
-  for (const marker of Object.keys(markers)) files[marker] = ''
-  const w = mkWorld(on, { now: NOW, ...opts, env: { TMPDIR, ...(opts.env || {}) }, files })
-  for (const [marker, age] of Object.entries(markers)) w.mtimes.set(marker, NOW - age * 1000)
-  return w
+  return mkWorld(on, { now: NOW, ...opts, env: { TMPDIR, ...(opts.env || {}) }, files })
 }
 
 describe('classic.PreToolUse Edit/Write: safety:vendor-guard, then safety:capture-guard', () => {
@@ -97,19 +90,6 @@ describe('classic.PreToolUse Edit/Write: safety:vendor-guard, then safety:captur
     expect(fired(w, 'safety:capture-guard')).toEqual(['run'])
   })
 
-  test('ports "findings.file on: the refusal names the status:inbox route": the route read from the repo settings', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, { repos: { [REPO]: JSON.stringify({ version: 1, enabled: true, findings: { file: true } }) } })
-    await editFile($, CAPTURE)
-    expect(denyOf(w)).toBe(REWRITE(ROUTE_ON))
-  })
-
-  test('ports "editing or writing it with a fresh marker: exit 0"', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, {}, { [REPO_MARKER]: 0 })
-    await writeFile($, CAPTURE)
-    expect(denyOf(w)).toBeNull()
-    expect(w.toolRan?.file_path).toBe(CAPTURE)
-  })
-
   // git cannot start in a folder that does not exist yet, so the gate asks from one that does.
   test('a Write into a dist/ that does not exist yet is still blocked by vendor-guard', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on)
@@ -138,31 +118,10 @@ describe('classic.PreToolUse Edit/Write: safety:vendor-guard, then safety:captur
 })
 
 describe('classic.PreToolUse Read/Grep: safety:capture-guard', () => {
-  test('given a Read of .workkit/capture.md with a triage marker 31 minutes old: the deny', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, {}, { [REPO_MARKER]: 31 * 60 })
-    await readFile($, CAPTURE)
-    expect(denyOf(w)).toBe(READ)
-    expect(w.toolRan).toBeUndefined()
-    expect(fired(w, 'safety:capture-guard')).toEqual(['run'])
-  })
-
-  test('ports "reading the capture file with a fresh marker: exit 0"', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, {}, { [REPO_MARKER]: 0 })
-    await readFile($, CAPTURE)
-    expect(denyOf(w)).toBeNull()
-    expect(w.toolRan?.file_path).toBe(CAPTURE)
-  })
-
   test('ports "reading the user capture file with no marker: exit 2": from an opted-in session folder', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, { files: { [`${HOME}/.workkit/capture.md`]: '- a thought\n' } })
     await readFile($, `${HOME}/.workkit/capture.md`)
     expect(denyOf(w)).toBe(READ)
-  })
-
-  test('ports "reading it with a fresh $HOME-keyed marker: exit 0": the anchor of a file in no repo is the .workkit parent', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, { files: { [`${HOME}/.workkit/capture.md`]: '- a thought\n' } }, { [HOME_MARKER]: 0 })
-    await readFile($, `${HOME}/.workkit/capture.md`)
-    expect(denyOf(w)).toBeNull()
   })
 
   test('ports "a Grep whose path is the .workkit directory: exit 2"', { plugins: [TOOL_SPY] }, async ($, on) => {

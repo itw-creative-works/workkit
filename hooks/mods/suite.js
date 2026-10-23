@@ -35,16 +35,28 @@ export async function factOf(fact, ...args) {
 }
 
 /**
- * Whether the suite record holds the tree: wk_suite_proved's read, the text
- * less its trailing newlines equal to a non-empty tree id.
+ * Whether the suite record holds the tree: wk_suite_proved's read, the first
+ * line equal to a non-empty tree id.
  * @param {string|null} record the suite record's text
  * @param {string|null} tree the tree id
  * @returns {boolean}
  */
 export function suiteProved(record, tree) {
   if (!tree || typeof record !== 'string') return false;
-  const recorded = record.replace(/\n+$/, '');
+  const recorded = record.split('\n')[0];
   return recorded !== '' && recorded === tree;
+}
+
+/**
+ * The recorded root run's wall time: the suite record's `ms=<n>` line, which
+ * wk_suite_marker_write adds and an older record may lack.
+ * @param {string|null} record the suite record's text
+ * @returns {number|null} the milliseconds, null when the record carries none
+ */
+export function suiteRecordMs(record) {
+  if (typeof record !== 'string') return null;
+  const match = /^ms=(\d+)$/m.exec(record);
+  return match ? Number(match[1]) : null;
 }
 
 /**

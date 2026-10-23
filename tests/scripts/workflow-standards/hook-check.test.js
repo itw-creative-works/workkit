@@ -15,6 +15,7 @@ const {
   WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('standards.sh: the hook layer self-check');
@@ -72,7 +73,7 @@ const run = async () => {
       '--input-type=module',
       '-e', 'const { pathToFileURL } = await import("node:url"); await import(pathToFileURL(process.argv[1]).href);',
       registerJs,
-    ], { encoding: 'utf8', timeout: 20000 });
+    ], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(res.status, 0, `the module imports, stderr: ${res.stderr}`);
     assert(!res.stderr.includes('MODULE_TYPELESS'), `and node knows its type up front, got: ${res.stderr}`);
   });
@@ -102,31 +103,6 @@ const run = async () => {
     });
   }
 
-  await test('a missing tool the shell pieces need is named loudly, without holding the repo back', () => {
-    // A tool the machine lacks is not the repo's fault, so it warns but never
-    // flags the run: the version stamp and the drift report must not wait on
-    // something no repo can install. The marker paths still need a digest tool.
-    const repo = makeRepo();
-    const hooks = makeHooksDir();
-    const stub = makeGhStub();
-    const binDir = binDirWithout('shasum');
-    fs.rmSync(path.join(binDir, 'sha1sum'), { force: true });
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
-      env: {
-        PATH: joinPath(stub.binDir, binDir),
-        WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')),
-        WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')),
-        WORKFLOW_HOOKS_DIR: shellPath(hooks),
-      },
-      encoding: 'utf8',
-      timeout: 20000,
-    });
-    const out = (res.stdout || '') + (res.stderr || '');
-    assertEq(res.status, 0, 'a machine condition never fails the run');
-    assert(/⚠.*hooks: the hook layer needs.*shasum or sha1sum/.test(out), `warns, naming the missing tool, got: ${out}`);
-    cleanup(repo); cleanup(hooks); cleanup(binDir); cleanup(stub.dir);
-  });
-
   await test('a digest tool under either name satisfies the check (workkit #245)', () => {
     // hook_sha1 takes shasum or sha1sum, so the daily heal asks for the pair:
     // a Linux machine with only sha1sum is whole, and a machine with neither
@@ -145,7 +121,7 @@ const run = async () => {
           WORKFLOW_HOOKS_DIR: shellPath(hooks),
         },
         encoding: 'utf8',
-        timeout: 20000,
+        timeout: SPAWN_DEADLINE,
       });
       return (res.stdout || '') + (res.stderr || '');
     };

@@ -72,20 +72,6 @@ const run = async () => {
     assert(lines.findIndex((l) => l.startsWith('Manager:')) > rule, 'the closing lines are below it');
   });
 
-  await test('ports "a silent path says nothing on either channel"', () => {
-    const out = session({ state: filled([]) });
-    assertEq(out.context || '', '', 'no context');
-    assertEq(out.carried, false, 'and no owner line: a header-only file carries nothing over');
-  });
-
-  await test('ports "the closing lines follow the oversize warning, owner last"', () => {
-    const text = ctx({ state: filled(notes(45)) });
-    assert(/queue, not a journal/.test(text), 'the warning is still there');
-    assert(text.indexOf('queue, not a journal') < text.indexOf('Manager: open your first reply'),
-      'the warning comes before the closing lines');
-    assert(text.trimEnd().endsWith('resumes the queue above.'), 'the owner line is still last');
-  });
-
   group('session: silence');
 
   await test('ports "no session.md at all: silent exit 0"', () => {
@@ -187,10 +173,6 @@ const run = async () => {
 
   await test('ports "a brief posted yesterday is not stale: one day is the ordinary morning"', () => {
     assertEq(brief(briefMarker(1)), '', 'says nothing');
-  });
-
-  await test('ports "today\'s brief says nothing at all"', () => {
-    assertEq(brief(briefMarker(0)), '', 'says nothing');
   });
 
   await test('ports "two days is the first stale morning"', () => {

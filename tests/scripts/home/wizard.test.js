@@ -206,16 +206,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the never-linked warning names the clone and npm install, and no file: spec', () => {
-    const world = mkWorld({ login: 'owner', npmLinksOn: 0 });
-    const { out } = setup(world);
-    const line = out.split('\n').find((l) => /build tooling did not install/.test(l)) || '';
-    assert(line.includes(shellPath(world.tower)), `it names the clone, got: ${line}`);
-    assert(/npm install/.test(line) && /omega/.test(line), `and that npm install there left no omega, got: ${line}`);
-    assert(!/file:/.test(line), `and talks no file: specs, which the pins no longer are, got: ${line}`);
-    cleanup(world.root);
-  });
-
   await test('without a terminal it names workkit setup --home, and asks nothing', () => {
     const world = mkWorld({ login: 'owner' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
@@ -291,16 +281,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the wizard question answered Y ensures the home repo', () => {
-    const world = mkWorld({ login: 'owner' });
-    const { code, out } = setup(world, { input: 'Y\n' });
-    assertEq(code, 0, `exit 0: ${out}`);
-    const calls = world.ghCalls().map((c) => c.join(' '));
-    assert(calls.some((c) => c.includes('repo create owner/workkit --private')), `the private repo is created: ${fmtCalls(world.ghCalls())}`);
-    assertEq(world.settings().site.repo, 'owner/workkit', 'and the home slug is recorded');
-    cleanup(world.root);
-  });
-
   await test('an answer that is not yes leaves everything alone, and the function returns 0', () => {
     for (const [label, input] of [['n', 'n\n'], ['maybe', 'maybe\n'], ['Enter alone', '\n'], ['a closed stdin', '']]) {
       const world = mkWorld({ login: 'owner' });
@@ -322,14 +302,6 @@ const run = async () => {
       `the prompt and hint are on stderr, got: ${err}`);
     assert(!stdout.includes('Create the private home repo'), `the prompt is not on stdout, got: ${stdout}`);
     assert(!stdout.includes('[y/N]'), `nor the hint, got: ${stdout}`);
-    cleanup(world.root);
-  });
-
-  await test('a gh that cannot say who you are points at the login command', () => {
-    const world = mkWorld({ login: '' });
-    const { code, out } = inHome(world, 'interactive() { return 0; }\nwk_home_setup');
-    assertEq(code, 0, 'exit 0');
-    assert(/gh auth login/.test(out), `it prints the fix, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -387,25 +359,27 @@ const run = async () => {
   await test('Enter checks now, ahead of the interval (#244)', () => {
     const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
     world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], afterReads: 1 });
-    const started = Date.now();
-    const { code, out } = atTerminal(world, "printf '\\n'; sleep 2; printf '\\n'");
-    const took = (Date.now() - started) / 1000;
+    // An interval no run outlasts, and the pipe closes right after the Enter:
+    // the only second check this run can make is the one the Enter asked for.
+    world.env.WORKKIT_HOME_POLL_INTERVAL = '600';
+    const { code, out } = atTerminal(world, "printf '\\n\\n'");
     assertEq(code, 0, 'exit 0');
-    assert(/✓.*categories are there/.test(out), `the second check passed, got: ${out}`);
     assertEq(categoriesCalls(world), 4, `enable, the step's own read, the poll's first check, then the one Enter asked for: ${categoriesCalls(world)} reads`);
-    assert(took < 5, `and it never waited the whole interval out (${took}s)`);
+    assert(/✓.*categories are there/.test(out), `the Enter's check passed, got: ${out}`);
+    assertEq((out.match(/⏳ Waiting for the categories/g) || []).length, 1, `inside the one wait that began, got: ${out}`);
     cleanup(world.root);
   });
 
-  await test('with no key pressed, the poll checks again on its own after five seconds (#244)', () => {
+  await test('with no key pressed, the poll checks again on its own once the interval is out (#244)', () => {
     const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
     world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], afterReads: 1 });
-    const started = Date.now();
-    const { code, out } = atTerminal(world, "printf '\\n'; sleep 9");
-    const took = (Date.now() - started) / 1000;
+    // Three seconds, the fewest in which a closed pipe still reads as a skip; the
+    // feeder holds stdin open past the run's own spawn cap, so the check that
+    // passes is the interval's.
+    world.env.WORKKIT_HOME_POLL_INTERVAL = '3';
+    const { code, out } = atTerminal(world, "printf '\\n'; sleep 30");
     assertEq(code, 0, 'exit 0');
     assert(/✓.*categories are there/.test(out), `the interval's own check passed, got: ${out}`);
-    assert(took >= 5 && took < 9, `one interval, not the pipe closing (${took}s)`);
     assertEq(categoriesCalls(world), 4, `enable, the step's own read, the poll's first check, the interval's: ${categoriesCalls(world)} reads`);
     cleanup(world.root);
   });

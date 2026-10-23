@@ -11,6 +11,7 @@ const { SYSTEM_BASH, NODE_DIR, NO_RC, shellPath, joinPath } = require('../../lib
 const {
   SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript, STANDARD_VERSION, repoVersion,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('standards.sh: the version gate and the drift report');
@@ -90,7 +91,7 @@ const run = async () => {
         WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')),
       },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     const code = res.status;
     const output = (res.stdout || '') + (res.stderr || '');
@@ -110,7 +111,7 @@ const run = async () => {
     // about the excluded one.
     const binDir = binDirWithout('jq');
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(dir)], {
-      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: 20000,
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     const out = (res.stdout || '') + (res.stderr || '');
     assertEq(res.status, 0, 'exit 0');

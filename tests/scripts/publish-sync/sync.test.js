@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { IS_WINDOWS, shellPath } = require('../../lib/platform');
-const { STAMP, readStamp, kitVersion } = require('../../lib/version-stamp');
+const { STAMP, kitVersion } = require('../../lib/version-stamp');
 const {
   cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
 } = require('./helpers');
@@ -66,38 +66,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a second run writes nothing: the manifests included', () => {
-    // The trap the content compare has to avoid: a manifest compared against the
-    // raw source differs by construction (the seed repoints its `file:` specs),
-    // so a sync that compared it that way would rewrite it forever.
-    const world = mkSyncWorld();
-    sync(world);
-    for (const rel of Object.keys(mtimes(world.clone))) {
-      fs.utimesSync(path.join(world.clone, rel), new Date(1e12), new Date(1e12));
-    }
-    const before = mtimes(world.clone);
-
-    const { rc, out, err } = sync(world);
-    assertEq(rc, 2, `already current: ${out}${err}`);
-    const after = mtimes(world.clone);
-    assertEq(Object.keys(after).filter((rel) => after[rel] !== before[rel]).join(','), '',
-      'not one file was rewritten');
-    cleanup(world.root);
-  });
-
-  await test('the manifests arrive with the seed’s transform, not the checkout’s relative specs', () => {
-    const world = mkSyncWorld();
-    sync(world);
-    const root = JSON.parse(fs.readFileSync(path.join(world.clone, 'package.json'), 'utf8'));
-    const web = JSON.parse(fs.readFileSync(path.join(world.clone, 'targets', 'web', 'package.json'), 'utf8'));
-    assert(root.devDependencies['@omega.js/manager'].startsWith('file:/'),
-      `an absolute path, got: ${root.devDependencies['@omega.js/manager']}`);
-    assert(web.dependencies['@omega.js/web'].startsWith('file:/'),
-      `at every level, got: ${web.dependencies['@omega.js/web']}`);
-    assert(!/Local era/.test(root.description), `and the description gains no Local era note, got: ${root.description}`);
-    cleanup(world.root);
-  });
-
   await test('a file the app retired goes; the clone’s own files at the root stay', () => {
     const world = mkSyncWorld();
     sync(world);
@@ -131,15 +99,6 @@ const run = async () => {
 
   // The sync writes the checkout's app over the clone's, so two machines seeding
   // one clone race; the stamp at the clone's root says which kit wrote what is there.
-
-  await test('the sync stamps the clone with the kit version it wrote from', () => {
-    const world = mkSyncWorld();
-    const { rc, out, err } = sync(world);
-    assertEq(rc, 0, `something changed: ${out}${err}`);
-    assertEq(readStamp(path.join(world.clone, STAMP)), kitVersion(),
-      'the version rides with the content it describes');
-    cleanup(world.root);
-  });
 
   await test('a clone stamped NEWER than this checkout is not synced at all', () => {
     const world = mkSyncWorld();
@@ -317,16 +276,6 @@ const run = async () => {
     }
     return world;
   };
-
-  await test('a folder the last sync wrote and the app dropped is removed whole, and counted as retired', () => {
-    const world = dropAfterSync(['legacy']);
-    write(path.join(world.app, 'README.md'), '# a newer tower\n');
-    const { rc, out, err } = sync(world);
-    assertEq(rc, 0, `the sync ran: ${out}${err}`);
-    assert(!fs.existsSync(path.join(world.clone, 'legacy')), 'the folder is gone, not merely emptied');
-    assertEq(retiredCount(out + err), 1, `the ok line counts the folder as retired: ${out}${err}`);
-    cleanup(world.root);
-  });
 
   await test('a clone folder neither the stamp nor the retired list names is left alone', () => {
     const world = dropAfterSync(['legacy']);

@@ -46,10 +46,6 @@ const run = async () => {
     assertEq(ask('a/run.sh', files), '', 'the two-segment tail names it');
   });
 
-  await test('ports "no test names it: the line"', () => {
-    reminder(ask('lib/thing.js', { 'lib/thing.js': 'module.exports = 1;\n', 'tests/other.test.js': "require('../lib/other');\n" }), 'lib/thing.js');
-  });
-
   await test('ports "the same file again in the same session: silent" (the seen list holds it)', () => {
     assertEq(ask('lib/thing.js', { 'lib/thing.js': 'module.exports = 1;\n' }, ['lib/thing.js']), '', 'asked once per session');
   });

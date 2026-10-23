@@ -12,6 +12,7 @@ const {
   BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const LIB = path.join(__dirname, '..', '..', 'jobs', 'brief-dispatch.sh');
 
@@ -71,7 +72,7 @@ const mkWorld = ({
 const dispatch = (world, lib = LIB) => {
   const script = `. ${JSON.stringify(shellPath(lib))}
 if dispatch_brief; then printf 'ok\\n%s\\n' "$DISPATCH_LINE"; else printf 'refused\\n%s\\n' "$DISPATCH_REASON"; fi`;
-  const res = spawnSync(BASH, [...NO_RC, '-c', script], { encoding: 'utf8', env: world.env, timeout: 30000 });
+  const res = spawnSync(BASH, [...NO_RC, '-c', script], { encoding: 'utf8', env: world.env, timeout: SPAWN_DEADLINE });
   const [verdict, ...rest] = (res.stdout || '').split('\n');
   return { verdict, said: rest.join('\n').trim(), stderr: res.stderr || '' };
 };
@@ -82,7 +83,7 @@ const run = async () => {
   await test('bash -n: no syntax errors, and nothing runs at load', () => {
     const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(LIB)], { encoding: 'utf8' });
     assertEq(res.status, 0, `bash -n: ${res.stderr}`);
-    const sourced = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(shellPath(LIB))}`], { encoding: 'utf8', timeout: 30000 });
+    const sourced = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(shellPath(LIB))}`], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(sourced.status, 0, 'sourcing it is free');
     assertEq(sourced.stdout, '', 'and silent');
   });

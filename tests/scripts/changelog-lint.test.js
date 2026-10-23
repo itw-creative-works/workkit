@@ -13,6 +13,7 @@ const {
   SYSTEM_BASH, NO_RC, shellPath, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 // The gate and the npm wrapper both lint through this one function, sourced
 // from the workflow lib, so a resolution that walks to the wrong folder would
@@ -22,7 +23,7 @@ const lint = (root, env = {}) => {
   const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${CHANGELOG_LIB}"\nwk_changelog_lint "$1" CHANGELOG.md`, 'bash', shellPath(root)], {
     env: { PATH: systemPathWith(path.dirname(process.execPath)), HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };

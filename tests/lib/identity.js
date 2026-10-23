@@ -9,6 +9,7 @@ const { spawn, spawnSync } = require('child_process');
 const { assert } = require('./harness');
 const { IS_WINDOWS, SYSTEM_PATH, which, homeEnv } = require('./platform');
 const { mkTmp } = require('./scratch');
+const { SPAWN_DEADLINE } = require('./process');
 
 const KIT = path.join(__dirname, '..', '..');
 
@@ -192,7 +193,7 @@ const atTerminal = (argv, { env, cwd, dir }) => {
   fs.writeFileSync(stdinFile, '');
   const fd = fs.openSync(stdinFile, 'r');
   const res = spawnSync('script', args, {
-    env, cwd, stdio: [fd, 'pipe', 'pipe'], encoding: 'utf8', timeout: 30000,
+    env, cwd, stdio: [fd, 'pipe', 'pipe'], encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   fs.closeSync(fd);
   return {

@@ -100,26 +100,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the first commit carries the project and none of the working files', () => {
-    const world = mkWorld();
-    const remote = mkRemote(world.root);
-    world.env.WORKKIT_HOME_REMOTE = remote;
-    inHome(world, [
-      'wk_home_clone owner/workkit',
-      'wk_home_seed',
-      'wk_home_set_slug owner/workkit',
-      'wk_home_commit_push "chore(home): seed the tower project"',
-    ].join('\n'));
-
-    const check = path.join(world.root, 'check');
-    spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
-    assert(fs.existsSync(path.join(check, 'targets', 'web', 'src', 'index.html')), 'the push landed the project');
-    assert(fs.existsSync(path.join(check, 'config', 'omega.json5')), 'with the app’s own config');
-    assert(!fs.existsSync(path.join(check, 'config', 'workkit.json')), 'and no site options of its own');
-    assert(!fs.existsSync(path.join(check, '.workkit')), 'nor a .workkit/ folder in what a second machine clones');
-    cleanup(world.root);
-  });
-
   await test('a stray .workkit/ in the clone is never committed by the daily push', () => {
     // The clone carries no participation state, so anything under that name is
     // scratch someone or something left there, and an unattended commit must

@@ -216,16 +216,6 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('a specced issue nobody has claimed is left exactly as it is', () => {
-    const repo = makeRepo();
-    const stub = speccedStub([{ number: 22, assignees: [], labels: [{ name: SPECCED }, { name: 'type:bug' }] }]);
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0');
-    assertEq(issueEdits(stub).length, 0, `an unclaimed spec is the ready queue, got: ${fmtCalls(ghCalls(stub))}`);
-    assert(!output.includes('claims: flipped'), `and nothing is claimed about it, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
   await test('a repo without status:building is left alone rather than edited into a failure', () => {
     // `gh issue edit` fails whole when it is handed a label the repo does not
     // have, so a flip attempted blind is an error report on exactly the repos

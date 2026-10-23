@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# workflow/workkit/commands.sh: the other four commands the dispatch names,
-# `update`, `publish`, `brief` and `doctor`. Sourced by workkit.sh, functions
+# workflow/workkit/commands.sh: the other five commands the dispatch names,
+# `update`, `publish`, `brief`, `test` and `doctor`. Sourced by workkit.sh, functions
 # only; every name it reads, and the QUIET and PUBLISH_FAILED it sets, are the
 # entry's.
 
@@ -77,6 +77,21 @@ cmd_brief() {
   fi
   wk_ok "$DISPATCH_LINE"
   wk_info "watch it: https://github.com/$DISPATCH_SLUG/actions/workflows/$BRIEF_WORKFLOW"
+}
+
+# The kit's test runner over the repo the command stands in, the suite paths
+# narrowing it as `npm test -- <paths>` does. The engine is exported so the
+# repo's tests/lib re-exports resolve the same kit copy as the runner.
+cmd_test() {
+  if ! command -v node >/dev/null 2>&1; then
+    wk_error "test: the runner needs node, and there is none on PATH"
+    exit 1
+  fi
+  export WORKKIT_ENGINE="$SCRIPT_DIR"
+  # The repo root as prove finds it, so the verb runs the same from any folder.
+  local root
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
+  exec node "$TEST_RUNNER" --root "$root" -- "$@"
 }
 
 cmd_doctor() {

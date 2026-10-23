@@ -10,6 +10,7 @@ const {
   group, test, assert, assertEq, skipSuite, selfRun, summary,
 } = require('../lib/harness');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
@@ -49,7 +50,7 @@ const runMint = (root, { child, send = '' }) => {
     'catch {close}',
     'catch {wait}',
   ].join('\n'));
-  const res = spawnSync('expect', [harness], { cwd: root, encoding: 'utf8', timeout: 60000 });
+  const res = spawnSync('expect', [harness], { cwd: root, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return {
     status: res.status,
     result: fs.existsSync(resultFile) ? fs.readFileSync(resultFile, 'utf8').trim() : '',

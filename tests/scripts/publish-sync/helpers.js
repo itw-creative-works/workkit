@@ -10,6 +10,9 @@ const { spawnSync } = require('child_process');
 const { assert } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
+const { seeded } = require('../../lib/seed');
+const { copyEngine, mkTowerRemote } = require('../publish/helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKFLOW_DIR = path.join(REPO_ROOT, 'workflow');
@@ -142,7 +145,7 @@ const inHome = (world, script, { env = {} } = {}) => {
     script,
   ].join('\n');
   const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
-    env: { ...world.env, ...env }, input: '', encoding: 'utf8', timeout: 30000,
+    env: { ...world.env, ...env }, input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -174,6 +177,51 @@ const mtimes = (dir) => {
 
 // ── The wiring layer ─────────────────────────────────────────────────────────
 
+// One seed per `registryPin`, built once per process: the copied engine with
+// its tower/app, the bare "GitHub" with the project as first seeded, and its
+// clone.
+const copyPublishWorld = seeded((seed, registryPin) => {
+  const kit = path.join(seed, 'kit');
+  copyEngine(kit);
+
+  // The app the sync reads: a sibling of the engine in the copied checkout,
+  // exactly as it is in the real one. No `file:` specs: the manifest transform
+  // has its own cases at the library layer, and here it would only add a
+  // resolvable framework path to the fixture.
+  const rootManifest = {
+    name: 'workkit-tower', private: true, description: 'The tower UI.', scripts: { build: 'omega build' },
+    ...(registryPin ? { devDependencies: { '@omega.js/manager': registryPin } } : {}),
+  };
+  const webManifest = {
+    name: 'workkit-tower-web', private: true,
+    ...(registryPin ? { dependencies: { '@omega.js/web': registryPin } } : {}),
+  };
+  const app = path.join(kit, 'tower', 'app');
+  writeJson(path.join(app, 'package.json'), rootManifest);
+  writeJson(path.join(app, 'targets', 'web', 'package.json'), webManifest);
+  write(path.join(app, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
+  write(path.join(app, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
+  write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
+  write(path.join(app, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
+
+  writeJson(path.join(seed, 'workflow-home', 'settings.json'), {
+    version: 1, site: { repo: 'owner/workkit', publish: true, url: null },
+  });
+
+  // The clone, carrying what a seed left behind: the project as it looked the
+  // day the home repo was made, the stale copy the sync has to bring current.
+  mkTowerRemote(seed, {
+    files: {
+      'package.json': `${JSON.stringify(rootManifest, null, 2)}\n`,
+      'targets/web/package.json': `${JSON.stringify(webManifest, null, 2)}\n`,
+      'config/omega.json5': '{ brand: { id: "workkit" } }\n',
+      'assets/logo/brandmark.svg': '<svg/>\n',
+      'targets/web/src/index.html': '<html>the board, as it was seeded</html>\n',
+      '.gitignore': 'node_modules/\ndist/\n.omega/\n',
+    },
+  });
+});
+
 /**
  * A publish world: a copied engine that carries a tower/app to sync from, a
  * scratch ~/.workkit, a bare "GitHub" with a project already on main, and the
@@ -196,38 +244,12 @@ const mkPublishWorld = ({
   const homeDir = path.join(root, 'home');
   const workflowHome = path.join(root, 'workflow-home');
   const tower = path.join(workflowHome, 'tower');
-  fs.mkdirSync(homeDir, { recursive: true });
-  fs.mkdirSync(workflowHome, { recursive: true });
-
-  fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
-  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
-  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
-  // The tower's temp folder rule lives in the hooks module, which the home
-  // runner seeds the same way (workflow/home.sh); the package.json makes the
-  // copy a module.
-  fs.mkdirSync(path.join(kit, 'hooks', 'mods'), { recursive: true });
-  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'package.json'), path.join(kit, 'hooks', 'package.json'));
-  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'mods', 'markers.js'), path.join(kit, 'hooks', 'mods', 'markers.js'));
-
-  // The app the sync reads: a sibling of the engine in the copied checkout,
-  // exactly as it is in the real one. No `file:` specs: the manifest transform
-  // has its own cases at the library layer, and here it would only add a
-  // resolvable framework path to the fixture.
-  const rootManifest = {
-    name: 'workkit-tower', private: true, description: 'The tower UI.', scripts: { build: 'omega build' },
-    ...(registryPin ? { devDependencies: { '@omega.js/manager': registryPin } } : {}),
-  };
-  const webManifest = {
-    name: 'workkit-tower-web', private: true,
-    ...(registryPin ? { dependencies: { '@omega.js/web': registryPin } } : {}),
-  };
   const app = path.join(kit, 'tower', 'app');
-  writeJson(path.join(app, 'package.json'), rootManifest);
-  writeJson(path.join(app, 'targets', 'web', 'package.json'), webManifest);
-  write(path.join(app, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
-  write(path.join(app, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
-  write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the current board</html>\n');
-  write(path.join(app, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
+  const bare = path.join(root, 'remote.git');
+  copyPublishWorld(root, registryPin);
+  fs.mkdirSync(homeDir, { recursive: true });
+  // The copied clone still names the seed's bare; this world's own takes over.
+  git(tower, 'remote', 'set-url', 'origin', bare);
 
   // The npm shim answers the install of the clone's dependencies and the build
   // of the app, recording its cwd and argv: `--prefix` names the project, the
@@ -247,29 +269,6 @@ const mkPublishWorld = ({
     'exit 0',
   ]);
   writeStub(path.join(bin, 'gh'), ['exit 0']);
-
-  const bare = path.join(root, 'remote.git');
-  spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { encoding: 'utf8' });
-  writeJson(path.join(workflowHome, 'settings.json'), {
-    version: 1, site: { repo: 'owner/workkit', publish: true, url: null },
-  });
-
-  // The clone, carrying what a seed left behind: the project as it looked the
-  // day the home repo was made, the stale copy the sync has to bring current.
-  const seed = path.join(root, 'seed');
-  writeJson(path.join(seed, 'package.json'), rootManifest);
-  writeJson(path.join(seed, 'targets', 'web', 'package.json'), webManifest);
-  write(path.join(seed, 'config', 'omega.json5'), '{ brand: { id: "workkit" } }\n');
-  write(path.join(seed, 'assets', 'logo', 'brandmark.svg'), '<svg/>\n');
-  write(path.join(seed, 'targets', 'web', 'src', 'index.html'), '<html>the board, as it was seeded</html>\n');
-  write(path.join(seed, '.gitignore'), 'node_modules/\ndist/\n.omega/\n');
-  git(seed, 'init', '-q', '-b', 'main');
-  git(seed, 'add', '-A');
-  git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@localhost', 'commit', '-q', '-m', 'chore(home): seed the tower project');
-  git(seed, 'remote', 'add', 'origin', bare);
-  git(seed, 'push', '-q', '-u', 'origin', 'main');
-  cleanup(seed);
-  spawnSync('git', ['clone', '-q', bare, tower], { encoding: 'utf8' });
 
   // The clone's own build tooling: the gate publish checks for, and the binary
   // the mint calls. It records where it ran and with what, and leaves what a
@@ -309,7 +308,7 @@ const mkPublishWorld = ({
 // it off a scratch directory rather than this checkout.
 const publish = (world, args = []) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
-    cwd: world.root, env: world.env, encoding: 'utf8', timeout: 60000,
+    cwd: world.root, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };

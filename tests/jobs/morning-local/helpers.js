@@ -15,6 +15,7 @@ const {
 } = require('../../lib/platform');
 const { noNodeTest, barePathTest } = require('../../lib/job-path');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE, until } = require('../../lib/process');
 const { mkKitRepo } = require('../../scripts/home/helpers');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
@@ -207,7 +208,7 @@ const mkWorld = ({
 
 const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
-  timeout: 60000,
+  timeout: SPAWN_DEADLINE,
   env: world.env,
 });
 
@@ -246,27 +247,18 @@ const REFRESH = 'chore(home): refresh the cloud brief runner';
 // The notification is fired detached on purpose: Notifly does not return until
 // it is dismissed, and the job must never wait on a human. So the job exits
 // before the recorder has written, and an assertion on it has to wait a moment.
-const notified = async (world, ms = 5000) => {
-  const deadline = Date.now() + ms;
-  for (;;) {
-    const calls = world.notifs();
-    if (calls.length > 0) return calls[0];
-    if (Date.now() > deadline) throw new Error('no notification was fired within the wait');
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
+const notified = async (world) => {
+  if (!(await until(() => world.notifs().length > 0))) throw new Error('no notification was fired');
+  return world.notifs()[0];
 };
 
 // The first notification whose message matches: the summaries step fires its
 // own, so "the brief's notification" is the one that says so, not the first one
 // recorded.
-const notifiedMatching = async (world, pattern, ms = 5000) => {
-  const deadline = Date.now() + ms;
-  for (;;) {
-    const hit = world.notifs().find((c) => pattern.test(c[c.indexOf('--message') + 1] || ''));
-    if (hit) return hit;
-    if (Date.now() > deadline) throw new Error(`no notification matching ${pattern} was fired within the wait`);
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
+const notifiedMatching = async (world, pattern) => {
+  const match = () => world.notifs().find((c) => pattern.test(c[c.indexOf('--message') + 1] || ''));
+  if (!(await until(() => match() !== undefined))) throw new Error(`no notification matching ${pattern} was fired`);
+  return match();
 };
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 500));

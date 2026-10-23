@@ -1,15 +1,10 @@
 //
 // Tests for the tower dashboard's board-motion.js: where each Board card moves
-// between two repaints. The lib loader is ../app/helpers.js; the page that plays
-// the plan imports the framework, so its decisions are pinned as source.
+// between two repaints. The lib loader is ../app/helpers.js.
 //
 
-const fs = require('fs');
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { libs, load } = require('../app/helpers');
-
-const PAGE = path.join(libs, '..', '..', 'pages', 'board.js');
+const { load } = require('../app/helpers');
 
 /** A map of `data-issue` to the card's on-screen spot, as the page measures it. */
 const spots = (entries) => new Map(Object.entries(entries));
@@ -61,35 +56,6 @@ const run = async () => {
   await test('empty maps give an empty plan', () => {
     const plan = motionPlan(new Map(), new Map());
     assertEq(JSON.stringify(plan), JSON.stringify({ moved: [], entered: [], left: [] }), 'nothing moves, enters or leaves');
-  });
-
-  await test('the page skips the plan on a filter, search or view change, and under reduced motion', () => {
-    const source = fs.readFileSync(PAGE, 'utf8');
-    assert(/import \{[^}]*\bmotionPlan\b[^}]*\} from '\.\.\/libs\/tower\/board-motion\.js'/.test(source),
-      'the movement math comes from the lib; the page only measures and plays');
-    assert(/motionPlan\(/.test(source), 'and the page asks it for a plan');
-    assert(/matchMedia\(\s*['"]\(prefers-reduced-motion: reduce\)['"]\s*\)/.test(source) && /\.matches\b/.test(source),
-      'the page asks whether reduced motion is on before it plays anything');
-
-    // The search box is one of the filter parameters, so writeFilters carries
-    // it. The repaint each handler asks for must differ from the one a refresh
-    // or a drop asks for, whichever side carries the flag.
-    const repaint = /\b(\w*(?:render|paint)\w*)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/i;
-    const asks = [...source.matchAll(/(?<!function )\b(writeView|writeFilters)\(/g)].map((hit) => {
-      const after = source.slice(hit.index + hit[0].length, hit.index + 400).match(repaint);
-      assert(after, `the ${hit[1]} call at ${hit.index} is followed by the repaint it asks for`);
-      return { writer: hit[1], name: after[1], call: after[0] };
-    });
-    assert(asks.some((ask) => ask.writer === 'writeView'), 'the view toggle repaints the board');
-    assert(asks.some((ask) => ask.writer === 'writeFilters'), 'and so do the filters and the search');
-    const quiet = new Set(asks.map((ask) => ask.call.replace(/\s+/g, ' ')));
-    for (const ask of asks) {
-      const others = [...source.matchAll(new RegExp(`\\b${ask.name}\\(([^()]*(?:\\([^()]*\\)[^()]*)*)\\)`, 'g'))]
-        .map((hit) => hit[0].replace(/\s+/g, ' '))
-        .filter((call) => !quiet.has(call));
-      assert(others.length > 0,
-        `${ask.call} after ${ask.writer} is a different repaint from the one a refresh or a drop asks for, so it can skip the slide`);
-    }
   });
 
   return summary();

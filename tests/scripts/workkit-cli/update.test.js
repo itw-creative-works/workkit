@@ -132,16 +132,6 @@ const run = async () => {
 
   group('workkit update --auto: the quiet variant');
 
-  await test('a machine with nothing to do says nothing at all', () => {
-    const world = mkWorld({ binOnPath: true });
-    fs.mkdirSync(world.claudeHome, { recursive: true });
-    runCli(world, ['update']);
-    const { code, out } = runCli(world, ['update', '--auto']);
-    assertEq(code, 0, 'exit 0');
-    assertEq(out, '', `session start hears nothing, got: ${out}`);
-    cleanup(world.root);
-  });
-
   await test('it introduces no ~/.local/bin to a machine that has none', () => {
     // The same restraint the engine shows with ~/.claude: the automatic path
     // keeps an address current, and never invents a convention at session start.

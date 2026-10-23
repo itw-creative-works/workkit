@@ -14,6 +14,7 @@ const {
   runScript,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('standards.sh: offline and unauthenticated');
@@ -27,7 +28,7 @@ const run = async () => {
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')) },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     const code = res.status;
     const stdout = (res.stdout || '') + (res.stderr || '');
@@ -45,7 +46,7 @@ const run = async () => {
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')) },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     const stdout = (res.stdout || '') + (res.stderr || '');
     assertEq(res.status, 0, 'exit 0');
@@ -91,7 +92,7 @@ const run = async () => {
         WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
       },
       encoding: 'utf8',
-      timeout: 20000,
+      timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, 'exit 0');
     assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'dump.md')), 'healed the cwd repo');

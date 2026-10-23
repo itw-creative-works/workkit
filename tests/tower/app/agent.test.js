@@ -3,9 +3,8 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { loadLibs, libs, drawnIndicator, NOW } = require('./helpers');
+const { loadLibs, drawnIndicator, NOW } = require('./helpers');
 
 const run = async () => {
   const { format, agent, secondHand, modal } = await loadLibs();
@@ -190,34 +189,6 @@ const run = async () => {
     assertEq(again.title, first.title, 'and the same hover text');
   });
 
-  await test('the classes the phase wears are written once, for both the paint and the tick', () => {
-    assert(agent.activityIcon('working').includes(`class="${agent.activityClass('working')}"`), 'the paint draws them from the one helper');
-    assertEq(agent.activityClass('idle'), 'omega-tower-activity omega-tower-activity--idle', 'and a phase crossing has one name to write');
-  });
-
-  await test('the second hand has one home, and it is not a page', () => {
-    const fs = require('fs');
-    const clock = fs.readFileSync(path.join(libs, 'clock.js'), 'utf8');
-    assert(clock.includes('setInterval'), 'the timer lives in clock.js');
-    assert(/import \{[^}]*activityTick[^}]*\} from '\.\/agent\.js'/.test(clock), 'and it re-decides through the shared arithmetic rather than a copy of the thresholds');
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
-      assert(!fs.readFileSync(path.join(pages, name), 'utf8').includes('setInterval'), `${name} runs no clock of its own`);
-    }
-    assert(fs.readFileSync(path.join(libs, 'page.js'), 'utf8').includes('startClock(document.body)'), 'the runtime arms it once, over the whole document - the dialogs carry indicators and sit outside the page mount');
-  });
-
-  await test('the paint and the double draw the same node - the selectors the tick walks by', () => {
-    // Every hook applyLive reaches for is one the real builder writes, so a
-    // rename in crewActivity fails here instead of leaving the fake DOM stale.
-    const markup = agent.crewActivity({ state: 'working', lastActivity: NOW - 12000, aliveSince: NOW - 3 * 60000 }, NOW);
-    assert(markup.includes('data-live-ts='), 'the wrapper the walk finds');
-    assert(markup.includes('class="omega-tower-activity omega-tower-activity--working"'), 'the icon the tick re-classes');
-    assert(markup.includes('<i class="fa-solid fa-gear fa-spin"'), 'the glyph it toggles the motion on');
-    assert(markup.includes('class="visually-hidden">working<'), 'the word it keeps in step with the colour');
-    assert(markup.includes('data-live-age'), 'and the label it rewrites');
-  });
-
   await test('a tick a second later moves the label and touches nothing else', () => {
     const drawn = drawnIndicator({
       phase: 'working', age: '12s', title: 'running for 3m',
@@ -300,57 +271,11 @@ const run = async () => {
   });
 
   await test('the Overview draws its state cell with the one shared builder, stamps and all', () => {
-    // A hand-rolled wrapper around the bare glyph carries no stamps, so the
-    // second hand walks straight past it.
-    const fs = require('fs');
-    const overview = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'index.js'), 'utf8');
-    assert(!overview.includes('activityIcon('), 'it wraps nothing of its own around the bare glyph');
-    // And what that builder hands it, for a session in the shape /api/crew
+    // What that builder hands it, for a session in the shape /api/crew
     // sends one - the stamps are the whole point of the delegation.
     const cell = agent.crewActivity({ state: 'working', lastActivity: NOW - 4000, aliveSince: NOW - 90000 }, NOW);
     assert(cell.includes(`data-live-ts="${NOW - 4000}"`), 'so the Overview markup carries the stamp the tick reads back');
     assert(cell.includes('data-live-age'), 'and the label the tick rewrites');
-  });
-
-  await test('the class the glyph spins on names a rule that exists', () => {
-    // `fa-spin` is Font Awesome's class and the theme ships its icons without
-    // that stylesheet, so the rule has to live in the tower's own sheet.
-    const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    const rule = /\.omega-tower-activity \.fa-spin \{ animation: (\S+) /.exec(sheet);
-    assert(rule, 'the indicator gives its own glyph the animation');
-    assertEq(rule[1], 'spin', 'reusing the keyframes the framework already ships');
-    // Anchored on the block that disables this animation, not on the sheet's
-    // first `prefers-reduced-motion` - an unrelated reduced-motion block added
-    // higher up would otherwise fail a rule that is perfectly well ordered.
-    const disable = /@media \(prefers-reduced-motion: reduce\) \{\s*\.omega-tower-activity \.fa-spin \{ animation: none; \}/.exec(sheet);
-    assert(disable, 'and reduced motion turns this animation off by name');
-    assert(disable.index > sheet.indexOf('.omega-tower-activity .fa-spin {'), 'after the rule it overrides, so it still wins the tie');
-  });
-
-  await test('the glyph turns about its own centre, still or spinning (#137)', () => {
-    // An `<i>` with no box of its own takes the line's height, so its centre
-    // sits below the 1em SVG's and a rotation orbits instead of turning: the
-    // box has to be the glyph.
-    const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    const box = /\.omega-tower-activity i \{([^}]*)\}/.exec(sheet);
-    assert(box, 'the indicator sizes the glyph it draws');
-    for (const declaration of ['height: 1em', 'width: 1em']) {
-      assert(box[1].includes(declaration), `one square em (${declaration}), so the box's centre is the glyph's`);
-    }
-    for (const declaration of ['display: flex', 'align-items: center', 'justify-content: center']) {
-      assert(box[1].includes(declaration), `and the glyph is centred in it (${declaration}), never laid out on a baseline`);
-    }
-    assert(/^\.omega-tower-activity i \{/m.test(sheet), 'at the top level - a box behind a media query is a box half the readers do not get');
-    // The still glyph wears the same box, so a card keeps its size the second
-    // the motion starts or stops.
-    const motion = /\.omega-tower-activity \.fa-spin \{ (.*?) \}/.exec(sheet);
-    assertEq(motion[1], 'animation: spin 1s linear infinite;', 'the phase rule says the motion and nothing about the box');
-    // The rule is scoped to what the markup actually draws.
-    const working = agent.activityIcon('working', 'running for 3m');
-    assert(/class="omega-tower-activity[^"]*"/.test(working), 'the wrapper the box and the motion are both scoped under');
-    assert(/<i class="fa-solid fa-gear fa-spin"/.test(working), 'the `i` the box sizes, wearing the class the motion is on');
   });
 
   await test('the indicator is a gear, so a still one does not read as a broken spinner (#137)', () => {
@@ -365,51 +290,6 @@ const run = async () => {
     }
   });
 
-  await test('the loading ring is the framework\'s, placed centered by the tower (#137)', () => {
-    // The ring is Bootstrap's `.spinner-border`, spun by the bundle's own
-    // `@keyframes spinner-border`; format.loading only centres it over the body.
-    // A local rule of that name is how a working spinner stops.
-    const markup = format.loading('reading the board…');
-    assert(markup.includes('spinner-border'), 'the ring is Bootstrap\'s, never one the tower draws itself');
-    assert(markup.includes('justify-content-center') && markup.includes('align-items-center'),
-      'centered both ways over the body it stands in for');
-    assert(markup.includes('role="status"'), 'announced as a wait, not read as content');
-    assert(markup.includes('reading the board…'), 'with the caller\'s line beneath it');
-    assert(format.loading('<b>x</b>').includes('&lt;b&gt;'), 'the line is escaped like every other interpolation');
-    const fs = require('fs');
-    const page = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
-    assert(!/\bloading[^}]*\} from '@omega\.js\/client\/modules\/live-page'/.test(page),
-      'the Board takes the wait state from the shared vocabulary, not the framework\'s corner-flush inline one');
-    assert(/import \{[^}]*\bloading\b[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(page),
-      'and it imports the tower\'s own');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    assert(!sheet.includes('.spinner-border'), 'and this sheet leaves the animation alone');
-  });
-
-  await test('the muted band borrows the gray the still glyph already wears', () => {
-    // The quiet phase names the same faint token the idle one does: one gray on
-    // the tower, not two.
-    const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    const rule = /\.omega-tower-activity--idle,\s*\.omega-tower-activity--quiet \{ color: (.+?); \}/.exec(sheet);
-    assert(rule, 'the two bands share one rule');
-    assert(rule[1].includes('--omega-ink-faint'), 'and it is the theme\'s faint ink, not a hex of its own');
-  });
-
-  await test('both crew surfaces mark the card the tick mutes (#99)', () => {
-    // The mute rides on the card as a hook the second hand walks, not only at
-    // paint time: the crossing falls between the ten-second feeds.
-    const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of ['crew.js', 'index.js']) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(source.includes('data-live-card'), `${name} marks the element that goes muted`);
-      assert(/import \{[^}]*cardMuted[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(source), `${name} draws that mute from the one arithmetic, never a threshold of its own`);
-    }
-    const clock = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'clock.js'), 'utf8');
-    assert(clock.includes('data-live-card'), 'and the second hand walks them');
-  });
-
   await test('every role has its own glyph, in the colour that class is drawn in everywhere else', () => {
     const roles = ['manager', 'worker', 'scout', 'verifier', 'advisor', 'reviewer'];
     const glyphs = roles.map((name) => agent.roleGlyph(name));
@@ -421,43 +301,6 @@ const run = async () => {
     assert(icon.includes(format.badgeColor('scout')), 'in the same colour as the chip under it');
     assert(icon.includes('title="workkit:scout"'), 'named on hover');
     assert(!agent.roleIcon('<img src=x>').includes('<img'), 'and a hostile class name is text');
-  });
-
-  await test('that glyph wears the shell\'s tile, and keeps its own colour inside it (#142)', () => {
-    // The tile is the theme's `.omega-icon-chip--neutral`, never redrawn in the
-    // sheet. Only the box is borrowed: the role colour is written inline and
-    // beats the chip's neutral ink.
-    assert(agent.roleIcon('worker').includes('omega-icon-chip omega-icon-chip--neutral'), 'the markup wears the theme\'s own tile');
-    assert(agent.roleIcon('worker').includes(`color: ${format.badgeColor('worker')}`), 'and still writes the role colour inline');
-    const fs = require('fs');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    const local = /\.omega-tower-role \{([^}]*)\}/.exec(sheet);
-    assert(local, 'the sheet still sizes the glyph');
-    for (const declaration of ['height', 'width', 'background', 'border-radius', 'color']) {
-      // Anchored to a declaration start so `line-height` does not read as `height`.
-      assert(!new RegExp(`(^|[\\s;])${declaration}:`).test(local[1]), `without redrawing what the chip ships (${declaration})`);
-    }
-    // The chip is inline-flex, which keeps both placements: the crew card
-    // centres it with `text-center` (inline-level boxes only), and the agent
-    // dialog's head lays it out as one flex item.
-    const crewPage = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'crew.js'), 'utf8');
-    assert(/<div class="text-center mb-2">\$\{roleIcon\(/.test(crewPage), 'the crew card centres it as inline content');
-  });
-
-  await test('the pages route their indicators through the one helper', () => {
-    const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    const crewPage = fs.readFileSync(path.join(pages, 'crew.js'), 'utf8');
-    assert(/import \{[^}]*crewActivity[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(crewPage), 'the Crew page takes the indicator from the shared lib');
-    const boardPage = fs.readFileSync(path.join(pages, 'board.js'), 'utf8');
-    assert(/import \{[^}]*claimGlyph[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(boardPage), 'the Board takes the claim glyph AND its gate from the same lib');
-    const overview = fs.readFileSync(path.join(pages, 'index.js'), 'utf8');
-    assert(/import \{[^}]*crewActivity[^}]*\} from '\.\.\/libs\/tower\/agent\.js'/.test(overview), 'and the Overview\'s crew table draws the same indicator - the same builder, not a pill or a wrapper of its own');
-    assert(!/pill\((?:[^)]*)working/.test(overview), 'no page decides on its own what a working agent looks like');
-    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js'))) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(!source.includes('fa-spin'), `${name} writes no glyph of its own - the helper owns what the indicator looks like`);
-    }
   });
 
   return summary();

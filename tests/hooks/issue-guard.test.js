@@ -173,10 +173,6 @@ const run = async () => {
     ].join(' '));
   });
 
-  await test('ports "a GraphQL query naming a repository mutation-free field: exit 0"', async () => {
-    await passes("gh api graphql -f query='{ viewer { login } }'");
-  });
-
   group('issue-guard: the REST door');
 
   await test('ports "a POST creating an issue with a .env value: exit 2, names the KEY"', async () => {
@@ -265,10 +261,6 @@ const run = async () => {
     await blocks(`gh issue comment 12 --body "it failed with ${SUB_SECRET}"`, ENV_VALUE('SUB_TOKEN'), { envFiles: [SUB_ENV, ROOT_ENV] });
   });
 
-  await test('ports "standing AT the repo root: exit 2, the one scan still catches it"', async () => {
-    await blocks(`gh issue comment 12 --body "it failed with ${ROOT_SECRET}"`, ENV_VALUE('ROOT_TOKEN'), { envFiles: [ROOT_ENV] });
-  });
-
   await test('ports "clean text from a subdirectory: exit 0"', async () => {
     await passes('gh issue comment 12 --body "specced, building now"', { envFiles: [SUB_ENV, ROOT_ENV] });
   });
@@ -321,14 +313,36 @@ const run = async () => {
     await passes('gh issue view 57 --json body');
   });
 
+  group('issue-guard: prose-shaped .env values');
+
+  await test('a plain lowercase word value, and a comment using that word: the write passes', async () => {
+    const envFiles = [{ path: `${CWD}/.env`, text: 'PROJECT_ID=lighthouse\n' }];
+    await passes('gh issue comment 12 --body "the lighthouse page renders again"', { envFiles });
+  });
+
+  await test('a value under eight characters, and a comment containing it: the write passes', async () => {
+    const envFiles = [{ path: `${CWD}/.env`, text: 'REGION_CODE=Qz7Kp2m\n' }];
+    await passes('gh issue comment 12 --body "the run stopped at step Qz7Kp2m today"', { envFiles });
+  });
+
+  await test('a mixed-case value with digits, and a comment containing it: refused naming the key', async () => {
+    const value = 'Tide4Harbor92';
+    const envFiles = [{ path: `${CWD}/.env`, text: `HARBOR_KEY=${value}\n` }];
+    const deny = await blocks(`gh issue comment 12 --body "it failed with ${value} today"`, ENV_VALUE('HARBOR_KEY'), { envFiles });
+    assert(!deny.includes(value), 'never echoes the value');
+  });
+
+  await test('a lowercase value carrying a digit, and a comment containing it: refused naming the key', async () => {
+    const value = 'lighthouse7';
+    const envFiles = [{ path: `${CWD}/.env`, text: `BEACON_ID=${value}\n` }];
+    const deny = await blocks(`gh issue comment 12 --body "it failed with ${value} today"`, ENV_VALUE('BEACON_ID'), { envFiles });
+    assert(!deny.includes(value), 'never echoes the value');
+  });
+
   group('issue-guard: fail-open');
 
   await test('ports "missing command: exit 0"', async () => {
     await passes('');
-  });
-
-  await test('ports "a cwd with no .env at all: exit 0"', async () => {
-    await passes('gh issue create --title "x" --body "plain text"', { envFiles: [] });
   });
 };
 

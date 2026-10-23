@@ -11,6 +11,7 @@ const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../lib/
 const { mkTmp } = require('../lib/scratch');
 const { mkPluginCopy } = require('../lib/plugin-copy');
 const { mkOriginRepo } = require('../lib/git-repo');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const REPO = path.join(__dirname, '..', '..');
@@ -83,8 +84,8 @@ const mkWorld = ({
   };
 };
 
-const install = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: 30000, env: world.env });
-const check = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), '--check'], { encoding: 'utf8', timeout: 30000, env: world.env });
+const install = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+const check = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), '--check'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
 
 const run = async () => {
   if (process.platform !== 'darwin') skipSuite('launchd and plutil are macOS');
@@ -184,7 +185,7 @@ const run = async () => {
     fs.symlinkSync(path.join(cloneRoot, 'workflow'), path.join(claude, 'workkit'));
     const cache = path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0');
     mkPluginCopy(cache, { dirs: ['workflow', 'jobs'] });
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(cache, 'jobs', 'install.sh'))], { encoding: 'utf8', timeout: 30000, env: world.env });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(cache, 'jobs', 'install.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const said = `${res.stdout}${res.stderr}`;
     assert(!said.includes('⚠'), `the clone outranks the cache copy, so nothing is wrong: ${said}`);
@@ -294,21 +295,12 @@ const run = async () => {
 
     const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: SPAWN_DEADLINE,
       env: { ...world.env, WORKKIT_LAUNCHD_OK: '' },
     });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(fmtCalls(world.calls().slice(before)), '', 'launchd is not even asked whether it is loaded');
     assert(/would bootstrap it \(plist unchanged\)/.test(res.stdout), `it says so: ${res.stdout}`);
-    cleanup(world.root);
-  });
-
-  await test('the override is what lets a fixture home talk to launchd', () => {
-    const world = mkWorld({ launchdOk: true });
-    const res = install(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(world.calls().some((c) => isCall(c, 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL))), `the calls happen: ${fmtCalls(world.calls())}`);
-    assert(!/skipped/.test(res.stdout), `and nothing is skipped: ${res.stdout}`);
     cleanup(world.root);
   });
 

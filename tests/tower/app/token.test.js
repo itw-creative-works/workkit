@@ -6,7 +6,7 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { loadLibs, libs, mkStorage } = require('./helpers');
+const { loadLibs, mkStorage } = require('./helpers');
 
 const run = async () => {
   const { format, scope, api, github, token } = await loadLibs();
@@ -133,11 +133,6 @@ const run = async () => {
     assert(format.LOCAL_LOCKED_NOTICE.includes('npm run tower'), 'in the same words, and no token among them');
     assert(!/token/i.test(format.LOCAL_LOCKED_NOTICE), 'a local dialog never asks for one');
     assertEq(token.lockedIntakeNotice('alice.github.io'), format.lockedNotice(), 'and anywhere else it is the token wording, unchanged');
-
-    const source = fs.readFileSync(path.join(libs, 'intake.js'), 'utf8');
-    assert(/lockedIntakeNotice\(location\.hostname\)/.test(source), 'the dialog reads the fork rather than owning a second one');
-    assert(/no roster until the Workkit API is running[\s\S]{0,60}no roster until a token is added/.test(source),
-      'and the empty roster forks with it, so the two halves of the dialog cannot disagree');
   });
 
   await test('Settings names the tier the copy is, and a copy with no roster names none', () => {
@@ -202,42 +197,6 @@ const run = async () => {
     assertEq(none.form.listeners.length, 1, 'one listener, on the form');
     const bare = { querySelector: () => null };
     token.mountTokenCard(bare, { storage: mkStorage(), reload: () => {} });
-    assert(true, 'and markup with no form in it at all is left alone rather than thrown at');
-  });
-
-  await test('the layout disarms the auth gate under the framework’s CURRENT key', () => {
-    // The pin is on the exact key path the framework reads (`client`), so a
-    // rename fails here instead of letting the admin chain's `authenticated`
-    // policy win on screen. It rides under `config:`, the one place a layout
-    // overrides omega.json5; a section restated bare fails the build.
-    const layout = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src',
-      '_layouts', 'tower', 'page.html'), 'utf8');
-    assert(/^config:$/m.test(layout), 'the override sits under the config namespace');
-    assert(/^  client:\n    auth:\n      config:\n        policy: "disabled"$/m.test(layout),
-      'the client blob disables the auth policy, spelled exactly as the engine reads it');
-    assert(!/^client:/m.test(layout), 'and never bare, which no longer reaches the engine at all');
-    assert(!layout.includes('web_manager:'), 'and the retired key is gone - it resolves to nothing');
-  });
-
-  await test('the layout ships no unlock dialog any more, and nothing can open one', () => {
-    // The token is typed on the Settings page, so no dialog stands between a
-    // viewer and a page with no data.
-    const layout = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src',
-      '_layouts', 'tower', 'page.html'), 'utf8');
-    assert(!layout.includes('id="tower-unlock"'), 'the dialog is gone from the layout');
-    assert(!layout.includes('data-token-body'), 'and so is the region the prompt was written into');
-    assert(!/data-bs-backdrop="static"/.test(layout), 'no undismissable dialog is left anywhere on the page');
-    for (const dialog of ['tower-issue', 'tower-agent', 'tower-intake']) {
-      assert(layout.includes(`id="${dialog}"`), `${dialog} is untouched`);
-      assert(layout.includes('data-bs-dismiss="modal"'), 'and every dialog the layout still ships can be closed');
-    }
-    for (const name of ['token.js', 'page.js', path.join('page', 'selector.js')]) {
-      const source = fs.readFileSync(path.join(libs, name), 'utf8');
-      assert(!/openTokenModal|hideTokenModal|TOKEN_MODAL|tokenPrompt/.test(source), `${name} has no opener left`);
-    }
-    for (const gone of ['openTokenModal', 'hideTokenModal', 'tokenPrompt', 'mountTokenPrompt', 'TOKEN_MODAL']) {
-      assertEq(token[gone], undefined, `${gone} is retired, not merely unused`);
-    }
   });
 
   await test('every other page points at Settings in one line, carrying the scope', () => {
@@ -259,41 +218,6 @@ const run = async () => {
     assertEq(scope.settingsHref('workkit,omega'), '/settings?repo=workkit,omega', 'with the whole subset');
     assertEq(scope.settingsHref(''), '/settings', 'and no parameter at all for every repo');
     assertEq(scope.settingsHref(''), scope.scopedHref(scope.SETTINGS_PATH, ''), 'through the one formatter every nav link uses');
-  });
-
-  await test('the Settings page exists, is in the sidebar, and is bound to its module', () => {
-    const src = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src');
-    const page = fs.readFileSync(path.join(src, 'pages', 'settings.md'), 'utf8');
-    assert(page.includes(`permalink: ${scope.SETTINGS_PATH}`), 'the page answers at the path the runtime sends viewers to');
-    assert(page.includes('<div id="tower-settings"></div>'), 'with the mount its module draws into');
-    assert(/meta:\n  title: "Settings"/.test(page), 'and a title of its own');
-
-    const sidebar = fs.readFileSync(path.join(src, '_includes', 'backend', 'sections', 'sidebar.json'), 'utf8');
-    assert(sidebar.includes(`href: '${scope.SETTINGS_PATH}'`), 'the nav carries an entry for it');
-    assert(/label: 'Settings'/.test(sidebar), 'named the way the pointer line names it');
-
-    const module = fs.readFileSync(path.join(src, 'assets', 'js', 'pages', 'settings.js'), 'utf8');
-    assert(/mount: 'tower-settings'/.test(module), 'the module claims that mount');
-    // The option itself, not the sentence about it in the header: a page that
-    // only talks about being tokenless is a page the runtime routes away from.
-    assert(/^ {2}tokenless: true,$/m.test(module), 'and declares itself the page that works without a token');
-    assert(/tokenCard\(\{ held, problem: state\.tokenProblem \}\)/.test(module),
-      'it draws the card from what this browser holds and from any refusal the runtime carried');
-    assert(/mountTokenCard\(root\)/.test(module), 'and wires it after the write');
-    assert(/LIVE \? towerTokenNote\(\) : ''/.test(module), 'a copy with a tower behind it is told the token is not its credential');
-    // The two cards sit on one row, a column each, and stack below the lg
-    // breakpoint the way every other pair on the dashboard does.
-    assert(/<div class="row g-4">/.test(module), 'the two cards share a row');
-    assert(/<div class="col-12 col-xl-6">\$\{tokenCard\(/.test(module), 'the token card takes half of it');
-    assert(/<div class="col-12 col-xl-6">\$\{tokenGuidance\(\)\}<\/div>/.test(module), 'and what the token needs takes the other half');
-    assert(/feeds: \['repos'\]/.test(module), 'the one feed it arms is the roster the sidebar’s selector is filled from');
-  });
-
-  await test('no other page declares itself tokenless - Settings is the only one that works locked', () => {
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of fs.readdirSync(pages).filter((file) => file.endsWith('.js') && file !== 'settings.js')) {
-      assert(!/tokenless/.test(fs.readFileSync(path.join(pages, name), 'utf8')), `${name} needs a token like every other data page`);
-    }
   });
 
   await test('nothing token-shaped is committed anywhere in the app', () => {

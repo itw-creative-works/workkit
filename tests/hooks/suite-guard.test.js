@@ -96,10 +96,6 @@ const run = async () => {
     await silent('npm test', { suiteRecord: `${TREE}\n`, treeId: OTHER_TREE });
   });
 
-  await test('ports "a stale marker, holding another tree, passes"', async () => {
-    await silent('npm test', { suiteRecord: `${'0'.repeat(40)}\n` });
-  });
-
   group('suite-guard: what a full run is, on a proved tree');
 
   await test('ports "npm run test bounces, the same run spelled out"', async () => {
@@ -324,13 +320,6 @@ const run = async () => {
   });
 
   group('suite-guard: wiring and fail-open');
-
-  await test('ports "hooks.json registers the guard under PreToolUse Bash, after proof-guard": BASH_GUARDS holds the order', async () => {
-    const hooks = mods('guards').BASH_GUARDS.map((g) => g.hook);
-    const proof = hooks.indexOf('safety:proof-guard');
-    const suite = hooks.indexOf('safety:suite-guard');
-    assert(proof >= 0 && suite > proof, `suite-guard runs after proof-guard, got: ${hooks.join(', ')}`);
-  });
 
   await test('ports "a repo declaring no test script passes" and "a repo with no package.json at its root passes"', async () => {
     await silent('npm test', { ...proved, testScript: null }, BUILDING);

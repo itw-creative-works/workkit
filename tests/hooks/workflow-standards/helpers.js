@@ -13,6 +13,7 @@ const {
 } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const { mods, textOf, runResult, standardsState } = require('../../lib/mods-inputs');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 
@@ -52,7 +53,7 @@ const heal = (repo) => {
       WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, 'claude-home')),
     }),
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: SPAWN_DEADLINE,
   });
   cleanup(home);
   return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });

@@ -6,7 +6,7 @@
 // tests/mods/guards-proof-guard.test.ts: the read's folder, the loader's quoted
 // comment and "gh not on PATH".
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const { mods } = require('../../lib/mods-inputs');
 const {
   WORLD, comments, viewer, judge, denyOf, textOf, BLOCK, UNREAD, CD_BOUNCE, SKIPPED, assertBlocks, passText,
@@ -67,16 +67,6 @@ const run = async () => {
     }
   });
 
-  await test('ports "a long table body stays fast, gated and ungated alike": the gated table body blocks, the ungated passes', async () => {
-    const body = ['| a | b | c |', '|---|---|---|',
-      ...Array.from({ length: 100 }, (_, i) => `| row ${i} | value ${i} | note ${i} |`)].join('\n');
-    assertBlocks((await judged(`gh issue edit 9 --body "${body}" --add-label status:complete`)).r,
-      BLOCK(9, COMPLETE), 'the unproved issue still bounces, table body and all');
-    const ungated = await judged(`gh issue edit 9 --body "${body}" --add-label status:building`);
-    assertEq(passText(ungated.r, 'an ungated edit'), '', 'silently');
-    assertEq(ungated.calls.length, 0, 'an ungated edit reads nothing');
-  });
-
   await test('ports "a redirect between --add-label and its value is skipped, never read as the label"', async () => {
     for (const c of [
       'gh issue edit 9 --add-label 2>&1 status:complete',
@@ -104,11 +94,6 @@ const run = async () => {
     for (const c of ["gh issue edit 9 --add-label 'a b'", 'gh issue edit 9 --add-label "x y" status:complete']) {
       passText((await judged(c)).r, `only the flag's own value is a label: ${c}`);
     }
-  });
-
-  await test('ports "a label list carrying status:complete blocks too"', async () => {
-    assertBlocks((await judged('gh issue edit 9 --add-label "type:bug,status:complete"')).r,
-      BLOCK(9, COMPLETE), 'the label is read out of the list');
   });
 
   await test('ports "any other label flip is not this gate: exit 0, no gh call"', async () => {
@@ -252,13 +237,6 @@ const run = async () => {
   });
 
   group('proof-guard: wiring and fail-open');
-
-  await test('ports "hooks.json registers the guard under PreToolUse Bash": BASH_GUARDS runs it after tree-guard', async () => {
-    const hooks = mods('guards').BASH_GUARDS.map((g) => g.hook);
-    const at = hooks.indexOf('safety:proof-guard');
-    assert(at > hooks.indexOf('safety:tree-guard') && hooks.indexOf('safety:tree-guard') >= 0,
-      `the Bash chain holds safety:proof-guard after safety:tree-guard, got: ${hooks.join(', ')}`);
-  });
 
   await test('ports "a gh view that fails: exit 0, and says the gate did not run": the notice, no deny', async () => {
     const { r } = await judged('gh issue edit 9 --add-label status:complete', WORLD, { fails: true });

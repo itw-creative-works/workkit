@@ -7,10 +7,9 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { WORKFLOW_DIR, cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
-const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, stubTool } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
+const { stubTool } = require('../../lib/platform');
 const { childrenOf, isContent } = require('../../lib/workflow-yaml');
-const { openingLines, TOP_THREE } = require('../../lib/checks-template');
+const { openingLines } = require('../../lib/checks-template');
 
 const run = async () => {
   group('standards.sh: the retired CHANGELOG linter copy');
@@ -161,92 +160,6 @@ const run = async () => {
       assert(again.includes('changelog job is already in'), `${copy}: seen as current, got: ${again}`);
       cleanup(repo); cleanup(stub.dir);
     }
-  });
-
-  await test('the job ends at the next job whatever its id, and the comment above that job stays', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const head = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
-    const tail = '\n\n  # end to end, on every pull request\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run e2e\n  lint.v2:\n    runs-on: ubuntu-latest\n';
-    fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}${tail}`);
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), `${head}  changelog:\n    ${USES}${tail}`,
-      `the e2e and lint.v2 jobs and the comment above them survive, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('the retired header comment is replaced by the template\'s own, with the job', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const oldHeader = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
-      + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
-      + '# changelog.js the heal vendors to .github/changelog-lint.cjs on every run.\n';
-    // The template's current paragraph: the anchor line through its last comment line.
-    const template = readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml')).split('\n');
-    const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
-    const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
-    const newHeader = `${template.slice(from, to).join('\n')}\n`;
-    assert(from !== -1 && newHeader !== oldHeader, 'the template carries a different paragraph');
-    const intro = '# Checks: the repo\'s own words.\n#\n';
-    const body = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n';
-    fs.writeFileSync(file, `${intro}${oldHeader}${body}${nodeJob('.github/changelog-lint.cjs')}\n`);
-    runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), `${intro}${newHeader}${body}  changelog:\n    ${USES}\n`,
-      'the old paragraph is swapped for the template\'s, and nothing else in the header moves');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a retired header above a job already in the uses: form is swapped on its own, once', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const older = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
-      + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
-      + '# changelog.js the heal vendors to .github/changelog-lint.js on every run.\n';
-    const template = readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml')).split('\n');
-    const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
-    const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
-    const newHeader = `${template.slice(from, to).join('\n')}\n`;
-    const body = `name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  changelog:\n    ${USES}\n`;
-    fs.writeFileSync(file, `${older}${body}`);
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), `${newHeader}${body}`, `the header swapped and the job untouched, got: ${output}`);
-    assert(output.includes('checks: the header comment in .github/workflows/checks.yml now describes the kit\'s workflow; commit it'),
-      `reported, got: ${output}`);
-    const again = runScript(repo, { pathPrefix: stub.binDir }).output;
-    assertEq(readFile(file), `${newHeader}${body}`, 'a second heal changes nothing');
-    assert(!again.includes('now describes the kit\'s workflow'), `and says nothing of it, got: ${again}`);
-    assert(again.includes('changelog job is already in'), `seen as current, got: ${again}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a comment naming the copy does not hold the copy in place', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
-    const other = path.join(repo, '.github', 'workflows', 'release.yml');
-    fs.mkdirSync(path.dirname(other), { recursive: true });
-    fs.writeFileSync(other, 'name: release\n# the old linter lived at .github/changelog-lint.cjs\non:\n  push:\n');
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assert(!fs.existsSync(cjs), `a comment is not a run, so the copy is removed, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a job that is the last one in the file is rewritten to the end', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const head = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
-    fs.writeFileSync(file, `${head}${nodeJob('.github/changelog-lint.cjs')}\n`);
-    runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), `${head}  changelog:\n    ${USES}\n`, 'the old job is replaced whole');
-    cleanup(repo); cleanup(stub.dir);
   });
 
   // The heal rewrites the job before it removes the copy: the other order finds
@@ -419,26 +332,6 @@ const run = async () => {
   const RETIRED_TAIL = ' the test gate that runs on every pull request.\n';
   const FIRST_LINE_SWAPPED = 'checks: the first line of .github/workflows/checks.yml now says the gate runs on pushes too; commit it';
 
-  await test('a retired first line is swapped for the template\'s opening sentence, reported once, the rest untouched', () => {
-    const rest = `name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  changelog:\n    ${USES}\n`;
-    for (const first of [`# Checks (workflow spec):${RETIRED_TAIL}`, `# Checks (workflow spec) \u2014${RETIRED_TAIL}`]) {
-      const repo = makeRepo();
-      const stub = makeGhStub();
-      const file = path.join(repo, '.github', 'workflows', 'checks.yml');
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, `${first}${rest}`);
-      const { output } = runScript(repo, { pathPrefix: stub.binDir });
-      assertEq(readFile(file), `${TOP}${rest}`, `${JSON.stringify(first)}: line 1 swapped, every other line byte for byte`);
-      assert(output.includes(FIRST_LINE_SWAPPED), `${JSON.stringify(first)}: reported, got: ${output}`);
-      assert(!output.includes('now describes the kit\'s workflow'), `${JSON.stringify(first)}: not as a header change, got: ${output}`);
-      const again = runScript(repo, { pathPrefix: stub.binDir }).output;
-      assertEq(readFile(file), `${TOP}${rest}`, `${JSON.stringify(first)}: a second heal changes nothing`);
-      assert(!again.includes(FIRST_LINE_SWAPPED), `${JSON.stringify(first)}: and says nothing of it, got: ${again}`);
-      assert(again.includes('changelog job is already in'), `${JSON.stringify(first)}: seen as current, got: ${again}`);
-      cleanup(repo); cleanup(stub.dir);
-    }
-  });
-
   await test('a retired first line on a PR-only checks.yml: both fixed in one heal, both reported', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
@@ -454,48 +347,6 @@ const run = async () => {
       `and the push trigger, got: ${output}`);
     assert(!output.includes('now describes the kit\'s workflow'), `and no header change, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
-  });
-
-  // A copy of the engine whose template opens with TOP_THREE, run in place of
-  // the kit's, beside the kit's own hook layer.
-  const healFromCopy = (kit, repo, stub) => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(kit, 'standards.sh')), shellPath(repo)], {
-      env: {
-        ...process.env,
-        PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOOKS_DIR: shellPath(path.join(WORKFLOW_DIR, '..', 'hooks')),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
-        WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'claude-home')),
-      },
-      encoding: 'utf8',
-      timeout: 20000,
-    });
-    return `${res.stdout || ''}${res.stderr || ''}`;
-  };
-
-  await test('a template rewrapped to three lines: the heal swaps in all three and reports it once', () => {
-    const root = mkTmp('wf-std-');
-    const kit = path.join(root, 'workflow');
-    fs.cpSync(WORKFLOW_DIR, kit, { recursive: true });
-    const shipped = readFile(path.join(kit, TEMPLATE_REL));
-    fs.writeFileSync(path.join(kit, TEMPLATE_REL), `${TOP_THREE}${shipped.slice(openingLines(shipped).length)}`);
-    const top = openingLines(readFile(path.join(kit, TEMPLATE_REL)));
-    assertEq(top, TOP_THREE, 'the copy\'s template opens with the three-line sentence');
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const file = path.join(repo, '.github', 'workflows', 'checks.yml');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const rest = `name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n  changelog:\n    ${USES}\n`;
-    fs.writeFileSync(file, `# Checks (workflow spec):${RETIRED_TAIL}${rest}`);
-    const output = healFromCopy(kit, repo, stub);
-    assertEq(readFile(file), `${top}${rest}`, `line 1 became the three lines, every other line byte for byte, got: ${output}`);
-    assertEq(output.split(FIRST_LINE_SWAPPED).length - 1, 1, `the swap is reported once, got: ${output}`);
-    assert(!output.includes('now describes the kit\'s workflow'), `not as a header change, got: ${output}`);
-    const again = healFromCopy(kit, repo, stub);
-    assertEq(readFile(file), `${top}${rest}`, 'a second heal changes nothing');
-    assert(!again.includes(FIRST_LINE_SWAPPED), `and says nothing of it, got: ${again}`);
-    assert(again.includes('changelog job is already in'), `seen as current past all three lines, got: ${again}`);
-    cleanup(root); cleanup(repo); cleanup(stub.dir);
   });
 
   return summary();

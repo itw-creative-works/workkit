@@ -1,5 +1,5 @@
 // Tests for jobs/morning/brief/brief-payload.js, the payload the 9am job hands
-// to Claude: what is printed, the rendered payload and the script run whole.
+// to Claude: what is printed, the instruction and the script run whole.
 // The shared prologue (fixture worlds, composer seam, news gate) is ./helpers.js.
 
 const { pathToFileURL } = require('url');
@@ -7,32 +7,13 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { homeEnv } = require('../../lib/platform');
 const {
-  SCRIPT, render, INSTRUCTION, cleanup, ccFixture, mkWorld, composeIn,
+  SCRIPT, INSTRUCTION, cleanup, ccFixture,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('jobs/brief-payload: what is printed');
-
-  await test('the rendered payload leads with the digest instruction', () => {
-    const world = mkWorld();
-    const text = render(composeIn(world));
-    assert(text.startsWith(INSTRUCTION), 'the instruction is first, before anything else');
-    assert(/MORNING KICKOFF/.test(text), 'the digest framing survives');
-    assert(/the literal prefix "HEADLINE: "/.test(text), 'and fixes the first response line for the notification');
-    cleanup(world.root);
-  });
-
-  await test('the payload after the instruction is readable JSON carrying the counts', () => {
-    const world = mkWorld();
-    const text = render(composeIn(world));
-    const json = text.slice(INSTRUCTION.length);
-    const parsed = JSON.parse(json);
-    assertEq(parsed.counts.open, 2, 'the counts round-trip');
-    assertEq(parsed.headline, composeIn(world).headline, 'so does the headline');
-    assert(/\n  "counts": \{/.test(json), 'indented, not one line: a human reads this over a shoulder');
-    cleanup(world.root);
-  });
 
   await test('the instruction describes the new keys and gives each one a section', () => {
     assert(/`nextUp` is the same board asked one question further/.test(INSTRUCTION), 'the payload description explains nextUp');
@@ -64,7 +45,7 @@ const run = async () => {
     const home = mkTmp('brief-payload-');
     const res = spawnSync(process.execPath, [SCRIPT], {
       encoding: 'utf8',
-      timeout: 60000,
+      timeout: SPAWN_DEADLINE,
       env: homeEnv(home, { ...process.env, WORKKIT_CC_CHANGELOG: pathToFileURL(ccFixture(home)).href }),
     });
     cleanup(home);

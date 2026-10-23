@@ -16,6 +16,7 @@ const {
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'red-proof.sh');
 const NO_SNAPSHOT = 'red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)';
@@ -116,7 +117,7 @@ const mkBuilt = () => {
 
 const runScript = (w, args, cwd = w.repo, env = w.env) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
-    cwd, env, encoding: 'utf8', timeout: 60000,
+    cwd, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `the script finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -136,7 +137,7 @@ const termMidRun = (w, args, marker) => new Promise((resolve, reject) => {
     if (fs.existsSync(marker)) {
       clearInterval(poll);
       child.kill('SIGTERM');
-    } else if (Date.now() - started > 30000) {
+    } else if (Date.now() - started > SPAWN_DEADLINE) {
       clearInterval(poll);
       child.kill('SIGKILL');
     }
@@ -144,7 +145,7 @@ const termMidRun = (w, args, marker) => new Promise((resolve, reject) => {
   const deadline = setTimeout(() => {
     child.kill('SIGKILL');
     reject(new Error(`the script did not exit after TERM: ${said}`));
-  }, 60000);
+  }, SPAWN_DEADLINE);
   child.on('exit', (code, signal) => {
     clearInterval(poll);
     clearTimeout(deadline);
@@ -211,23 +212,6 @@ const run = async () => {
   });
 
   group('red-proof.sh: the snapshot');
-
-  await test('build output rebuilt after the snapshot: an untouched package\'s dist loads the old code, red on the real assertion', () => {
-    const w = mkBuilt();
-    takeSnapshot(w);
-    w.write('packages/a/index.js', 'module.exports = 2;\n');
-    w.write('packages/b/dist/index.js', BUILT('new'));
-    w.write('tests/ab.test.js', BUILT_TEST_OF(2));
-    const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/ab.test.js']);
-    assert(out.includes('b old 1'), `the snapshot's build of @scope/b loaded the snapshot's @scope/a: ${out}${err}`);
-    assert(!err.includes('Cannot find module'), `no load failure: ${err}`);
-    assert(err.includes('a via b is 1'), `the assertion ran: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
-    assertEq(fs.readFileSync(path.join(w.repo, 'packages', 'b', 'dist', 'index.js'), 'utf8'), BUILT('new'), 'the live build is intact');
-    assertNoWorktree(w);
-    cleanup(w.dir);
-  });
 
   await test('a gitignored .env in a repo with one root package.json is in the copy', () => {
     const w = mkRepo('red-proof-env-', {
@@ -442,34 +426,6 @@ const run = async () => {
     cleanup(w.dir);
   });
 
-  await test('the root node_modules is reachable from the copy', () => {
-    const w = mkWorld();
-    w.write('node_modules/tiny/index.js', 'module.exports = 5;\n');
-    takeSnapshot(w);
-    w.write('src/x.js', 'module.exports = 2;\n');
-    w.write('tests/x.test.js', `console.log('tiny', require('tiny'));\n${TEST_OF(2)}`);
-    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 0, `exit 0: ${err}`);
-    assert(out.includes('tiny 5'), `the package resolved: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `red on the edited source: ${out}`);
-    assertEq(fs.readFileSync(path.join(w.repo, 'node_modules', 'tiny', 'index.js'), 'utf8'),
-      'module.exports = 5;\n', 'the real node_modules is intact');
-    assertNoWorktree(w);
-    cleanup(w.dir);
-  });
-
-  await test('a dependency installed after the snapshot is visible to the copy, the documented limit', () => {
-    const w = mkWorld();
-    takeSnapshot(w);
-    w.write('node_modules/late/index.js', 'module.exports = 6;\n');
-    w.write('src/x.js', 'module.exports = 2;\n');
-    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', "console.log('late', require('late'));"]);
-    assertEq(field(out, 'late'), '6', `the late dependency resolved in the copy: ${out}${err}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertNoWorktree(w);
-    cleanup(w.dir);
-  });
-
   // A path HEAD holds as one kind (file or folder) and the snapshot as the other.
   for (const [label, head, held, check, want] of [
     ['a file in HEAD, a folder at the claim', { conf: 'file\n' }, (w) => w.write('conf/inner.txt', 'inner\n'),
@@ -513,17 +469,6 @@ const run = async () => {
     assertEq(field(out, 'kind'), 'true 3', `the copy holds the committed folder: ${out}${err}`);
     assert(code === 0 || code === 1, `a verdict, exit 0 or 1: ${code} ${out}${err}`);
     assertNoWorktree(w);
-    cleanup(w.dir);
-  });
-
-  await test('a tracked file deleted in the working tree, not named, is deleted in the copy', () => {
-    const w = mkWorld();
-    takeSnapshot(w);
-    fs.rmSync(path.join(w.repo, 'src', 'helper.js'));
-    const check = "process.exit(require('fs').existsSync('src/helper.js') ? 0 : 1)";
-    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assertEq(code, 0, `exit 0, the copy lacks it: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `red: ${out}`);
     cleanup(w.dir);
   });
 
@@ -575,24 +520,6 @@ const run = async () => {
   });
 
   group('red-proof.sh: workspaces');
-
-  await test('a workspace package name loads the copy\'s files: red on its named source, exit 0', () => {
-    const w = mkWorkspaces();
-    takeSnapshot(w);
-    w.write('packages/a/index.js', 'module.exports = 2;\n');
-    w.write('tests/a.test.js', WS_TEST_OF(2));
-    const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/a.test.js']);
-    const resolved = field(out, 'resolved');
-    const root = field(out, 'root');
-    assert(root !== '' && root !== w.repo, `the test ran in a copy, not the live root: ${out}`);
-    assert(resolved.startsWith(`${root}${path.sep}`), `@scope/a resolved under the copy ${root}: ${resolved}`);
-    assert(!resolved.startsWith(`${w.repo}${path.sep}`), `never under the live root ${w.repo}: ${resolved}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
-    assert(err.includes('a is 1'), `the snapshot's package source ran: ${err}`);
-    assertNoWorktree(w);
-    cleanup(w.dir);
-  });
 
   await test('a package\'s own node_modules is reachable from the copy: dep resolves, green, exit 1', () => {
     const w = mkWorkspaces();

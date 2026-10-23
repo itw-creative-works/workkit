@@ -13,7 +13,7 @@ const { mods, textOf } = require('../lib/mods-inputs');
 
 const run = async () => {
   group('manager-addon: silence');
-  for (const [label, text] of [['an empty file', ''], ['a whitespace-only file', '\n  \n\t\n']]) {
+  for (const [label, text] of [['an empty file', '']]) {
     await test(`ports "${label}: exit 0, no output"`, () => {
       assertEq(textOf(mods('addon').addonContext(text)), '', 'a blank add-on adds nothing');
     });

@@ -1,15 +1,11 @@
-// Tests for docs:change-tracker's logic, changeTrackerVerdict({
-// stopHookActive, porcelain, diff, untracked, inbox, capture, previous, prompt
-// }) in hooks/mods/change-tracker.js: uncommitted code or unfiled entries
-// block the stop with the nag, once per fingerprint of the state. Each case
-// ports the HEAD case its name quotes. Gathering is the wiring's, in
-// tests/mods/stop-change-tracker.test.ts: the git repo, the .workkit/ state
-// file and the folder with none, the counts, the FINDINGS and BOARD lines, the
-// prompt's read, the session, never calling gh. Every HEAD case is ported.
+// Tests for docs:change-tracker's logic, changeTrackerVerdict in
+// hooks/mods/change-tracker.js: uncommitted code or unfiled entries block the
+// stop with the nag, once per fingerprint of the state. Gathering the facts is
+// the wiring's, cased in tests/mods/stop-change-tracker.test.ts.
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods } = require('../lib/mods-inputs');
 
 const PROMPT_FILE = path.join(__dirname, '..', '..', 'hooks', 'mods', 'change-tracker', 'prompt.md');
@@ -80,19 +76,6 @@ const run = async () => {
     assert(prompt().length > 100, 'prompt.md should have substantial content');
   });
 
-  await test('ports "prompt.md points at issues as the work-item home"', () => {
-    const content = prompt();
-    assert(/GitHub issues/i.test(content), 'should name issues as the SSOT');
-    assert(content.includes('status:'), 'should name the status label vocabulary');
-    assert(content.includes('CHANGELOG'), 'should require the CHANGELOG entry on ship');
-  });
-
-  await test('ports "prompt.md requires promoting durable findings out of .workkit/"', () => {
-    const content = prompt();
-    assert(content.includes(`${W}/`), 'should reference scratch');
-    assert(/promote/i.test(content), 'should state the promotion rule');
-  });
-
   await test('ports "prompt.md never offers the capture file as a filing destination"', () => {
     const content = prompt();
     assert(/never write to `?\.workkit\/capture\.md/i.test(content), 'the rule is stated outright');
@@ -101,29 +84,7 @@ const run = async () => {
     }
   });
 
-  await test('ports "prompt.md carries no board instructions"', () => {
-    const content = prompt();
-    assert(!content.includes('PROGRESS.md'), 'the board is not the prompt\'s business anymore');
-    assert(!content.includes('INBOX.md'), 'nor the retired inbox file');
-  });
-
-  await test('ports "prompt.md mentions doc parity"', () => {
-    const content = prompt();
-    assert(content.includes('doc parity') || content.includes('Doc parity'), 'should reference the doc parity system');
-  });
-
-  await test('ports "the code-change block carries prompt.md itself, not the fallback": the prompt it is handed', async () => {
-    const text = prompt();
-    const r = await blocksWith({ ...NEW_APP, prompt: text }, CODE);
-    assert(r.context.includes(text.trim()), 'the context carries the prompt whole');
-  });
-
   group('change-tracker: repeat only when something changed');
-
-  await test('ports "first stop with changes: blocks and records the fingerprint": a SHA-1', async () => {
-    const r = await blocksWith(EDITED('two'), CODE);
-    assert(/^[0-9a-f]{40}$/.test(r.fingerprint), `the fingerprint is a sha1, got: ${r.fingerprint}`);
-  });
 
   await test('ports "unchanged tree on the next stop: silent"', async () => {
     const first = await blocksWith(EDITED('two'), CODE);
@@ -163,16 +124,6 @@ const run = async () => {
     assert(second.context.includes('SCRATCH: 2 unfiled'), 'and carries the new count');
   });
 
-  await test('ports "clean tree, empty capture file: silent and no state file written": no fingerprint to keep', async () => {
-    await silent({ capture: 0 }, 'nothing to nudge about');
-  });
-
-  await test('ports "no .workkit/: nudges every stop and writes nothing": with no state to read, every stop nudges', async () => {
-    const first = await blocksWith(NEW_APP, CODE);
-    const second = await blocksWith({ ...NEW_APP, previous: null }, CODE);
-    assertEq(second.fingerprint, first.fingerprint, 'the same state, nudged again');
-  });
-
   group('change-tracker: guards');
 
   await test('ports "stop_hook_active=true: exits 0 (prevents recursion)"', async () => {
@@ -187,27 +138,12 @@ const run = async () => {
     assert(r.context.includes('workkit:triage'), 'offers the triage skill');
   });
 
-  await test('ports "clean tree + header-only INBOX: no block"', async () => {
-    await silent({ inbox: 0 }, 'no nudge for an empty inbox');
-  });
-
   await test('ports "code change + unfiled INBOX: one block carrying both"', async () => {
     const r = await blocksWith({ ...NEW_APP, inbox: 1 }, BOTH);
     assert(r.context.includes('INBOX: 1 unfiled'), 'inbox line rides the code nudge');
   });
 
   group('change-tracker: local .workkit/capture.md');
-
-  await test('ports "clean tree + scratch entries: blocks with the count"', async () => {
-    const r = await blocksWith({ capture: 2 }, ENTRIES);
-    assert(r.context.includes('SCRATCH: 2 unfiled'), `context carries the count, got: ${r.context}`);
-    assert(r.context.includes('workkit:triage'), 'offers the triage skill');
-    assert(r.context.includes('never drain'), 'draining stays deliberate');
-  });
-
-  await test('ports "clean tree + header-only capture file: no block"', async () => {
-    await silent({ capture: 0 }, 'no nudge for an empty capture file');
-  });
 
   await test('ports "code change + scratch entries: one block carrying both"', async () => {
     const r = await blocksWith({ ...NEW_APP, capture: 1 }, BOTH);

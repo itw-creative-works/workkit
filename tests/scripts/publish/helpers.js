@@ -12,6 +12,8 @@ const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
+const { seeded } = require('../../lib/seed');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -21,6 +23,75 @@ const writeStub = (file, lines) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   return stubTool(path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines]);
 };
+
+/**
+ * The engine and the libs the slug list reads, copied into `kit` so a run's
+ * engine is the copy and never this checkout. The tower's temp folder rule
+ * lives in the hooks module, which the home runner seeds the same way
+ * (workflow/home.sh); the package.json makes the copy a module.
+ */
+const copyEngine = (kit) => {
+  fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
+  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
+  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
+  fs.mkdirSync(path.join(kit, 'hooks', 'mods'), { recursive: true });
+  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'package.json'), path.join(kit, 'hooks', 'package.json'));
+  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'mods', 'markers.js'), path.join(kit, 'hooks', 'mods', 'markers.js'));
+};
+
+/**
+ * A bare "GitHub" at `<seed>/remote.git` whose default branch is `branch`.
+ * Given `files` (root-relative path to content), the tower project as a seed
+ * leaves it: those files committed on `branch`, pushed, and cloned to
+ * `<seed>/workflow-home/tower`.
+ */
+const mkTowerRemote = (seed, { branch = 'main', files = null } = {}) => {
+  const bare = path.join(seed, 'remote.git');
+  spawnSync('git', ['init', '-q', '--bare', '-b', branch, bare], { encoding: 'utf8' });
+  if (!files) return;
+  const work = path.join(seed, 'seed');
+  for (const [rel, body] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(work, rel)), { recursive: true });
+    fs.writeFileSync(path.join(work, rel), body);
+  }
+  git(work, 'init', '-q', '-b', branch);
+  git(work, 'add', '-A');
+  git(work, '-c', 'user.name=seed', '-c', 'user.email=seed@localhost', 'commit', '-q', '-m', 'chore(home): seed the tower project');
+  git(work, 'remote', 'add', 'origin', bare);
+  git(work, 'push', '-q', '-u', 'origin', branch);
+  cleanup(work);
+  spawnSync('git', ['clone', '-q', bare, path.join(seed, 'workflow-home', 'tower')], { encoding: 'utf8' });
+};
+
+// The parts of a world no option changes inside one shape, built once per
+// process for each `branch`, `home` and `roster` a suite asks for: the copied
+// checkout, the bare "GitHub" with the tower project on main, its clone, and
+// the roster repos.
+const copyWorld = seeded((seed, { branch, home, roster }) => {
+  copyEngine(path.join(seed, 'kit'));
+
+  // The clone, carrying what a seed leaves: the project on main (the app and
+  // nothing else).
+  mkTowerRemote(seed, {
+    branch,
+    files: home ? {
+      'package.json': '{ "name": "workkit-tower" }\n',
+      'targets/web/src/index.html': '<html>the board</html>\n',
+      'README.md': '# the tower\n',
+      '.gitignore': 'node_modules/\ndist/\n',
+    } : null,
+  });
+
+  // Each roster entry is a real repo: a committed opt-in, and an origin the
+  // slug is derived from.
+  for (const name of roster) {
+    const dir = path.join(seed, 'repos', name);
+    fs.mkdirSync(path.join(dir, '.workkit'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    git(dir, 'init', '-q', '-b', 'main');
+    git(dir, 'remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
+  }
+});
 
 /**
  * A world: a copied checkout, a scratch HOME and ~/.workkit, a bare "GitHub"
@@ -42,20 +113,10 @@ const mkWorld = ({
   const homeDir = path.join(root, 'home');
   const workflowHome = path.join(root, 'workflow-home');
   const tower = path.join(workflowHome, 'tower');
+  const bare = path.join(root, 'remote.git');
+  copyWorld(root, { branch, home, roster });
   fs.mkdirSync(homeDir, { recursive: true });
   fs.mkdirSync(workflowHome, { recursive: true });
-
-  // The engine and the libs the slug list reads, copied so the run's engine is
-  // the copy and never this checkout.
-  fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
-  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
-  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
-  // The tower's temp folder rule lives in the hooks module, which the home
-  // runner seeds the same way (workflow/home.sh); the package.json makes the
-  // copy a module.
-  fs.mkdirSync(path.join(kit, 'hooks', 'mods'), { recursive: true });
-  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'package.json'), path.join(kit, 'hooks', 'package.json'));
-  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'mods', 'markers.js'), path.join(kit, 'hooks', 'mods', 'markers.js'));
 
   // The build: an `npm --prefix <clone>/targets/web run build` that writes dist/
   // beside src/, as `omega build` does. It records the path prefix its env
@@ -88,9 +149,6 @@ const mkWorld = ({
       : ['exit 0']),
   ]);
 
-  const bare = path.join(root, 'remote.git');
-  spawnSync('git', ['init', '-q', '--bare', '-b', branch, bare], { encoding: 'utf8' });
-
   // The site options are the user's and live beside the roster: the clone
   // below is engine territory and carries nothing hand-written.
   const settings = {
@@ -100,18 +158,11 @@ const mkWorld = ({
   fs.writeFileSync(path.join(workflowHome, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`);
 
   // The roster this machine has registered: the engine's own index, read by
-  // the same module the tower and the brief read it with. Each entry is a real
-  // repo: a committed opt-in, and an origin the slug is derived from.
+  // the same module the tower and the brief read it with, keyed by where this
+  // world's copies of the seed's repos sit.
   if (roster.length) {
     const registered = {};
-    for (const name of roster) {
-      const dir = path.join(root, 'repos', name);
-      fs.mkdirSync(path.join(dir, '.workkit'), { recursive: true });
-      fs.writeFileSync(path.join(dir, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
-      git(dir, 'init', '-q', '-b', 'main');
-      git(dir, 'remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
-      registered[gitPath(dir)] = { registered: '2026-07-29' };
-    }
+    for (const name of roster) registered[gitPath(path.join(root, 'repos', name))] = { registered: '2026-07-29' };
     fs.writeFileSync(path.join(workflowHome, '.repos.json'), `${JSON.stringify({ version: 1, repos: registered }, null, 2)}\n`);
   }
 
@@ -121,24 +172,11 @@ const mkWorld = ({
     WORKKIT_HOME_REMOTE: bare,
   });
 
-  // The clone, carrying what a seed leaves: the project on main (the app and
-  // nothing else) and (unless a world says otherwise) the build tooling that
-  // proves it can build here.
+  // The copied clone still names the seed's bare as its origin; this world's
+  // own bare takes its place. Unless a world says otherwise, the clone gets the
+  // build tooling that proves it can build here.
   if (home) {
-    const seed = path.join(root, 'seed');
-    fs.mkdirSync(path.join(seed, 'targets', 'web', 'src'), { recursive: true });
-    fs.writeFileSync(path.join(seed, 'package.json'), '{ "name": "workkit-tower" }\n');
-    fs.writeFileSync(path.join(seed, 'targets', 'web', 'src', 'index.html'), '<html>the board</html>\n');
-    fs.writeFileSync(path.join(seed, 'README.md'), '# the tower\n');
-    fs.writeFileSync(path.join(seed, '.gitignore'), 'node_modules/\ndist/\n');
-    git(seed, 'init', '-q', '-b', branch);
-    git(seed, 'add', '-A');
-    git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@localhost', 'commit', '-q', '-m', 'chore(home): seed the tower project');
-    git(seed, 'remote', 'add', 'origin', bare);
-    git(seed, 'push', '-q', '-u', 'origin', branch);
-    cleanup(seed);
-
-    spawnSync('git', ['clone', '-q', bare, tower], { encoding: 'utf8' });
+    git(tower, 'remote', 'set-url', 'origin', bare);
     // The mint leaves what a real one leaves: a minted logo, which the build
     // checks for before it builds.
     if (tooling) {
@@ -189,7 +227,7 @@ const binDirWithout = (excluded) => {
 
 const publish = (world, args = []) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
-    env: world.env, encoding: 'utf8', timeout: 60000,
+    env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
   // `out` is both streams in the order a terminal shows them, since what these
@@ -228,5 +266,6 @@ const readJson5 = (file) => JSON.parse(JSON.stringify(
 ));
 
 module.exports = {
-  REPO_ROOT, cleanup, git, writeStub, mkWorld, binDirWithout, publish, setSite, fromPages, onMain, readJson5,
+  REPO_ROOT, cleanup, git, writeStub, copyEngine, mkTowerRemote, mkWorld, binDirWithout, publish, setSite, fromPages,
+  onMain, readJson5,
 };

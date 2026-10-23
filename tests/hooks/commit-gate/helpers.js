@@ -16,6 +16,7 @@ const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo, FIXTURE_ORIGIN } = require('../../lib/git-repo');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const KIT = fs.realpathSync(path.join(__dirname, '..', '..', '..'));
 const WORKFLOW_DIR = path.join(KIT, 'workflow');
@@ -221,7 +222,7 @@ const asFile = (r, x, name) => {
 /** wk_changelog_job_rewrite <a> <b> run for real, its stdout, or null when it fails. */
 const realRewrite = (a, b) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"; wk_changelog_job_rewrite "$2" "$3"', 'bash', shellPath(JOB), shellPath(a), shellPath(b)],
-    { encoding: 'utf8', timeout: 30000 });
+    { encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return res.status === 0 ? res.stdout : null;
 };
 
@@ -239,7 +240,7 @@ const readWork = (r, p) => {
 // One of the kit's own scripts run for real, from a real folder.
 const realRun = (argv, init) => {
   const cwd = init.cwd && fs.existsSync(init.cwd) ? init.cwd : os.tmpdir();
-  const res = spawnSync(BASH, [...NO_RC, ...argv.slice(1)], { cwd, input: init.stdin, encoding: 'utf8', timeout: 30000 });
+  const res = spawnSync(BASH, [...NO_RC, ...argv.slice(1)], { cwd, input: init.stdin, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return runResult({ exitCode: res.status ?? 1, stdout: res.stdout || '', stderr: res.stderr || '' });
 };
 
@@ -325,6 +326,8 @@ const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
     isWindows: r.isWindows,
     scriptShell: r.scriptShell,
     scriptShellExe: r.scriptShellExe ?? null,
+    // The machine's settings file: a real file when a case sets one, else a path nothing holds.
+    userSettings: r.userSettings ?? '/w/user/settings.json',
     show: async (rev, p) => {
       r.calls.show.push([rev, p]);
       const [at, file] = p === undefined ? splitSpec(rev) : [String(rev).replace(/:$/, ''), p];
@@ -343,7 +346,7 @@ const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
       r.calls.lint.push([p, ...rest]);
       scratch ??= materialize(r);
       const res = spawnSync(process.execPath, [LINTER, path.join(scratch, relOf(p)), '--added-only', ...(source === 'index' ? ['--staged'] : [])],
-        { cwd: scratch, encoding: 'utf8', timeout: 30000 });
+        { cwd: scratch, encoding: 'utf8', timeout: SPAWN_DEADLINE });
       return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
     },
     jobRewrite: async (a, b) => {

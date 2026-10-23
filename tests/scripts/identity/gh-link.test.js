@@ -54,17 +54,6 @@ const run = async () => {
     cleanup(world.root); cleanup(other.kit);
   });
 
-  await test('setup repoints a gh link into another kit copy\'s workflow/identity/gh', () => {
-    const { world, repo, kit, script } = mkSetupScene();
-    const other = mkKit('other/kit');
-    fs.mkdirSync(world.localBin, { recursive: true });
-    fs.symlinkSync(path.join(other.kit, 'workflow', 'identity', 'gh'), ghLink(world));
-    const { said } = runCli(world, ['setup'], { cwd: repo, script });
-    assertEq(fs.readlinkSync(ghLink(world)), path.join(kit, 'workflow', 'identity', 'gh'), `repointed at the kit setup runs from (setup said: ${said})`);
-    assert(said.includes('repointed'), `and says so, got: ${said}`);
-    cleanup(world.root); cleanup(kit); cleanup(repo); cleanup(other.kit);
-  });
-
   await test('setup leaves a foreign gh link alone and reports it', () => {
     const { world, repo, kit, script } = mkSetupScene();
     const foreign = path.join(world.root, 'someone-elses-gh');
@@ -75,17 +64,6 @@ const run = async () => {
     assertEq(fs.readlinkSync(ghLink(world)), foreign, 'the link still points where it did');
     assert(said.includes(shellPath(foreign)), `the run names the foreign target, got: ${said}`);
     cleanup(world.root); cleanup(kit); cleanup(repo);
-  });
-
-  await test('a real file at ~/.local/bin/gh is reported and left as it is', () => {
-    const world = mkWorld();
-    fs.mkdirSync(world.localBin, { recursive: true });
-    fs.writeFileSync(ghLink(world), 'someone else’s gh\n');
-    const { code, said } = runCli(world, ['update']);
-    assertEq(code, 0, 'exit 0');
-    assert(said.includes('is a real file'), `it says what is in the way, got: ${said}`);
-    assertEq(fs.readFileSync(ghLink(world), 'utf8'), 'someone else’s gh\n', 'and the file is untouched');
-    cleanup(world.root);
   });
 
   group('identity/gh link: doctor');

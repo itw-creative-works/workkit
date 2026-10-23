@@ -12,6 +12,7 @@ const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const PARTICIPATION = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'participation.sh'));
 
@@ -22,7 +23,7 @@ const inSeam = (script, env = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(PARTICIPATION)}\n${script}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
@@ -58,7 +59,7 @@ const run = async () => {
     const vars = (first) => spawnSync(
       BASH,
       [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
-      { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 },
+      { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE },
     );
     const before = vars(':');
     const after = vars(`. ${JSON.stringify(PARTICIPATION)}`);

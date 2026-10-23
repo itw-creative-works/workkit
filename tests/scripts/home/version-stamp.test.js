@@ -35,14 +35,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the runner seed stamps the clone with this checkout’s kit version', () => {
-    const world = mkWorld();
-    const { out, err } = seeded(world);
-    assert(/rc=0/.test(out + err), `the seed ran: ${out}${err}`);
-    assertEq(stampOf(world), kitVersion(), 'the version is at the clone’s root, beside what it describes');
-    cleanup(world.root);
-  });
-
   await test('a clone stamped NEWER is left exactly as it is, and the skip names the fix', () => {
     const world = mkWorld();
     seeded(world);

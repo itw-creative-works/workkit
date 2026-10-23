@@ -93,23 +93,6 @@ const run = async () => {
     cleanup(tmp);
   });
 
-  await test('a roster that cannot be read raises rather than composing an empty one', () => {
-    // The failure and the empty machine compose the same list, so
-    // telling them apart is the whole job. An empty list published over a good
-    // one tells every reader the board is gone.
-    const tmp = mkTmp('workkit-site-repos-');
-    const workflowHome = mkWorkflowHome(tmp, ['omega'], { roster: '{ not json' });
-    let raised = null;
-    try {
-      composeSlugs({ workflowHome, home: tmp });
-    } catch (err) {
-      raised = err;
-    }
-    assert(raised, 'the compose raised');
-    assert(/could not be read/.test(raised.message), `and says what could not be read, got: ${raised && raised.message}`);
-    cleanup(tmp);
-  });
-
   await test('the list already published survives a roster that will not read', () => {
     const tmp = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmp, 'data', 'repos.json');

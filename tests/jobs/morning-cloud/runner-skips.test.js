@@ -1,5 +1,5 @@
-// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the shape of
-// the script, and the cloud steps that run on a runner only.
+// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the steps a
+// runner skips, and the cloud steps that run on a runner only.
 // The shared prologue (world factory, no-jq PATH, job runner, case gates) is ./helpers.js.
 
 const fs = require('fs');
@@ -8,21 +8,12 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const {
-  SCRIPT, HOME_SLUG, cleanup, mkWorld, runJob, execBitTest,
+  SCRIPT, HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
-  group('jobs/morning (cloud): shape');
-
-  await test('bash -n: no syntax errors', () => {
-    const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' });
-    assertEq(res.status, 0, `bash -n: ${res.stderr}`);
-  });
-
-  await execBitTest('the script is executable', () => {
-    // eslint-disable-next-line no-bitwise
-    assert(fs.statSync(SCRIPT).mode & 0o111, 'the workflow runs it through bash, but a human runs it directly');
-  });
+  group('jobs/morning (cloud): the steps a runner skips');
 
   await test('a runner runs the brief alone: every other step names its skip', () => {
     // The capability gates from the cloud side: the summaries read a machine's
@@ -94,7 +85,7 @@ const run = async () => {
 
     const env = { ...world.env };
     delete env.GITHUB_ACTIONS;
-    spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: 60000, env });
+    spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
 
     assertEq(fs.readFileSync(roster, 'utf8'), before, 'the roster is byte-identical: nothing was registered or dropped');
     assertEq(world.calls().length, 0, 'and nothing was sent: the day is dispatched from a machine, never composed on it');

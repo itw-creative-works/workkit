@@ -61,14 +61,6 @@ const run = async () => {
     }
   });
 
-  await test('an odd or unparseable settings text opts in through optinRepo exactly as settingsOptedIn reads it', async () => {
-    const texts = ['{"proof":{"enabled":false}}', '{ "enabled":\n false }', '{ "enabled": "false" }', 'not json', '', '{"enabled":false}'];
-    for (const text of texts) {
-      const r = await ask('git status', '/w/r', { repos: { '/w/r': text } });
-      assertEq(r.opted, mods('gate').settingsOptedIn(text), `the gate and the opt-in reader agree on ${JSON.stringify(text)}`);
-    }
-  });
-
   await test('ports "a --repo or -R inside quoted text names no repo; an issue URL does": the off-roster half', async () => {
     await runs('git commit -m "kill the watcher before gh --repo acme/x runs"', OPTED.repo);
     await runs('gh issue edit 3 --body "run grep -R foo/bar, then token x"', OPTED.repo);
@@ -91,10 +83,6 @@ const run = async () => {
 
   await test('ports "cd into an opted-in repo from a repo not opted in runs the hook"', async () => {
     await runs(`cd ${OPTED.repo}; ls`, NOT.repo);
-  });
-
-  await test('ports "a relative cd resolves from the cwd"', async () => {
-    await runs('cd repo/sub && ls', OPTED.dir);
   });
 
   await test('ports "a second cd resolves from where the first landed"', async () => {

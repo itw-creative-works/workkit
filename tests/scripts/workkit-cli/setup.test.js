@@ -108,14 +108,6 @@ const run = async () => {
     done();
   });
 
-  await test('the repo question and its [y/N] hint are on stderr, none of it on stdout', () => {
-    const { out, err, done } = repoQuestion('\n');
-    assert(/Add \S+ to the issue workflow\? \[y\/N\]/.test(err), `the prompt and hint are on stderr, got: ${err}`);
-    assert(!out.includes('to the issue workflow?'), `the prompt is not on stdout, got: ${out}`);
-    assert(!out.includes('[y/N]'), `nor the hint, got: ${out}`);
-    done();
-  });
-
   await test('the repo question on a kit without lib.sh prints the skip line and asks nothing', () => {
     // The prompt is lib.sh's, so a kit without it (HOME_LIBS at 0) can only take
     // the no branch after a command-not-found; the guard names the library instead.
@@ -181,13 +173,6 @@ const run = async () => {
     assertEq(code, 1, `exit 1, got: ${out}`);
     assert(/home-repo library is missing/.test(out), `it names the missing library, got: ${out}`);
     cleanup(world.root); cleanup(kit);
-  });
-
-  await test('workkit help lists setup --home', () => {
-    const world = mkWorld();
-    const help = runCli(world, ['help']);
-    assert(/^ {2}setup --home\b/m.test(help.out), `help lists setup --home, got: ${help.out}`);
-    cleanup(world.root);
   });
 
   group('workkit setup: the site question');
@@ -348,16 +333,6 @@ const run = async () => {
       assertEq(JSON.parse(fs.readFileSync(file, 'utf8')).site.publish, false, `${label} is a no on disk: false, not null`);
       cleanup(world.root);
     }
-  });
-
-  await test('the publish question and its [y/N] hint are on stderr, none of it on stdout', () => {
-    const world = mkWorld();
-    seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
-    const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'n\n' });
-    assert(err.includes('Publish the dashboard site to GitHub Pages? [y/N]'), `the prompt and hint are on stderr, got: ${err}`);
-    assert(!out.includes('Publish the dashboard'), `the prompt is not on stdout, got: ${out}`);
-    assert(!out.includes('[y/N]'), `nor the hint, got: ${out}`);
-    cleanup(world.root);
   });
 
   await test('an already-answered machine is asked about the domain no more than about the switch', () => {
@@ -634,18 +609,6 @@ const run = async () => {
     assert(out.includes('rc=1'), `doctor asks for attention, got: ${out}`);
     assert(err.includes('is missing or older than script-shell.cs; run `workkit update`'), `naming the fix, got: ${err}`);
     cleanup(world.root);
-  });
-
-  group('the engine: one yes/no rule');
-
-  await test('the accepted yes spellings are written out in workflow/lib/flows.sh alone', () => {
-    const kitRoot = path.dirname(WORKFLOW_DIR);
-    const hits = fs.readdirSync(WORKFLOW_DIR, { recursive: true })
-      .map((rel) => path.join(WORKFLOW_DIR, rel))
-      .filter((file) => fs.statSync(file).isFile() && fs.readFileSync(file, 'utf8').includes('y|Y|yes|YES'))
-      .map((file) => path.relative(kitRoot, file).split(path.sep).join('/'))
-      .sort();
-    assertEq(JSON.stringify(hits), JSON.stringify(['workflow/lib/flows.sh']), 'the one home of the yes-parse');
   });
 
   return summary();

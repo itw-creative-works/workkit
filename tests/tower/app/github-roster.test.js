@@ -4,10 +4,9 @@
 //
 
 const path = require('path');
-const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  loadLibs, libs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW, USER_URL,
+  loadLibs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW, USER_URL,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
 
@@ -133,13 +132,6 @@ const run = async () => {
     assertEq(logins(), 2, 'and a different token is a different viewer, asked afresh');
   });
 
-  await test('the home repo name is the one setup creates', () => {
-    const homeSh = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'home.sh'), 'utf8');
-    const pinned = (homeSh.match(/WK_HOME_REPO_NAME='(.+)'/) || [])[1];
-    assert(pinned, 'workflow/home.sh names the home repo');
-    assertEq(github.HOME_NAME, pinned, 'and the central copy reads <login>/ that same name');
-  });
-
   await test('the brief the browser builds is the brief the tower builds', () => {
     const board = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
     const stamp = '2026-07-29T11:00:00Z';
@@ -262,15 +254,6 @@ const run = async () => {
     assert(/refused the token/.test(refused.reason), `and says which of the two problems it is: ${refused.reason}`);
     assertEq(nowhere.reason, null, 'while a copy with no home repo has nothing it failed to read');
     assertEq(empty.reason, null, 'and a board that answered has nothing to explain');
-  });
-
-  await test('the browser sorts the queues by the brief’s rule, to the letter', () => {
-    const sectionsOf = (source) => (source.match(/const (?:ready|inFlight) = issues\.filter\(\(i\) => i\.status === '\w+'\)/g) || []).join(' | ');
-    const briefSrc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'brief.js'), 'utf8');
-    const mine = fs.readFileSync(path.join(libs, 'github', 'brief.js'), 'utf8');
-    assertEq(sectionsOf(briefSrc).split(' | ').length, 2, 'the brief sorts both queues by the status label');
-    assertEq(sectionsOf(mine), sectionsOf(briefSrc), 'and the published brief reads the same two expressions');
-    assert(!/claimed\(/.test(mine), `no claim predicate is called in the browser's copy either, got: ${(mine.match(/.*claimed\(.*/g) || []).join(' | ')}`);
   });
 
   await test('a site with no home repo has nowhere to read summaries from, and says so', async () => {

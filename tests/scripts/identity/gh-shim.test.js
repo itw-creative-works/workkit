@@ -22,6 +22,7 @@ const {
   INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, startServer, startService,
   scratchKit, PTY, atTerminal,
 } = require('../../lib/identity');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 // The client's cache, one token per repo, so a token names the repo it was read for.
 const CACHED = {
@@ -98,7 +99,7 @@ const runShim = (world, args, {
     };
   }
   const res = spawnSync(BASH, [...NO_RC, shellPath(world.shim), ...args],
-    { cwd, env, encoding: 'utf8', timeout: 30000 });
+    { cwd, env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return {
     code: res.status, stderr: res.stderr || '', calls: ghCalls(stub), envs: ghEnvs(stub),
   };

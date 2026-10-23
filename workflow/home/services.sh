@@ -49,7 +49,9 @@ wk_home_discussions() {
   if declare -f interactive >/dev/null 2>&1 && interactive; then
     wk_enter_to_open "$page" 'the categories page' \
       "Make the $missing categories on this page, each with that exact name (any format)."
-    if wk_poll 'Waiting for the categories' 5 wk_home_categories_present "$slug"; then
+    # WORKKIT_HOME_POLL_INTERVAL is the suite's seam: a case waits one interval
+    # it chose, never the five seconds an owner gets.
+    if wk_poll 'Waiting for the categories' "${WORKKIT_HOME_POLL_INTERVAL:-5}" wk_home_categories_present "$slug"; then
       wk_ok "home: the Daily, Weekly, Monthly and Brief categories are there"
       return 0
     fi

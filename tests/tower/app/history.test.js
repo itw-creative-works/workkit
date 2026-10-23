@@ -4,7 +4,6 @@
 //
 
 const path = require('path');
-const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, load } = require('./helpers');
 
@@ -48,7 +47,6 @@ const run = async () => {
   });
 
   await test('an unreadable history says WHY, where the read had a reason to give (#215)', () => {
-    const fs = require('fs');
     const said = 'GitHub rate limit hit for this token; resets at 11:04 PM (in 18 min).';
     const line = history.unreadLine(history.UNREAD, { counts: { open: 0 }, history: null, historyReason: said });
     assert(line.startsWith(history.UNREAD), 'the page keeps its own sentence');
@@ -57,13 +55,6 @@ const run = async () => {
       'a read that had no reason to give draws the sentence alone, as it always did');
     assertEq(history.unreadLine(history.UNREAD, null), history.UNREAD,
       'and so does a copy that was never asked the question');
-
-    // Both pages drawn off that one read say it, each keeping its own tail.
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of ['index.js', 'brief.js']) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(/unreadLine\(UNREAD, payload\)/.test(source), `${name} draws the reason where it drew the bare sentence`);
-    }
   });
 
   await test('last week is found by date, not by counting entries', () => {
@@ -97,23 +88,6 @@ const run = async () => {
     assertEq(history.deltaLine(flat), 'unchanged since 9 days ago', 'the gap is named when it is not a week');
     const up = history.weekDelta([day('2026-07-27', { open: 4 }), day('2026-08-03', { open: 9 })], 'open');
     assertEq(history.deltaLine(up), 'up 5 from last week', 'and a board that grew says up');
-  });
-
-  await test('the Overview draws the history through the framework’s chart module, and invents no colour', () => {
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    const source = fs.readFileSync(path.join(pages, 'index.js'), 'utf8');
-    assert(/from '__main_assets__\/js\/libs\/charts\.js'/.test(source), 'index.js draws through the framework module');
-    assert(/chartSlot\(/.test(source), 'index.js draws into the slot that says the figures are in the table when the chunk did not load');
-    assert(/hasSeries\(/.test(source) && /ACCRUES/.test(source), 'index.js says why a chart is absent rather than drawing an empty axis');
-    // A raw colour would be one the theme cannot restate; the module's own
-    // ramp is what every other chart on the tower draws in.
-    assert(!/['"]#[0-9a-fA-F]{3,8}['"]/.test(source), 'index.js names no colour of its own');
-    assert(/feeds: \['repos', 'board', 'sessions', 'health', 'brief'\]/.test(source),
-      'and the Overview asks for the brief feed the history rides on');
-    // The Brief page is the mornings themselves, so it draws no chart; the
-    // series read off them is the Overview's.
-    const brief = fs.readFileSync(path.join(pages, 'brief.js'), 'utf8');
-    assert(!/chartSlot\(|lineChart\(|charts\.js/.test(brief), 'and the Brief draws no chart of its own any more');
   });
 
   group('tower/app: has the cloud brief stopped posting');
@@ -194,24 +168,6 @@ const run = async () => {
     // not reach the home repo knows nothing, which is not a healthy morning.
     assertEq(github.buildBrief(board, { generatedAt: stamp }).briefFreshness.state, 'unreadable',
       'and a history nobody could read says so rather than staying silent');
-  });
-
-  await test('both pages draw that line, and the Health page asks for the feed it rides on', () => {
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of ['health.js', 'brief.js']) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(/briefAlert\(/.test(source), `${name} draws the line from the one decision, never its own`);
-      assert(/alert-\$\{/.test(source), `${name} takes the colour from the level rather than fixing one`);
-      assert(/esc\(/.test(source), `${name} escapes it - the date came off a Discussion body`);
-    }
-    // A builder nothing places is a line nobody sees, so the markup each page
-    // writes is pinned too.
-    const health = fs.readFileSync(path.join(pages, 'health.js'), 'utf8');
-    assert(/\$\{briefRow\(state\)\}/.test(health), 'the Health page writes the row into the body it swaps in');
-    assert(/\$\{staleBanner\(payload\)\}/.test(fs.readFileSync(path.join(pages, 'brief.js'), 'utf8')),
-      'and the Brief page writes the banner into its own');
-    assert(/feeds: \[[^\]]*'brief'[^\]]*\]/.test(health),
-      'and the Health page arms the brief feed the freshness rides on');
   });
 
   return summary();

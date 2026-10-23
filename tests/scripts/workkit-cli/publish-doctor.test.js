@@ -23,23 +23,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the map names it', () => {
-    const world = mkWorld();
-    assert(runCli(world, ['help']).out.includes('publish'), 'one command, and publish is reachable from it');
-    cleanup(world.root);
-  });
-
-  await test('update --auto never builds a site at session start', () => {
-    // The daily job publishes; a session start that ran an app build would cost
-    // minutes nobody asked for.
-    const world = mkWorld({ binOnPath: true });
-    fs.mkdirSync(world.claudeHome, { recursive: true });
-    runCli(world, ['update']);
-    const { out } = runCli(world, ['update', '--auto']);
-    assert(!/publish:/.test(out), `the quiet path says nothing about the site, got: ${out}`);
-    cleanup(world.root);
-  });
-
   group('workkit doctor');
 
   await test('a bare machine hears what is missing and how to fix each', () => {

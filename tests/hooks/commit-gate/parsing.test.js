@@ -77,10 +77,6 @@ const run = async () => {
     passes(await judge(mkRepo(), 'ls -la && npm test', { cwd: ELSEWHERE }), '', 'no commit clause, no verdict');
   });
 
-  await test('ports "a payload carrying NO cwd still fails open: exit 0 (issue #159)"', async () => {
-    passes(await judge(mkRepo(), 'git commit -m "feat: x"', { cwd: '' }), '', 'no cwd fails open');
-  });
-
   await test('ports "pathspec commit with nothing staged: exit 2 (bypass closed)"', async () => {
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 1;\n');

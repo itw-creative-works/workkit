@@ -13,6 +13,8 @@ const {
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
+const { seeded } = require('../../lib/seed');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
 
@@ -248,7 +250,7 @@ const runCli = (world, args, { cwd, script, env } = {}) => {
     env: { ...world.env, ...(env || {}) },
     input: '',
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `workkit ${args.join(' ')} finished (no timeout, no signal): ${res.error || ''}`);
   // Three views of one run: stdout, stderr, and `said`, the whole transcript in
@@ -302,7 +304,7 @@ const signInEnv = (world, { node = true, extra = {} } = {}) => ({
   ...extra,
 });
 
-const installSchedule = (world) => spawnSync(BASH, [...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: 30000 });
+const installSchedule = (world) => spawnSync(BASH, [...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
 
 // The machine's hand-edited settings file, written the way a heal seeds it.
 // `site` is whatever the test wants the site options to be: a `publish` of
@@ -334,7 +336,7 @@ const inCli = (world, script, { input = '', env, entry = CLI } = {}) => {
     env: { ...world.env, ...(env || {}) },
     stdio: [fd, 'pipe', 'pipe'],
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: SPAWN_DEADLINE,
   });
   fs.closeSync(fd);
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
@@ -370,30 +372,33 @@ const mkPartialKit = ({ installer } = {}) => {
   return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
 };
 
+// One kit per origin slug and per `jobs/` or none, built once per process: the
+// git init and origin are the cost a case would repeat.
+const copyKit = seeded((seed, { slug, jobs }) => {
+  fs.cpSync(WORKFLOW_DIR, path.join(seed, 'workflow'), { recursive: true });
+  if (jobs) fs.cpSync(path.join(path.dirname(WORKFLOW_DIR), 'jobs'), path.join(seed, 'jobs'), { recursive: true });
+  mkOriginRepo(seed, `https://github.com/${slug}.git`);
+});
+const mkKitCopy = (slug, jobs) => {
+  const kit = mkTmp('workkit-cli-');
+  copyKit(kit, { slug, jobs });
+  return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
+};
+
 /**
  * A checkout of the engine with an origin of its own, a different slug from the
  * machine's home repo, so a run that reached for the checkout's origin instead
  * of the home repo is visible. Only `workflow/` is copied, so the schedule step
  * is the named skip a partial checkout gets.
  */
-const mkKit = (slug) => {
-  const kit = mkTmp('workkit-cli-');
-  fs.cpSync(WORKFLOW_DIR, path.join(kit, 'workflow'), { recursive: true });
-  mkOriginRepo(kit, `https://github.com/${slug}.git`);
-  return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
-};
+const mkKit = (slug) => mkKitCopy(slug, false);
 
 /**
  * A kit `setup` runs against end to end, so nothing it writes lands in this
  * checkout: mkKit's copy under an origin naming the workkit repo, which the
  * engine address accepts, plus the schedule installer. Returns `{ kit, script }`.
  */
-const mkSetupKit = () => {
-  const made = mkKit('checkout/workkit');
-  const root = path.dirname(WORKFLOW_DIR);
-  fs.cpSync(path.join(root, 'jobs'), path.join(made.kit, 'jobs'), { recursive: true });
-  return made;
-};
+const mkSetupKit = () => mkKitCopy('checkout/workkit', true);
 
 /**
  * The kit as a plugin install leaves it: a copy with no `.git` and no origin,

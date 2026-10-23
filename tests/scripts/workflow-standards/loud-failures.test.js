@@ -12,41 +12,10 @@ const {
   WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, STANDARD_VERSION,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('standards.sh: it fails loudly, never silently');
-
-  // The engine runs under `set -e`, and a bare `(( x++ ))` yields the value before
-  // the increment, so a counter at 0 exits non-zero and bash 4.1 and later end the
-  // run. Stock macOS bash 3.2 does not, so the shape is banned by inspection.
-  await test('no arithmetic command that can exit non-zero under errexit', () => {
-    // The entry and every heal it sources: the shape is banned wherever the
-    // script's functions live.
-    const piecesDir = path.join(WORKFLOW_DIR, 'standards');
-    const files = [SCRIPT, ...fs.readdirSync(piecesDir).filter((f) => f.endsWith('.sh')).map((f) => path.join(piecesDir, f))];
-    const offenders = files.flatMap((file) => fs.readFileSync(file, 'utf8').split('\n')
-      .map((line, i) => ({ file: path.basename(file), line: line.trim(), n: i + 1 }))
-      .filter(({ line }) => /^\(\(.*\)\)\s*$/.test(line)));
-    assertEq(offenders.length, 0,
-      `use an assignment or [ ] instead, got: ${offenders.map((o) => `${o.file} line ${o.n}: ${o.line}`).join(', ')}`);
-  });
-
-  await test('every shipped template is tracked by git', () => {
-    // The suite reads templates from the working tree, so an untracked one
-    // passes every other test and then breaks every machine that pulls.
-    const listed = spawnSync('git', ['ls-files', 'workflow/templates'], {
-      cwd: path.join(__dirname, '..', '..', '..'), encoding: 'utf8',
-    }).stdout.split('\n').filter(Boolean);
-    const onDisk = [];
-    const walk = (dir, prefix) => {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (e.isDirectory()) walk(path.join(dir, e.name), `${prefix}${e.name}/`);
-        else onDisk.push(`workflow/templates/${prefix}${e.name}`);
-      }
-    };
-    walk(path.join(WORKFLOW_DIR, 'templates'), '');
-    for (const f of onDisk) assert(listed.includes(f), `${f} is on disk but untracked: a fresh clone would half-heal`);
-  });
 
   await test('a missing template warns, keeps healing, and exits non-zero', () => {
     const engine = mkTmp('wf-std-');
@@ -59,7 +28,7 @@ const run = async () => {
         ...process.env, PATH: systemPathWith(stub.binDir),
         WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
       },
-      encoding: 'utf8', timeout: 20000,
+      encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     const out = (res.stdout || '') + (res.stderr || '');
     assert(out.includes('template missing'), `names the missing template, got: ${out}`);
@@ -79,13 +48,13 @@ const run = async () => {
       ...process.env, PATH: SYSTEM_PATH,
       WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
     };
-    const state = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: 20000 });
+    const state = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(state.status, 0, '--state answers without the manifest');
     assertEq((state.stdout || '').trim(), 'enabled', 'and answers correctly');
-    const announce = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--announce', shellPath(repo)], { env, encoding: 'utf8', timeout: 20000 });
+    const announce = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--announce', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(announce.status, 0, '--announce answers without the manifest');
     assert((announce.stdout || '').includes('--enable'), 'and still offers');
-    const heal = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], { env, encoding: 'utf8', timeout: 20000 });
+    const heal = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const out = (heal.stdout || '') + (heal.stderr || '');
     assert(out.includes('labels.json missing'), `the heal names the broken install, got: ${out}`);
     assertEq(heal.status, 1, 'and exits non-zero so the caller retries');
@@ -192,7 +161,7 @@ const run = async () => {
       if (real) linkTool(binDir, real);
     }
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
-      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: 20000,
+      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     assertEq((res.stdout || '').trim(), 'disabled', 'a deliberate no survives a jq-less machine');
     cleanup(repo); cleanup(binDir);

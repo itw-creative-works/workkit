@@ -17,9 +17,10 @@ const { mkRepo } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
 const { suiteMarkerPath, reviewMarkerPath } = require('../lib/suite-record');
 const {
-  skipWithoutWrapper, scratchNpmrc, WRAPPER, EXE_ENV, EXE_CLAUDE_HOME,
+  skipWithoutWrapper, scratchNpmrc, WRAPPER, EXE_ENV, EXE_CLAUDE_HOME, assertRecord,
 } = require('../lib/script-shell');
 const { gateOn } = require('../lib/real-gate');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
@@ -75,7 +76,7 @@ const proveEnv = (w) => ({
 
 const prove = (w) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(CLI), 'prove'], {
-    cwd: w.repo, env: proveEnv(w), input: '', encoding: 'utf8', timeout: 120000,
+    cwd: w.repo, env: proveEnv(w), input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `workkit prove finished (no timeout, no signal): ${res.error || ''}`);
   return { code: res.status, said: `${res.stdout || ''}${res.stderr || ''}` };
@@ -124,7 +125,7 @@ const run = async () => {
     const index = indexTree(w);
     const res = prove(w);
     assertEq(res.code, 0, `the staged tree is green, got: ${res.said}`);
-    assertEq(recorded(w), `${index}\n`, 'the record holds the index tree');
+    assertRecord(recorded(w), index, 'the record holds the index tree');
 
     const review = reviewMarkerPath(w.tmp, w.repo);
     fs.mkdirSync(path.dirname(review), { recursive: true });
@@ -176,7 +177,7 @@ const run = async () => {
     const index = indexTree(w);
     const res = prove(w);
     assertEq(res.code, 0, `the copy reaches node_modules, got: ${res.said}`);
-    assertEq(recorded(w), `${index}\n`, 'the record holds the index tree');
+    assertRecord(recorded(w), index, 'the record holds the index tree');
     assertEq(fs.readFileSync(path.join(w.repo, 'node_modules', 'tiny', 'index.js'), 'utf8'),
       'module.exports = 5;\n', 'the live node_modules is intact');
     cleanup(w.dir);

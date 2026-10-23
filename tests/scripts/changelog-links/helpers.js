@@ -9,6 +9,7 @@ const { skipSuite } = require('../../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB, SYSTEM_PATH, stubTool, pathWith } = require('../../lib/platform');
 const { recordArgv } = require('../../lib/argv-log');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'workflow', 'changelog', 'changelog-links.js');
 const { repoSlug } = require(SCRIPT);
@@ -66,7 +67,7 @@ const runScript = (cwd, stub, args = []) => {
     cwd,
     env: { ...process.env, PATH: stub ? pathWith(stub.binDir) : SYSTEM_PATH },
     encoding: 'utf8',
-    timeout: 20000,
+    timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, out: (res.stdout || '') + (res.stderr || '') };
 };

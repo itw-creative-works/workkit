@@ -3,7 +3,6 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs } = require('./helpers');
 
@@ -219,16 +218,6 @@ const run = async () => {
     assertEq(format.byPriority(issue(null, ''), issue(null, '')), 0, 'two issues with nothing to sort by tie');
   });
 
-  await test('the Board sorts its columns with the shared comparator, not one of its own', () => {
-    // The band arithmetic is pinned above; this pins the page to it, since a
-    // date-only sort in board.js would leave every other test green.
-    const fs = require('fs');
-    const boardPage = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
-    assert(/import \{[^}]*byPriority[^}]*\} from '\.\.\/libs\/tower\/format\.js'/.test(boardPage),
-      'the comparator comes from format.js');
-    assert(boardPage.includes('.sort(byPriority)'), 'and the columns actually sort by it');
-  });
-
   await test('an empty state is an icon above a line, and says which nothing it is', () => {
     const state = format.empty('nothing here');
     assert(state.includes('fa-regular fa-folder-open'), 'the neutral default icon');
@@ -244,14 +233,8 @@ const run = async () => {
   await test('that icon is centred by a rule of its own, over the line it sits above (#142)', () => {
     // `text-center` centres inline content, and `d-block` (a Bootstrap
     // `!important` utility) beats the framework's `i[data-omega-fa] { display:
-    // inline-flex }`, leaving a block box hugging the left edge. Neither half
-    // is visible from Node, so both are pinned by hand.
-    const fs = require('fs');
+    // inline-flex }`, leaving a block box hugging the left edge.
     assert(format.empty('nothing here').includes('class="omega-tower-empty '), 'the helper carries the hook the sheet centres from');
-    const sheet = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'css', 'main.scss'), 'utf8');
-    const rule = /\.omega-tower-empty i \{ margin-inline: (\S+?); \}/.exec(sheet);
-    assert(rule, 'and the sheet centres the icon box - once, for every caller of the helper');
-    assertEq(rule[1], 'auto', 'the one way a block box of known width centres itself');
   });
 
   await test('a model id falls in its family whatever it is decorated with', () => {

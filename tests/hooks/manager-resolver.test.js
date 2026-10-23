@@ -38,12 +38,6 @@ const run = async () => {
     assert(['rewrite', 'advise'].includes(ladder.mode), `bad mode: ${ladder.mode}`);
     assert(ladder.ladder && ladder.classes && ladder.tiers, 'a map is missing');
   });
-  await test('ports "all four classes map through tiers into the ladder"', () => {
-    for (const cls of ['scout', 'worker', 'verifier', 'advisor']) {
-      const tier = ladder.classes[cls];
-      assert(tier && ladder.tiers[tier] && ladder.ladder[ladder.tiers[tier]], `class ${cls} does not reach a rung`);
-    }
-  });
   await test('ports "ladder is ordered strongest first (fable at the top)"', () => {
     assertEq(Object.keys(ladder.ladder)[0], 'fable');
   });

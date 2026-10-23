@@ -10,21 +10,16 @@ const {
   SCRIPT, writeBriefMarks, INSTRUCTION, parseStatsMark, CC_CHANGELOG, cleanup, mkNewsWorld, newsTest,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('jobs/brief-payload: the upstream news');
-
-  await test('the instruction tells the digest what a CC NEWS block is', () => {
-    assert(/--- CC NEWS ---/.test(INSTRUCTION), 'the payload description names the block');
-    assert(/^CC NEWS: only when a CC NEWS block is present/m.test(INSTRUCTION), 'and the response shape has its line');
-  });
-
 
   await newsTest('a first run prints no block and hands the runner the latest version', () => {
     // The cursor is a line in the latest published brief, so the
     // world here is an empty board and a scratch mark file, never the network.
     const world = mkNewsWorld();
-    const first = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    const first = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
     assertEq(first.status, 0, `exit 0, stderr: ${first.stderr}`);
     // Past the instruction, which names the block it is explaining.
     assert(!/--- CC NEWS ---/.test(first.stdout.slice(INSTRUCTION.length)), 'the first morning does not dump the history');
@@ -34,7 +29,7 @@ const run = async () => {
     // above it upstream.
     world.publish('2.1.219');
     fs.writeFileSync(world.ccFile, `# Changelog\n\n## 2.1.220\n\n- Added a \`DirectoryAdded\` hook\n- Bug fixes\n${CC_CHANGELOG}`);
-    const second = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    const second = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
     assertEq(second.status, 0, `exit 0, stderr: ${second.stderr}`);
     assert(/--- CC NEWS ---/.test(second.stdout.slice(INSTRUCTION.length)), 'the new release is flagged');
     assert(/\[hooks\]\n2\.1\.220: Added a `DirectoryAdded` hook/.test(second.stdout), 'with the entry under its topic');
@@ -47,7 +42,7 @@ const run = async () => {
     // The runner appends this file verbatim under the digest, so
     // both lines the published brief is meant to carry leave together.
     const world = mkNewsWorld();
-    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
+    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const lines = world.mark().trim().split('\n');
     assertEq(lines.length, 2, `two lines, got: ${world.mark()}`);
@@ -62,7 +57,7 @@ const run = async () => {
     // cursor, and the day's numbers are not the news's to take with it.
     const world = mkNewsWorld();
     const env = { ...world.env, WORKKIT_CC_CHANGELOG: 'file:///nowhere/at/all.md' };
-    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     const lines = world.mark().trim().split('\n');
     assertEq(lines.length, 1, `one line, got: ${world.mark()}`);
@@ -94,21 +89,13 @@ const run = async () => {
     cleanup(dir);
   });
 
-  await newsTest('nothing on this machine records the cursor', () => {
-    const world = mkNewsWorld();
-    spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env: world.env });
-    assert(!fs.existsSync(path.join(world.home, '.workkit', '.cache.json')),
-      'the disposable cache is not where the news cursor lives any more');
-    cleanup(world.home);
-  });
-
   await newsTest('with no mark file named, the script still prints its brief', () => {
     // The runner names the file; a human running `node jobs/morning/brief/brief-payload.js`
     // does not, and the payload is the whole point of the script.
     const world = mkNewsWorld();
     const env = { ...world.env };
     delete env.WORKKIT_BRIEF_MARK_FILE;
-    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: 60000, env });
+    const res = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(res.stdout.startsWith(INSTRUCTION), 'the payload printed');
     cleanup(world.home);

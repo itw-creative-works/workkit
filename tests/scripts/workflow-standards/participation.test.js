@@ -14,6 +14,7 @@ const {
   WORKFLOW_DIR, cleanup, rosterOf, makeRepo, binDirWithout, runScript, STANDARD_VERSION,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('standards.sh: participation');
@@ -242,7 +243,7 @@ const run = async () => {
       shellPath(path.join(WORKFLOW_DIR, 'lib', 'participation.sh')),
       shellPath(path.join(WORKFLOW_DIR, 'standards', 'state.sh')),
       shellPath(file),
-    ], { env: { PATH: binDir }, encoding: 'utf8', timeout: 20000 });
+    ], { env: { PATH: binDir }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(res.stdout, 'unreadable', `never a decline or the legacy yes, stderr: ${res.stderr}`);
     fs.chmodSync(file, 0o600);
     cleanup(dir); cleanup(binDir);

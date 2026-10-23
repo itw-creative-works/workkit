@@ -18,6 +18,7 @@ const {
 const { mkTmp } = require('./scratch');
 const { suiteMarkerPath, pkgRecord } = require('./suite-record');
 const { FIXTURE_ORIGIN } = require('./git-repo');
+const { SPAWN_DEADLINE } = require('./process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 
@@ -34,7 +35,7 @@ const buildExe = () => {
   if (!fs.existsSync(WINDOWS_CSC)) return null;
   const cli = path.join(WORKFLOW_DIR, 'workkit.sh');
   const res = spawnSync(BASH, [...NO_RC, '-c', `. "${shellPath(cli)}" help >/dev/null; script_shell_exe`], {
-    env: { ...process.env, WORKFLOW_HOME: shellPath(EXE_HOME) }, encoding: 'utf8', timeout: 60000,
+    env: { ...process.env, WORKFLOW_HOME: shellPath(EXE_HOME) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   // A compile error must never read as a machine without a compiler.
   if (!fs.existsSync(EXE)) throw new Error(`${WINDOWS_CSC} built no ${EXE}: ${res.stderr || res.error || ''}`);
@@ -120,7 +121,7 @@ const mkWorld = () => {
  */
 const npm = (world, cwd, args, shell = WRAPPER, extra = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${shell}`, ...args], {
-    cwd, env: { ...world.env, ...extra }, encoding: 'utf8', timeout: 60000,
+    cwd, env: { ...world.env, ...extra }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   assert(res.status !== null, `npm ${args.join(' ')} finished: ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -132,10 +133,16 @@ const recorded = (world, repo) => {
   return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : undefined;
 };
 
+/** Assert <text> is the record of a green root run on <tree>: the tree, then `ms=<n>`. */
+const assertRecord = (text, tree, msg) => {
+  const [first, second] = (text || '').split('\n');
+  assert(first === tree && /^ms=\d+$/.test(second || ''), `${msg}: the tree then ms=<n>, got ${JSON.stringify(text)}`);
+};
+
 /** The package record's lines for <repo> in <world>, as JSON so a case compares them whole. */
 const packaged = (world, repo) => JSON.stringify(pkgRecord(world.tmp, repo));
 
 module.exports = {
   WRAPPER, EXE_ENV, EXE_CLAUDE_HOME, scratchNpmrc,
-  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged,
+  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord, packaged,
 };

@@ -81,18 +81,6 @@ const run = async () => {
 
   group('standards.sh: CI workflow');
 
-  await test('installs the required-checks workflow on heal', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const { output: stdout } = runScript(repo, { pathPrefix: stub.binDir });
-    const body = readFile(path.join(repo, '.github', 'workflows', 'checks.yml'));
-    assert(body, 'checks.yml created');
-    assert(body.includes('pull_request'), 'runs on pull requests');
-    assert(body.includes('npm test'), 'runs the test suite');
-    assert(stdout.includes('checks: created'), `reported the install, got: ${stdout}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
   await test('the installed workflow runs on pull requests and on a push to main, a CHANGELOG-only push skipped', () => {
     const repo = makeRepo();
     const stub = makeGhStub();

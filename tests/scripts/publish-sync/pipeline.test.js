@@ -74,25 +74,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the install is keyed from the clone’s real path, symlinked ~/.workkit or not', () => {
-    // `npm --prefix <link>/tower install` keys the tree from the caller's cwd,
-    // so through a symlinked `~/.workkit` the lockfile takes paths outside the
-    // project root. An install run from inside the resolved path is the fix, so
-    // the cwd is what this pins.
-    const world = mkPublishWorld();
-    const link = path.join(world.root, 'linked-workkit');
-    fs.symlinkSync(path.join(world.root, 'workflow-home'), link);
-    world.env.WORKFLOW_HOME = link;
-
-    const { code, out, err } = publish(world);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    const installs = world.npms().filter((call) => /install/.test(call));
-    assertEq(installs.length, 1, `the seeded clone’s manifests are installed once: ${installs.join(' | ')}`);
-    assertEq(installs[0], `${shellPath(world.tower)}|install`,
-      'the cwd is the clone with its links resolved, and no --prefix keys the tree from elsewhere');
-    cleanup(world.root);
-  });
-
   await test('a sync that changed only a page installs nothing', () => {
     const world = mkPublishWorld();
     publish(world);

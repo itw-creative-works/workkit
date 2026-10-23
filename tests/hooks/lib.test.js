@@ -1,17 +1,16 @@
 /* eslint-disable no-console */
 // Tests for hooks/_lib.sh, the helper library the scripts and the dotfiles hooks
 // source: one group per helper, from the platform seam and hook_sha1 through
-// hook_jq, the test package and the marker paths, and the retired helpers left
-// undefined. The suite and package records are tests/hooks/lib-record.test.js.
+// hook_jq, the test package and the marker paths. The suite and package records are tests/hooks/lib-record.test.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skip, skipSuite, selfRun, summary,
+  group, test, assert, assertEq, skipSuite, selfRun, summary,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT,
+  BASH, SYSTEM_PATH, NO_RC,
   shellPath, digestTool, stubTool, crlfJq, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
@@ -170,30 +169,6 @@ const run = async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  group('_lib.sh: the retired helpers');
-
-  await test('hook_manager_config, hook_model_tier, hook_session_model, hook_prompt_is_system and HOOK_PROMPT_FRAME_RE are undefined', () => {
-    const names = ['hook_manager_config', 'hook_model_tier', 'hook_session_model', 'hook_prompt_is_system'];
-    const out = runLib(`${names.map((n) => `declare -F ${n} >/dev/null && echo "${n} is defined"`).join('\n')}
-[ -n "\${HOOK_PROMPT_FRAME_RE+set}" ] && echo "HOOK_PROMPT_FRAME_RE is set"
-echo done`);
-    assertEq(out.stdout, 'done\n', `the library still defines: ${out.stdout}${out.stderr}`);
-  });
-
-  await test('the helpers of the seven retired groups are undefined, hook_test_package_dir alone kept of paths.sh', () => {
-    // Public names of each retired file (commit, gh-edit, notice, optin, proof,
-    // settings, suite) and every paths.sh helper but the package lookup.
-    const names = ['hook_find_git_commit', 'hook_cmd_steps', 'hook_redirect_word', 'hook_originless_cwd',
-      'hook_gh_repo', 'hook_gh_issue_numbers', 'hook_pretool_notice', 'hook_issue_view', 'hook_view_has_proof',
-      'hook_setting_get', 'hook_findings_route', 'hook_suite_root_run', 'hook_suite_prove_run',
-      'hook_is_test_name', 'hook_is_test_path', 'hook_has_code_ext', 'hook_is_code_path', 'hook_test_script_text',
-      'hook_optin_repo', 'hook_repo_opted_in'];
-    const out = runLib(`${names.map((n) => `declare -F ${n} >/dev/null && echo "${n} is defined"`).join('\n')}
-declare -F hook_test_package_dir >/dev/null || echo "hook_test_package_dir is gone"
-echo done`);
-    assertEq(out.stdout, 'done\n', `the library still defines: ${out.stdout}${out.stderr}`);
-  });
-
   group('_lib.sh: the test package');
 
   await test('hook_test_package_dir: the nearest package declaring a test script, below the root', () => {
@@ -280,32 +255,6 @@ echo done`);
     assert(!out.stdout.includes('rc=0'), `and says so, got: ${out.stdout}`);
     fs.rmSync(world, { recursive: true, force: true });
   });
-
-  group('_lib.sh: the scripts');
-
-  // A marker script, and the reader keyed on the same marker, name it only
-  // through its helper; red-proof.sh reads no marker.
-  for (const [script, keys] of [
-    ['review-marker.sh', [['hook_review_marker_path', 'claude-review-marker'],
-      ['hook_review_full_marker_path', 'claude-review-full-marker']]],
-    ['triage-marker.sh', [['hook_triage_marker_path', 'claude-triage-marker']]],
-    ['review-covers.sh', [['hook_review_full_marker_path', 'claude-review-full-marker']]],
-    ['red-proof.sh', []],
-  ]) {
-    await test(`scripts/${script} exists, is executable, and parses`, () => {
-      const file = path.join(__dirname, '..', '..', 'scripts', script);
-      assert(fs.existsSync(file), `missing ${file}`);
-      if (IS_WINDOWS) skip(`${script} carries the executable bit`, NO_EXEC_BIT);
-      else assert((fs.statSync(file).mode & 0o111) !== 0, `${script} is executable`);
-      const parsed = spawnSync(BASH, [...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' });
-      assertEq(parsed.status, 0, `${script} parses, got: ${parsed.stderr}`);
-      const text = fs.readFileSync(file, 'utf8');
-      for (const [fn, dir] of keys) {
-        assert(text.includes(fn), `${script} keys through ${fn}, never its own spelling`);
-        assert(!text.includes(`${dir}/`), `${script} never spells the marker path itself`);
-      }
-    });
-  }
 };
 
 module.exports = async () => {

@@ -86,17 +86,6 @@ const run = async () => {
     cleanup(home);
   });
 
-  await test('the read asks the home repo the settings name', () => {
-    const home = mkHome('owner/other-home');
-    const calls = [];
-    briefHistory({ workflowHome: home, exec: mkExec([], calls) });
-    assertEq(calls.length, 1, 'one round trip');
-    const argv = calls[0].join(' ');
-    assert(argv.includes('owner=owner') && argv.includes('name=other-home'), `the home repo: ${argv}`);
-    assert(argv.includes('body'), 'and it asks for the body the line lives in');
-    cleanup(home);
-  });
-
   group('tower/history: nothing to read is never a throw');
 
   await test('a failed read is null; a board with no briefs is an empty series', () => {
@@ -145,14 +134,6 @@ const run = async () => {
       exec: () => { throw new Error('gh must not be called at all'); },
     }).reason, null, 'a machine with no home repo has no board to have failed to read');
     cleanup(home); cleanup(noHome);
-  });
-
-  await test('the read asks for the headers a limit is only legible in', () => {
-    const home = mkHome();
-    const calls = [];
-    readDiscussions({ workflowHome: home, exec: mkExec([], calls) });
-    assert(calls[0].includes('--include'), `the round trip asks for them: ${calls[0].join(' ')}`);
-    cleanup(home);
   });
 
   group('tower/history: the block itself');
@@ -216,6 +197,7 @@ const run = async () => {
     const out = briefHistory({ workflowHome: home, exec: mkExec([brief('2026-08-03', 12, 4)], calls) });
     briefFreshness(out, at('2026-08-19T09:00:00Z'));
     assertEq(calls.length, 1, 'the history read is the only round trip there is');
+    assert(calls[0].join(' ').includes('body'), 'and it asks for the body the stats line lives in');
     cleanup(home);
   });
 

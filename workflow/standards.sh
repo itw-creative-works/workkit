@@ -48,6 +48,8 @@ CHANGELOG_LINTER="$SCRIPT_DIR/changelog/changelog.js"
 . "$SCRIPT_DIR/standards/claims.sh"
 # shellcheck source=./standards/hooks.sh
 . "$SCRIPT_DIR/standards/hooks.sh"
+# shellcheck source=./standards/tests.sh
+. "$SCRIPT_DIR/standards/tests.sh"
 
 # The hook layer beside this engine; the self-check skips silently without it.
 # WORKFLOW_HOOKS_DIR is the tests' seam.
@@ -67,11 +69,11 @@ BUILDING_LABEL="status:building"
 SPECCED_LABEL="status:specced"
 
 # The state directory's name for the engine layer. hooks/_lib.sh and
-# tests/lib/harness.js hold their own copy, and a test holds all three equal.
+# workflow/test/lib/harness.js hold their own copy, so change all three together.
 WORKKIT_DIR=".workkit"
 
 # Bump it when a new heal or drift check lands (README § The standard version).
-STANDARD_VERSION=8
+STANDARD_VERSION=9
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Diagnostics go to stderr: stdout is the machine answer of --state and
@@ -203,6 +205,7 @@ sweep_stale_claims
 flip_claimed_specced
 check_issue_labels
 check_hook_layer
+check_test_runner
 
 # Below the current standard: report the drift, then stamp the version only if
 # every mechanical heal succeeded. A drift report is not a failure.

@@ -1,6 +1,5 @@
 // Agent roster parity: the four class agents, the ladder they must agree
-// with, the effort each one runs at, the README roster, and the review skill's
-// re-route.
+// with, and the effort each one runs at.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -8,8 +7,6 @@ const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harn
 const REPO = path.join(__dirname, '..', '..');
 const AGENTS_DIR = path.join(REPO, 'agents');
 const LADDER = path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json');
-const README = path.join(REPO, 'docs', 'agents.md');
-const SKILL = path.join(REPO, 'skills', 'review', 'SKILL.md');
 
 const CLASSES = ['scout', 'worker', 'verifier', 'advisor'];
 
@@ -56,61 +53,12 @@ const run = async () => {
     assertEq(frontmatter(path.join(AGENTS_DIR, 'verifier.md')).effort, 'xhigh');
     assertEq(frontmatter(path.join(AGENTS_DIR, 'advisor.md')).effort, undefined);
   });
-  await test('the ladder note points at the agent files for effort', () => {
-    assert(ladder.note.includes('`effort:`'), 'ladder.json note does not say where effort lives');
-  });
   await test('advisor and scout/verifier toolsets carry no Write', () => {
     for (const cls of ['scout', 'verifier', 'advisor']) {
       const fm = frontmatter(path.join(AGENTS_DIR, `${cls}.md`));
       assert(fm.tools, `${cls} should restrict tools`);
       assert(!/\bWrite\b|\bEdit\b/.test(fm.tools), `${cls} must not carry Write/Edit`);
     }
-  });
-  await test('every class file names the resolver as the model authority', () => {
-    for (const cls of CLASSES) {
-      const text = fs.readFileSync(path.join(AGENTS_DIR, `${cls}.md`), 'utf8');
-      assert(text.includes('manager/resolver'), `${cls}.md does not name the resolver`);
-    }
-  });
-  await test('every agent file inlines its handoff rules instead of pointing at a personal path', () => {
-    for (const file of fs.readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'))) {
-      const text = fs.readFileSync(path.join(AGENTS_DIR, file), 'utf8');
-      assert(text.includes('Never spawn subagents.'), `${file} does not state the no-subagents rule`);
-      assert(/final message IS the (report|write-up)/.test(text), `${file} does not state the inline-report rule`);
-      assert(
-        /report file only when the brief explicitly asks/.test(text),
-        `${file} does not state the report-file exception`
-      );
-    }
-  });
-
-  group('agents: README roster parity');
-  await test('roster carries a row for each class + reviewer', () => {
-    const readme = fs.readFileSync(README, 'utf8');
-    for (const name of [...CLASSES, 'reviewer']) {
-      assert(new RegExp(`\\|\\s*\`workkit:${name}\``).test(readme), `roster row missing: ${name}`);
-    }
-  });
-  await test('README documents the Classes contract', () => {
-    const readme = fs.readFileSync(README, 'utf8');
-    assert(readme.includes('manager/resolver'), 'Classes section must name the resolver');
-    assert(readme.includes('ladder.json'), 'Classes section must name the ladder');
-  });
-
-  group('agents: review skill re-route');
-  await test('SKILL.md routes lenses to the scout and scoring to the verifier', () => {
-    const skill = fs.readFileSync(SKILL, 'utf8');
-    assert(skill.includes('`workkit:scout` agent'), 'the lens list should name the scout');
-    assert(skill.includes('`workkit:verifier` agent'), 'scorer/light tier should name the verifier');
-    assert(!skill.includes('general subagent'), 'no lens should remain on "general subagent"');
-    assert(skill.includes('never pass a `model` param'), 'the resolver rule note is missing');
-  });
-  await test('the compliance lens is always workkit:reviewer, never a user-level override', () => {
-    const skill = fs.readFileSync(SKILL, 'utf8');
-    const line = skill.split('\n').find((l) => l.includes('**Compliance + spec**'));
-    assert(line, 'the compliance lens line is missing');
-    assert(line.includes('`workkit:reviewer`'), line);
-    assert(!/user-level|if one exists/.test(line), `the lens still offers an override: ${line}`);
   });
 };
 

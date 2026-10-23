@@ -23,20 +23,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('the roster never reaches the published branch: Pages is public, and the names are not', () => {
-    // gh-pages is served to anyone with the URL even when the repo
-    // is private, so a file naming every private repo on this machine cannot be
-    // beside the pages. It lives on main, where the repo's own privacy covers
-    // it, and every reader fetches it with a token.
-    const world = mkWorld({ roster: ['workkit', 'omega'] });
-    publish(world);
-    const pages = fromPages(world);
-    assert(!fs.existsSync(path.join(pages, 'data', 'repos.json')), 'no roster on the published branch');
-    const published = spawnSync('git', ['-C', pages, 'ls-files'], { encoding: 'utf8' }).stdout;
-    assert(!/omega/.test(published), `and no private repo is named anywhere in what it carries: ${published}`);
-    cleanup(world.root);
-  });
-
   await test('nothing but the home repo is published: no roster, no issue data', () => {
     // Pages is public even from a private repo, so the published copy reads
     // GitHub live with the viewer's own token: a baked board would serve every

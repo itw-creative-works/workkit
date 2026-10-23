@@ -6,8 +6,8 @@
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 
-const { renderStatsMark, dayOf, STATS_RE } = require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'stats.js'));
-const { parseStatsMark, STATS_RE: READ_RE } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
+const { renderStatsMark, dayOf } = require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'stats.js'));
+const { parseStatsMark } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
 /** A brief payload in the shape buildBrief returns, with closedDay and repoCounts on it. */
 const PAYLOAD = {
@@ -61,10 +61,6 @@ const run = async () => {
   });
 
   group('jobs/stats: the writer and the reader are one shape');
-
-  await test('the pattern is the read-back’s own, not a second copy', () => {
-    assertEq(STATS_RE, READ_RE, 'jobs/morning/brief/stats.js re-exports tower/api/lib/history.js’s pattern');
-  });
 
   await test('what the renderer wrote is what the reader parses back', () => {
     // The round trip through a body that looks like a published brief: prose

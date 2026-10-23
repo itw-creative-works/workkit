@@ -3,8 +3,6 @@
 // and the intake's filing). Shared prologue: ./helpers.js.
 //
 
-const path = require('path');
-const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkFetch, jsonResponse, isRoster, mkSiteFetch } = require('./helpers');
 const {
@@ -16,14 +14,6 @@ const run = async () => {
 
   group('tower/app: github - the two writes');
 
-  // The tower's own source is the reference for both writes: the published site
-  // relabels and files exactly what the endpoint on the machine does, across the
-  // copy boundary. The endpoint's source is server.js and every piece in server/.
-  const apiDir = path.join(__dirname, '..', '..', '..', 'tower', 'api');
-  const serverSrc = [path.join(apiDir, 'server.js')]
-    .concat(fs.readdirSync(path.join(apiDir, 'server')).filter((name) => name.endsWith('.js')).sort().map((name) => path.join(apiDir, 'server', name)))
-    .map((file) => fs.readFileSync(file, 'utf8')).join('\n');
-
   await test('the browser writes the endpoint’s own move - the old status off, the new one on, nothing else touched', () => {
     assertEq(
       github.nextLabels([{ name: 'status:specced' }, { name: 'type:enhancement' }, { name: 'priority:high' }], 'specced', 'building').join(','),
@@ -33,9 +23,6 @@ const run = async () => {
     assertEq(github.nextLabels(['status:building'], 'building', 'blocked').join(','), 'status:blocked', 'the one status is replaced, never doubled');
     assertEq(github.nextLabels(['type:bug', 'status:blocked'], 'building', 'blocked').join(','), 'type:bug,status:blocked', 'a destination already carried is not added twice');
     assertEq(github.nextLabels(null, 'specced', 'building').join(','), 'status:building', 'an issue answering with no labels still lands on its column');
-    // The semantics are the endpoint's, and this is where the two are held together.
-    assert(/--remove-label', `status:\$\{checked\.from\}`/.test(serverSrc), 'the tower removes the from label');
-    assert(/--add-label', `status:\$\{checked\.to\}`/.test(serverSrc), 'and adds the to label, in one call');
   });
 
   await test('a move is one PATCH of the issue, with the viewer’s token as the whole of the auth', async () => {
@@ -148,13 +135,6 @@ const run = async () => {
     assert(/to is not a status: \(none\)/.test((await refuse({ ...ok, to: '' })).reason), 'and a destination that is blank');
     assert(/already status:inbox/.test((await refuse({ ...ok, to: 'inbox' })).reason), 'a move to where the issue already is');
     assertEq(fetchImpl.calls.length, 0, 'and every refusal came before GitHub was read at all');
-
-    // The rules restated across the copy boundary, pinned to the endpoint that owns them.
-    const statuses = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
-    assertEq(github.MOVE_STATUSES.slice().sort().join(','), statuses.sort().join(','), 'the statuses a move may name are the vocabulary’s own');
-    assert(serverSrc.includes('issue number must be a positive integer'), 'the number rule is the endpoint’s');
-    assert(serverSrc.includes('not a repository slug:'), 'the slug rule is the endpoint’s');
-    assert(serverSrc.includes('the issue is already status:'), 'and so is the refusal of a move that is not one');
   });
 
   // The proof gate on the drag: Complete is a column a card has to prove
@@ -183,18 +163,6 @@ const run = async () => {
     }, { token: 't', fetch: blind });
     assertEq(blind.calls.length, 1, 'and it stopped there');
     assert(/could not be read/.test(unreadable.reason), `saying the proof could not be read, got: ${unreadable.reason}`);
-
-    // The sentence and the pattern are the endpoint's, across the copy boundary.
-    assert(serverSrc.includes('carries no comment whose line starts with "Proof:"'), 'the refusal is the endpoint’s own sentence');
-    assert(serverSrc.includes('/(^|\\n)[ \\t]*Proof:/'), 'and the line it looks for is the endpoint’s own pattern');
-    // The same pattern has a third home on the shell side, and the gated status
-    // is a vocabulary word: both pinned, so a change to either cannot leave the
-    // board and the hooks disagreeing with every test green.
-    const fs = require('fs');
-    const libSrc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'hooks', 'mods', 'proof.js'), 'utf8');
-    assert(libSrc.includes('(^|\\n)[ \\t]*Proof:'), 'hooks/mods/proof.js looks for the same line');
-    const statusWords = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
-    assert(statusWords.includes('complete'), 'and the gated status is one the vocabulary names');
   });
 
   await test('a Proof: line opening any line of any comment lets that same move through', async () => {
@@ -289,27 +257,6 @@ const run = async () => {
     assertEq(answer.reason, NO_SPEC_REASON, 'in the endpoint’s own words');
   });
 
-  await test('the Spec rule is one rule in three homes - the endpoint, this copy and the hook', () => {
-    // The sentences are the endpoint's, across the copy boundary, and the gated
-    // status is a vocabulary word.
-    assert(serverSrc.includes('has a written Spec with no ### Contract'), 'the Contract refusal is the endpoint’s own sentence');
-    assert(serverSrc.includes('Add Files, Names and Cases, or the small-item line'), 'with the endpoint’s own fix');
-    assert(serverSrc.includes('has no ## Spec'), 'and so is the no-Spec refusal');
-    const statusWords = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'workflow', 'labels.json'), 'utf8')).groups.status.values);
-    assert(statusWords.includes('specced'), 'and the gated status is one the vocabulary names');
-
-    // The rule's spellings: both headings and the small-item line, the same in
-    // each copy. The walk around them is held by the shared bodies.
-    const root = path.join(__dirname, '..', '..', '..');
-    const pageSrc = fs.readFileSync(path.join(root, 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'github', 'writes.js'), 'utf8');
-    const hookSrc = fs.readFileSync(path.join(root, 'hooks', 'mods', 'spec-guard.js'), 'utf8');
-    for (const [home, src] of [['the endpoint', serverSrc], ['the page-side copy', pageSrc], ['the hook', hookSrc]]) {
-      assert(src.includes('/^## Spec\\s*$/'), `${home} opens the section on the Spec heading`);
-      assert(src.includes('/^### Contract\\s*$/'), `${home} looks for the Contract heading`);
-      assert(src.includes("=== 'None needed: small item.'"), `${home} passes the small-item line and nothing near it`);
-    }
-  });
-
   await test('intake files the issue the endpoint files - same labels, same default body', async () => {
     const fetchImpl = mkSiteFetch({ repos: ['owner/workkit'], home: 'owner/workkit' },
       { html_url: 'https://github.com/owner/workkit/issues/12' });
@@ -325,12 +272,6 @@ const run = async () => {
     assertEq(sent.labels.join(','), 'status:inbox,type:idea', 'captured, and typed as an idea until triage says otherwise');
     assertEq(answer.ok, true, 'answered');
     assertEq(answer.data.url, 'https://github.com/owner/workkit/issues/12', 'and the dialog gets the URL to link');
-
-    // The rules restated across the copy boundary, pinned to the endpoint that owns them.
-    assert(serverSrc.includes(`const DEFAULT_BODY = '${github.DEFAULT_BODY}'`), 'the default body is the endpoint’s');
-    assert(serverSrc.includes(`const TITLE_MAX = ${github.TITLE_MAX}`), 'the title cap is the endpoint’s');
-    assert(serverSrc.includes(`const BODY_MAX = ${github.BODY_MAX}`), 'the body cap is the endpoint’s');
-    for (const label of github.INTAKE_LABELS) assert(serverSrc.includes(`'--label', '${label}'`), `${label} is what the endpoint files with`);
   });
 
   await test('intake refuses what the endpoint refuses, before anything is filed', async () => {

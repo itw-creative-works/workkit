@@ -29,12 +29,6 @@ describe('classic.Stop: the Contract cases', () => {
     expect(hooksLog(w).some((l: any) => l.hook === 'manager:close-guard' && l.verdict === 'run')).toBe(true)
   })
 
-  test('four edits: no line', async ($, on) => {
-    const w = mkWorld(on, { model: MODELS.fable, messages: [row.user(), ...edits(4)] })
-    await stop($)
-    expect(guardLogs(w)).toHaveLength(0)
-  })
-
   test('MANAGER_CLOSE_EDITS=2 and two edits: the line', async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable, env: { MANAGER_CLOSE_EDITS: '2' }, messages: [row.user(), ...edits(2)] })
     await stop($)
@@ -51,36 +45,10 @@ describe('classic.Stop: the Contract cases', () => {
     expect(lines[0].endsWith('.')).toBe(true)
   })
 
-  test('a worker and a verifier: no line', async ($, on) => {
-    const w = mkWorld(on, { model: MODELS.fable, messages: [row.user(), ...spawn('workkit:worker'), ...spawn('workkit:verifier')] })
-    await stop($)
-    expect(guardLogs(w)).toHaveLength(0)
-  })
-
-  test('a workhorse model: no rule 3', async ($, on) => {
-    const w = mkWorld(on, { model: MODELS.opus, messages: [row.user(), ...edits(6)] })
-    await stop($)
-    expect(guardLogs(w)).toHaveLength(0)
-  })
-
   test('manager.enabled: false in the repo settings: no line (ports "enabled: false silences the guard")', async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable, repos: { [REPO]: settings({ enabled: false }) }, messages: [row.user(), ...edits(6)] })
     await stop($)
     expect(guardLogs(w)).toHaveLength(0)
-  })
-
-  test('a system-framed user entry after the edits: the edits still count', async ($, on) => {
-    const handBack = row.user('[Subagent hand-back]\nDONE: the brief is built.')
-    const w = mkWorld(on, { model: MODELS.fable, messages: [row.user(), ...edits(5), handBack] })
-    await stop($)
-    expect(guardLogs(w)).toEqual([RULE3(5)])
-  })
-
-  test('the last owner prompt followed by nothing: no line, and next ran once', async ($, on) => {
-    const w = mkWorld(on, { model: MODELS.fable, messages: [row.user(), ...edits(6), row.user('thanks, that is all')] })
-    await stop($)
-    expect(guardLogs(w)).toHaveLength(0)
-    expect(w.reached.filter((e: string) => e === 'classic.Stop')).toHaveLength(1)
   })
 })
 

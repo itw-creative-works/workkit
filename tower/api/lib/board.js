@@ -236,7 +236,8 @@ const startSweep = (repos, opts = {}) => {
         error: entry.error,
       };
       // Added last and only while it is true, so a finished board is byte for
-      // byte the payload the browser's sweep ends on (the parity suite pins it).
+      // byte the payload the browser's sweep ends on (tests/tower/app/github-sweep.test.js,
+      // "a paged sweep ends in exactly the payload the tower serves").
       if (pending(entry)) repo.loading = true;
       repoEntries.push(repo);
       for (const node of entry.nodes) issues.push(issueFrom(node, entry.slug, groups));

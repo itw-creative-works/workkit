@@ -64,6 +64,7 @@ const run = async () => {
     assert(/the digest send exit 3/.test(res.stderr), `the status is named: ${res.stderr}`);
     assert(/budget exceeded/.test(res.stderr), `and what the CLI said: ${res.stderr}`);
     assert(!/MORNING KICKOFF/.test(res.stdout + res.stderr), 'the payload it was handed is not echoed');
+    assertEq(world.created().length, 0, 'and no Discussion carries the failure');
     cleanup(world.root);
   });
 
@@ -83,15 +84,6 @@ const run = async () => {
     // A post that did not land is the warning level, on stderr with the rest of
     // them; the Actions log carries both streams.
     assert(res.stderr.includes('nothing posted'), `and the run says what happened: ${res.stdout}${res.stderr}`);
-    cleanup(world.root);
-  });
-
-  await test('a failed send publishes nothing and carries its status out', () => {
-    const world = mkWorld({ response: 'budget exceeded', status: 3 });
-    const res = runJob(world);
-    assertEq(res.status, 3, 'the exit status carries through');
-    assertEq(world.created().length, 0, 'and no Discussion carries the failure');
-    assert(/budget exceeded/.test(res.stderr), `the reason is on stderr: ${res.stderr}`);
     cleanup(world.root);
   });
 

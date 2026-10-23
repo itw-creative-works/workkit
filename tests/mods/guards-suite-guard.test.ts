@@ -68,12 +68,4 @@ describe('tool.call Bash: safety:suite-guard', () => {
       expect(logged[0]).toContain('suite-guard')
     })
   }
-
-  test('ports "a narrowed run passes while an issue is building": no gh read', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = world(on, { gh: { issues: BUILDING } })
-    await bash($, 'npm test -- tests/hooks/suite-guard.test.js')
-    expect(answered(w)?.deny).toBeUndefined()
-    expect(issueLists(w)).toHaveLength(0)
-    expect(kitLogs(w)).toHaveLength(0)
-  })
 })

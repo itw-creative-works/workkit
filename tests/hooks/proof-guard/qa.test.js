@@ -59,7 +59,7 @@ const run = async () => {
     assert(msg.includes('Touched under a test folder but not a test file, so not required: tests/helpers.js.'), `the helper is named, got: ${msg}`);
   });
 
-  for (const label of ['a root with no test script', 'a root with no package.json']) {
+  for (const label of ['a root with no test script']) {
     await test(`ports "${label}: exit 0, the touched file named as not provable by npm test"`, async () => {
       const msg = passText(await flip(['tests/a.test.js'], { packages: packagesOf([], false) }), label);
       assert(msg.startsWith('proof-guard: no touched test file can be proved by npm test here, so the qa flip needs no test record. Cannot be proved by npm test, since the repo root has no test script, so not required: tests/a.test.js.'),

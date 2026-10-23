@@ -12,13 +12,14 @@
 import { isChangelog, linterPath } from './changelog-guard.js';
 import { findGitCommit } from './command.js';
 import { closedIssues, closesAny, commitFlags, isDocPath, isManifest, namedIssues } from './commit-gate/checks.js';
+import { budgetLine } from './commit-gate/budget.js';
 import { HealHeld, healArms } from './commit-gate/heal.js';
 import { issueView } from './gh.js';
 import { userDirOf } from './log.js';
 import { markerPath, reviewMarkerPath, suiteMarkerPath, windowsKit } from './markers.js';
 import { viewHasProof, viewStage } from './proof.js';
-import { parseJson } from './settings.js';
-import { LONG_RUN_MS, hasTestScript, suiteProved, treeHash } from './suite.js';
+import { parseJson, settingGet } from './settings.js';
+import { LONG_RUN_MS, hasTestScript, suiteProved, suiteRecordMs, treeHash } from './suite.js';
 import { isCodePath, isTestPath } from './test-reminder.js';
 
 /** What every one of the gate's denies opens with. */
@@ -149,11 +150,20 @@ async function issueChecks(facts, command, notices) {
   return unproved ? deny(unprovedText(unproved)) : null;
 }
 
-// Check 5: the record a green root run wrote holds the tree the commit carries.
+// Check 5: the record a green root run wrote holds the tree the commit carries;
+// a recorded run past tests.budget says so beside the proved line, never a block.
 async function suiteCheck(facts, root, all, notices) {
   const record = await facts.suiteRecord;
   if (suiteProved(record, await commitTree(facts, root, all))) {
     notices.push(TEXT.proved);
+    const ms = suiteRecordMs(record);
+    if (ms !== null) {
+      const [repoSettings, userSettings] = await Promise.all([
+        facts.read(`${root}/.workkit/settings.json`), facts.read(facts.userSettings),
+      ]);
+      const over = budgetLine(ms, settingGet('tests.budget', parseJson(repoSettings), parseJson(userSettings)));
+      if (over) notices.push(over);
+    }
     return null;
   }
   if (suiteProved(record, await facts.treeId)) return deny(TEXT.disk);
@@ -196,7 +206,7 @@ async function judge(facts, root, flags, files, notices) {
  * costly ones (the tree id, the records, npm) unread until a check needs them.
  * @param {object} facts `{ command, cwd, root, originless, staged, changed,
  *   headTime, reviewMarker, suiteRecord, treeId, indexTreeId, isWindows,
- *   scriptShell, scriptShellExe, kitRoot, real, show, run, read, issueView,
+ *   scriptShell, scriptShellExe, userSettings, kitRoot, real, show, run, read, issueView,
  *   lint, jobRewrite, hashOf, tmpdir }`, each named in docs/hooks.md § safety:commit-gate
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
@@ -245,15 +255,13 @@ async function rewriteOf(g, at, kit, text, template) {
 }
 
 /**
- * The guard's run over the Bash facts: a real commit's facts, each read only
- * when a check asks. `treeId` is the working tree's id (`tree-hash.sh
- * <root>`), `indexTreeId()` the tree a -a/--all commit carries (`tree-hash.sh
- * <root> -u`); `originless` the chain's memoized origin test;
- * `scriptShell` npm's raw value; `scriptShellExe` the Windows wrapper
- * (`<user dir>/script-shell.exe`, wk_script_shell_exe's path); `lint(path)` the linter's run over the index unless the commit
- * carries -a/--all or a pathspec, null with no node or linter; `jobRewrite(a,
- * b)` the rewrite entry over the text `a`; `hashOf(path, text)` the blob id
- * (docs/hooks.md § safety:commit-gate).
+ * The guard's run over the Bash facts, each read only when a check asks: `treeId` the working
+ * tree's id (`tree-hash.sh <root>`), `indexTreeId()` the -a/--all tree (`tree-hash.sh <root> -u`);
+ * `originless` the chain's memoized origin test; `scriptShell` npm's raw value; `scriptShellExe`
+ * the Windows wrapper (`<user dir>/script-shell.exe`, wk_script_shell_exe's path); `userSettings`
+ * `<user dir>/settings.json`; `lint(path)` the linter over the index unless the commit carries
+ * -a/--all or a pathspec, null with no node or linter; `jobRewrite(a, b)` the rewrite entry over
+ * the text `a`; `hashOf(path, text)` the blob id (docs/hooks.md § safety:commit-gate).
  * @param {object} g the chain's facts (guards.js)
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
@@ -297,6 +305,7 @@ export async function commitGateGuard(g) {
     isWindows: windowsKit(kit),
     kitRoot: kit,
     scriptShellExe: `${userDirOf(g.env)}/script-shell.exe`,
+    userSettings: `${userDirOf(g.env)}/settings.json`,
     real: g.real,
     tmpdir: TMPDIR,
     show: (rev, path) => text(['git', 'show', `${rev}:${path}`], { timeoutMs: LONG_RUN_MS }),

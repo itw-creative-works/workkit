@@ -49,6 +49,6 @@ const allows = async (call, label) => {
 };
 
 module.exports = {
-  REPO, HOME, CAPTURE, HOME_CAPTURE, FRESH, STALE, ROUTE_OFF, ROUTE_ON, READ, WRITE, REWRITE,
+  REPO, HOME, CAPTURE, HOME_CAPTURE, FRESH, STALE, ROUTE_ON, READ, WRITE, REWRITE,
   judge, denyOf, bash, read, edit, write, grep, refuses, allows,
 };

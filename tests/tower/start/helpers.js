@@ -32,8 +32,8 @@ const pidIn = (file) => {
 
 // The pid in <file> the moment it is written, so a signal sent on sight lands
 // right after the writer spawned. 0 if never.
-const pidOnSight = async (file, ms = 8000) => (
-  (await elapsedUntil(() => pidIn(file) > 0, ms)) === Infinity ? 0 : pidIn(file));
+const pidOnSight = async (file) => (
+  (await elapsedUntil(() => pidIn(file) > 0)) === Infinity ? 0 : pidIn(file));
 
 // The port takeover is aimed at nothing unless a test says otherwise, so a
 // run here never touches whatever this machine really has on 8693/4300.

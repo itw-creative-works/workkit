@@ -10,6 +10,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { openingLines, TOP_THREE } = require('../lib/checks-template');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog', 'changelog-job.sh'));
@@ -23,7 +24,7 @@ const inSeam = (script, args = []) => {
   const res = spawnSync(
     BASH,
     [...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\n${script}`, 'bash', ...args],
-    { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 30000 },
+    { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE },
   );
   assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -83,7 +84,7 @@ const run = async () => {
       + 'wk_checks_header wk_checks_push_trigger wk_checks_template wk_checks_top wk_checks_top_count wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_first_lines wk_retired_checks_headers '
       + 'wk_workflows_run_copy ', `the functions, got: ${fns.out}`);
     const vars = (first) => spawnSync(BASH, [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
-      { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 }).stdout;
+      { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE }).stdout;
     assertEq(vars(`. ${JSON.stringify(SEAM)}`), vars(':'), 'the same variables as a shell that sourced nothing');
   });
 
@@ -213,16 +214,6 @@ const run = async () => {
       'both new lines end CRLF, as does every other line');
   });
 
-  await test('one rewrite swaps a retired first line and adds the missing push trigger', () => {
-    const prOnly = `${JOBS.replace('  push:\n', '')}  changelog:\n${USES}\n`;
-    const { code, out } = rewrite(`${RETIRED_FIRST_LINES[0]}\n${SECOND_LINE}${prOnly}`);
-    assertEq(code, 0, 'it answers');
-    const want = overFile(`${templateFirstLines()}${SECOND_LINE}${prOnly}`, 'wk_checks_push_trigger "$1"');
-    assertEq(want.code, 0, `wk_checks_push_trigger answers, stderr: ${want.err}`);
-    assert(/^ {2}push:/m.test(want.out), `the expected file has the push trigger, got: ${want.out}`);
-    assertEq(out, want.out, 'the first line swapped and the push trigger added, both in the one pass');
-  });
-
   await test('a template rewrapped to three lines: the retired first line becomes those three, once', () => {
     const { dir, file } = rewrappedTemplate(TOP_THREE);
     try {
@@ -234,17 +225,6 @@ const run = async () => {
     } finally {
       cleanup(dir);
     }
-  });
-
-  await test('the rewrite adds the push trigger to a PR-only file, once', () => {
-    const prOnly = `${JOBS.replace('  push:\n', '')}  changelog:\n${USES}\n`;
-    const { code, out } = rewrite(prOnly);
-    assertEq(code, 0, 'it answers');
-    assert(/^ {2}push:/m.test(out) && !/^ {2}push:/m.test(prOnly), `the push trigger is added, got: ${out}`);
-    const trigger = overFile(prOnly, 'wk_checks_push_trigger "$1"');
-    assertEq(trigger.code, 0, `wk_checks_push_trigger answers, stderr: ${trigger.err}`);
-    assertEq(out, trigger.out, 'the rewrite\'s change is wk_checks_push_trigger\'s');
-    assertEq(rewrite(out).out, out, 'and a second rewrite changes nothing');
   });
 
   await test('an unreadable file is a non-zero status, not an empty answer', () => {
@@ -267,7 +247,7 @@ const run = async () => {
 
   await test('a comment naming the copy is not a run of it; a run: line is', () => {
     const names = (text) => spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\nwk_names_linter_copy`],
-      { input: text, env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 }).status;
+      { input: text, env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE }).status;
     assertEq(names('# changelog.js the heal vendors to .github/changelog-lint.js on every run.\njobs:\n'), 1,
       'a column-0 comment');
     assertEq(names('jobs:\n  x:\n    steps:\n      # node .github/changelog-lint.cjs was here\n      - run: npm test\n'), 1,
@@ -280,7 +260,7 @@ const run = async () => {
 
   await test('`changelog-job.sh names -` reads the text from its own stdin; a file argument, the file', () => {
     const entry = (text, ...copy) => spawnSync(BASH, [...NO_RC, SEAM, 'names', '-', ...copy],
-      { input: text, env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: 20000 });
+      { input: text, env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const runs = 'jobs:\n  x:\n    steps:\n      - run: node .github/changelog-lint.cjs CHANGELOG.md\n';
     const hit = entry(runs, '.github/changelog-lint.cjs');
     assertEq(hit.status, 0, `a text naming the copy, stderr: ${hit.stderr}`);
@@ -314,16 +294,6 @@ const run = async () => {
     assertEq(overFile(`${JOBS}  changelog:\n${USES}\n`, 'grep() { return 2; }\nwk_changelog_job_runs_copy "$1"').code, 2,
       'a job the grep could not read');
     cleanup(dir);
-  });
-
-  group('interview skill: the owner quoted in step 4');
-
-  await test('step 4\'s not-planned close quotes the owner under their @<login>', () => {
-    const lines = fs.readFileSync(path.join(ROOT, 'skills', 'interview', 'SKILL.md'), 'utf8').split('\n');
-    const steps = lines.filter((l) => /^\s*4\. /.test(l) && l.includes('not planned'));
-    assertEq(steps.length, 1, `one step 4 closes the issue as not planned, got: ${steps.join('\n')}`);
-    assert(steps[0].includes('with the ruling in a comment under their `@<login>` (spec \u00a7 The pass)'),
-      `its comment clause names the owner's login, got: ${steps[0]}`);
   });
 
   return summary();

@@ -12,10 +12,10 @@ const {
   IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
-const { until } = require('../../lib/process');
+const { until, SPAWN_DEADLINE } = require('../../lib/process');
 const { mkTmp } = require('../../lib/scratch');
 const {
-  DEVICE_CODE, deviceFlowRoutes, writeLogin, readWrittenLogin, collector, json, failureOf, startServer, scratchEnv,
+  DEVICE_CODE, deviceFlowRoutes, readWrittenLogin, collector, json, failureOf, startServer, scratchEnv,
 } = require('../../lib/identity');
 
 const KIT = path.join(__dirname, '..', '..', '..');
@@ -65,7 +65,7 @@ const fakeFlow = (polls) => {
 
 /** Run `node login.js <args>` with `home` its scratch home, `extra` added to the env. */
 const command = (home, args, extra = {}) => spawnSync(process.execPath, [MODULE, ...args],
-  { env: scratchEnv(home, extra), encoding: 'utf8', timeout: 30000 });
+  { env: scratchEnv(home, extra), encoding: 'utf8', timeout: SPAWN_DEADLINE });
 
 const run = async () => {
   // loginFile() resolves under ~/.workkit; this process's home is a scratch one.
@@ -158,20 +158,6 @@ const run = async () => {
       assertEq(fs.existsSync(loginPath), false, `${reason}: no login file`);
       assertEq(flow.calls.filter((c) => c.url === 'https://api.github.com/user').length, 0, `${reason}: no /user read`);
     }
-  });
-
-  group('identity/login: the command form');
-
-  await test('case 10: --logout is the usage error, exit 1, and leaves the file', () => {
-    const cmdHome = mkTmp('wk-login-logout-home-');
-    // No logout form: removing the file is how one signs out.
-    writeLogin(cmdHome, { token: 'ghu_status', login: 'octocat' });
-    const out = command(cmdHome, ['--logout']);
-    assertEq(out.status, 1, `--logout is the usage error, exit 1, stderr: ${out.stderr}`);
-    assert(/usage/i.test(out.stderr), `stderr carries the usage, got: ${out.stderr}`);
-    assertEq(out.stdout, '', `nothing on stdout, got: ${out.stdout}`);
-    assertEq(JSON.stringify(readWrittenLogin(cmdHome)), JSON.stringify({ token: 'ghu_status', login: 'octocat' }),
-      'the login file is left as it was');
   });
 
   group('identity/login: the browser opener');

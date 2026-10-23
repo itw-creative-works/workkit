@@ -37,7 +37,7 @@ prove_cleanup() {
 # always `prove: exit <code>`, for a reader of the log; only a green run whose
 # copy still holds the index's tree writes the record.
 prove_body() {
-  local root="$1" tree copy add_err fill_root sh_path rel before after rc=0 ignored=()
+  local root="$1" tree copy add_err fill_root sh_path rel before after rc=0 started ms ignored=()
   PROVE_ROOT="$root" PROVE_TMP="" PROVE_COPY="" PROVE_ADDED=0
   wk_body_traps prove prove_cleanup
   tree=$(wk_suite_index_tree "$root") && [ -n "$tree" ] \
@@ -76,14 +76,16 @@ prove_body() {
   # copy's own record is never the one wanted. A Windows sh is spelled for node.
   sh_path=$(command -v sh) || fail "no sh on PATH for npm to run the suite with"
   sh_path=$(wk_git_path "$sh_path") || fail "could not spell $sh_path for npm"
+  started=$SECONDS
   (cd "$copy" && npm test --script-shell="$sh_path") || rc=$?
+  ms=$(wk_elapsed_ms "$started")
   if [ "$rc" -ne 0 ]; then
     printf 'prove: red: the suite failed on the staged tree %s, so no record was written\n' "$tree"
     exit "$rc"
   fi
   after=$(wk_tree_hash "$copy") || fail "the suite passed, but the copy's tree could not be hashed, so no record was written"
   [ "$after" = "$tree" ] || fail "the suite passed, but it changed the copy's tree, so no record was written"
-  wk_suite_marker_write "$root" "$tree" || fail "the suite passed, but the record of $root could not be written"
+  wk_suite_marker_write "$root" "$tree" "$ms" || fail "the suite passed, but the record of $root could not be written"
   printf 'prove: green: the staged tree %s is proved; a commit of it passes the gate\n' "$tree"
   exit 0
 }

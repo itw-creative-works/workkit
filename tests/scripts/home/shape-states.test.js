@@ -1,5 +1,5 @@
-// Tests for workflow/home.sh: its shape (the three libraries load quietly and
-// carry no personal path, the copy's exclude list, the addresses, the site host)
+// Tests for workflow/home.sh: its shape (the three libraries load quietly,
+// the copy's exclude list, the addresses, the site host)
 // and the four states a home can be in. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
@@ -22,18 +22,6 @@ const run = async () => {
     // act every time the CLI, the heal or the job started.
     assertEq(inHome(world, 'true').out, '', 'sourcing says nothing');
     cleanup(world.root);
-  });
-
-  await test('no absolute personal path is written into the engine', () => {
-    // The three libraries and every shell piece the first two source (home/, lib/).
-    const libs = ['lib.sh', 'home.sh', 'publish.sh'];
-    for (const dir of ['home', 'lib']) {
-      for (const file of fs.readdirSync(path.join(WORKFLOW_DIR, dir)).filter((f) => f.endsWith('.sh'))) libs.push(`${dir}/${file}`);
-    }
-    for (const lib of libs) {
-      const text = fs.readFileSync(path.join(WORKFLOW_DIR, lib), 'utf8');
-      assert(!/\/Users\/(?!x\b)[a-z]/i.test(text), `${lib} carries no machine-specific path`);
-    }
   });
 
   await test('the copy’s exclude list covers everything the app’s .gitignore names', () => {

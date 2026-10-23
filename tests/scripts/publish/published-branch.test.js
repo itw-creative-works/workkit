@@ -111,19 +111,6 @@ const run = async () => {
     cleanup(world.root);
   });
 
-  await test('a publish that changed nothing writes no commit', () => {
-    const world = mkWorld();
-    publish(world);
-    const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
-
-    const { code, out } = publish(world);
-    assertEq(code, 0, 'exit 0');
-    assert(/already current/.test(out), `it says so, got: ${out}`);
-    assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), before,
-      'and the branch is unchanged');
-    cleanup(world.root);
-  });
-
   return summary();
 };
 

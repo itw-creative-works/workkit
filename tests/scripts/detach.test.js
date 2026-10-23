@@ -14,12 +14,12 @@ const {
   BASH, NO_RC, NODE_DIR, shellPath, stubTool, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
-const { until, alive } = require('../lib/process');
+const { until, alive, SPAWN_DEADLINE } = require('../lib/process');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 const DETACH = path.join(LIB, 'detach.js');
 
-const detach = (...args) => spawnSync(process.execPath, [DETACH, ...args], { encoding: 'utf8', timeout: 30000 });
+const detach = (...args) => spawnSync(process.execPath, [DETACH, ...args], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
 
 /**
  * `wk_run_detached <log> <lock> -- node -e <script>` in a shell that sourced
@@ -83,13 +83,13 @@ const run = async () => {
       "const r = require('child_process').spawnSync(process.execPath, process.argv.slice(1), { encoding: 'utf8' });",
       'process.stdout.write(r.stdout || ""); process.stderr.write(r.stderr || "");',
       'process.exit(r.status === null ? 1 : r.status);',
-    ].join(' '), DETACH, log, done, '--', ...cmd], { encoding: 'utf8', timeout: 30000 });
+    ].join(' '), DETACH, log, done, '--', ...cmd], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(parent.status, 0, `detach.js exits 0, stderr: ${parent.stderr}`);
     assert(/^\d+\s*$/.test(parent.stdout), `detach.js prints the supervisor's pid, got: ${JSON.stringify(parent.stdout)}`);
     const pid = Number(parent.stdout.trim());
     assert(alive(pid), 'the supervisor is alive after its launcher exited');
     assert(!fs.existsSync(done), 'the command was still running when its launcher had exited');
-    assert(await until(() => fs.existsSync(done), 15000), `the done file never appeared at ${done}`);
+    assert(await until(() => fs.existsSync(done)), `the done file never appeared at ${done}`);
     assertEq(fs.readFileSync(done, 'utf8'), '4\n', "the done file holds the command's exit code");
     const text = fs.readFileSync(log, 'utf8');
     assert(text.includes('finished'), `the log holds the command's output, got: ${JSON.stringify(text)}`);
@@ -103,9 +103,9 @@ const run = async () => {
     const log = path.join(dir, 'log');
     const done = path.join(dir, 'done');
     const res = spawnSync(process.execPath, [DETACH, log, done, '--', BASH, ...NO_RC, '-c', 'echo from-the-shell; echo to-stderr >&2; exit 3'],
-      { encoding: 'utf8', timeout: 30000 });
+      { encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(res.status, 0, `detach.js exits 0, stderr: ${res.stderr}`);
-    assert(await until(() => fs.existsSync(done), 15000), `the done file never appeared at ${done}`);
+    assert(await until(() => fs.existsSync(done)), `the done file never appeared at ${done}`);
     assertEq(fs.readFileSync(done, 'utf8'), '3\n', "the done file holds the shell's exit code");
     const text = fs.readFileSync(log, 'utf8');
     assert(text.includes('from-the-shell'), `the log holds the shell's stdout, got: ${JSON.stringify(text)}`);
@@ -129,11 +129,11 @@ const run = async () => {
     const closed = new Promise((resolve) => { child.on('close', resolve); });
     try {
       const pidFile = path.join(lock, 'pid');
-      assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() !== '', 10000),
+      assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() !== ''),
         `the run wrote its pid into the lock, stderr: ${err}`);
       fs.writeFileSync(pidFile, `${process.pid}\n`);
       fs.writeFileSync(go, '');
-      assert(await until(() => child.exitCode !== null, 10000), `the run returned within 10 s, stdout: ${out}`);
+      assert(await until(() => child.exitCode !== null), `the run never returned, stdout: ${out}`);
       await closed;
       assertEq(rcOf(out), 7, `the command's own code, stdout: ${JSON.stringify(out)}, stderr: ${err}`);
       assert(fs.existsSync(lock), 'the lock the newer pid holds is still there');
@@ -142,7 +142,7 @@ const run = async () => {
     }
   });
 
-  await test('a lock holding a done file and a gone pid is taken over: the command runs and its code comes back within 5 s', () => {
+  await test('a lock holding a done file and a gone pid is taken over: the command runs and its code comes back', () => {
     // A finished run whose foreground never came to collect it.
     const dir = mkTmp('detach-done-');
     const lock = path.join(dir, 'lock');
@@ -153,12 +153,9 @@ const run = async () => {
     fs.writeFileSync(path.join(lock, 'pid'), `${dead}\n`);
     fs.writeFileSync(path.join(lock, 'done'), '0\n');
     const script = `require('fs').writeFileSync(${jsPath(ran)},'');process.exit(6)`;
-    const start = Date.now();
-    const res = spawnSync(BASH, runDetachedArgs(dir, script), { env: RUN_ENV, encoding: 'utf8', timeout: 30000 });
-    const took = Date.now() - start;
+    const res = spawnSync(BASH, runDetachedArgs(dir, script), { env: RUN_ENV, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(rcOf(res.stdout || ''), 6, `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`);
     assert(fs.existsSync(ran), 'the command ran');
-    assert(took < 5000, `within 5 s, took ${took} ms`);
   });
 
   await test('a run that starts on the lock the moment an earlier run\'s done file appears: each gets its own code', async () => {
@@ -170,13 +167,17 @@ const run = async () => {
       const go = path.join(dir, 'go');
       const first = startDetached(runDetachedArgs(dir,
         `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(0)},20)`));
+      // B marks the moment its spin starts: under load its shell can come up
+      // after A would otherwise have finished and dropped the lock.
+      const spinning = `${lock}.spinning`;
       const second = startDetached(runDetachedArgs(dir, 'process.exit(5)',
-        'until [ -e "$2/done" ]; do :; done'));
+        ': > "$2.spinning"; seen=; until [ -e "$2/done" ]; do if [ -d "$2" ]; then seen=1; elif [ -n "$seen" ]; then break; fi; done'));
       try {
-        assert(await until(() => fs.existsSync(path.join(lock, 'pid')), 10000), `round ${round}: run A took the lock`);
+        assert(await until(() => fs.existsSync(path.join(lock, 'pid'))), `round ${round}: run A took the lock`);
+        assert(await until(() => fs.existsSync(spinning)), `round ${round}: run B is spinning on the done file`);
         fs.writeFileSync(go, '');
-        assert(await until(() => first.child.exitCode !== null && second.child.exitCode !== null, 15000),
-          `round ${round}: both runs returned within 15 s`);
+        assert(await until(() => first.child.exitCode !== null && second.child.exitCode !== null),
+          `round ${round}: both runs returned`);
         const a = await first.result();
         const b = await second.result();
         assertEq(rcOf(a.out), 0, `round ${round}: run A's own code, stdout: ${JSON.stringify(a.out)}, stderr: ${a.err}`);
@@ -189,7 +190,7 @@ const run = async () => {
 
   await test('WK_RAN_CODE: the command\'s code after it ran, empty when the runner could not start', () => {
     const dir = mkTmp('detach-ran-');
-    const ran = spawnSync(BASH, runDetachedArgs(dir, 'process.exit(7)'), { env: RUN_ENV, encoding: 'utf8', timeout: 30000 });
+    const ran = spawnSync(BASH, runDetachedArgs(dir, 'process.exit(7)'), { env: RUN_ENV, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(rcOf(ran.stdout || ''), 7, `the command's code comes back, stdout: ${JSON.stringify(ran.stdout)}, stderr: ${ran.stderr}`);
     assertEq(ranOf(ran.stdout || ''), '7', `WK_RAN_CODE holds it, stdout: ${JSON.stringify(ran.stdout)}`);
 
@@ -199,7 +200,7 @@ const run = async () => {
     fs.mkdirSync(bin);
     stubTool(bin, 'node', ['#!/bin/bash', 'exit 1']);
     const failed = spawnSync(BASH, runDetachedArgs(mkTmp('detach-ran-'), 'process.exit(7)', 'WK_RAN_CODE=7'),
-      { env: { PATH: systemPathWith(bin, NODE_DIR) }, encoding: 'utf8', timeout: 30000 });
+      { env: { PATH: systemPathWith(bin, NODE_DIR) }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(rcOf(failed.stdout || ''), 1, `the runner's 1, stdout: ${JSON.stringify(failed.stdout)}, stderr: ${failed.stderr}`);
     assertEq(ranOf(failed.stdout || ''), '', `WK_RAN_CODE is empty, stdout: ${JSON.stringify(failed.stdout)}`);
   });

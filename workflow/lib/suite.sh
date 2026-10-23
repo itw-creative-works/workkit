@@ -73,21 +73,28 @@ _wk_record_write() {
 }
 
 # _wk_record_holds <path_fn> <repo_root> <tree>: the suite record's read: the
-# file <path_fn> names exists and holds <tree>.
+# file <path_fn> names exists and its first line is <tree>.
 _wk_record_holds() {
-  local marker recorded
+  local marker recorded=""
   [ -n "$3" ] || return 1
   marker=$("$1" "$2") || return 1
   [ -f "$marker" ] || return 1
-  recorded=$(cat "$marker" 2>/dev/null) || return 1
+  IFS= read -r recorded < "$marker" || [ -n "$recorded" ] || return 1
   [ -n "$recorded" ] && [ "$recorded" = "$3" ]
 }
 
-# wk_suite_marker_write <repo_root> <tree>: record <tree>, the id hashed
-# BEFORE the green run, so an edit made while it ran is never counted proved.
-# Consumers: the record's two writers, script-shell.sh (the working tree a root
-# run started on) and prove.sh (the staged tree, proved in a copy).
-wk_suite_marker_write() { _wk_record_write wk_suite_marker_path "$1" "$2"; }
+# wk_elapsed_ms <start>: the milliseconds since <start>, a `$SECONDS` reading,
+# in whole seconds (bash 3.2 has no finer clock), ample for a budget in
+# minutes. Consumers: the suite record's two writers, timing their run.
+wk_elapsed_ms() { printf '%s\n' "$(( (SECONDS - $1) * 1000 ))"; }
+
+# wk_suite_marker_write <repo_root> <tree> <ms>: record <tree>, the id hashed
+# BEFORE the green run, so an edit made while it ran is never counted proved,
+# and `ms=<ms>`, the run's wall time. Consumers: script-shell.sh (the working
+# tree a root run started on) and prove.sh (the staged tree, proved in a copy).
+wk_suite_marker_write() {
+  _wk_record_write wk_suite_marker_path "$1" "$2" "ms=$3"
+}
 
 # wk_pkg_marker_write <repo_root> <tree> <pkg>: add <pkg>, a package folder
 # relative to the root (`.` for the root), under <tree>, hashed BEFORE its green
@@ -112,7 +119,7 @@ wk_suite_index_tree() {
   git -C "$1" write-tree 2>/dev/null
 }
 
-# wk_suite_proved <repo_root> <tree>: the marker exists and holds <tree>. The
+# wk_suite_proved <repo_root> <tree>: the marker exists and its first line is <tree>. The
 # guards read it through its module twin, suiteProved in hooks/mods/suite.js:
 # suite-guard with the working tree's hash, commit-gate with the real index's id.
 wk_suite_proved() { _wk_record_holds wk_suite_marker_path "$1" "$2"; }

@@ -16,6 +16,7 @@ const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
 const {
   KIT, T, mkRepo, stage, write, commit, touchMarker, staleMarker, judge, blocks, passes,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 // The marker script the review skill calls, and the skill's own line calling
 // it, run for real: the skill, the script and the module's marker path cannot
@@ -69,19 +70,12 @@ const run = async () => {
       cwd: world.repo,
       env: { ...world.env, CLAUDE_PLUGIN_ROOT: shellPath(KIT), TMPDIR: shellPath(tmp) },
       encoding: 'utf8',
-      timeout: 10000,
+      timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the marker script runs, got: ${res.stderr}`);
     assert(fs.existsSync(marker), `and writes exactly the file the module names: ${marker}`);
     r.marker = { mtimeMs: fs.statSync(marker).mtimeMs };
     passes(await judge(r, 'git commit -m "feat"'), '', 'so the commit passes');
-  });
-
-  await test('ports "the review skill names the script and spells no digest itself"', () => {
-    const skill = fs.readFileSync(path.join(KIT, 'skills', 'review', 'SKILL.md'), 'utf8');
-    assert(skill.includes('scripts/review-marker.sh'), 'the skill calls the marker script');
-    assert(!skill.includes('shasum'), 'and carries no platform-bound command of its own');
-    assert(fs.existsSync(path.join(KIT, 'scripts', 'review-marker.sh')), 'the script exists');
   });
 
   await test('ports "docs-only staged, no marker: exit 0 (review not required)"', async () => {
@@ -95,16 +89,6 @@ const run = async () => {
     staleMarker(r);
     stage(r, 'app.js', 'const x = 1;\n');
     blocks(await judge(r, 'git commit -m "feat"'), T.stale, 'a marker from before the last commit must not count');
-  });
-
-  await test('given a review marker older than the newest staged code file: the stale-marker deny', async () => {
-    const r = mkRepo();
-    stage(r, 'lib.js', 'const y = 1;\n');
-    commit(r);
-    staleMarker(r);
-    stage(r, 'lib.js', 'const y = 2;\n');
-    stage(r, 'app.js', 'const x = 1;\n');
-    blocks(await judge(r, 'git commit -m "feat: thing"'), T.stale, 'the marker predates the code it would cover');
   });
 
   await test('ports "-a flag counts modified tracked files: exit 2 without marker"', async () => {

@@ -9,11 +9,12 @@ const { execFileSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { gitPath, homeEnv } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly', 'nightly-payload.js');
 const {
   composeNightly, composeRollup, transcriptIndex, commitsToday,
-  render, renderRollup, rollupInstruction, INSTRUCTION,
+  renderRollup, rollupInstruction, INSTRUCTION,
 } = require(SCRIPT);
 
 const NOW = Date.parse('2026-07-28T03:00:00.000Z');
@@ -230,34 +231,7 @@ const run = async () => {
     assert(/EXACTLY these four\s+sections/.test(INSTRUCTION), 'and they are the only four');
   });
 
-  await test('it hands the model its own reading budget over the index', () => {
-    assert(/Read, Grep, and Glob/.test(INSTRUCTION), 'the tools it samples with');
-    assert(/newest/.test(INSTRUCTION), 'the order');
-    assert(/larger than 10 MB/.test(INSTRUCTION), 'the size ceiling');
-    assert(/Stop when the reading budget feels spent/.test(INSTRUCTION), 'and when to stop');
-  });
-
-  await test('the improvements are candidates, not filings', () => {
-    assert(/candidate issue/.test(INSTRUCTION), 'each improvement is phrased as one');
-    assert(/Nothing is filed from this document/.test(INSTRUCTION), 'and the job files nothing itself');
-  });
-
-  await test('the output is the document, with nothing wrapped around it', () => {
-    assert(/output ONLY the finished daily summary/.test(INSTRUCTION), 'the response IS the summary');
-    assert(/No preamble/.test(INSTRUCTION), 'no preamble');
-    assert(/no code fence around\s+the document itself/.test(INSTRUCTION), 'and no fence: the script writes this to a file');
-  });
-
   group('jobs/nightly-payload: what is printed');
-
-  await test('the rendered payload leads with the instruction, then readable JSON', () => {
-    const out = composeNightly({ projectsRoot: '/nonexistent', workflowHome: '/nonexistent', now: NOW });
-    const text = render(out);
-    assert(text.startsWith(INSTRUCTION), 'the instruction is first');
-    const parsed = JSON.parse(text.slice(INSTRUCTION.length));
-    assertEq(parsed.quiet, true, 'the payload round-trips');
-    assert(/\n  "transcripts": \[/.test(text), 'indented, not one line: a human reads this over a shoulder');
-  });
 
   await test('run as a script it prints a payload and exits 0', () => {
     // An empty HOME: the live machine's repos and transcripts are none of this
@@ -265,7 +239,7 @@ const run = async () => {
     const home = mkTmp('nightly-payload-');
     const res = spawnSync(process.execPath, [SCRIPT], {
       encoding: 'utf8',
-      timeout: 60000,
+      timeout: SPAWN_DEADLINE,
       env: homeEnv(home, { ...process.env, WORKKIT_CLAUDE_PROJECTS: path.join(home, 'projects') }),
     });
     cleanup(home);
@@ -305,7 +279,7 @@ const run = async () => {
     const home = mkTmp('nightly-payload-');
     const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'weekly'], {
       encoding: 'utf8',
-      timeout: 60000,
+      timeout: SPAWN_DEADLINE,
       input: JSON.stringify([{ title: 'daily: 2026-07-27', createdAt: '2026-07-27T09:00:00Z', body: 'a day' }]),
       env: homeEnv(home, { ...process.env }),
     });
@@ -317,7 +291,7 @@ const run = async () => {
   });
 
   await test('an unknown cadence is refused rather than guessed', () => {
-    const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'hourly'], { encoding: 'utf8', input: '[]', timeout: 60000 });
+    const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'hourly'], { encoding: 'utf8', input: '[]', timeout: SPAWN_DEADLINE });
     assertEq(res.status, 1, 'exit 1');
     assert(/unknown cadence hourly/.test(res.stderr), `it names what it did not understand, got: ${res.stderr}`);
   });

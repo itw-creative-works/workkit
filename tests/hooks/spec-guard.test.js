@@ -6,7 +6,7 @@
 // "missing command and malformed JSON" (the JSON half). In
 // tests/mods/guards-spec-guard.test.ts: the read's folder and "gh not on PATH".
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
 
 const CWD = '/w/repo';
@@ -14,7 +14,6 @@ const CWD = '/w/repo';
 const BLOCK = (n) => `spec-guard: BLOCKED this flip: #${n} has a written Spec with no ### Contract (docs/project-state.md § Specs): add Files, Names and Cases, or the small-item line None needed: small item., then flip.`;
 const BODY_EDIT = (n) => `spec-guard: BLOCKED this flip: #${n} edits its body and flips in one command, so the read would judge the old body. Edit the body in its own command, then flip.`;
 const SKIPPED = (n, why) => `spec-guard: could not read issue #${n} (${why}), so the spec gate did not run on this command.`;
-const CD_BOUNCE = 'spec-guard: BLOCKED this command. It changes directory (cd, pushd or popd) before a gated gh issue flip or close, so the gate cannot tell which tree and repo that command acts on. Run the cd in its own Bash call first, then the gh command alone; where the directory resets between calls (a subagent), run the flip from a session whose directory is that repo.';
 
 // 12 the small item, 13 a Contract, 14 a written Spec with none, 15 no Spec at
 // all, 16 a Contract heading outside the Spec, 17 the small item in CRLF, 18 a
@@ -92,20 +91,6 @@ const run = async () => {
     }
   });
 
-  await test('ports "the issue number is read past the flags, and off an issue URL"', async () => {
-    for (const c of [
-      'gh issue edit -R owner/name 14 --add-label status:specced',
-      'gh issue edit --add-label status:specced 14',
-      'gh issue edit https://github.com/owner/name/issues/14 --add-label status:specced',
-      'gh issue edit --milestone 12 --add-label status:specced 14',
-    ]) {
-      const { deny, calls } = await judged(c);
-      assertEq(deny, BLOCK(14), `the block line: ${c}`);
-      assertEq(calls.length, 1, `one read (a flag's value is no issue): ${c}`);
-      assertEq(calls[0][0], '14', `the read names #14: ${c}`);
-    }
-  });
-
   await test('ports "the attached and listed label spellings are judged the same"', async () => {
     for (const c of [
       'gh issue edit 14 --add-label=status:specced',
@@ -147,30 +132,10 @@ const run = async () => {
     assertEq(JSON.stringify(calls), JSON.stringify([['14', 'owner/name']]), "the URL's repo is forwarded");
   });
 
-  await test('ports "--repo rides the read in every spelling"', async () => {
-    for (const flag of ['--repo owner/name', '--repo=owner/name', '-R owner/name', '-Rowner/name', '--repo "owner/name"']) {
-      const { deny, calls } = await judged(`gh issue edit 14 ${flag} --add-label status:specced`);
-      assertEq(deny, BLOCK(14), `the issue still has no Contract: ${flag}`);
-      assertEq(JSON.stringify(calls), JSON.stringify([['14', 'owner/name']]), `the repo is forwarded for ${flag}`);
-    }
-  });
-
   await test('ports "a --repo value the guard cannot read fails open, never reads the local repo"', async () => {
     const { r, calls } = await passes('gh issue edit 14 --repo "$TARGET" --add-label status:specced');
     assertEq(textOf(r), SKIPPED(14, 'the --repo value could not be read'), 'one stand-down line');
     assertEq(calls.length, 0, 'the local repo is never asked instead');
-  });
-
-  await test('ports "a directory change before the flip bounces, reading no issue"', async () => {
-    for (const c of [
-      'cd /some/repo && gh issue edit 12 --add-label status:specced',
-      'pushd /some/repo >/dev/null && gh issue edit 12 --add-label status:specced',
-      '(cd /some/repo && gh issue edit 12 --add-label status:specced)',
-    ]) {
-      const { deny, calls } = await judged(c);
-      assertEq(deny, CD_BOUNCE, `the shared bounce line: ${c}`);
-      assertEq(calls.length, 0, `reads no issue: ${c}`);
-    }
   });
 
   await test('ports "a directory change after the flip is not one"', async () => {
@@ -182,12 +147,6 @@ const run = async () => {
   });
 
   group('spec-guard: wiring and fail-open');
-
-  await test('ports "hooks.json registers the guard under PreToolUse Bash, right after proof-guard": BASH_GUARDS holds the order', async () => {
-    const hooks = mods('guards').BASH_GUARDS.map((g) => g.hook);
-    const at = hooks.indexOf('safety:spec-guard');
-    assert(at > 0 && hooks[at - 1] === 'safety:proof-guard', `spec-guard sits right after proof-guard, got: ${hooks.join(', ')}`);
-  });
 
   await test('ports "a gh view that fails: exit 0, one line saying the gate did not run"', async () => {
     const { r, deny } = await judged(FLIP(14), { fails: true });

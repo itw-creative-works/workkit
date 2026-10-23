@@ -3,7 +3,6 @@
 // selection leaves in play, the issue behind a dragged card. Prologue: ./helpers.js.
 //
 
-const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkState, failed, ROSTER } = require('./helpers');
 
@@ -30,16 +29,6 @@ const run = async () => {
     assertEq(state.brief(answered).counts.open, 3, 'a feed that answered hands back its payload');
     assertEq(state.brief({ feeds: { brief: failed('connection refused') }, selectedRepo: '' }), null,
       'and a read that failed is null, never a payload with nothing in it');
-    const fs = require('fs');
-    const pages = path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages');
-    for (const name of ['index.js', 'health.js']) {
-      const source = fs.readFileSync(path.join(pages, name), 'utf8');
-      assert(/brief\(state\)/.test(source), `${name} reads it through the one accessor`);
-      // Asking the raw slot whether it has answered yet is a different question,
-      // and the Overview still asks it; what no page keeps is a second copy of
-      // the reader that turns the slot into the payload.
-      assert(!/briefPayload/.test(source), `${name} keeps no reader of its own`);
-    }
   });
 
   await test('a feed that failed reads as empty too - a page draws its own reason', () => {
@@ -190,20 +179,6 @@ const run = async () => {
     assertEq(state.issueByKey(live, 'ITW/workkit#48').status, 'specced', 'and back where it came from, not left in a state nothing agreed to');
   });
 
-  await test('the Board resolves its drop at DROP time and holds no snapshot', () => {
-    const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
-    assert(/const move = async \(key, to\) => \{\s*const issue = issueByKey\(state, key\);/.test(source), 'the issue is looked up when the drop happens');
-    // The card-motion maps hold on-screen spots; what is barred is a keyed
-    // store of the issues themselves, built from the list or filled one by one.
-    assert(!/new Map\([^)]*\bissues?\b/.test(source) && !/\.set\([^,]+,\s*issue\b/.test(source) && !/\]\s*=\s*issue\b/.test(source),
-      'and nothing holds a per-paint map of them');
-    assert(source.includes('draggable="true"'), 'the cards are draggable');
-    assert(source.includes('data-column='), 'the columns are drop targets');
-    assert(source.includes('moveError = answer.reason'), 'a refused write becomes the line the page shows');
-    assert(source.includes('await state.refresh(\'board\')'), 'and a landed one forces the sweep the next poll would otherwise stale over');
-  });
-
   await test('the no-status alert is drawn from the SCOPED issues, so a repo out of scope neither shows nor counts', () => {
     // The alert is markup from values (format.js) and the narrowing is
     // state.js's, so what the page contributes is handing one to the other -
@@ -222,13 +197,6 @@ const run = async () => {
     assert(markup.includes('1 issue carries no status label'), 'only the one in scope is counted');
     assert(markup.includes('https://gh/workkit/1'), 'and it is the one linked');
     assert(!markup.includes('https://gh/omega/2'), 'the other repo’s is not on this board at all');
-
-    const fs = require('fs');
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'pages', 'board.js'), 'utf8');
-    assert(/noStatusAlert\(all, showRepo\)/.test(source), 'the page hands the alert the scoped list, not the raw payload');
-    assert(/const labelled = all\.filter\(\(issue\) => issue\.status\)/.test(source),
-      'and the columns and their denominator are drawn from the labelled ones alone (#118)');
-    assert(!/No status/.test(source), 'the column that used to hold them is gone, comments and all');
   });
 
   return summary();

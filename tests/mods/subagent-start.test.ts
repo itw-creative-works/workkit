@@ -36,12 +36,7 @@ describe('classic.SubagentStart: manager:addon', () => {
     expect(contextOf(await start($, 'workkit:verifier'))).toBe('')
   })
 
-  test('ports "no agents folder at all: exit 0, no output"', async ($, on) => {
-    mkWorld(on, { env: { WORKFLOW_HOME: '/w/bare' } })
-    expect(contextOf(await start($, 'workkit:verifier'))).toBe('')
-  })
-
-  for (const type of ['Explore', 'general-purpose', 'verifier', 'other-plugin:verifier']) {
+  for (const type of ['Explore', 'verifier', 'other-plugin:verifier']) {
     test(`ports "agent_type ${type} gets nothing, even with a matching file"`, async ($, on) => {
       mkWorld(on, { env: { WORKFLOW_HOME: '/w/wh' }, files: { '/w/wh/agents/verifier.md': 'must not leak' } })
       expect(contextOf(await start($, type))).toBe('')
@@ -67,13 +62,6 @@ describe('classic.SubagentStart: manager:addon', () => {
 })
 
 describe('the hooks log', () => {
-  test('with WORKFLOW_HOME set the line lands in $WORKFLOW_HOME/hooks.log', async ($, on) => {
-    const w = mkWorld(on, { env: { WORKFLOW_HOME: '/w/wh' } })
-    await start($, 'workkit:scout')
-    expect(hooksLog(w, '/w/wh').some((l: any) => l.hook === 'manager:addon')).toBe(true)
-    expect(w.files.has(`${HOME}/.workkit/hooks.log`)).toBe(false)
-  })
-
   test('a log at 10,001 lines is cut to its last 5,000 before the line is added', async ($, on) => {
     const old = Array.from({ length: 10001 }, (_, i) => `old-${i + 1}`)
     const w = mkWorld(on, { files: { [`${HOME}/.workkit/hooks.log`]: `${old.join('\n')}\n` } })

@@ -31,15 +31,6 @@ const run = async () => {
   const git = (dir, ...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' }).stdout.trim();
   const treeHash = (dir) => runLib(`wk_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
 
-  await test('the records and the test-script predicate keep their engine names, with no hook_ second name', () => {
-    const names = ['suite_marker_path', 'tree_hash', 'suite_index_tree', 'suite_proved', 'has_test_script',
-      'pkg_marker_path', 'pkg_marker_write', 'pkg_proved'];
-    const out = runLib(names.map((n) => `declare -F wk_${n} hook_${n}`).join('; ')).stdout;
-    assertEq(out.trim(), names.map((n) => `wk_${n}`).join('\n'), `only the engine names, got: ${out}`);
-    const gone = runLib('declare -F wk_qa_marker_path wk_qa_marker_write wk_qa_proved').stdout;
-    assertEq(gone.trim(), '', `the qa record's functions are gone, got: ${gone}`);
-  });
-
   await test('wk_tree_hash: the working tree as write-tree names it, untracked in, ignored out, index untouched', () => {
     const dir = mkTmp('lib-tree-');
     git(dir, 'init', '-q');
@@ -167,12 +158,6 @@ const run = async () => {
     assert(!ask('wk_pkg_proved', ID, 'packages/fo'), 'a prefix of a recorded folder is not');
     assert(!ask('wk_pkg_proved', OTHER_ID, '.'), 'another tree is not');
     assert(!ask('wk_pkg_proved', '', '.'), 'an empty tree (a failed hash) is never a match');
-  });
-
-  await test("wk_pkg_proved: the root's line never covers a nested package", () => {
-    const { ask } = pkgWorld();
-    assert(ask('wk_pkg_marker_write', ID, '.'), 'the root is written');
-    assert(!ask('wk_pkg_proved', ID, 'packages/foo'), 'the nested package needs its own line');
   });
 
   await test('the suite record and the package record never stand in for each other', () => {

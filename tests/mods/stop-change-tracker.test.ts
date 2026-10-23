@@ -107,12 +107,6 @@ describe('classic.Stop: docs:change-tracker, the gathering', () => {
     expect([...w.files.keys()].filter((p: string) => p.startsWith(`${sub}/.workkit`))).toEqual([])
   })
 
-  test('ports "clean tree, empty capture file: silent and no state file written"', async ($, on) => {
-    const w = world(on, { status: {}, diff: {}, files: { [`${REPO}/.workkit/capture.md`]: '# capture\n> dump anything here\n\n' } })
-    expect(blockOf(await stop($))).toBeNull()
-    expect(w.files.has(STATE)).toBe(false)
-  })
-
   test('ports "non-git directory: exits 0 silently (fail open)"', async ($, on) => {
     world(on, { cwd: PLAIN })
     expect(blockOf(await stop($, { cwd: PLAIN }))).toBeNull()

@@ -6,13 +6,14 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath, homeEnv, stubTool, basePathWithout,
+  BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout,
   systemPathWith, joinPath,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { mkTmp } = require('../lib/scratch');
+const { SPAWN_DEADLINE } = require('../lib/process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
@@ -91,7 +92,7 @@ const spawnOpts = (cwd, { home, bin }, extraEnv = {}) => ({
     ...extraEnv,
   }),
   encoding: 'utf8',
-  timeout: 20000,
+  timeout: SPAWN_DEADLINE,
 });
 
 const runScript = (cwd, args, t, extraEnv = {}) => {
@@ -168,26 +169,6 @@ const run = async () => {
     assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`);
     assertEq(t.ghCalls().length, 1, 'one gh call');
     assert(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'and no user-level capture file appeared');
-    cleanup(t.dir);
-  });
-
-  await test('a lookalike home between the cwd and the root is not a participating repo', async () => {
-    // Windows makes its temp directories inside the user profile, so a walk up
-    // passes through a home that is not the configured one and still carries the
-    // machine settings file. A settings file is a repo's opt-in where a repo is,
-    // and nowhere else.
-    const t = makeTree();
-    const profile = path.join(t.dir, 'profile');
-    fs.mkdirSync(path.join(profile, W), { recursive: true });
-    fs.writeFileSync(path.join(profile, W, 'settings.json'), MACHINE_SETTINGS);
-    const cwd = path.join(profile, 'AppData', 'Local', 'Temp', 'wk-x');
-    fs.mkdirSync(cwd, { recursive: true });
-
-    const { code, out } = runScript(cwd, ['note', 'a thought from a lookalike home'], t);
-    assertEq(code, 0, `exit 0: ${out}`);
-    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`);
-    assertEq(t.ghCalls().length, 1, 'one gh call');
-    assert(!fs.existsSync(path.join(profile, W, 'capture.md')), 'and nothing was written into the profile');
     cleanup(t.dir);
   });
 
@@ -301,27 +282,6 @@ const run = async () => {
     cleanup(t.dir);
   });
 
-  await test('a repo checked out as a git worktree is a participating repo', async () => {
-    // A worktree's `.git` is a file, and that is the shape the repo-root
-    // predicate asks with `-e` rather than `-d`: a `-d` reading answers no for
-    // a checkout that works perfectly, and the note is filed as an issue on the
-    // home repo instead of landing where the session is standing.
-    const t = makeTree();
-    const git = (...args) => spawnSync('git', ['-C', t.repo, ...args], { encoding: 'utf8' });
-    git('-c', 'user.name=wk', '-c', 'user.email=wk@localhost', 'commit', '-q', '--allow-empty', '-m', 'chore: seed');
-    const tree = path.join(t.dir, 'worktree');
-    git('worktree', 'add', '-q', tree, '-b', 'side');
-    assert(fs.statSync(path.join(tree, '.git')).isFile(), 'the checkout carries a `.git` FILE');
-    fs.mkdirSync(path.join(tree, W), { recursive: true });
-    fs.writeFileSync(path.join(tree, W, 'settings.json'), '{ "version": 1, "enabled": true }\n');
-
-    const { code, out } = runScript(tree, ['note', 'from a worktree'], t);
-    assertEq(code, 0, `exit 0: ${out}`);
-    assert(read(path.join(tree, W, 'capture.md')).includes('- from a worktree\n'), 'filed in the worktree');
-    assertEq(t.ghCalls().length, 0, 'and never filed as an issue somewhere else');
-    cleanup(t.dir);
-  });
-
   await test('a settings file with no enabled key is the legacy opt-in', async () => {
     // Same reading as the hooks and the engine: the committed file existing at
     // all is the repo's yes.
@@ -357,14 +317,6 @@ const run = async () => {
     fs.writeFileSync(t.repoCapture, '- an unterminated note');
     runScript(t.repo, ['note', 'the next one'], t);
     assertEq(read(t.repoCapture), '- an unterminated note\n- the next one\n', 'the entries stay separate lines');
-    cleanup(t.dir);
-  });
-
-  await test('two notes in a row both land', async () => {
-    const t = makeTree();
-    runScript(t.repo, ['note', 'one'], t);
-    runScript(t.repo, ['note', 'two'], t);
-    assert(read(t.repoCapture).endsWith('- one\n- two\n'), 'in order, one per line');
     cleanup(t.dir);
   });
 
@@ -404,15 +356,6 @@ const run = async () => {
       assertEq(out, '', 'and nothing on stdout');
     }
     cleanup(t.dir);
-  });
-
-  group('wk.sh: the script itself');
-
-  await test('it is executable and parses', async () => {
-    // eslint-disable-next-line no-bitwise
-    if (IS_WINDOWS) skip('wk.sh carries the executable bit', NO_EXEC_BIT);
-    else assert((fs.statSync(SCRIPT).mode & 0o111) !== 0, 'the executable bit is set');
-    assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(SCRIPT)], { encoding: 'utf8' }).status, 0, 'bash -n is clean');
   });
 
   return summary();

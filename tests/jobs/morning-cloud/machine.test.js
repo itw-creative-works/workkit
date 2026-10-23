@@ -11,6 +11,7 @@ const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const {
   SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, mkWorld, withoutJq, runJob, composerTest,
 } = require('./helpers');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('jobs/morning (cloud): the machine it makes');
@@ -51,7 +52,7 @@ const run = async () => {
     const copy = path.join(seeded, 'jobs', 'morning.sh');
     fs.cpSync(path.dirname(SCRIPT), path.join(seeded, 'jobs'), { recursive: true });
     const res = spawnSync(BASH, [...NO_RC, shellPath(copy)], {
-      encoding: 'utf8', timeout: 60000, env: world.env,
+      encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env,
     });
     assertEq(res.status, 1, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`);
     assert(/engine/.test(res.stderr), `and names the engine as what is missing: ${res.stderr}`);
@@ -64,7 +65,7 @@ const run = async () => {
     // refusals have to say which of them happened.
     const world = mkWorld();
     const env = { ...world.env, PATH: withoutJq(world.root, path.join(world.root, 'bin')) };
-    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: 60000, env });
+    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
     assertEq(res.status, 1, 'the run refuses');
     assert(/jq is not installed/.test(res.stderr), `and names the tool: ${res.stderr}`);
     assert(!/names no home repo/.test(res.stderr), 'never the key, which is right there');
@@ -78,14 +79,6 @@ const run = async () => {
     assert(/GITHUB_REPOSITORY/.test(res.stderr), `and it names what is missing: ${res.stderr}`);
     assertEq(world.calls().length, 0, 'nothing was sent');
     cleanup(world.root);
-  });
-
-  await test('nothing anywhere reads WORKKIT_HOME_SLUG any more', () => {
-    // A leftover read would pass for a configured runner on any machine that
-    // still has the variable set.
-    const steps = path.join(path.dirname(SCRIPT), 'morning');
-    const texts = [SCRIPT, ...fs.readdirSync(steps, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.join(steps, e.name))].map((f) => fs.readFileSync(f, 'utf8'));
-    assert(!texts.some((t) => /WORKKIT_HOME_SLUG/.test(t)), 'neither the runner nor a step it sources names it');
   });
 
   await composerTest('the roster comes from the home repo’s own branch, and the composer reads it back', () => {

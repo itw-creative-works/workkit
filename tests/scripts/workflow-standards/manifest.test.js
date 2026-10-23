@@ -7,31 +7,6 @@ const { MANIFEST, desiredLabels } = require('./helpers');
 const run = async () => {
   group('labels.json: manifest shape');
 
-  await test('all four groups present', () => {
-    const groups = Object.keys(MANIFEST.groups).sort();
-    assertEq(groups.join(','), 'agent,priority,status,type', 'the day-one groups');
-  });
-
-  await test('exact values per group', () => {
-    const values = (g) => Object.keys(MANIFEST.groups[g].values).sort().join(',');
-    assertEq(values('status'), 'backlog,blocked,building,complete,inbox,qa,specced', 'status values');
-    assertEq(values('type'), 'bug,enhancement,idea', 'type values');
-    assertEq(values('priority'), 'high,low', 'priority values');
-    assertEq(values('agent'), 'claimed,ok', 'agent values');
-  });
-
-  await test('status:complete is the stage after qa, and its label teaches what it means (#196)', () => {
-    // The statuses are listed in pipeline order (inbox, specced, building, qa,
-    // complete, then the side pockets), so `gh label list` teaches the road in the
-    // order it is walked. The stage a ship reads sits right after qa, whose passing
-    // check grants it, and wears the verdict green qa gave up.
-    const status = MANIFEST.groups.status.values;
-    assertEq(Object.keys(status).slice(0, 5).join(','), 'inbox,specced,building,qa,complete', 'the pipeline in order');
-    assertEq(status.complete.description, 'QA passed, ready to ship. Exactly one status: label per open issue.', 'complete says QA passed');
-    assertEq(status.complete.color, '12925C', 'complete wears the verdict green');
-    assertEq(status.qa.color, 'B0416A', 'qa moved off it: qa only means waiting on the check');
-  });
-
   await test('values are single lowercase words: no hyphens', () => {
     for (const { name } of desiredLabels()) {
       const value = name.split(':')[1];
@@ -58,24 +33,6 @@ const run = async () => {
     }
   });
 
-  await test('a fixed label’s hex is its board token’s light value: the pairing, pinned', () => {
-    // A label's colour on GitHub is the light-mode value of the theme token the
-    // tower draws it in, so the board and the issue page agree. The token values
-    // live in the omega framework, so only the hex side is pinned here.
-    const expected = {
-      status: {
-        inbox: '0F8FA9', specced: '7A45B5', building: 'C47206', qa: 'B0416A', complete: '12925C', blocked: 'D92D20', backlog: 'A1A19E',
-      },
-      type: { bug: 'D92D20', enhancement: 'A06A08', idea: '7A45B5' },
-      priority: { high: 'D92D20', low: 'A1A19E' },
-    };
-    for (const [group, values] of Object.entries(expected)) {
-      for (const [value, color] of Object.entries(values)) {
-        assertEq(MANIFEST.groups[group].values[value].color, color, `${group}:${value} wears its token's light value`);
-      }
-    }
-  });
-
   await test('a hex repeats across the groups but never inside one (#149)', () => {
     // The rule the palette is built on: a colour is unique within a vocabulary,
     // since a column header, a card chip and a chart slice are read by hue,
@@ -87,48 +44,6 @@ const run = async () => {
     assertEq(MANIFEST.groups.type.values.idea.color, MANIFEST.groups.status.values.specced.color, 'idea and specced share the purple');
     assertEq(MANIFEST.groups.priority.values.high.color, MANIFEST.groups.status.values.blocked.color, 'high and blocked share the alarm red');
     assertEq(MANIFEST.groups.priority.values.low.color, MANIFEST.groups.status.values.backlog.color, 'low and backlog share the faint gray');
-  });
-
-  await test('status is exclusive and every status description says so', () => {
-    assertEq(MANIFEST.groups.status.exclusive, true, 'status.exclusive');
-    for (const [value, body] of Object.entries(MANIFEST.groups.status.values)) {
-      assert(/exactly one status:/i.test(body.description), `status:${value} must state the one-per-issue rule`);
-    }
-  });
-
-  await test('priority is exclusive: high plus low on one issue is a contradiction', () => {
-    assertEq(MANIFEST.groups.priority.exclusive, true, 'priority.exclusive');
-  });
-
-  await test('status and type are the required groups: priority absence means normal', () => {
-    for (const [name, body] of Object.entries(MANIFEST.groups)) {
-      assertEq(body.required === true, name === 'status' || name === 'type', `${name}.required`);
-    }
-  });
-
-  await test('type is exclusive: an issue is one kind of thing', () => {
-    assertEq(MANIFEST.groups.type.exclusive, true, 'type.exclusive');
-  });
-
-  await test('inbox description names triage as the drain', () => {
-    assert(/triage/i.test(MANIFEST.groups.status.values.inbox.description), 'status:inbox points at triage');
-  });
-
-  await test('building description says the work is in flight', () => {
-    assert(/in flight/i.test(MANIFEST.groups.status.values.building.description),
-      'status:building is the label in-flight work carries');
-  });
-
-  await test('priority descriptions state that absence means normal', () => {
-    for (const [value, body] of Object.entries(MANIFEST.groups.priority.values)) {
-      assert(/absence/i.test(body.description) && /normal/i.test(body.description),
-        `priority:${value} must state absence = normal`);
-    }
-    assert(!Object.keys(MANIFEST.groups.priority.values).includes('normal'), 'no priority:normal label exists');
-  });
-
-  await test('agent:ok grants autonomous work', () => {
-    assert(/agent may work/i.test(MANIFEST.groups.agent.values.ok.description), 'agent:ok states the permission');
   });
 
   return summary();

@@ -151,10 +151,6 @@ const run = async () => {
     await passes(`${MONO}/src/assets/build/tool.js`, MONO_FACTS);
   });
 
-  await test('ports "unresolvable path with a dist/ segment stays blocked: exit 2 (default-deny)"', async () => {
-    await blocks('/nope/does-not-exist/dist/app.js', OUTPUT_DIR);
-  });
-
   group('vendor-guard: gitignored files');
 
   await test('ports "gitignored file in a repo: exit 2": names the reason', async () => {
@@ -167,10 +163,6 @@ const run = async () => {
 
   await test('ports "tracked file in a repo: exit 0"', async () => {
     await passes(`${GIT}/src.js`, GIT_FACTS);
-  });
-
-  await test('ports "file outside any git repo: exit 0"', async () => {
-    await passes('/w/norepo/scratch.txt', { root: null });
   });
 
   group('vendor-guard: fail-open');

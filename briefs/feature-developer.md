@@ -12,6 +12,10 @@ Spec: the `## Spec` and `### Contract` of {{issue}}. Where this brief and the Co
 
 Build the Contract's Names from the Contract and the Spec. A test-developer writes the tests from the same Contract at the same time: never read its test files.
 
+## The bar
+
+Cost: in-process through a seam unless the wiring is under test; a world from `seeded()`, copied per case; scratch from `mkTmp()`; no fixed path, port or sleep; a timing case asserts order, never a duration; a live probe behind a named flag that skips with its reason.
+
 ## Paths
 
 Yours: {{paths}}
