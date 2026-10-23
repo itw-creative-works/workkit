@@ -7,16 +7,18 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-10-23
+
 ### Added
-- [#451](../../issues/451) - `safety:test-bar` names, at write time and never blocking, each line of a test file that misses the test bar's mechanical rules. The bar (what a test must be worth, what it may cost) lives in `docs/tests.md`; the test-developer brief and the verifier's WORTH check point at it.
-- [#452](../../issues/452) - The kit ships the parallel runner (`docs/tests.md` § The shape): `workkit test [paths]` runs it from any folder of a repo and fails when nothing ran, `tests/run.js` hands off to it, and each run names its five slowest suites; `tests.budget` has the commit gate name an overrun.
+- [#451](../../issues/451) [`2897eb4`](../../commit/2897eb4) Thanks [@ianwieds]! - `safety:test-bar` names, at write time and never blocking, each line of a test file that misses the test bar's mechanical rules. The bar (what a test must be worth, what it may cost) lives in `docs/tests.md`; the test-developer brief and the verifier's WORTH check point at it.
+- [#452](../../issues/452) [`2897eb4`](../../commit/2897eb4) Thanks [@ianwieds]! - The kit ships the parallel runner (`docs/tests.md` § The shape): `workkit test [paths]` runs it from any folder of a repo and fails when nothing ran, `tests/run.js` hands off to it, and each run names its five slowest suites; `tests.budget` has the commit gate name an overrun.
 
 ### Changed
 - (no issue) - `docs/agents.md` § Batches states the default the manager applies unasked: every issue of a batch builds at once, batches run one at a time, and the manager picks each batch's issues and the batch order unless the owner directs; an earlier plan or session file never serializes a batch.
-- [#450](../../issues/450) - The root `npm test` runs each suite in its own worker process, cores less one at once, each output printed whole in sorted order, the suites `tests/lib/serial.js` names alone after the wave; a dead worker fails as `run <suite>`. About 450 cases whose failure meant nothing real broke are struck.
+- [#450](../../issues/450) [`2897eb4`](../../commit/2897eb4) Thanks [@ianwieds]! - The root `npm test` runs each suite in its own worker process, cores less one at once, each output printed whole in sorted order, the suites `tests/lib/serial.js` names alone after the wave; a dead worker fails as `run <suite>`. About 450 cases whose failure meant nothing real broke are struck.
 
 ### Fixed
-- [#453](../../issues/453) - `safety:issue-guard` no longer refuses ordinary prose because a `.env` value is a plain lowercase word: that value is skipped, like one under eight characters, while a secret-shaped value still blocks the write, naming its key.
+- [#453](../../issues/453) [`2897eb4`](../../commit/2897eb4) Thanks [@ianwieds]! - `safety:issue-guard` no longer refuses ordinary prose because a `.env` value is a plain lowercase word: that value is skipped, like one under eight characters, while a secret-shaped value still blocks the write, naming its key.
 
 ## [0.80.1] - 2026-10-22
 
