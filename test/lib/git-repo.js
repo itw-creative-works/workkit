@@ -28,7 +28,8 @@ const OPT_IN = '{ "version": 1, "enabled": true }\n';
  * @param {Date} [when] - the mtime every seeded file carries
  * @param {object} [opts]
  * @param {boolean} [opts.optIn=true] - false seeds no `.workkit/settings.json`
- * @returns {{dir: string, repo: string, tmp: string, env: object, git: Function, write: Function}}
+ * @returns {{dir: string, repo: string, tmp: string, workflowHome: string, env: object, git: Function, write: Function}}
+ *   `workflowHome` is the home's `.workkit`, where the markers live;
  *   `git(...args)` runs in the repo and throws on a non-zero exit;
  *   `write(rel, body, when)` writes a file, dated `when` when given
  */
@@ -38,7 +39,8 @@ const mkRepo = (prefix, files, when, { optIn = true } = {}) => {
   const home = path.join(dir, 'home');
   const tmp = path.join(dir, 'tmp');
   for (const d of [repo, home, tmp]) fs.mkdirSync(d, { recursive: true });
-  const env = homeEnv(home, { PATH: process.env.PATH, TMPDIR: shellPath(tmp) });
+  const workflowHome = path.join(home, '.workkit');
+  const env = homeEnv(home, { PATH: process.env.PATH, TMPDIR: shellPath(tmp), WORKFLOW_HOME: shellPath(workflowHome) });
   const git = (...args) => {
     const res = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
     if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
@@ -58,7 +60,7 @@ const mkRepo = (prefix, files, when, { optIn = true } = {}) => {
   git('add', '-A');
   git('commit', '-q', '-m', 'init');
   git('remote', 'add', 'origin', FIXTURE_ORIGIN);
-  return { dir, repo, tmp, env, git, write };
+  return { dir, repo, tmp, workflowHome, env, git, write };
 };
 
 /**

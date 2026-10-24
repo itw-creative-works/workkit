@@ -111,7 +111,7 @@ export function healArms(facts, root, all) {
     const head = await blob(check, 'HEAD', CHECKS);
     const answer = await facts.jobRewrite(head);
     const rewrite = typeof answer === 'string' ? { exitCode: 0, stdout: answer, stderr: '' } : answer ?? { exitCode: 1, stdout: '', stderr: '' };
-    await tool(check, `wk_changelog_job_rewrite <HEAD:${CHECKS}>`, rewrite);
+    await tool(check, `wk_checks_heal_rewrite <HEAD:${CHECKS}>`, rewrite);
     const want = await facts.hashOf(CHECKS, rewrite.stdout);
     let have;
     if (all) {

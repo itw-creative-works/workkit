@@ -15,6 +15,8 @@ const {
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { runLib } = require('../lib/hook-lib');
+const { mods } = require('../lib/mods-inputs');
+const { scratchWorkflowHome, agedFile } = require('../lib/workflow-home');
 
 const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
 
@@ -210,36 +212,69 @@ const run = async () => {
   const sha1 = (text) => spawnSync(BASH, [...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],
     { encoding: 'utf8' }).stdout.split(' ')[0];
 
-  // TMPDIR is handed over explicitly: the marker lives under whatever temp dir
-  // the session has, which is the seam the two guard suites move.
+  // TMPDIR is handed over explicitly: a session marker lives under whatever
+  // temp dir the session has.
   const TMP = mkTmp('lib-marker-');
+  // So are HOME and WORKFLOW_HOME: every other marker lives under the workflow
+  // home's markers folder, never the machine's.
+  const HOME = scratchWorkflowHome('lib-marker-home-');
+  const MARKERS = path.join(HOME.workflowHome, 'markers');
 
   await test('hook_review_marker_path is the review marker dir plus the sha of the root', () => {
-    const out = runLib('hook_review_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+    const out = runLib('hook_review_marker_path /repos/thing', HOME.env);
     assertEq(out.stdout.trim(),
-      shellPath(path.join(TMP, 'claude-review-marker', sha1('/repos/thing'))),
+      shellPath(path.join(MARKERS, 'claude-review-marker', sha1('/repos/thing'))),
       `got: ${out.stdout}|${out.stderr}`);
   });
 
   await test('hook_review_full_marker_path is the full-panel marker dir plus the sha of the root', () => {
-    const out = runLib('hook_review_full_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+    const out = runLib('hook_review_full_marker_path /repos/thing', HOME.env);
     assertEq(out.stdout.trim(),
-      shellPath(path.join(TMP, 'claude-review-full-marker', sha1('/repos/thing'))),
+      shellPath(path.join(MARKERS, 'claude-review-full-marker', sha1('/repos/thing'))),
       `got: ${out.stdout}|${out.stderr}`);
   });
 
   await test('hook_triage_marker_path is the triage marker dir plus the sha of the anchor', () => {
-    const out = runLib('hook_triage_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+    const out = runLib('hook_triage_marker_path /repos/thing', HOME.env);
     assertEq(out.stdout.trim(),
-      shellPath(path.join(TMP, 'claude-triage-marker', sha1('/repos/thing'))),
+      shellPath(path.join(MARKERS, 'claude-triage-marker', sha1('/repos/thing'))),
       `got: ${out.stdout}|${out.stderr}`);
   });
 
   await test('wk_suite_marker_path is the suite marker dir plus the sha of the root', () => {
-    const out = runLib('wk_suite_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+    const out = runLib('wk_suite_marker_path /repos/thing', HOME.env);
     assertEq(out.stdout.trim(),
-      shellPath(path.join(TMP, 'claude-suite-marker', sha1('/repos/thing'))),
+      shellPath(path.join(MARKERS, 'claude-suite-marker', sha1('/repos/thing'))),
       `got: ${out.stdout}|${out.stderr}`);
+  });
+
+  await test('the shell and JS key rules name the same file under the workflow home, for every marker kind', async () => {
+    const kinds = [
+      ['hook_review_marker_path', 'reviewMarkerPath'],
+      ['hook_review_full_marker_path', 'reviewFullMarkerPath'],
+      ['hook_triage_marker_path', 'triageMarkerPath'],
+      ['wk_suite_marker_path', 'suiteMarkerPath'],
+      ['wk_pkg_marker_path', 'pkgMarkerPath'],
+      ['hook_snapshot_dir', 'snapshotMarkerPath'],
+    ];
+    for (const [shellRule, jsRule] of kinds) {
+      const shell = runLib(`${shellRule} /repos/thing`, HOME.env).stdout.trim();
+      assert(shell.startsWith(`${shellPath(MARKERS)}/`), `${shellRule} is under the markers folder, got: ${shell}`);
+      assertEq(await mods('markers')[jsRule]('/repos/thing', shellPath(HOME.workflowHome)), shell, `${jsRule} names the file ${shellRule} does`);
+    }
+  });
+
+  await test('writing a marker sweeps the markers folder: a file 8 days old goes, one 6 days old stays', () => {
+    const { workflowHome, env } = scratchWorkflowHome('lib-sweep-home-');
+    const aged = (kind, name, days) => agedFile(path.join(workflowHome, 'markers', kind, name), days);
+    const old = aged('claude-review-marker', 'old', 8);
+    const oldOtherKind = aged('claude-suite-marker', 'old', 8);
+    const young = aged('claude-review-marker', 'young', 6);
+    const out = runLib('_hook_write_marker "$(hook_review_marker_path /repos/thing)"', env);
+    assertEq(out.code, 0, `the marker is written, got: ${out.stderr}`);
+    assert(!fs.existsSync(old), 'the 8-day-old sibling is swept');
+    assert(!fs.existsSync(oldOtherKind), 'and so is an 8-day-old file of another kind');
+    assert(fs.existsSync(young), 'the 6-day-old sibling is kept');
   });
 
   await test('hook_session_marker is the named dir plus the session id with every non-alphanumeric as _', () => {

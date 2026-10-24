@@ -1,7 +1,7 @@
 // tool.call Bash through the hooks module: safety:proof-guard in the Bash
 // chain, its issue read through gh, the qa flip's touched list read through git
 // (the working diff, the untracked files, the committed leg), its records read
-// from TMPDIR, the repo a --repo names found on the roster, and the chain's
+// from the workflow home, the repo a --repo names found on the roster, and the chain's
 // order. The verdict's own cases are test/hooks/proof-guard/*.test.js.
 
 import { test, expect, describe } from 'claude-code/testing'
@@ -10,9 +10,9 @@ import { mkWorld, hooksLog, kitLogs, TOOL_SPY, REPO, HOME, OPTED_IN, bash, answe
 const TMP = '/w/tmp'
 const OTHER = '/w/other'
 const TREE = 'a'.repeat(40)
-// The package record's file for each root: TMPDIR, the folder, the SHA-1 of the root.
-const PKG_RECORD = { [REPO]: `${TMP}/claude-package-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`, [OTHER]: `${TMP}/claude-package-marker/733f07a1e1c6941aaa32abd5c1fa4661beb0e6cd` }
-const SUITE_RECORD = `${TMP}/claude-suite-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
+// The package record's file for each root: the workflow home's markers, the folder, the SHA-1 of the root.
+const PKG_RECORD = { [REPO]: `${HOME}/.workkit/markers/claude-package-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`, [OTHER]: `${HOME}/.workkit/markers/claude-package-marker/733f07a1e1c6941aaa32abd5c1fa4661beb0e6cd` }
+const SUITE_RECORD = `${HOME}/.workkit/markers/claude-suite-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
 const PKG = JSON.stringify({ name: 'fixture', scripts: { test: 'node --test' } })
 const RED = 'process.exit(1);\n'
 const QA = 'gh issue edit 3 --remove-label status:building --add-label status:qa'

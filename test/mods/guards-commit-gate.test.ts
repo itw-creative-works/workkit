@@ -1,11 +1,11 @@
 // tool.call Bash through the hooks module: safety:commit-gate first in the
 // module's Bash chain, its facts gathered through git, npm and $.fs (the
-// review marker under TMPDIR, a stat), its denies, the heal pass, its
+// review marker under the workflow home, a stat), its denies, the heal pass, its
 // stand-downs as the result's `context` plus one $.ui.log line, and the
 // chain's .catch when it throws. The verdict's own cases are test/hooks/commit-gate/*.test.js.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, kitLogs, TOOL_SPY, REPO, bash, answered, denyOf } from '../lib/mod-world.ts'
+import { mkWorld, hooksLog, kitLogs, TOOL_SPY, REPO, HOME, bash, answered, denyOf } from '../lib/mod-world.ts'
 
 const PREFIX = 'commit-gate: BLOCKED this commit: '
 const NO_REVIEW = `${PREFIX}the commit contains code and no review has run. Run the workkit:review skill on the diff first (it records a marker), then commit.`
@@ -13,9 +13,9 @@ const STALE = `${PREFIX}the review marker predates the last commit. This commit'
 const FIXES = `${PREFIX}the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit.`
 const NO_CODE = 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).'
 
-// The review marker for /w/repo under TMPDIR: the folder plus the SHA-1 of the root.
+// The review marker for /w/repo under the workflow home: the folder plus the SHA-1 of the root.
 const TMP = '/w/tmp'
-const MARKER = `${TMP}/claude-review-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
+const MARKER = `${HOME}/.workkit/markers/claude-review-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
 
 const verdicts = (w: any, hook: string) => hooksLog(w).filter((l: any) => l.hook === hook).map((l: any) => l.verdict)
 const world = (on: any, opts: any = {}) => mkWorld(on, { env: { TMPDIR: TMP }, ...opts })

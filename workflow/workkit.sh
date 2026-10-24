@@ -22,7 +22,6 @@ STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 PROVE="$SCRIPT_DIR/prove.sh"
-TEST_RUNNER="$SCRIPT_DIR/test/run.js"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
 # The same two files the 9am schedule runs, so `workkit brief` is that morning
@@ -52,7 +51,7 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # Sourced tolerantly: an incomplete checkout is reported by the steps that need
 # these, never by a source that aborts before the command can speak.
 HOME_LIBS=1
-for _lib in lib/platform.sh lib.sh lib/discussions.sh home.sh; do
+for _lib in lib/platform.sh lib/suite.sh lib.sh lib/discussions.sh home.sh; do
   if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
     # shellcheck source=/dev/null
     . "$SCRIPT_DIR/$_lib"
@@ -130,8 +129,8 @@ usage: workkit <command> [args]
                        pass a session makes once a day, without the wait
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
-  test [paths]         run the kit's test runner over this repo's test/, or
-                       only the suite paths named
+  test [paths]         hand the paths to this repo's npm test, run at its root,
+                       so the script shell records the run
   prove                run the root suite on exactly the staged tree, in a copy
                        outside the repo, and record it on green, so a commit
                        of it passes the gate while other work stays unstaged

@@ -11,20 +11,20 @@ const { BASH, NO_RC, shellPath } = require('./platform');
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 
 /**
- * The snapshot folder of the repo at `root`, under the scratch `tmp`:
- * `wk_marker_path claude-red-snapshot <root>` with TMPDIR at `tmp` and the
- * root spelled as `pwd -P` prints it there.
- * @param {string} tmp - the case's own TMPDIR, native
+ * The snapshot folder of the repo at `root`, under the scratch workflow `home`:
+ * `wk_marker_path claude-red-snapshot <root>` with WORKFLOW_HOME at `home` and
+ * the root spelled as `pwd -P` prints it there.
+ * @param {string} home - the case's own workflow home, native
  * @param {string} root - the repo root, native
  * @returns {string} the folder, native
  */
-const snapshotDir = (tmp, root) => {
+const snapshotDir = (home, root) => {
   const res = spawnSync(BASH, [...NO_RC, '-c',
     'cd "$1" && . "$2" && wk_marker_path claude-red-snapshot "$(pwd -P)"', '_', shellPath(root), PLATFORM], {
-    env: { PATH: process.env.PATH, TMPDIR: shellPath(tmp) }, encoding: 'utf8',
+    env: { PATH: process.env.PATH, WORKFLOW_HOME: shellPath(home) }, encoding: 'utf8',
   });
   if (res.status !== 0 || !res.stdout.trim()) throw new Error(`wk_marker_path failed: ${res.stderr}`);
-  return path.join(tmp, 'claude-red-snapshot', path.basename(res.stdout.trim()));
+  return path.join(home, 'markers', 'claude-red-snapshot', path.basename(res.stdout.trim()));
 };
 
 /**
@@ -77,12 +77,12 @@ const treeOf = (root, { skipModules = false } = {}) => {
  * folder without `.git` or any package's `node_modules` as `tree/`, HEAD's sha, the
  * working-change list (NUL-separated: the diff against HEAD, then the
  * untracked files) and the issue numbers, one a line.
- * @param {{repo: string, tmp: string, git: Function}} w
+ * @param {{repo: string, workflowHome: string, git: Function}} w
  * @param {{issues?: string[]}} [opts]
  * @returns {string} the snapshot folder
  */
 const takeSnapshot = (w, { issues = ['5'] } = {}) => {
-  const dir = snapshotDir(w.tmp, w.repo);
+  const dir = snapshotDir(w.workflowHome, w.repo);
   fs.mkdirSync(dir, { recursive: true });
   const pkgs = packageDirs(w.repo);
   fs.cpSync(w.repo, path.join(dir, 'tree'), {

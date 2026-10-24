@@ -36,6 +36,7 @@ const TEXT = {
   fixes: 'the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit.',
   proved: 'commit-gate: suite proved: a green root `npm test` recorded this tree.',
   noCode: 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).',
+  firstCommit: 'commit-gate: first commit of this repo, no HEAD to judge against; the gate stands down',
   pathspec: 'a pathspec commit carries a tree the gate cannot compare with the record: stage the files and commit from the index.',
   disk: 'the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (`git add -A`), or run `workkit prove` to prove the staged tree alone (the suite runs on a copy of the index, and the folder stays as it is), then commit.',
   unwired: "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root `npm test` writes no record. Run `workkit setup` once, then `npm test` at the repo root, then commit.",
@@ -90,7 +91,7 @@ async function unwired(facts) {
 // Where a root run logs: .workkit/suite.log where git ignores it, else its marker path.
 async function suiteLogOf(facts, root) {
   const ignored = await facts.run(['git', 'check-ignore', '-q', '.workkit/suite.log'], { cwd: root });
-  return ignored.exitCode === 0 ? `${root}/.workkit/suite.log` : markerPath('claude-suite.log', root, facts.tmpdir);
+  return ignored.exitCode === 0 ? `${root}/.workkit/suite.log` : markerPath('claude-suite.log', root, facts.home);
 }
 
 // The git list a read answers, one path per line; a failed read lists nothing.
@@ -207,7 +208,7 @@ async function judge(facts, root, flags, files, notices) {
  * @param {object} facts `{ command, cwd, root, originless, staged, changed,
  *   headTime, reviewMarker, suiteRecord, treeId, indexTreeId, isWindows,
  *   scriptShell, scriptShellExe, userSettings, kitRoot, real, show, run, read, issueView,
- *   lint, jobRewrite, hashOf, tmpdir }`, each named in docs/hooks.md § safety:commit-gate
+ *   lint, jobRewrite, hashOf, home }`, each named in docs/hooks.md § safety:commit-gate
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
 export async function commitGateVerdict(facts) {
@@ -229,6 +230,7 @@ export async function commitGateVerdict(facts) {
   if (files.length === 0 && !flags.pathspec) {
     return hasTestScript(parseJson(await facts.read(`${root}/package.json`))) ? { context: TEXT.nothing } : null;
   }
+  if ((await facts.headTime) === null) return { context: TEXT.firstCommit };
   const verdict = await judge(facts, root, flags, files, notices);
   if (verdict) return verdict;
   return notices.length > 0 ? { context: notices.join('\n') } : null;
@@ -269,7 +271,7 @@ export async function commitGateGuard(g) {
   const found = findGitCommit(g.command);
   if (!found.clause && !found.wrapped) return null;
   const kit = g.pluginRoot;
-  const { TMPDIR } = g.env;
+  const home = userDirOf(g.env);
   const flags = found.clause ? commitFlags(found.clause) : {};
   const top = once(() => (g.cwd ? g.top(g.cwd) : null));
   const at = async (argv, init = {}) => g.run(argv, { cwd: await top(), ...init });
@@ -283,8 +285,8 @@ export async function commitGateGuard(g) {
   const staged = list(['diff', '--cached', '--name-only']);
   const changed = list(['diff', '--name-only']);
   const headTime = once(async () => Number((await text(['git', 'log', '-1', '--format=%ct']))?.trim()) || null);
-  const reviewMarker = once(async () => g.stat(await reviewMarkerPath(await top(), TMPDIR)));
-  const suiteRecord = once(async () => g.read(await suiteMarkerPath(await top(), TMPDIR)));
+  const reviewMarker = once(async () => g.stat(await reviewMarkerPath(await top(), home)));
+  const suiteRecord = once(async () => g.read(await suiteMarkerPath(await top(), home)));
   const scriptShell = once(async () => {
     const npm = await g.run(['npm', 'config', 'get', 'script-shell'], { cwd: g.cwd });
     return npm.isStarted === false || npm.exitCode !== 0 ? null : npm.stdout;
@@ -304,10 +306,10 @@ export async function commitGateGuard(g) {
     get scriptShell() { return scriptShell(); },
     isWindows: windowsKit(kit),
     kitRoot: kit,
-    scriptShellExe: `${userDirOf(g.env)}/script-shell.exe`,
-    userSettings: `${userDirOf(g.env)}/settings.json`,
+    scriptShellExe: `${home}/script-shell.exe`,
+    userSettings: `${home}/settings.json`,
     real: g.real,
-    tmpdir: TMPDIR,
+    home,
     show: (rev, path) => text(['git', 'show', `${rev}:${path}`], { timeoutMs: LONG_RUN_MS }),
     run: g.run,
     read: g.read,

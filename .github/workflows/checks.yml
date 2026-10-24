@@ -64,6 +64,31 @@ jobs:
           elif [ -f package.json ]; then
             npm install --no-audit --no-fund
           fi
+      # A repo's test/run.js reaches the kit's runner, and a runner has no kit:
+      # a shallow clone of the public kit, WORKKIT_ENGINE and, for the hooks, a
+      # `workkit` wrapper on PATH; no link, since npm on Windows would need a
+      # .cmd wrapper. The kit itself skips it.
+      - name: Check out the workkit kit's runner
+        shell: bash
+        run: |
+          if [ -f workflow/test/run.js ]; then
+            echo "this repo is the kit, its runner is already here"
+          else
+            git clone --depth 1 https://github.com/itw-creative-works/workkit "$HOME/workkit-kit"
+            # node and the runner cannot resolve Git Bash's /c/... spelling, so a Windows
+            # runner exports the mixed form of both paths.
+            engine="$HOME/workkit-kit/workflow"
+            bin="$HOME/.local/bin"
+            if command -v cygpath >/dev/null 2>&1; then
+              engine="$(cygpath -m "$engine")"
+              bin="$(cygpath -m "$bin")"
+            fi
+            echo "WORKKIT_ENGINE=$engine" >> "$GITHUB_ENV"
+            mkdir -p "$HOME/.local/bin"
+            printf '#!/usr/bin/env bash\nexec bash "$HOME/workkit-kit/workflow/workkit.sh" "$@"\n' > "$HOME/.local/bin/workkit"
+            chmod +x "$HOME/.local/bin/workkit"
+            echo "$bin" >> "$GITHUB_PATH"
+          fi
       - name: Test
         run: npm test
   test:

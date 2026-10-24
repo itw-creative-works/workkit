@@ -4,8 +4,8 @@
 // `test/**/*.test.js` in worker processes, a parallel wave then the serial tail
 // the repo's `test/lib/serial.js` names, then the mod half (`claude plugin test`
 // over `test/mods/*.test.ts`), totalled; non-zero on any failure. Suite paths
-// after `--` narrow the run. A repo reaches it through `workkit test` or a
-// `test/run.js` that calls `main`. A repo with no `test/` is read from `tests/`.
+// after `--` narrow the run. A repo reaches it through a `test/run.js` that
+// calls `main`. A repo with no `test/` is read from `tests/`.
 
 const fs = require('fs');
 const path = require('path');

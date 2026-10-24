@@ -1,16 +1,21 @@
 #!/bin/bash
 # hooks/lib/markers.sh: the files the hooks name by content: the review,
-# full-panel and triage marker paths, the one writer the marker scripts share, the
-# per-session marker path, and hook_file_mtime. The digest and the key rule
-# are the engine's (wk_sha1, wk_marker_path in workflow/lib/platform.sh).
+# full-panel and triage marker paths, the one writer the marker scripts share and
+# its sweep, the per-session marker path, and hook_file_mtime. The digest, the
+# key rule and the sweep are the engine's (workflow/lib/platform.sh).
 # Sourced by hooks/_lib.sh; defines functions and sets nothing.
 
-# _hook_write_marker <path>: make the marker at <path> and print it. Internal to
-# the two marker scripts, which have nothing else to do: one tail, so the review
-# marker and the triage marker are written exactly alike.
+# hook_sweep_markers: the markers past MARKER_KEEP_DAYS removed; the body is
+# wk_sweep_markers, since the engine's record writers sweep too.
+hook_sweep_markers() { wk_sweep_markers; }
+
+# _hook_write_marker <path>: make the marker at <path>, sweep, and print it.
+# Internal to the two marker scripts, which have nothing else to do: one tail,
+# so the review marker and the triage marker are written exactly alike.
 _hook_write_marker() {
   mkdir -p "${1%/*}"
   : > "$1"
+  hook_sweep_markers
   printf '%s\n' "$1"
 }
 

@@ -4,10 +4,10 @@
 # suites live under `test/`. Sourced by standards.sh, functions only.
 
 # ── 6. npm test prints the totals line ──
-# Silent for `workkit test`, or `node`, `bash` or `sh` over a file that names a
-# runner path (`test/run.js`, the kit's `workflow/test/run.js`, a `run.js`
-# beside it) or carries the totals line itself, read one level deep; any other
-# test script gets the one line, never a flag on the run.
+# Silent for `node`, `bash` or `sh` over a file that names a runner path
+# (`test/run.js`, the kit's `workflow/test/run.js`, a `run.js` beside it) or
+# carries the totals line itself, read one level deep; `workkit test` would loop,
+# and it and any other script get one line each, never a flag on the run.
 check_test_runner() {
   local script file="" word words=()
   [[ -f package.json ]] || return 0
@@ -15,7 +15,10 @@ check_test_runner() {
   [[ -n "$script" ]] || return 0
 
   case "$script" in
-    'workkit test'|'workkit test '*) return 0 ;;
+    'workkit test'|'workkit test '*)
+      wk_warn "test script: \`workkit test\` would loop through npm test; set it to \`node test/run.js\`"
+      return 0
+      ;;
     'node '*|'bash '*|'sh '*)
       # The file is the first argument that is no flag (`node --no-warnings x.js`).
       read -ra words <<<"${script#* }"

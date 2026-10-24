@@ -4,8 +4,8 @@
  * wrapper named by `--script-shell`, the record a green root run leaves and the
  * package record every other green test run leaves, and npm's script shell as
  * setup wires it (the wrapper, or on Windows the built executable).
- * Consumers: test/scripts/script-shell.test.js, script-shell-detached.test.js
- * and prove.test.js.
+ * Consumers: test/scripts/script-shell.test.js, script-shell-detached.test.js,
+ * prove.test.js and workkit-cli/test-verb.test.js.
  */
 
 const fs = require('fs');
@@ -96,6 +96,7 @@ const mkRepo = (pkg, extra = {}) => {
 /**
  * A scratch machine: its own home and TMPDIR, node and npm on PATH; on Windows
  * a claude home through which the built executable reaches this checkout.
+ * `workflowHome` is the home's `.workkit`, where the records live.
  */
 const mkWorld = () => {
   const root = mkTmp('script-shell-world-');
@@ -103,11 +104,14 @@ const mkWorld = () => {
   const tmp = path.join(root, 'tmp');
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(tmp, { recursive: true });
+  const workflowHome = path.join(home, '.workkit');
   return {
     root,
     tmp,
+    workflowHome,
     env: homeEnv(home, {
       TMPDIR: shellPath(tmp),
+      WORKFLOW_HOME: shellPath(workflowHome),
       PATH: joinPath(NODE_DIR, SYSTEM_PATH),
       ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
     }),
@@ -129,7 +133,7 @@ const npm = (world, cwd, args, shell = WRAPPER, extra = {}) => {
 
 /** The record a green root run left for <repo> in <world>, or undefined. */
 const recorded = (world, repo) => {
-  const marker = suiteMarkerPath(world.tmp, repo);
+  const marker = suiteMarkerPath(world.workflowHome, repo);
   return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : undefined;
 };
 
@@ -140,7 +144,7 @@ const assertRecord = (text, tree, msg) => {
 };
 
 /** The package record's lines for <repo> in <world>, as JSON so a case compares them whole. */
-const packaged = (world, repo) => JSON.stringify(pkgRecord(world.tmp, repo));
+const packaged = (world, repo) => JSON.stringify(pkgRecord(world.workflowHome, repo));
 
 module.exports = {
   WRAPPER, EXE_ENV, EXE_CLAUDE_HOME, scratchNpmrc,

@@ -50,7 +50,7 @@ const ioIn = (env) => ({
 
 /**
  * The guard's verdict on <command> run from <repo> in a session whose
- * variables are <env> (TMPDIR names the markers and records): `deny` the block
+ * variables are <env> (the workflow home holds the markers and records): `deny` the block
  * or null, `context` the stand-down notice as text, '' for none.
  */
 const gateOn = async (repo, command, env) => {

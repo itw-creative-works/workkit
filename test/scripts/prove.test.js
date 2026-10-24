@@ -84,7 +84,7 @@ const prove = (w) => {
 
 /** The record a green run left for the world's repo, or undefined. */
 const recorded = (w) => {
-  const marker = suiteMarkerPath(w.tmp, w.repo);
+  const marker = suiteMarkerPath(w.workflowHome, w.repo);
   return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : undefined;
 };
 
@@ -93,13 +93,13 @@ const indexTree = (w) => w.git('write-tree').trim();
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex');
 
 // What a run must leave as it found it: the status, the index tree, the
-// worktree list, TMPDIR bar the suite's own records (the throwaway folder is
-// gone), and a hash of every path outside .git.
+// worktree list, TMPDIR (the throwaway folder is gone), and a hash of every
+// path outside .git.
 const stateOf = (w) => ({
   status: w.git('status', '--porcelain'),
   index: indexTree(w),
   worktrees: w.git('worktree', 'list', '--porcelain'),
-  tmp: fs.readdirSync(w.tmp).filter((name) => !name.startsWith('claude-suite')).join(', '),
+  tmp: fs.readdirSync(w.tmp).join(', '),
   files: Object.fromEntries(Object.entries(treeOf(w.repo)).map(([rel, body]) => [rel, sha1(body)])),
 });
 
@@ -107,7 +107,7 @@ const assertUnchanged = (before, after, label) => {
   assertEq(after.status, before.status, `${label}: git status --porcelain is unchanged`);
   assertEq(after.index, before.index, `${label}: the index tree is unchanged`);
   assertEq(after.worktrees, before.worktrees, `${label}: the worktree list is unchanged, the copy removed`);
-  assertEq(after.tmp, before.tmp, `${label}: TMPDIR holds no throwaway folder beside the suite's records`);
+  assertEq(after.tmp, before.tmp, `${label}: TMPDIR holds no throwaway folder`);
   assertEq(JSON.stringify(after.files, null, 1), JSON.stringify(before.files, null, 1),
     `${label}: every file in the folder hashes the same`);
 };
@@ -127,7 +127,7 @@ const run = async () => {
     assertEq(res.code, 0, `the staged tree is green, got: ${res.said}`);
     assertRecord(recorded(w), index, 'the record holds the index tree');
 
-    const review = reviewMarkerPath(w.tmp, w.repo);
+    const review = reviewMarkerPath(w.workflowHome, w.repo);
     fs.mkdirSync(path.dirname(review), { recursive: true });
     fs.writeFileSync(review, '');
     const out = await gateOn(w.repo, 'git commit -m "feat: thing"', { ...proveEnv(w), TMPDIR: shellPath(w.tmp) });

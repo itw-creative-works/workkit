@@ -106,7 +106,7 @@ const makeWorld = ({
 };
 
 // Node joins PATH because the watch runs detached through a Node supervisor;
-// TMPDIR is the world's, so the watch lock never lands in the machine's temp.
+// HOME and TMPDIR are the world's, so the watch lock never lands on the machine.
 const watchEnv = (w, env = {}) => homeEnv(w.home, {
   PATH: systemPathWith(w.bin, NODE_DIR),
   TMPDIR: shellPath(w.tmp),
@@ -441,7 +441,7 @@ const runSuite = async () => {
   await test('a lock that cannot be taken, over the log an earlier red watch left, is no answer, never red: exit 4', async () => {
     const w = makeWorld({ runs: [run(87, 'Checks')] });
     // A plain file at the CI lock path: no mkdir can take it.
-    const lock = ciLockPath(w.tmp, w.repo);
+    const lock = ciLockPath(path.join(w.home, '.workkit'), w.repo);
     fs.mkdirSync(path.dirname(lock), { recursive: true });
     fs.writeFileSync(lock, 'not a lock\n');
     fs.mkdirSync(path.dirname(w.ciLog), { recursive: true });

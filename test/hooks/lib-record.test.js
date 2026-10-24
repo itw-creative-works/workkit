@@ -11,6 +11,7 @@ const { SYSTEM_PATH, shellPath, digestTool } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { plantRecord, pkgRecord } = require('../lib/suite-record');
 const { runLib } = require('../lib/hook-lib');
+const { scratchWorkflowHome, agedFile } = require('../lib/workflow-home');
 const { until } = require('../lib/process');
 
 // Two tree ids a record can hold, neither a real tree.
@@ -23,9 +24,12 @@ const run = async () => {
   if (!digestTool(SYSTEM_PATH)) {
     skipSuite('this machine has neither shasum nor sha1sum, so no record path can be keyed');
   }
-  // TMPDIR is handed over explicitly: a record lives under whatever temp dir
-  // the session has.
+  // TMPDIR is handed over explicitly: the tree hash's throwaway index lives
+  // under whatever temp dir the session has.
   const TMP = mkTmp('lib-record-');
+  // So are HOME and WORKFLOW_HOME: a record lives under the workflow home's
+  // markers folder, never the machine's.
+  const HOME = scratchWorkflowHome('lib-record-home-');
 
   group('_lib.sh: the suite record');
 
@@ -90,10 +94,9 @@ const run = async () => {
     // The root as a hook hands it over, and the record planted at its native
     // path: the lib answers a shell path, which Node on Windows cannot open.
     const root = git(dir, 'rev-parse', '--show-toplevel');
-    const env = { TMPDIR: shellPath(TMP) };
-    const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, env).code === 0;
+    const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, HOME.env).code === 0;
     assert(!proved(ID), 'no marker proves nothing');
-    const marker = plantRecord(TMP, dir, ID);
+    const marker = plantRecord(HOME.workflowHome, dir, ID);
     assert(proved(ID), 'the recorded tree is proved');
     assert(!proved(OTHER_ID), 'another tree is not');
     assert(!proved(''), 'an empty tree (a failed hash) is never a match');
@@ -102,23 +105,22 @@ const run = async () => {
 
   group('_lib.sh: the package record');
 
-  // A git root and its own TMPDIR, so no case reads another's record.
+  // A git root and its own workflow home, so no case reads another's record.
   const pkgWorld = () => {
     const dir = mkTmp('lib-pkg-');
     git(dir, 'init', '-q');
-    const tmp = mkTmp('lib-pkg-tmp-');
-    const env = { TMPDIR: shellPath(tmp) };
+    const { workflowHome: wh, env } = scratchWorkflowHome('lib-pkg-home-');
     const root = git(dir, 'rev-parse', '--show-toplevel');
     const ask = (fn, ...args) => runLib(`${fn} "${root}" ${args.map((a) => `"${a}"`).join(' ')}`, env).code === 0;
-    return { dir, tmp, ask, lines: () => JSON.stringify(pkgRecord(tmp, dir)) };
+    return { dir, wh, ask, lines: () => JSON.stringify(pkgRecord(wh, dir)) };
   };
 
   await test('wk_pkg_marker_path is the package marker dir plus the sha of the root, never the suite record', () => {
-    const out = runLib('wk_pkg_marker_path /repos/thing', { TMPDIR: shellPath(TMP) });
+    const out = runLib('wk_pkg_marker_path /repos/thing', HOME.env);
     assertEq(out.stdout.trim(),
-      shellPath(path.join(TMP, 'claude-package-marker', sha1('/repos/thing'))),
+      shellPath(path.join(HOME.workflowHome, 'markers', 'claude-package-marker', sha1('/repos/thing'))),
       `got: ${out.stdout}|${out.stderr}`);
-    const suite = runLib('wk_suite_marker_path /repos/thing', { TMPDIR: shellPath(TMP) }).stdout.trim();
+    const suite = runLib('wk_suite_marker_path /repos/thing', HOME.env).stdout.trim();
     assert(out.stdout.trim() !== suite, `a different file from the suite record, got: ${suite}`);
   });
 
@@ -143,10 +145,18 @@ const run = async () => {
     assertEq(lines(), JSON.stringify([OTHER_ID, 'packages/bar']), "the old tree's packages are gone");
   });
 
+  await test('wk_pkg_marker_write sweeps the markers folder: a file 8 days old goes, the new record stands', () => {
+    const { wh, ask, lines } = pkgWorld();
+    const old = agedFile(path.join(wh, 'markers', 'claude-review-marker', 'old'), 8);
+    assert(ask('wk_pkg_marker_write', ID, '.'), 'the record is written');
+    assert(!fs.existsSync(old), 'the 8-day-old file is swept');
+    assertEq(lines(), JSON.stringify([ID, '.']), 'and the new record stands');
+  });
+
   await test('wk_pkg_marker_write: an empty tree is refused and leaves no record', () => {
-    const { tmp, ask } = pkgWorld();
+    const { wh, ask } = pkgWorld();
     assert(!ask('wk_pkg_marker_write', '', '.'), 'an empty tree (a failed hash) is refused');
-    assert(!fs.existsSync(path.join(tmp, 'claude-package-marker')), 'and leaves no record');
+    assert(!fs.existsSync(path.join(wh, 'markers', 'claude-package-marker')), 'and leaves no record');
   });
 
   await test('wk_pkg_proved: the first package line and a later one, on the recorded tree only', () => {
@@ -164,7 +174,7 @@ const run = async () => {
 
   await test('the suite record and the package record never stand in for each other', () => {
     const suiteOnly = pkgWorld();
-    plantRecord(suiteOnly.tmp, suiteOnly.dir, ID);
+    plantRecord(suiteOnly.wh, suiteOnly.dir, ID);
     assert(suiteOnly.ask('wk_suite_proved', ID), 'the planted suite record proves its tree');
     assert(!suiteOnly.ask('wk_pkg_proved', ID, '.'), 'a suite record is no package record');
     const pkgOnly = pkgWorld();

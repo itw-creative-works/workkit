@@ -8,6 +8,7 @@
 
 import { cdStep, foldRedirectAmp, namesDirChange, stepDirs, stripHeredocs, stripQuotes, unquoteWord, wordsOf } from './command.js';
 import { buildingList } from './gh.js';
+import { userDirOf } from './log.js';
 import { suiteMarkerPath } from './markers.js';
 import { fold, isAbsolute } from './optin.js';
 import { issuesBuilding } from './proof.js';
@@ -180,15 +181,15 @@ async function suiteRootRun(command, at) {
  * hold, a notice when GitHub could not answer, else null (lazy: see factOf).
  * @param {{command: string, cwd: string, root: string|null, testScript: string,
  *   memberDirs: object|function, suiteRecord: string|null|function, treeId: string|null|function,
- *   building: function, originless?: boolean|function, tmpdir?: string, real?: function}} facts
+ *   building: function, originless?: boolean|function, home?: string, real?: function}} facts
  *   the command, its folder, the repo root, the root's scripts.test; each member below the root
  *   as `{ [folder]: { name, test } }` (lazy); the suite record (lazy); the tree (lazy, `(prove)`:
  *   the index's for prove); gh's status:building list, async, null on failure; no origin (lazy);
- *   TMPDIR, for the record's path; `real(path)` async, the physical path or null when not there
+ *   the machine folder, for the record's path; `real(path)` async, the physical path or null when not there
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
 export async function suiteGuardVerdict({
-  command, cwd, root, testScript, memberDirs, suiteRecord, treeId, building, originless, tmpdir, real,
+  command, cwd, root, testScript, memberDirs, suiteRecord, treeId, building, originless, home, real,
 }) {
   if (!command || !root) return null;
   let found;
@@ -199,7 +200,7 @@ export async function suiteGuardVerdict({
   if (!(await suiteRootRun(stripped, at))) return null;
   const tree = await factOf(treeId, isProveRun(stripped));
   if (suiteProved(await factOf(suiteRecord), tree)) {
-    return { deny: `suite-guard: this tree is already proved: the full suite ran green on it and ${await suiteMarkerPath(root, tmpdir)} records it. ${NARROW}; the commit gate reads the same record for a commit whose staged tree matches it.` };
+    return { deny: `suite-guard: this tree is already proved: the full suite ran green on it and ${await suiteMarkerPath(root, home)} records it. ${NARROW}; the commit gate reads the same record for a commit whose staged tree matches it.` };
   }
   if (await factOf(originless)) return null;
   const list = await building();
@@ -256,7 +257,7 @@ export async function suiteGuardGuard(facts) {
     root,
     testScript,
     memberDirs: () => packageFiles(root, facts),
-    suiteRecord: async () => facts.read(await suiteMarkerPath(root, facts.env.TMPDIR)),
+    suiteRecord: async () => facts.read(await suiteMarkerPath(root, userDirOf(facts.env))),
     treeId: async (prove) => {
       if (!prove) return treeHash(facts.run, facts.pluginRoot, root);
       const tree = await facts.run(['git', 'write-tree'], at);
@@ -264,7 +265,7 @@ export async function suiteGuardGuard(facts) {
     },
     originless: () => facts.originless(),
     building: () => buildingList(facts.run, at),
-    tmpdir: facts.env.TMPDIR,
+    home: userDirOf(facts.env),
     real: facts.real,
   });
 }

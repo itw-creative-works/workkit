@@ -79,19 +79,27 @@ cmd_brief() {
   wk_info "watch it: https://github.com/$DISPATCH_SLUG/actions/workflows/$BRIEF_WORKFLOW"
 }
 
-# The kit's test runner over the repo the command stands in, the suite paths
-# narrowing it as `npm test -- <paths>` does. The engine is exported so the
-# repo's test/lib re-exports resolve the same kit copy as the runner.
+# The repo's own `npm test` at its root, the arguments after `--`, and nothing
+# else: npm runs it through the script shell, so the one recorder sees the run.
 cmd_test() {
-  if ! command -v node >/dev/null 2>&1; then
-    wk_error "test: the runner needs node, and there is none on PATH"
+  # npm names the running script, so a test script of `workkit test` would loop.
+  if [[ "${npm_lifecycle_event:-}" == test ]]; then
+    wk_error "test: workkit test was started inside an npm test, so it stops instead of looping; a test script of \`workkit test\` must point at the runner (node test/run.js)"
     exit 1
   fi
-  export WORKKIT_ENGINE="$SCRIPT_DIR"
+  if ! command -v npm >/dev/null 2>&1; then
+    wk_error "test: the verb runs npm test, and there is no npm on PATH"
+    exit 1
+  fi
   # The repo root as prove finds it, so the verb runs the same from any folder.
   local root
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
-  exec node "$TEST_RUNNER" --root "$root" -- "$@"
+  cd "$root" || exit 1
+  if ! wk_has_test_script "$root"; then
+    wk_error "test: $root/package.json has no test script"
+    exit 1
+  fi
+  exec npm test -- "$@"
 }
 
 cmd_doctor() {

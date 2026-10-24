@@ -14,6 +14,7 @@ import { issueView } from './gh.js';
 import {
   denyAfter, ghBlocksCd, ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghRepoIsHere, ghSkipped, ghSteps,
 } from './gh-edit.js';
+import { userDirOf } from './log.js';
 import { pkgMarkerPath, suiteMarkerPath } from './markers.js';
 import { rosterOf, rosterPath } from './optin.js';
 import { viewHasProof } from './proof.js';
@@ -248,8 +249,8 @@ export async function proofGuardGuard(facts) {
       return hasTestScript(parseJson(await read(`${root}/package.json`))) ? '.' : null;
     },
     treeId: (root) => treeHash(run, facts.pluginRoot, root),
-    suiteRecord: async (root) => read(await suiteMarkerPath(root, env.TMPDIR)),
-    packageRecord: async (root) => read(await pkgMarkerPath(root, env.TMPDIR)),
+    suiteRecord: async (root) => read(await suiteMarkerPath(root, userDirOf(env))),
+    packageRecord: async (root) => read(await pkgMarkerPath(root, userDirOf(env))),
     rootOnly: async (root) => rootOnlyDeclared(await read(`${root}/.workkit/settings.json`)),
   });
 }

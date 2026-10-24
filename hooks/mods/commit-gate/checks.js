@@ -115,6 +115,7 @@ function lockstep(object) {
  * Whether two texts of one JSON file differ only in `version`, or in it and
  * the exact dependency pins equal to it on each side. Text that does not parse
  * as an object is a no.
+ * Its shell twin is hook_version_only_change in hooks/lib/tree.sh.
  * @param {string} head the file at HEAD
  * @param {string} copy the bytes the commit carries
  * @returns {boolean}

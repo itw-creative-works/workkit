@@ -1,6 +1,6 @@
 // The suite marker read and written independently of workflow/lib/suite.sh: its
 // path (and the package record's, the review marker's, the suite log's and the
-// lock's) under a temp dir, the package record's lines, the working tree's hash
+// lock's) under a workflow home's markers folder, the package record's lines, the working tree's hash
 // by the temp-index recipe, and the suite and package records planted as a green
 // `npm test` would leave them. Consumers: the suite-guard, commit-gate,
 // script-shell, proof-guard and _lib suites.
@@ -14,32 +14,32 @@ const { mkTmp } = require('./scratch');
 const repoRoot = (dir) => spawnSync('git', ['rev-parse', '--show-toplevel'],
   { cwd: dir, encoding: 'utf8' }).stdout.trim();
 
-// <tmp>/<name>/<sha1 of the repo root>, the shape of every per-repo temp file.
-const perRepo = (tmp, name, dir) => path.join(tmp, name,
+// <workflow home>/markers/<name>/<sha1 of the repo root>, every per-repo marker's shape.
+const perRepo = (home, name, dir) => path.join(home, 'markers', name,
   crypto.createHash('sha1').update(repoRoot(dir)).digest('hex'));
 
-/** The marker file for <dir>'s repo under <tmp>, keyed by the sha1 of its root. */
-const suiteMarkerPath = (tmp, dir) => perRepo(tmp, 'claude-suite-marker', dir);
+/** The marker file for <dir>'s repo under the workflow <home>, keyed by the sha1 of its root. */
+const suiteMarkerPath = (home, dir) => perRepo(home, 'claude-suite-marker', dir);
 
-/** The package record for <dir>'s repo under <tmp>, keyed the same way. */
-const pkgMarkerPath = (tmp, dir) => perRepo(tmp, 'claude-package-marker', dir);
+/** The package record for <dir>'s repo under <home>, keyed the same way. */
+const pkgMarkerPath = (home, dir) => perRepo(home, 'claude-package-marker', dir);
 
 /** The package record's lines (the tree id, then one folder each), or undefined. */
-const pkgRecord = (tmp, dir) => {
-  const marker = pkgMarkerPath(tmp, dir);
+const pkgRecord = (home, dir) => {
+  const marker = pkgMarkerPath(home, dir);
   if (!fs.existsSync(marker)) return undefined;
   return fs.readFileSync(marker, 'utf8').replace(/\n$/, '').split('\n');
 };
 
-/** The review marker file for <dir>'s repo under <tmp>, keyed the same way. */
-const reviewMarkerPath = (tmp, dir) => perRepo(tmp, 'claude-review-marker', dir);
+/** The review marker file for <dir>'s repo under <home>, keyed the same way. */
+const reviewMarkerPath = (home, dir) => perRepo(home, 'claude-review-marker', dir);
 
-/** The suite log under <tmp>, its home when the repo does not ignore .workkit/. */
-const suiteLogPath = (tmp, dir) => perRepo(tmp, 'claude-suite.log', dir);
+/** The suite log under <home>, where it goes when the repo does not ignore .workkit/. */
+const suiteLogPath = (home, dir) => perRepo(home, 'claude-suite.log', dir);
 
-/** The in-flight lock folder under <tmp>, holding the running suite's `pid`. */
-const suiteLockPath = (tmp, dir) => perRepo(tmp, 'claude-suite-lock', dir);
-const ciLockPath = (tmp, dir) => perRepo(tmp, 'claude-ci-watch-lock', dir);
+/** The in-flight lock folder under <home>, holding the running suite's `pid`. */
+const suiteLockPath = (home, dir) => perRepo(home, 'claude-suite-lock', dir);
+const ciLockPath = (home, dir) => perRepo(home, 'claude-ci-watch-lock', dir);
 
 /** The working tree's `git write-tree` id, built in a throwaway index. */
 const treeHash = (dir) => {
@@ -49,16 +49,16 @@ const treeHash = (dir) => {
 };
 
 /** Plant the record holding <tree>, the working tree's hash by default. */
-const plantRecord = (tmp, dir, tree = treeHash(dir)) => {
-  const marker = suiteMarkerPath(tmp, dir);
+const plantRecord = (home, dir, tree = treeHash(dir)) => {
+  const marker = suiteMarkerPath(home, dir);
   fs.mkdirSync(path.dirname(marker), { recursive: true });
   fs.writeFileSync(marker, `${tree}\n`);
   return marker;
 };
 
 /** Plant the package record holding <pkgs> on <tree>, the working tree's hash by default. */
-const plantPkgRecord = (tmp, dir, pkgs, tree = treeHash(dir)) => {
-  const marker = pkgMarkerPath(tmp, dir);
+const plantPkgRecord = (home, dir, pkgs, tree = treeHash(dir)) => {
+  const marker = pkgMarkerPath(home, dir);
   fs.mkdirSync(path.dirname(marker), { recursive: true });
   fs.writeFileSync(marker, `${[tree, ...pkgs].join('\n')}\n`);
   return marker;

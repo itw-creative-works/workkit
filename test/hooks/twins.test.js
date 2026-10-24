@@ -1,7 +1,7 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. Ten rows: the test package,
+// function (spawned) and to the JavaScript export (required), and the two must agree. Eleven rows: the test package,
 // the opt-in read, the machine folder, the CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint
-// block's sentence, the working-diff reads, the status:building list.
+// block's sentence, the working-diff reads, the version-only change, the status:building list.
 
 const fs = require('fs');
 const os = require('os');
@@ -14,6 +14,7 @@ const {
   IS_WINDOWS, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith,
 } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
+const { mkRepo } = require('../lib/git-repo');
 const { mods, runResult } = require('../lib/mods-inputs');
 const { recordArgv, readArgv } = require('../lib/argv-log');
 const commitGate = require('./commit-gate/helpers');
@@ -315,6 +316,26 @@ const run = async () => {
     const reads = runs.filter((c) => c.argv[0] === 'git').map((c) => c.argv.slice(1));
     const missing = shell.filter((argv) => !reads.some((a) => JSON.stringify(a) === JSON.stringify(argv)));
     assertEq(missing.map((a) => a.join(' ')).join('; '), '', `the shell reads the module never made, it made: ${JSON.stringify(reads)}`);
+  });
+
+  group('twins: the version-only change, hook_version_only_change in hooks/lib/tree.sh against versionOnly in hooks/mods/commit-gate/checks.js');
+
+  // One JSON file's HEAD text, then its working copy: the version alone, another key too, a copy that does not parse.
+  const HEAD_JSON = '{\n  "version": 1,\n  "enabled": true\n}\n';
+  const CHANGES = {
+    'stamp.json': '{\n  "version": 2,\n  "enabled": true\n}\n',
+    'other.json': '{\n  "version": 2,\n  "enabled": false\n}\n',
+    'broken.json': '{\n  "version": 2,\n',
+  };
+
+  await test('hook_version_only_change and versionOnly give every change the same answer', () => {
+    const files = Object.keys(CHANGES);
+    const w = mkRepo('twins-version-', Object.fromEntries(files.map((f) => [f, HEAD_JSON])), undefined, { optIn: false });
+    for (const f of files) w.write(f, CHANGES[f]);
+    const shell = bashAnswers(lib('hooks', '_lib.sh'), `hook_version_only_change "${shellPath(w.repo)}"`, files);
+    agree(files, shell, (f) => mods('commit-gate/checks').versionOnly(HEAD_JSON, CHANGES[f]), 'the version-only change');
+    assertEq(JSON.stringify(shell), JSON.stringify([true, false, false]), 'only the lone version stamp is version-only');
+    fs.rmSync(w.dir, { recursive: true, force: true });
   });
 
   group('twins: the status:building list, hook_issues_building in hooks/lib/snapshot.sh against buildingList in hooks/mods/gh.js');

@@ -52,11 +52,10 @@ jobs:
           elif [ -f package.json ]; then
             npm install --no-audit --no-fund
           fi
-      # `workkit test` and a repo's test/run.js reach the kit's runner, and a
-      # runner has no kit: a shallow clone of the public kit, WORKKIT_ENGINE and
-      # a `workkit` wrapper on PATH, no link, so a Windows runner takes the
-      # WORKKIT_ENGINE route too (npm there would need a .cmd wrapper).
-      # The kit itself skips it.
+      # A repo's test/run.js reaches the kit's runner, and a runner has no kit:
+      # a shallow clone of the public kit, WORKKIT_ENGINE and, for the hooks, a
+      # `workkit` wrapper on PATH; no link, since npm on Windows would need a
+      # .cmd wrapper. The kit itself skips it.
       - name: Check out the workkit kit's runner
         shell: bash
         run: |

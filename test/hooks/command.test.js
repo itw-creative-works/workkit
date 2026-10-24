@@ -162,24 +162,26 @@ const run = async () => {
 
   group('markers: the marker paths');
 
-  // TMPDIR is handed over explicitly: the marker lives under whatever temp dir
-  // the session has, keyed by the sha1 of the root (SHA1_THING, of /repos/thing).
+  // The workflow home is handed over explicitly: the marker lives under its
+  // markers folder, keyed by the sha1 of the root (SHA1_THING, of /repos/thing).
+  // A session marker lives under the session's TMPDIR.
+  const WH = '/w/home/.workkit';
   const TMP = '/w/tmp';
 
   await test('ports "hook_review_marker_path is the review marker dir plus the sha of the root"', async () => {
-    assertEq(await markers().reviewMarkerPath('/repos/thing', TMP), `${TMP}/claude-review-marker/${SHA1_THING}`, 'the path');
+    assertEq(await markers().reviewMarkerPath('/repos/thing', WH), `${WH}/markers/claude-review-marker/${SHA1_THING}`, 'the path');
   });
 
   await test('ports "hook_review_full_marker_path is the full-panel marker dir plus the sha of the root"', async () => {
-    assertEq(await markers().reviewFullMarkerPath('/repos/thing', TMP), `${TMP}/claude-review-full-marker/${SHA1_THING}`, 'the path');
+    assertEq(await markers().reviewFullMarkerPath('/repos/thing', WH), `${WH}/markers/claude-review-full-marker/${SHA1_THING}`, 'the path');
   });
 
   await test('ports "hook_triage_marker_path is the triage marker dir plus the sha of the anchor"', async () => {
-    assertEq(await markers().triageMarkerPath('/repos/thing', TMP), `${TMP}/claude-triage-marker/${SHA1_THING}`, 'the path');
+    assertEq(await markers().triageMarkerPath('/repos/thing', WH), `${WH}/markers/claude-triage-marker/${SHA1_THING}`, 'the path');
   });
 
   await test('ports "wk_suite_marker_path is the suite marker dir plus the sha of the root"', async () => {
-    assertEq(await markers().suiteMarkerPath('/repos/thing', TMP), `${TMP}/claude-suite-marker/${SHA1_THING}`, 'the path');
+    assertEq(await markers().suiteMarkerPath('/repos/thing', WH), `${WH}/markers/claude-suite-marker/${SHA1_THING}`, 'the path');
   });
 
   await test('ports "hook_session_marker is the named dir plus the session id with every non-alphanumeric as _"', async () => {

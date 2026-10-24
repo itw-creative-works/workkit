@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/lib/platform.sh: the spellings that differ per platform and the read
 # shapes built on them, for the engine and the hooks. Sourced: functions, plus
-# the one MSYS export below. The shell twin of test/lib/platform.js; on macOS
+# the one MSYS export and MARKER_KEEP_DAYS below. The shell twin of test/lib/platform.js; on macOS
 # and Linux every function is the plain POSIX spelling. What each answers:
 # workflow/README.md, the lib/platform.sh row.
 
@@ -200,12 +200,31 @@ wk_sha1() {
   printf '%s\n' "${out%% *}"
 }
 
-# wk_marker_path <dir> <anchor>: the marker file ${TMPDIR:-/tmp}/<dir> holds for
+# The days a marker outlives its last write; wk_sweep_markers removes older.
+MARKER_KEEP_DAYS=7
+
+# wk_markers_dir: the folder every marker lives under, markers/ in wk_user_dir's
+# folder, where no system temp cleaner reaches.
+wk_markers_dir() {
+  printf '%s\n' "$(wk_user_dir)/markers"
+}
+
+# wk_marker_path <dir> <anchor>: the marker file <markers dir>/<dir> holds for
 # <anchor>, keyed by its wk_sha1. Every marker name is derived here, so a
 # writer and its readers never drift apart.
 wk_marker_path() {
   local key
   key=$(printf '%s' "$2" | wk_sha1) || return 1
   [ -n "$key" ] || return 1
-  printf '%s\n' "${TMPDIR:-/tmp}/$1/$key"
+  printf '%s\n' "$(wk_markers_dir)/$1/$key"
+}
+
+# wk_sweep_markers: remove each regular file one folder under the markers dir
+# whose mtime is older than MARKER_KEEP_DAYS. A folder there (a run lock, a red
+# snapshot) is never entered. Every marker writer calls it; it never fails one.
+wk_sweep_markers() {
+  local dir
+  dir=$(wk_markers_dir)
+  [ -d "$dir" ] || return 0
+  find "$dir" -mindepth 2 -maxdepth 2 -type f -mmin "+$((MARKER_KEEP_DAYS * 1440))" -exec rm -f {} + 2>/dev/null || true
 }

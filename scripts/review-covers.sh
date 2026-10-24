@@ -1,9 +1,9 @@
 #!/bin/bash
 # scripts/review-covers.sh: does a full-panel review cover the working diff? The
-# full-panel marker (`scripts/review-marker.sh full`, keyed on the repo root)
-# must be newer than every modified, staged and untracked path, and than the
-# folder a deleted path left. An empty diff is stale, since commits are unseen.
-# Covered exits 0, stale exits 1, usage or a failed git read exits 2.
+# full-panel marker (`scripts/review-marker.sh full`, keyed on the repo root) must
+# be newer than every modified, staged and untracked path but the heal's version
+# stamp, and than the folder a deleted path left. A diff of that stamp or nothing
+# is stale, since commits are unseen. Covered exits 0, stale 1, a usage or git failure 2.
 
 set -euo pipefail
 
@@ -40,7 +40,13 @@ if [ ! -s "$tmp/paths" ]; then
   exit 1
 fi
 
+judged=0
 while IFS= read -r -d '' rel; do
+  # The heal's version stamp is bookkeeping, never review matter.
+  if [ "$rel" = "$WORKKIT_DIR/settings.json" ] && hook_version_only_change "$root" "$rel"; then
+    continue
+  fi
+  judged=1
   # A deletion has no mtime of its own: the nearest folder still standing
   # changed when it went. An edit in the marker's own second may postdate it.
   at="$root/$rel"
@@ -50,5 +56,9 @@ while IFS= read -r -d '' rel; do
     exit 1
   fi
 done <"$tmp/paths"
+if [ "$judged" = 0 ]; then
+  echo "review-covers: stale: no working diff"
+  exit 1
+fi
 
 echo "review-covers: covered"

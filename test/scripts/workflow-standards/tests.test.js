@@ -1,6 +1,6 @@
-// Tests for standards.sh: a participating repo's `npm test` either is the kit's
-// `workkit test` or prints the totals line, else the heal says so in one line
-// and never bounces; a suite folder at tests/ is named as drift the same way.
+// Tests for standards.sh: a participating repo's `npm test` prints the totals
+// line, else the heal says so in one line and never bounces; a test script of
+// `workkit test` and a suite folder at tests/ are named as drift the same way.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -8,6 +8,7 @@ const fs = require('fs');
 const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
+const { stripVTControlCharacters } = require('util');
 const { cleanup, makeRepo, makeGhStub, runScript } = require('./helpers');
 
 const LINE = 'standards: npm test does not print the totals line';
@@ -23,6 +24,10 @@ const repoTesting = (script, files = {}) => {
 
 const linesOf = (output) => output.split(/\r?\n/).filter((line) => line.includes(LINE));
 
+// The drift line a test script of `workkit test` gets, naming the runner to point at.
+const scriptLines = (output) => stripVTControlCharacters(output).split(/\r?\n/)
+  .filter((line) => /(?:^|\s)test script: .*node test\/run\.js/.test(line));
+
 const run = async () => {
   group('standards.sh: the test script');
 
@@ -32,15 +37,6 @@ const run = async () => {
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(code, 0, `exit 0, got: ${output}`);
     assertEq(linesOf(output).length, 1, `the line, once, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('an npm test of workkit test gets no line', () => {
-    const repo = repoTesting('workkit test');
-    const stub = makeGhStub();
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, `exit 0, got: ${output}`);
-    assert(linesOf(output).length === 0, `no test-script line, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -64,6 +60,22 @@ const run = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  // The script alone differs between the two repos.
+  await test('a test script of workkit test gets the test script line naming node test/run.js, node test/run.js none, exit 0 both ways', () => {
+    const stub = makeGhStub();
+    for (const [script, count] of [['workkit test', 1], ['node test/run.js', 0]]) {
+      const repo = repoTesting(script);
+      fs.mkdirSync(path.join(repo, 'test'));
+      fs.writeFileSync(path.join(repo, 'test', 'run.js'), HANDOFF);
+      const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+      assertEq(code, 0, `${script}: exit 0, got: ${output}`);
+      assertEq(scriptLines(output).length, count, `${script}: the test script line ${count} time(s), got: ${output}`);
+      if (count === 0) assertEq(linesOf(output).length, 0, `${script}: no totals line either, got: ${output}`);
+      cleanup(repo);
+    }
+    cleanup(stub.dir);
+  });
+
   await test('an npm test of bash tests/run.sh running node "$here/run.js" gets no line', () => {
     const repo = repoTesting('bash tests/run.sh');
     fs.mkdirSync(path.join(repo, 'tests'));
@@ -85,7 +97,7 @@ const run = async () => {
   await test('suites under tests/ get the drift line once, suites under test/ none, exit 0 both ways', () => {
     const stub = makeGhStub();
     for (const [folder, count] of [['tests', 1], ['test', 0]]) {
-      const repo = repoTesting('workkit test');
+      const repo = repoTesting('node run.js', { 'run.js': HANDOFF });
       fs.mkdirSync(path.join(repo, folder));
       fs.writeFileSync(path.join(repo, folder, 'a.test.js'), 'module.exports = async () => ({ passed: 0, failed: 0, failures: [], skips: [] });\n');
       const { code, output } = runScript(repo, { pathPrefix: stub.binDir });

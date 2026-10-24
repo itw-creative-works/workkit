@@ -10,6 +10,7 @@
 import { repoSlug } from './command.js';
 import { buildingList } from './gh.js';
 import { ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghRepoIsHere, ghSteps } from './gh-edit.js';
+import { userDirOf } from './log.js';
 import { snapshotMarkerPath } from './markers.js';
 import { rosterOf, rosterPath } from './optin.js';
 import { issuesBuilding } from './proof.js';
@@ -118,7 +119,7 @@ async function runStep(step, facts, snapOf) {
  */
 export async function snapshotGuard(facts) {
   if (!snapshotTriggers(facts.command)) return null;
-  const snapOf = (root) => snapshotMarkerPath(root, facts.env.TMPDIR);
+  const snapOf = (root) => snapshotMarkerPath(root, userDirOf(facts.env));
   const steps = await snapshotPlan({
     command: facts.command,
     cwd: facts.cwd,

@@ -81,7 +81,7 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 What a test must be worth and may cost (the bar), and the shape every repo's runner keeps: `docs/tests.md`.
 
-`npm test` runs `test/run.js`, which hands off to the runner the kit ships, `workflow/test/run.js` (its library in `workflow/test/lib/`; `workkit test` runs the same one); `test/lib/{harness,process,scratch,seed,suites}.js` are one-line re-exports of it, and `test/lib/serial.js` is this repo's serial list.
+`npm test` runs `test/run.js`, which hands off to the runner the kit ships, `workflow/test/run.js` (its library in `workflow/test/lib/`; `workkit test` hands its arguments to this `npm test`); `test/lib/{harness,process,scratch,seed,suites}.js` are one-line re-exports of it, and `test/lib/serial.js` is this repo's serial list.
 
 A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip. Suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`, plus the runner's own suite at `test/runner.test.js`.
 

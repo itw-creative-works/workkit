@@ -2,7 +2,7 @@
 // building }) in hooks/mods/snapshot.js decides a take at a claim and a drop at
 // the release of the last building issue, and the copy runs for real through
 // `bash hooks/lib/snapshot.sh take|add|stale|drop <root> ...` in a temp repo
-// with its own TMPDIR. Each case ports the HEAD case its name quotes. Dropped:
+// with its own home. Each case ports the HEAD case its name quotes. Dropped:
 // "run.sh is executable", and "a claim from a folder inside no git repo" (the
 // gate stands it down). In test/mods/post-tool-use-bash.test.ts: the wiring,
 // the loader's take and which mode a claim runs.
@@ -93,7 +93,7 @@ const ok = (out, what) => assertEq(out.code, 0, `${what} exits 0: ${out.stderr}`
 const take = (w, ...nums) => {
   const out = mode(w, 'take', nums.map(String));
   ok(out, `take ${nums}`);
-  assert(fs.existsSync(path.join(snapshotDir(w.tmp, w.repo), 'tree')), `take ${nums} left a snapshot: ${out.stderr}`);
+  assert(fs.existsSync(path.join(snapshotDir(w.workflowHome, w.repo), 'tree')), `take ${nums} left a snapshot: ${out.stderr}`);
   return out;
 };
 
@@ -109,14 +109,14 @@ const withCache = (w) => {
   return w;
 };
 const CACHED = path.join('cache', 'app', 'node_modules', 'x', 'index.js');
-const takenTree = (w) => treeOf(path.join(snapshotDir(w.tmp, w.repo), 'tree'));
+const takenTree = (w) => treeOf(path.join(snapshotDir(w.workflowHome, w.repo), 'tree'));
 const modulesIn = (tree, under = '') => Object.keys(tree)
   .filter((k) => k.startsWith(under) && k.split(path.sep).includes('node_modules')).join(',');
 
 const read = (snap, name) => fs.readFileSync(path.join(snap, name), 'utf8');
 const issuesOf = (snap) => read(snap, 'issues').split('\n').filter(Boolean).sort();
 const snapshots = (w) => {
-  const dir = path.join(w.tmp, 'claude-red-snapshot');
+  const dir = path.join(w.workflowHome, 'markers', 'claude-red-snapshot');
   return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 };
 const workingPaths = (w) => w.git('diff', 'HEAD', '--name-only', '--no-renames', '-z')
@@ -145,7 +145,7 @@ const run = async () => {
     w.git('commit', '-q', '-m', 'pkg');
     w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     assert(fs.existsSync(path.join(snap, 'tree')), `the snapshot's tree exists at ${snap}`);
     const tree = treeOf(path.join(snap, 'tree'));
     assertEq(Object.keys(tree).filter((k) => k.split(path.sep).includes('node_modules')).join(','), '',
@@ -208,7 +208,7 @@ const run = async () => {
   await test('ports "a second claim while the snapshot is live adds its number and leaves the tree alone": stale answers live, add records the number', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     const before = treeOf(path.join(snap, 'tree'));
     const head = read(snap, 'head');
     w.write('src/x.js', 'module.exports = 9;\n');
@@ -228,7 +228,7 @@ const run = async () => {
     w.write('src/x.js', 'module.exports = 9;\n');
     assertEq(stale(w, building(6)).code, 0, 'no recorded issue still building: stale');
     take(w, 6);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     assertEq(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'module.exports = 9;\n', 'the new tree carries the later change');
     assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the repo now');
     assertEq(json(issuesOf(snap)), json(['6']), 'issues is the new claim alone');
@@ -239,7 +239,7 @@ const run = async () => {
     const w = mkWorld();
     w.write('src/gone.js', 'module.exports = 8;\n');
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     assert(fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'the first take holds src/gone.js');
     fs.rmSync(path.join(w.repo, 'src', 'gone.js'));
     w.write('src/x.js', 'module.exports = 9;\n');
@@ -252,7 +252,7 @@ const run = async () => {
   await test('ports "a re-claim of a recorded issue after a block keeps the first tree, the number once": add records it once', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     const before = treeOf(path.join(snap, 'tree'));
     w.write('src/x.js', 'module.exports = 9;\n');
     ok(mode(w, 'add', ['5']), 'add 5 again');
@@ -270,7 +270,7 @@ const run = async () => {
     assertEq(takes((await planOf('gh issue edit "$N" --add-label status:building')).plan), HERE, 'the claim still takes');
     const w = mkWorld();
     take(w);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     assertEq(json(issuesOf(snap)), json([]), 'no number recorded');
     const { code, calls } = stale(w, building(6));
     assertEq(code, 1, 'an empty recorded list is live');
@@ -290,7 +290,7 @@ const run = async () => {
   await test('ports "the last building issue leaving removes the snapshot": drop removes it whole', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     assert(fs.existsSync(snap), `the take left a snapshot to drop: ${snapshots(w)}`);
     ok(mode(w, 'drop'), 'drop');
     assert(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`);
@@ -392,7 +392,7 @@ const run = async () => {
   await test('ports "a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling"', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     const before = { tree: treeOf(path.join(snap, 'tree')), head: read(snap, 'head'), issues: read(snap, 'issues') };
     w.write('src/x.js', 'module.exports = 9;\n');
     w.git('commit', '-q', '-am', 'later');
@@ -422,7 +422,7 @@ const run = async () => {
   await lockTest('ports "a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one"', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     fs.chmodSync(path.join(snap, 'tree', 'src'), 0o555);
     try {
       w.write('src/x.js', 'module.exports = 9;\n');
@@ -438,14 +438,14 @@ const run = async () => {
       assertEq(siblings.length, 1, `exactly one sibling: ${snapshots(w)}`);
       assert(/^\.[^.]{6}$/.test(siblings[0].slice(path.basename(snap).length)), `named <dir>.<six chars>: ${siblings[0]}`);
     } finally {
-      unlock(path.join(w.tmp, 'claude-red-snapshot'));
+      unlock(path.join(w.workflowHome, 'markers', 'claude-red-snapshot'));
     }
   });
 
   await test('ports "a take clears a sibling older than 10 minutes and keeps a fresh one"', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.tmp, w.repo);
+    const snap = snapshotDir(w.workflowHome, w.repo);
     const old = `${snap}.abcdef`;
     const fresh = `${snap}.ghijkl`;
     const then = new Date(Date.now() - 20 * 60 * 1000);

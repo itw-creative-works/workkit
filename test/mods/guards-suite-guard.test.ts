@@ -1,15 +1,15 @@
 // tool.call Bash through the hooks module: safety:suite-guard in the Bash
-// chain, its record read from TMPDIR against the tree tree-hash.sh prints (the
+// chain, its record read from the workflow home against the tree tree-hash.sh prints (the
 // index's for `workkit prove`), its building read through gh from the root, no
 // gh call in a repo with no origin, and a gh that cannot answer passing the
 // run with one $.ui.log line. The verdict's own cases are test/hooks/suite-guard.test.js.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, kitLogs, TOOL_SPY, REPO, bash, answered, denyOf } from '../lib/mod-world.ts'
+import { mkWorld, hooksLog, kitLogs, TOOL_SPY, REPO, HOME, bash, answered, denyOf } from '../lib/mod-world.ts'
 
 const TMP = '/w/tmp'
 const TREE = 'a'.repeat(40)
-const SUITE_RECORD = `${TMP}/claude-suite-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
+const SUITE_RECORD = `${HOME}/.workkit/markers/claude-suite-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
 const PKG = JSON.stringify({ name: 'fixture', scripts: { test: 'node tests/run.js' } })
 const NARROW = "Run the narrowest test that proves the change (`npm test -- <file>` from the package's folder)"
 const PROVED = `suite-guard: this tree is already proved: the full suite ran green on it and ${SUITE_RECORD} records it. ${NARROW}; the commit gate reads the same record for a commit whose staged tree matches it.`

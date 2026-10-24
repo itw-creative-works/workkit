@@ -1,9 +1,9 @@
 // Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
 // hooks/mods/commit-gate.js: heal bookkeeping skips the review and new-file
 // checks, and a heal arm whose read fails is held by name; `jobRewrite` runs
-// the real wk_changelog_job_rewrite. Each case ports the HEAD case its name
+// the real wk_checks_heal_rewrite. Each case ports the HEAD case its name
 // quotes; the failing find is a failing git read now. Plus the rewrite entry,
-// `changelog-job.sh rewrite a b`, against wk_changelog_job_rewrite, run in bash.
+// `changelog-job.sh rewrite a b`, against wk_checks_heal_rewrite, run in bash.
 // The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
 const path = require('path');
@@ -17,6 +17,7 @@ const {
   judge, denyOf, blocks, passes, realRewrite,
 } = require('./helpers');
 const { SPAWN_DEADLINE } = require('../../lib/process');
+const { withoutCloneStep } = require('../../lib/checks-template');
 
 // A repo with a committed settings.json: the stamp arm only exempts an edit
 // that touches nothing but the version key.
@@ -58,6 +59,14 @@ const healedChecks = () => {
   const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
   const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
   return withPushTrigger(`${template.slice(from, to).join('\n')}\n${PR_ONLY}`);
+};
+// The heal's kit clone step written into a body, read back from its scratch copy.
+const withCloneStep = (body) => {
+  const file = scratchFile(body);
+  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"\nwk_checks_clone_step "$2"', 'bash', shellPath(JOB), shellPath(file)],
+    { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+  assertEq(res.status, 0, `wk_checks_clone_step answers, stderr: ${res.stderr}`);
+  return fs.readFileSync(file, 'utf8');
 };
 const PUSH = /^ {2}push:/m;
 const CHECKS = '.github/workflows/checks.yml';
@@ -170,6 +179,19 @@ const run = async () => {
     passes(await judge(r, 'git commit -m "chore(workflow): run checks on a push"'), NOTICE.proved, 'the heal\'s push trigger alone needs no review');
   });
 
+  await test('the kit clone step added alone to an older checks.yml is bookkeeping, no marker: exit 0', async () => {
+    const r = mkStampedRepo();
+    stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+    const older = withoutCloneStep(fs.readFileSync(TEMPLATE, 'utf8'));
+    stage(r, CHECKS, older);
+    commit(r);
+    const healed = withCloneStep(older);
+    assert(healed !== older, 'the step is in the diff');
+    stage(r, CHECKS, healed);
+    proveTree(r);
+    passes(await judge(r, 'git commit -m "chore(workflow): clone the kit in CI"'), NOTICE.proved, 'the heal\'s clone step alone needs no review');
+  });
+
   await test('ports "the copy deleted while checks.yml still runs it, no marker: exit 2"', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
@@ -241,10 +263,10 @@ const run = async () => {
     assert(deny !== null && shape.test(deny) && deny.endsWith(HELD), `the check, the command, git's status and stderr, got: ${deny}`);
   });
 
-  group('changelog-job.sh rewrite: the entry over wk_changelog_job_rewrite');
+  group('changelog-job.sh rewrite: the entry over wk_checks_heal_rewrite');
 
-  await test('given the run of `changelog-job.sh rewrite a b` and `wk_changelog_job_rewrite a b`: the same text', () => {
-    for (const body of [oldChecks('.github/changelog-lint.cjs'), PR_ONLY]) {
+  await test('given the run of `changelog-job.sh rewrite a b` and `wk_checks_heal_rewrite a b`: the same text', () => {
+    for (const body of [oldChecks('.github/changelog-lint.cjs'), PR_ONLY, withoutCloneStep(fs.readFileSync(TEMPLATE, 'utf8'))]) {
       const a = scratchFile(body);
       const entry = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', shellPath(a), shellPath(TEMPLATE)], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
       const fn = realRewrite(a, TEMPLATE);

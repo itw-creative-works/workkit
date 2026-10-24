@@ -50,7 +50,7 @@ export function shellDirOf(given, { TMP, TEMP, LOCALAPPDATA }, platform) {
 }
 
 /**
- * The folder the module reads markers under: shellDirOf over
+ * The temp folder the module keeps per-session files under: shellDirOf over
  * `${TMPDIR:-/tmp}`.
  * @param {{TMPDIR?: string, TMP?: string, TEMP?: string, LOCALAPPDATA?: string}} env each unset when absent
  * @param {string} platform `win32` on Windows
@@ -73,25 +73,28 @@ export function shellEnvOf(env, platform) {
   return out;
 }
 
+// The folder every marker lives under, wk_markers_dir's rule.
+const markersDir = (home) => `${home}/markers`;
+
 /**
- * The marker file `${TMPDIR:-/tmp}/<dir>` holds for `anchor`, keyed by its
+ * The marker file `<home>/markers/<dir>` holds for `anchor`, keyed by its
  * SHA-1: wk_marker_path's rule.
  * @param {string} dir the marker folder's name (`claude-review-marker`)
  * @param {string} anchor what the marker is for, a repo root as a rule
- * @param {string} [tmpdir] TMPDIR, `/tmp` when unset
+ * @param {string} home the machine folder (userDirOf in hooks/mods/log.js)
  * @returns {Promise<string>}
  */
-export async function markerPath(dir, anchor, tmpdir) {
-  return `${tmpdir || '/tmp'}/${dir}/${await sha1Hex(anchor)}`;
+export async function markerPath(dir, anchor, home) {
+  return `${markersDir(home)}/${dir}/${await sha1Hex(anchor)}`;
 }
 
 // Each marker the hooks and the marker scripts share, by its folder's name.
-export const reviewMarkerPath = (root, tmpdir) => markerPath('claude-review-marker', root, tmpdir);
-export const reviewFullMarkerPath = (root, tmpdir) => markerPath('claude-review-full-marker', root, tmpdir);
-export const triageMarkerPath = (anchor, tmpdir) => markerPath('claude-triage-marker', anchor, tmpdir);
-export const suiteMarkerPath = (root, tmpdir) => markerPath('claude-suite-marker', root, tmpdir);
-export const pkgMarkerPath = (root, tmpdir) => markerPath('claude-package-marker', root, tmpdir);
-export const snapshotMarkerPath = (root, tmpdir) => markerPath('claude-red-snapshot', root, tmpdir);
+export const reviewMarkerPath = (root, home) => markerPath('claude-review-marker', root, home);
+export const reviewFullMarkerPath = (root, home) => markerPath('claude-review-full-marker', root, home);
+export const triageMarkerPath = (anchor, home) => markerPath('claude-triage-marker', anchor, home);
+export const suiteMarkerPath = (root, home) => markerPath('claude-suite-marker', root, home);
+export const pkgMarkerPath = (root, home) => markerPath('claude-package-marker', root, home);
+export const snapshotMarkerPath = (root, home) => markerPath('claude-red-snapshot', root, home);
 
 /**
  * The per-session file under `${TMPDIR:-/tmp}/<name>`, the id with every

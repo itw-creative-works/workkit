@@ -9,8 +9,8 @@ import { mkWorld, hooksLog, TOOL_SPY, REPO, HOME, bash, denyOf } from '../lib/mo
 
 const NOW = 1800000000000
 const TMPDIR = '/w/tmp'
-const REPO_MARKER = `${TMPDIR}/claude-triage-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
-const HOME_MARKER = `${TMPDIR}/claude-triage-marker/0a51b0fa3ab03e73525a857074f825928990c353`
+const REPO_MARKER = `${HOME}/.workkit/markers/claude-triage-marker/2d98e56dc36b7431b8f668bf4d7715c564698d73`
+const HOME_MARKER = `${HOME}/.workkit/markers/claude-triage-marker/0a51b0fa3ab03e73525a857074f825928990c353`
 
 const READ = "capture-guard: BLOCKED reading .workkit/capture.md: it is the owner's capture surface, and its contents are read only during a triage run.\nRun the workkit:triage skill, which records the marker this guard checks, and read it there. Counting the entries (wc -l) stays open."
 const WRITE = (route: string) => `capture-guard: BLOCKED writing .workkit/capture.md: it is the owner's capture surface, and the agent never adds to it.\nIts entries are cleared only by the triage drain: run the workkit:triage skill, which records the marker this guard checks. ${route}`

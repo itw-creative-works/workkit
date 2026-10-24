@@ -1,58 +1,73 @@
-// Tests for workflow/workkit.sh: the `test` verb, the kit's runner over the cwd
-// repo's tests/ folder, reading its tests/lib/serial.js when present.
-// The shared prologue is ./helpers.js.
+// Tests for workflow/workkit.sh: the `test` verb, the repo's own `npm test` run
+// from its root, so npm's script shell records what the run proved.
+// The shared prologue is ./helpers.js; the script shell's world is test/lib/script-shell.js.
 
 const path = require('path');
 const fs = require('fs');
+const { spawnSync } = require('child_process');
 const { stripVTControlCharacters } = require('util');
 const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
-const { NODE_DIR, joinPath } = require('../../lib/platform');
 const {
-  cleanup, mkWorld, runCli, mkRepo,
+  IS_WINDOWS, NODE_DIR, shellPath, joinPath, basePathWithout,
+} = require('../../lib/platform');
+const { seeded } = require('../../lib/seed');
+const { treeHash } = require('../../lib/suite-record');
+const {
+  WRAPPER, EXE_CLAUDE_HOME, scratchNpmrc, skipWithoutWrapper, recorded, assertRecord, packaged,
+} = require('../../lib/script-shell');
+const {
+  WORKFLOW_DIR, CLI, cleanup, writeStub, mkWorld, runCli, mkRepo,
 } = require('./helpers');
 
-// A suite in the harness's shape, its one case `body` under `name`.
-const SUITE = (name, body) => `
-const fs = require('fs');
-const path = require('path');
+// A suite in the harness's shape, its one case named `name`.
+const SUITE = (name) => `
 const { test, assert, summary } = require('./lib/harness');
-const root = path.join(__dirname, '..');
 module.exports = async () => {
-  await test('${name}', () => { ${body} });
+  await test('${name}', () => { assert(true); });
   return summary();
 };
 `;
 
-// A repo on the kit harness: a package.json, the harness re-exported through
-// WORKKIT_ENGINE, and suites a and b, b leaving a file behind.
-// `serial` writes tests/lib/serial.js; a serial a asserts b's file is there.
-const mkTestRepo = (serial = null) => {
+// The files of a repo whose `npm test` is the kit's runner, the way the kit's
+// own test/run.js reaches it, with suites a and b, plus a nested package whose
+// own test script would say `nested-ran`.
+const copyFixture = seeded((seed) => {
+  const write = (rel, text) => {
+    fs.mkdirSync(path.dirname(path.join(seed, rel)), { recursive: true });
+    fs.writeFileSync(path.join(seed, rel), text);
+  };
+  write('package.json', `${JSON.stringify({ name: 'fixture', private: true, scripts: { test: 'node test/run.js' } }, null, 2)}\n`);
+  write('test/run.js', `require(${JSON.stringify(path.join(WORKFLOW_DIR, 'test', 'run.js'))}).main(['--root', require('path').dirname(__dirname), ...process.argv.slice(2)]);\n`);
+  write('test/lib/harness.js', `module.exports = require(${JSON.stringify(path.join(WORKFLOW_DIR, 'test', 'lib', 'harness.js'))});\n`);
+  write('test/a.test.js', SUITE('a case'));
+  write('test/b.test.js', SUITE('b case'));
+  write('packages/foo/package.json', `${JSON.stringify({ name: 'foo', scripts: { test: 'echo nested-ran' } })}\n`);
+});
+
+// The fixture's root package.json, `scripts` its whole scripts block (none when absent).
+const writePackage = (repo, scripts) => fs.writeFileSync(path.join(repo, 'package.json'),
+  `${JSON.stringify({ name: 'fixture', private: true, ...(scripts ? { scripts } : {}) })}\n`);
+
+const mkTestRepo = () => {
   const repo = mkRepo();
-  const tests = path.join(repo, 'tests');
-  fs.mkdirSync(path.join(tests, 'lib'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'package.json'), `${JSON.stringify({ name: 'fixture', private: true, scripts: { test: 'workkit test' } }, null, 2)}\n`);
-  fs.writeFileSync(path.join(tests, 'lib', 'harness.js'), "module.exports = require(`${process.env.WORKKIT_ENGINE}/test/lib/harness.js`);\n");
-  if (serial) fs.writeFileSync(path.join(tests, 'lib', 'serial.js'), `module.exports = { SERIAL: ${JSON.stringify(serial)} };\n`);
-  const aWaits = Boolean(serial && serial.includes('a.test.js'));
-  fs.writeFileSync(path.join(tests, 'a.test.js'), aWaits
-    ? SUITE('a case', "assert(fs.existsSync(path.join(root, 'b.done')), 'a ran before b had finished');")
-    : SUITE('a case', 'assert(true);'));
-  fs.writeFileSync(path.join(tests, 'b.test.js'), SUITE('b case', "fs.writeFileSync(path.join(root, 'b.done'), ''); assert(true);"));
+  copyFixture(repo);
   return repo;
 };
 
-// `workkit test <args>` in the repo, node on PATH; the world's env carries no
-// WORKKIT_ENGINE, so the harness re-export resolves through the verb's own.
-const runTest = (repo, args = [], cwd = repo) => {
-  const world = mkWorld({ claude: false });
-  assertEq(world.env.WORKKIT_ENGINE, undefined, 'the world names no engine');
+// `workkit test <args>` from `cwd`, on a machine whose npm names the script
+// shell, node and npm on PATH unless `env` says otherwise.
+const runTest = (world, args = [], { cwd, env = {} } = {}) => {
   const res = runCli(world, ['test', ...args], {
     cwd,
-    env: { PATH: joinPath(NODE_DIR, world.env.PATH) },
+    env: {
+      PATH: joinPath(NODE_DIR, world.env.PATH),
+      NPM_CONFIG_USERCONFIG: scratchNpmrc(WRAPPER),
+      ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
+      ...env,
+    },
   });
-  cleanup(world.root);
   return { ...res, lines: stripVTControlCharacters(res.said).split(/\r?\n/) };
 };
 
@@ -62,67 +77,87 @@ const ran = (lines, name) => lines.some((line) => line.includes(name));
 const TOTALS = (passed, suites) => new RegExp(`^${passed} passed, 0 failed \\(\\d+(?:\\.\\d+)?s, ${suites} suites?\\)$`);
 
 const run = async () => {
-  group('workkit test: the kit runner over the cwd repo');
+  skipWithoutWrapper();
 
-  await test('with no serial list and no WORKKIT_ENGINE set, every suite loads through the exported engine and the totals line prints', () => {
+  group('workkit test: the repo\'s npm test, from its root');
+
+  await test('workkit test test/a.test.js runs only that suite and the package record holds the root on the tree', () => {
+    const world = mkWorld({ claude: false });
     const repo = mkTestRepo();
-    const { code, said, lines } = runTest(repo);
+    const tree = treeHash(repo);
+    const { code, said, lines } = runTest(world, ['test/a.test.js'], { cwd: repo });
     assertEq(code, 0, `exit 0, got: ${said}`);
-    assert(ran(lines, 'a case') && ran(lines, 'b case'), `both suites ran, got: ${said}`);
-    assert(lines.some((line) => TOTALS(2, 2).test(line)), `the totals line, got: ${said}`);
-    cleanup(repo);
-  });
-
-  // a sorts first, so it prints after b only when it was held past the wave,
-  // and it passes only when b had finished before it started.
-  await test('a suite tests/lib/serial.js names runs after the wave, alone', () => {
-    const repo = mkTestRepo(['a.test.js']);
-    const { code, said, lines } = runTest(repo);
-    assertEq(code, 0, `exit 0: a ran once b had finished, got: ${said}`);
-    assert(lines.some((line) => TOTALS(2, 2).test(line)), `both passed, got: ${said}`);
-    const at = (name) => lines.findIndex((line) => line.includes(name));
-    assert(at('b case') >= 0 && at('a case') > at('b case'), `the serial suite prints after the wave, got: ${said}`);
-    cleanup(repo);
-  });
-
-  await test('a serial entry matching no suite exits 1 naming it before any suite runs', () => {
-    const repo = mkTestRepo(['gone.test.js']);
-    const { code, said, lines } = runTest(repo);
-    assertEq(code, 1, `exit 1, got: ${said}`);
-    assert(said.includes('gone.test.js'), `names the entry, got: ${said}`);
-    assert(!ran(lines, 'a case') && !ran(lines, 'b case'), `no suite ran, got: ${said}`);
-    assert(!fs.existsSync(path.join(repo, 'b.done')), 'b never wrote its file');
-    cleanup(repo);
-  });
-
-  await test('from a subfolder of the repo the verb still runs the repo\'s suites', () => {
-    const repo = mkTestRepo();
-    const docs = path.join(repo, 'docs');
-    fs.mkdirSync(docs);
-    const { code, said, lines } = runTest(repo, [], docs);
-    assertEq(code, 0, `exit 0, got: ${said}`);
-    assert(lines.some((line) => TOTALS(2, 2).test(line)), `both suites ran from the subfolder, got: ${said}`);
-    cleanup(repo);
-  });
-
-  await test('a repo with no suite at all exits 1 saying so, never a silent pass', () => {
-    const repo = mkTestRepo();
-    fs.rmSync(path.join(repo, 'tests', 'a.test.js'));
-    fs.rmSync(path.join(repo, 'tests', 'b.test.js'));
-    const { code, said } = runTest(repo);
-    assertEq(code, 1, `exit 1, got: ${said}`);
-    assert(said.includes('No *.test.js suites found'), `says nothing ran, got: ${said}`);
-    cleanup(repo);
-  });
-
-  await test('workkit test tests/a.test.js runs only that suite', () => {
-    const repo = mkTestRepo();
-    const { code, said, lines } = runTest(repo, ['tests/a.test.js']);
-    assertEq(code, 0, `exit 0, got: ${said}`);
-    assert(ran(lines, 'a case'), `the named suite ran, got: ${said}`);
-    assert(!ran(lines, 'b case') && !fs.existsSync(path.join(repo, 'b.done')), `the other never ran, got: ${said}`);
+    assert(ran(lines, 'a case') && !ran(lines, 'b case'), `only the named suite ran, got: ${said}`);
     assert(lines.some((line) => TOTALS(1, 1).test(line)), `the totals count the one suite, got: ${said}`);
-    cleanup(repo);
+    assertEq(packaged(world, repo), JSON.stringify([tree, '.']), `the tree it ran on, then the root package, got: ${said}`);
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('workkit test with no path runs every suite and the suite record holds the tree', () => {
+    const world = mkWorld({ claude: false });
+    const repo = mkTestRepo();
+    const tree = treeHash(repo);
+    const { code, said, lines } = runTest(world, [], { cwd: repo });
+    assertEq(code, 0, `exit 0, got: ${said}`);
+    assert(lines.some((line) => TOTALS(2, 2).test(line)), `both suites ran, got: ${said}`);
+    assertRecord(recorded(world, repo), tree, `the record holds the working tree it proved, got: ${said}`);
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('from a nested package\'s folder the verb runs the root\'s npm test, never the nested one', () => {
+    const world = mkWorld({ claude: false });
+    const repo = mkTestRepo();
+    const { code, said, lines } = runTest(world, [], { cwd: path.join(repo, 'packages', 'foo') });
+    assertEq(code, 0, `exit 0, got: ${said}`);
+    assert(lines.some((line) => TOTALS(2, 2).test(line)), `the root's suites ran, got: ${said}`);
+    assert(!ran(lines, 'nested-ran'), `the nested package's script never ran, got: ${said}`);
+    cleanup(world.root); cleanup(repo);
+  });
+
+  for (const [shape, scripts] of [['no test script', undefined], ['an empty test script', { test: '' }]]) {
+    await test(`a package.json with ${shape}: one error line naming it, exit 1, nothing run`, () => {
+      const world = mkWorld({ claude: false });
+      const repo = mkTestRepo();
+      writePackage(repo, scripts);
+      const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+      const { code, said, lines } = runTest(world, [], { cwd: repo });
+      assertEq(code, 1, `exit 1, got: ${said}`);
+      const printed = lines.filter((line) => line.trim());
+      assert(printed.length === 1 && printed[0].includes(`test: ${root}/package.json has no test script`), `the one error line, got: ${said}`);
+      assert(!ran(lines, 'a case') && !ran(lines, 'b case'), `no suite ran, got: ${said}`);
+      cleanup(world.root); cleanup(repo);
+    });
+  }
+
+  // `workkit` on PATH is this CLI. Without the guard the script shell's lock
+  // refuses the nested root run, and past that the stub refuses a third call,
+  // so no chain outlives the deadline.
+  await test('a test script of workkit test, run through npm by the verb: exit 1 with the hand-off line, no loop', () => {
+    const world = mkWorld({ claude: false });
+    const repo = mkTestRepo();
+    writePackage(repo, { test: 'workkit test' });
+    const bin = path.join(world.root, 'workkit-bin');
+    fs.mkdirSync(bin);
+    writeStub(path.join(bin, 'workkit'), [
+      'export WK_LOOP_DEPTH=$(( ${WK_LOOP_DEPTH:-0} + 1 ))',
+      'if [ "$WK_LOOP_DEPTH" -gt 2 ]; then exit 99; fi',
+      `exec bash "${shellPath(CLI)}" "$@"`,
+    ]);
+    const { code, said } = runTest(world, [], { cwd: repo, env: { PATH: joinPath(bin, NODE_DIR, world.env.PATH) } });
+    assertEq(code, 1, `exit 1, got: ${said}`);
+    assert(said.includes('test: workkit test was started inside an npm test, so it stops instead of looping; a test script of `workkit test` must point at the runner (node test/run.js)'),
+      `the hand-off line, got: ${said}`);
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('node on PATH but no npm: the npm error line, exit 1', () => {
+    const world = mkWorld({ claude: false });
+    const repo = mkTestRepo();
+    const noNpm = basePathWithout(world.root, 'npm');
+    const { code, said } = runTest(world, [], { cwd: repo, env: { PATH: joinPath(world.bin, noNpm) } });
+    assertEq(code, 1, `exit 1, got: ${said}`);
+    assert(said.includes('test: the verb runs npm test, and there is no npm on PATH'), `the npm error line, got: ${said}`);
+    cleanup(world.root); cleanup(repo);
   });
 };
 

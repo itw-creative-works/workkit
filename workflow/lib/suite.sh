@@ -4,11 +4,11 @@
 # test run proved, with each package folder it covered), where each is kept, and
 # the two tree ids they are compared with, plus the paths of the detached runs'
 # logs and locks. Sourced, functions only, by script-shell.sh (the records'
-# writer), ship/ci-watch.sh, tree-hash.sh and the hooks' _lib.sh; it reads wk_jq,
-# wk_marker_path and wk_git_path from platform.sh.
+# writer), ship/ci-watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
+# wk_marker_path, wk_sweep_markers and wk_git_path from platform.sh.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
-# non-empty string. Consumers: prove.sh, hook_test_package_dir; the module's
+# non-empty string. Consumers: prove.sh, cmd_test, hook_test_package_dir; the module's
 # twin is hasTestScript in hooks/mods/suite.js.
 wk_has_test_script() {
   [ -f "$1/package.json" ] \
@@ -92,17 +92,20 @@ wk_elapsed_ms() { printf '%s\n' "$(( (SECONDS - $1) * 1000 ))"; }
 # BEFORE the green run, so an edit made while it ran is never counted proved,
 # and `ms=<ms>`, the run's wall time. Consumers: script-shell.sh (the working
 # tree a root run started on) and prove.sh (the staged tree, proved in a copy).
+# Like every marker writer, it sweeps first (wk_sweep_markers).
 wk_suite_marker_write() {
+  wk_sweep_markers
   _wk_record_write wk_suite_marker_path "$1" "$2" "ms=$3"
 }
 
 # wk_pkg_marker_write <repo_root> <tree> <pkg>: add <pkg>, a package folder
 # relative to the root (`.` for the root), under <tree>, hashed BEFORE its green
 # run. One file per repo: a different tree starts it over. Consumer:
-# script-shell.sh (every green test run but the bare root one).
+# script-shell.sh (every green test run but the bare root one). Sweeps first.
 wk_pkg_marker_write() {
   local marker first=""
   [ -n "$2" ] && [ -n "$3" ] || return 1
+  wk_sweep_markers
   if wk_pkg_proved "$1" "$2" "$3"; then return 0; fi
   marker=$(wk_pkg_marker_path "$1") || return 1
   if [ -f "$marker" ]; then IFS= read -r first < "$marker" || :; fi

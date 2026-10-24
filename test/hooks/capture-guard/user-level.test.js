@@ -33,15 +33,16 @@ const skillLine = () => {
 
 const TMP = mkTmp('capture-guard-tmp-');
 const SCRATCH_HOME = mkTmp('capture-guard-home-');
+const SCRATCH_WH = path.join(SCRATCH_HOME, '.workkit');
 const runSkillLine = (cwd) => spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
   cwd,
   env: {
-    ...process.env, HOME: shellPath(SCRATCH_HOME), TMPDIR: shellPath(TMP), CLAUDE_PLUGIN_ROOT: shellPath(PLUGIN_ROOT),
+    ...process.env, HOME: shellPath(SCRATCH_HOME), WORKFLOW_HOME: shellPath(SCRATCH_WH), TMPDIR: shellPath(TMP), CLAUDE_PLUGIN_ROOT: shellPath(PLUGIN_ROOT),
   },
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,
 });
-const markerOf = (anchor) => mods('markers').triageMarkerPath(anchor, TMP);
+const markerOf = (anchor) => mods('markers').triageMarkerPath(anchor, SCRATCH_WH);
 
 const run = async () => {
   group('capture-guard: the user-level capture file');

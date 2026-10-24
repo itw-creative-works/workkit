@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# workflow/changelog/changelog-job.sh: the `changelog` job and the push trigger
-# in a repo's checks.yml, read and rewritten, and the retired linter copies.
+# workflow/changelog/changelog-job.sh: the `changelog` job, the push trigger and
+# the kit clone step in a repo's checks.yml, read and rewritten, and the retired linter copies.
 # SOURCED by standards.sh, where it defines functions and sets nothing. RUN directly, the hooks module's entry for safety:commit-gate:
 # `bash changelog-job.sh rewrite|copies|names [args]` (the foot of the
 # file). One rewrite, so the gate never accepts a change the heal would not make.
@@ -183,6 +183,83 @@ wk_checks_push_trigger() {
   ' "$1"
 }
 
+# The line that marks a checks.yml as carrying the kit clone step.
+wk_checks_clone_line() {
+  printf '%s\n' 'git clone --depth 1 https://github.com/itw-creative-works/workkit'
+}
+
+# wk_checks_clone_block <template>: the template's clone step, the comment run
+# at the step indent above its `- ` line included, then a tab and that indent.
+# Fails, printing nothing, when no step carries the clone line.
+wk_checks_clone_block() {
+  CLONE="$(wk_checks_clone_line)" awk -v BINMODE=3 '
+    function done_step(   k) {
+      if (!hit) return
+      for (k = 1; k <= nc; k++) print cur[k]
+      printf "\t%d\n", ind
+      found = 1
+      exit
+    }
+    BEGIN { ind = -1 }
+    { sub(/\r$/, "") }
+    ind < 0 && /^ *steps:[[:space:]]*$/ { s = 1; next }
+    s && ind < 0 && /^ *- / { match($0, /^ */); ind = RLENGTH }
+    ind < 0 { next }
+    { match($0, /^ */); i = RLENGTH }
+    !/^[[:space:]]*$/ && i < ind { done_step(); exit }
+    i == ind && /^ *#/ { pend[++np] = $0; next }
+    i == ind && /^ *- / { done_step(); nc = 0; hit = 0 }
+    {
+      for (k = 1; k <= np; k++) cur[++nc] = pend[k]
+      np = 0
+      cur[++nc] = $0
+      if (index($0, ENVIRON["CLONE"])) hit = 1
+    }
+    END { if (!found && hit) done_step(); if (!found) exit 1 }
+  ' "$1"
+}
+
+# wk_checks_clone_step <checks.yml> [template]: the template's clone step
+# written into the file before its `- name: Test` step (and the comment run
+# above it), reindented to that step, in the file's own line ending; prints the
+# change. 0 changed or already carrying it, 2 no Test step (the warning), 1 a failure.
+wk_checks_clone_step() {
+  local file="$1" has=0 out block tmp="$1.clone.$$" status=0
+  grep -qF -- "$(wk_checks_clone_line)" "$file" || has=$?
+  case "$has" in 0) return 0 ;; 1) ;; *) return 1 ;; esac
+  out="$(wk_checks_clone_block "${2:-$(wk_checks_template)}")" || {
+    printf 'checks.yml: the template has no kit clone step\n' >&2
+    return 1
+  }
+  block="${out%$'\t'*}"
+  BLOCK="${block%$'\n'}" TIND="${out##*$'\t'}" awk -v BINMODE=3 '
+    BEGIN { eol = "\n" }
+    NR == 1 && /\r$/ { eol = "\r\n" }
+    { line[NR] = $0; b[NR] = $0; sub(/\r$/, "", b[NR]) }
+    END {
+      for (n = 1; n <= NR; n++) if (b[n] ~ /^ *- name: Test[[:space:]]*$/) break
+      if (n > NR) exit 2
+      match(b[n], /^ */); pad = sprintf("%" RLENGTH "s", "")
+      at = n
+      while (at > 1 && substr(b[at - 1], 1, length(pad) + 1) == pad "#") at--
+      for (k = 1; k < at; k++) print line[k]
+      nl = split(ENVIRON["BLOCK"], l, "\n")
+      for (k = 1; k <= nl; k++) printf "%s%s%s", (l[k] == "" ? "" : pad), substr(l[k], ENVIRON["TIND"] + 1), eol
+      for (k = at; k <= NR; k++) print line[k]
+    }
+  ' "$file" >"$tmp" || status=$?
+  if [[ "$status" -eq 2 ]]; then
+    rm -f "$tmp"
+    printf 'checks.yml: no Test step as the template names it; the kit clone step was not added\n' >&2
+    return 2
+  fi
+  if [[ "$status" -ne 0 ]] || ! mv "$tmp" "$file"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  printf 'checks.yml: kit clone step added\n'
+}
+
 # wk_changelog_job_rewrite <checks.yml> <template>: the file as the heal leaves
 # it, each swap only where it applies (`workflow/README.md`, the changelog-job
 # row; a retired line 1 included), over the file with its push trigger in place.
@@ -260,9 +337,26 @@ wk_changelog_job_rewrite() {
   (( status[0] == 0 && status[1] == 0 ))
 }
 
+# wk_checks_heal_rewrite <checks.yml> <template>: the file as the heal leaves
+# it, wk_changelog_job_rewrite and then the kit clone step; a file with no Test
+# step keeps the first alone. A failed read or write fails it.
+wk_checks_heal_rewrite() {
+  local tmp status=0
+  tmp="$(mktemp)" || return 1
+  if wk_changelog_job_rewrite "$1" "$2" >"$tmp"; then
+    wk_checks_clone_step "$tmp" "$2" >/dev/null || status=$?
+    [[ "$status" -ne 2 ]] || status=0
+    [[ "$status" -ne 0 ]] || cat "$tmp" || status=1
+  else
+    status=1
+  fi
+  rm -f "$tmp"
+  return "$status"
+}
+
 # The entry the hooks module runs, each mode the function it names, its stdout
-# and exit status passed through: `rewrite <checks.yml> [template]` (the
-# template wk_checks_template names by default), `copies`, and `names <file|->
+# and exit status passed through: `rewrite <checks.yml> [template]`
+# (wk_checks_heal_rewrite, the template wk_checks_template names by default), `copies`, and `names <file|->
 # [copy]` over the file's text, or with `-` over its own stdin. Run as a file
 # only: sourced, this does nothing.
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${#BASH_SOURCE[@]}" -eq 1 ]; then
@@ -270,7 +364,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${#BASH_SOURCE[@]}" -eq 1 ]; then
   set -f
   usage() { echo "changelog-job.sh: usage: rewrite <checks.yml> [template] | copies | names <file|-> [copy]" >&2; exit 64; }
   case "${1:-}" in
-    rewrite) [ -n "${2:-}" ] || usage; wk_changelog_job_rewrite "$2" "${3:-$(wk_checks_template)}" ;;
+    rewrite) [ -n "${2:-}" ] || usage; wk_checks_heal_rewrite "$2" "${3:-$(wk_checks_template)}" ;;
     copies) wk_linter_copies ;;
     names)
       [ -n "${2:-}" ] || usage

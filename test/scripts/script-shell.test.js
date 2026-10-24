@@ -126,7 +126,8 @@ const run = async () => {
     const world = mkWorld();
     const kit = mkWrapperCopy(world);
     const repo = mkRepo({ scripts: { test: 'exit 0' } });
-    fs.writeFileSync(path.join(world.tmp, 'claude-suite-marker'), '');
+    fs.mkdirSync(path.join(world.workflowHome, 'markers'), { recursive: true });
+    fs.writeFileSync(path.join(world.workflowHome, 'markers', 'claude-suite-marker'), '');
     const res = npm(world, repo, ['test'], kit.shell, kit.env);
     assertEq(res.code, 1, `a green run with no record is not green, got: ${res.code} ${res.err}`);
     assert(res.out.includes('script-shell: the suite passed, but the record of ')
@@ -242,7 +243,7 @@ const run = async () => {
     const repo = mkRepo({ scripts: { build: 'echo built', test: 'echo ran' } });
     assertEq(npm(world, repo, ['test', '--', 'only/one.test.js']).code, 0, 'the narrowed run is green');
     assertEq(npm(world, repo, ['run', 'build']).code, 0, 'the other script is green');
-    assert(!fs.existsSync(suiteLogPath(world.tmp, repo)), 'no suite log under TMPDIR');
+    assert(!fs.existsSync(suiteLogPath(world.workflowHome, repo)), 'no suite log under the workflow home');
     assert(!fs.existsSync(path.join(repo, '.workkit', 'suite.log')), 'no suite log in the repo');
     cleanup(world.root); cleanup(repo);
   });
@@ -255,7 +256,7 @@ const run = async () => {
     fs.writeFileSync(path.join(repo, 'app.js'), 'const x = 2;\n');
     git(repo, 'add', 'app.js');
     // The review marker check 2 reads, so check 5 is what answers.
-    const review = reviewMarkerPath(world.tmp, repo);
+    const review = reviewMarkerPath(world.workflowHome, repo);
     fs.mkdirSync(path.dirname(review), { recursive: true });
     fs.writeFileSync(review, '');
     const before = await gateOn(world, repo);

@@ -6,7 +6,7 @@
  */
 
 import { BLANK, anyLine } from './command.js';
-import { homeOf } from './log.js';
+import { homeOf, userDirOf } from './log.js';
 import { fileAge, triageMarkerPath } from './markers.js';
 import { findingsRoute, settingsLayers } from './settings.js';
 
@@ -135,6 +135,6 @@ export async function captureGuardGuard(facts) {
   const parent = dirname(dirname(path));
   const probe = (await stat(dirname(path)))?.kind === 'dir' ? dirname(path) : parent;
   const root = (await top(probe)) || parent;
-  const marker = await stat(await triageMarkerPath(root, env.TMPDIR));
+  const marker = await stat(await triageMarkerPath(root, userDirOf(env)));
   return captureGuardVerdict({ ...call, root, markerAgeS: marker ? fileAge(marker.mtimeMs, await now()) : null, route });
 }

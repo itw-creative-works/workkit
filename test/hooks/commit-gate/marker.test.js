@@ -7,16 +7,28 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath, gitPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const { mods } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
+const { gateOn } = require('../../lib/real-gate');
 const {
-  KIT, T, mkRepo, stage, write, commit, touchMarker, staleMarker, judge, blocks, passes,
+  KIT, PREFIX, T, mkRepo, stage, write, commit, touchMarker, staleMarker, judge, blocks, passes,
 } = require('./helpers');
 const { SPAWN_DEADLINE } = require('../../lib/process');
+const { daysAgo, agedFile } = require('../../lib/workflow-home');
+
+// A kit script run for real in <cwd> with the world's env.
+const runScript = (world, name, args = [], cwd = world.repo) => spawnSync(BASH, [...NO_RC, shellPath(path.join(KIT, 'scripts', name)), ...args], {
+  cwd, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+});
+
+// Every file under <dir>, at any depth; none when it is not there.
+const filesUnder = (dir) => (fs.existsSync(dir)
+  ? fs.readdirSync(dir, { recursive: true }).map((rel) => path.join(dir, rel)).filter((p) => fs.statSync(p).isFile())
+  : []);
 
 // The marker script the review skill calls, and the skill's own line calling
 // it, run for real: the skill, the script and the module's marker path cannot
@@ -56,19 +68,18 @@ const run = async () => {
 
   await test('ports "the review skill\'s own line writes the marker this gate checks": at the path markers.js names', async () => {
     const world = mkGitRepo('cg-skill-', { 'app.js': 'const x = 1;\n' });
-    const tmp = mkTmp('cg-skill-tmp-');
     // As the live sides build it: the root in git's spelling, under the folder
-    // the module reads for the TMPDIR the script is handed.
+    // the module reads for the WORKFLOW_HOME the script is handed.
     const { TMP, TEMP, LOCALAPPDATA } = process.env;
-    const tmpdir = mods('markers').tempDirOf({ TMPDIR: shellPath(tmp), TMP, TEMP, LOCALAPPDATA }, process.platform);
-    const marker = await mods('markers').reviewMarkerPath(gitPath(world.repo), tmpdir);
+    const home = mods('markers').shellDirOf(world.env.WORKFLOW_HOME, { TMP, TEMP, LOCALAPPDATA }, process.platform);
+    const marker = await mods('markers').reviewMarkerPath(gitPath(world.repo), home);
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 2;\n');
     r.headTime = Number(world.git('log', '-1', '--format=%ct').trim());
     blocks(await judge(r, 'git commit -m "feat"'), T.noReview, 'blocked before the skill runs');
     const res = spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
       cwd: world.repo,
-      env: { ...world.env, CLAUDE_PLUGIN_ROOT: shellPath(KIT), TMPDIR: shellPath(tmp) },
+      env: { ...world.env, CLAUDE_PLUGIN_ROOT: shellPath(KIT) },
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
     });
@@ -97,6 +108,44 @@ const run = async () => {
     commit(r);
     write(r, 'app.js', 'const x = 2;\n');
     blocks(await judge(r, 'git commit -am "tweak"'), T.noReview, '-a commits are classified from modified tracked files');
+  });
+
+  group('commit-gate: the review marker under the workflow home');
+
+  await test('the full marker read 5 days later, past another marker write: review-covers.sh and the gate both still see it', async () => {
+    const world = mkGitRepo('cg-aged-', { 'app.js': 'const x = 1;\n' }, daysAgo(7));
+    // HEAD and the edit predate the review, so only the markers' age is in play.
+    const amend = spawnSync('git', ['commit', '--amend', '--no-edit', '-q'], {
+      cwd: world.repo, env: { ...world.env, GIT_COMMITTER_DATE: daysAgo(6).toISOString() }, encoding: 'utf8',
+    });
+    assertEq(amend.status, 0, `HEAD is redated: ${amend.stderr}`);
+    world.write('app.js', 'const x = 2;\n', daysAgo(6));
+    world.git('add', 'app.js');
+    const wrote = runScript(world, 'review-marker.sh', ['full']);
+    assertEq(wrote.status, 0, `review-marker.sh full runs, got: ${wrote.stderr}`);
+    const aged = filesUnder(path.join(world.workflowHome, 'markers'));
+    assertEq(aged.length, 2, `the plain and the full marker are under the workflow home, got: ${aged}`);
+    for (const file of aged) agedFile(file, 5);
+    const later = runScript(world, 'triage-marker.sh', [], world.dir);
+    assertEq(later.status, 0, `a later marker write runs its sweep, got: ${later.stderr}`);
+    const covers = runScript(world, 'review-covers.sh');
+    assertEq(covers.stdout, 'review-covers: covered\n', `review-covers.sh still sees the full marker, got: ${covers.stdout}${covers.stderr}`);
+    const gate = await gateOn(world.repo, 'git commit -m "feat"', world.env);
+    assertEq(gate.deny, null, 'and the gate still sees the review marker');
+    fs.rmSync(world.dir, { recursive: true, force: true });
+  });
+
+  await test('an old temp-folder marker and an empty workflow home: the gate reads only the home, and blocks', async () => {
+    const world = mkGitRepo('cg-old-', { 'app.js': 'const x = 1;\n' });
+    world.write('app.js', 'const x = 2;\n');
+    world.git('add', 'app.js');
+    const root = world.git('rev-parse', '--show-toplevel').trim();
+    const old = path.join(world.tmp, 'claude-review-marker', crypto.createHash('sha1').update(root).digest('hex'));
+    fs.mkdirSync(path.dirname(old), { recursive: true });
+    fs.writeFileSync(old, '');
+    const gate = await gateOn(world.repo, 'git commit -m "feat"', world.env);
+    assertEq((gate.deny || '').replace(/\n$/, ''), `${PREFIX}${T.noReview}`, 'the temp-folder marker opens nothing');
+    fs.rmSync(world.dir, { recursive: true, force: true });
   });
 };
 

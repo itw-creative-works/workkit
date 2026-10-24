@@ -1,7 +1,7 @@
 // Tests for scripts/review-covers.sh: whether the full-panel review marker is
 // newer than every path in the working diff. Every case is a real throwaway git
 // repo; the marker is written by scripts/review-marker.sh itself under the
-// case's own TMPDIR, so the machine's real marker is never touched.
+// case's own workflow home, so the machine's real marker is never touched.
 
 const fs = require('fs');
 const path = require('path');
@@ -25,15 +25,22 @@ const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 const PAST = new Date(Date.now() - 3600 * 1000);
 const FUTURE = new Date(Date.now() + 3600 * 1000);
 
+const SETTINGS = '.workkit/settings.json';
+
+// The repo's settings as jq leaves them, the shape the standards heal writes.
+const settingsJson = (version, rest = { enabled: true }) => `${JSON.stringify({ version, ...rest }, null, 2)}\n`;
+
 /**
- * A scratch world: a repo holding `src/x.js`, `src/y.js` and `src/gone.js`,
- * committed, with every file dated an hour back; a home and a TMPDIR beside it.
+ * A scratch world: a repo holding `src/x.js`, `src/y.js`, `src/gone.js` and,
+ * unless `tracked` is false, its settings at version 1, committed, with every
+ * file dated an hour back; a home and a TMPDIR beside it.
  * Its `write` dates a file an hour back unless told otherwise.
  */
-const mkWorld = () => {
+const mkWorld = ({ tracked = true } = {}) => {
   const files = {};
   for (const name of ['x', 'y', 'gone']) files[`src/${name}.js`] = `module.exports = '${name}';\n`;
-  const w = mkRepo('review-covers-', files, PAST);
+  if (tracked) files[SETTINGS] = settingsJson(1);
+  const w = mkRepo('review-covers-', files, PAST, { optIn: tracked });
   return { ...w, write: (rel, body, when = PAST) => w.write(rel, body, when) };
 };
 
@@ -48,9 +55,9 @@ const spawnIn = (w, script, cwd = w.repo, args = []) => {
 const writeMarker = (w, cwd = w.repo) => assertEq(spawnIn(w, MARKER_SCRIPT, cwd, ['full']).code, 0,
   'review-marker.sh full wrote the markers');
 
-/** The one full-panel marker the case's TMPDIR holds. */
+/** The one full-panel marker the case's workflow home holds. */
 const fullMarker = (w) => {
-  const dir = path.join(w.tmp, 'claude-review-full-marker');
+  const dir = path.join(w.workflowHome, 'markers', 'claude-review-full-marker');
   const [only] = fs.readdirSync(dir);
   return path.join(dir, only);
 };
@@ -145,13 +152,70 @@ const run = async () => {
     cleanup(w.dir);
   });
 
+  group('review-covers.sh: the heal\'s version stamp');
+
+  await test('a code edit before the marker, then only the settings version stamped: covered', () => {
+    const w = mkWorld();
+    w.write('src/x.js', "module.exports = 'x2';\n");
+    writeMarker(w);
+    w.write(SETTINGS, settingsJson(2), FUTURE);
+    const { code, out, err } = spawnIn(w, SCRIPT);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(out, 'review-covers: covered\n', `the stamp alone needs no review: ${out}${err}`);
+    cleanup(w.dir);
+  });
+
+  await test('the version stamp the only change: stale, no working diff', () => {
+    const w = mkWorld();
+    writeMarker(w);
+    w.write(SETTINGS, settingsJson(2), FUTURE);
+    const { code, out, err } = spawnIn(w, SCRIPT);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(out, 'review-covers: stale: no working diff\n', `the stamp is no diff to cover: ${out}${err}`);
+    cleanup(w.dir);
+  });
+
+  await test('the version stamped and another settings key changed: stale, naming the settings', () => {
+    const w = mkWorld();
+    w.write('src/x.js', "module.exports = 'x2';\n");
+    writeMarker(w);
+    w.write(SETTINGS, settingsJson(2, { enabled: false }), FUTURE);
+    const { code, out, err } = spawnIn(w, SCRIPT);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(out, `review-covers: stale: ${SETTINGS}\n`, `the stale line: ${out}${err}`);
+    cleanup(w.dir);
+  });
+
+  await test('the version stamped and a code file edited: stale, naming the code file only', () => {
+    const w = mkWorld();
+    writeMarker(w);
+    w.write(SETTINGS, settingsJson(2), FUTURE);
+    w.write('src/x.js', "module.exports = 'x2';\n", FUTURE);
+    const { code, out, err } = spawnIn(w, SCRIPT);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(out, 'review-covers: stale: src/x.js\n', `the settings path sorts first, so it is skipped: ${out}${err}`);
+    cleanup(w.dir);
+  });
+
+  await test('settings not tracked in HEAD: stale, naming the settings', () => {
+    const w = mkWorld({ tracked: false });
+    w.write('src/x.js', "module.exports = 'x2';\n");
+    writeMarker(w);
+    w.write(SETTINGS, settingsJson(2), FUTURE);
+    const { code, out, err } = spawnIn(w, SCRIPT);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(out, `review-covers: stale: ${SETTINGS}\n`, `no HEAD copy to diff against: ${out}${err}`);
+    cleanup(w.dir);
+  });
+
   group('review-marker.sh: the plain and the full-panel marker');
 
-  // The markers review-marker.sh left under the case's TMPDIR, by folder.
+  // The markers review-marker.sh left under the case's workflow home, by folder.
   const markersAfter = (args) => {
     const w = mkWorld();
     assertEq(spawnIn(w, MARKER_SCRIPT, w.repo, args).code, 0, `review-marker.sh ${args.join(' ')} exits 0`);
-    const count = (dir) => (fs.existsSync(path.join(w.tmp, dir)) ? fs.readdirSync(path.join(w.tmp, dir)).length : 0);
+    const markers = path.join(w.workflowHome, 'markers');
+    const count = (dir) => (fs.existsSync(path.join(markers, dir)) ? fs.readdirSync(path.join(markers, dir)).length : 0);
     const found = { plain: count('claude-review-marker'), full: count('claude-review-full-marker') };
     cleanup(w.dir);
     return found;

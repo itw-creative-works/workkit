@@ -24,8 +24,8 @@ const {
 
 // The suite log of a repo that does not ignore .workkit/, the lock's pid, and
 // the log of one that does.
-const tmpLog = (world, repo) => suiteLogPath(world.tmp, repo);
-const lockPid = (world, repo) => path.join(suiteLockPath(world.tmp, repo), 'pid');
+const tmpLog = (world, repo) => suiteLogPath(world.workflowHome, repo);
+const lockPid = (world, repo) => path.join(suiteLockPath(world.workflowHome, repo), 'pid');
 const repoLog = (repo) => path.join(repo, '.workkit', 'suite.log');
 const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined);
 const lineCount = (file) => (read(file) || '').split('\n').filter(Boolean).length;
@@ -181,7 +181,7 @@ const run = async () => {
     },
   );
 
-  await test('.workkit/ ignored: the log is .workkit/suite.log; not ignored: under TMPDIR; the record holds either tree', () => {
+  await test('.workkit/ ignored: the log is .workkit/suite.log; not ignored: under the workflow home; the record holds either tree', () => {
     const world = mkWorld();
     const ignored = mkRepo({ scripts: { test: 'echo logged-in-repo' } }, { '.gitignore': '.workkit/*\n' });
     const plain = mkRepo({ scripts: { test: 'echo logged-in-tmp' } });
@@ -190,11 +190,11 @@ const run = async () => {
     assertEq(npm(world, ignored, ['test']).code, 0, 'the ignoring repo ran green');
     assertEq(npm(world, plain, ['test']).code, 0, 'the plain repo ran green');
     assert((read(repoLog(ignored)) || '').includes('logged-in-repo'), `the log is ${repoLog(ignored)}`);
-    assertEq(read(tmpLog(world, ignored)), undefined, 'and not under TMPDIR');
+    assertEq(read(tmpLog(world, ignored)), undefined, 'and not under the workflow home');
     assert((read(tmpLog(world, plain)) || '').includes('logged-in-tmp'), `the log is ${tmpLog(world, plain)}`);
     assertEq(read(repoLog(plain)), undefined, 'and not in the repo, where it would change the tree');
     assertRecord(recorded(world, ignored), ignoredTree, 'the ignored log leaves the tree as it was proved');
-    assertRecord(recorded(world, plain), plainTree, 'the TMPDIR log leaves the tree as it was proved');
+    assertRecord(recorded(world, plain), plainTree, 'the workflow home log leaves the tree as it was proved');
     cleanup(world.root); cleanup(ignored); cleanup(plain);
   });
 
@@ -234,7 +234,7 @@ const run = async () => {
     const world = mkWorld();
     const repo = mkRepo({ scripts: { test: 'echo after-takeover' } });
     const tree = treeHash(repo);
-    const lock = suiteLockPath(world.tmp, repo);
+    const lock = suiteLockPath(world.workflowHome, repo);
     // A pid that was real a moment ago and has ended: the supervisor that died mid-run.
     const dead = spawnSync(process.execPath, ['-e', '0']).pid;
     fs.mkdirSync(lock, { recursive: true });

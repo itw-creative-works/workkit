@@ -63,6 +63,7 @@ const NOTICE = {
   proved: 'commit-gate: suite proved: a green root `npm test` recorded this tree.',
   noCode: 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).',
   unread: (n) => `commit-gate: could not read issue #${n} (gh could not answer), so its stage and proof checks did not run.`,
+  firstCommit: 'commit-gate: first commit of this repo, no HEAD to judge against; the gate stands down',
 };
 
 // --- The repo in memory. ---
@@ -219,9 +220,9 @@ const asFile = (r, x, name) => {
   return file;
 };
 
-/** wk_changelog_job_rewrite <a> <b> run for real, its stdout, or null when it fails. */
+/** wk_checks_heal_rewrite <a> <b> run for real, its stdout, or null when it fails. */
 const realRewrite = (a, b) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"; wk_changelog_job_rewrite "$2" "$3"', 'bash', shellPath(JOB), shellPath(a), shellPath(b)],
+  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"; wk_checks_heal_rewrite "$2" "$3"', 'bash', shellPath(JOB), shellPath(a), shellPath(b)],
     { encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return res.status === 0 ? res.stdout : null;
 };

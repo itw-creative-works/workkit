@@ -5,11 +5,11 @@
 // and the copy are test/hooks/workflow-snapshot.test.js.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, REPO, SID } from '../lib/mod-world.ts'
+import { mkWorld, hooksLog, REPO, HOME, SID } from '../lib/mod-world.ts'
 
 const TMP = '/w/tmp'
-// The snapshot folder of the session repo: TMPDIR, the folder, the SHA-1 of the root.
-const SNAP = `${TMP}/claude-red-snapshot/2d98e56dc36b7431b8f668bf4d7715c564698d73`
+// The snapshot folder of the session repo: the workflow home's markers, the folder, the SHA-1 of the root.
+const SNAP = `${HOME}/.workkit/markers/claude-red-snapshot/2d98e56dc36b7431b8f668bf4d7715c564698d73`
 const LIVE = { [`${SNAP}/tree/src/x.js`]: 'module.exports = 1;\n', [`${SNAP}/head`]: `${'c'.repeat(40)}\n`, [`${SNAP}/issues`]: '5\n' }
 const issue = (number: number, ...labels: string[]) => ({ number, labels: labels.map((name) => ({ name })) })
 

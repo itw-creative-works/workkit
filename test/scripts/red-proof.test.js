@@ -2,8 +2,9 @@
 // snapshot, where the named source paths are as the snapshot holds them and
 // every other change since is live; with --live they run in the live tree, the
 // named paths swapped for the run. Every case is a real throwaway git repo
-// whose snapshot is made by hand in the claim's layout, in a TMPDIR of its own,
-// so the worktree the script makes is seen to go; nothing is stubbed.
+// whose snapshot is made by hand in the claim's layout, in a home of its own,
+// with a TMPDIR of its own so the worktree the script makes is seen to go;
+// nothing is stubbed.
 
 const fs = require('fs');
 const path = require('path');
@@ -158,11 +159,11 @@ const lines = (out) => out.split('\n').filter(Boolean);
 /** The value after `<tag> ` on the stdout line that starts with it. */
 const field = (out, tag) => (lines(out).find((l) => l.startsWith(`${tag} `)) || '').slice(tag.length + 1);
 
-/** The worktree is gone: one `git worktree list` line, nothing but the snapshot left in TMPDIR. */
+/** The worktree is gone: one `git worktree list` line, nothing left in TMPDIR. */
 const assertNoWorktree = (w) => {
   assertEq(lines(w.git('worktree', 'list')).length, 1, 'git worktree list is back to one entry');
-  const left = fs.readdirSync(w.tmp).filter((name) => name !== 'claude-red-snapshot');
-  assertEq(left.length, 0, `nothing but the snapshot left in TMPDIR: ${left}`);
+  const left = fs.readdirSync(w.tmp);
+  assertEq(left.length, 0, `nothing left in TMPDIR: ${left}`);
 };
 
 const run = async () => {
