@@ -1,0 +1,72 @@
+// Agent-definition lint: no machine-specific absolute path under agents/,
+// hooks/ or skills/, named by file and line. The rule and its judgment half
+// live in docs/agents.md § Definition rules; test/scripts/skills.test.js
+// checks the same convention per file.
+const path = require('path');
+const fs = require('fs');
+const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+
+const REPO = path.join(__dirname, '..', '..');
+const AGENTS_DIR = path.join(REPO, 'agents');
+
+// The portable idioms, `~/…` (every install has a home directory) and
+// `${CLAUDE_PLUGIN_ROOT}/…` (the plugin resolves its own location), match
+// none of these by construction, so they need no exception list.
+const PATTERNS = [
+  { name: '/Users/', re: /\/Users\//i },
+  { name: '/home/', re: /\/home\//i },
+  { name: 'C:\\', re: /C:\\/i },
+  { name: '~/Developer/', re: /~\/Developer\//i },
+  { name: '.dotfiles', re: /\.dotfiles/i },
+];
+
+// Every violation in one file's text, as `path:line: pattern`.
+const violations = (rel, text) => {
+  const out = [];
+  text.split('\n').forEach((line, i) => {
+    for (const { name, re } of PATTERNS) {
+      if (re.test(line)) out.push(`${rel}:${i + 1}: machine-specific path (${name}): ${line.trim()}`);
+    }
+  });
+  return out;
+};
+
+const filesIn = (dir, filter = () => true) =>
+  fs.readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((e) => e.isFile() && filter(e.name))
+    .map((e) => path.join(e.parentPath || e.path, e.name));
+
+const scan = (files) => {
+  const bad = [];
+  for (const file of files) bad.push(...violations(path.relative(REPO, file), fs.readFileSync(file, 'utf8')));
+  return bad;
+};
+
+const run = async () => {
+  group('agents-lint: the shipped tree');
+
+  await test('no agent definition carries a machine-specific absolute path', () => {
+    const bad = scan(filesIn(AGENTS_DIR, (name) => name.endsWith('.md')));
+    assertEq(bad.join('\n'), '', `absolute paths in agent files:\n${bad.join('\n')}`);
+  });
+
+  // The same convention, same sentence in AGENTS.md: hooks and skills ship on
+  // the same terms as the agents do, so they are scanned by the same walk.
+  for (const dir of ['hooks', 'skills']) {
+    await test(`nothing under ${dir}/ carries a machine-specific absolute path`, () => {
+      const full = path.join(REPO, dir);
+      assert(fs.existsSync(full), `missing ${full}`);
+      const files = filesIn(full);
+      assert(files.length > 0, `no files found under ${dir}/`);
+      const bad = scan(files);
+      assertEq(bad.join('\n'), '', `absolute paths under ${dir}/:\n${bad.join('\n')}`);
+    });
+  }
+};
+
+module.exports = async () => {
+  await run();
+  return summary();
+};
+
+if (require.main === module) selfRun(module.exports);

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # workflow/standards/tests.sh: the check that a repo's `npm test` prints the
-# runner's totals line, read off package.json and never run. Sourced by
-# standards.sh, functions only.
+# runner's totals line, read off package.json and never run, and that its
+# suites live under `test/`. Sourced by standards.sh, functions only.
 
 # ── 6. npm test prints the totals line ──
 # Silent for `workkit test`, or `node`, `bash` or `sh` over a file that names a
-# runner path (`tests/run.js`, the kit's `test/run.js`, a `run.js` beside it) or
-# carries the totals line itself, read one level deep; any other test script
-# gets the one line, never a flag on the run.
+# runner path (`test/run.js`, the kit's `workflow/test/run.js`, a `run.js`
+# beside it) or carries the totals line itself, read one level deep; any other
+# test script gets the one line, never a flag on the run.
 check_test_runner() {
   local script file="" word words=()
   [[ -f package.json ]] || return 0
@@ -28,4 +28,14 @@ check_test_runner() {
       ;;
   esac
   wk_warn "standards: npm test does not print the totals line"
+}
+
+# ── 6b. The suites live under test/ ──
+# A Node repo (one with a package.json) whose suites sit in `tests/` with no
+# `test/` beside it gets the one line naming the move; the runner still reads
+# it, so never a flag on the run.
+check_test_folder() {
+  [[ -f package.json ]] || return 0
+  [[ -d tests && ! -d test ]] || return 0
+  wk_warn "tests/: the suites live under tests/; Node's convention is test/ (git mv tests test)"
 }

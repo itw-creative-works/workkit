@@ -151,5 +151,5 @@ tower/            the dashboard: api/ (the JSON API) + app/ (the OMEGA dashboard
 jobs/             the 9am job: summaries, brief, publish: payload builders, runners, launchd schedule
 scripts/          four scripts: the review and triage markers, red-proof (the verifier's red run), review-covers (the ship's review tier)
 docs/             project-state.md (the spec) · agents.md (the crew contract) · hooks.md (what each hook does) · setup.md (this page) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook) · assets/ (the README's hero and mark)
-tests/            npm test
+test/             npm test
 ```

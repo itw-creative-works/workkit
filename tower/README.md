@@ -191,7 +191,7 @@ tower/
                 │   └── selector.js      # the sidebar selector: its button, the menu the runtime claims, the label patched onto it, the search box
 ```
 
-Every lib takes an `opts` object for path and exec injection; the suites under `tests/tower/` run the whole server against fixtures, fully offline.
+Every lib takes an `opts` object for path and exec injection; the suites under `test/tower/` run the whole server against fixtures, fully offline.
 
 ## The dependency posture
 

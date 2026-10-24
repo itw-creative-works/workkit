@@ -7,11 +7,11 @@
 
 import { escaped, isTestName, isTestPath } from './test-reminder.js';
 
-// The scratch writer's two homes: a consumer repo's and the kit's own.
-const SCRATCH = new Set(['tests/lib/scratch.js', 'workflow/test/lib/scratch.js']);
-// The shared deadline's two homes, where its own bounds are written.
-const DEADLINE_HOME = new Set(['tests/lib/process.js', 'workflow/test/lib/process.js']);
-const HELPER_DIR = /(^|\/)(tests|workflow\/test)\/lib\//;
+// The scratch writer's homes: a consumer repo's (`test/` or `tests/`) and the kit's own.
+const SCRATCH = new Set(['test/lib/scratch.js', 'tests/lib/scratch.js', 'workflow/test/lib/scratch.js']);
+// The shared deadline's homes, where its own bounds are written.
+const DEADLINE_HOME = new Set(['test/lib/process.js', 'tests/lib/process.js', 'workflow/test/lib/process.js']);
+const HELPER_DIR = /(^|\/)(tests?|workflow\/test)\/lib\//;
 
 const COMMENT = /^\s*(\/\/|\/\*|\*|#)/;
 const CASE_START = /^\s*(await\s+)?(test|it|testUnless\s*\([^)]*\))\s*\(/;
@@ -156,7 +156,7 @@ function sourceRegexFindings(lines) {
   const found = [];
   lines.forEach((line, i) => {
     const read = line.match(SOURCE_READ);
-    if (!read || COMMENT.test(line) || /\btests\b/.test(read[1]) || !SOURCE_ANCHOR.test(read[1])) return;
+    if (!read || COMMENT.test(line) || /(^|[^\w-])tests?\//.test(read[1]) || !SOURCE_ANCHOR.test(read[1])) return;
     if (/\bassert\.match\s*\(/.test(line)) {
       found.push([i + 1, 'source-regex']);
       return;

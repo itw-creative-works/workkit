@@ -12,6 +12,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Changed
 - [#458](../../issues/458) - The ship runs the root `npm test` after the scorer and its fix round, on the staged final tree, or `workkit prove` once when the index differs from the disk; the steps after the push wait for a green CI watch, and one gh call moves each label.
+- [#465](../../issues/465) - The kit's runner and its suites move to `test/`, Node's convention: `npm test` is `node test/run.js`, and the runner reads a repo's `test/`, or `tests/` when it has none, naming the folder when no suite matches. The standards heal names `tests/` as drift; `safety:test-bar` takes `test/lib/` as a helper home.
 
 ### Fixed
 - [#463](../../issues/463) - A snapshot copy leaves out, and a fill relinks, only a package's `node_modules` (a folder whose package.json git sees, not ignored); every other `node_modules` is copied as it is, so a code-signed app bundle in an ignored download cache stays sealed and `workkit prove` runs on a vscode-test repo.

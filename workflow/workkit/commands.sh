@@ -81,7 +81,7 @@ cmd_brief() {
 
 # The kit's test runner over the repo the command stands in, the suite paths
 # narrowing it as `npm test -- <paths>` does. The engine is exported so the
-# repo's tests/lib re-exports resolve the same kit copy as the runner.
+# repo's test/lib re-exports resolve the same kit copy as the runner.
 cmd_test() {
   if ! command -v node >/dev/null 2>&1; then
     wk_error "test: the runner needs node, and there is none on PATH"

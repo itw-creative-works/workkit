@@ -47,7 +47,7 @@ const isNodeTestSuite = (text) => {
  * Its stdout and stderr are written through as they arrive; a load failure is
  * the whole-suite failure `load <rel>`.
  * @param {string} suite the suite's absolute path
- * @param {string} rel the suite's path relative to tests/, its name in a failure
+ * @param {string} rel the suite's path relative to test/, its name in a failure
  * @returns {Promise<{passed: number, failed: number, failures: object[], skips: object[]}>}
  */
 const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {

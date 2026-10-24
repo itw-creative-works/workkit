@@ -130,7 +130,7 @@ usage: workkit <command> [args]
                        pass a session makes once a day, without the wait
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
-  test [paths]         run the kit's test runner over this repo's tests/, or
+  test [paths]         run the kit's test runner over this repo's test/, or
                        only the suite paths named
   prove                run the root suite on exactly the staged tree, in a copy
                        outside the repo, and record it on green, so a commit

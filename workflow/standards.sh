@@ -206,6 +206,7 @@ flip_claimed_specced
 check_issue_labels
 check_hook_layer
 check_test_runner
+check_test_folder
 
 # Below the current standard: report the drift, then stamp the version only if
 # every mechanical heal succeeded. A drift report is not a failure.

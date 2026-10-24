@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 // The kit's test runner, over the repo `--root <dir>` names (else the cwd): every
-// `tests/**/*.test.js` in worker processes, a parallel wave then the serial tail
-// the repo's `tests/lib/serial.js` names, then the mod half (`claude plugin test`
-// over `tests/mods/*.test.ts`), totalled; non-zero on any failure. Suite paths
+// `test/**/*.test.js` in worker processes, a parallel wave then the serial tail
+// the repo's `test/lib/serial.js` names, then the mod half (`claude plugin test`
+// over `test/mods/*.test.ts`), totalled; non-zero on any failure. Suite paths
 // after `--` narrow the run. A repo reaches it through `workkit test` or a
-// `tests/run.js` that calls `main`.
+// `test/run.js` that calls `main`. A repo with no `test/` is read from `tests/`.
 
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +19,15 @@ const { isNodeTestSuite, runNodeTest } = require('./lib/node-test');
 const PIPE_GRACE_MS = 1000;
 const TAIL_LINES = 3;
 const SLOWEST = 5;
+
+// The repo's suite folder: `test/`, Node's convention; `tests/` only when the
+// repo has that folder and no `test/`.
+const suiteDir = (root) => {
+  const isDir = (dir) => fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory() === true;
+  const dir = path.join(root, 'test');
+  const legacy = path.join(root, 'tests');
+  return !isDir(dir) && isDir(legacy) ? legacy : dir;
+};
 
 // The repo the run covers and the suite paths it was handed: `--root <dir>`
 // anywhere, `--` dropped, every other argument a suite path.
@@ -37,11 +46,11 @@ const parseArgs = (argv) => {
     }
   }
   const root = path.resolve(rootArg);
-  const testDir = path.join(root, 'tests');
+  const testDir = suiteDir(root);
   return { root, testDir, modDir: path.join(testDir, 'mods'), paths };
 };
 
-// The repo's serial tail, relative to tests/; none without a serial.js.
+// The repo's serial tail, relative to the suite folder; none without a serial.js.
 const serialOf = (testDir) => {
   const file = path.join(testDir, 'lib', 'serial.js');
   return fs.existsSync(file) ? require(file).SERIAL : [];
@@ -56,7 +65,7 @@ const pickSuites = ({ root, testDir, modDir, paths: args }, serialRels) => {
   const mods = findModSuites(modDir);
   for (const rel of serialRels) {
     if (!all.includes(path.join(testDir, rel))) {
-      console.error(`No suite matches ${rel} (tests/lib/serial.js)`);
+      console.error(`No suite matches ${rel} (${path.basename(testDir)}/lib/serial.js)`);
       process.exit(1);
     }
   }
@@ -70,7 +79,7 @@ const pickSuites = ({ root, testDir, modDir, paths: args }, serialRels) => {
       continue;
     }
     if (!all.includes(full)) {
-      console.error(`No suite matches ${arg}`);
+      console.error(`No suite matches ${arg} under ${path.basename(testDir)}/`);
       process.exit(1);
     }
     picked.add(full);
@@ -184,7 +193,7 @@ const crashMessage = ({ output, code, signal, error }) => {
 /**
  * One run over a repo: the whole of what `npm test` prints and exits with.
  * @param {string[]} argv `[--root <dir>] [--] [suite paths...]`, or a worker's
- *   `--worker <suite> <tests dir>`
+ *   `--worker <suite> <suite dir>`
  * @returns {Promise<void>}
  */
 const main = async (argv) => {
@@ -202,7 +211,7 @@ const main = async (argv) => {
   const { suites, withMods } = pickSuites(args, serialRels);
 
   if (suites.length === 0 && !withMods) {
-    console.error('No *.test.js suites found under tests/.');
+    console.error(`No *.test.js suites found under ${path.basename(testDir)}/.`);
     process.exit(1);
   }
 

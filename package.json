@@ -8,7 +8,7 @@
     "brief": "bash jobs/morning.sh --now",
     "nightly": "bash jobs/claude-nightly.sh --now",
     "start": "npm run tower",
-    "test": "node tests/run.js",
+    "test": "node test/run.js",
     "tower": "bash tower/start.sh"
   }
 }

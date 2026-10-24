@@ -12,7 +12,7 @@ export const HOME_PATH = 'data/home.json';
 /**
  * The home repo's name under the viewer's login, where the central copy reads a
  * board from. Its twin is WK_HOME_REPO_NAME in workflow/home.sh, kept in step by
- * hand across the language line and pinned by tests/tower/app/github-roster.test.js.
+ * hand across the language line and pinned by test/tower/app/github-roster.test.js.
  */
 export const HOME_NAME = 'workkit';
 

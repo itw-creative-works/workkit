@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/lib/platform.sh: the spellings that differ per platform and the read
 # shapes built on them, for the engine and the hooks. Sourced: functions, plus
-# the one MSYS export below. The shell twin of tests/lib/platform.js; on macOS
+# the one MSYS export below. The shell twin of test/lib/platform.js; on macOS
 # and Linux every function is the plain POSIX spelling. What each answers:
 # workflow/README.md, the lib/platform.sh row.
 
