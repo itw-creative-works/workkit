@@ -167,10 +167,11 @@ is_named() {
 # live_swap_in: each named path's live version moved under $tmp/live (or
 # recorded absent), and the snapshot's version put in its place when it has one.
 live_swap_in() {
-  local rel n i=0 top
+  local rel n i=0 top held
+  held=$(_hook_snapshot_modules_list "$root") || fail "could not list the package node_modules folders of $root"
   for rel in "${named[@]}"; do
     [ -n "$rel" ] && [ -d "$root/$rel" ] && [ ! -L "$root/$rel" ] || continue
-    [ -z "$(find "$root/$rel" -name node_modules -prune -print -quit 2>/dev/null)" ] \
+    ! _hook_snapshot_is_held "$held" "$rel" && ! _hook_snapshot_held_under "$held" "$rel" \
       || fail "--live cannot name a folder holding node_modules: $rel; name the files instead"
   done
   for rel in "${named[@]}"; do
@@ -226,16 +227,21 @@ else
     || fail "could not fill the copy from the snapshot at $snap: $fill_err"
   # A named path is exactly the snapshot's, whatever HEAD holds there: absent
   # when the snapshot lacks it, and a named folder loses each entry the snapshot
-  # lacks (the node_modules the fill linked stay).
+  # lacks (the package node_modules the fill linked stay).
+  held=$(_hook_snapshot_modules_list "$root") || fail "could not list the package node_modules folders of $root"
   for rel in "${named[@]}"; do
     [ -n "$rel" ] || continue
     if [ ! -e "$snap/tree/$rel" ] && [ ! -L "$snap/tree/$rel" ]; then
       rm -rf "${copy:?}/$rel" || fail "could not clear $rel in the copy"
     elif [ -d "$copy/$rel" ] && [ ! -L "$copy/$rel" ]; then
-      find "$copy/$rel" -mindepth 1 \( -name node_modules -prune \) -o -print0 >"$tmp/extra" \
-        || fail "could not list $rel in the copy"
+      find "$copy/$rel" -mindepth 1 -print0 >"$tmp/extra" || fail "could not list $rel in the copy"
+      # find lists a folder before its entries, so a held path's whole listing
+      # follows it and is skipped through the prefix it sets.
+      skip=""
       while IFS= read -r -d '' f; do
         f="${f#"$copy"/}"
+        [ -z "$skip" ] || [ "${f#"$skip"}" = "$f" ] || continue
+        if _hook_snapshot_is_held "$held" "$f"; then skip="$f/"; continue; fi
         [ -e "$snap/tree/$f" ] || [ -L "$snap/tree/$f" ] || rm -rf "${copy:?}/$f" \
           || fail "could not clear $f in the copy"
       done <"$tmp/extra"

@@ -7,10 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#464](../../issues/464) - The kit's runner carries a second suite shape: a file that imports `node:test` runs through Node's `run()` in the same worker, its passes, failures and skips filling the same result object, so every line the runner prints comes for free; the kit harness stays the shape a new repo uses.
+
 ### Changed
 - [#458](../../issues/458) - The ship runs the root `npm test` after the scorer and its fix round, on the staged final tree, or `workkit prove` once when the index differs from the disk; the steps after the push wait for a green CI watch, and one gh call moves each label.
 
 ### Fixed
+- [#463](../../issues/463) - A snapshot copy leaves out, and a fill relinks, only a package's `node_modules` (a folder whose package.json git sees, not ignored); every other `node_modules` is copied as it is, so a code-signed app bundle in an ignored download cache stays sealed and `workkit prove` runs on a vscode-test repo.
 - [#457](../../issues/457) - `safety:test-bar` names, under a `deadline` rule, any test line that writes a wait bound as a number literal (a timer, a sleep, a timeout option, `Atomics.wait`), and the kit's own tests sit on the shared deadline, polling `until` a condition holds instead of sleeping a fixed time.
 - [#461](../../issues/461) - `safety:issue-guard` no longer refuses a gh write because a `.env` value equals an owner or repo name the command itself names (a GitHub URL, a REST path, a `--repo` flag, the cwd repo's own slug); a secret-shaped value beside such a name still blocks, naming its key.
 

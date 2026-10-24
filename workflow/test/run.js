@@ -12,6 +12,7 @@ const path = require('path');
 const { stripVTControlCharacters } = require('util');
 const { fork, spawnSync } = require('child_process');
 const { findSuites, findModSuites, POOL } = require('./lib/suites');
+const { isNodeTestSuite, runNodeTest } = require('./lib/node-test');
 
 // How long a worker's pipes stay open past its exit, for a grandchild still
 // holding them; the worker's own output is already in the pipe by then.
@@ -99,10 +100,19 @@ const runModHalf = (root) => {
 
 // Worker mode: runs one suite and sends its result as ONE message, then exits 0
 // once its output is flushed. A whole-suite failure (no load, no runner, a
-// throw) is a `whole` failure, named as the runner always named it.
+// throw) is a `whole` failure, named as the runner always named it. A
+// `node:test` suite is picked before any require, which would run its tests.
 const runOne = async (suite, testDir) => {
   const rel = path.relative(testDir, suite);
   const result = { passed: 0, failed: 0, failures: [], skips: [], skipped: null };
+  const send = () => process.send(result, () => {
+    process.stdout.write('', () => process.stderr.write('', () => process.exit(0)));
+  });
+  if (isNodeTestSuite(fs.readFileSync(suite, 'utf8'))) {
+    Object.assign(result, await runNodeTest(suite, rel));
+    send();
+    return;
+  }
   const wholeFailure = (name, message) => {
     result.failed = 1;
     result.failures = [{ name, message, whole: true }];
@@ -137,9 +147,7 @@ const runOne = async (suite, testDir) => {
       }
     }
   }
-  process.send(result, () => {
-    process.stdout.write('', () => process.stderr.write('', () => process.exit(0)));
-  });
+  send();
 };
 
 // One suite in a worker process: everything it wrote, both streams in arrival

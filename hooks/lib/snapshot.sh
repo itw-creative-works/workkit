@@ -22,23 +22,55 @@ hook_snapshot_root() {
 # and `issues` (one number a line). A snapshot is live while `tree` exists.
 hook_snapshot_dir() { wk_marker_path claude-red-snapshot "$1"; }
 
+# _hook_snapshot_modules_list <dir>: each package's node_modules folder in
+# <dir>, one ./-led path a line: beside every package.json git lists there,
+# tracked or untracked and not ignored, none under a node_modules. Empty
+# outside a git work tree (a snapshot tree holds no package's node_modules).
+_hook_snapshot_modules_list() {
+  [ "$(git -C "$1" rev-parse --is-inside-work-tree 2>/dev/null)" = true ] || return 0
+  (
+    set -o pipefail
+    git -C "$1" ls-files -z --cached --others --exclude-standard -- ':(glob)**/package.json' \
+      | while IFS= read -r -d '' file; do
+        ! _hook_snapshot_in_modules "$file" || continue
+        case "$file" in */*) file="./${file%/*}/node_modules" ;; *) file="./node_modules" ;; esac
+        [ ! -d "$1/$file" ] || printf '%s\n' "$file"
+      done
+  )
+}
+
+# _hook_snapshot_is_held <held> <rel>: whether ./<rel> is a line of <held>.
+_hook_snapshot_is_held() { case $'\n'"$1"$'\n' in *$'\n'"./$2"$'\n'*) return 0 ;; esac; return 1; }
+
+# _hook_snapshot_held_under <held> <rel>: whether a line of <held> lies under
+# ./<rel>/.
+_hook_snapshot_held_under() { case $'\n'"$1" in *$'\n'"./$2/"*) return 0 ;; esac; return 1; }
+
 # _hook_snapshot_copy <src> <dest> [rel]...: every entry of <src> (or each rel
-# whose parent <dest> holds) into <dest>, `.git` and each node_modules at any
-# depth left out (the fill rebuilds those from the live repo), symlinks kept.
-# The tools' words go to stderr.
+# whose parent <dest> holds) into <dest>, `.git` and each package's
+# node_modules left out (the fill rebuilds those from the live repo), symlinks
+# kept. The tools' words go to stderr.
 _hook_snapshot_copy() {
-  local src="$1" dest="$2" entry rel held flags=(-pPR) rels=()
+  local src="$1" dest="$2" entry rel held anchor flags=(-pPR) rels=() excludes=(--exclude=./.git)
   shift 2
+  held=$(_hook_snapshot_modules_list "$src") \
+    || { echo "could not list the package node_modules folders under $src" >&2; return 1; }
   for rel in "$@"; do
     rel="${rel%/}"
-    [ "${rel##*/}" != node_modules ] || continue
+    ! _hook_snapshot_is_held "$held" "$rel" || continue
     case "$rel" in */*) [ -d "$dest/${rel%/*}" ] || continue ;; esac
     rels+=("$rel")
   done
   [ $# -eq 0 ] || [ ${#rels[@]} -gt 0 ] || return 0
   if hook_is_windows; then
-    [ ${#rels[@]} -gt 0 ] || rels=(.)
-    (set -o pipefail; cd "$src" && tar -cf - --exclude=./.git --exclude=node_modules -- "${rels[@]}" | tar -xf - -C "$dest")
+    # Every member streams ./-led, so GNU tar, which tries a pattern after each
+    # slash, matches a ./-led one only at the start; bsdtar needs ^ to anchor.
+    case "$(tar --version 2>/dev/null)" in *bsdtar*) anchor="^" ;; esac
+    while IFS= read -r entry; do
+      [ -z "$entry" ] || excludes+=("--exclude=$anchor$(_hook_snapshot_glob_quote "$entry")")
+    done <<<"$held"
+    if [ ${#rels[@]} -gt 0 ]; then rels=("${rels[@]/#/./}"); else rels=(.); fi
+    (set -o pipefail; cd "$src" && tar -cf - "${excludes[@]}" -- "${rels[@]}" | tar -xf - -C "$dest")
     return
   fi
   if hook_is_macos; then
@@ -52,29 +84,35 @@ _hook_snapshot_copy() {
     done < <(find "$src" -mindepth 1 -maxdepth 1 ! -name .git -print0)
     [ ${#rels[@]} -gt 0 ] || return 0
   fi
-  held=$(cd "$src" && find "${rels[@]/#/./}" \( -name .git -prune \) -o \( -name node_modules -prune -print \)) \
-    || { echo "could not list the node_modules folders under $src" >&2; return 1; }
   for rel in "${rels[@]}"; do
     _hook_snapshot_put "$src" "$dest" "$rel" "$held" "${flags[@]}" || return 1
   done
 }
 
+# _hook_snapshot_glob_quote <path>: <path> with each wildcard character
+# backslashed, so a tar pattern matches it literally.
+_hook_snapshot_glob_quote() {
+  local p="${1//\\/\\\\}"
+  p="${p//\*/\\*}"
+  p="${p//\?/\\?}"
+  printf '%s\n' "${p//\[/\\[}"
+}
+
 # _hook_snapshot_put <src> <dest> <rel> <held> <cp flag>...: <rel> copied whole
-# into <dest> by cp, unless it is a node_modules (left out) or a folder holding
-# one (<held>, the ./-led list), which is made and walked entry by entry.
+# into <dest> by cp, unless it is a package's node_modules (in <held>, the
+# ./-led list: left out) or a folder holding one, which is made and walked
+# entry by entry.
 _hook_snapshot_put() {
   local src="$1" dest="$2" rel="$3" held="$4" entry
   shift 4
-  [ "${rel##*/}" != node_modules ] || return 0
-  case $'\n'"$held" in
-    *$'\n'"./$rel/"*)
-      mkdir -p "$dest/$rel" || return 1
-      while IFS= read -r -d '' entry; do
-        _hook_snapshot_put "$src" "$dest" "$rel/${entry##*/}" "$held" "$@" || return 1
-      done < <(find "$src/$rel" -mindepth 1 -maxdepth 1 -print0)
-      return 0
-      ;;
-  esac
+  ! _hook_snapshot_is_held "$held" "$rel" || return 0
+  if _hook_snapshot_held_under "$held" "$rel"; then
+    mkdir -p "$dest/$rel" || return 1
+    while IFS= read -r -d '' entry; do
+      _hook_snapshot_put "$src" "$dest" "$rel/${entry##*/}" "$held" "$@" || return 1
+    done < <(find "$src/$rel" -mindepth 1 -maxdepth 1 -print0)
+    return 0
+  fi
   case "$rel" in */*) entry="$dest/${rel%/*}/" ;; *) entry="$dest/" ;; esac
   cp "$@" "$src/$rel" "$entry"
 }
@@ -251,17 +289,19 @@ hook_snapshot_worktree_remove() {
 
 # hook_snapshot_fill <tree> <root> <dest> [rel]...: the folder <dest> filled from
 # the folder <tree> (only the rels, given any; _hook_snapshot_copy). Each
-# node_modules the live repo <root> holds then becomes a real folder wherever
-# the copy holds its parent (_hook_snapshot_modules).
+# package's node_modules the live repo <root> holds then becomes a real folder
+# wherever the copy holds its parent (_hook_snapshot_modules).
 hook_snapshot_fill() {
-  local tree="$1" root="$2" dest="$3" found rel
+  local tree="$1" root="$2" dest="$3" held rel
   shift 3
   _hook_snapshot_copy "$tree" "$dest" "$@" || return 1
-  while IFS= read -r -d '' found; do
-    rel="${found#"$root"/}"
-    [ -d "$found" ] && [ ! -e "$dest/$rel" ] && [ ! -L "$dest/$rel" ] && [ -d "$(dirname "$dest/$rel")" ] || continue
+  held=$(_hook_snapshot_modules_list "$root") \
+    || { echo "could not list the package node_modules folders under $root" >&2; return 1; }
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    [ -n "$rel" ] && [ ! -e "$dest/$rel" ] && [ ! -L "$dest/$rel" ] && [ -d "$(dirname "$dest/$rel")" ] || continue
     _hook_snapshot_modules "$root" "$dest" "$rel" || return 1
-  done < <(find "$root" \( -name .git -prune \) -o \( -name node_modules -prune -print0 \))
+  done <<<"$held"
 }
 
 # The entry the hooks module runs: `take <root> [issue]...`, `add <root>

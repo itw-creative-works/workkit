@@ -335,6 +335,8 @@ const run = async () => {
 
   await test('a snapshot with no node_modules: the copy reaches the root\'s and a nested package\'s live one', () => {
     const w = mkWorld();
+    w.write('package.json', `${JSON.stringify({ name: 'root', private: true })}\n`);
+    w.write('pkg/package.json', `${JSON.stringify({ name: 'pkg' })}\n`);
     w.write('pkg/use.js', "module.exports = require('dep');\n");
     w.git('add', '-A');
     w.git('commit', '-q', '-m', 'pkg');
@@ -353,6 +355,27 @@ const run = async () => {
       'the snapshot still holds no node_modules');
     assertEq(fs.readFileSync(path.join(w.repo, 'node_modules', 'tiny', 'index.js'), 'utf8'),
       'module.exports = 5;\n', 'the real node_modules is intact');
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a node_modules in an ignored folder: the copy holds its file as a regular file with the live content, the live folder untouched', () => {
+    const w = mkWorld();
+    w.write('.gitignore', 'node_modules/\ncache/\n');
+    w.git('commit', '-q', '-am', 'ignore cache');
+    w.write('cache/app/package.json', `${JSON.stringify({ name: 'app' })}\n`);
+    w.write('cache/app/node_modules/x/index.js', 'module.exports = 9;\n');
+    takeSnapshot(w);
+    const live = treeOf(path.join(w.repo, 'cache'));
+    const check = "const fs = require('fs'), path = require('path');"
+      + " const rel = path.join('cache', 'app', 'node_modules', 'x', 'index.js');"
+      + " console.log('inside', fs.realpathSync(rel) === path.join(fs.realpathSync('.'), rel));"
+      + " console.log('body', JSON.stringify(fs.readFileSync(rel, 'utf8')));";
+    const { code, out, err } = runScript(w, ['src/y.js', '--', 'node', '-e', check]);
+    assertEq(field(out, 'inside'), 'true', `the file is the copy's own, through no link: ${out}${err}`);
+    assertEq(field(out, 'body'), JSON.stringify('module.exports = 9;\n'), `the live content: ${out}${err}`);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(JSON.stringify(treeOf(path.join(w.repo, 'cache'))), JSON.stringify(live), 'the live cache/ is untouched');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
@@ -810,6 +833,26 @@ const run = async () => {
       `the last stderr line: ${err}`);
     assertEq(JSON.stringify(treeOf(w.repo)), JSON.stringify(tree), 'no file in the live tree added, removed or altered');
     assertEq(w.git('status', '--short'), status, 'git status --short is unchanged');
+    cleanup(w.dir);
+  });
+
+  await test('--live naming a folder whose only node_modules is no package\'s: accepted, the swap made, the folder back', () => {
+    const w = mkWorld();
+    w.write('tools/run.js', 'module.exports = 1;\n');
+    w.git('add', '-A');
+    w.git('commit', '-q', '-m', 'tools');
+    w.write('tools/node_modules/x/index.js', 'module.exports = 9;\n');
+    takeSnapshot(w);
+    w.write('tools/run.js', 'module.exports = 2;\n');
+    const before = liveState(w, 'tools/run.js');
+    const check = "const v = require('./tools/run'); console.log('run', v); if (v !== 2) process.exit(1);";
+    const { code, out, err } = runScript(w, ['--live', 'tools', '--', 'node', '-e', check]);
+    assertEq(field(out, 'run'), '1', `the snapshot's tools/ was in the live tree for the run: ${out}${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertRestored(w, 'tools/run.js', before);
+    assertEq(fs.readFileSync(path.join(w.repo, 'tools', 'node_modules', 'x', 'index.js'), 'utf8'),
+      'module.exports = 9;\n', 'the live node_modules under tools/ is intact');
     cleanup(w.dir);
   });
 

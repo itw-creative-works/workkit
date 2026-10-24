@@ -79,10 +79,13 @@ const mkWorld = (prefix = 'snapshot-') => {
   return w;
 };
 
-/** `bash hooks/lib/snapshot.sh <mode> <root> ...args` for world `w`, its PATH `envPath` when given. */
-const mode = (w, name, args = [], envPath = null) => {
+/**
+ * `bash hooks/lib/snapshot.sh <mode> <root> ...args` for world `w`, its PATH
+ * `envPath` when given, any `extra` env on top.
+ */
+const mode = (w, name, args = [], envPath = null, extra = {}) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SNAPSHOT), name, shellPath(fs.realpathSync(w.repo)), ...args], {
-    env: { ...w.env, ...(envPath ? { PATH: envPath } : {}) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    env: { ...w.env, ...(envPath ? { PATH: envPath } : {}), ...extra }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
@@ -93,6 +96,22 @@ const take = (w, ...nums) => {
   assert(fs.existsSync(path.join(snapshotDir(w.tmp, w.repo), 'tree')), `take ${nums} left a snapshot: ${out.stderr}`);
   return out;
 };
+
+/**
+ * World `w` with `cache/` ignored and committed so, holding a downloaded app:
+ * its own ignored `package.json` and `cache/app/node_modules/x/index.js`.
+ */
+const withCache = (w) => {
+  w.write('.gitignore', 'node_modules/\ndist/\n.env\ncache/\n');
+  w.git('commit', '-q', '-am', 'ignore cache');
+  w.write('cache/app/package.json', `${JSON.stringify({ name: 'app' })}\n`);
+  w.write('cache/app/node_modules/x/index.js', 'module.exports = 9;\n');
+  return w;
+};
+const CACHED = path.join('cache', 'app', 'node_modules', 'x', 'index.js');
+const takenTree = (w) => treeOf(path.join(snapshotDir(w.tmp, w.repo), 'tree'));
+const modulesIn = (tree, under = '') => Object.keys(tree)
+  .filter((k) => k.startsWith(under) && k.split(path.sep).includes('node_modules')).join(',');
 
 const read = (snap, name) => fs.readFileSync(path.join(snap, name), 'utf8');
 const issuesOf = (snap) => read(snap, 'issues').split('\n').filter(Boolean).sort();
@@ -121,6 +140,9 @@ const run = async () => {
     const w = mkWorld();
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('src/new.js', 'module.exports = 3;\n');
+    w.write('pkg/package.json', `${JSON.stringify({ name: 'pkg' })}\n`);
+    w.git('add', 'pkg/package.json');
+    w.git('commit', '-q', '-m', 'pkg');
     w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
     take(w, 5);
     const snap = snapshotDir(w.tmp, w.repo);
@@ -136,6 +158,51 @@ const run = async () => {
     assertEq(read(snap, 'head'), `${w.git('rev-parse', 'HEAD').trim()}\n`, 'head is HEAD, one sha line');
     assertEq(read(snap, 'paths'), workingPaths(w), 'paths is the working-change list, NUL-separated');
     assertEq(json(issuesOf(snap)), json(['5']), 'issues records the claim');
+  });
+
+  await test('an untracked, not ignored pkg/package.json makes pkg/node_modules a package\'s: the take leaves it out', () => {
+    const w = mkWorld();
+    w.write('pkg/package.json', `${JSON.stringify({ name: 'pkg' })}\n`);
+    w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
+    take(w, 5);
+    const tree = takenTree(w);
+    assertEq(tree[path.join('pkg', 'package.json')], 'file {"name":"pkg"}\n', 'the untracked package.json is in it');
+    assertEq(modulesIn(tree, 'pkg'), '', 'no pkg/node_modules path in the snapshot');
+  });
+
+  await test('a node_modules inside an ignored folder, no package.json git sees above it: the take holds its file as a regular file', () => {
+    const w = withCache(mkWorld());
+    take(w, 5);
+    assertEq(takenTree(w)[CACHED], 'file module.exports = 9;\n', 'the downloaded app\'s module is copied as it is');
+  });
+
+  await test('a relative symlink in an ignored folder\'s node_modules: the take holds the link with its target', () => {
+    const w = withCache(mkWorld());
+    fs.symlinkSync('x', path.join(w.repo, 'cache', 'app', 'node_modules', 'y'), 'dir');
+    take(w, 5);
+    assertEq(takenTree(w)[path.join('cache', 'app', 'node_modules', 'y')], 'link x', 'the link is copied as a link');
+  });
+
+  await test('pkg/node_modules beside no package.json git sees, pkg not ignored: the take holds it', () => {
+    const w = mkWorld();
+    w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
+    take(w, 5);
+    assertEq(takenTree(w)[path.join('pkg', 'node_modules', 'dep', 'index.js')], 'file module.exports = 7;\n',
+      'a node_modules no package owns is copied as it is');
+  });
+
+  await test('the Windows branch (OSTYPE msys, the tar copy): the root package\'s node_modules left out, an ignored folder\'s copied', () => {
+    const w = withCache(mkWorld());
+    const bin = mkTmp('snapshot-tar-');
+    const log = path.join(bin, 'tar.log');
+    stubTool(bin, 'tar', ['#!/bin/bash', `echo "$*" >> "${shellPath(log)}"`,
+      `exec "${shellPath(which('tar', SYSTEM_PATH))}" "$@"`]);
+    const out = mode(w, 'take', ['5'], joinPath(bin, w.env.PATH), { OSTYPE: 'msys' });
+    ok(out, 'take 5 as Windows');
+    assert(fs.existsSync(log), `the take copied through tar: ${out.stderr}`);
+    const tree = takenTree(w);
+    assertEq(modulesIn(tree, 'node_modules'), '', 'no root node_modules path in the snapshot');
+    assertEq(tree[CACHED], 'file module.exports = 9;\n', 'the ignored folder\'s module is copied as it is');
   });
 
   await test('ports "a second claim while the snapshot is live adds its number and leaves the tree alone": stale answers live, add records the number', () => {

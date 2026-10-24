@@ -37,6 +37,7 @@ A removed feature gets no test at all: no test beats a tombstone, and the WORTH 
 
 What a repo's root runner does, whichever runner it is. The kit ships one that keeps it (below); a repo on another runner (a framework's own devkit runner, say) keeps the shape with its own.
 
+- A suite is written on the kit harness (`tests/lib/harness.js`: the file exports an async runner function that returns `{passed, failed, failures, skips}`), the preferred shape and the one a new repo uses; a suite on `node:test`, Node's built-in test library, is the second shape, carried for a repo that already has it, as the kit's runner does (below).
 - Each suite file runs in its own process, as many at once as the machine has cores less one, and its output prints whole, in sorted order, so two suites never interleave.
 - A suite that touches a shared path (a fixed folder, a port) is named in the repo's serial list, with the path in a comment beside its entry; those suites run one at a time after the parallel wave. An entry that matches no suite fails the run, naming it, before any suite starts.
 - A world is seeded once per process (`seeded()`) and copied per case.
@@ -44,13 +45,14 @@ What a repo's root runner does, whichever runner it is. The kit ships one that k
 - A suite or a case that cannot run here skips by name with its reason, and the run lists every skip after the totals.
 - The run ends with one totals line, `N passed, M failed (Ns, K suites)`, with `, S suites skipped` and `, C cases skipped` after the failed count when there are any.
 - The kit's runner then prints one more line, `slowest: <suite> <s>s, ...`, naming the five slowest suites of the run by wall time, slowest first.
-- Any failure exits 1. A suite that fails to load, exports no runner, or dies without a result is one failure, named `load <suite>`, `export <suite>` or `run <suite>`.
+- Any failure exits 1. A suite that fails to load, exports no runner (and is no `node:test` file), or dies without a result is one failure, named `load <suite>`, `export <suite>` or `run <suite>`.
 
 ### The kit's runner
 
-It lives in the kit's engine folder: `workflow/test/run.js`, its library beside it in `workflow/test/lib/` (`harness.js`, `process.js`, `scratch.js`, `seed.js`, `suites.js`), so its engine address is `~/.claude/workkit/test/run.js`.
+It lives in the kit's engine folder: `workflow/test/run.js`, its library beside it in `workflow/test/lib/` (`harness.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `suites.js`), so its engine address is `~/.claude/workkit/test/run.js`.
 
 - `workkit test [paths]` runs it over the current repo: every `tests/**/*.test.js`, the parallel wave then the serial tail `tests/lib/serial.js` names (none without the file), then the mod half when `tests/mods/` holds `*.test.ts` suites; suite paths narrow the run, and a path matching no suite exits 1 naming it. It runs outside npm's script shell, so it records no tree: the run that proves one is still the root `npm test`.
+- It carries a second shape for a repo that already has suites on `node:test`: a file whose text imports `node:test` (read, never required, since requiring it runs its tests) runs through Node's own `run()` in the same worker, its pass, fail, skip and todo events filling the harness's result object, so every line above prints for it unchanged.
 - A repo's `npm test` stays `node tests/run.js`, a few lines that hand off to the kit's runner: the kit itself by a relative path into `workflow/`, every other repo through `WORKKIT_ENGINE` when it is set, else `~/.claude/workkit`.
 - The repo's `tests/lib/harness.js`, `process.js`, `scratch.js`, `seed.js` and `suites.js` are each a re-export of the kit's file, so every suite's `require('../lib/harness')` stands as it is, and `tests/lib/` otherwise holds only the repo's own seams and its `serial.js`.
 - CI has no kit checkout, so the checks template clones the public kit shallowly and exports `WORKKIT_ENGINE` to its `workflow/` folder, with no link, so a Windows runner can take the `WORKKIT_ENGINE` route too; in the kit itself the step does nothing.

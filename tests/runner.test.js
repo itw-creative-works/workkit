@@ -2,7 +2,8 @@
 // Tests for workflow/test/run.js, the kit's suite runner tests/run.js hands off
 // to: a named skip stays green and a real throw fails, paths narrow a run, suites
 // run whole in a worker pool with a serial tail after the wave, a crashed,
-// unloadable or orphaned worker fails or dies loudly, and every suite runs by file.
+// unloadable or orphaned worker fails or dies loudly, a node:test suite reports
+// in the same lines, and every suite runs by file.
 
 const path = require('path');
 const fs = require('fs');
@@ -421,6 +422,206 @@ const run = async () => {
     assertEq(code, 1, `exit 1, got: ${output}`);
     assert(TOTALS.test(stripVTControlCharacters(output)), `"7 passed, 1 failed (Ns, 3 suites)", got: ${output}`);
     assert(stripVTControlCharacters(output).includes('beta.test.js › beta case three: beta breaks'), `lists the failure, got: ${output}`);
+  });
+
+  // A suite on Node's own test library runs through its run() and reports in
+  // the same lines as a harness suite.
+  group('run.js: node:test suites');
+
+  const NODE_TEST = (inner) => `const { describe, test } = require('node:test');
+const assert = require('node:assert');
+${inner}
+`;
+  const failuresOf = (output) => stripVTControlCharacters(output).split('Failures:')[1];
+
+  await test('a node:test suite reports its passes, its failure and its skip and todo as case skips', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+describe('the widget', () => {
+  test('first passes', () => { assert.strictEqual(1, 1); });
+  test('second passes', () => { assert.ok(true); });
+  test('third passes', () => { assert.deepStrictEqual([1], [1]); });
+  test('breaks here', () => { assert.strictEqual(1, 2, 'the widget broke'); });
+  test('gated case', { skip: 'no widget on this machine' }, () => { assert.fail('must not run'); });
+  test.todo('later case');
+});`),
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    assert(/^3 passed, 1 failed, 2 cases skipped \(/m.test(plain), `"3 passed, 1 failed, 2 cases skipped", got: ${output}`);
+    const failures = failuresOf(output);
+    assert(failures, `a Failures: list, got: ${output}`);
+    const broke = failures.split('\n').find((line) => line.includes('a.test.js › breaks here'));
+    assert(broke && broke.includes('the widget broke'), `names the failure with its message, got: ${failures}`);
+    assert(plain.includes('a.test.js › gated case: no widget on this machine'), `lists the skip with its reason, got: ${output}`);
+    assert(plain.includes('a.test.js › later case: todo'), `lists the todo, got: ${output}`);
+    assert(!plain.includes('must not run'), 'the skipped case never ran');
+  });
+
+  await test('a node:test suite\'s stdout and stderr print under its header', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+test('talks', () => {
+  console.log('said on stdout');
+  console.error('said on stderr');
+});`),
+    });
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    const lines = linesOf(output);
+    const header = lines.indexOf('▶ a.test.js');
+    assert(header >= 0, `prints the header, got: ${output}`);
+    for (const said of ['said on stdout', 'said on stderr']) {
+      assert(lines.indexOf(said) > header, `"${said}" prints under the header, got: ${output}`);
+    }
+  });
+
+  await test('a node:test suite that throws at load is one failure named load', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+throw new Error('broke before any test');
+test('never reached', () => { assert.ok(true); });`),
+    });
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    const failures = failuresOf(output);
+    assert(failures, `a Failures: list, got: ${output}`);
+    const load = failures.split('\n').find((line) => line.includes('load a.test.js'));
+    assert(load && load.includes('broke before any test'), `names "load a.test.js" with the message, got: ${failures}`);
+  });
+
+  await test('a harness suite and a node:test suite share the totals and the slowest line', () => {
+    const { code, output } = runSuites({
+      'harness.test.js': SUITE(`  await test('harness case', () => { assert(true); });`),
+      'native.test.js': NODE_TEST(`
+test('native one', () => { assert.ok(true); });
+test('native two', () => { assert.ok(true); });`),
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^3 passed, 0 failed \(\d+(?:\.\d+)?s, 2 suites\)$/m.test(plain), `"3 passed, 0 failed (Ns, 2 suites)", got: ${output}`);
+    const line = linesOf(output).find((l) => l.startsWith('slowest: ')) || '';
+    for (const name of ['harness.test.js', 'native.test.js']) {
+      assert(line.includes(name), `the slowest line names ${name}, got: ${output}`);
+    }
+  });
+
+  await test('a path naming a node:test suite runs only it', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+test('named one', () => { assert.ok(true); });
+test('named two', () => { assert.ok(true); });`),
+      'b.test.js': NODE_TEST(`
+test('unnamed', () => {
+  console.log('the unnamed suite ran');
+  assert.fail('must not run');
+});`),
+    }, { args: () => ['tests/a.test.js'] });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^2 passed, 0 failed \(/m.test(plain), `totals count only the named suite, got: ${output}`);
+    assert(linesOf(output).includes('▶ a.test.js'), `the named suite ran, got: ${output}`);
+    assert(!plain.includes('b.test.js') && !plain.includes('the unnamed suite ran'), `the unnamed suite never ran, got: ${output}`);
+  });
+
+  // The commented require is not an import, so the file is neither shape.
+  await test('a file that exports nothing and imports no node:test still fails as export', () => {
+    const { code, output } = runSuites({
+      'plain.test.js': "// require('node:test') here is a comment, not an import\nconst value = 1;\n",
+    });
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    const failures = failuresOf(output);
+    assert(failures, `a Failures: list, got: ${output}`);
+    const exported = failures.split('\n').find((line) => line.includes('export plain.test.js'));
+    assert(exported && exported.includes('no default export function'), `names "export plain.test.js" with the reason, got: ${failures}`);
+  });
+
+  await test('a node:test suite whose every test passes exits 0 with no Failures block', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+describe('all good', () => {
+  test('one', () => { assert.ok(true); });
+  test('two', () => { assert.ok(true); });
+});`),
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^2 passed, 0 failed \(/m.test(plain), `"2 passed, 0 failed", got: ${output}`);
+    assert(!plain.includes('Failures:'), `no Failures: block, got: ${output}`);
+  });
+
+  await test('a todo test that throws is a case skip named todo, never a failure', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+test('works', () => { assert.ok(true); });
+test.todo('pending case', () => { throw new Error('not built yet'); });`),
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^1 passed, 0 failed, 1 case skipped \(/m.test(plain), `"1 passed, 0 failed, 1 case skipped", got: ${output}`);
+    assert(plain.includes('a.test.js › pending case: todo'), `lists the todo, got: ${output}`);
+  });
+
+  await test('a describe body that throws is one failure named by the describe', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+describe('the broken group', () => {
+  throw new Error('group exploded');
+});`),
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    assert(/^0 passed, 1 failed \(/m.test(plain), `"0 passed, 1 failed", got: ${output}`);
+    const failures = failuresOf(output);
+    assert(failures, `a Failures: list, got: ${output}`);
+    const broke = failures.split('\n').find((line) => line.includes('a.test.js › the broken group'));
+    assert(broke && broke.includes('group exploded'), `names the describe with the message, got: ${failures}`);
+  });
+
+  await test('a require on the closing line of a multi-line destructure runs as a node:test suite', () => {
+    const { code, output } = runSuites({
+      'a.test.js': `const {
+  describe,
+  test,
+} = require('node:test');
+const assert = require('node:assert');
+describe('split import', () => {
+  test('one', () => { assert.ok(true); });
+  test('two', () => { assert.ok(true); });
+});
+`,
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^2 passed, 0 failed \(/m.test(plain), `its cases counted, got: ${output}`);
+    assert(!plain.includes('export a.test.js'), `never read as export, got: ${output}`);
+  });
+
+  await test('a todo describe is no skip itself; its passing test is one case skip named todo', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+describe('the pending group', { todo: true }, () => {
+  test('inner case', () => { assert.ok(true); });
+});`),
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^0 passed, 0 failed, 1 case skipped \(/m.test(plain), `"0 passed, 0 failed, 1 case skipped", got: ${output}`);
+    assert(plain.includes('a.test.js › inner case: todo'), `lists the inner test as todo, got: ${output}`);
+    assert(!plain.includes('a.test.js › the pending group'), `no skip named by the describe, got: ${output}`);
+  });
+
+  await test('a skipped describe is one case skip named skipped, its tests counted nowhere', () => {
+    const { code, output } = runSuites({
+      'a.test.js': NODE_TEST(`
+describe.skip('the parked group', () => {
+  test('parked one', () => { assert.fail('must not run'); });
+  test('parked two', () => { assert.fail('must not run'); });
+});`),
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^0 passed, 0 failed, 1 case skipped \(/m.test(plain), `"0 passed, 0 failed, 1 case skipped", got: ${output}`);
+    assert(plain.includes('a.test.js › the parked group: skipped'), `lists the describe as skipped, got: ${output}`);
+    assert(!plain.includes('parked one') && !plain.includes('parked two'), `its tests are named nowhere, got: ${output}`);
   });
 
   // `npm test` runs the Node suites, then `claude plugin test` over the hooks

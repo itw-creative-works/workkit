@@ -183,6 +183,25 @@ const run = async () => {
     cleanup(w.dir);
   });
 
+  await test('a node_modules in an ignored folder reaches the proved copy as a regular file with the live content', () => {
+    const check = [
+      "const fs = require('fs'), path = require('path');",
+      "const root = fs.realpathSync(path.join(__dirname, '..'));",
+      "const file = path.join(root, 'cache', 'app', 'node_modules', 'x', 'index.js');",
+      "require('assert').strictEqual(fs.realpathSync(file), file, 'the copy\\'s own file, through no link');",
+      "require('assert').strictEqual(fs.readFileSync(file, 'utf8'), 'module.exports = 9;\\n');",
+      '',
+    ].join('\n');
+    const w = mkWorld({ '.gitignore': 'node_modules/\ncache/\n', 'test/cache.test.js': check });
+    w.write('cache/app/package.json', `${JSON.stringify({ name: 'app' })}\n`);
+    w.write('cache/app/node_modules/x/index.js', 'module.exports = 9;\n');
+    assertEq(folderRun(w), 0, 'the check passes in the folder itself');
+    stagePassing(w);
+    const res = prove(w);
+    assertEq(res.code, 0, `the copy holds the ignored folder's module as it is, got: ${res.said}`);
+    cleanup(w.dir);
+  });
+
   return summary();
 };
 
