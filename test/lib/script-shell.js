@@ -22,10 +22,10 @@ const { SPAWN_DEADLINE } = require('./process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 
-// npm's script shell as setup wires it: the wrapper beside this checkout's
-// engine, or on Windows the executable built into a scratch machine folder
-// (null with no compiler), which reaches this checkout's wrapper through a
-// scratch claude home whose `workkit` is a junction to it.
+// npm's script shell, built once: the wrapper beside this checkout's engine, or
+// on Windows the executable built into a scratch folder (null with no compiler)
+// that wireShell copies into each machine folder; it reaches this checkout's
+// wrapper through a scratch claude home whose `workkit` is a junction to it.
 const EXE_TMP = mkTmp('script-shell-exe-');
 const EXE_HOME = path.join(EXE_TMP, 'workkit-home');
 const EXE_CLAUDE_HOME = path.join(EXE_TMP, 'claude-home');
@@ -44,11 +44,19 @@ const buildExe = () => {
   return gitPath(EXE);
 };
 const WRAPPER = IS_WINDOWS ? buildExe() : path.join(WORKFLOW_DIR, 'script-shell.sh');
-// The gate compares npm's value with the machine folder's executable on Windows.
-const EXE_ENV = IS_WINDOWS ? { WORKFLOW_HOME: shellPath(EXE_HOME) } : {};
-// The gate asks only that the executable exists before it compares paths, so
-// with no compiler an empty stand-in wires it.
-if (IS_WINDOWS && !fs.existsSync(EXE)) fs.writeFileSync(EXE, '');
+
+/**
+ * npm's script shell for the machine folder <workflowHome>, as setup wires it:
+ * on Windows the built executable copied in as its script-shell.exe (the file
+ * the gate compares npm's value with), in git's spelling; elsewhere the wrapper.
+ */
+const wireShell = (workflowHome) => {
+  if (!IS_WINDOWS) return WRAPPER;
+  const exe = path.join(workflowHome, 'script-shell.exe');
+  fs.mkdirSync(workflowHome, { recursive: true });
+  fs.copyFileSync(EXE, exe);
+  return gitPath(exe);
+};
 
 /** A scratch user npmrc naming <shell>, so npm's config is never the machine's. */
 const scratchNpmrc = (shell) => {
@@ -95,8 +103,9 @@ const mkRepo = (pkg, extra = {}) => {
 
 /**
  * A scratch machine: its own home and TMPDIR, node and npm on PATH; on Windows
- * a claude home through which the built executable reaches this checkout.
- * `workflowHome` is the home's `.workkit`, where the records live.
+ * a claude home through which its executable reaches this checkout.
+ * `workflowHome` is the home's `.workkit`, where the records live; `wrapper`
+ * is npm's script shell wired there (wireShell).
  */
 const mkWorld = () => {
   const root = mkTmp('script-shell-world-');
@@ -109,6 +118,7 @@ const mkWorld = () => {
     root,
     tmp,
     workflowHome,
+    wrapper: wireShell(workflowHome),
     env: homeEnv(home, {
       TMPDIR: shellPath(tmp),
       WORKFLOW_HOME: shellPath(workflowHome),
@@ -119,11 +129,11 @@ const mkWorld = () => {
 };
 
 /**
- * npm run in <cwd> with <args>, through the wrapper unless `shell` names another,
- * with <extra> merged over the world's env. The flag goes first: after a `--`
- * npm hands it to the script instead.
+ * npm run in <cwd> with <args>, through the world's script shell unless `shell`
+ * names another, with <extra> merged over the world's env. The flag goes first:
+ * after a `--` npm hands it to the script instead.
  */
-const npm = (world, cwd, args, shell = WRAPPER, extra = {}) => {
+const npm = (world, cwd, args, shell = world.wrapper, extra = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${shell}`, ...args], {
     cwd, env: { ...world.env, ...extra }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
@@ -147,6 +157,6 @@ const assertRecord = (text, tree, msg) => {
 const packaged = (world, repo) => JSON.stringify(pkgRecord(world.workflowHome, repo));
 
 module.exports = {
-  WRAPPER, EXE_ENV, EXE_CLAUDE_HOME, scratchNpmrc,
+  WRAPPER, EXE_CLAUDE_HOME, wireShell, scratchNpmrc,
   cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord, packaged,
 };

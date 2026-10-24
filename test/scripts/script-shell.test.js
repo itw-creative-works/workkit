@@ -14,14 +14,14 @@ const {
 } = require('../lib/platform');
 const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
 const {
-  scratchNpmrc, WRAPPER, EXE_ENV, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged, assertRecord,
+  scratchNpmrc, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged, assertRecord,
 } = require('../lib/script-shell');
 const { gateOn: gateIn } = require('../lib/real-gate');
 
 const ROOT = path.join(__dirname, '..', '..');
 
 // A copy of the wrapper and its libs under <world.root>/claude/workkit, so a
-// case may rewrite it. On Windows the built exe reaches the copy through
+// case may rewrite it. On Windows the world's exe reaches the copy through
 // WORKFLOW_CLAUDE_HOME (the claude home, native spelling, as mkWorld passes it);
 // `file` is the copy in node's spelling.
 const mkWrapperCopy = (world) => {
@@ -32,14 +32,14 @@ const mkWrapperCopy = (world) => {
   fs.cpSync(path.join(ROOT, 'workflow', 'script-shell.sh'), file);
   fs.cpSync(path.join(ROOT, 'workflow', 'lib'), path.join(kit, 'lib'), { recursive: true });
   return IS_WINDOWS
-    ? { shell: WRAPPER, env: { WORKFLOW_CLAUDE_HOME: claude }, file }
+    ? { shell: world.wrapper, env: { WORKFLOW_CLAUDE_HOME: claude }, file }
     : { shell: shellPath(file), env: {}, file };
 };
 
 // The commit gate, through the hooks module, asked about a plain code commit in
-// <repo>, on a machine whose npm names the wrapper.
+// <repo>, on a machine whose npm names the world's script shell.
 const gateOn = (world, repo) => gateIn(repo, 'git commit -m "feat: x"',
-  { ...world.env, NPM_CONFIG_USERCONFIG: scratchNpmrc(WRAPPER), ...EXE_ENV });
+  { ...world.env, NPM_CONFIG_USERCONFIG: scratchNpmrc(world.wrapper) });
 
 const run = async () => {
   skipWithoutWrapper();
@@ -90,7 +90,7 @@ const run = async () => {
       `if [ -e "${shellPath(flag)}" ]; then for a in "$@"; do [ "$a" = add ] && { echo 'git: add refused' >&2; exit 1; }; done; fi`,
       `exec "${shellPath(which('git'))}" "$@"`]);
     const repo = mkRepo({ scripts: { test: ': > "$WK_FLAG"' } });
-    const res = npm(world, repo, ['test'], WRAPPER, { PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH), WK_FLAG: shellPath(flag) });
+    const res = npm(world, repo, ['test'], world.wrapper, { PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH), WK_FLAG: shellPath(flag) });
     assert(fs.existsSync(flag), 'the suite ran and left its flag');
     assertEq(res.code, 1, `a green run with no hash is not green, got: ${res.code} ${res.out} ${res.err}`);
     assert(res.out.includes('script-shell: the suite passed, but the tree of ')

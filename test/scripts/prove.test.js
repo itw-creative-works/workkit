@@ -17,7 +17,7 @@ const { mkRepo } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
 const { suiteMarkerPath, reviewMarkerPath } = require('../lib/suite-record');
 const {
-  skipWithoutWrapper, scratchNpmrc, WRAPPER, EXE_ENV, EXE_CLAUDE_HOME, assertRecord,
+  skipWithoutWrapper, scratchNpmrc, wireShell, EXE_CLAUDE_HOME, assertRecord,
 } = require('../lib/script-shell');
 const { gateOn } = require('../lib/real-gate');
 const { SPAWN_DEADLINE } = require('../lib/process');
@@ -65,12 +65,12 @@ const holdBreaking = (w) => {
 // The fixture's suite run straight in the working folder.
 const folderRun = (w) => spawnSync(process.execPath, ['run.js'], { cwd: w.repo, encoding: 'utf8' }).status;
 
-// npm beside this node naming the kit's wrapper, as `workkit setup` leaves a machine.
+// npm beside this node naming the script shell wired into the world's machine
+// folder, as `workkit setup` leaves a machine.
 const proveEnv = (w) => ({
   ...w.env,
   PATH: joinPath(NODE_DIR, w.env.PATH),
-  NPM_CONFIG_USERCONFIG: scratchNpmrc(WRAPPER),
-  ...EXE_ENV,
+  NPM_CONFIG_USERCONFIG: scratchNpmrc(wireShell(w.workflowHome)),
   ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
 });
 

@@ -15,7 +15,7 @@ const {
 const { seeded } = require('../../lib/seed');
 const { treeHash } = require('../../lib/suite-record');
 const {
-  WRAPPER, EXE_CLAUDE_HOME, scratchNpmrc, skipWithoutWrapper, recorded, assertRecord, packaged,
+  EXE_CLAUDE_HOME, wireShell, scratchNpmrc, skipWithoutWrapper, recorded, assertRecord, packaged,
 } = require('../../lib/script-shell');
 const {
   WORKFLOW_DIR, CLI, cleanup, writeStub, mkWorld, runCli, mkRepo,
@@ -63,7 +63,7 @@ const runTest = (world, args = [], { cwd, env = {} } = {}) => {
     cwd,
     env: {
       PATH: joinPath(NODE_DIR, world.env.PATH),
-      NPM_CONFIG_USERCONFIG: scratchNpmrc(WRAPPER),
+      NPM_CONFIG_USERCONFIG: scratchNpmrc(wireShell(world.workflowHome)),
       ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
       ...env,
     },

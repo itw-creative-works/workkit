@@ -51,7 +51,7 @@ _hook_snapshot_held_under() { case $'\n'"$1" in *$'\n'"./$2/"*) return 0 ;; esac
 # node_modules left out (the fill rebuilds those from the live repo), symlinks
 # kept. The tools' words go to stderr.
 _hook_snapshot_copy() {
-  local src="$1" dest="$2" entry rel held anchor flags=(-pPR) rels=() excludes=(--exclude=./.git)
+  local src="$1" dest="$2" entry rel held anchor="" flags=(-pPR) rels=() excludes=(--exclude=./.git)
   shift 2
   held=$(_hook_snapshot_modules_list "$src") \
     || { echo "could not list the package node_modules folders under $src" >&2; return 1; }

@@ -19,7 +19,7 @@ const {
 } = require('../lib/process');
 const { CHANGELOG, ISSUE } = require('../hooks/commit-gate/helpers');
 const {
-  WRAPPER, cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord,
+  cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord,
 } = require('../lib/script-shell');
 
 // The suite log of a repo that does not ignore .workkit/, the lock's pid, and
@@ -28,6 +28,7 @@ const tmpLog = (world, repo) => suiteLogPath(world.workflowHome, repo);
 const lockPid = (world, repo) => path.join(suiteLockPath(world.workflowHome, repo), 'pid');
 const repoLog = (repo) => path.join(repo, '.workkit', 'suite.log');
 const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined);
+const realOf = (file) => { try { return fs.realpathSync(file); } catch { return `(unresolved) ${file}`; } };
 const lineCount = (file) => (read(file) || '').split('\n').filter(Boolean).length;
 
 // A folder outside the repo the suite scripts write to (a counter, their pid),
@@ -45,7 +46,7 @@ const IN_FLIGHT = 'echo start; echo x >> "$WK_OUT/counter"; echo $$ > "$WK_OUT/s
 // npm started without waiting for it, as an agent's tool starts a job: the
 // caller polls `child.exitCode` and reads both streams through `output`.
 const npmStart = (world, cwd, args, extra = {}) => {
-  const child = spawn(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${WRAPPER}`, ...args], {
+  const child = spawn(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${world.wrapper}`, ...args], {
     cwd, env: { ...world.env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   return { child, output: collect(child) };
@@ -137,12 +138,15 @@ const run = async () => {
     const { child, output } = npmStart(world, repo, ['test'], out.env);
     try {
       assert(await until(() => fs.existsSync(counter)), `the first suite never started; npm said: ${output()}`);
-      const second = npm(world, repo, ['test'], WRAPPER, out.env);
+      const second = npm(world, repo, ['test'], world.wrapper, out.env);
       assertEq(second.code, 1, `the second run refuses, got: ${second.code} ${second.err}`);
       const pid = read(lockPid(world, repo));
       assert(pid !== undefined, `the lock holds a pid at ${lockPid(world, repo)}`);
-      const line = `script-shell: a root npm test is already running (pid ${pid.trim()}); its output is in ${shellPath(tmpLog(world, repo))}\n`;
-      assert(second.err.includes(line), `the line names the pid and the log: ${JSON.stringify(line)}, got: ${second.err}`);
+      // The wrapper's bash spells the log as its WORKFLOW_HOME reached it, so the
+      // path is held to the file node resolves, never to one spelling.
+      const said = second.err.match(/^script-shell: a root npm test is already running \(pid (\d+)\); its output is in (.+)$/m);
+      assert(said && said[1] === pid.trim(), `the line names the lock's pid ${pid.trim()}, got: ${second.err}`);
+      assertEq(realOf(said[2]), realOf(tmpLog(world, repo)), `the line names the suite log, got: ${second.err}`);
       assert(await until(() => ended(child)), `the first run never ended; npm said: ${output()}`);
       assertEq(child.exitCode, 0, `the first run is green; npm said: ${output()}`);
       assertEq(lineCount(counter), 1, 'the script ran once');
@@ -217,7 +221,7 @@ const run = async () => {
         assert(await until(() => ended(child)), 'npm never ended after TERM');
         // The supervisor writes the done file and then exits, so its exit is the done file's arrival.
         assert(await until(() => !alive(supervisor)), `the first run's supervisor (pid ${supervisor}) never ended`);
-        const second = npm(world, repo, ['test'], WRAPPER, out.env);
+        const second = npm(world, repo, ['test'], world.wrapper, out.env);
         assertEq(second.code, 0, `the second run goes green, got: ${second.code} ${second.out} ${second.err}`);
         assertEq(lineCount(path.join(out.dir, 'counter')), 2, 'the suite ran twice, once per run');
         const text = read(log);
@@ -254,7 +258,7 @@ const run = async () => {
     const out = mkOut(world);
     const repo = mkRepo({ scripts: { test: 'echo x >> "$WK_OUT/counter"' } }, { 'CHANGELOG.md': CHANGELOG() });
     fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), entryOf(62));
-    const res = npm(world, repo, ['test'], WRAPPER, out.env);
+    const res = npm(world, repo, ['test'], world.wrapper, out.env);
     assertEq(res.code, 1, `the run refuses, got: ${res.code} ${res.err}`);
     assert(res.err.includes('script-shell: the CHANGELOG entry does not match the format (see docs/project-state.md). '),
       `the gate's message, got: ${res.err}`);
@@ -271,7 +275,7 @@ const run = async () => {
     const repo = mkRepo({ scripts: { test: 'echo x >> "$WK_OUT/counter"' } }, { 'CHANGELOG.md': CHANGELOG() });
     fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), entryOf(20));
     const tree = treeHash(repo);
-    const res = npm(world, repo, ['test'], WRAPPER, { ...out.env, ...node.env });
+    const res = npm(world, repo, ['test'], world.wrapper, { ...out.env, ...node.env });
     assertEq(res.code, 0, `the run is green, got: ${res.code} ${res.err}`);
     assertEq(node.lintCalls().length, 1, 'the CHANGELOG linter ran once');
     assertEq(lineCount(path.join(out.dir, 'counter')), 1, 'the suite ran once');
@@ -286,7 +290,7 @@ const run = async () => {
     const repo = mkRepo({ scripts: { test: 'echo x >> "$WK_OUT/counter"' } }, { 'CHANGELOG.md': entryOf(62) });
     fs.writeFileSync(path.join(repo, 'app.js'), 'const x = 2;\n');
     const tree = treeHash(repo);
-    const res = npm(world, repo, ['test'], WRAPPER, { ...out.env, ...node.env });
+    const res = npm(world, repo, ['test'], world.wrapper, { ...out.env, ...node.env });
     assertEq(res.code, 0, `the run is green, got: ${res.code} ${res.err}`);
     assertEq(node.lintCalls().length, 0, 'no CHANGELOG linter ran');
     assertEq(lineCount(path.join(out.dir, 'counter')), 1, 'the suite ran once');
@@ -299,7 +303,7 @@ const run = async () => {
     const out = mkOut(world);
     const repo = mkRepo({ scripts: { test: 'echo x >> "$WK_OUT/counter"' } }, { 'my pkg/CHANGELOG.md': CHANGELOG() });
     fs.writeFileSync(path.join(repo, 'my pkg', 'CHANGELOG.md'), entryOf(62));
-    const res = npm(world, repo, ['test'], WRAPPER, out.env);
+    const res = npm(world, repo, ['test'], world.wrapper, out.env);
     assertEq(res.code, 1, `the run refuses, got: ${res.code} ${res.err}`);
     assert(res.err.includes('script-shell: the CHANGELOG entry does not match the format (see docs/project-state.md). '),
       `the gate's message, got: ${res.err}`);
@@ -319,7 +323,7 @@ const run = async () => {
     const repo = mkRepo({ scripts: { test: 'echo x >> "$WK_OUT/counter"' } }, { 'CHANGELOG.md': CHANGELOG() });
     fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), entryOf(62));
     const tree = treeHash(repo);
-    const res = npm(world, repo, ['test'], WRAPPER, { ...out.env, WORKFLOW_DIR: shellPath(empty) });
+    const res = npm(world, repo, ['test'], world.wrapper, { ...out.env, WORKFLOW_DIR: shellPath(empty) });
     assertEq(res.code, 0, `the run is green, got: ${res.code} ${res.out} ${res.err}`);
     assertEq(lineCount(path.join(out.dir, 'counter')), 1, 'the suite ran once');
     assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
