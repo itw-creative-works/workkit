@@ -5,8 +5,9 @@
 
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { until } = require('../../lib/process');
 const {
-  DEFAULT_BIND, DEFAULT_PORT, cleanup, issueNode, mkWorld, start, getJson, tiles,
+  DEFAULT_BIND, DEFAULT_PORT, cleanup, issueNode, mkWorld, start, getJson, sweptBoard, tiles,
 } = require('./helpers');
 
 const run = async () => {
@@ -102,9 +103,7 @@ const run = async () => {
       assertEq(first.status, 200, 'the read that started the sweep is answered with its first page');
       // The drop happens a turn of the loop later. Bounded, so a regression that
       // takes the process down fails here rather than hanging the suite.
-      for (let i = 0; i < 100 && said.length === 0; i += 1) {
-        await new Promise((resolve) => { setTimeout(resolve, 5); });
-      }
+      await until(() => said.length > 0);
       assertEq(said.length, 1, 'the machine is told once, the way every other catch here tells it');
       // The kit's one line shape: the glyph, then the message.
       assert(/^✖ the board sweep was dropped: /.test(said[0]),
@@ -117,11 +116,7 @@ const run = async () => {
       // next read sweeps again, and a page that has stopped breaking lands.
       broken = false;
       const second = await getJson(c, '/api/board');
-      let body = second.body;
-      for (let i = 0; i < 100 && body.repos[0].loading; i += 1) {
-        await new Promise((resolve) => { setTimeout(resolve, 5); });
-        ({ body } = await getJson(c, '/api/board'));
-      }
+      const body = await sweptBoard(c, second.body);
       assertEq(body.issues.length, 2, 'the whole board, from a sweep that was started fresh');
       assertEq(said.length, 1, 'and nothing more was dropped');
     } finally {

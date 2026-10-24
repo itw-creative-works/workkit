@@ -9,8 +9,9 @@ import { escaped, isTestName, isTestPath } from './test-reminder.js';
 
 // The scratch writer's two homes: a consumer repo's and the kit's own.
 const SCRATCH = new Set(['tests/lib/scratch.js', 'workflow/test/lib/scratch.js']);
+// The shared deadline's two homes, where its own bounds are written.
+const DEADLINE_HOME = new Set(['tests/lib/process.js', 'workflow/test/lib/process.js']);
 const HELPER_DIR = /(^|\/)(tests|workflow\/test)\/lib\//;
-const SLEEP_MAX_MS = 1000;
 
 const COMMENT = /^\s*(\/\/|\/\*|\*|#)/;
 const CASE_START = /^\s*(await\s+)?(test|it|testUnless\s*\([^)]*\))\s*\(/;
@@ -19,27 +20,106 @@ const ASSERTION = /\b(assert(\.\w+|Eq\w*)?|expect)\s*\(/;
 const TMP_DIR = /\bmkdtempSync\s*\(|\btmpdir\s*\(/;
 const FIXED_PATH = /['"`]\/tmp\/[\w.-]/;
 const FIXED_PORT = /\b(localhost|127\.0\.0\.1|0\.0\.0\.0):[1-9]\d{1,4}\b|\bport\b['"]?\s*[:=]\s*[1-9]\d{1,4}\b|\.listen\(\s*[1-9]\d{1,4}\b/i;
-const SLEEP = /\bsetTimeout\s*\(.*,\s*([\d_]+)\s*\)/;
+// A wait bound written as a number literal: a timer, a sleep helper, a timeout option, Atomics.wait.
+const WAITS = [
+  /\bset(?:Timeout|Interval)\s*\(.*,\s*([\d_]+)\s*\)/,
+  /\bsleep\s*\(\s*([\d_]+)\s*\)/,
+  /\btimeout\s*:\s*([\d_]+)/,
+  /\bAtomics\.wait\s*\(.*,\s*([\d_]+)\s*\)/,
+];
 const SOURCE_READ = /\breadFileSync\s*\((.*)/;
 // A read names the source tree by a repo-root anchor or a repo-relative literal.
 const SOURCE_ANCHOR = /__dirname|process\.cwd\(\)|\b[A-Z_]*(ROOT|KIT|REPO)[A-Z_]*\b|['"`][\w.-]+\/[\w./-]+['"`]|['"`][\w-]+\.(js|cjs|mjs|ts|md|json|sh|css|scss|html)['"`]/;
 const NAMED = /\b(?:const|let|var)\s+(\w+)\s*=/;
 const WEAK = [/\bexistsSync\s*\(/, /\bl?stat(Sync)?\s*\(.*\.mode\b|\b0o[0-7]{3,4}\b|\bX_OK\b|\baccessSync\s*\(/, /\bassert(\.ok)?\s*\(\s*true\s*[,)]/];
 
+// A `/` opens a regex literal at the line's start, after an operator or an
+// opener (an arrow's `>` included) or after `return`; anywhere else it divides.
+const REGEX_AFTER = /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn)\s*$/;
+
 /**
- * The `[line, rule]` findings of the one-line rules: mkTmp, serial, sleep.
+ * Whether the `/` at `i`, met outside any span, opens a regex literal rather
+ * than dividing: the text before it decides.
+ * @param {string} line the line
+ * @param {number} i the index of the `/`
+ * @returns {boolean}
+ */
+function opensRegex(line, i) {
+  return REGEX_AFTER.test(line.slice(0, i));
+}
+
+/**
+ * The index of the unescaped `/` closing the regex literal opened at `i`, a
+ * `/` inside a `[...]` class left alone; the line's length when it never
+ * closes, since a regex never runs past its line.
+ * @param {string} line the line
+ * @param {number} i the index of the opening `/`
+ * @returns {number}
+ */
+function regexEnd(line, i) {
+  let inClass = false;
+  for (let j = i + 1; j < line.length; j += 1) {
+    if (line[j] === '\\') j += 1;
+    else if (line[j] === '[') inClass = true;
+    else if (line[j] === ']') inClass = false;
+    else if (line[j] === '/' && !inClass) return j;
+  }
+  return line.length;
+}
+
+/**
+ * The file's lines with every quoted span removed: a `'...'`, `"..."` or
+ * backtick span on one line, and every line inside a template literal left
+ * open at a line's end, up to the text after its closing backtick. A regex
+ * literal and a trailing `//` comment are dropped too and open no span. A
+ * comment line outside a template passes through whole and opens no span.
+ * @param {string[]} lines the file's lines
+ * @returns {string[]}
+ */
+export function quoteFree(lines) {
+  let quote = '';
+  return lines.map((line) => {
+    if (!quote && COMMENT.test(line)) return line;
+    let out = '';
+    for (let i = 0; i < line.length; i += 1) {
+      const c = line[i];
+      if (c === '\\') {
+        if (!quote) out += line.slice(i, i + 2);
+        i += 1;
+      } else if (quote) {
+        if (c === quote) quote = '';
+      } else if (c === '/' && line[i + 1] === '/') {
+        break;
+      } else if (c === '/' && opensRegex(line, i)) {
+        i = regexEnd(line, i);
+      } else if (c === "'" || c === '"' || c === '`') {
+        quote = c;
+      } else {
+        out += c;
+      }
+    }
+    // Only a template literal runs past its line; a stray quote ends with it.
+    if (quote !== '`') quote = '';
+    return out;
+  });
+}
+
+/**
+ * The `[line, rule]` findings of the one-line rules: mkTmp, serial, and
+ * deadline, which reads the quote-free lines (quoted text is a fixture's).
  * @param {string[]} lines the file's lines
  * @param {string} rel the file, repo-relative
  * @returns {Array<[number, string]>}
  */
 function lineFindings(lines, rel) {
   const found = [];
+  const free = quoteFree(lines);
   lines.forEach((line, i) => {
     if (COMMENT.test(line)) return;
     if (!SCRATCH.has(rel) && TMP_DIR.test(line)) found.push([i + 1, 'mkTmp']);
     if (FIXED_PATH.test(line) || FIXED_PORT.test(line)) found.push([i + 1, 'serial']);
-    const sleep = line.match(SLEEP);
-    if (sleep && Number(sleep[1].replace(/_/g, '')) > SLEEP_MAX_MS) found.push([i + 1, 'sleep']);
+    const bound = (wait) => Number(free[i].match(wait)?.[1].replace(/_/g, '')) > 0;
+    if (!DEADLINE_HOME.has(rel) && WAITS.some(bound)) found.push([i + 1, 'deadline']);
   });
   return found;
 }

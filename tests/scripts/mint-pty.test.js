@@ -34,14 +34,14 @@ const runMint = (root, { child, send = '' }) => {
   const resultFile = path.join(root, 'result.txt');
   const harness = path.join(root, 'harness.exp');
   fs.writeFileSync(harness, [
-    'set timeout 20',
+    `set timeout ${SPAWN_DEADLINE / 1000}`,
     `set log [open ${JSON.stringify(resultFile)} w]`,
     `spawn bash -c ". ${CLI} help >/dev/null 2>&1; run_under_pty ${capture} ${childFile} && echo WRAPPER-EXIT:0 || echo WRAPPER-EXIT:\\$?"`,
     'expect {',
     '    "CHILD-UP" {}',
     '    timeout { puts $log "no child"; close $log; exit 1 }',
     '}',
-    ...(send ? ['sleep 1', `send ${JSON.stringify(send)}`] : []),
+    ...(send ? [`send ${JSON.stringify(send)}`] : []),
     'expect {',
     '    -re {WRAPPER-EXIT:(\\d+)} { puts $log "exit=$expect_out(1,string)" }',
     '    timeout { puts $log "no exit" }',

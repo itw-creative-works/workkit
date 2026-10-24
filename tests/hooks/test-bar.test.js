@@ -9,13 +9,22 @@ const { mods, textOf } = require('../lib/mods-inputs');
 // The hook's answer for `lines` written at `rel`, as one text.
 const write = (rel, lines) => textOf(mods('test-bar').testBarContext({ root: '/w/repo', rel, text: `${lines.join('\n')}\n` }));
 
+// `rule` as a whole word of a finding line, never part of a longer rule name.
+const ruleWord = (rule) => new RegExp(`(^|[^\\w-])${rule}([^\\w-]|$)`);
+
 // The context holds a `test-bar: <rel>:<line> ...` line naming `rule`; `line`
 // is one number, or undefined where the Contract names no line.
 const names = (out, rel, line, rule) => {
   const head = line === undefined ? `test-bar: ${rel}:` : `test-bar: ${rel}:${line} `;
-  const word = new RegExp(`(^|[^\\w-])${rule}([^\\w-]|$)`);
+  const word = ruleWord(rule);
   const hit = out.split('\n').some((l) => l.startsWith(head) && word.test(l.slice(head.length)));
   assert(hit, `names ${rel}${line === undefined ? '' : `:${line}`} and the ${rule} rule, got: ${out}`);
+};
+
+// The lines of the context naming `rule` at any line of any file.
+const ruleLines = (out, rule) => {
+  const word = ruleWord(rule);
+  return out.split('\n').filter((l) => /^test-bar: \S+:\d+ /.test(l) && word.test(l.replace(/^test-bar: \S+:\d+ /, '')));
 };
 
 const run = async () => {
@@ -87,20 +96,139 @@ const run = async () => {
       "const src = fs.readFileSync('hooks/mods/thing.js', 'utf8');",
       'assert.match(src, /export function thing/);',
     ]);
-    const hit = out.split('\n').some((l) => /^test-bar: tests\/hooks\/thing\.test\.js:[34] /.test(l) && /(^|[^\w-])source-regex([^\w-]|$)/.test(l));
+    const hit = out.split('\n').some((l) => /^test-bar: tests\/hooks\/thing\.test\.js:[34] /.test(l) && ruleWord('source-regex').test(l));
     assert(hit, `names the readFileSync or the assert.match line and the source-regex rule, got: ${out}`);
   });
 
-  await test('a setTimeout past 1000 ms: the sleep rule', () => {
+  await test('await sleep(300): one deadline finding, at that line', () => {
+    const rel = 'tests/timing.test.js';
+    const out = write(rel, [
+      "const { test, assert } = require('./lib/harness');",
+      'const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });',
+      "test('it settles', async () => {",
+      '  await sleep(300);',
+      "  assert(true, 'settled');",
+      '});',
+    ]);
+    names(out, rel, 4, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `one deadline finding, got: ${out}`);
+  });
+
+  await test('a setTimeout at 500 ms, under the old 1000 ms bar: the deadline rule', () => {
     const rel = 'tests/timing.test.js';
     const out = write(rel, [
       "const { test, assert } = require('./lib/harness');",
       "test('it settles', async () => {",
-      '  await new Promise((resolve) => setTimeout(resolve, 1500));',
+      '  await new Promise((resolve) => { setTimeout(resolve, 500); });',
       "  assert(true, 'settled');",
       '});',
     ]);
-    names(out, rel, 3, 'sleep');
+    names(out, rel, 3, 'deadline');
+  });
+
+  await test('a spawn timeout: 15000 is a deadline finding, timeout: SPAWN_DEADLINE is not', () => {
+    const rel = 'tests/spawn.test.js';
+    const out = write(rel, [
+      "const { spawnSync } = require('child_process');",
+      "const { test, assertEq } = require('./lib/harness');",
+      "const { SPAWN_DEADLINE } = require('./lib/process');",
+      "test('exits clean', () => assertEq(spawnSync('node', ['a.js'], { encoding: 'utf8', timeout: 15000 }).status, 0, 'ok'));",
+      "test('exits clean too', () => assertEq(spawnSync('node', ['b.js'], { encoding: 'utf8', timeout: SPAWN_DEADLINE }).status, 0, 'ok'));",
+    ]);
+    names(out, rel, 4, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `the shared deadline is not named, got: ${out}`);
+  });
+
+  await test('an Atomics.wait of 1100 ms: the deadline rule', () => {
+    const rel = 'tests/block.test.js';
+    const out = write(rel, [
+      "const { test, assert } = require('./lib/harness');",
+      'const arr = new Int32Array(new SharedArrayBuffer(4));',
+      "test('it blocks', () => {",
+      '  Atomics.wait(arr, 0, 0, 1100);',
+      "  assert(true, 'woke');",
+      '});',
+    ]);
+    names(out, rel, 4, 'deadline');
+  });
+
+  await test('await sleep(300) on a line after a fixture template closed: one deadline finding, at that line', () => {
+    const rel = 'tests/runner.test.js';
+    const out = write(rel, [
+      "const { test, assert } = require('./lib/harness');",
+      'const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });',
+      'const SUITE = (body) => body;',
+      'const program = SUITE(`',
+      '  await sleep(200);',
+      '`);',
+      "test('it settles', async () => {",
+      '  await sleep(300);',
+      "  assert(program.length > 0, 'settled');",
+      '});',
+    ]);
+    names(out, rel, 8, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `only the wait after the template, got: ${out}`);
+  });
+
+  await test('a setTimeout at 500 ms on a line holding quoted words on both sides: still the deadline rule', () => {
+    const rel = 'tests/timing.test.js';
+    const out = write(rel, [
+      "const { test, assert } = require('./lib/harness');",
+      "test('waits', async () => { await new Promise((resolve) => { setTimeout(resolve, 500); }); assert(true, 'quoted'); });",
+    ]);
+    names(out, rel, 2, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `one deadline finding, got: ${out}`);
+  });
+
+  await test('a setTimeout at 500 ms after a comment holding one unclosed backtick: one deadline finding, at that line', () => {
+    const rel = 'tests/fixture.test.js';
+    const out = write(rel, [
+      "const { test, assert } = require('./lib/harness');",
+      '// see `node x.js <file>',
+      '// for the fixture it reads',
+      "test('waits', async () => {",
+      '  await new Promise((resolve) => { setTimeout(resolve, 500); });',
+      "  assert(true, 'waited');",
+      '});',
+    ]);
+    names(out, rel, 5, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `one deadline finding, got: ${out}`);
+  });
+
+  await test('await sleep(300) after a regex literal holding one backtick: one deadline finding, at that line', () => {
+    const rel = 'tests/rule.test.js';
+    const out = write(rel, [
+      "test('states the rule', async () => {",
+      "  assert(/never write to `?x/.test(c), 'ok');",
+      '  await sleep(300);',
+      '});',
+    ]);
+    names(out, rel, 3, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `one deadline finding, got: ${out}`);
+  });
+
+  await test('await sleep(300) after an arrow returning a regex literal holding one backtick: one deadline finding, at that line', () => {
+    const rel = 'tests/rule.test.js';
+    const out = write(rel, [
+      "test('states the rule', async () => {",
+      '  const hit = lines.filter((l) => /never `x/.test(l));',
+      '  await sleep(300);',
+      '});',
+    ]);
+    names(out, rel, 3, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `one deadline finding, got: ${out}`);
+  });
+
+  await test('a setTimeout at 500 ms after a trailing comment holding one backtick: one deadline finding, at that line', () => {
+    const rel = 'tests/fixture.test.js';
+    const out = write(rel, [
+      "test('waits', async () => {",
+      '  run(); // see `node x.js <file>',
+      '  await new Promise((resolve) => { setTimeout(resolve, 500); });',
+      '});',
+    ]);
+    names(out, rel, 3, 'deadline');
+    assertEq(ruleLines(out, 'deadline').length, 1, `one deadline finding, got: ${out}`);
   });
 
   await test('a *.test.* write under tests/lib/: the helper-test rule', () => {
@@ -125,11 +253,87 @@ const run = async () => {
       "test('parses the written list', async () => {",
       "  const file = path.join(mkTmp('parse-'), 'list.txt');",
       "  fs.writeFileSync(file, 'a\\nb\\n');",
-      '  await new Promise((resolve) => setTimeout(resolve, 10));',
       "  assertEq(parse(fs.readFileSync(file, 'utf8')), ['a', 'b'], 'two items');",
       '});',
     ]);
     assertEq(out, '', 'the bar holds');
+  });
+
+  await test('a short bound passed to until or elapsedUntil, the sanctioned negative form: no deadline finding', () => {
+    const out = write('tests/quiet.test.js', [
+      "const { test, assert } = require('./lib/harness');",
+      "const { until, elapsedUntil } = require('./lib/process');",
+      'let seen = false;',
+      "test('never shows', async () => {",
+      "  assert(!(await until(() => seen, 300)), 'nothing came');",
+      "  assert((await elapsedUntil(() => seen, 500)) === Infinity, 'nor later');",
+      '});',
+    ]);
+    assertEq(ruleLines(out, 'deadline').join('\n'), '', 'the bound is the case');
+  });
+
+  await test('a zero setTimeout, a number on a comment line, a shell sleep in a string: no deadline finding', () => {
+    const out = write('tests/stub.test.js', [
+      "const { test, assert } = require('./lib/harness');",
+      "const STUB = 'exec sleep 30';",
+      '// await sleep(5000);',
+      "test('yields once', async () => {",
+      '  const fn = () => {};',
+      '  setTimeout(fn, 0);',
+      "  assert(STUB.length > 0, 'a stub');",
+      '});',
+    ]);
+    assertEq(ruleLines(out, 'deadline').join('\n'), '', 'none of the three is a wait bound');
+  });
+
+  await test('a child program\'s setTimeout inside a string: no deadline finding', () => {
+    const out = write('tests/child.test.js', [
+      "const { execFileSync } = require('child_process');",
+      "const { test, assertEq } = require('./lib/harness');",
+      "test('the child exits quiet', () => {",
+      '  assertEq(execFileSync(process.execPath, [\'-e\', "setTimeout(() => {}, 2000)"]).length, 0, \'no output\');',
+      '});',
+    ]);
+    assertEq(ruleLines(out, 'deadline').join('\n'), '', 'the child\'s wait, not this test\'s');
+  });
+
+  await test('a wait inside a template literal spanning lines: no deadline finding', () => {
+    const out = write('tests/runner.test.js', [
+      "const { test, assert } = require('./lib/harness');",
+      'const SUITE = (body) => body;',
+      'const program = SUITE(`',
+      "  const { sleep } = require('./lib/process');",
+      '  await sleep(200);',
+      '`);',
+      "test('the program is text', () => assert(program.length > 0, 'a program'));",
+    ]);
+    assertEq(ruleLines(out, 'deadline').join('\n'), '', 'the fixture program\'s wait, not this test\'s');
+  });
+
+  await test('a wait inside a string in an array literal: no deadline finding', () => {
+    const out = write('tests/fixture.test.js', [
+      "const { test, assertEq } = require('./lib/harness');",
+      'const program = [',
+      "  '  await sleep(300);',",
+      '];',
+      "test('the program is text', () => assertEq(program.length, 1, 'one line'));",
+    ]);
+    assertEq(ruleLines(out, 'deadline').join('\n'), '', 'a fixture line, not this test\'s wait');
+  });
+
+  await test('the deadline\'s own home, in the kit or a consumer repo: no deadline finding', () => {
+    const home = [
+      'const SPAWN_DEADLINE = 60000;',
+      'const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });',
+      'const until = async (predicate, ms = SPAWN_DEADLINE) => {',
+      '  const end = Date.now() + ms;',
+      '  while (Date.now() < end) { if (predicate()) return true; await sleep(100); }',
+      '  return predicate();',
+      '};',
+      'module.exports = { SPAWN_DEADLINE, until };',
+    ];
+    assertEq(ruleLines(write('workflow/test/lib/process.js', home), 'deadline').join('\n'), '', 'the kit\'s process.js is exempt');
+    assertEq(ruleLines(write('tests/lib/process.js', home), 'deadline').join('\n'), '', 'and a consumer repo\'s');
   });
 
   await test('a source file write, misses and all: the hook does not run', () => {

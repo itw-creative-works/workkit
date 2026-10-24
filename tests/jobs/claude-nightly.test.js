@@ -15,7 +15,7 @@ const {
 } = require('../lib/platform');
 const { noNodeTest, barePathTest, NO_NODE_LINE } = require('../lib/job-path');
 const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
+const { SPAWN_DEADLINE, until } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
@@ -174,11 +174,6 @@ const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT
   env: world.env,
 });
 
-// The notification would be fired detached, so its absence needs a moment of
-// waiting to mean anything: an assertion made immediately would pass even on a
-// job that did notify.
-const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
-
 const run = async () => {
   if (process.platform !== 'darwin') skipSuite('the runner is a macOS launchd job (~/Library paths)');
 
@@ -190,8 +185,10 @@ const run = async () => {
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(/summaries: no home repo configured; skipped/.test(world.log()), `the log names the reason: ${world.log()}`);
     assertEq(world.calls().length, 0, `nothing was sent: ${fmtCalls(world.calls())}`);
-    await settle();
-    assertEq(world.notifs().length, 0, 'and nothing interrupted anyone');
+    // The notification would be fired detached, so its absence needs a moment of
+    // waiting to mean anything: an assertion made immediately would pass even on a
+    // job that did notify.
+    assert(!(await until(() => world.notifs().length > 0, 500)), 'and nothing interrupted anyone');
     cleanup(world.root);
   });
 

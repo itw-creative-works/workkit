@@ -8,7 +8,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { gitPath } = require('../../lib/platform');
 const {
-  cleanup, SLUG, mkWorld, BOARD_PAGES, pageTheBoard, limitDiscussions, start, getJson, ghCalls, tiles, scriptHead,
+  cleanup, SLUG, mkWorld, BOARD_PAGES, pageTheBoard, limitDiscussions, start, getJson, sweptBoard, ghCalls, tiles, scriptHead,
 } = require('./helpers');
 
 const run = async () => {
@@ -258,11 +258,7 @@ const run = async () => {
 
     // The page's next poll, without the page. Bounded, so a sweep that never
     // finishes fails here instead of hanging the suite.
-    let body = first.body;
-    for (let i = 0; i < 100 && body.repos[0].loading; i += 1) {
-      await new Promise((resolve) => { setTimeout(resolve, 5); });
-      ({ body } = await getJson(c, '/api/board'));
-    }
+    const body = await sweptBoard(c, first.body);
     assertEq(body.issues.length, 3, 'the finished board carries both pages');
     assertEq(body.repos[0].loading, undefined, 'and no progress at all - the line clears by being absent');
     assertEq(body.repos[0].truncated, false, 'the repo was swept to the end');

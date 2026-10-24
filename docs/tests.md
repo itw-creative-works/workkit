@@ -29,6 +29,7 @@ A removed feature gets no test at all: no test beats a tombstone, and the WORTH 
 - A world is built once per process through `seeded()` and copied per case.
 - A scratch folder comes from `mkTmp()`.
 - No fixed path, port or sleep, so the suite never needs the serial tail.
+- A wait bound is the runner's shared deadline (`SPAWN_DEADLINE`, the default bound of `until` and `elapsedUntil`), or a short bound passed to `until` for a negative case; `safety:test-bar` names a literal bound on write, a literal inside quoted text (a fixture's or a child program's) excepted.
 - A timing case asserts order, never a measured duration.
 - A live probe sits behind a named flag and skips with its reason.
 

@@ -11,6 +11,7 @@ const { execFileSync } = require('child_process');
 const { resetIn, mkLimited } = require('../../lib/gh');
 const { gitPath } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
+const { until } = require('../../lib/process');
 
 const {
   createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES, MOVE_STATUSES,
@@ -221,6 +222,28 @@ const getJson = async (client, p) => {
   return { status: res.status, body: await res.json() };
 };
 
+// Re-read /api/board from <body> until its first repo stops loading, one read
+// in flight at a time; the last board read, settled or not at the deadline,
+// or the failed read's error.
+const sweptBoard = async (client, body) => {
+  let last = body;
+  let asking = null;
+  let failed = null;
+  await until(() => {
+    if (failed || !last.repos[0].loading) return true;
+    if (!asking) {
+      asking = getJson(client, '/api/board').then(
+        (res) => { last = res.body; asking = null; },
+        (err) => { failed = err; asking = null; },
+      );
+    }
+    return false;
+  });
+  await asking;
+  if (failed) throw failed;
+  return last;
+};
+
 const postJson = async (client, p, payload) => {
   const res = await fetch(client.url(p), {
     method: 'POST',
@@ -277,5 +300,5 @@ const scriptHead = (world, answers) => {
 module.exports = {
   createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES, MOVE_STATUSES,
   cleanup, SLUG, issueNode, mkWorld, BOARD_PAGES, pageTheBoard, limitDiscussions,
-  listen, worldOpts, start, getJson, postJson, raw, ghCalls, tiles, scriptHead,
+  listen, worldOpts, start, getJson, sweptBoard, postJson, raw, ghCalls, tiles, scriptHead,
 };

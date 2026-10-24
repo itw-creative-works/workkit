@@ -59,8 +59,7 @@ const run = async () => {
     assert(/no brief this morning/.test(world.log()), `the log says the morning is briefless: ${world.log()}`);
     assert(/did not land/.test(world.log()), `and names the reason: ${world.log()}`);
     assert(/no brief this morning/.test(res.stderr), `it reaches the plist log too: ${res.stderr}`);
-    await settle();
-    assertEq(world.notifs().length, 0, 'and nothing was announced: there is no digest to announce');
+    assert(!(await settle(world)), 'and nothing was announced: there is no digest to announce');
     cleanup(world.root);
   });
 
@@ -79,7 +78,7 @@ const run = async () => {
     assert(/marker: the engine library is missing/.test(world.log()), `the marker names the missing lib: ${world.log()}`);
     const said = [world.log(), res.stdout, res.stderr].join('\n');
     assert(said.includes('morning.d: the engine library is missing'), `and so does the morning.d step: ${said}`);
-    await settle();
+    await settle(world);
     cleanup(world.root);
   });
 

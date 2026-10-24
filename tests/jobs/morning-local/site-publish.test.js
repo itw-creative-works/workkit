@@ -25,7 +25,7 @@ const run = async () => {
     const text = fs.readFileSync(SCRIPT, 'utf8');
     assert(/publish\.sh" --quiet/.test(text), 'the daily run asks for the quiet variant');
     assert(/publish exit %d; the brief was already sent/.test(text), 'and a failure is logged, never fatal');
-    await settle();
+    await settle(world);
     cleanup(world.root);
   });
 
@@ -40,7 +40,7 @@ const run = async () => {
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assert(!SITE_BLOCK.test(world.log()), `the log stays about the morning, got: ${world.log()}`);
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'and the brief is untouched');
-    await settle();
+    await settle(world);
     cleanup(world.root);
   });
 

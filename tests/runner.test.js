@@ -75,20 +75,15 @@ const linesOf = (output) => stripVTControlCharacters(output).split(/\r?\n/);
 
 // Fixture-side helpers for suites that meet across processes: the fixture
 // root, a sleep, a marker file, and a wait for another suite's marker that
-// gives up (false) after five seconds, so a runner that never overlaps them fails.
+// gives up (false) at the shared deadline, so a runner that never overlaps them fails.
 const MEET = `
   const fs = require('fs');
   const path = require('path');
+  const { until } = require(${JSON.stringify(path.join(KIT_TEST, 'lib', 'process.js'))});
   const root = path.join(__dirname, '..');
   const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
   const mark = (name, text = '') => fs.appendFileSync(path.join(root, name), text);
-  const waitFor = async (name) => {
-    for (let i = 0; i < 50; i++) {
-      if (fs.existsSync(path.join(root, name))) return true;
-      await sleep(100);
-    }
-    return false;
-  };
+  const waitFor = (name) => until(() => fs.existsSync(path.join(root, name)));
 `;
 
 const SELF_RUN = /^if \(require\.main === module\) selfRun\(/m;

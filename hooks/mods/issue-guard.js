@@ -6,7 +6,7 @@
  * shape (named by kind). It runs opted in or not (docs/hooks.md § safety:issue-guard).
  */
 
-import { BLANK, anyLine } from './command.js';
+import { BLANK, anyLine, repoSlug } from './command.js';
 
 // grep reads a command line by line, so every pattern here is tried per line.
 const GH_WORD = '(^|[^A-Za-z0-9_./-])gh';
@@ -24,6 +24,14 @@ const ANY_FIELD = new RegExp(`(^|${BLANK})(-[fF]|--field|--raw-field|--input)[= 
 const BODY_FLAG = new RegExp(`(--body-file|--raw-field|--field|--input|(^|${BLANK})-F)[= \\t\\v\\f\\r]+[^ \\t\\v\\f\\r]+`, 'g');
 const BODY_FLAG_HEAD = new RegExp(`^${BLANK}*(--body-file|--raw-field|--field|--input|-F)[= \\t\\v\\f\\r]+`);
 const AT_FILE = new RegExp(`(^|${BLANK})(-[fF]|--field|--raw-field)[= \\t\\v\\f\\r]+[A-Za-z_][A-Za-z0-9_]*=["']?@[^ \\t\\v\\f\\r"']+`, 'g');
+
+// The public GitHub names a text spells: a github.com/<o>/<n> URL, a REST
+// repos/<o>/<n> path and a --repo/-R <o>/<n> flag (-R attached too), the name
+// cut at the first character no name holds, then one trailing punctuation mark.
+const GH_URL = /github\.com\/([^/\s#?"']+)\/([^/\s#?"']+)/g;
+const REST_NAMED = /(?:^|[^A-Za-z0-9_.-])repos\/([^/\s#?"']+)\/([^/\s#?"']+)/g;
+const REPO_NAMED = /(?:^|\s)(?:--repo(?:=|[ \t\v\f\r]+)|-R(?:=|[ \t\v\f\r]*))["']?([^/\s"']+)\/([^/\s#?"']+)/g;
+const NAME_TAIL = /[.,;:)\]>`"']$/;
 
 // The committed example and template variants hold public placeholders.
 const ENV_SKIP = new Set(['.env.example', '.env.sample', '.env.template', '.env.defaults']);
@@ -104,13 +112,36 @@ function isPlain(value) {
   return /^[0-9.]*$/.test(value);
 }
 
-// The key of the first local .env value the text carries, or null.
-function envLeak(envFiles, text) {
+/**
+ * The lowercase owner and name segments the text's GitHub URLs, REST repo
+ * paths and repo flags spell, plus the two segments of the origin slug:
+ * public by construction.
+ * @param {string} text the outbound text
+ * @param {string|null} slug the origin's `owner/name`, null for no origin
+ * @returns {Set<string>}
+ */
+export function publicNames(text, slug) {
+  const names = new Set();
+  const add = (owner, name) => {
+    names.add(owner.toLowerCase());
+    names.add(name.replace(NAME_TAIL, '').replace(/\.git$/, '').toLowerCase());
+  };
+  for (const re of [GH_URL, REST_NAMED, REPO_NAMED]) {
+    for (const m of text.matchAll(re)) add(m[1], m[2]);
+  }
+  if (slug) add(...slug.split('/'));
+  return names;
+}
+
+// The key of the first local .env value the text carries and `names` does
+// not hold (lowercase), or null.
+function envLeak(envFiles, text, names) {
   for (const { path, text: env } of envFiles) {
     if (ENV_SKIP.has(path.split('/').pop())) continue;
     for (const line of env.split('\n')) {
       const pair = envPair(line);
-      if (pair && !isPlain(pair.value) && text.includes(pair.value)) return pair.key;
+      if (!pair || isPlain(pair.value) || names.has(pair.value.toLowerCase())) continue;
+      if (text.includes(pair.value)) return pair.key;
     }
   }
   return null;
@@ -128,20 +159,20 @@ function tokenLeak(text) {
 /**
  * issue-guard's verdict on a Bash command: the block naming the key or the
  * kind its outbound text carries, else null.
- * @param {{command: string, envFiles: Array<{path: string, text: string}>, bodies: object}} facts
+ * @param {{command: string, envFiles: Array<{path: string, text: string}>, bodies: object, slug: string|null}} facts
  *   the command; the local .env files, the session folder's then the repo
  *   root's; each body file's text by the path `bodyPaths` names it, a path
- *   that is no file left out
+ *   that is no file left out; the origin's `owner/name`, null for none
  * @returns {{deny: string}|null}
  */
-export function issueGuardVerdict({ command, envFiles, bodies }) {
+export function issueGuardVerdict({ command, envFiles, bodies, slug }) {
   if (!isOutbound(command)) return null;
   const parts = [command];
   for (const path of bodyPaths(command)) {
     if (typeof bodies[path] === 'string') parts.push(bodies[path].replace(/\n+$/, ''));
   }
   const text = parts.join('\n');
-  const key = envLeak(envFiles, text);
+  const key = envLeak(envFiles, text, publicNames(text, slug));
   const found = key ? `the value of ${key} from a local .env file` : tokenLeak(text);
   if (!found) return null;
   return {
@@ -158,11 +189,12 @@ async function envFilesIn(dir, list, read) {
 
 /**
  * The guard's run over the Bash facts: an outbound command reads its body
- * files and the .env files of its folder and of the repo root above it.
- * @param {{command: string, cwd: string, top: function, read: function, list: function}} facts the chain's facts
+ * files, the .env files of its folder and of the repo root above it, and,
+ * when it found any .env file, the repo's origin slug.
+ * @param {{command: string, cwd: string, top: function, read: function, list: function, run: function}} facts the chain's facts
  * @returns {Promise<{deny: string}|null>}
  */
-export async function issueGuardGuard({ command, cwd, top, read, list }) {
+export async function issueGuardGuard({ command, cwd, top, read, list, run }) {
   if (!isOutbound(command)) return null;
   const bodies = {};
   for (const path of bodyPaths(command)) {
@@ -174,5 +206,6 @@ export async function issueGuardGuard({ command, cwd, top, read, list }) {
     ...(await envFilesIn(cwd, list, read)),
     ...(root && root !== cwd ? await envFilesIn(root, list, read) : []),
   ];
-  return issueGuardVerdict({ command, envFiles, bodies });
+  const slug = envFiles.length > 0 ? (await repoSlug(root ?? cwd, run)) || null : null;
+  return issueGuardVerdict({ command, envFiles, bodies, slug });
 }

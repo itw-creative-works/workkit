@@ -9,7 +9,7 @@ const {
 } = require('../../lib/harness');
 const { stubTool } = require('../../lib/platform');
 const {
-  skipUnlessDarwin, cleanup, mkWorld, runJob, notified, notifiedMatching, settle, noNodeTest, withoutNode,
+  skipUnlessDarwin, cleanup, mkWorld, runJob, notified, notifiedMatching, noNodeTest, withoutNode,
 } = require('./helpers');
 const { NO_NODE_LINE } = require('../../lib/job-path');
 
@@ -106,7 +106,6 @@ const run = async () => {
     const res = runJob(world, ['hello']);
     assertEq(res.status, 0, `a missing notifier never fails the job: ${res.stderr}`);
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'the response still goes to stdout');
-    await settle();
     const skipped = world.log().split('\n').filter((l) => /notifly/i.test(l) && /skip/i.test(l));
     assertEq(skipped.length, 1, `one line naming the skipped notification: ${world.log()}`);
     cleanup(world.root);

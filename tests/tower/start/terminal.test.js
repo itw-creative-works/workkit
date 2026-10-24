@@ -13,6 +13,7 @@ const {
   probeStub, ptyRun, hasExpect,
 } = require('./helpers');
 const { mkTmp } = require('../../lib/scratch');
+const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const run = async () => {
   group('tower/start: the terminal');
@@ -106,7 +107,7 @@ const run = async () => {
         '',
       ].join('\n'));
       fs.writeFileSync(script, [
-        'set timeout 20',
+        `set timeout ${SPAWN_DEADLINE / 1000}`,
         `spawn bash ${shellPath(runner)}`,
         'expect -re "dashboard at"',
         'send \\003',

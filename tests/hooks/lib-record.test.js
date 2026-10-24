@@ -11,6 +11,7 @@ const { SYSTEM_PATH, shellPath, digestTool } = require('../lib/platform');
 const { mkTmp } = require('../lib/scratch');
 const { plantRecord, pkgRecord } = require('../lib/suite-record');
 const { runLib } = require('../lib/hook-lib');
+const { until } = require('../lib/process');
 
 // Two tree ids a record can hold, neither a real tree.
 const ID = '1111111111111111111111111111111111111111';
@@ -54,15 +55,16 @@ const run = async () => {
     assertEq(untracked, git(dir, 'write-tree'), 'the hash is what a real add -A then write-tree names');
   });
 
-  await test("wk_tree_hash: a same-size edit in the index's own second is still seen", () => {
+  await test("wk_tree_hash: a same-size edit in the index's own second is still seen", async () => {
     const dir = mkTmp('lib-racy-');
     git(dir, 'init', '-q');
     fs.writeFileSync(path.join(dir, 'a.js'), 'one\n');
     git(dir, 'add', '-A');
     git(dir, 'commit', '-q', '-m', 'seed');
+    const added = Math.floor(Date.now() / 1000);
     fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
     // Past the index's second, so a copy stamped now would trust the stale stat.
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1100);
+    await until(() => Math.floor(Date.now() / 1000) > added);
     const index = path.join(mkTmp('lib-racy-index-'), 'index');
     const fresh = { ...process.env, GIT_INDEX_FILE: index };
     spawnSync('git', ['add', '-A'], { cwd: dir, env: fresh });

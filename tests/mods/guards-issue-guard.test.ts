@@ -19,6 +19,8 @@ const ENV_FILES = {
   [`${REPO}/.env`]: `# a comment\nAPI_SECRET=${SECRET}\nDEBUG=true\n`,
   [`${REPO}/.env.example`]: 'API_SECRET=your-api-key-here-1234\n',
 }
+const ORG_FILES = { [`${REPO}/.env`]: 'ORG="itw-creative-works"\n' }
+const ORG_BODY = 'gh issue comment 1 --body "itw-creative-works is the org"'
 
 describe('tool.call Bash: safety:issue-guard', () => {
   test('given gh issue create whose text carries a .env value: the deny names the key, never the value', { plugins: [TOOL_SPY] }, async ($, on) => {
@@ -70,5 +72,19 @@ describe('tool.call Bash: safety:issue-guard', () => {
     expect(denyOf(w, 0)).toBeNull()
     expect(denyOf(w, 1)).toBeNull()
     expect(w.toolRan?.command).toBe('gh issue comment 57 --body "specced: the guard blocks the outbound write"')
+  })
+
+  test('a .env value naming the org, from a repo whose origin is under the org: the write passes', { plugins: [TOOL_SPY] }, async ($, on) => {
+    const w = mkWorld(on, { files: ORG_FILES, origins: { [REPO]: 'https://github.com/itw-creative-works/workkit.git' } })
+    await bash($, ORG_BODY)
+    expect(denyOf(w)).toBeNull()
+    expect(w.toolRan?.command).toBe(ORG_BODY)
+  })
+
+  test('the same text from a repo with no origin: the deny names ORG', { plugins: [TOOL_SPY] }, async ($, on) => {
+    const w = mkWorld(on, { files: ORG_FILES, origins: { [REPO]: null } })
+    await bash($, ORG_BODY)
+    expect(denyOf(w)).toBe(ENV_VALUE('ORG'))
+    expect(w.toolRan).toBeUndefined()
   })
 })

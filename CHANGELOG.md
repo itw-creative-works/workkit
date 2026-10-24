@@ -7,6 +7,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+- [#458](../../issues/458) - The ship runs the root `npm test` after the scorer and its fix round, on the staged final tree, or `workkit prove` once when the index differs from the disk; the steps after the push wait for a green CI watch, and one gh call moves each label.
+
+### Fixed
+- [#457](../../issues/457) - `safety:test-bar` names, under a `deadline` rule, any test line that writes a wait bound as a number literal (a timer, a sleep, a timeout option, `Atomics.wait`), and the kit's own tests sit on the shared deadline, polling `until` a condition holds instead of sleeping a fixed time.
+- [#461](../../issues/461) - `safety:issue-guard` no longer refuses a gh write because a `.env` value equals an owner or repo name the command itself names (a GitHub URL, a REST path, a `--repo` flag, the cwd repo's own slug); a secret-shaped value beside such a name still blocks, naming its key.
+
 ## [0.81.0] - 2026-10-23
 
 ### Added

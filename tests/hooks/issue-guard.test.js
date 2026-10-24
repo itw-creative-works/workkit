@@ -1,5 +1,5 @@
 // Tests for safety:issue-guard's logic, issueGuardVerdict({ command,
-// envFiles, bodies }) in hooks/mods/issue-guard.js: a gh issue or pr write, a
+// envFiles, bodies, slug }) in hooks/mods/issue-guard.js: a gh issue or pr write, a
 // GraphQL discussion or issue mutation, or a REST write to an issue or pull
 // endpoint is refused when its outbound text carries a local .env value (named
 // by KEY) or a token shape (named by kind). Each case ports the HEAD case its
@@ -36,8 +36,8 @@ const BLOCK = (what) => `issue-guard: BLOCKED this gh command: the outbound text
 const ENV_VALUE = (key) => BLOCK(`the value of ${key} from a local .env file`);
 const GITHUB = BLOCK('a GitHub token-shaped string');
 
-const judge = async (command, { envFiles = CWD_ENV, bodies = {} } = {}) => mods('issue-guard')
-  .issueGuardVerdict({ command, envFiles, bodies });
+const judge = async (command, { envFiles = CWD_ENV, bodies = {}, slug = null } = {}) => mods('issue-guard')
+  .issueGuardVerdict({ command, envFiles, bodies, slug });
 
 const denyOf = (r) => (r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null);
 
@@ -337,6 +337,58 @@ const run = async () => {
     const envFiles = [{ path: `${CWD}/.env`, text: `BEACON_ID=${value}\n` }];
     const deny = await blocks(`gh issue comment 12 --body "it failed with ${value} today"`, ENV_VALUE('BEACON_ID'), { envFiles });
     assert(!deny.includes(value), 'never echoes the value');
+  });
+
+  group('issue-guard: public GitHub names');
+
+  // The org slug sits in the .env beside the real secret; a name the outbound
+  // text or the origin slug makes public is never a leak.
+  const ORG_ENV = [{ path: ENV.path, text: `${ENV.text}ORG="itw-creative-works"\n` }, EXAMPLE];
+  const ORG_BODY = 'gh issue comment 1 --body "itw-creative-works is the org"';
+
+  await test('a --repo flag naming the org: the write passes', async () => {
+    await passes('gh issue comment 1 --repo itw-creative-works/workkit --body "x"', { envFiles: ORG_ENV });
+  });
+
+  await test('a body file linking a github.com URL under the org: the write passes', async () => {
+    await passes('gh issue comment 1 --body-file b.md', {
+      envFiles: ORG_ENV,
+      bodies: { 'b.md': 'https://github.com/itw-creative-works/workkit/issues/4\n' },
+    });
+  });
+
+  await test('the org named with no slug in the text, from another origin: refused naming ORG', async () => {
+    const deny = await blocks(ORG_BODY, ENV_VALUE('ORG'), { envFiles: ORG_ENV, slug: 'alice/dotfiles' });
+    assert(!deny.includes('itw-creative-works'), 'never echoes the value');
+  });
+
+  await test('the same text from a repo whose origin owner is the org: the write passes', async () => {
+    await passes(ORG_BODY, { envFiles: ORG_ENV, slug: 'itw-creative-works/workkit' });
+  });
+
+  await test('a real secret beside a public --repo slug: refused naming API_SECRET', async () => {
+    await blocks(`gh issue comment 1 --repo itw-creative-works/workkit --body "${SECRET}"`, ENV_VALUE('API_SECRET'), { envFiles: ORG_ENV });
+  });
+
+  await test('a -R flag spelled in another case: the write passes', async () => {
+    await passes('gh issue comment 1 -R Itw-Creative-Works/Workkit --body "x"', { envFiles: ORG_ENV });
+    await passes('gh issue comment 1 -R Itw-Creative-Works/Workkit --body "itw-creative-works is the org"', { envFiles: ORG_ENV });
+  });
+
+  await test('a REST path naming the org: the write passes', async () => {
+    await passes('gh api repos/itw-creative-works/workkit/issues/4/comments -f body="x"', { envFiles: ORG_ENV });
+  });
+
+  await test('a -R flag attached to its slug: the write passes', async () => {
+    await passes('gh issue comment 1 -Ritw-creative-works/workkit --body "x"', { envFiles: ORG_ENV });
+  });
+
+  await test('a github.com name segment ending in one punctuation character: the write passes', async () => {
+    await passes('gh issue comment 1 --body "see (https://github.com/alice/itw-creative-works)"', { envFiles: ORG_ENV });
+  });
+
+  await test('a real secret beside a public REST path: refused naming API_SECRET', async () => {
+    await blocks(`gh api repos/itw-creative-works/workkit/issues/4/comments -f body="${SECRET}"`, ENV_VALUE('API_SECRET'), { envFiles: ORG_ENV });
   });
 
   group('issue-guard: fail-open');

@@ -261,7 +261,9 @@ const notifiedMatching = async (world, pattern) => {
   return match();
 };
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
+// The detached notifier's moment before a case removes its world: over once a
+// notification lands, or after a short bound when none comes.
+const settle = (world) => until(() => world.notifs().length > 0, 500);
 
 // The system tools and the fake ones: no node anywhere the case controls.
 const withoutNode = (world) => { world.env.PATH = systemPathWith(path.join(world.root, 'bin')); };

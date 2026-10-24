@@ -193,8 +193,7 @@ const run = async () => {
         const errors = out().split('\n').filter((line) => line.trim() && !STARTING.test(line));
         assertEq(errors.join('\n'), '', 'and it printed no error line, only that it was starting');
         // A half spawned late would still be writing its pid file; give it time.
-        await new Promise((resolve) => { setTimeout(resolve, 300); });
-        assert(halves.every((file) => !fs.existsSync(file)), 'nor spawned a half after the signal');
+        assert(!(await until(() => halves.some((file) => fs.existsSync(file)), 300)), 'nor spawned a half after the signal');
       } finally {
         child.kill('SIGKILL');
         cleanup(dir);

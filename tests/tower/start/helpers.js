@@ -10,7 +10,7 @@ const { testUnless } = require('../../lib/harness');
 const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
 const { mkTmp } = require('../../lib/scratch');
 const {
-  alive, until, elapsedUntil, readPid, collect,
+  SPAWN_DEADLINE, alive, until, elapsedUntil, readPid, collect,
 } = require('../../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'tower', 'start.sh');
@@ -248,7 +248,7 @@ const ptyRun = (dir, app, exports = []) => {
     '',
   ].join('\n'));
   fs.writeFileSync(script, [
-    'set timeout 20',
+    `set timeout ${SPAWN_DEADLINE / 1000}`,
     `spawn bash ${shellPath(runner)}`,
     'expect -re "dashboard at"',
     'send \\003',

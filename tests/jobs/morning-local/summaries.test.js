@@ -21,7 +21,7 @@ const run = async () => {
     assert(fs.existsSync(world.nightlyLog), 'the step ran: it kept its own log');
     assert(/summaries: no home repo configured; skipped/.test(fs.readFileSync(world.nightlyLog, 'utf8')),
       'and said why it had nothing to do');
-    await settle();
+    await settle(world);
     cleanup(world.root);
   });
 
@@ -35,7 +35,7 @@ const run = async () => {
     assert(/summaries: this machine has no session transcripts to read; skipped/.test(world.log()),
       `the log names the gate: ${world.log()}`);
     assert(!fs.existsSync(world.nightlyLog), 'and the step was never started');
-    await settle();
+    await settle(world);
     cleanup(world.root);
   });
 
@@ -51,7 +51,7 @@ const run = async () => {
     assert(/\[summaries exit \d+; the brief continues\]/.test(world.log()),
       `the log names the failed step: ${world.log().slice(0, 300)}`);
     assertEq(world.dispatched().length, 1, 'and the day was still handed over');
-    await settle();
+    await settle(world);
     cleanup(world.root);
   });
 
