@@ -47,7 +47,7 @@ const SILENT = [
   'the context of the bug is issue #12',
 ];
 
-const run = async () => {
+const cases = async () => {
   group('docs-checkpoint: the compaction phrases fire');
   for (const prompt of FIRING) {
     await test(`ports "fires on "${prompt}""`, () => {
@@ -79,7 +79,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

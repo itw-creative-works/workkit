@@ -32,7 +32,7 @@ const passes = async (command, facts) => {
   assertEq(textOf(r), '', `silently: ${command}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-language: bounced messages');
 
   await test('ports "kill in -m message: exit 2 with replacement guidance"', async () => {
@@ -221,7 +221,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

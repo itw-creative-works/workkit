@@ -13,7 +13,7 @@ const {
 
 const strip = (text) => mods('command').stripQuotes(text);
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: a quoted message never hides a pathspec (issue #25)');
 
   await test('ports "quoted and unquoted pathspec commits gate identically"', async () => {
@@ -75,7 +75,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

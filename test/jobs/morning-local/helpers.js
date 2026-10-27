@@ -8,14 +8,12 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
-const { skipSuite } = require('../../lib/harness');
+const { skipSuite, mkTmp, SPAWN_DEADLINE, until } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
   BASH, NO_RC, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, stubTool, pathWith, systemPathWith, joinPath,
 } = require('../../lib/platform');
 const { noNodeTest, barePathTest } = require('../../lib/job-path');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE, until } = require('../../lib/process');
 const { mkKitRepo } = require('../../scripts/home/helpers');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');

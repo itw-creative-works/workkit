@@ -6,7 +6,7 @@ const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): the site publish');
@@ -17,10 +17,10 @@ const run = async () => {
     const world = mkWorld({ badSettings: true });
     const res = runJob(world, ['--now']);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    const log = world.log();
-    assert(log.includes('HEADLINE: one thing today.'), `the brief reached the log: ${log}`);
-    assert(log.indexOf('publish:') > log.indexOf('HEADLINE: one thing today.'),
-      `and nothing is built before the brief has gone: ${log}`);
+    const logText = world.log();
+    assert(logText.includes('HEADLINE: one thing today.'), `the brief reached the log: ${logText}`);
+    assert(logText.indexOf('publish:') > logText.indexOf('HEADLINE: one thing today.'),
+      `and nothing is built before the brief has gone: ${logText}`);
 
     const text = fs.readFileSync(SCRIPT, 'utf8');
     assert(/publish\.sh" --quiet/.test(text), 'the daily run asks for the quiet variant');
@@ -58,15 +58,15 @@ const run = async () => {
     const world = mkWorld({ badSettings: true });
     const res = runJob(world);
     assertEq(res.status, 0, `the morning is untouched: ${res.stderr}`);
-    const log = world.log();
-    assert(SITE_BLOCK.test(log), `the warning reached the log: ${log}`);
-    assert(/does not parse as JSON/.test(log), `and says what is wrong: ${log}`);
+    const logText = world.log();
+    assert(SITE_BLOCK.test(logText), `the warning reached the log: ${logText}`);
+    assert(/does not parse as JSON/.test(logText), `and says what is wrong: ${logText}`);
     cleanup(world.root);
   });
 
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

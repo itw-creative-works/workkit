@@ -7,14 +7,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { assert } = require('../../lib/harness');
+// Aliased: `seeded` here is the runner-seeded world below.
+const { assert, mkTmp, seeded: seedOnce, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
-const { mkTmp } = require('../../lib/scratch');
-// Aliased: `seeded` here is the runner-seeded world below.
-const { seeded: seedOnce } = require('../../lib/seed');
 const { STAMP } = require('../../lib/version-stamp');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 // The plugin checkout the cloud brief's runner is seeded from: the real one,

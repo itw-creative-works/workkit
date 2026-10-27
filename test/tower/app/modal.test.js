@@ -6,7 +6,7 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { format, modal } = await loadLibs();
 
   group('tower/app: modal - the issue dialog');
@@ -326,6 +326,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

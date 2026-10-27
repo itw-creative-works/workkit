@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { mkTmp } = require('./scratch');
+const { mkTmp } = require('./harness');
 
 const repoRoot = (dir) => spawnSync('git', ['rev-parse', '--show-toplevel'],
   { cwd: dir, encoding: 'utf8' }).stdout.trim();

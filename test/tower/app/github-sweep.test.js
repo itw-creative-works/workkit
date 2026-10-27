@@ -7,7 +7,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { github } = await loadLibs();
 
   group('tower/app: github - the sweep is the tower’s own');
@@ -249,6 +249,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

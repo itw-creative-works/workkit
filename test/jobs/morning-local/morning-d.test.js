@@ -5,9 +5,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, testUnless, assert, assertEq, summary, selfRun, alive, readPid } = require('../../lib/harness');
 const { stubTool, which } = require('../../lib/platform');
-const { alive, readPid } = require('../../lib/process');
 const { skipUnlessDarwin, cleanup, mkWorld, runJob } = require('./helpers');
 
 // The job bounds a step only where a `timeout` exists, so the timeout case
@@ -40,7 +39,7 @@ const allLines = (world, res) => [world.log(), res.stdout, res.stderr].join('\n'
 const warnedAbout = (world, res, name) => allLines(world, res)
   .filter((l) => l.includes(name) && !/^--- .+ ---$/.test(l));
 
-const run = async () => {
+const cases = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): the morning.d folder');
@@ -55,15 +54,15 @@ const run = async () => {
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
     assertEq(ran(order).join(','), '10-a.sh,20-b.sh', 'both ran, in name order');
 
-    const log = world.log();
-    const a = headerAt(log, '10-a.sh');
-    const b = headerAt(log, '20-b.sh');
-    assert(a >= 0 && b >= 0, `each script has its own header: ${log}`);
-    const outA = log.indexOf('output of 10-a.sh');
-    const outB = log.indexOf('output of 20-b.sh');
-    assert(a < outA && outA < b && b < outB, `each output sits under its own header: ${log}`);
-    const status = log.indexOf('marker: ');
-    assert(status >= 0 && status < a, `the brief status comes first: ${log}`);
+    const logText = world.log();
+    const a = headerAt(logText, '10-a.sh');
+    const b = headerAt(logText, '20-b.sh');
+    assert(a >= 0 && b >= 0, `each script has its own header: ${logText}`);
+    const outA = logText.indexOf('output of 10-a.sh');
+    const outB = logText.indexOf('output of 20-b.sh');
+    assert(a < outA && outA < b && b < outB, `each output sits under its own header: ${logText}`);
+    const status = logText.indexOf('marker: ');
+    assert(status >= 0 && status < a, `the brief status comes first: ${logText}`);
     cleanup(world.root);
   });
 
@@ -148,6 +147,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

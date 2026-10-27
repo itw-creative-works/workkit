@@ -77,7 +77,7 @@ const silent = async (command, over = proved, list = []) => {
   assertEq(textOf(r), '', `and say nothing: ${command}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('suite-guard: a repeat on a proved tree');
 
   await test('ports "a first full run passes: no marker records the tree"', async () => {
@@ -334,7 +334,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

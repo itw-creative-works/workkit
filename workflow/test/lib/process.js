@@ -1,7 +1,8 @@
 /**
  * Watching a process a suite started without waiting for it: whether a pid is
  * alive, a bounded poll for a condition, a pid read from the file a script
- * left, both streams of a captured child, and the one spawn deadline.
+ * left, both streams of a captured child, the one spawn deadline and the
+ * pipe grace.
  */
 
 const fs = require('fs');
@@ -12,6 +13,10 @@ const fs = require('fs');
  * case asserts order and never a duration.
  */
 const SPAWN_DEADLINE = 60000;
+
+// How long a child's pipes stay open past its exit, for a grandchild still
+// holding them; the child's own output is already in the pipe by then.
+const PIPE_GRACE_MS = 1000;
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
@@ -67,5 +72,5 @@ const collect = (child) => {
 };
 
 module.exports = {
-  SPAWN_DEADLINE, alive, until, elapsedUntil, readPid, collect,
+  SPAWN_DEADLINE, PIPE_GRACE_MS, alive, until, elapsedUntil, readPid, collect,
 };

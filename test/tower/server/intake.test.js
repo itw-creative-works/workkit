@@ -9,7 +9,7 @@ const {
   MAX_REQUEST_BYTES, cleanup, SLUG, mkWorld, start, postJson, raw, ghCalls,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/api/server: intake, the filing write path');
 
   await test('a valid filing calls gh with exactly the expected ARGV and returns the url', async () => {
@@ -124,6 +124,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

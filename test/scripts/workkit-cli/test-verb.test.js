@@ -7,12 +7,11 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { stripVTControlCharacters } = require('util');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun, seeded,
 } = require('../../lib/harness');
 const {
   IS_WINDOWS, NODE_DIR, shellPath, joinPath, basePathWithout,
 } = require('../../lib/platform');
-const { seeded } = require('../../lib/seed');
 const { treeHash } = require('../../lib/suite-record');
 const {
   EXE_CLAUDE_HOME, wireShell, scratchNpmrc, skipWithoutWrapper, recorded, assertRecord, packaged,
@@ -76,7 +75,7 @@ const ran = (lines, name) => lines.some((line) => line.includes(name));
 // The totals line: `passed` passing cases, none failed, across `suites` suites.
 const TOTALS = (passed, suites) => new RegExp(`^${passed} passed, 0 failed \\(\\d+(?:\\.\\d+)?s, ${suites} suites?\\)$`);
 
-const run = async () => {
+const cases = async () => {
   skipWithoutWrapper();
 
   group('workkit test: the repo\'s npm test, from its root');
@@ -162,7 +161,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

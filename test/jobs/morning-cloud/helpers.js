@@ -9,14 +9,12 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
-const { testUnless } = require('../../lib/harness');
+const { testUnless, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
   IS_WINDOWS, BASH, NO_RC, NO_NODE_STUB, shellPath, which, homeEnv, linkTool,
   stubTool, pathWith, joinPath,
 } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));

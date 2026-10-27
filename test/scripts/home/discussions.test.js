@@ -6,7 +6,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { cleanup, mkWorld, inHome } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/discussions: posting and reading back');
 
   await test('a summary is posted, and the discussion URL comes back', () => {
@@ -46,6 +46,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

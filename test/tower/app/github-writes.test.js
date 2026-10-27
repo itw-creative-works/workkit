@@ -9,7 +9,7 @@ const {
   WITH_CONTRACT, WITHOUT_CONTRACT, SMALL_ITEM, SMALL_ITEM_PADDED, NO_SPEC, contractReason, noSpecReason,
 } = require('../spec-bodies');
 
-const run = async () => {
+const cases = async () => {
   const { github } = await loadLibs();
 
   group('tower/app: github - the two writes');
@@ -290,6 +290,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

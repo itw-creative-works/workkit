@@ -9,7 +9,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { gitPath, joinPath } = require('../../lib/platform');
 const { cleanup, git, mkWorld, binDirWithout, publish, setSite, fromPages, onMain } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish: the owner’s switches');
 
   await test('the slug list is written to the home repo’s default branch: names and each machine’s entry, nothing else', () => {
@@ -367,6 +367,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

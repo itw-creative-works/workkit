@@ -49,7 +49,7 @@ const passes = async (command, what = command) => {
   return out;
 };
 
-const run = async () => {
+const cases = async () => {
   group('spec-guard: the flip to status:specced');
 
   await test('ports "the small-item Spec passes, silently": one body read of #12', async () => {
@@ -156,7 +156,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

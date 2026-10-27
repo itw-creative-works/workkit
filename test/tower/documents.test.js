@@ -5,8 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { mkTmp } = require('../lib/scratch');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 
 const { documentsFrom, readable, DOCUMENT_LIMIT } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'documents.js'));
 const { readDiscussions, historyFrom } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
@@ -49,7 +48,7 @@ const mkExec = (nodes, calls = []) => (cmd, args) => {
   return JSON.stringify({ data: { repository: { discussions: { nodes } } } });
 };
 
-const run = async () => {
+const cases = async () => {
   group('tower/documents: every morning, and every summary beside it');
 
   await test('both kinds of post are documents, newest first, and the title says which is which', () => {
@@ -152,6 +151,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

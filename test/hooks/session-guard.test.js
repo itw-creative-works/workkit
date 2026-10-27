@@ -13,7 +13,7 @@ const verdict = (text, file = SESSION) => textOf(mods('session-guard').sessionGu
 const doc = (bullets) => ['# Session', '', '## Active', ...bullets, '', '## Queue', '', '## Notes', ''].join('\n');
 const notes = (n) => Array.from({ length: n }, (_, i) => `- #${i}: a queued entry.`);
 
-const run = async () => {
+const cases = async () => {
   group('session-guard: the line cap');
 
   await test('ports "a session.md left over 40 content lines is bounced, count named"', () => {
@@ -99,7 +99,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

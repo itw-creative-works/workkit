@@ -10,7 +10,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { shellPath } = require('../../lib/platform');
 const { cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the seed');
 
   await test('the tower app becomes the project, minus everything a checkout accretes', () => {
@@ -130,6 +130,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

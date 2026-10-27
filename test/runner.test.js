@@ -8,14 +8,11 @@
 const path = require('path');
 const fs = require('fs');
 const { stripVTControlCharacters } = require('util');
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, selfRun, summary,
+  group, test, testUnless, assert, assertEq, selfRun, summary, findSuites, POOL, mkTmp, SPAWN_DEADLINE, until, alive, start, endTree,
 } = require('./lib/harness');
-const { findSuites, POOL } = require('./lib/suites');
-const { mkTmp } = require('./lib/scratch');
 const { which, basePathWithout, joinPath, NODE_DIR } = require('./lib/platform');
-const { SPAWN_DEADLINE, until, alive } = require('./lib/process');
 
 const KIT_TEST = path.join(__dirname, '..', 'workflow', 'test');
 const RUNNER = path.join(KIT_TEST, 'run.js');
@@ -101,13 +98,13 @@ const SELF_RUN = /^if \(require\.main === module\) selfRun\(/m;
 
 const SUITE = (inner) => `
 const { test, assert, skip, skipSuite, summary } = require('./lib/harness');
-const run = async () => {
+const cases = async () => {
 ${inner}
 };
-module.exports = async () => { await run(); return summary(); };
+module.exports = async () => { await cases(); return summary(); };
 `;
 
-const run = async () => {
+const cases = async () => {
   group('run.js: a suite that cannot run here');
 
   await test('a skipped suite names its reason and keeps the run green', () => {
@@ -370,7 +367,7 @@ const run = async () => {
     const pid = Number(files['sleeper.pid']);
     // A pid of 0 would signal this process group, so only a written pid is probed and killed.
     const sleeperAlive = pid > 0 && alive(pid);
-    if (pid > 0) { try { process.kill(pid); } catch {} }
+    if (pid > 0) endTree(pid);
     assertEq(code, 0, `exit 0, got: ${output}`);
     assert(sleeperAlive, `the run ended while the sleeper still held its pipes: ${output}`);
   });
@@ -395,18 +392,18 @@ const run = async () => {
 `),
     });
     const pidFile = path.join(root, 'worker.pid');
-    const runner = spawn(process.execPath, [RUNNER], { cwd: root, stdio: 'ignore' });
+    const runner = start(process.execPath, [RUNNER], { cwd: root });
     try {
       const wrote = await until(() => fs.existsSync(pidFile) && Number(fs.readFileSync(pidFile, 'utf8')) > 0);
       assert(wrote, 'the worker wrote its pid');
       const pid = Number(fs.readFileSync(pidFile, 'utf8'));
       assert(pid !== runner.pid, 'the suite ran in a worker, not in the runner itself');
-      runner.kill('SIGKILL');
+      runner.child.kill('SIGKILL');
       const gone = await until(() => !alive(pid));
-      if (!gone) { try { process.kill(pid); } catch {} }
+      if (!gone) endTree(pid);
       assert(gone, `worker ${pid} outlived its runner`);
     } finally {
-      runner.kill('SIGKILL');
+      await runner.end('SIGKILL');
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
@@ -738,7 +735,7 @@ describe.skip('the parked group', () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

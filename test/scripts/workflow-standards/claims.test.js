@@ -8,7 +8,7 @@ const {
   MANIFEST, desiredLabels, cleanup, makeRepo, makeGhStub, ghCalls, runScript,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: the stale-claim sweep');
 
   // An agent that claimed an issue and then died leaves it locked against every
@@ -273,6 +273,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

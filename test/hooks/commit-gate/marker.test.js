@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath, gitPath } = require('../../lib/platform');
 const { mods } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
@@ -17,7 +17,6 @@ const { gateOn } = require('../../lib/real-gate');
 const {
   KIT, PREFIX, T, mkRepo, stage, write, commit, touchMarker, staleMarker, judge, blocks, passes,
 } = require('./helpers');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 const { daysAgo, agedFile } = require('../../lib/workflow-home');
 
 // A kit script run for real in <cwd> with the world's env.
@@ -40,7 +39,7 @@ const skillLine = () => {
   return line;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: scope');
 
   await test('ports "non-commit command: exit 0"', async () => {
@@ -150,7 +149,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

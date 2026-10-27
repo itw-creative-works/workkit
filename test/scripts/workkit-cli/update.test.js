@@ -6,7 +6,7 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  group, test, skip, assert, assertEq, summary, selfRun, hasLaunchd,
+  group, test, skip, assert, assertEq, summary, selfRun, hasLaunchd, mkTmp,
 } = require('../../lib/harness');
 const {
   IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which,
@@ -16,10 +16,9 @@ const {
   WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, signInEnv, ACTED, mkRepo, installSchedule,
   mkPartialKit, mkSetupKit,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 const { writeLogin } = require('../../lib/identity');
 
-const run = async () => {
+const cases = async () => {
   group('workkit update: the three links');
 
   await test('the engine address is pointed at this checkout', () => {
@@ -347,6 +346,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

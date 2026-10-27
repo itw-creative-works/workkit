@@ -9,7 +9,7 @@ const {
   cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit publish');
 
   await test('publish delegates to the engine’s script, which skips an untouched machine', () => {
@@ -136,6 +136,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -32,7 +32,7 @@ const ROSTER = [
   { name: 'local-only', path: '/repos/local-only', slug: null },
 ];
 
-const run = async () => {
+const cases = async () => {
   group('tower/brief: the six sections');
 
   await test('blocked issues are what is waiting on you; every specced issue is ready', () => {
@@ -398,6 +398,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

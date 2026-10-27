@@ -9,7 +9,7 @@ const {
   HOME_SLUG, cleanup, mkWorld, runJob, composerTest,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('jobs/morning (cloud): the two tokens');
 
   await composerTest('the post is made with the built-in token, the sweep with the secret', () => {
@@ -48,6 +48,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

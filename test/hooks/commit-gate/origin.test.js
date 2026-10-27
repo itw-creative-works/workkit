@@ -13,7 +13,7 @@ const {
 // A throwaway repo: the fixture repo with its origin taken away.
 const mkThrowawayRepo = () => mkRepo({ origin: null });
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: a repo with no origin');
 
   await test('ports "no origin, staged code, no review marker: exit 0 and silent"', async () => {
@@ -57,7 +57,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

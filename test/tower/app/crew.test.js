@@ -6,7 +6,7 @@
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { crew } = await loadLibs();
 
   group('tower/app: crew - the tree');
@@ -123,6 +123,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

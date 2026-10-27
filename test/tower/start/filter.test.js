@@ -3,21 +3,20 @@
 // swallows, the phase boundary, the doors to the whole wall). Prologue: ./helpers.js.
 //
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
-  cleanup, until, start, collect, QUIET_PORTS, NOISY_APP, FAILURE_SHAPES, FAILING_APP,
+  cleanup, until, start, QUIET_PORTS, NOISY_APP, FAILURE_SHAPES, FAILING_APP,
   REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP, BENIGN_APP, STARTING, WEB_APP,
   PHASED_APP, CHATTY_API, BUMPED_APP,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
-const run = async () => {
+const cases = async () => {
   group('tower/start: the log filter');
 
   await test('the default run is quiet: the log wall is dropped, the problems and one URL line survive', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       assert(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced');
       assert(await until(() => /the board failed to load/.test(out())), 'the error line came through');
@@ -31,15 +30,15 @@ const run = async () => {
       assert(/omega: no cloudflare account id configured/.test(text), 'and so did the line omega says as itself');
       assert(!/compiled 42 files/.test(text), 'but not the build timings - the wall is still dropped');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('the shapes a failure really arrives in all survive the filter', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', FAILING_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', FAILING_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       assert(await until(() => /ELIFECYCLE/.test(out())), 'the app half was read to its last line');
       const text = out();
@@ -47,7 +46,7 @@ const run = async () => {
         assert(text.includes(line), `"${line}" came through`);
       });
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
@@ -56,8 +55,8 @@ const run = async () => {
     // omega's refusal carries none of the keep net's words; dropped, it leaves a
     // terminal showing only "starting the dashboard…" while both halves end.
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', REFUSING_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', REFUSING_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       assert(await until(() => /ended before the dashboard/.test(out())), 'the run said a half ended before the dashboard came up');
       const text = out();
@@ -66,37 +65,37 @@ const run = async () => {
       assert(/the app half ended before the dashboard/.test(text), 'the line names which half ended');
       assert(/--verbose/.test(text), 'and points at the run that shows everything');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('the half named is the one that ended - the API side says so too', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, REFUSING_API, 'exec sleep 30', QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, REFUSING_API, 'exec sleep 30', QUIET_PORTS);
+    const out = tower.output;
     try {
       assert(await until(() => /ended before the dashboard/.test(out())), 'the run explained itself');
       const text = out();
       assert(/the API half ended before the dashboard/.test(text), 'and named the half that actually ended');
       assert(/omega: linked packages are read-only/.test(text), 'with its refusal above it');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('a run that got its dashboard explains nothing when it ends', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', ANNOUNCED_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', ANNOUNCED_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
-      assert(await until(() => child.exitCode !== null), 'the run ended when its app half did');
+      assert(await until(() => tower.child.exitCode !== null), 'the run ended when its app half did');
       const text = out();
       assert(/✓ dashboard at https:\/\/localhost:14300/.test(text), 'the dashboard had been announced');
       assert(!/ended before the dashboard/.test(text), 'so its ending is ordinary shutdown, not a refusal to explain');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
@@ -107,26 +106,26 @@ const run = async () => {
     // poll loop must not read a run that had its dashboard as one that never
     // came up.
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', ANNOUNCING_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
-    const closed = new Promise((resolve) => { child.on('close', resolve); });
+    const tower = start(dir, 'exec sleep 30', ANNOUNCING_APP, QUIET_PORTS);
+    const out = tower.output;
+    const closed = new Promise((resolve) => { tower.child.on('close', resolve); });
     try {
       assert(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced');
-      child.kill('SIGTERM');
+      tower.child.kill('SIGTERM');
       await closed;
       const text = out();
       assert(!/ended before the dashboard/.test(text), 'the interrupted run explained nothing - it got its dashboard');
       assert(!/API half/.test(text), 'and named no half, least of all the wrong one');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('the known-benign lines are dropped, and a summary with real failures is not', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', BENIGN_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', BENIGN_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       // The error is the app half's last line, so seeing it means every line
       // above it has been through the filter - and it is the keep net's own
@@ -139,7 +138,7 @@ const run = async () => {
       assert(/4 passed, 2 failed, 1 warned, 20 skipped/.test(text), 'a summary with real failures is still read out');
       assert(/4 passed, 10 failed, 1 warned, 20 skipped/.test(text), 'ten of them too - the zero it exempts is a whole number');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
@@ -148,26 +147,26 @@ const run = async () => {
     // The quiet phase is otherwise a blank terminal: omega builds for a while
     // before it names a URL, and every line of that is filtered.
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
-    const loud = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true, args: ['--verbose'] });
-    const loudOut = collect(loud);
+    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS);
+    const out = tower.output;
+    const loud = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { args: ['--verbose'] });
+    const loudOut = loud.output;
     try {
       assert(await until(() => out().includes('\n')), 'the quiet run printed');
       assert(STARTING.test(out().split('\n')[0]), `and its very first line says so, got: ${out().split('\n')[0]}`);
       assert(await until(() => loudOut().includes('\n')), 'the verbose run printed');
       assert(STARTING.test(loudOut().split('\n')[0]), `the same first line - one story, both modes, got: ${loudOut().split('\n')[0]}`);
     } finally {
-      child.kill('SIGKILL');
-      loud.kill('SIGKILL');
+      await tower.end('SIGKILL');
+      await loud.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('the web target\'s own tag is the phase boundary - the manage cycle before it is not', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', WEB_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', WEB_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       // The last line of the run, carrying no keep-net word at all, so seeing
       // it is itself proof the switch happened.
@@ -181,15 +180,15 @@ const run = async () => {
       assert(/\[web\] Dev server: https:\/\/localhost:14300/.test(text), "and the app's own URL line printed beside it, not instead of it");
       assert(!/objc\[/.test(text), 'the drop list outlives the boundary - the objc warning is gone');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('an app that never tags a line still switches at the URL it names', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', PHASED_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', PHASED_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       // The last line of the run, and one that carries no keep-net word at all,
       // so seeing it is itself proof the switch happened.
@@ -208,15 +207,15 @@ const run = async () => {
       // wrapper's own voice.
       assert(/Dev server: https:\/\/localhost:14300/.test(text), "the app's own URL line came through as well");
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('the API half owns no port, so it never switches - chatter stays hidden for its whole life', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, CHATTY_API, 'exec sleep 30', QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, CHATTY_API, 'exec sleep 30', QUIET_PORTS);
+    const out = tower.output;
     try {
       assert(await until(() => /sweep token is missing/.test(out())), 'its problem line came through');
       const text = out();
@@ -225,15 +224,15 @@ const run = async () => {
       assert(!/api: listening on/.test(text), 'so that line is just chatter too');
       assert(!/\[web\] hello/.test(text), 'nor does the app half\'s tag open a phase over here');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('an app on a bumped port is still announced - and says it was bumped', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', BUMPED_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', BUMPED_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       assert(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced');
       const text = out();
@@ -241,15 +240,15 @@ const run = async () => {
       assertEq(text.match(/✓ dashboard at/g).length, 1, 'once');
       assert(/bumped to 14301/.test(text), 'and the line explaining the move survived too');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('--verbose passes the whole wall through, as before', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { capture: true, args: ['--verbose'] });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { args: ['--verbose'] });
+    const out = tower.output;
     try {
       // The app half's last line, the way the quiet case above polls for it: a
       // snapshot taken at an earlier line can be read before the lines after it
@@ -261,20 +260,20 @@ const run = async () => {
       assert(/Dev server: https:\/\/localhost:14300/.test(text), "the app's own URL line stands unrewritten");
       assert(!/✓ dashboard at/.test(text), 'so the wrapper adds no second one');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
   await test('WORKKIT_TOWER_VERBOSE=1 is the same door, for callers that pass no arguments', async () => {
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS,
-      { capture: true, env: { WORKKIT_TOWER_VERBOSE: '1' } });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS,
+      { env: { WORKKIT_TOWER_VERBOSE: '1' } });
+    const out = tower.output;
     try {
       assert(await until(() => /compiled 42 files/.test(out())), 'the env var opens the wall too');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
@@ -282,6 +281,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

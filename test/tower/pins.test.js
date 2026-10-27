@@ -22,7 +22,7 @@ const specOf = (manifest, name) => {
   return { ...pkg.dependencies, ...pkg.devDependencies }[name];
 };
 
-const run = async () => {
+const cases = async () => {
   group('tower/pins: the framework packages come from npm');
 
   for (const { name, manifest } of PINS) {
@@ -45,6 +45,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

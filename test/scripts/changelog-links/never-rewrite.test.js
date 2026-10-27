@@ -7,7 +7,7 @@ const {
   skipOnWindows, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   skipOnWindows();
 
   group('changelog-links: what it must never rewrite');
@@ -199,6 +199,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

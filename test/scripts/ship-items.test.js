@@ -6,13 +6,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'ship-items.sh');
 
@@ -33,7 +31,7 @@ const mkWorld = ({ qa = [], complete = [], fail = false } = {}) => {
   const bin = path.join(dir, 'bin');
   const home = path.join(dir, 'home');
   const fixtures = path.join(dir, 'fixtures');
-  const log = path.join(dir, 'gh-argv.log');
+  const logFile = path.join(dir, 'gh-argv.log');
   for (const d of [bin, home, fixtures]) fs.mkdirSync(d, { recursive: true });
   const body = (fixture) => (typeof fixture === 'string' ? fixture : JSON.stringify(fixture));
   fs.writeFileSync(path.join(fixtures, 'qa.json'), body(qa));
@@ -41,7 +39,7 @@ const mkWorld = ({ qa = [], complete = [], fail = false } = {}) => {
   const refuse = fail === true ? 'true' : (fail ? `[ "$label" = "status:${fail}" ]` : 'false');
   stubTool(bin, 'gh', [
     '#!/usr/bin/env bash',
-    recordArgv(log),
+    recordArgv(logFile),
     'label=""',
     'for arg in "$@"; do',
     '  if [ "${prev:-}" = --label ]; then label="$arg"; fi',
@@ -50,7 +48,7 @@ const mkWorld = ({ qa = [], complete = [], fail = false } = {}) => {
     `if ${refuse}; then printf 'error connecting to api.github.com\\n' >&2; exit 1; fi`,
     `cat "${shellPath(fixtures)}/\${label#status:}.json"`,
   ]);
-  return { dir, bin, home, calls: () => readArgv(log) };
+  return { dir, bin, home, calls: () => readArgv(logFile) };
 };
 
 const runScript = (w, args = []) => {
@@ -69,7 +67,7 @@ const lines = (out) => out.split('\n').filter(Boolean);
 // The harness compares with `===`, so a list is compared in its JSON form.
 const assertList = (actual, expected, msg) => assertEq(JSON.stringify(actual), JSON.stringify(expected), msg);
 
-const run = async () => {
+const cases = async () => {
   group('ship-items.sh: the lines');
 
   await test('qa lines first, then complete, each by number ascending', () => {
@@ -220,6 +218,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
 if (require.main === module) selfRun(module.exports);

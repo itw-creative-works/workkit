@@ -28,7 +28,7 @@ const linesOf = (output) => output.split(/\r?\n/).filter((line) => line.includes
 const scriptLines = (output) => stripVTControlCharacters(output).split(/\r?\n/)
   .filter((line) => /(?:^|\s)test script: .*node test\/run\.js/.test(line));
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: the test script');
 
   await test('an npm test that prints no totals line gets the one heal line and exit 0', () => {
@@ -121,7 +121,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -9,7 +9,7 @@ const {
   fetchBoard, PAGE_SIZE, MAX_OPEN_ISSUES, REPOS_PER_REQUEST, issue, ROSTER,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/board: paging past the first page');
 
   // GitHub caps one connection page at 100, so a repo past that is asked again
@@ -219,6 +219,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -7,13 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { spawnSync } = require('child_process');
-const { assert } = require('../../lib/harness');
+const { assert, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
-const { seeded } = require('../../lib/seed');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

@@ -10,8 +10,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { resetIn, mkLimited } = require('../../lib/gh');
 const { gitPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
-const { until } = require('../../lib/process');
+const { mkTmp, until } = require('../../lib/harness');
 
 const {
   createServer, DEFAULT_BIND, DEFAULT_PORT, MAX_REQUEST_BYTES, MOVE_STATUSES,

@@ -5,16 +5,15 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, alive, readPid } = require('../../lib/harness');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../../lib/argv-log');
 const { shellPath } = require('../../lib/platform');
-const { alive, readPid } = require('../../lib/process');
 const {
   cleanup, writeStub, mkWorld, mintTest, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, SLUG,
   HOME, mkHomeWorld,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit setup: the cloud secrets');
 
   // Fictional values with no vendor's prefix: a committed credential-shaped
@@ -251,9 +250,9 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     // machine speaks BSD, so GNU is pinned against a stub shaped like the real
     // utility (it answers `--version`, which BSD's refuses).
     const gnuScript = (world) => {
-      const log = path.join(world.root, 'script-argv.log');
+      const logFile = path.join(world.root, 'script-argv.log');
       writeStub(path.join(world.bin, 'script'), [
-        recordArgv(log),
+        recordArgv(logFile),
         'if [[ "$1" == \'--version\' ]]; then printf \'%s\\n\' \'script from util-linux 2.38\'; exit 0; fi',
         'e=0; cmd=\'\'; file=\'\'',
         'while [[ "$#" -gt 0 ]]; do',
@@ -269,7 +268,7 @@ FAKEtrailingLINEthatIsLongEnough')"`);
         'if [[ "$e" -eq 1 ]]; then exit "$rc"; fi',
         'exit 0',
       ]);
-      return () => readArgv(log);
+      return () => readArgv(logFile);
     };
 
     const world = mkMintWorld({ claudeToken: MINTED });
@@ -420,6 +419,6 @@ FAKEtrailingLINEthatIsLongEnough')"`);
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

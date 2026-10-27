@@ -10,7 +10,7 @@ const {
   KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, seeded, mkKitCopy, commitKit, kitCommitted, STAMP,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the version stamp');
 
   // Two machines seed one clone, so the stamp is the tie-breaker: the clone says
@@ -172,6 +172,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

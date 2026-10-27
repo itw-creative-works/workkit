@@ -2,14 +2,17 @@
  * hooks/mods/change-tracker.js: docs:change-tracker, the Stop nag that keeps
  * the work item true, promotes durable findings out of `.workkit/` and checks
  * doc parity while code sits uncommitted or captures sit unfiled; once per
- * change, remembered by fingerprint in `.workkit/agents/.change-tracker`
+ * change, remembered by fingerprint in `.workkit/agents/.change-tracker`,
+ * and only on the Stop of a turn that parked, blocked or closed an issue
  * (docs/hooks.md § docs:change-tracker). It reads files and git, never gh.
  */
 
+import { ghClauseSub, ghFlagValues, ghNames, ghSteps, hasLabel } from './gh-edit.js';
 import { sha1Hex } from './markers.js';
 import { rowsOf } from './session-guard.js';
 import { findingsOn, settingsLayers } from './settings.js';
 import { CODE_EXT } from './test-reminder.js';
+import { turnMessages } from './turn.js';
 
 const STATE_FILE = '.workkit/agents/.change-tracker';
 const PROMPT = 'hooks/mods/change-tracker/prompt.md';
@@ -20,6 +23,28 @@ const BOARD = "BOARD: PROGRESS.md still exists in this repo. Migrate it to issue
 
 // What a command substitution keeps of a text: every trailing newline dropped.
 const chomp = (text) => text.replace(/\n+$/, '');
+
+// A clause that ends work in hand: a park or a block flip, or a close.
+function endsWork(clause, detect) {
+  const sub = ghClauseSub(detect);
+  if (sub === 'close') return true;
+  if (sub !== 'edit') return false;
+  const labels = ghFlagValues(clause, '--add-label');
+  return hasLabel(labels, 'status:qa') || hasLabel(labels, 'status:blocked');
+}
+
+/**
+ * Whether the turn reached an endpoint: a Bash tool use after the last owner
+ * prompt runs `gh issue edit` adding status:qa or status:blocked, or `gh issue close`.
+ * @param {object[]} messages the transcript, the session's SessionMessage rows
+ * @returns {boolean}
+ */
+export function endpointTurn(messages) {
+  return turnMessages(messages).some((message) => (message.toolUses ?? []).some((use) => {
+    const command = use.tool === 'Bash' ? String(use.input?.command ?? '') : '';
+    return ghNames(command, 'edit|close') && [...ghSteps(command)].some(({ clause, detect }) => endsWork(clause, detect));
+  }));
+}
 
 /**
  * The unfiled entries of a capture surface: lines that are not a heading, a
@@ -106,10 +131,10 @@ async function keepsMemory(io, cwd) {
 }
 
 /**
- * The change tracker's Stop: gathers the tree, asks the verdict, writes the
- * new fingerprint whole where the repo keeps the memory, and answers the
- * block carrying the reason and the nag.
- * @param {object} io the engine calls register.js hands over (`ioOf`)
+ * The change tracker's Stop: on an endpoint turn only, gathers the tree, asks
+ * the verdict, writes the new fingerprint whole where the repo keeps the
+ * memory, and answers the block carrying the reason and the nag.
+ * @param {object} io the engine calls register.js hands over (`ioOf`), the turn through `messages()`
  * @param {object} env the variables the module read
  * @param {object} e the Stop event's input
  * @returns {Promise<{block: string}|null>}
@@ -117,6 +142,7 @@ async function keepsMemory(io, cwd) {
 export async function changeTrackerGather(io, env, e) {
   const { cwd } = e;
   if (String(e.stop_hook_active) === 'true' || !cwd) return null;
+  if (!endpointTurn(await io.messages())) return null;
   const git = (args) => io.run(['git', ...args], { cwd });
   if ((await git(['rev-parse', '--is-inside-work-tree'])).exitCode !== 0) return null;
   const [status, inboxText, captureText] = await Promise.all([

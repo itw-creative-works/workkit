@@ -9,7 +9,7 @@ const {
   fetchBoard, buildBoardQuery, PAGE_SIZE, BODY_LIMIT, LAST_COMMENT_LIMIT, issue, fakeGh, ROSTER,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/board: the soft skip');
 
   await test('gh missing returns the skip shape, never throws', () => {
@@ -158,6 +158,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

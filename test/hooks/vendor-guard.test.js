@@ -72,7 +72,7 @@ const GIT_FACTS = {
   kindOf: kinds({ '/': 'dir', '/w': 'dir', [GIT]: 'dir', [`${GIT}/.git`]: 'dir' }),
 };
 
-const run = async () => {
+const cases = async () => {
   group('vendor-guard: blocked paths');
 
   await test('ports "node_modules/: exit 2": names itself and points at the source-not-output rule', async () => {
@@ -174,7 +174,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

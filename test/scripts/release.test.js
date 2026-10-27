@@ -7,12 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { mods } = require('../lib/mods-inputs');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'release.js');
 
@@ -146,7 +144,7 @@ const assertRefused = (dir, res, says) => {
   assert(lines[0].includes(says), `names why (${says}), got: ${lines[0]}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('release: the version bump');
 
   await test('the version lands and every other byte of package.json stays', () => {
@@ -417,7 +415,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

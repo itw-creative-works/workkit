@@ -6,7 +6,7 @@ const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { skipUnlessDarwin, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): the cloud brief marker');
@@ -101,8 +101,8 @@ const run = async () => {
   await test('--now marks its log block manual, in the same log file', () => {
     const world = mkWorld();
     runJob(world, ['--now']);
-    const log = world.log();
-    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ---/.test(log), `stamped manual, got: ${log.slice(0, 120)}`);
+    const logText = world.log();
+    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ---/.test(logText), `stamped manual, got: ${logText.slice(0, 120)}`);
     cleanup(world.root);
   });
 
@@ -116,6 +116,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

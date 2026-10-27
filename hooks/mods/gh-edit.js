@@ -137,6 +137,9 @@ export function ghFlagValues(clause, long, short) {
   return values;
 }
 
+/** Whether the label is one of the flag's comma-listed values, matched whole with quotes and a subshell's `)` off. */
+export const hasLabel = (values, label) => values.join('\n').replace(/["')]/g, '').split(/[,\n]/).some((v) => v.trim() === label);
+
 /**
  * The first `--repo`/`-R` value in any spelling gh takes, quotes off; with no
  * flag, the repo an issue URL names (read off the quote-stripped clause, so a

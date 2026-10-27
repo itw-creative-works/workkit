@@ -11,7 +11,7 @@ const spots = (entries) => new Map(Object.entries(entries));
 
 const sorted = (keys) => [...keys].sort();
 
-const run = async () => {
+const cases = async () => {
   const { motionPlan } = await load('board-motion.js');
 
   group('tower/board: motion - where each card moves between repaints');
@@ -61,6 +61,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

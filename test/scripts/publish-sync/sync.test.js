@@ -12,7 +12,7 @@ const {
   cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the tower sync');
 
   await test('a clone that carries nothing gets the project, and none of the accretions', () => {
@@ -360,6 +360,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -10,7 +10,7 @@ const {
   SLUG, STAMP, cleanup, issueNode, mkWorld, composeIn,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('jobs/brief-payload: composition');
 
   await test('the fixture roster sweeps into a real brief', () => {
@@ -92,6 +92,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

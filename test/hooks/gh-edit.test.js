@@ -5,7 +5,7 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods } = require('../lib/mods-inputs');
 
-const run = async () => {
+const cases = async () => {
   group('gh-edit.js: ghSteps');
 
   await test('ghSteps yields one step per clause, the cd itself none, sawCd set on every step after a cd clause', () => {
@@ -19,7 +19,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

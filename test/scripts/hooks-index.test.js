@@ -52,7 +52,7 @@ const moduleEvents = () => {
   return [...new Set(events)].sort();
 };
 
-const run = async () => {
+const cases = async () => {
   group('hooks: hooks.json and the hooks folder');
 
   await test('hooks.json holds only `modules`, naming ./register.js, and the file is there', () => {
@@ -78,7 +78,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

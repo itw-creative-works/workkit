@@ -5,9 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 
 const MODULE = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
 const { parseEntries, lintText, RULES } = require(MODULE);
@@ -53,7 +51,7 @@ const runCli = (file, args, cwd) => {
   return { code: res.status, out: (res.stdout || '') + (res.stderr || '') };
 };
 
-const run = async () => {
+const cases = async () => {
   group('changelog: parsing');
 
   await test('a bullet under a version section is an entry; a preamble bullet is not', () => {
@@ -431,6 +429,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
 if (require.main === module) selfRun(module.exports);

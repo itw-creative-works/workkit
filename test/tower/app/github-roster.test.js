@@ -4,15 +4,14 @@
 //
 
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
   loadLibs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW, USER_URL,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
 const apiBrief = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'brief.js'));
 
-const run = async () => {
+const cases = async () => {
   const { github } = await loadLibs();
 
   group('tower/app: github - the roster, the brief and the summaries');
@@ -290,6 +289,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

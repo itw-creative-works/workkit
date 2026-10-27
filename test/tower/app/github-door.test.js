@@ -9,7 +9,7 @@ const {
   loadLibs, mkFetch, jsonResponse, SWEEP, USER_URL, isRoster, mkSiteFetch,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { github } = await loadLibs();
 
   group('tower/app: github - the one door');
@@ -218,6 +218,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

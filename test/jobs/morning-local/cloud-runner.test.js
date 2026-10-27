@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner, pushFromElsewhere, subjects, REFRESH } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): the cloud brief’s runner');
@@ -33,9 +33,9 @@ const run = async () => {
 
     // Ordering is the whole point: the run the dispatch starts is the consumer
     // of what this step just pushed.
-    const log = world.log();
-    assert(log.indexOf('seeded the cloud brief') < log.indexOf('dispatched brief.yml'),
-      `the reconcile lands before the day goes over: ${log}`);
+    const logText = world.log();
+    assert(logText.indexOf('seeded the cloud brief') < logText.indexOf('dispatched brief.yml'),
+      `the reconcile lands before the day goes over: ${logText}`);
     cleanup(world.root);
   });
 
@@ -127,6 +127,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

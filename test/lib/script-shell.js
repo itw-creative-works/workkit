@@ -11,14 +11,12 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { assert, skipSuite } = require('./harness');
+const { assert, skipSuite, mkTmp, SPAWN_DEADLINE } = require('./harness');
 const {
   IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, WINDOWS_CSC, shellPath, gitPath, which, joinPath, homeEnv,
 } = require('./platform');
-const { mkTmp } = require('./scratch');
 const { suiteMarkerPath, pkgRecord } = require('./suite-record');
 const { FIXTURE_ORIGIN } = require('./git-repo');
-const { SPAWN_DEADLINE } = require('./process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 

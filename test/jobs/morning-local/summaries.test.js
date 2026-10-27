@@ -7,7 +7,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { fmtCalls } = require('../../lib/argv-log');
 const { skipUnlessDarwin, INSTRUCTION, cleanup, mkWorld, runJob, notifiedMatching, settle } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): the summaries step');
@@ -83,6 +83,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

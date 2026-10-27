@@ -76,7 +76,7 @@ Size the sweep and say it out loud:
 The interview is done when the `## Spec` exists (a written one with its `### Contract`), not when the questions run out:
 
 1. Draft (or deepen) the issue's `## Spec` from the answers. Each decision the human made lands as a spec statement in their terms; each category cleared with a default names that default.
-   - A written Spec ends with its `### Contract` part: Files, Names, Cases (the shape's home is spec § Specs).
+   - A written Spec opens with one plain sentence stating the behaviour rule, the line the owner's yes answers, and ends with its `### Contract` part: Files, Names, Cases (the shape's home is spec § Specs).
    - A small item's Spec stays the literal `None needed: small item.`, with no Contract.
 2. Post it and ask for acceptance in chat: a recognition pass, not a review.
 3. Durable rulings (preferences that outlive this task) get recorded verbatim and dated where they bind: `AGENTS.md`/`docs/` if doctrine, else a comment on the issue under their `@<login>` (spec § The pass).

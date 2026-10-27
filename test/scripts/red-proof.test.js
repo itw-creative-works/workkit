@@ -10,14 +10,13 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync, spawn } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun,
+  group, test, assert, assertEq, testUnless, summary, selfRun, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, NO_RC, shellPath, gitPath,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'red-proof.sh');
 const NO_SNAPSHOT = 'red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)';
@@ -166,7 +165,7 @@ const assertNoWorktree = (w) => {
   assertEq(left.length, 0, `nothing left in TMPDIR: ${left}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('red-proof.sh: the verdict');
 
   await test('an edited source the new test needs: red, exit 0, the shared tree untouched', () => {
@@ -877,6 +876,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
 if (require.main === module) selfRun(module.exports);

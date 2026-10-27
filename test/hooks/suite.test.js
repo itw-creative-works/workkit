@@ -12,20 +12,20 @@ const OTHER_ID = '2222222222222222222222222222222222222222';
 
 const suite = () => mods('suite');
 
-const run = async () => {
+const cases = async () => {
   group('suite.js: treeHash');
 
   await test('treeHash runs bash <kit>/workflow/lib/tree-hash.sh <root> [flags] with the long timeout, answering the trimmed id or null', async () => {
     const { treeHash, LONG_RUN_MS } = suite();
     const calls = [];
-    const run = (answer) => async (argv, init) => { calls.push({ argv: [...argv], init }); return answer; };
+    const answerer = (answer) => async (argv, init) => { calls.push({ argv: [...argv], init }); return answer; };
     const ok = { exitCode: 0, stdout: `${ID}\n`, stderr: '' };
-    assertEq(await treeHash(run(ok), '/k', '/w/repo'), ID, 'the id, trimmed');
+    assertEq(await treeHash(answerer(ok), '/k', '/w/repo'), ID, 'the id, trimmed');
     assertEq(JSON.stringify(calls[0].argv), JSON.stringify(['bash', '/k/workflow/lib/tree-hash.sh', '/w/repo']), 'the entry over the root');
     assertEq(calls[0].init?.timeoutMs, LONG_RUN_MS, 'under the long-run timeout');
-    await treeHash(run(ok), '/k', '/w/repo', '-u');
+    await treeHash(answerer(ok), '/k', '/w/repo', '-u');
     assertEq(JSON.stringify(calls[1].argv), JSON.stringify(['bash', '/k/workflow/lib/tree-hash.sh', '/w/repo', '-u']), 'the flags after the root');
-    assertEq(await treeHash(run({ exitCode: 1, stdout: '', stderr: 'fatal\n' }), '/k', '/w/repo'), null, 'a failed hash is null');
+    assertEq(await treeHash(answerer({ exitCode: 1, stdout: '', stderr: 'fatal\n' }), '/k', '/w/repo'), null, 'a failed hash is null');
   });
 
   group('suite.js: the suite record');
@@ -80,7 +80,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -7,13 +7,11 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   SYSTEM_BASH, NO_RC, shellPath, systemPathWith,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 // The gate and the npm wrapper both lint through this one function, sourced
 // from the workflow lib, so a resolution that walks to the wrong folder would
@@ -43,7 +41,7 @@ const changelogRepo = (words) => {
   return dir;
 };
 
-const run = async () => {
+const cases = async () => {
   group('workflow/lib/changelog.sh: wk_changelog_lint resolves the linter');
 
   await test("with no WORKFLOW_DIR it runs the engine's own changelog.js", () => {
@@ -76,6 +74,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

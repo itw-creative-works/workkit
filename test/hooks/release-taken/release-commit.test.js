@@ -9,7 +9,7 @@ const {
   PKG, RELEASE, TAKEN, isOverride, judge,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('release-taken: the release commit at npm');
 
   await test('ports "a version npm already has bounces, naming the provider and the pair"', async () => {
@@ -83,7 +83,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

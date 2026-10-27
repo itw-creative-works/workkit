@@ -23,7 +23,7 @@ const PAYLOAD = {
 
 const EXPECTED = '<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":12,"waiting":2,"complete":1,"qa":2,"ready":3,"inFlight":1,"inbox":5,"backlog":1},"closedDay":4,"repos":{"ITW-Creative-Works/workkit":{"open":9},"alice/.dotfiles":{"open":3}}} -->';
 
-const run = async () => {
+const cases = async () => {
   group('jobs/stats: the line itself');
 
   await test('the mark is one line of JSON, key for key', () => {
@@ -76,6 +76,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

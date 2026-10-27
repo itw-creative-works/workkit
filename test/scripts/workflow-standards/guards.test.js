@@ -3,11 +3,10 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const { cleanup, runScript } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: guards');
 
   await test('a non-git directory is skipped cleanly', () => {
@@ -22,6 +21,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

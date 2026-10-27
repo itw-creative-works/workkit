@@ -11,7 +11,7 @@ const {
   cleanup, SLUG, mkWorld, BOARD_PAGES, pageTheBoard, limitDiscussions, start, getJson, sweptBoard, ghCalls, tiles, scriptHead,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/api/server: the read endpoints');
 
   await test('/api/repos serves the discovered roster', async () => {
@@ -337,6 +337,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -20,7 +20,7 @@ const flip = async (touched, over = {}, command = QA) => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('proof-guard: the park reads the records and runs nothing');
 
   await test('ports "no touched test file: exit 0, the notice says so"', async () => {
@@ -133,7 +133,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -6,13 +6,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, joinPath,
 } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const { REPO_ROOT, writeStub, readJson5 } = require('./helpers');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const SCRIPT = path.join(REPO_ROOT, 'workflow', 'publish', 'build.sh');
 const SIDEBAR_REL = path.join('targets', 'web', 'src', '_includes', 'backend', 'sections', 'sidebar.json');
@@ -141,7 +139,7 @@ const assertBuilt = (world, code, out) => {
   assert(fs.existsSync(path.join(world.project, 'targets', 'web', 'dist')), 'and the output is there');
 };
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish/build.sh: install');
 
   await test('install runs npm install with the project dir as the working directory', () => {
@@ -308,6 +306,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

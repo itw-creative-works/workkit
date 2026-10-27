@@ -21,7 +21,7 @@ const withWorkflowHome = (value, fn) => {
   }
 };
 
-const run = async () => {
+const cases = async () => {
   group('user-dir: the machine folder');
 
   await test('userDir: WORKFLOW_HOME wins, else .workkit under the home, else under os.homedir()', () => {
@@ -39,6 +39,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

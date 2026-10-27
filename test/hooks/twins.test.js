@@ -8,17 +8,15 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun,
+  group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
 const { mods, runResult } = require('../lib/mods-inputs');
 const { recordArgv, readArgv } = require('../lib/argv-log');
 const commitGate = require('./commit-gate/helpers');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const KIT = path.join(__dirname, '..', '..');
 const lib = (...parts) => shellPath(path.join(KIT, ...parts));
@@ -86,7 +84,7 @@ const settingsRoots = (texts) => texts.map((text) => {
 /** The settings text register.js hands settingsOptedIn: the file's text, null when absent or unreadable. */
 const readOrNull = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch { return null; } };
 
-const run = async () => {
+const cases = async () => {
   group('twins: the test package, hook_test_package_dir in hooks/lib/paths.sh against testPackageDir in hooks/mods/suite.js');
 
   await test('hook_test_package_dir and testPackageDir name the same package for every path', async () => {
@@ -267,9 +265,9 @@ const run = async () => {
   // real tools stay reachable behind it.
   const recordingTool = (tool, out = '') => {
     const bin = mkTmp(`twins-${tool}-`);
-    const log = path.join(bin, 'argv.log');
-    stubTool(bin, tool, ['#!/bin/bash', recordArgv(log), `printf '%s' '${out}'`]);
-    return { path: systemPathWith(bin), calls: () => readArgv(log) };
+    const logFile = path.join(bin, 'argv.log');
+    stubTool(bin, tool, ['#!/bin/bash', recordArgv(logFile), `printf '%s' '${out}'`]);
+    return { path: systemPathWith(bin), calls: () => readArgv(logFile) };
   };
 
   group('twins: the lint block, wk_changelog_lint in workflow/lib/changelog.sh against lintText in hooks/mods/commit-gate.js');
@@ -304,14 +302,14 @@ const run = async () => {
     assertEq(shell.length, 2, `the shell makes two reads, got: ${JSON.stringify(shell)}`);
     const runs = [];
     const view = JSON.stringify({ state: 'OPEN', url: 'https://github.com/o/r/issues/12', labels: [{ name: 'status:building' }], comments: [], body: '' });
-    const run = async (argv, init = {}) => {
+    const recordRun = async (argv, init = {}) => {
       runs.push({ argv: [...argv], init });
       return runResult({ stdout: argv[0] === 'gh' ? view : '' });
     };
     await mods('proof-guard').proofGuardGuard({
       command: 'gh issue edit 12 --add-label status:qa --remove-label status:building', cwd: '/w/repo', env: { HOME: '/w/home' },
       originless: async () => false, exists: async () => false, top: async () => '/w/repo', read: async () => null, list: async () => [],
-      run, pluginRoot: KIT, stat: async () => null, real: async (p) => p, write: async () => {}, now: () => 0,
+      run: recordRun, pluginRoot: KIT, stat: async () => null, real: async (p) => p, write: async () => {}, now: () => 0,
     });
     const reads = runs.filter((c) => c.argv[0] === 'git').map((c) => c.argv.slice(1));
     const missing = shell.filter((argv) => !reads.some((a) => JSON.stringify(a) === JSON.stringify(argv)));
@@ -356,7 +354,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

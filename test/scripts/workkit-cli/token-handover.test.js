@@ -11,7 +11,7 @@ const {
   cleanup, writeStub, mkWorld, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, mkSetupKit,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit setup: the token handover');
 
   // The fake this group moves around: shaped like the `gh` OAuth token the step
@@ -216,6 +216,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

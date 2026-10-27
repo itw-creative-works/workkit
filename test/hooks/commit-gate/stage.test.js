@@ -19,7 +19,7 @@ const commit = async (message, { issues = {} } = {}) => {
   return { r, v: await judge(r, `git commit -m "${message}"`) };
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: check 7, a named issue is at status:complete');
 
   await test('ports "an open issue at status:qa named by Refs blocks, naming it and its stage"', async () => {
@@ -82,7 +82,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

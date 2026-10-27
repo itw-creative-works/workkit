@@ -8,7 +8,7 @@ const { group, test, assert, assertEq, skip, summary, selfRun } = require('../..
 const { IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath } = require('../../lib/platform');
 const { CLI, cleanup, mkWorld, runCli } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit: the map');
 
   await test('no arguments print the map', () => {
@@ -47,6 +47,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -12,7 +12,7 @@
 import { repoSlug } from './command.js';
 import { issueView } from './gh.js';
 import {
-  denyAfter, ghBlocksCd, ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghRepoIsHere, ghSkipped, ghSteps,
+  denyAfter, ghBlocksCd, ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghRepoIsHere, ghSkipped, ghSteps, hasLabel,
 } from './gh-edit.js';
 import { userDirOf } from './log.js';
 import { pkgMarkerPath, suiteMarkerPath } from './markers.js';
@@ -139,15 +139,15 @@ export async function proofGuardVerdict(facts) {
       // Nothing was built, so nothing is proved: the two closes this gate ignores.
       if (NOT_PLANNED.test(clause) || DUPLICATE.test(clause)) continue;
     } else {
-      const labels = ghFlagValues(clause, '--add-label').join('\n');
-      if (labels.includes('status:qa')) {
+      const labels = ghFlagValues(clause, '--add-label');
+      if (hasLabel(labels, 'status:qa')) {
         if (sawCd) return deny(ghBlocksCd('proof-guard'));
         const qaRepo = ghRepo(clause);
         if (qaRepo === null) return deny(UNREAD);
         if (qaRepo === '' || ghRepoIsHere(qaRepo, await hereSlug())) qaHere = true;
         else if (!qaOthers.includes(qaRepo.toLowerCase())) qaOthers.push(qaRepo.toLowerCase());
       }
-      if (!labels.includes('status:complete')) continue;
+      if (!hasLabel(labels, 'status:complete')) continue;
     }
     const issues = ghIssueNumbers(detect, sub);
     if (issues.length === 0) continue;

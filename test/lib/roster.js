@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { gitPath } = require('./platform');
-const { mkTmp } = require('./scratch');
+const { mkTmp } = require('./harness');
 
 /**
  * A scratch home whose roster lists each folder with its state, keyed by the

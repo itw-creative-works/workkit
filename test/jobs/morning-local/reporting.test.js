@@ -18,7 +18,7 @@ const SYSTEM_NOTIFLY = '/Applications/Notifly.app';
 const noSystemNotiflyTest = testUnless(fs.existsSync(SYSTEM_NOTIFLY),
   `${SYSTEM_NOTIFLY} is installed here, and the job would fire it for real`);
 
-const run = async () => {
+const cases = async () => {
   skipUnlessDarwin();
 
   group('jobs/morning (local): reporting');
@@ -28,10 +28,10 @@ const run = async () => {
     const res = runJob(world, ['hello']);
     assert(res.stdout.includes('HEADLINE: one thing today.'), 'the response goes to stdout');
 
-    const log = world.log();
-    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/.test(log), 'one timestamped block');
-    assert(log.includes('> hello'), 'the message is logged, truncated to its first 200 characters');
-    assert(log.includes('IN FLIGHT: nothing.'), 'and the whole response');
+    const logText = world.log();
+    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/.test(logText), 'one timestamped block');
+    assert(logText.includes('> hello'), 'the message is logged, truncated to its first 200 characters');
+    assert(logText.includes('IN FLIGHT: nothing.'), 'and the whole response');
 
     const notif = await notified(world);
     const after = (flag) => notif[notif.indexOf(flag) + 1];
@@ -68,9 +68,9 @@ const run = async () => {
     const res = runJob(world, ['--now']);
     assertEq(res.status, 7, 'the builder status carries through');
     assertEq(world.calls().length, 0, 'claude never ran: there was nothing to send');
-    const log = world.log();
-    assert(log.includes('[brief-payload exit 7]'), 'the log names the failed stage');
-    assert(log.includes('boom: cannot find module'), 'and carries the stderr');
+    const logText = world.log();
+    assert(logText.includes('[brief-payload exit 7]'), 'the log names the failed stage');
+    assert(logText.includes('boom: cannot find module'), 'and carries the stderr');
     await notifiedMatching(world, /brief-payload exit 7/);
     cleanup(world.root);
   });
@@ -123,6 +123,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -7,12 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun,
+  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'publish-plan.js');
 const { plan } = require(SCRIPT);
@@ -94,7 +92,7 @@ const SPEC_FIXTURE = () => mkRepo({
   },
 });
 
-const run = async () => {
+const cases = async () => {
   group('publish-plan: which packages, in which order');
 
   await test('the CLI prints the publish lines in order, then the skips, and exits 0', () => {
@@ -420,7 +418,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

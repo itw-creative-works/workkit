@@ -7,7 +7,7 @@ const {
 } = require('./lib/harness');
 const { isNodeTestSuite } = require('../workflow/test/lib/node-test');
 
-const run = async () => {
+const cases = async () => {
   group('isNodeTestSuite: a real import reads true');
 
   await test('a one-line CJS require', () => {
@@ -50,7 +50,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

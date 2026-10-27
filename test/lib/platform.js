@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { SPAWN_DEADLINE } = require('./process');
+const { SPAWN_DEADLINE } = require('./harness');
 
 const IS_WINDOWS = process.platform === 'win32';
 

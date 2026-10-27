@@ -6,13 +6,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const LIB = path.join(__dirname, '..', '..', 'jobs', 'brief-dispatch.sh');
 
@@ -77,7 +75,7 @@ if dispatch_brief; then printf 'ok\\n%s\\n' "$DISPATCH_LINE"; else printf 'refus
   return { verdict, said: rest.join('\n').trim(), stderr: res.stderr || '' };
 };
 
-const run = async () => {
+const cases = async () => {
   group('jobs/brief-dispatch: shape');
 
   await test('bash -n: no syntax errors, and nothing runs at load', () => {
@@ -155,6 +153,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

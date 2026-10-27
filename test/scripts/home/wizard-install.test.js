@@ -9,7 +9,7 @@ const { shellPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const { cleanup, mkWorld, setup } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the wizard, the install');
 
   await test('the install is keyed from the clone’s real path, symlinked ~/.workkit or not', () => {
@@ -55,6 +55,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -7,15 +7,13 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, skipSuite,
+  group, test, assert, assertEq, summary, selfRun, skipSuite, mkTmp, SPAWN_DEADLINE, until,
 } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath,
 } = require('../lib/platform');
 const { noNodeTest, barePathTest, NO_NODE_LINE } = require('../lib/job-path');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE, until } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
@@ -174,7 +172,7 @@ const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT
   env: world.env,
 });
 
-const run = async () => {
+const cases = async () => {
   if (process.platform !== 'darwin') skipSuite('the runner is a macOS launchd job (~/Library paths)');
 
   group('jobs/claude-nightly: no home repo is a named skip');
@@ -198,9 +196,9 @@ const run = async () => {
     const world = mkWorld({ home: 'owner/private-home' });
     const res = runJob(world);
     assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    const log = world.log();
-    assert(/posted the daily summary/.test(log), `the log says it published: ${log}`);
-    assert(/discussions\/7/.test(log), 'and names the discussion it created');
+    const logText = world.log();
+    assert(/posted the daily summary/.test(logText), `the log says it published: ${logText}`);
+    assert(/discussions\/7/.test(logText), 'and names the discussion it created');
     assertEq(world.calls().length, 1, `Claude wrote it once: ${fmtCalls(world.calls())}`);
     const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
     assertEq(created.length, 1, `one createDiscussion mutation: ${fmtCalls(world.ghCalls())}`);
@@ -231,9 +229,9 @@ const run = async () => {
     const world = mkWorld({ home: 'owner/private-home', categories: ['General'] });
     const res = runJob(world);
     assertEq(res.status, 0, 'exit 0');
-    const log = world.log();
-    assert(/posted the daily summary in General/.test(log), `it names the category it used: ${log}`);
-    assert(/no API that creates one/.test(log), 'and why it was not the Daily one');
+    const logText = world.log();
+    assert(/posted the daily summary in General/.test(logText), `it names the category it used: ${logText}`);
+    assert(/no API that creates one/.test(logText), 'and why it was not the Daily one');
     cleanup(world.root);
   });
 
@@ -241,10 +239,10 @@ const run = async () => {
     const world = mkWorld({ home: 'owner/private-home', ghFails: true });
     const res = runJob(world);
     assertEq(res.status, 0, 'a summary that cannot be posted never fails the morning');
-    const log = world.log();
-    assert(/skipped/.test(log), `the log says what happened: ${log}`);
-    assert(/nothing was written to disk/.test(log), 'and that no file was left behind instead');
-    assert(!/posted the daily summary/.test(log), 'and never claims to have published');
+    const logText = world.log();
+    assert(/skipped/.test(logText), `the log says what happened: ${logText}`);
+    assert(/nothing was written to disk/.test(logText), 'and that no file was left behind instead');
+    assert(!/posted the daily summary/.test(logText), 'and never claims to have published');
     cleanup(world.root);
   });
 
@@ -402,10 +400,10 @@ const run = async () => {
       }
     };
     walk(world.home);
-    const log = path.join(world.home, 'Library', 'Logs', 'claude-nightly.log');
+    const logFile = path.join(world.home, 'Library', 'Logs', 'claude-nightly.log');
     // The shims the fixture itself put in ~/.local/bin are not the run's doing.
     const written = found.filter((f) => !f.startsWith(path.join(world.home, '.local', 'bin')));
-    assertEq(written.join(','), log, `the log and nothing else, got: ${written.join(', ')}`);
+    assertEq(written.join(','), logFile, `the log and nothing else, got: ${written.join(', ')}`);
     cleanup(world.root);
   });
 
@@ -420,6 +418,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

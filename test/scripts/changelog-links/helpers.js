@@ -5,11 +5,9 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
-const { skipSuite } = require('../../lib/harness');
+const { skipSuite, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB, SYSTEM_PATH, stubTool, pathWith } = require('../../lib/platform');
 const { recordArgv } = require('../../lib/argv-log');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'workflow', 'changelog', 'changelog-links.js');
 const { repoSlug } = require(SCRIPT);

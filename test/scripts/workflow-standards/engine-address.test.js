@@ -4,17 +4,15 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
 const { WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group("standards.sh: the engine's address");
 
   // ~/.claude/workkit → the engine. The step runs on a real heal from a
@@ -324,6 +322,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

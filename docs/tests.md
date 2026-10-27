@@ -29,7 +29,7 @@ A removed feature gets no test at all: no test beats a tombstone, and the WORTH 
 - A world is built once per process through `seeded()` and copied per case.
 - A scratch folder comes from `mkTmp()`.
 - No fixed path, port or sleep, so the suite never needs the serial tail.
-- A wait bound is the runner's shared deadline (`SPAWN_DEADLINE`, the default bound of `until` and `elapsedUntil`), or a short bound passed to `until` for a negative case; `safety:test-bar` names a literal bound on write, a literal inside quoted text (a fixture's or a child program's) excepted.
+- A wait bound is the runner's shared deadline (`SPAWN_DEADLINE`, the default bound of `until` and `elapsedUntil`, and the default `deadline` of `run` and `start`), or a short bound passed to `until`, or as `deadline` to `run` or `start`, for a negative case; `safety:test-bar` names a literal bound on write, a literal inside quoted text (a fixture's or a child program's) excepted.
 - A timing case asserts order, never a measured duration.
 - A live probe sits behind a named flag and skips with its reason.
 
@@ -37,7 +37,7 @@ A removed feature gets no test at all: no test beats a tombstone, and the WORTH 
 
 What a repo's root runner does, whichever runner it is. The kit ships one that keeps it (below); a repo on another runner (a framework's own devkit runner, say) keeps the shape with its own.
 
-- A suite is written on the kit harness (`test/lib/harness.js`: the file exports an async runner function that returns `{passed, failed, failures, skips}`), the preferred shape and the one a new repo uses; a suite on `node:test`, Node's built-in test library, is the second shape, carried for a repo that already has it, as the kit's runner does (below).
+- A suite is written on the kit harness (`test/lib/harness.js`: its async case runner is named `cases`, and the file exports it, or a wrapper calling it, returning `{passed, failed, failures, skips}`), the preferred shape and the one a new repo uses; a suite on `node:test`, Node's built-in test library, is the second shape, carried for a repo that already has it, as the kit's runner does (below).
 - Each suite file runs in its own process, as many at once as the machine has cores less one, and its output prints whole, in sorted order, so two suites never interleave.
 - A suite that touches a shared path (a fixed folder, a port) is named in the repo's serial list, with the path in a comment beside its entry; those suites run one at a time after the parallel wave. An entry that matches no suite fails the run, naming it, before any suite starts.
 - A world is seeded once per process (`seeded()`) and copied per case.
@@ -45,18 +45,20 @@ What a repo's root runner does, whichever runner it is. The kit ships one that k
 - A suite or a case that cannot run here skips by name with its reason, and the run lists every skip after the totals.
 - The run ends with one totals line, `N passed, M failed (Ns, K suites)`, with `, S suites skipped` and `, C cases skipped` after the failed count when there are any.
 - The kit's runner then prints one more line, `slowest: <suite> <s>s, ...`, naming the five slowest suites of the run by wall time, slowest first.
+- Under a failing case's message the kit's harness prints the first stack frame outside the harness (the suite's line, or the seam's when the assert sits in one) and the lines the case wrote through `log()`; with `TEST_LOG=1` a passing case's `log()` lines print too, and a `log()` line written with no case running prints at once.
 - Any failure exits 1. A suite that fails to load, exports no runner (and is no `node:test` file), or dies without a result is one failure, named `load <suite>`, `export <suite>` or `run <suite>`.
 
 ### The kit's runner
 
-It lives in the kit's engine folder: `workflow/test/run.js`, its library beside it in `workflow/test/lib/` (`harness.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `suites.js`), so its engine address is `~/.claude/workkit/test/run.js`.
+It lives in the kit's engine folder: `workflow/test/run.js`, its library beside it in `workflow/test/lib/` (`harness.js`, `log.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`), with `harness.js` the entry that carries the exports of every file but `node-test.js`, so a suite requires that one line; its engine address is `~/.claude/workkit/test/run.js`.
 
+- `start()`'s `end(signal)` climbs the shell's ladder (`wk_end_run`), `SIGINT` then `SIGTERM` then `SIGKILL`, from the rung named, 1.5 s apart, each rung sent only while the child (a detached child's whole process group) still lives, so `end('SIGKILL')` is one send; on Windows it is one `taskkill` tree end.
 - It reads the repo's `test/` folder, Node's convention, and `tests/` when the repo has no `test/`, so a repo not yet moved keeps running; the standards heal names a `tests/` folder as drift, with `git mv tests test` as the fix.
 - A run covers every `test/**/*.test.js`, the parallel wave then the serial tail `test/lib/serial.js` names (none without the file), then the mod half when `test/mods/` holds `*.test.ts` suites; suite paths narrow the run, and a path matching no suite exits 1 naming it and the folder read.
 - `workkit test [paths]` hands its arguments to the repo's own `npm test`, run at the repo root, and does nothing else, so the one recorder, npm's script shell, sees the run: a narrowed run leaves the package record, a bare one the suite record. A repo whose package.json has no `test` script gets one error line and exit 1, and so does the verb started inside an `npm test`, which would otherwise loop.
 - It carries a second shape for a repo that already has suites on `node:test`: a file whose text imports `node:test` (read, never required, since requiring it runs its tests) runs through Node's own `run()` in the same worker, its pass, fail, skip and todo events filling the harness's result object, so every line above prints for it unchanged.
 - A repo's `npm test` stays `node test/run.js`, a few lines that hand off to the kit's runner: the kit itself by a relative path into `workflow/`, every other repo through `WORKKIT_ENGINE` when it is set, else `~/.claude/workkit`.
-- The repo's `test/lib/harness.js`, `process.js`, `scratch.js`, `seed.js` and `suites.js` are each a re-export of the kit's file, so every suite's `require('../lib/harness')` stands as it is, and `test/lib/` otherwise holds only the repo's own seams and its `serial.js`.
+- The repo's `test/lib/harness.js` is the one re-export, of the kit's entry, so every suite's `require('../lib/harness')` stands as it is and reaches the whole library, and `test/lib/` otherwise holds only the repo's own seams and its `serial.js`. A repo that still re-exports `process.js`, `scratch.js`, `seed.js` and `suites.js` keeps working, since the kit keeps those files, until it collapses to the one line.
 - CI has no kit checkout, so the checks template clones the public kit shallowly and exports `WORKKIT_ENGINE` to its `workflow/` folder, with no link, so a Windows runner can take the `WORKKIT_ENGINE` route too; in the kit itself the step does nothing.
 - The standards heal names a participating repo whose test script reaches neither this runner nor one that prints the totals line (`workflow/README.md`, the `standards/` row).
 

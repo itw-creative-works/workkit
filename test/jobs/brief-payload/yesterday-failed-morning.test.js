@@ -7,7 +7,7 @@ const {
   composeBrief, SLUG, STAMP, cleanup, mkWorld, captureStderr, composeIn, nameHomeRepo, discussion, MONDAY, TUESDAY,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('jobs/brief-payload: yesterday and the week');
 
   await test('the newest daily summary is the findings, every morning', () => {
@@ -111,6 +111,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

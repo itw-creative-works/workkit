@@ -6,7 +6,7 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, drawnIndicator, NOW } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { format, agent, secondHand, modal } = await loadLibs();
 
   group('tower/app: agent - the activity indicator');
@@ -306,6 +306,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

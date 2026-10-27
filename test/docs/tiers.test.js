@@ -14,7 +14,7 @@ const read = (rel) => fs.readFileSync(path.join(REPO, rel), 'utf8');
 const mentions = (text) => [...text.matchAll(/itw-creative-works\.github\.io\/workkit/gi)]
   .map((m) => text.slice(Math.max(0, m.index - 'https://'.length), m.index + m[0].length + 1));
 
-const run = async () => {
+const cases = async () => {
   group('docs: the central address');
 
   await test(`every mention is spelled ${ADDRESS}`, () => {
@@ -25,6 +25,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

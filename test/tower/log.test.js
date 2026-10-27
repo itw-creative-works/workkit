@@ -5,8 +5,7 @@
 
 const { spawnSync } = require('child_process');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { SPAWN_DEADLINE } = require('../lib/process');
+const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../lib/harness');
 
 const LOG = path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'log.js');
 const ESCAPE = '\u001b';
@@ -25,7 +24,7 @@ const inNode = (script, env = {}) => {
 const EVERY_LEVEL = "const l = createLogger();\nl.ok('board: swept');\nl.skip('board: current');\n"
   + "l.info('board: a hint');\nl.warn('board: careful');\nl.error('board: broken');";
 
-const run = async () => {
+const cases = async () => {
   group('tower/api/lib/log: the glyphs');
 
   await test('every level opens with its own glyph', () => {
@@ -83,6 +82,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

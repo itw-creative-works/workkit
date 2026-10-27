@@ -25,7 +25,7 @@ const mkSetupScene = () => {
   return { world, repo: mkRepo({ optIn: true }), ...mkSetupKit() };
 };
 
-const run = async () => {
+const cases = async () => {
   group('identity/gh link: setup and update');
 
   await test('setup links ~/.local/bin/gh to the kit\'s workflow/identity/gh', () => {
@@ -118,6 +118,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

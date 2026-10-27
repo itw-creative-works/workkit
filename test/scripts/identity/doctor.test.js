@@ -52,7 +52,7 @@ const NOT_SIGNED_IN = /not signed in; run `?workkit setup --login`?/;
 const repoLines = (said) => section(said, 'This repo').split('\n')
   .filter((l) => l.includes('acme/rostered') && /installed/.test(l));
 
-const run = async () => {
+const cases = async () => {
   group('workkit doctor: identity');
 
   await test('case 19: This machine says signed in as @<login>, or not signed in; run workkit setup --login as one attention item', async () => {
@@ -123,6 +123,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

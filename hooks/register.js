@@ -602,9 +602,12 @@ export function register(on) {
   on('classic.Stop', async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
-    const opted = await folderOpted(ioOf($, env), e.cwd);
-    if (opted) await caught($, HOOK.closeGuard, closeGuardGather(ioOf($, env), env, e));
-    const nag = opted ? await caught($, HOOK.changeTracker, changeTrackerGather(ioOf($, env), env, e)) : null;
+    // One transcript read serves both gathers.
+    let messages;
+    const io = { ...ioOf($, env), messages: () => (messages ??= $.session.messages()) };
+    const opted = await folderOpted(io, e.cwd);
+    if (opted) await caught($, HOOK.closeGuard, closeGuardGather(io, env, e));
+    const nag = opted ? await caught($, HOOK.changeTracker, changeTrackerGather(io, env, e)) : null;
     await logFires($, env, 'Stop', e, [HOOK.closeGuard, HOOK.changeTracker].map((hook) => [hook, verdictOf(hook, opted)]));
     return nag ? next(e).then((r) => ({ ...r, block: [nag.block, r?.block].filter(Boolean).join('\n\n') })) : next(e);
   }).catch(passOn);

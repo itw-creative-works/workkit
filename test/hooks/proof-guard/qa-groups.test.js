@@ -15,7 +15,7 @@ const BACKEND = 'packages/backend';
 
 const flip = (touched, pkgs, over = {}) => judge(QA, { touched, packages: packagesOf(pkgs), ...over });
 
-const run = async () => {
+const cases = async () => {
   group('proof-guard: every touched package needs its own record on the tree');
 
   await test('ports "every touched package recorded: exit 0, the notice names each package"', async () => {
@@ -95,7 +95,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

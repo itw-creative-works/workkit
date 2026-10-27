@@ -9,7 +9,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { fmtCalls } = require('../../lib/argv-log');
 const { cleanup, mkWorld, setup } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the wizard, a first machine');
 
   await test('setup creates the repo, clones it, seeds it, and records the slug', () => {
@@ -74,6 +74,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -81,9 +81,9 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 What a test must be worth and may cost (the bar), and the shape every repo's runner keeps: `docs/tests.md`.
 
-`npm test` runs `test/run.js`, which hands off to the runner the kit ships, `workflow/test/run.js` (its library in `workflow/test/lib/`; `workkit test` hands its arguments to this `npm test`); `test/lib/{harness,process,scratch,seed,suites}.js` are one-line re-exports of it, and `test/lib/serial.js` is this repo's serial list.
+`npm test` runs `test/run.js`, which hands off to the runner the kit ships, `workflow/test/run.js` (its library in `workflow/test/lib/`; `workkit test` hands its arguments to this `npm test`); `test/lib/harness.js` is a one-line re-export of its entry, which carries the whole library, and `test/lib/serial.js` is this repo's serial list.
 
-A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip. Suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`, plus the runner's own suite at `test/runner.test.js`.
+A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip. Suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`, plus the library's own suites at the `test/` root (`runner`, `node-test`, `harness`, `log`, `spawn`).
 
 A suite keeps to its own temp folder through `mkTmp` and touches no fixed shared path; one that must is added to `SERIAL`, with the path named in a one-line comment beside its entry.
 
@@ -101,9 +101,9 @@ A world a case spawns comes from the same seam:
 - `test/lib/mod-fixtures.mjs` is the one home of the fixtures both halves share (`MODELS`, `SESSION_NOW`, `daysBefore`, `briefMarker`, `row`), which `mod-world.ts` re-exports whole and `mods-inputs.js` all but `SESSION_NOW`;
 - and `test/lib/mod-world.ts` is the one world beneath the hooks module for the `test/mods/*.test.ts` wiring suites (`mkWorld(on)`: files, git, gh, the engine scripts, the store and the session, answered from memory).
 
-A scratch folder has one writer as well: `mkTmp(prefix)` in `test/lib/scratch.js`, which resolves the path and removes every folder it made when the process exits. The kit's version stamp has one reader as well: `test/lib/version-stamp.js` holds `STAMP`, `readStamp(file)` and `kitVersion()`, so no suite spells the stamp file or its first-line read itself.
+A scratch folder has one writer as well: `mkTmp(prefix)` in the kit's `scratch.js`, reached through `test/lib/harness.js`; it resolves the path and removes every folder it made when the process exits. The kit's version stamp has one reader as well: `test/lib/version-stamp.js` holds `STAMP`, `readStamp(file)` and `kitVersion()`, so no suite spells the stamp file or its first-line read itself.
 
-A world built the same way for every case has one home too: `seeded(build)` in `test/lib/seed.js` builds it once per process for each shape on first use, removes it at exit, and returns a copier that `fs.cpSync`s that shape's seed into the case's own folder, so no case is handed the seed.
+A world built the same way for every case has one home too: `seeded(build)` in the kit's `seed.js`, reached through `test/lib/harness.js`, builds it once per process for each shape on first use, removes it at exit, and returns a copier that `fs.cpSync`s that shape's seed into the case's own folder, so no case is handed the seed.
 
 A case only one platform can answer names its skip through the harness's `skip()`. On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree.
 

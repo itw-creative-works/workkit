@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { cleanup, write, mkSyncWorld, sync, mkPublishWorld, publish } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish: a partial write');
 
   await test('a partial write is its own failure, and the publish aborts before committing it', () => {
@@ -40,6 +40,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

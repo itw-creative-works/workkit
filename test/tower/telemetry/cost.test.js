@@ -8,7 +8,7 @@ const {
   readUsage, costOf, PRICING, cleanup, PRICED, assistantLine, mkWorld, mkSession,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/telemetry: cost');
 
   await test('a known model prices per million tokens, each counter at its own rate', () => {
@@ -138,6 +138,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

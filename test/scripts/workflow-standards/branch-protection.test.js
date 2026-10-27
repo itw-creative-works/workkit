@@ -6,7 +6,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { stubTool } = require('../../lib/platform');
 const { cleanup, makeRepo, makeGhStub, readFile, ghCalls, runScript } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: branch protection');
 
   await test('asks GitHub to require the test check when none is set', () => {
@@ -61,6 +61,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

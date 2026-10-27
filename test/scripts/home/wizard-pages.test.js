@@ -7,7 +7,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { fmtCalls } = require('../../lib/argv-log');
 const { cleanup, mkWorld, inHome, setup } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the wizard, Pages');
 
   await test('Pages is asked for the gh-pages branch at its root, and a refusal warns with the fix', () => {
@@ -39,6 +39,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

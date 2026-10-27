@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W,
+  group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W, mkTmp,
 } = require('../../lib/harness');
 const { gitPath, crlfJq, joinPath } = require('../../lib/platform');
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
@@ -12,9 +12,8 @@ const {
   desiredLabels, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, runScript,
   repoVersion,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: labels');
 
   await test('creates every manifest label with its description and color', () => {
@@ -226,6 +225,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

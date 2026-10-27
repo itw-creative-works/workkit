@@ -4,11 +4,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, until, start } = require('../../lib/harness');
 const { IS_WINDOWS, BASH, NO_RC, shellPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
-const { until, collect } = require('../../lib/process');
 const {
   WORKFLOW_DIR, CLI, cleanup, mkWorld, runCli,
 } = require('./helpers');
@@ -24,7 +21,7 @@ const withLog = (count) => {
 
 const printed = (out) => out.split('\n').filter(Boolean);
 
-const run = async () => {
+const cases = async () => {
   group('workkit log');
 
   await test('a 60-line log prints its last 40 lines', () => {
@@ -58,12 +55,12 @@ const run = async () => {
     const logFile = path.join(world.workflowHome, 'hooks.log');
     // Its own process group off Windows, so the kill reaches a `tail` the
     // command did not exec into as well as the shell.
-    const child = spawn(BASH, [...NO_RC, shellPath(CLI), 'log', '--follow'], {
-      cwd: world.root, env: world.env, stdio: ['ignore', 'pipe', 'pipe'], detached: !IS_WINDOWS,
+    const follow = start(BASH, [...NO_RC, shellPath(CLI), 'log', '--follow'], {
+      cwd: world.root, env: world.env, detached: !IS_WINDOWS,
     });
-    const said = collect(child);
+    const said = follow.output;
     let ended = false;
-    child.on('exit', () => { ended = true; });
+    follow.child.on('exit', () => { ended = true; });
     try {
       assert(await until(() => said().includes(lines[2])), `the existing tail printed first, got: ${said()}`);
       const appended = '2026-10-18T00:01:00Z\tdocs:checkpoint\tUserPromptSubmit\ts1\t/repo\tappended';
@@ -71,7 +68,7 @@ const run = async () => {
       assert(await until(() => said().includes(appended)), `the appended line printed, got: ${said()}`);
       assert(!ended, `and the command was still following when it did: ${said()}`);
     } finally {
-      try { if (IS_WINDOWS) child.kill('SIGKILL'); else process.kill(-child.pid, 'SIGKILL'); } catch {}
+      await follow.end('SIGKILL');
     }
     cleanup(world.root);
   });
@@ -90,6 +87,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
+  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath, systemPathWith } = require('../../lib/platform');
 const { isCall } = require('../../lib/argv-log');
@@ -13,10 +13,8 @@ const {
   SCRIPT, IGNORE_GLOB, cleanup, makeRepo, makeGhStub, readFile, ghCalls, binDirWithout,
   runScript,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: offline and unauthenticated');
 
   await test('no gh on PATH: clean exit, local heals still applied', () => {
@@ -113,6 +111,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -1,12 +1,12 @@
-// Tests for docs:change-tracker's logic, changeTrackerVerdict in
-// hooks/mods/change-tracker.js: uncommitted code or unfiled entries block the
-// stop with the nag, once per fingerprint of the state. Gathering the facts is
-// the wiring's, cased in test/mods/stop-change-tracker.test.ts.
+// Tests for docs:change-tracker's logic in hooks/mods/change-tracker.js: endpointTurn, a turn that parked, blocked
+// or closed an issue, and changeTrackerVerdict: uncommitted code or unfiled entries block the stop with the nag,
+// once per fingerprint of the state. Gathering the facts is the wiring's, cased in
+// test/mods/stop-change-tracker.test.ts.
 
 const fs = require('fs');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { mods } = require('../lib/mods-inputs');
+const { mods, row } = require('../lib/mods-inputs');
 
 const PROMPT_FILE = path.join(__dirname, '..', '..', 'hooks', 'mods', 'change-tracker', 'prompt.md');
 const PROMPT = 'The working tree has uncommitted code/config changes. Keep the issue true before you stop.';
@@ -14,6 +14,10 @@ const PROMPT = 'The working tree has uncommitted code/config changes. Keep the i
 const CODE = 'Change tracker: uncommitted code changes detected.';
 const ENTRIES = 'Change tracker: unfiled entries detected.';
 const BOTH = 'Change tracker: uncommitted code changes + unfiled entries detected.';
+
+// The turn's rows: an owner prompt, then each command as one Bash tool use and its answer.
+const turn = (...commands) => [row.user(), ...commands.flatMap((command) => [row.tool('Bash', { command }), row.result()])];
+const endpoint = (rows) => mods('change-tracker').endpointTurn(rows);
 
 const judge = (facts) => mods('change-tracker').changeTrackerVerdict({
   stopHookActive: false, porcelain: '', diff: '', untracked: [], inbox: 0, capture: 0, previous: null, prompt: PROMPT, ...facts,
@@ -38,7 +42,7 @@ const silent = async (facts, label) => {
 
 const prompt = () => fs.readFileSync(PROMPT_FILE, 'utf8');
 
-const run = async () => {
+const cases = async () => {
   group('change-tracker: dirty tree detection');
 
   await test('ports "clean repo: no output (no block)"', async () => {
@@ -149,10 +153,35 @@ const run = async () => {
     const r = await blocksWith({ ...NEW_APP, capture: 1 }, BOTH);
     assert(r.context.includes('SCRATCH: 1 unfiled'), 'scratch line rides the code nudge');
   });
+
+  group('change-tracker: the endpoint turn');
+
+  await test('a turn whose tool uses hold no park, block or close is no endpoint', () => {
+    assertEq(endpoint(turn('git status --short', 'npm test -- test/a.test.js')), false, 'commands with no gh flip');
+    assertEq(endpoint(turn('gh issue edit 12 --add-label status:building --remove-label status:inbox')), false, 'a claim is no endpoint');
+    assertEq(endpoint(turn('gh issue edit 12 --remove-label status:qa --add-label status:building')), false, 'taking status:qa off is no park');
+  });
+
+  await test('gh issue edit 12 --add-label status:qa in a Bash tool use is an endpoint', () => {
+    assertEq(endpoint(turn('git status --short', 'gh issue edit 12 --add-label status:qa')), true, 'a park');
+  });
+
+  await test('gh issue edit 12 --add-label status:blocked in a Bash tool use is an endpoint', () => {
+    assertEq(endpoint(turn('gh issue edit 12 --add-label status:blocked')), true, 'a block');
+  });
+
+  await test('gh issue close 12 in a Bash tool use is an endpoint', () => {
+    assertEq(endpoint(turn('gh issue close 12')), true, 'a close');
+  });
+
+  await test('a flip before the last owner prompt belongs to an earlier turn: no endpoint', () => {
+    const rows = [...turn('gh issue edit 12 --add-label status:qa', 'gh issue close 13'), ...turn('git status --short')];
+    assertEq(endpoint(rows), false, 'only the rows after the last owner prompt count');
+  });
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -11,17 +11,15 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun,
+  group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, NO_RC, SYSTEM_PATH, shellPath, which, stubTool, joinPath,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const { mkRepo } = require('../lib/git-repo');
-const { mkTmp } = require('../lib/scratch');
 const { snapshotDir, treeOf } = require('../lib/red-snapshot');
 const { mods } = require('../lib/mods-inputs');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const KIT = path.join(__dirname, '..', '..');
 const SNAPSHOT = path.join(KIT, 'hooks', 'lib', 'snapshot.sh');
@@ -129,7 +127,7 @@ const stale = (w, list, fails = false) => {
   return { code: out.code, calls: ghCalls(stub) };
 };
 
-const run = async () => {
+const cases = async () => {
   group('workflow:snapshot: the claim');
 
   await test('ports "a claim with no snapshot takes one": the plan is a take of the session repo', async () => {
@@ -194,12 +192,12 @@ const run = async () => {
   await test('the Windows branch (OSTYPE msys, the tar copy): the root package\'s node_modules left out, an ignored folder\'s copied', () => {
     const w = withCache(mkWorld());
     const bin = mkTmp('snapshot-tar-');
-    const log = path.join(bin, 'tar.log');
-    stubTool(bin, 'tar', ['#!/bin/bash', `echo "$*" >> "${shellPath(log)}"`,
+    const logFile = path.join(bin, 'tar.log');
+    stubTool(bin, 'tar', ['#!/bin/bash', `echo "$*" >> "${shellPath(logFile)}"`,
       `exec "${shellPath(which('tar', SYSTEM_PATH))}" "$@"`]);
     const out = mode(w, 'take', ['5'], joinPath(bin, w.env.PATH), { OSTYPE: 'msys' });
     ok(out, 'take 5 as Windows');
-    assert(fs.existsSync(log), `the take copied through tar: ${out.stderr}`);
+    assert(fs.existsSync(logFile), `the take copied through tar: ${out.stderr}`);
     const tree = takenTree(w);
     assertEq(modulesIn(tree, 'node_modules'), '', 'no root node_modules path in the snapshot');
     assertEq(tree[CACHED], 'file module.exports = 9;\n', 'the ignored folder\'s module is copied as it is');
@@ -374,10 +372,10 @@ const run = async () => {
   const failingCopy = (w) => {
     const tool = IS_WINDOWS ? 'tar' : 'cp';
     const bin = mkTmp(`snapshot-${tool}-`);
-    const log = path.join(bin, `${tool}.log`);
-    stubTool(bin, tool, ['#!/bin/bash', `echo "$*" >> "${shellPath(log)}"`,
+    const logFile = path.join(bin, `${tool}.log`);
+    stubTool(bin, tool, ['#!/bin/bash', `echo "$*" >> "${shellPath(logFile)}"`,
       `"${shellPath(which(tool, SYSTEM_PATH))}" "$@"`, `echo "${tool}: refused" >&2`, 'exit 1']);
-    return { tool, log, envPath: joinPath(bin, w.env.PATH) };
+    return { tool, logFile, envPath: joinPath(bin, w.env.PATH) };
   };
 
   await test('ports "a take whose copy fails leaves no snapshot folder and no temporary sibling"', () => {
@@ -385,7 +383,7 @@ const run = async () => {
     const copy = failingCopy(w);
     const out = mode(w, 'take', ['5'], copy.envPath);
     assert(out.code !== 0, `the failed take says so in its exit: ${out.code}`);
-    assert(fs.existsSync(copy.log), `the take reached the failing ${copy.tool}`);
+    assert(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`);
     assertEq(json(snapshots(w)), json([]), 'no snapshot folder and no temporary sibling');
   });
 
@@ -399,7 +397,7 @@ const run = async () => {
     const copy = failingCopy(w);
     const out = mode(w, 'take', ['6'], copy.envPath);
     assert(out.code !== 0, `the failed take says so in its exit: ${out.code}`);
-    assert(fs.existsSync(copy.log), `the take reached the failing ${copy.tool}`);
+    assert(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`);
     assertEq(json(treeOf(path.join(snap, 'tree'))), json(before.tree), 'the live tree is as it was');
     assertEq(read(snap, 'head'), before.head, 'head is as it was');
     assertEq(read(snap, 'issues'), before.issues, 'issues is as it was');
@@ -463,6 +461,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
 if (require.main === module) selfRun(module.exports);

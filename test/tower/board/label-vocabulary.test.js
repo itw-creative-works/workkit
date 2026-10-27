@@ -5,13 +5,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
   REPO, fetchBoard, labelGroups, LABELS_FILE, cleanup, labels, assignees, issue, fakeGh, ROSTER,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
-const run = async () => {
+const cases = async () => {
   group('tower/board: the label vocabulary');
 
   await test('the group names come from the real workflow/labels.json', () => {
@@ -117,6 +116,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

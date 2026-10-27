@@ -17,7 +17,7 @@ const withComments = (r, map) => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: check 6, a closed issue carries its Proof: comment (issue #233)');
 
   await test('ports "a Fixes trailer whose issue has no Proof: comment blocks"', async () => {
@@ -52,7 +52,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -12,7 +12,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 - When the work has an issue, check its stage before anything else.
 - A build starts ONLY from `status:specced` with a real `## Spec`: the implementation layer, or the literal `None needed: small item.`
-- A written Spec (anything but the literal) with no `### Contract` part (Files, Names, Cases; spec § Specs) is refused the same way: it goes back through the spec pass below for its Contract.
+- A written Spec (anything but the literal) opens with one plain sentence stating the behaviour rule, then carries its `### Contract` part (Files, Names, Cases; spec § Specs); one with no Contract is refused the same way: it goes back through the spec pass below for its Contract.
 - An issue at `status:inbox`, or a specced one whose Spec lacks the implementation layer, gets the SPEC PASS first:
   - a `workkit:scout` maps the territory (its brief from `briefs/recon-scout.md`), and the spec drafts against the issue and the map;
   - any Spec beyond the literal gets the [workkit:interview](../interview/SKILL.md) BEFORE acceptance is requested, never a whole draft handed over for a yes (spec § Specs; `agent:ok` issues are exempt);
@@ -85,7 +85,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 
 ## 5. Verify + review
 
-- Each agent runs only the test files touched by the edit it made or checks, as `npm test -- <files>` from that package's folder (`docs/project-state.md` § The proof).
+- Each agent runs the test files touched by the edit it made or checks, and the maker also runs the suites of the modules that require a changed file (its importers, one grep of the package's source per changed file), as `npm test -- <files>` from that package's folder (`docs/project-state.md` § The proof).
   - The park runs no root suite: its proof is the flip to `status:qa`, which runs nothing and needs a green `npm test` recorded on the parked tree for each package owning a touched test file (`safety:proof-guard`).
   - A package the flip lists as missing, with its touched files, gets its own tests narrowed to those files, in the path form its runner takes, then the flip again.
   - Any edit after the narrowed runs (a fix round, docs, the CHANGELOG) makes a new tree, so the narrowed runs come last, right before the flip.

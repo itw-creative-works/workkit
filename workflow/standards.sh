@@ -2,9 +2,10 @@
 # workflow standards: bring a repo to the issue-workflow standard, idempotently.
 # The heals live in standards/; what each does: workflow/README.md, the
 # standards.sh row, § The standard version and § The hook layer self-check.
-# Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link|--home] [repo_dir]
+# Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link|--command-link|--home] [repo_dir]
 #   (no mode) heals an enabled repo; --state prints enabled | disabled |
-#   declined | undecided | home | nogit; --home heals only the tower clone.
+#   declined | undecided | home | nogit; --home heals only the tower clone;
+#   --engine-link and --command-link each make one machine link, no repo read.
 #   Every mode: README § Participation: the tri-state. repo_dir defaults to $PWD.
 
 set -euo pipefail
@@ -83,7 +84,7 @@ WK_LOG_INDENT='  '
 
 mode="heal"
 case "${1:-}" in
-  --state|--announce|--enable|--decline|--engine-link|--home) mode="${1#--}"; shift ;;
+  --state|--announce|--enable|--decline|--engine-link|--command-link|--home) mode="${1#--}"; shift ;;
   --*) wk_warn "standards: unknown option $1"; exit 1 ;;
 esac
 
@@ -96,6 +97,20 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # The engine's address needs no repo, so it answers before one is resolved.
 if [[ "$mode" == "engine-link" ]]; then
   ensure_engine_link
+  exit 0
+fi
+
+# The command's link needs no repo either: links.sh's step alone, with the names
+# it reads spelled as workkit.sh spells them. An explicit call, not the
+# automatic path, so a missing ~/.local/bin is made; HOME is the tests' seam.
+if [[ "$mode" == "command-link" ]]; then
+  KIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+  BIN_DIR="${HOME:-}/.local/bin"
+  BIN_LINK="$BIN_DIR/workkit"
+  QUIET=0
+  # shellcheck source=./workkit/links.sh
+  . "$SCRIPT_DIR/workkit/links.sh"
+  link_command
   exit 0
 fi
 

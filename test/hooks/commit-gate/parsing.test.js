@@ -28,7 +28,7 @@ const docsWithTrackedEdit = () => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: command parsing (review regressions)');
 
   await test('ports "command that only MENTIONS git commit: exit 0"', async () => {
@@ -176,7 +176,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

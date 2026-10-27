@@ -5,13 +5,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, skipSuite } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, skipSuite, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { mkPluginCopy } = require('../lib/plugin-copy');
 const { mkOriginRepo } = require('../lib/git-repo');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
 const REPO = path.join(__dirname, '..', '..');
@@ -53,10 +51,10 @@ const mkWorld = ({
   const agents = path.join(home, 'Library', 'LaunchAgents');
   const body = loadedPath === null ? path.join(agents, `${LABEL}.plist`) : loadedPath;
 
-  const log = path.join(root, 'launchctl-argv.log');
+  const logFile = path.join(root, 'launchctl-argv.log');
   const stub = stubTool(bin, 'launchctl', [
     '#!/usr/bin/env bash',
-    recordArgv(log),
+    recordArgv(logFile),
     'if [[ "$1" == \'print\' ]]; then',
     '  case "$2" in',
     `    */${LABEL})`,
@@ -76,7 +74,7 @@ const mkWorld = ({
   return {
     root,
     home,
-    calls: () => readArgv(log),
+    calls: () => readArgv(logFile),
     plist: (label) => path.join(agents, `${label}.plist`),
     rendered: () => (fs.existsSync(agents) ? fs.readdirSync(agents).sort() : []),
     installed: path.join(agents, `${LABEL}.plist`),
@@ -87,7 +85,7 @@ const mkWorld = ({
 const install = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
 const check = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), '--check'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
 
-const run = async () => {
+const cases = async () => {
   if (process.platform !== 'darwin') skipSuite('launchd and plutil are macOS');
 
   group('jobs/install: rendering');
@@ -339,6 +337,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

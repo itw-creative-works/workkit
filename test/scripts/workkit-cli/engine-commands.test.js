@@ -8,7 +8,7 @@ const {
 } = require('../../lib/harness');
 const { cleanup, mkWorld, runCli, mkRepo } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit: the engine commands');
 
   await test('note delegates to the capture CLI', () => {
@@ -55,6 +55,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

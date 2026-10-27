@@ -22,7 +22,7 @@ const judged = async (command, views = WORLD, opts = {}) => {
   return { r, calls: view.calls };
 };
 
-const run = async () => {
+const cases = async () => {
   group('proof-guard: the flip to status:complete');
 
   await test('ports "no Proof: comment, exit 2, naming the issue and the fix": one comments read of #9', async () => {
@@ -252,7 +252,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

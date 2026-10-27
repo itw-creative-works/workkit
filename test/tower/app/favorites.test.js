@@ -6,7 +6,7 @@
 const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkStorage } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { favorites, github } = await loadLibs();
 
   group('tower/app: favorites - the projects pinned to the top');
@@ -55,6 +55,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

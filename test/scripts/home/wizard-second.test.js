@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { cleanup, git, mkRemote, mkWorld, setup, mkKitCopy } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the wizard, a second machine');
 
   await test('a clone another machine already seeded is left exactly as it is', () => {
@@ -108,6 +108,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

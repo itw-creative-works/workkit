@@ -42,7 +42,7 @@ const stands = async (command, cwd, opts) => {
   assertEq((await ask(command, cwd, opts)).opted, false, `${JSON.stringify(command)} from ${cwd} must stand the hook down`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('optin: a repo that has not opted in');
 
   await test('ports "no settings file: commit-gate, suite-guard and docs:change-tracker step aside"', async () => {
@@ -179,7 +179,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

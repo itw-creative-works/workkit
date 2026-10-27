@@ -11,12 +11,10 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { assert, assertEq } = require('../../lib/harness');
+const { assert, assertEq, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo, FIXTURE_ORIGIN } = require('../../lib/git-repo');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const KIT = fs.realpathSync(path.join(__dirname, '..', '..', '..'));
 const WORKFLOW_DIR = path.join(KIT, 'workflow');

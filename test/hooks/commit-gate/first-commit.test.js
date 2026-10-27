@@ -18,7 +18,7 @@ const mkUnbornRepo = () => {
 
 const commitOn = (world) => gateOn(world.repo, 'git commit -m "feat: first"', world.env);
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: a repo with no HEAD');
 
   await test('staged code, no review marker, no suite record, no HEAD: the stand-down line, never a deny', async () => {
@@ -39,7 +39,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

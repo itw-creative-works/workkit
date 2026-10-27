@@ -7,7 +7,7 @@ const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { cleanup, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish: the source side');
 
   await test('an edit to the project itself is committed and pushed to main', () => {
@@ -56,6 +56,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

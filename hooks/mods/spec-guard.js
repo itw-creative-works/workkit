@@ -7,7 +7,7 @@
  */
 
 import { issueView } from './gh.js';
-import { denyAfter, ghBlocksCd, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghSkipped, ghSteps } from './gh-edit.js';
+import { denyAfter, ghBlocksCd, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghSkipped, ghSteps, hasLabel } from './gh-edit.js';
 import { parseJson } from './settings.js';
 
 const BODY_EDIT = /(^|[ \t\r\f\v])(--body(-file)?([= \t\r\f\v]|$)|-[bF])/m;
@@ -67,7 +67,7 @@ export async function specGuardVerdict({ command, issueView }) {
   const deny = denyAfter(notes);
   for (const { clause, detect, sawCd } of ghSteps(command)) {
     if (!ghNames(detect, 'edit')) continue;
-    if (!ghFlagValues(clause, '--add-label').join('\n').includes('status:specced')) continue;
+    if (!hasLabel(ghFlagValues(clause, '--add-label'), 'status:specced')) continue;
     const issues = ghIssueNumbers(detect, 'edit');
     if (issues.length === 0) continue;
     if (sawCd) return deny(ghBlocksCd('spec-guard'));

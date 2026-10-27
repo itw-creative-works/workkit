@@ -6,11 +6,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { openingLines, TOP_THREE } = require('../lib/checks-template');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog', 'changelog-job.sh'));
@@ -74,7 +72,7 @@ const NODE_JOB = '  changelog:\n    runs-on: ubuntu-latest\n    steps:\n      # 
 // The push trigger is already here, so these cases see only the changelog job.
 const JOBS = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n';
 
-const run = async () => {
+const cases = async () => {
   group('changelog-job.sh: sourcing it');
 
   await test('sourcing defines the functions and sets no variable', () => {
@@ -300,6 +298,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
 if (require.main === module) selfRun(module.exports);

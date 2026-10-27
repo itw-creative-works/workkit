@@ -7,12 +7,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assertEq, testUnless, summary, selfRun } = require('../lib/harness');
+const { group, test, assertEq, testUnless, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const PARTICIPATION = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'participation.sh'));
 
@@ -40,7 +38,7 @@ const settingsFile = (dir, body) => {
   return file;
 };
 
-const run = async () => {
+const cases = async () => {
   group('participation.sh: sourcing it');
 
   await test('sourcing defines the three functions', () => {
@@ -161,6 +159,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

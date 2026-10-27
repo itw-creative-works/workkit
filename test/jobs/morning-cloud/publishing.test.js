@@ -8,7 +8,7 @@ const {
   cleanup, today, mkWorld, runJob, composerTest,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('jobs/morning (cloud): publishing');
 
   await composerTest('the digest is posted as a Discussion titled with the date', () => {
@@ -90,6 +90,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

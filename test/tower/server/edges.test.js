@@ -4,13 +4,12 @@
 //
 
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { until } = require('../../lib/process');
+const { group, test, assert, assertEq, summary, selfRun, until } = require('../../lib/harness');
 const {
   DEFAULT_BIND, DEFAULT_PORT, cleanup, issueNode, mkWorld, start, getJson, sweptBoard, tiles,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/api/server: the edges');
 
   await test('the API serves no pages - / is a 404 like any other non-endpoint', async () => {
@@ -140,6 +139,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

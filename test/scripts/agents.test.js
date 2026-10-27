@@ -23,7 +23,7 @@ const frontmatter = (file) => {
   return out;
 };
 
-const run = async () => {
+const cases = async () => {
   const ladder = JSON.parse(fs.readFileSync(LADDER, 'utf8'));
 
   group('agents: the four class files');
@@ -63,7 +63,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

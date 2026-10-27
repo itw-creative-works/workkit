@@ -7,13 +7,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, gitPath, systemPathWith,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { mkOriginRepo } = require('../lib/git-repo');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SLUG = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'slug.sh'));
 
@@ -46,7 +44,7 @@ const slug = (url) => {
   return out;
 };
 
-const run = async () => {
+const cases = async () => {
   group('slug.sh: sourcing it');
 
   await test('sourcing defines the four functions', () => {
@@ -152,6 +150,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

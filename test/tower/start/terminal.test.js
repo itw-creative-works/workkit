@@ -4,18 +4,13 @@
 //
 
 const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
-const { group, test, assert, assertEq, skip, summary, selfRun } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { group, test, assert, assertEq, skip, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
-  SCRIPT, TMP_ENV, cleanup, until, start, collect, QUIET_PORTS, RED, CYAN, OFF, COLORED_APP,
+  cleanup, until, start, QUIET_PORTS, RED, CYAN, OFF, COLORED_APP,
   probeStub, ptyRun, hasExpect,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('tower/start: the terminal');
 
   await test('a colored log keeps its colors, and the filter still judges what is under them', async () => {
@@ -24,8 +19,8 @@ const run = async () => {
     // a refusal falls out of the keep net, a forgiven warning rides through, and
     // the tag stops opening the flowing phase.
     const dir = mkTmp('tower-start-');
-    const child = start(dir, 'exec sleep 30', COLORED_APP, QUIET_PORTS, { capture: true });
-    const out = collect(child);
+    const tower = start(dir, 'exec sleep 30', COLORED_APP, QUIET_PORTS);
+    const out = tower.output;
     try {
       // The last line of the run, carrying no keep-net word, so seeing it is
       // proof the colored tag opened the phase.
@@ -41,7 +36,7 @@ const run = async () => {
       assert(/^✓ dashboard at https:\/\/localhost:14300$/.test(announce || ''),
         `and the announce names the bare URL - the tower composes its own lines uncolored, got: ${announce}`);
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
@@ -51,12 +46,12 @@ const run = async () => {
     // plain text, so the halves are left to decide for themselves.
     const dir = mkTmp('tower-start-');
     const { app, seen } = probeStub(dir);
-    const child = start(dir, 'exec sleep 30', app, QUIET_PORTS);
+    const tower = start(dir, 'exec sleep 30', app, QUIET_PORTS);
     try {
       assert(await until(() => fs.existsSync(seen)), 'the half started and reported what it was given');
       assertEq(fs.readFileSync(seen, 'utf8'), 'unset', 'which is nothing at all');
     } finally {
-      child.kill('SIGKILL');
+      await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
@@ -68,12 +63,12 @@ const run = async () => {
       // terminal is watching.
       const dir = mkTmp('tower-start-');
       const { app, seen } = probeStub(dir);
-      const child = ptyRun(dir, app);
+      const pty = ptyRun(dir, app);
       try {
         assert(await until(() => fs.existsSync(seen)), 'the half started under the terminal');
         assertEq(fs.readFileSync(seen, 'utf8'), '1', 'and was told to color its log');
       } finally {
-        child.kill('SIGKILL');
+        await pty.end('SIGKILL');
         cleanup(dir);
       }
     });
@@ -81,12 +76,12 @@ const run = async () => {
     await test('a FORCE_COLOR the caller exported is the caller\'s - a deliberate 0 included', async () => {
       const dir = mkTmp('tower-start-');
       const { app, seen } = probeStub(dir);
-      const child = ptyRun(dir, app, ['export FORCE_COLOR=0']);
+      const pty = ptyRun(dir, app, ['export FORCE_COLOR=0']);
       try {
         assert(await until(() => fs.existsSync(seen)), 'the half started under the terminal');
         assertEq(fs.readFileSync(seen, 'utf8'), '0', 'with the answer its caller gave, not the one the tower would have');
       } finally {
-        child.kill('SIGKILL');
+        await pty.end('SIGKILL');
         cleanup(dir);
       }
     });
@@ -96,35 +91,15 @@ const run = async () => {
       // never signal, so bash's "Terminated: 15 … Done …" lines, made for a job
       // another shell killed, never appear here.
       const dir = mkTmp('tower-start-');
-      const runner = path.join(dir, 'runner.sh');
-      const script = path.join(dir, 'ctrl-c.exp');
-      fs.writeFileSync(runner, [
-        '#!/usr/bin/env bash',
-        `export WORKKIT_TOWER_PORTS='${QUIET_PORTS}'`,
-        "export WORKKIT_TOWER_API='exec sleep 30'",
-        'export WORKKIT_TOWER_APP="echo \'Dev server: https://localhost:14300\'; exec sleep 30"',
-        `exec bash '${shellPath(SCRIPT)}'`,
-        '',
-      ].join('\n'));
-      fs.writeFileSync(script, [
-        `set timeout ${SPAWN_DEADLINE / 1000}`,
-        `spawn bash ${shellPath(runner)}`,
-        'expect -re "dashboard at"',
-        'send \\003',
-        'expect eof',
-        '',
-      ].join('\n'));
-
-      const child = spawn('expect', [script], { env: { ...process.env, ...TMP_ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
-      const out = collect(child);
+      const pty = ptyRun(dir, "echo 'Dev server: https://localhost:14300'; exec sleep 30");
       try {
-        assert(await until(() => child.exitCode !== null), 'the run came down on the interrupt');
-        const text = out();
+        assert(await until(() => pty.child.exitCode !== null), 'the run came down on the interrupt');
+        const text = pty.output();
         assert(/✓ dashboard at/.test(text), 'the terminal saw the one line it should');
         assert(!/Terminated/.test(text), 'and no job-control obituary for the halves');
         assert(!/\bDone\b/.test(text), 'nor for their filters');
       } finally {
-        child.kill('SIGKILL');
+        await pty.end('SIGKILL');
         cleanup(dir);
       }
     });
@@ -139,6 +114,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

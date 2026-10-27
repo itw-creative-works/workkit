@@ -8,7 +8,7 @@ const {
 } = require('../../lib/harness');
 const { cleanup, makeRepo, readFile, runScript } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: local working files');
 
   await test('creates .workkit/capture.md with the capture header', () => {
@@ -61,6 +61,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

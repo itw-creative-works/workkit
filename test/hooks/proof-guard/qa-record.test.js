@@ -14,7 +14,7 @@ const ON_ROOT = QA_BLOCK(1, 'the repo root: tests/a.test.js');
 
 const flip = (over) => judge(QA, { touched: TOUCHED, ...over });
 
-const run = async () => {
+const cases = async () => {
   group('proof-guard: a record holds only the tree it was written on');
 
   await test('ports "a tracked edit after the record" and "a new untracked file after the record": a tree id the root line was not written on blocks', async () => {
@@ -29,7 +29,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

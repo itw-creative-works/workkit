@@ -6,9 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { group, test, testUnless, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 const { asWindows, gitPath: rosterKey } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 
 const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
 // The slug rule is the engine's (workflow/slug.js, cased in test/scripts/slug.test.js);
@@ -80,7 +79,7 @@ const mkWorkflowHome = (root, repos, { homeSlug = null, roster } = {}) => {
 
 const names = (found) => found.map((r) => r.name).sort().join(',');
 
-const run = async () => {
+const cases = async () => {
   group('tower/repos: which repos are in');
 
   await test('a registered, opted-in repo is on the roster', () => {
@@ -454,6 +453,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

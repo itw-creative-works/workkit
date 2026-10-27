@@ -33,7 +33,7 @@ const SILENT = [
   'version 1.2.3', 'a1234b', 'does the framework only run on mac', 'I presume this is fine', 'this api is discontinued',
 ];
 
-const run = async () => {
+const cases = async () => {
   group('workflow-feature: the issue-work lines fire');
   for (const prompt of FIRING) {
     await test(`ports "fires on "${prompt}""`, () => {
@@ -61,7 +61,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

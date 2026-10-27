@@ -7,12 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { assert } = require('../../lib/harness');
+const { assert, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
-const { seeded } = require('../../lib/seed');
 const { copyEngine, mkTowerRemote } = require('../publish/helpers');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKFLOW_DIR = path.join(REPO_ROOT, 'workflow');

@@ -16,7 +16,7 @@ const FAMILY = (extra = {}) => ({
   members: { 'packages/a': member('@s/a'), 'packages/b': member('@s/b'), ...extra },
 });
 
-const run = async () => {
+const cases = async () => {
   group('release-taken: npm publish');
 
   await test('ports "a taken version bounces the publish, and GitHub is not asked"', async () => {
@@ -161,7 +161,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

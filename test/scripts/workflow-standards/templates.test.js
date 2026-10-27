@@ -9,7 +9,7 @@ const { block, listValue, isContent } = require('../../lib/workflow-yaml');
 const { splitCloneStep, withoutCloneStep } = require('../../lib/checks-template');
 const { WORKFLOW_DIR, cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: issue templates');
 
   await test('creates all four templates with the right auto-labels', () => {
@@ -229,6 +229,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

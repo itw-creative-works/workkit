@@ -5,9 +5,8 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 const { gitPath } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 
 const { composeSlugs, writeSlugs, machineKey } = require(path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js'));
 
@@ -65,7 +64,7 @@ const dropFromRoster = (workflowHome, name) => {
 
 const keysOf = (machines) => Object.keys(machines).sort().join(',');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/site-repos: what the list says');
 
   await test('every registered repo is a slug, and the home repo rides along', () => {
@@ -256,6 +255,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

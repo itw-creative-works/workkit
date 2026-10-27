@@ -13,7 +13,7 @@ const {
   cleanup, writeStub, mkWorld, runCli, mkRepo, seedSettings, mkPartialKit,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit brief: today’s brief, asked for now (issue #54)');
 
   const BOTH_SECRETS = [
@@ -129,6 +129,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

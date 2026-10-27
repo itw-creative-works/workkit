@@ -8,7 +8,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { fmtCalls } = require('../../lib/argv-log');
 const { cleanup, mkRemote, mkWorld, inHome, setup } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the wizard, the question');
 
   await test('without a terminal it names workkit setup --home, and asks nothing', () => {
@@ -64,6 +64,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

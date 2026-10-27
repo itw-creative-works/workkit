@@ -34,7 +34,7 @@ const skillFolders = () =>
     .map((e) => e.name)
     .sort();
 
-const run = async () => {
+const cases = async () => {
   group('skills: the nine folders');
   for (const name of SKILLS) {
     await test(`${name}/SKILL.md exists and its frontmatter name matches the folder`, () => {
@@ -111,7 +111,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

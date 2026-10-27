@@ -5,9 +5,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 const { resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
-const { mkTmp } = require('../lib/scratch');
 
 const {
   readDiscussions, briefHistory, briefFreshness, parseStatsMark, HISTORY_LIMIT, BRIEF_TITLE_PREFIX,
@@ -41,7 +40,7 @@ const mkExec = (nodes, calls = []) => (cmd, args) => {
   return JSON.stringify({ data: { repository: { discussions: { nodes } } } });
 };
 
-const run = async () => {
+const cases = async () => {
   group('tower/history: the board over time');
 
   await test('every published brief’s stats line becomes one entry, oldest first', () => {
@@ -204,6 +203,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

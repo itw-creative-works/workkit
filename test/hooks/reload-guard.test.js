@@ -19,7 +19,7 @@ const STAMP = 'hooks.json:3f1c|agents/worker.md:1700000000000|skills/ship/SKILL.
 const CHANGED = 'hooks.json:3f1c|agents/scout.md:1700000600000|agents/worker.md:1700000000000|skills/ship/SKILL.md:1700000000000';
 const say = (stamp, fingerprint) => textOf(mods('reload-guard').reloadGuardContext(stamp, fingerprint));
 
-const run = async () => {
+const cases = async () => {
   group('reload-guard: an unchanged checkout is silent');
 
   await test('ports "prompt after a stamp with nothing touched: no output"', () => {
@@ -53,7 +53,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

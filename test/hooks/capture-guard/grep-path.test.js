@@ -13,7 +13,7 @@ const {
 
 const label = (input) => JSON.stringify(input);
 
-const run = async () => {
+const cases = async () => {
   group('capture-guard: the Grep path');
 
   await test('ports "a Grep whose path IS the capture file: exit 2"', async () => {
@@ -69,6 +69,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -1,11 +1,11 @@
-// classic.Stop through the hooks module: docs:change-tracker after
-// manager:close-guard, its `{ block }` carrying the nag on uncommitted code or
-// unfiled entries, the fingerprint's SHA-1 kept in .workkit/agents/.change-tracker
-// where .workkit/ is gitignored, and silence on a state already nagged about.
+// classic.Stop through the hooks module: docs:change-tracker after manager:close-guard, its `{ block }` carrying
+// the nag on uncommitted code or unfiled entries at a turn that parked, blocked or closed an issue, the fingerprint's
+// SHA-1 kept in .workkit/agents/.change-tracker where .workkit/ is gitignored, and silence on a state already nagged
+// about.
 // The verdict's own cases are test/hooks/change-tracker.test.js.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, REPO, PLAIN, SID } from '../lib/mod-world.ts'
+import { mkWorld, hooksLog, row, REPO, PLAIN, SID } from '../lib/mod-world.ts'
 
 const PROMPT = 'The working tree has uncommitted code/config changes. (fixture prompt.md)'
 const STATE = `${REPO}/.workkit/agents/.change-tracker`
@@ -24,8 +24,13 @@ const stop = ($: any, extra: any = {}) => $.classic.Stop({
   hook_event_name: 'Stop', session_id: SID, cwd: REPO, stop_hook_active: false, ...extra,
 })
 
-// An opted-in repo whose .workkit/ is gitignored, the prompt in the kit, and app.js edited.
+// A turn: the owner's prompt, then one Bash tool use and its answer.
+const turn = (command: string) => [row.user(), row.tool('Bash', { command }), row.result()]
+const PARK = turn('gh issue edit 12 --add-label status:qa')
+
+// An opted-in repo whose .workkit/ is gitignored, the prompt in the kit, app.js edited, and a turn that parked.
 const world = (on: any, opts: any = {}) => mkWorld(on, {
+  messages: PARK,
   status: { [REPO]: ' M app.js\n' },
   diff: { [REPO]: DIFF('two') },
   ignored: [`${REPO}/.workkit/`],
@@ -36,7 +41,7 @@ const world = (on: any, opts: any = {}) => mkWorld(on, {
 const blockOf = (r: any) => (typeof r?.block === 'string' ? r.block : null)
 
 describe('classic.Stop: docs:change-tracker, the Contract cases', () => {
-  test('given uncommitted code and no previous fingerprint: { block } with the nag, the state file holds the sha1', async ($, on) => {
+  test('given uncommitted code, gh issue edit 12 --add-label status:qa in a Bash tool use and no previous fingerprint: { block } with the nag, the state file holds the sha1', async ($, on) => {
     const w = world(on)
     const r = await stop($)
     const block = blockOf(r)
@@ -58,6 +63,16 @@ describe('classic.Stop: docs:change-tracker, the Contract cases', () => {
     const w = world(on)
     expect(blockOf(await stop($, { stop_hook_active: true }))).toBeNull()
     expect(w.files.has(STATE)).toBe(false)
+  })
+})
+
+describe('classic.Stop: docs:change-tracker, the endpoint gate', () => {
+  test('a dirty tree and a turn with no park, block or close: no block, nothing written, the later park still nags', async ($, on) => {
+    const w = world(on, { messages: turn('npm test -- test/a.test.js') })
+    expect(blockOf(await stop($))).toBeNull()
+    expect(w.files.has(STATE)).toBe(false)
+    w.messages = PARK
+    expect(blockOf(await stop($))).toContain(CODE)
   })
 })
 

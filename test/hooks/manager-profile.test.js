@@ -23,7 +23,7 @@ const config = (user, repo, ladder = LADDER) => mods('manager').managerConfig(la
 const ctxFor = (model, cfg = config()) => textOf(mods('profile').profileContext(cfg, model));
 const settings = (manager) => ({ version: 1, enabled: true, manager });
 
-const run = async () => {
+const cases = async () => {
   group('manager-profile: injection by session tier');
   await test('ports "frontier session injects the profile with the advisor-redundant clause"', () => {
     const ctx = ctxFor(MODELS.fable);
@@ -85,7 +85,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

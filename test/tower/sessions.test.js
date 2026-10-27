@@ -6,9 +6,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 const { asWindows } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 
 const { listSessions, transcriptPath, chatNameFrom, NAME_READ_BYTES } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'sessions.js'));
 
@@ -81,7 +80,7 @@ const list = (world, opts = {}) => listSessions({
   ...opts,
 });
 
-const run = async () => {
+const cases = async () => {
   group('tower/sessions: liveness');
 
   await test('a marker whose assertion holds its own pid is live and working', () => {
@@ -482,6 +481,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish: the published branch');
 
   await test('the built dashboard is pushed to gh-pages, at its root', () => {
@@ -69,8 +69,8 @@ const run = async () => {
     assertEq(code, 0, `exit 0: ${out}`);
 
     const pages = fromPages(world);
-    const log = spawnSync('git', ['-C', pages, 'log', '--oneline'], { encoding: 'utf8' }).stdout.trim().split('\n');
-    assertEq(log.length, 2, `the branch has a history, not a fresh root each time: ${log.join(' | ')}`);
+    const gitLog = spawnSync('git', ['-C', pages, 'log', '--oneline'], { encoding: 'utf8' }).stdout.trim().split('\n');
+    assertEq(gitLog.length, 2, `the branch has a history, not a fresh root each time: ${gitLog.join(' | ')}`);
     assert(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim() !== first,
       'and it moved');
     cleanup(world.root);
@@ -89,8 +89,8 @@ const run = async () => {
     assertEq(code, 0, `exit 0: ${out}`);
     const pages = fromPages(world);
     assert(pages, 'the branch is back');
-    const log = spawnSync('git', ['-C', pages, 'log', '--oneline'], { encoding: 'utf8' }).stdout.trim().split('\n');
-    assertEq(log.length, 1, `one commit, no old history: ${log.join(' | ')}`);
+    const gitLog = spawnSync('git', ['-C', pages, 'log', '--oneline'], { encoding: 'utf8' }).stdout.trim().split('\n');
+    assertEq(gitLog.length, 1, `one commit, no old history: ${gitLog.join(' | ')}`);
     cleanup(world.root);
   });
 
@@ -114,6 +114,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

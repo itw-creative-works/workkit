@@ -6,7 +6,7 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkState, ROSTER } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { chrome } = await loadLibs();
 
   group('tower/app: chrome - the strip above the body');
@@ -54,6 +54,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

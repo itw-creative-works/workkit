@@ -19,7 +19,7 @@ const reminder = (out, file) => {
   assert(out.includes('If not, say why in the Proof: line.'), `points at the Proof: line, got: ${out}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('test-reminder: a test naming the file keeps it silent');
 
   await test('ports "a test naming the file by its basename: silent"', () => {
@@ -66,7 +66,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

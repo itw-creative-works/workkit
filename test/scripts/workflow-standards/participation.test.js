@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun, WORKKIT_DIR: W,
+  group, test, assert, assertEq, testUnless, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
   IS_WINDOWS, SYSTEM_BASH, NO_RC, gitPath, shellPath,
@@ -13,10 +13,8 @@ const {
 const {
   WORKFLOW_DIR, cleanup, rosterOf, makeRepo, binDirWithout, runScript, STANDARD_VERSION,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: participation');
 
   // Four states, two files. A yes (or a deliberate project-level no) is the
@@ -258,6 +256,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

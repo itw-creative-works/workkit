@@ -2,13 +2,12 @@
 // reading the origin remote into the GitHub slug its links are built from.
 // The shared prologue is ./helpers.js.
 
-const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
   skipOnWindows, repoSlug, cleanup, git,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
-const run = async () => {
+const cases = async () => {
   skipOnWindows();
 
   group('changelog-links: reading the remote');
@@ -49,6 +48,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

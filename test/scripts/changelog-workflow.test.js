@@ -27,7 +27,7 @@ const jobBlock = (text, name) => {
 // The one `uses:` line a caller's changelog job is made of.
 const USES_RE = /^ {4}uses: ([\w.-]+\/[\w.-]+)\/(\.github\/workflows\/[\w.-]+\.yml)@main$/;
 
-const run = async () => {
+const cases = async () => {
   group('changelog.yml: the reusable workflow');
 
   await test('it is callable and only callable: on is workflow_call alone', () => {
@@ -80,6 +80,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
 if (require.main === module) selfRun(module.exports);

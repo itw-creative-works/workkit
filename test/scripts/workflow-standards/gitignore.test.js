@@ -13,7 +13,7 @@ const {
   readFile, runScript,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: .workkit/ in .gitignore');
 
   await test('git honors the pattern: settings.json tracked, the rest ignored', () => {
@@ -145,6 +145,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

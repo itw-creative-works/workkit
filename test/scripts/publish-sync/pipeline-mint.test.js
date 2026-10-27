@@ -9,7 +9,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { shellPath } = require('../../lib/platform');
 const { cleanup, writeStub, mkPublishWorld, publish, fromPages } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish: the mint after any change');
 
   await test('a sync that changed something mints the brand assets, at the brand root', () => {
@@ -92,6 +92,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -7,10 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skipSuite, selfRun, summary,
+  group, test, assert, assertEq, skipSuite, selfRun, summary, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
@@ -58,7 +56,7 @@ const runMint = (root, { child, send = '' }) => {
   };
 };
 
-const run = async () => {
+const cases = async () => {
   if (!hasExpect()) skipSuite('expect is not installed: only the script fallback can run here');
 
   group('workflow: mint-pty: Ctrl-C ends a mint whose child ignores it (#187)');
@@ -89,5 +87,5 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
-if (require.main === module) selfRun(run);
+module.exports = cases;
+if (require.main === module) selfRun(cases);

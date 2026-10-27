@@ -5,13 +5,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
   readUsage, resetCache, cachedPaths, cleanup, assistantLine, mkWorld, mkSession, mkSubagent, collect,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
 
-const run = async () => {
+const cases = async () => {
   group('tower/telemetry: reading usage');
 
   await test('usage sums across many assistant lines, and lines without a usage block are skipped', () => {
@@ -167,6 +166,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

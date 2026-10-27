@@ -42,7 +42,7 @@ const scan = (files) => {
   return bad;
 };
 
-const run = async () => {
+const cases = async () => {
   group('agents-lint: the shipped tree');
 
   await test('no agent definition carries a machine-specific absolute path', () => {
@@ -65,7 +65,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

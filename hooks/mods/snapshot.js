@@ -9,15 +9,12 @@
 
 import { repoSlug } from './command.js';
 import { buildingList } from './gh.js';
-import { ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghRepoIsHere, ghSteps } from './gh-edit.js';
+import { ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghRepoIsHere, ghSteps, hasLabel } from './gh-edit.js';
 import { userDirOf } from './log.js';
 import { snapshotMarkerPath } from './markers.js';
 import { rosterOf, rosterPath } from './optin.js';
 import { issuesBuilding } from './proof.js';
 import { LONG_RUN_MS } from './suite.js';
-
-// The label is one of the comma-listed values, matched whole.
-const hasLabel = (values, label) => values.join('\n').replace(/["']/g, '').split(/[,\n]/).some((v) => v.trim() === label);
 
 /**
  * Whether the command could be a claim or a release: a `gh issue edit|close`

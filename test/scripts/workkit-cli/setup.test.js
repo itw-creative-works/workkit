@@ -17,7 +17,7 @@ const {
   writeStub, mkSetupKit, mkPartialKit,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit setup');
 
   await test('a machine without the plugin has it installed from this checkout', () => {
@@ -614,6 +614,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

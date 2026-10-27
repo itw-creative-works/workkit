@@ -6,8 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { mkTmp } = require('../lib/scratch');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 
 const { repoHealth, unreleasedCount } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'health.js'));
 
@@ -62,7 +61,7 @@ const CHANGELOG = [
   '',
 ].join('\n');
 
-const run = async () => {
+const cases = async () => {
   group('tower/health: git counts');
 
   await test('unpushed counts commits ahead of the upstream', () => {
@@ -157,6 +156,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

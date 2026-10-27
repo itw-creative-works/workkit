@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
+  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, cygpathStub, joinPath,
@@ -14,10 +14,8 @@ const {
   WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, binDirWithout,
   runScript,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: the roster');
 
   // The machine-local index the tower reads instead of walking a disk. It is
@@ -166,8 +164,8 @@ const run = async () => {
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     const status = spawnSync('git', ['-C', tower, 'status', '--short'], { encoding: 'utf8' }).stdout;
     assertEq(status.trim(), '', `nothing was written into the clone: ${status}`);
-    const log = spawnSync('git', ['-C', tower, 'log', '--oneline'], { encoding: 'utf8' });
-    assert(!log.stdout.trim(), `and nothing was committed there: ${log.stdout}`);
+    const gitLog = spawnSync('git', ['-C', tower, 'log', '--oneline'], { encoding: 'utf8' });
+    assert(!gitLog.stdout.trim(), `and nothing was committed there: ${gitLog.stdout}`);
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
@@ -328,6 +326,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

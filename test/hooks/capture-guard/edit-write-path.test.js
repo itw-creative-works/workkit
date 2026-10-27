@@ -11,7 +11,7 @@ const {
   REPO, CAPTURE, FRESH, ROUTE_ON, WRITE, REWRITE, bash, edit, write, denyOf, refuses, allows,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('capture-guard: the Edit and Write path');
 
   await test('ports "editing or writing the capture file with no marker: exit 2": the refusal names the rewrite', async () => {
@@ -126,6 +126,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

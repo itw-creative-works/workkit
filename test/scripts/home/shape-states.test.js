@@ -9,7 +9,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { WORKFLOW_DIR, KIT_DIR, cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: shape');
 
   await test('the three libraries parse and run nothing at load', () => {
@@ -135,6 +135,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

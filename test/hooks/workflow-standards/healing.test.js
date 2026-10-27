@@ -6,15 +6,14 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath, homeEnv } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const { runResult } = require('../../lib/mods-inputs');
 const {
   WORKFLOW_DIR, BASE_PATH, cleanup, makeRepo, heal, say, dropPathWithoutGh,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow:standards: healing a repo');
 
   await test('ports "unstandardized repo: heals it and reports what changed"', () => {
@@ -59,6 +58,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

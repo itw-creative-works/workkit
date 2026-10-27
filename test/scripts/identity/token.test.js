@@ -9,11 +9,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun,
+  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const { IS_WINDOWS } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 const {
   INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf, startServer,
   startService, scratchKit, scratchEnv, PTY, atTerminal,
@@ -93,7 +91,7 @@ const tokenKit = () => {
   };
 };
 
-const run = async () => {
+const cases = async () => {
   group('identity/token: the cache');
 
   await test('case 11: tokenFor mints through POST <tokenUrl> with the bearer and { repo }, reuses within the hour, mints again under five minutes; no expiresAt is a miss', async () => {
@@ -377,7 +375,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -9,7 +9,7 @@ const {
   OVERTIME_DAYS, createServer, cleanup, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, listen, getJson,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/telemetry: the endpoints');
 
   await test('/api/telemetry serves the whole payload through the real server', async () => {
@@ -65,6 +65,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -10,7 +10,7 @@ const {
 
 const { compareVersions, isSemver } = require(path.join(__dirname, '..', '..', 'workflow', 'ship', 'semver.js'));
 
-const run = async () => {
+const cases = async () => {
   group('semver: compareVersions');
 
   await test('numbers compare numerically, and a prerelease sorts below its release', () => {
@@ -52,7 +52,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -7,14 +7,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { test, assert, skip, WORKKIT_DIR: W } = require('../../lib/harness');
+const { test, assert, skip, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
-const { seeded } = require('../../lib/seed');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
 

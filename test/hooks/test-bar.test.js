@@ -46,8 +46,14 @@ const PROCESS_HOME = [
   '};',
   'module.exports = { SPAWN_DEADLINE, until };',
 ];
+// The tree end's TERM-to-KILL grace, the one other wait bound a home writes.
+const SPAWN_HOME = [
+  "const kill = (child) => child.kill('SIGKILL');",
+  'const end = (child) => { setTimeout(() => kill(child), 2000); };',
+  'module.exports = { end };',
+];
 
-const run = async () => {
+const cases = async () => {
   group('test-bar: each mechanical miss names its line and rule');
 
   await test('fs.mkdtempSync outside tests/lib/scratch.js: the mkTmp rule', () => {
@@ -340,6 +346,11 @@ const run = async () => {
     assertEq(ruleLines(write('tests/lib/process.js', PROCESS_HOME), 'deadline').join('\n'), '', 'and a consumer repo\'s');
   });
 
+  await test('the grace in the kit\'s spawn.js: no deadline finding; the same line at test/lib/spawn.js still named', () => {
+    assertEq(ruleLines(write('workflow/test/lib/spawn.js', SPAWN_HOME), 'deadline').join('\n'), '', 'the kit\'s spawn.js is a deadline home');
+    names(write('test/lib/spawn.js', SPAWN_HOME), 'test/lib/spawn.js', 2, 'deadline');
+  });
+
   await test('the helpers\' homes under test/lib/: scratch.js and process.js exempt, a test file there named', () => {
     assertEq(ruleLines(write('test/lib/scratch.js', SCRATCH_HOME), 'mkTmp').join('\n'), '', 'test/lib/scratch.js is the scratch writer\'s home');
     assertEq(ruleLines(write('test/lib/process.js', PROCESS_HOME), 'deadline').join('\n'), '', 'test/lib/process.js is the deadline\'s home');
@@ -383,7 +394,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

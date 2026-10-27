@@ -19,7 +19,7 @@ const fieldsOf = (e) => (Array.isArray(e) ? { kind: e[0], dir: e.length > 2 ? e[
 
 const SHA1_THING = '15da8f6dacb5c1cbf08b4fbd577410882e5c5ae4';
 
-const run = async () => {
+const cases = async () => {
   group('command: redirectSpan');
 
   // Each word as a guard's walk hands it over: the quote strip has already
@@ -254,7 +254,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

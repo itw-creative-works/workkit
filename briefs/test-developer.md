@@ -25,7 +25,7 @@ The other roles': {{other-paths}}. Touch none of them.
 
 ## Verify
 
-Run only: {{tests}}
+Run: {{tests}}, then the suite of every module that requires a file you changed: its importers, one grep of the package's source per changed file for its basename, run once before the report.
 Report your run's result as you saw it; what that run proves is `docs/agents.md` § Crew sizing's.
 
 ## Report

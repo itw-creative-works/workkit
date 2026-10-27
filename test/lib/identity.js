@@ -6,10 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const { assert } = require('./harness');
+const { assert, mkTmp, SPAWN_DEADLINE } = require('./harness');
 const { IS_WINDOWS, SYSTEM_PATH, which, homeEnv } = require('./platform');
-const { mkTmp } = require('./scratch');
-const { SPAWN_DEADLINE } = require('./process');
 
 const KIT = path.join(__dirname, '..', '..');
 
@@ -119,14 +117,14 @@ server.listen(0, '127.0.0.1', () => process.stdout.write(server.address().port +
  * close() }`, where `requests()` lists `{ method, url, auth, body }`, body as text.
  */
 const startServer = (routes, dir) => new Promise((resolve, reject) => {
-  const log = path.join(dir, `server-requests-${process.hrtime.bigint()}.log`);
-  const child = spawn(process.execPath, ['-e', SERVER, JSON.stringify(routes), log],
+  const logFile = path.join(dir, `server-requests-${process.hrtime.bigint()}.log`);
+  const child = spawn(process.execPath, ['-e', SERVER, JSON.stringify(routes), logFile],
     { stdio: ['ignore', 'pipe', 'inherit'] });
   child.once('error', reject);
   child.stdout.once('data', (chunk) => resolve({
     url: `http://127.0.0.1:${String(chunk).trim()}`,
-    requests: () => (fs.existsSync(log)
-      ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    requests: () => (fs.existsSync(logFile)
+      ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
       : []),
     close: () => new Promise((done) => {
       if (child.exitCode !== null) return done();

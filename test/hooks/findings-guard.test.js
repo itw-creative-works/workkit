@@ -27,7 +27,7 @@ const passes = async (command, layers, what) => {
 
 const NO_KEY = { user: { version: 1 }, repo: { version: 1, enabled: true } };
 
-const run = async () => {
+const cases = async () => {
   group('findings-guard: a review-notes create while findings.file is off');
 
   await test('ports "no findings.file key in either file: the create bounces, naming the chat route and the toggle"', async () => {
@@ -67,7 +67,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

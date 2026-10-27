@@ -16,7 +16,7 @@ const childIndent = (keyBlock) => {
   return first ? indentOf(first) : -1;
 };
 
-const run = async () => {
+const cases = async () => {
   group('checks.yml: the triggers');
 
   await test('a push runs only on main and skips one touching only CHANGELOG.md and the plugin manifest; a pull request still runs', () => {
@@ -39,6 +39,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

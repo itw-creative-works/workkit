@@ -10,15 +10,13 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, WORKKIT_DIR: W, selfRun,
+  group, test, assert, assertEq, summary, WORKKIT_DIR: W, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const { mods } = require('../../lib/mods-inputs');
 const {
   HOME_CAPTURE, FRESH, READ, judge, read, bash, refuses, allows,
 } = require('./helpers');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 // The marker script the triage skill calls, and the skill's own line calling
 // it: the test runs the line, so the skill and the module's marker path cannot
@@ -44,7 +42,7 @@ const runSkillLine = (cwd) => spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
 });
 const markerOf = (anchor) => mods('markers').triageMarkerPath(anchor, SCRATCH_WH);
 
-const run = async () => {
+const cases = async () => {
   group('capture-guard: the user-level capture file');
 
   await test('ports "reading the user capture file with no marker: exit 2"', async () => {
@@ -101,6 +99,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

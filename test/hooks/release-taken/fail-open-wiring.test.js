@@ -6,7 +6,7 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { RELEASE, judge } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('release-taken: fail-open');
 
   await test('ports "a provider that cannot tell stands down out loud, and the commit stands"', async () => {
@@ -53,7 +53,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

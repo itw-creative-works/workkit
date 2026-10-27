@@ -6,7 +6,7 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { fetchBoard, buildBoardQuery, CLOSED_PAGE, issue, fakeGh, ROSTER } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/board: what the day closed');
 
   // The sweep carries a count of the issues closed in the last 24 hours per
@@ -128,6 +128,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

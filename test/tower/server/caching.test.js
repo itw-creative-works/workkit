@@ -10,7 +10,7 @@ const {
   createServer, cleanup, mkWorld, listen, worldOpts, start, getJson, ghCalls,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/api/server: caching');
 
   await test('two board reads inside the TTL make ONE graphql call', async () => {
@@ -100,6 +100,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

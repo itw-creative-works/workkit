@@ -6,14 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun,
+  group, test, testUnless, assert, assertEq, summary, selfRun, until, SPAWN_DEADLINE, mkTmp,
 } = require('../../lib/harness');
 const {
   IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
-const { until, SPAWN_DEADLINE } = require('../../lib/process');
-const { mkTmp } = require('../../lib/scratch');
 const {
   DEVICE_CODE, deviceFlowRoutes, readWrittenLogin, collector, json, failureOf, startServer, scratchEnv,
 } = require('../../lib/identity');
@@ -67,7 +65,7 @@ const fakeFlow = (polls) => {
 const command = (home, args, extra = {}) => spawnSync(process.execPath, [MODULE, ...args],
   { env: scratchEnv(home, extra), encoding: 'utf8', timeout: SPAWN_DEADLINE });
 
-const run = async () => {
+const cases = async () => {
   // loginFile() resolves under ~/.workkit; this process's home is a scratch one.
   const home = mkTmp('wk-login-home-');
   const loginPath = path.join(home, '.workkit', 'identity', 'login.json');
@@ -235,7 +233,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, libs, mkStorage } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { format, api, github } = await loadLibs();
 
   group('tower/app: api - the feed adapter');
@@ -242,6 +242,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

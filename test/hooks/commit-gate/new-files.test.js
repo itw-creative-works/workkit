@@ -11,7 +11,7 @@ const {
 
 const TEST_SCRIPT = '{"scripts":{"test":"exit 0"}}';
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: new source files need tests (test-TYPE proxy)');
 
   await test('ports "new .js file, no test file staged: exit 2"', async () => {
@@ -88,7 +88,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

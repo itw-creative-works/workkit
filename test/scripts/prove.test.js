@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, NO_RC, NODE_DIR, shellPath, joinPath,
@@ -20,7 +20,6 @@ const {
   skipWithoutWrapper, scratchNpmrc, wireShell, EXE_CLAUDE_HOME, assertRecord,
 } = require('../lib/script-shell');
 const { gateOn } = require('../lib/real-gate');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
@@ -112,7 +111,7 @@ const assertUnchanged = (before, after, label) => {
     `${label}: every file in the folder hashes the same`);
 };
 
-const run = async () => {
+const cases = async () => {
   skipWithoutWrapper();
 
   group('workkit prove: the staged tree, never the folder');
@@ -205,6 +204,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

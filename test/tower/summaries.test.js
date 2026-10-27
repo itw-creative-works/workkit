@@ -5,9 +5,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 const { resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
-const { mkTmp } = require('../lib/scratch');
 
 const { briefSummaries, newestSummary, isMonday } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'summaries.js'));
 
@@ -49,7 +48,7 @@ const BOARD = [
   post('daily: 2026-08-01', '2026-08-01'),
 ];
 
-const run = async () => {
+const cases = async () => {
   group('tower/summaries: the newest of a cadence');
 
   await test('the newest daily and the newest weekly are read off one board', () => {
@@ -211,6 +210,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

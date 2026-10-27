@@ -7,6 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+- [#454](../../issues/454) - A suite requires one line, `test/lib/harness`, and gets the test library: the runner primitives, `run`, `start` and `endTree` on one deadline (`end()` climbs INT, TERM, KILL), and a per-case `log()`, printed under a failing case or at once outside one. A suite's runner is `cases`.
+- [#470](../../issues/470) - `standards.sh --command-link` makes `~/.local/bin/workkit` alone and exits 0, with no repo, no terminal and no wizard, so a cloud bootstrap can install the command the setup pester checks for.
+
+### Changed
+- [#467](../../issues/467) - The checkpoint's bold safe-to-compact line is the reply's last line, with nothing under it: a note about agents still running sits inside the Filed trail above it, and every later turn-final reply before the compaction ends with the same line.
+- [#468](../../issues/468) - Node 22.12 to 22.19 flags no test inside a `describe` marked todo, so the runner counted that describe as a failure and the root suite ran red there; the floor moves to 22.22, the first version proven green here (the fix landed in 22.20).
+- [#466](../../issues/466) - The review picks its light tier by kind of change, not line count; workers also run the suites requiring a changed file; the change tracker nags only at a park, a block or a close; a written Spec opens with one plain sentence stating its behaviour rule.
+
 ## [0.82.0] - 2026-10-24
 
 ### Added

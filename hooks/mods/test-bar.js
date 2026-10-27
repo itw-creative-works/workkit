@@ -10,7 +10,7 @@ import { escaped, isTestName, isTestPath } from './test-reminder.js';
 // The scratch writer's homes: a consumer repo's (`test/` or `tests/`) and the kit's own.
 const SCRATCH = new Set(['test/lib/scratch.js', 'tests/lib/scratch.js', 'workflow/test/lib/scratch.js']);
 // The shared deadline's homes, where its own bounds are written.
-const DEADLINE_HOME = new Set(['test/lib/process.js', 'tests/lib/process.js', 'workflow/test/lib/process.js']);
+const DEADLINE_HOME = new Set(['test/lib/process.js', 'tests/lib/process.js', 'workflow/test/lib/process.js', 'workflow/test/lib/spawn.js']);
 const HELPER_DIR = /(^|\/)(tests?|workflow\/test)\/lib\//;
 
 const COMMENT = /^\s*(\/\/|\/\*|\*|#)/;

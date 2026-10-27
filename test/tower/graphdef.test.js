@@ -23,7 +23,7 @@ const issue = (repo, number, extra = {}) => ({
 /** A blocker reference: the shape `blockedBy` carries. */
 const ref = (repo, number) => ({ repo, number });
 
-const run = async () => {
+const cases = async () => {
   const { boardGraph, nodeId, MAX_TITLE } = await load('graphdef.js');
 
   group('tower/graphdef: who is on the picture');
@@ -150,6 +150,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

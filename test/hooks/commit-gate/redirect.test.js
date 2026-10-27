@@ -16,7 +16,7 @@ const docsStaged = () => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: a redirect is shell syntax, never a pathspec');
 
   await test('ports "a docs-only commit with a redirect passes"', async () => {
@@ -50,7 +50,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

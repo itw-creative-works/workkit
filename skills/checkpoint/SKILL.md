@@ -67,7 +67,8 @@ Status changes ARE checkpoint work. Apply every owner word that moves an issue's
 - The trail reports actions; it is not an audit log. It is the reply's `**🗂️ Filed**` section, the one shape `workkit:triage` prints too.
 - ONE bullet per issue this run touched, listing everything done to it in plain words: comments, filings, flips. Never one line per action, never a raw URL.
 - Every bullet reads in the cold-reader line (`docs/project-state.md` § Restating an issue): its bold lead is the number, the issue link, the issue's status in square brackets and five words.
-- Items verified as already on the board get ONE closing count line, never a line each.
+- Items verified as already on the board get ONE count line, after the issue bullets, never a line each.
+- Agents still running at the checkpoint get ONE note bullet, after the count line and last in the trail: which are running and where a resume picks them up. It sits inside the trail, above the bold line, never as a paragraph under it.
 
 ```
 **🗂️ Filed**
@@ -75,12 +76,17 @@ Status changes ARE checkpoint work. Apply every owner word that moves an issue's
 - **2. [#637](url) [complete] palette failure line**: the palette failure line was overwritten on the desktop settings page. Quoted your "637 looks good" and flipped it to status:complete, so the next ship carries it.
 - **3. [#211](url) [inbox] findings on the wrong repo**: findings about workkit made in another repo's session were filed on the home repo instead of the workkit repo. Filed as a bug, status:inbox, for triage to route.
 - **4. Verified six earlier items**: already on their issues.
+- **5. Two builders still running**: the builders for [#212](url) and [#213](url) are still working. Both claims are on their issues, so a new session picks them up from there.
 
 **✅ Safe to compact or continue in a new session.**
 ```
 
 - The trail is the whole reply: nothing prints before it but the timestamp.
-- `**✅ Safe to compact or continue in a new session.**` prints ONLY when every enumerated item is on the board. Otherwise the last line names what is still unfiled.
+- `**✅ Safe to compact or continue in a new session.**` prints ONLY when every enumerated item is on the board, and it is the reply's LAST line: nothing prints under it.
+- An item still unfiled: the last line starts `Still unfiled:` followed by what is left, and the bold line does not print. For example: `Still unfiled: the owner's ruling on the palette colors.`
+- A checkpoint run from the compaction nudge binds every later turn-final message until the compaction: each ends with the same bold line as its last line, on the same condition. A sign-off after a task notification is one short line, then the bold line; never a second trail.
+- A checkpoint run for any other reason ("harden this chat") has no later-reply rule.
+- A local harness may bounce a reply that breaks this; nothing in the kit does.
 
 ## Rules
 

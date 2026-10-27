@@ -7,7 +7,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { resetIn, clockAt } = require('../../lib/gh');
 const { loadLibs, mkFetch, jsonResponse } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { github } = await loadLibs();
 
   group('tower/app: github - the wire');
@@ -112,6 +112,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

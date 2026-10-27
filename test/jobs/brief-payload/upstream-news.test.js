@@ -5,14 +5,12 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   SCRIPT, writeBriefMarks, INSTRUCTION, parseStatsMark, CC_CHANGELOG, cleanup, mkNewsWorld, newsTest,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('jobs/brief-payload: the upstream news');
 
   await newsTest('a first run prints no block and hands the runner the latest version', () => {
@@ -104,6 +102,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

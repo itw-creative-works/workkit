@@ -2,8 +2,9 @@
 # workflow/workkit/links.sh: the four pointers this command maintains, the
 # engine's address (asked of standards.sh, which owns it), the
 # `~/.local/bin/workkit` command itself, the `~/.local/bin/gh` shim, and npm's
-# script-shell (on Windows, the executable it names). Sourced by workkit.sh,
-# functions only; every name it reads is the entry's.
+# script-shell (on Windows, the executable it names). Sourced by workkit.sh and
+# by standards.sh's --command-link, functions only; every name it reads is the
+# entry's.
 
 # standards.sh owns the engine's address; `--engine-link` runs that step alone.
 # Its diagnostics arrive on stderr, so an action line is relayed and silence

@@ -2,7 +2,7 @@
   "name": "workkit",
   "private": true,
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.22"
   },
   "scripts": {
     "brief": "bash jobs/morning.sh --now",

@@ -5,8 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR } = require('../lib/harness');
-const { mkTmp } = require('../lib/scratch');
+const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR, mkTmp } = require('../lib/harness');
 
 const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf } =
   require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'cc-news.js'));
@@ -92,7 +91,7 @@ const board = (world, version) => {
 
 const ghCalls = (world) => world.calls.filter(([cmd]) => cmd === 'gh');
 
-const run = async () => {
+const cases = async () => {
   group('jobs/cc-news: parsing');
 
   await test('the release sections and their entries come out in file order', () => {
@@ -344,6 +343,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

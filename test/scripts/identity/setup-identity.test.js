@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W,
+  group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W, until,
 } = require('../../lib/harness');
 const {
   IS_WINDOWS, NO_NODE_STUB, shellPath,
@@ -18,7 +18,6 @@ const {
   INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, startServer,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
-const { until } = require('../../lib/process');
 const { isCall } = require('../../lib/argv-log');
 const {
   cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkSetupKit, inCli, AT_TERMINAL,
@@ -132,7 +131,7 @@ const installSetup = ({
   };
 }, { ownerId });
 
-const run = async () => {
+const cases = async () => {
   group('workkit setup: identity');
 
   await test('case 18: not signed in with no keyboard warns naming workkit setup --login and starts no device flow; signed in says so; no node is the named skip; no .env is made', async () => {
@@ -332,6 +331,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

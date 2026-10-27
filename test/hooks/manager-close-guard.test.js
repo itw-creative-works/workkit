@@ -39,7 +39,7 @@ const warn = (rows, { model = FRONTIER_MODEL, closeEdits = 5 } = {}) => {
   return textOf(mods('close-guard').closeGuardWarning(facts, { tier, frontier: FRONTIER, closeEdits }));
 };
 
-const run = async () => {
+const cases = async () => {
   group('manager-close-guard: rule 3, the frontier model implementing itself');
 
   await test('ports "6 edits and no worker in a frontier session warns"', () => {
@@ -187,7 +187,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

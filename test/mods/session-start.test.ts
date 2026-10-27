@@ -224,8 +224,8 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
   test('ports "a subdirectory session resolves to the repo root"', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL }, dirs: [`${REPO}/src/deep`] })
     await start($, `${REPO}/src/deep`)
-    const run = heals(w)[0]
-    expect(run.argv.includes(REPO) || run.init.cwd === REPO).toBe(true)
+    const heal = heals(w)[0]
+    expect(heal.argv.includes(REPO) || heal.init.cwd === REPO).toBe(true)
   })
 
   test('ports "a machine that never ran setup is told to, every session"', async ($, on) => {

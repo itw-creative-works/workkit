@@ -1,6 +1,10 @@
 /* eslint-disable no-console */
 // Tiny zero-dependency test harness shared across the suites: `test()` prints
 // a mark per case and each suite reports via `summary()`. AGENTS.md § Tests.
+// It is the library's one entry: every concern file's exports ride on its own.
+
+const path = require('path');
+const { openCase, drain, CASE_INDENT } = require('./log');
 
 // The workflow state directory's name for the test layer. The engine and the
 // hooks hold their own copy, so change all three together.
@@ -11,20 +15,40 @@ let failed = 0;
 const failures = [];
 const skips = [];
 
+// The first stack frame outside this library: the line in the suite that threw.
+// The stack opens with the message, so its lines are skipped before frames are read.
+const caseFrame = (err) => {
+  const stack = String(err?.stack ?? '');
+  const message = String(err?.message ?? '');
+  const at = stack.indexOf(message);
+  return (at === -1 ? stack : stack.slice(at + message.length)).split('\n')
+    .map((line) => line.trim())
+    .find((line) => {
+      const file = line.match(/^at (?:.* \()?(.+?):\d+:\d+\)?$/)?.[1];
+      return file !== undefined && path.isAbsolute(file) && !file.startsWith(`${__dirname}${path.sep}`);
+    });
+};
+
 const group = (name) => {
   console.log(`\n\x1b[1m[${name}]\x1b[0m`);
 };
 
 const test = async (name, fn) => {
+  openCase();
   try {
     await fn();
     passed++;
     console.log(`  \x1b[32m✓\x1b[0m ${name}`);
+    const lines = drain();
+    if (process.env.TEST_LOG === '1') for (const line of lines) console.log(`${CASE_INDENT}${line}`);
   } catch (err) {
     failed++;
     failures.push({ name, err });
     console.log(`  \x1b[31m✗\x1b[0m ${name}`);
-    console.log(`    \x1b[31m${err.message}\x1b[0m`);
+    console.log(`${CASE_INDENT}\x1b[31m${err.message}\x1b[0m`);
+    for (const line of drain()) console.log(`${CASE_INDENT}${line}`);
+    const frame = caseFrame(err);
+    if (frame) console.log(`${CASE_INDENT}\x1b[2m${frame}\x1b[0m`);
   }
   // One event-loop turn per case: a killed runner's disconnect reaches the
   // worker between cases, which an await on a sync case alone never gives it.
@@ -95,5 +119,11 @@ const selfRun = (runner) => {
 };
 
 module.exports = {
+  ...require('./process'),
+  ...require('./scratch'),
+  ...require('./seed'),
+  ...require('./suites'),
+  ...require('./log'),
+  ...require('./spawn'),
   group, test, assert, assertEq, skip, testUnless, skipSuite, selfRun, summary, hasLaunchd, stripAnsi, WORKKIT_DIR,
 };

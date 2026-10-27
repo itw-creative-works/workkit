@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { shellPath, stubTool, basePathWithout } = require('./platform');
 const { recordArgv, readArgv } = require('./argv-log');
-const { mkTmp } = require('./scratch');
+const { mkTmp } = require('./harness');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 

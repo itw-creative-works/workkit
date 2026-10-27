@@ -9,7 +9,7 @@ const {
   REPO, CAPTURE, FRESH, STALE, READ, read, refuses, allows,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('capture-guard: the Read path');
 
   await test('ports "reading the capture file with no marker: exit 2, names the rule and the skill"', async () => {
@@ -37,6 +37,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

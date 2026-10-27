@@ -38,7 +38,7 @@ const resolvedLinks = (file) =>
 const missing = (file) =>
   resolvedLinks(file).filter(({ abs }) => !fs.existsSync(abs)).map(({ target }) => target);
 
-const run = async () => {
+const cases = async () => {
   group('README: links and images');
 
   await test('every relative link and image path in README.md resolves to a file or folder', () => {
@@ -54,7 +54,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

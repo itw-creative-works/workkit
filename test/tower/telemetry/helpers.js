@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { mkTmp } = require('../../lib/scratch');
+const { mkTmp } = require('../../lib/harness');
 
 const lib = path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib');
 const {

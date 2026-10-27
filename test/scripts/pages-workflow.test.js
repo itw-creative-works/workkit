@@ -36,7 +36,7 @@ const runLines = (all) => {
   return out;
 };
 
-const run = async () => {
+const cases = async () => {
   group('pages.yml: when it runs and what it may touch');
 
   await test('it runs on a published release and on a manual dispatch, nothing else, with no tabs', () => {
@@ -81,6 +81,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

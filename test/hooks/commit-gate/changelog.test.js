@@ -30,7 +30,7 @@ const committedLog = (text) => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: CHANGELOG entry format');
 
   await test('ports "a staged 62-word entry: blocked with the shared message and the linter\'s word-cap line"', async () => {
@@ -107,7 +107,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

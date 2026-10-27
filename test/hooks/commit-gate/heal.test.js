@@ -9,14 +9,12 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const {
   WORKFLOW_DIR, JOB, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, write, gitRm, unlink, commit, proveTree,
   judge, denyOf, blocks, passes, realRewrite,
 } = require('./helpers');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 const { withoutCloneStep } = require('../../lib/checks-template');
 
 // A repo with a committed settings.json: the stamp arm only exempts an edit
@@ -82,7 +80,7 @@ const mkVendoredRepo = (name, { withChecks = true } = {}) => {
 
 const HELD = '. Its answer is unknown, so the commit is held; fix what failed, then commit.';
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: heal bookkeeping skips review + new-file checks (issue #15)');
 
   await test('ports "version stamp alone, no marker: exit 0"', async () => {
@@ -278,7 +276,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

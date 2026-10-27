@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { shellPath } = require('./platform');
-const { mkTmp } = require('./scratch');
+const { mkTmp } = require('./harness');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

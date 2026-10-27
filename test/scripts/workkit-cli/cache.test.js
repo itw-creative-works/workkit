@@ -33,7 +33,7 @@ const seedHomeClone = (world, script) => {
   assertEq(res.code, 0, `the clone is seeded, got: ${res.said}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('workkit from the plugin cache');
 
   await test('setup from the cache links the engine and the command at the cached copy', () => {
@@ -108,6 +108,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

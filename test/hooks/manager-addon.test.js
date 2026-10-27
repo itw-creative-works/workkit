@@ -11,7 +11,7 @@
 const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
 
-const run = async () => {
+const cases = async () => {
   group('manager-addon: silence');
   for (const [label, text] of [['an empty file', '']]) {
     await test(`ports "${label}: exit 0, no output"`, () => {
@@ -21,7 +21,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

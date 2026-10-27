@@ -11,7 +11,7 @@ const { stubTool } = require('../../lib/platform');
 const { childrenOf, isContent } = require('../../lib/workflow-yaml');
 const { openingLines } = require('../../lib/checks-template');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: the retired CHANGELOG linter copy');
 
   // What an earlier heal vendored: a shebang, the vendor header on line 2,
@@ -352,6 +352,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

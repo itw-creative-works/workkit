@@ -1,4 +1,4 @@
-The working tree has uncommitted code/config changes. Work items live as GitHub issues (the SSOT); `.workkit/` holds per-session working state that is never committed (only `.workkit/settings.json`, the repo's workflow opt-in, is tracked). Before you stop:
+This turn parked, blocked or closed an issue; the line above says what the tracker found (uncommitted code or config changes, unfiled entries, or both). Record on that issue where the work stands: for a park, what to check and where; for a block, the question that holds it; for a close, the CHANGELOG entry it points at. Work items live as GitHub issues (the SSOT); `.workkit/` holds per-session working state that is never committed (only `.workkit/settings.json`, the repo's workflow opt-in, is tracked). Before you stop:
 
 ## 1. Keep the work item true (always)
 

@@ -7,8 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { mkTmp } = require('../../lib/scratch');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
   NOTICE, stage, commit, touchMarker, proveTree, judge, denyOf, contextOf, mkReleaseRepo,
 } = require('./helpers');
@@ -40,7 +39,7 @@ const userBudget = (r, tests) => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: the root run against tests.budget');
 
   await test('a recorded root run past tests.budget prints the test-budget line and the record still proves the tree', async () => {
@@ -70,7 +69,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

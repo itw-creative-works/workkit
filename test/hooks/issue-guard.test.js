@@ -65,7 +65,7 @@ const mutation = (body) => [
   "}'",
 ].join(' ');
 
-const run = async () => {
+const cases = async () => {
   group('issue-guard: blocked outbound text');
 
   await test('ports "gh issue create carrying a .env value: exit 2, names the KEY not the value"', async () => {
@@ -399,7 +399,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -7,13 +7,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skipSuite, selfRun, summary,
+  group, test, assert, assertEq, skipSuite, selfRun, summary, mkTmp,
 } = require('../lib/harness');
 const {
   BASH, SYSTEM_PATH, NO_RC,
   shellPath, digestTool, stubTool, crlfJq, systemPathWith,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { runLib } = require('../lib/hook-lib');
 const { mods } = require('../lib/mods-inputs');
 const { scratchWorkflowHome, agedFile } = require('../lib/workflow-home');
@@ -32,7 +31,7 @@ const digestWorld = (name, real) => {
   return dir;
 };
 
-const run = async () => {
+const cases = async () => {
   const real = digestTool(SYSTEM_PATH);
   if (!real) {
     skipSuite('this machine has neither shasum nor sha1sum, so no digest world can be built');
@@ -293,7 +292,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

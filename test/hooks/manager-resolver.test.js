@@ -31,7 +31,7 @@ const config = (user, repo) => mods('manager').managerConfig(ladder, user, repo)
 const resolve = (type, parent, cfg = config()) => mods('resolver').resolverModel(cfg, type, parent, undefined);
 const settings = (manager) => ({ version: 1, enabled: true, manager });
 
-const run = async () => {
+const cases = async () => {
   group('manager-resolver: ladder manifest shape');
   await test('ports "ladder.json carries note, mode, and the three maps"', () => {
     assert(typeof ladder.note === 'string' && ladder.note.length > 0, 'note missing');
@@ -87,7 +87,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

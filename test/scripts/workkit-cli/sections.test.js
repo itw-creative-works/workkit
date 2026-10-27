@@ -6,7 +6,7 @@ const fs = require('fs');
 const { group, test, assert, summary, selfRun } = require('../../lib/harness');
 const { cleanup, mkWorld, runCli, mkKit, SLUG, mkHomeWorld } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workkit: how a run is organized (issue #90)');
 
   // The escape byte every color code starts with. Nothing this command prints
@@ -99,6 +99,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

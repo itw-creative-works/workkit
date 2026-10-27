@@ -16,7 +16,7 @@ const verdict = (name, text) => textOf(mods('board-guard').boardGuardVerdict(`/w
 const agentsLines = (n) => `# repo: overview\n${Array.from({ length: n - 1 }, (_, i) => `line ${i}`).join('\n')}\n`;
 const longLine = (n) => 'x'.repeat(n);
 
-const run = async () => {
+const cases = async () => {
   group('board-guard: scope');
 
   await test('ports "unguarded file: silent exit 0"', () => {
@@ -111,7 +111,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -5,15 +5,14 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
+  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const { SYSTEM_BASH, NODE_DIR, NO_RC, shellPath, joinPath } = require('../../lib/platform');
 const {
   SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript, STANDARD_VERSION, repoVersion,
 } = require('./helpers');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: the version gate and the drift report');
 
   await test('a retired file is reported and never touched', () => {
@@ -170,6 +169,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

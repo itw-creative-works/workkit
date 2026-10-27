@@ -5,13 +5,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
-const { testUnless } = require('../../lib/harness');
-const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
-const { mkTmp } = require('../../lib/scratch');
 const {
-  SPAWN_DEADLINE, alive, until, elapsedUntil, readPid, collect,
-} = require('../../lib/process');
+  testUnless, mkTmp, SPAWN_DEADLINE, alive, until, elapsedUntil, readPid, start: startHandle,
+} = require('../../lib/harness');
+const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'tower', 'start.sh');
 
@@ -36,8 +33,9 @@ const pidOnSight = async (file) => (
   (await elapsedUntil(() => pidIn(file) > 0)) === Infinity ? 0 : pidIn(file));
 
 // The port takeover is aimed at nothing unless a test says otherwise, so a
-// run here never touches whatever this machine really has on 8693/4300.
-const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false } = {}) => {
+// run here never touches whatever this machine really has on 8693/4300. The
+// harness handle, detached, so an end reaches the stubs the script spawned.
+const start = (dir, api, app, ports = '', { args = [], env = {} } = {}) => {
   const childEnv = {
     ...process.env, ...TMP_ENV, WORKKIT_TOWER_API: api, WORKKIT_TOWER_APP: app, WORKKIT_TOWER_PORTS: ports, ...env,
   };
@@ -45,21 +43,17 @@ const start = (dir, api, app, ports = '', { args = [], env = {}, capture = false
   // untouched, a red herring to every case that asserts what the tower itself
   // decides. The caller-owned path has its own pty case.
   if (!('FORCE_COLOR' in env)) delete childEnv.FORCE_COLOR;
-  return spawn(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
-    env: childEnv,
-    stdio: ['ignore', capture ? 'pipe' : 'ignore', capture ? 'pipe' : 'ignore'],
-    cwd: dir,
-  });
+  return startHandle(BASH, [...NO_RC, shellPath(SCRIPT), ...args], { env: childEnv, cwd: dir, detached: true });
 };
 
 // The stand-in listener the port cases hand the wrapper. Node's
 // `console.log(<number>)` paints a number once FORCE_COLOR is set, and the
 // reclaim pass would then look up a port that does not exist, so the ambient
-// value goes first here too.
+// value goes first here too. The harness handle.
 const standIn = (code) => {
   const childEnv = { ...process.env };
   delete childEnv.FORCE_COLOR;
-  return spawn(process.execPath, ['-e', code], { env: childEnv, stdio: ['ignore', 'pipe', 'ignore'] });
+  return startHandle(process.execPath, ['-e', code], { env: childEnv });
 };
 
 // The ports the output tests hand the wrapper: high and unused, so the reclaim
@@ -255,7 +249,7 @@ const ptyRun = (dir, app, exports = []) => {
     'expect eof',
     '',
   ].join('\n'));
-  return spawn('expect', [script], { env: { ...process.env, ...TMP_ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
+  return startHandle('expect', [script], { env: { ...process.env, ...TMP_ENV } });
 };
 
 // The pty case needs a real terminal to send a real Ctrl-C down; expect is the
@@ -270,7 +264,7 @@ const hasExpect = () => Boolean(which('expect'));
 const pidTest = testUnless(IS_WINDOWS, 'a Git Bash $$ is an MSYS id, not a pid Node can query');
 
 module.exports = {
-  SCRIPT, TMP_ENV, cleanup, alive, until, readPid, pidIn, pidOnSight, start, standIn, collect, QUIET_PORTS,
+  SCRIPT, TMP_ENV, cleanup, alive, until, readPid, pidIn, pidOnSight, start, standIn, QUIET_PORTS,
   NOISY_APP, FAILURE_SHAPES, FAILING_APP, REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP,
   BENIGN_APP, WEB_APP, PHASED_APP, CHATTY_API, BUMPED_APP, STARTING, RED, CYAN, OFF, COLORED_APP,
   probeStub, ptyRun, hasExpect, pidTest,

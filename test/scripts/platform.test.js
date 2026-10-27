@@ -7,15 +7,13 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, testUnless, summary, selfRun } = require('../lib/harness');
+const { spawnSync } = require('child_process');
+const { group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, until, alive, start, endTree, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
   stubTool, pathWith, systemPathWith,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
-const { until, alive, SPAWN_DEADLINE } = require('../lib/process');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 const DETACH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'detach.js');
@@ -73,8 +71,8 @@ const netstatWorld = () => {
 const PORT_TOOL_PATH = { PATH: process.env.PATH };
 
 /**
- * A child process listening on a free port, and the port it took: the shape a
- * port takeover finds. Written with process.stdout rather than console.log,
+ * A child process listening on a free port, as the harness `start()` handle, and
+ * the port it took: the shape a port takeover finds. Written with process.stdout rather than console.log,
  * which paints a number once FORCE_COLOR is set and would hand the case a port
  * wrapped in escapes.
  *
@@ -84,17 +82,15 @@ const PORT_TOOL_PATH = { PATH: process.env.PATH };
  * @param {boolean} [ignoreTerm]
  */
 const listener = (ignoreTerm = false) => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, ['-e', [
+  const handle = start(process.execPath, ['-e', [
     ignoreTerm ? "process.on('SIGTERM',()=>{});" : '',
     "const s=require('net').createServer();",
     "s.listen(0,'127.0.0.1',()=>process.stdout.write(`${s.address().port}\\n`));",
     'setInterval(()=>{},1000);',
-  ].join('')], { stdio: ['ignore', 'pipe', 'ignore'] });
-  let out = '';
-  child.on('error', reject);
-  child.stdout.on('data', (chunk) => {
-    out += chunk.toString();
-    if (out.includes('\n')) resolve({ child, port: Number(out.trim()) });
+  ].join('')]);
+  handle.done.catch(reject);
+  handle.child.stdout.on('data', () => {
+    if (handle.stdout().includes('\n')) resolve({ ...handle, port: Number(handle.stdout().trim()) });
   });
 });
 
@@ -105,7 +101,7 @@ const ended = (child, ms = SPAWN_DEADLINE) => new Promise((resolve) => {
   child.on('exit', () => { clearTimeout(timer); resolve(true); });
 });
 
-const run = async () => {
+const cases = async () => {
   group('platform.sh: wk_git_path');
 
   await test('on the Windows branch a path is spelled the way git spells it', () => {
@@ -280,7 +276,7 @@ const run = async () => {
     // carried or dropped.
     for (const signal of ['', '-9']) {
       const forced = signal === '-9';
-      const { child, port } = await listener(forced);
+      const { child, port, end } = await listener(forced);
       try {
         const { out } = inPlatform(`wk_port_pids ${port}`, PORT_TOOL_PATH);
         assertEq(out.trim(), String(child.pid), `the child holds the port, got: ${JSON.stringify(out)}`);
@@ -294,7 +290,7 @@ const run = async () => {
         inPlatform(`wk_end_pid ${signal} ${child.pid}`, PORT_TOOL_PATH);
         assert(await ended(child), `${signal || 'the polite signal'} ended it`);
       } finally {
-        child.kill('SIGKILL');
+        await end('SIGKILL');
       }
     }
   });
@@ -357,7 +353,7 @@ const run = async () => {
         assert(await until(() => !alive(command) && !alive(supervisor)),
           `the command (pid ${command}) or the supervisor (pid ${supervisor}) outlived wk_end_run`);
       } finally {
-        for (const pid of [command, supervisor].filter(Boolean)) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+        for (const pid of [command, supervisor].filter(Boolean)) endTree(pid, 'SIGKILL');
         cleanup(dir);
       }
     },
@@ -376,6 +372,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

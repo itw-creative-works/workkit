@@ -41,7 +41,7 @@ const passes = async (command) => {
   assertEq(textOf(r), '', `silently: ${command}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('tree-guard: git checkout');
 
   await test('ports "checkout with a pathspec after --: exit 2"', async () => {
@@ -242,7 +242,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

@@ -9,7 +9,7 @@ const {
   fetchBoard, splitResponse, rateLimitReason, labels, issue, fakeGh, ROSTER,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/board: a dropped issue node');
 
   // GitHub can answer the board's shape with every issue node null, and reading
@@ -247,6 +247,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

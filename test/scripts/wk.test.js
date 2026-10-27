@@ -6,14 +6,12 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout,
   systemPathWith, joinPath,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
-const { mkTmp } = require('../lib/scratch');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
@@ -112,7 +110,7 @@ const runScriptBytes = (cwd, noteLiteral, t, extraEnv = {}) => {
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 
-const run = async () => {
+const cases = async () => {
   group('wk.sh: which capture file a note lands in');
 
   await test('a note from inside a participating repo lands in the repo capture file', async () => {
@@ -361,6 +359,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

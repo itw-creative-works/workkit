@@ -13,10 +13,8 @@ const { stripVTControlCharacters } = require('util');
 const { fork, spawnSync } = require('child_process');
 const { findSuites, findModSuites, POOL } = require('./lib/suites');
 const { isNodeTestSuite, runNodeTest } = require('./lib/node-test');
+const { PIPE_GRACE_MS } = require('./lib/process');
 
-// How long a worker's pipes stay open past its exit, for a grandchild still
-// holding them; the worker's own output is already in the pipe by then.
-const PIPE_GRACE_MS = 1000;
 const TAIL_LINES = 3;
 const SLOWEST = 5;
 

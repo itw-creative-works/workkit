@@ -10,7 +10,7 @@ const {
   sessionTelemetry, dayKey, OVERTIME_DAYS, cleanup, PRICED, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, collect,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/telemetry: the whole payload');
 
   await test('byModel counts tokens per model across the session and its subagents', () => {
@@ -148,6 +148,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun,
+  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
   BASH, NO_RC, NODE_DIR, shellPath, systemPathWith, homeEnv, basePathWithout,
@@ -17,12 +17,10 @@ const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const { makeGhStub, ghCalls, ghEnvs } = require('../../lib/gh-stub');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const { mkRosterHome } = require('../../lib/roster');
-const { mkTmp } = require('../../lib/scratch');
 const {
   INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, startServer, startService,
   scratchKit, PTY, atTerminal,
 } = require('../../lib/identity');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 // The client's cache, one token per repo, so a token names the repo it was read for.
 const CACHED = {
@@ -113,7 +111,7 @@ const assertRan = (res, argv, token, what) => {
   assertEq(res.envs[0].GH_TOKEN, token, `${what}: GH_TOKEN`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('identity/gh: the owner\'s own calls');
 
   await test('case 15: outside a Claude session, gh issue list runs the real gh with no GH_TOKEN', async () => {
@@ -368,7 +366,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

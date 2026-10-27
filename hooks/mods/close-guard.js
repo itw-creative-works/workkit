@@ -7,30 +7,21 @@
 
 import { isSystemPrompt } from './frame.js';
 import { DEFAULT_TIERS, modelTier } from './manager.js';
+import { turnMessages } from './turn.js';
 
 const DEFAULT_CLOSE_EDITS = 5;
 const EDITS = new Set(['Edit', 'Write']);
 const SPAWNS = new Set(['Task', 'Agent']);
 
-// An owner prompt: a user entry with text, carrying no tool results, that
-// Claude Code did not deliver itself.
-const isOwnerPrompt = (message, isSystemPrompt) => message.role === 'user'
-  && Boolean(message.text)
-  && !(message.toolResults?.length > 0)
-  && !isSystemPrompt(message.text);
-
 /**
- * The turn's counts: every entry after the last owner prompt; none in view is
- * an empty turn.
+ * The turn's counts, over the entries after the last owner prompt (turnMessages).
  * @param {object[]} messages the transcript, the session's SessionMessage rows
  * @param {(text: string) => boolean} isSystemPrompt the frame test (mods/frame.js)
  * @returns {{edits: number, workers: number, verifiers: number}}
  */
 export function turnFacts(messages, isSystemPrompt) {
   const facts = { edits: 0, workers: 0, verifiers: 0 };
-  const start = messages.findLastIndex((message) => isOwnerPrompt(message, isSystemPrompt));
-  if (start === -1) return facts;
-  for (const message of messages.slice(start + 1)) {
+  for (const message of turnMessages(messages, isSystemPrompt)) {
     for (const use of message.toolUses ?? []) {
       if (EDITS.has(use.tool)) facts.edits += 1;
       if (!SPAWNS.has(use.tool)) continue;

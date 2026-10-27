@@ -6,13 +6,11 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, skipSuite, selfRun, summary } = require('../lib/harness');
+const { group, test, assert, assertEq, skipSuite, selfRun, summary, mkTmp, until } = require('../lib/harness');
 const { SYSTEM_PATH, shellPath, digestTool } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { plantRecord, pkgRecord } = require('../lib/suite-record');
 const { runLib } = require('../lib/hook-lib');
 const { scratchWorkflowHome, agedFile } = require('../lib/workflow-home');
-const { until } = require('../lib/process');
 
 // Two tree ids a record can hold, neither a real tree.
 const ID = '1111111111111111111111111111111111111111';
@@ -20,7 +18,7 @@ const OTHER_ID = '2222222222222222222222222222222222222222';
 
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex');
 
-const run = async () => {
+const cases = async () => {
   if (!digestTool(SYSTEM_PATH)) {
     skipSuite('this machine has neither shasum nor sha1sum, so no record path can be keyed');
   }
@@ -184,7 +182,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

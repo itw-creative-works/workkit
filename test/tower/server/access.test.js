@@ -8,7 +8,7 @@ const {
   cleanup, SLUG, mkWorld, start, raw, ghCalls,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/api/server: who may reach the tower');
 
   await test('a Host the tower does not answer to is 403, on a plain read', async () => {
@@ -214,6 +214,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -9,10 +9,8 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { mkTmp } = require('../lib/scratch');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { mods, textOf, runResult } = require('../lib/mods-inputs');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const LINTER = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
 const ISSUE = '[#4](https://github.com/o/r/issues/4)';
@@ -47,7 +45,7 @@ const append = (dir, line) => {
   return file;
 };
 
-const run = async () => {
+const cases = async () => {
   group('changelog-guard: scope');
 
   await test('ports "a file that is not a CHANGELOG is ignored"', () => {
@@ -108,7 +106,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

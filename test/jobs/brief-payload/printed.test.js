@@ -4,15 +4,13 @@
 
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { homeEnv } = require('../../lib/platform');
 const {
   SCRIPT, INSTRUCTION, cleanup, ccFixture,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('jobs/brief-payload: what is printed');
 
   await test('the instruction describes the new keys and gives each one a section', () => {
@@ -59,6 +57,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

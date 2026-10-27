@@ -43,7 +43,7 @@ const filled = (lines) => [
 
 const notes = (n) => Array.from({ length: n }, (_, i) => `note ${i}`);
 
-const run = async () => {
+const cases = async () => {
   group('session: the file is injected when it has content');
 
   await test('ports "a non-empty session.md is handed back, with the path named"', () => {
@@ -200,7 +200,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

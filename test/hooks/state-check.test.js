@@ -9,7 +9,7 @@ const { mods, textOf, stateFacts } = require('../lib/mods-inputs');
 
 const say = (facts) => textOf(mods('state-check').stateCheckContext(stateFacts(facts)));
 
-const run = async () => {
+const cases = async () => {
   group('state-check: status:inbox issues');
 
   await test('ports "three open inbox issues: announces the count and offers triage"', () => {
@@ -98,7 +98,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

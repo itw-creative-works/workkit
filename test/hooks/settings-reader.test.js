@@ -39,7 +39,7 @@ const ask = async (w, key = 'findings.file') => {
   return settingGet(key, ...(await settingsLayers(CWD, w.env, w.io)));
 };
 
-const run = async () => {
+const cases = async () => {
   group('settingsLayers and settingGet: the repo file over the machine file');
 
   await test('ports "no key in either file: prints nothing"', async () => {
@@ -104,6 +104,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -5,18 +5,15 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun,
+  group, test, assert, assertEq, testUnless, summary, selfRun, until, alive, readPid, start, endTree,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, joinPath, stubTool,
 } = require('../lib/platform');
 const { suiteLogPath, suiteLockPath, treeHash } = require('../lib/suite-record');
 const { recordArgv, readArgv } = require('../lib/argv-log');
-const {
-  until, alive, readPid, collect,
-} = require('../lib/process');
 const { CHANGELOG, ISSUE } = require('../hooks/commit-gate/helpers');
 const {
   cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord,
@@ -44,19 +41,18 @@ const mkOut = (world) => {
 const IN_FLIGHT = 'echo start; echo x >> "$WK_OUT/counter"; echo $$ > "$WK_OUT/suite.pid"; sleep 2; echo end';
 
 // npm started without waiting for it, as an agent's tool starts a job: the
-// caller polls `child.exitCode` and reads both streams through `output`.
-const npmStart = (world, cwd, args, extra = {}) => {
-  const child = spawn(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${world.wrapper}`, ...args], {
-    cwd, env: { ...world.env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  return { child, output: collect(child) };
-};
+// harness handle, whose caller polls `child.exitCode`, reads both streams
+// through `output` and ends npm through `end`.
+const npmStart = (world, cwd, args, extra = {}) => start(
+  BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${world.wrapper}`, ...args],
+  { cwd, env: { ...world.env, ...extra } },
+);
 
 const ended = (child) => child.exitCode !== null || child.signalCode !== null;
 
 // Whatever a red case left running, ended hard so the next case starts clean.
 const reap = (...pids) => {
-  for (const pid of pids.filter(Boolean)) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+  for (const pid of pids.filter(Boolean)) endTree(pid, 'SIGKILL');
 };
 
 // The pid of <parent>'s child whose command line names <needle>, or undefined.
@@ -72,18 +68,18 @@ const childPid = (parent, needle) => {
 const nodeLogger = (world) => {
   const bin = path.join(world.root, 'node-logger');
   fs.mkdirSync(bin, { recursive: true });
-  const log = path.join(world.root, 'node-argv.log');
-  stubTool(bin, 'node', ['#!/bin/bash', recordArgv(log), `exec "${shellPath(process.execPath)}" "$@"`]);
+  const logFile = path.join(world.root, 'node-argv.log');
+  stubTool(bin, 'node', ['#!/bin/bash', recordArgv(logFile), `exec "${shellPath(process.execPath)}" "$@"`]);
   return {
     env: { PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH) },
-    lintCalls: () => readArgv(log).filter((argv) => argv.some((a) => a.includes('changelog/changelog.js'))),
+    lintCalls: () => readArgv(logFile).filter((argv) => argv.some((a) => a.includes('changelog/changelog.js'))),
   };
 };
 
 // A CHANGELOG entry of <words> words after its issue link.
 const entryOf = (words) => CHANGELOG(`- ${ISSUE} - ${new Array(words - 1).fill('word').join(' ')} end.`);
 
-const run = async () => {
+const cases = async () => {
   skipWithoutWrapper();
 
   group('script-shell: the root test runs detached, its output in the suite log');
@@ -94,11 +90,11 @@ const run = async () => {
     const res = npm(world, repo, ['test']);
     assertEq(res.code, 3, `the script's code comes back, got: ${res.code} ${res.err}`);
     assert(res.out.includes('red-start\nred-end\n'), `the terminal shows the output, got: ${res.out}`);
-    const log = read(tmpLog(world, repo));
-    assert(log !== undefined, `the suite log exists at ${tmpLog(world, repo)}`);
-    assert(log.includes('red-start\nred-end\n'), `the log holds the output, got: ${JSON.stringify(log)}`);
-    assert(log.endsWith('red-end\nscript-shell: exit 3\n'), `the log ends on the closing line, got: ${JSON.stringify(log)}`);
-    assert(res.out.includes(log), `the terminal shows the log's output whole, log: ${JSON.stringify(log)}, out: ${res.out}`);
+    const logText = read(tmpLog(world, repo));
+    assert(logText !== undefined, `the suite log exists at ${tmpLog(world, repo)}`);
+    assert(logText.includes('red-start\nred-end\n'), `the log holds the output, got: ${JSON.stringify(logText)}`);
+    assert(logText.endsWith('red-end\nscript-shell: exit 3\n'), `the log ends on the closing line, got: ${JSON.stringify(logText)}`);
+    assert(res.out.includes(logText), `the terminal shows the log's output whole, log: ${JSON.stringify(logText)}, out: ${res.out}`);
     assertEq(recorded(world, repo), undefined, 'a red run proves nothing');
     cleanup(world.root); cleanup(repo);
   });
@@ -110,21 +106,21 @@ const run = async () => {
       const out = mkOut(world);
       const repo = mkRepo({ scripts: { test: IN_FLIGHT } });
       const tree = treeHash(repo);
-      const log = tmpLog(world, repo);
-      const { child, output } = npmStart(world, repo, ['test'], out.env);
+      const logFile = tmpLog(world, repo);
+      const { child, output, end } = npmStart(world, repo, ['test'], out.env);
       try {
-        assert(await until(() => (read(log) || '').includes('start')),
-          `the suite never wrote "start" to ${log}; npm said: ${output()}`);
+        assert(await until(() => (read(logFile) || '').includes('start')),
+          `the suite never wrote "start" to ${logFile}; npm said: ${output()}`);
         child.kill('SIGTERM');
         assert(await until(() => ended(child)), 'npm never ended after TERM');
-        assert(!read(log).split('\n').includes('end'), 'npm ended while the suite still ran');
-        assert(await until(() => read(log).endsWith('script-shell: exit 0\n')),
-          `the suite never finished; log: ${JSON.stringify(read(log))}`);
-        assert(read(log).endsWith('\nend\nscript-shell: exit 0\n'),
-          `the log holds the suite's last line, then the closing line, got: ${JSON.stringify(read(log))}`);
+        assert(!read(logFile).split('\n').includes('end'), 'npm ended while the suite still ran');
+        assert(await until(() => read(logFile).endsWith('script-shell: exit 0\n')),
+          `the suite never finished; log: ${JSON.stringify(read(logFile))}`);
+        assert(read(logFile).endsWith('\nend\nscript-shell: exit 0\n'),
+          `the log holds the suite's last line, then the closing line, got: ${JSON.stringify(read(logFile))}`);
         assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
       } finally {
-        reap(child.pid);
+        await end('SIGKILL');
       }
       cleanup(world.root); cleanup(repo);
     },
@@ -135,7 +131,7 @@ const run = async () => {
     const out = mkOut(world);
     const repo = mkRepo({ scripts: { test: IN_FLIGHT } });
     const counter = path.join(out.dir, 'counter');
-    const { child, output } = npmStart(world, repo, ['test'], out.env);
+    const { child, output, end } = npmStart(world, repo, ['test'], out.env);
     try {
       assert(await until(() => fs.existsSync(counter)), `the first suite never started; npm said: ${output()}`);
       const second = npm(world, repo, ['test'], world.wrapper, out.env);
@@ -151,7 +147,7 @@ const run = async () => {
       assertEq(child.exitCode, 0, `the first run is green; npm said: ${output()}`);
       assertEq(lineCount(counter), 1, 'the script ran once');
     } finally {
-      reap(child.pid);
+      await end('SIGKILL');
     }
     cleanup(world.root); cleanup(repo);
   });
@@ -163,7 +159,7 @@ const run = async () => {
       const out = mkOut(world);
       const repo = mkRepo({ scripts: { test: 'echo $$ > "$WK_OUT/suite.pid"; sleep 10; echo x >> "$WK_OUT/counter"' } });
       const pidFile = path.join(out.dir, 'suite.pid');
-      const { child, output } = npmStart(world, repo, ['test'], out.env);
+      const { child, output, end } = npmStart(world, repo, ['test'], out.env);
       let wrapper;
       let suite;
       try {
@@ -179,7 +175,8 @@ const run = async () => {
         assertEq(recorded(world, repo), undefined, 'an interrupted run proves nothing');
         assertEq(lineCount(path.join(out.dir, 'counter')), 0, 'the suite never reached its end');
       } finally {
-        reap(suite, wrapper, child.pid);
+        reap(suite, wrapper);
+        await end('SIGKILL');
       }
       cleanup(world.root); cleanup(repo);
     },
@@ -210,11 +207,11 @@ const run = async () => {
       const world = mkWorld();
       const out = mkOut(world);
       const repo = mkRepo({ scripts: { test: IN_FLIGHT } });
-      const log = tmpLog(world, repo);
-      const { child, output } = npmStart(world, repo, ['test'], out.env);
+      const logFile = tmpLog(world, repo);
+      const { child, output, end } = npmStart(world, repo, ['test'], out.env);
       let supervisor;
       try {
-        assert(await until(() => (read(log) || '').includes('start') && read(lockPid(world, repo)) !== undefined),
+        assert(await until(() => (read(logFile) || '').includes('start') && read(lockPid(world, repo)) !== undefined),
           `the first suite never started under its lock; npm said: ${output()}`);
         supervisor = readPid(lockPid(world, repo));
         child.kill('SIGTERM');
@@ -224,11 +221,12 @@ const run = async () => {
         const second = npm(world, repo, ['test'], world.wrapper, out.env);
         assertEq(second.code, 0, `the second run goes green, got: ${second.code} ${second.out} ${second.err}`);
         assertEq(lineCount(path.join(out.dir, 'counter')), 2, 'the suite ran twice, once per run');
-        const text = read(log);
+        const text = read(logFile);
         assertEq(text.split('\n').filter((l) => l === 'start').length, 1, `the log is the second run's own, got: ${JSON.stringify(text)}`);
         assert(text.endsWith('\nend\nscript-shell: exit 0\n'), `and it ran to its end, got: ${JSON.stringify(text)}`);
       } finally {
-        reap(child.pid, supervisor);
+        await end('SIGKILL');
+        reap(supervisor);
       }
       cleanup(world.root); cleanup(repo);
     },
@@ -333,6 +331,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

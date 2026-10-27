@@ -7,8 +7,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, summary, selfRun } = require('../../lib/harness');
-const { mkTmp } = require('../../lib/scratch');
+const { group, test, assert, summary, selfRun, mkTmp } = require('../../lib/harness');
 const {
   T, NOTICE, stage, write, commit, touchMarker, proveTree, factsOf, judge, denyOf, blocks, passes, recordBlocks,
   suiteRan, pkg, mkReleaseRepo,
@@ -73,7 +72,7 @@ const codeCommit = () => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: the record is required only for commits carrying code');
 
   await test('ports "docs-only commit: no record required"', async () => {
@@ -227,8 +226,8 @@ const run = async () => {
     const r = codeCommit();
     const deny = denyOf(await judge(r, 'git commit -m "feat: thing"'));
     recordBlocks({ deny });
-    const log = deny.slice(deny.indexOf('writes its output to ') + 'writes its output to '.length, deny.length - T.recordTail.length);
-    assert(log.includes('suite.log'), `the bounce names the suite log, got: ${log}`);
+    const logFile = deny.slice(deny.indexOf('writes its output to ') + 'writes its output to '.length, deny.length - T.recordTail.length);
+    assert(logFile.includes('suite.log'), `the bounce names the suite log, got: ${logFile}`);
   });
 
   // The Windows compare: npm's value spelled with a drive, read through cygpath,
@@ -304,7 +303,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

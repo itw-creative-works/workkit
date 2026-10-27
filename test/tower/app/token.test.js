@@ -8,7 +8,7 @@ const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { loadLibs, mkStorage } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   const { format, scope, api, github, token } = await loadLibs();
 
   group('tower/app: token - the card the Settings page owns');
@@ -238,6 +238,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

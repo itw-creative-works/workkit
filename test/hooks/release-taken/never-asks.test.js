@@ -16,7 +16,7 @@ const neverAsks = async (command, world = TAKEN_WORLD) => {
   assertEq(calls.github.length, 0, `gh is never asked for ${command}, got: ${calls.github.join(' ')}`);
 };
 
-const run = async () => {
+const cases = async () => {
   group('release-taken: what it never asks about');
 
   await test('ports "a commit that is not a release, and a command that is no commit at all"', async () => {
@@ -37,7 +37,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

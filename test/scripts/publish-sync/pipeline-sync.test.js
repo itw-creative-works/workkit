@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { cleanup, mkPublishWorld, publish, fromPages } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish: the sync ahead of the build');
 
   await test('the clone is refreshed before it is built: the published page is the app’s', () => {
@@ -54,6 +54,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -6,13 +6,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, NO_RC, shellPath, which, toolStem, basePathWithout,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
 const { mkRepo } = require('../lib/git-repo');
-const { SPAWN_DEADLINE } = require('../lib/process');
 
 const SCRIPTS = path.join(__dirname, '..', '..', 'scripts');
 const SCRIPT = path.join(SCRIPTS, 'review-covers.sh');
@@ -62,7 +60,7 @@ const fullMarker = (w) => {
   return path.join(dir, only);
 };
 
-const run = async () => {
+const cases = async () => {
   group('review-covers.sh: the verdict');
 
   await test('a marker newer than every edited, staged, deleted and untracked path: covered', () => {
@@ -276,6 +274,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
 if (require.main === module) selfRun(module.exports);

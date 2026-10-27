@@ -10,8 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { shellPath, homeEnv } = require('./platform');
-const { mkTmp } = require('./scratch');
-const { WORKKIT_DIR } = require('./harness');
+const { mkTmp, WORKKIT_DIR } = require('./harness');
 
 // The origin every fixture repo carries, never fetched: a repo without one is a
 // throwaway the commit hooks skip.

@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
   SYSTEM_BASH, NO_RC, shellPath, stubTool, joinPath,
@@ -14,10 +14,8 @@ const {
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
 } = require('./helpers');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
-const run = async () => {
+const cases = async () => {
   group('standards.sh: the hook layer self-check');
 
   // Every guard fails open by design, so a module that cannot load, a shell
@@ -112,7 +110,7 @@ const run = async () => {
     const stub = makeGhStub();
     const binDir = binDirWithout('shasum');
     fs.rmSync(path.join(binDir, 'sha1sum'), { force: true });
-    const run = () => {
+    const check = () => {
       const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
         env: {
           PATH: joinPath(stub.binDir, binDir),
@@ -125,10 +123,10 @@ const run = async () => {
       });
       return (res.stdout || '') + (res.stderr || '');
     };
-    const neither = run();
+    const neither = check();
     assert(/hooks: the hook layer needs.*shasum or sha1sum/.test(neither), `names both digest tools, got: ${neither}`);
     stubTool(binDir, 'sha1sum', ['#!/bin/sh', 'exit 0']);
-    const one = run();
+    const one = check();
     assert(!/hook layer needs/.test(one), `sha1sum alone satisfies the pair, got: ${one}`);
     cleanup(repo); cleanup(hooks); cleanup(binDir); cleanup(stub.dir);
   });
@@ -146,6 +144,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

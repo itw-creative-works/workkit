@@ -41,7 +41,7 @@ const mkWrapperCopy = (world) => {
 const gateOn = (world, repo) => gateIn(repo, 'git commit -m "feat: x"',
   { ...world.env, NPM_CONFIG_USERCONFIG: scratchNpmrc(world.wrapper) });
 
-const run = async () => {
+const cases = async () => {
   skipWithoutWrapper();
 
   group('script-shell: the root test records the tree it proved');
@@ -272,6 +272,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

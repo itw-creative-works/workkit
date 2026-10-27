@@ -6,15 +6,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun, mkTmp, until, alive, SPAWN_DEADLINE, start,
 } = require('../lib/harness');
 const {
   BASH, NO_RC, NODE_DIR, shellPath, stubTool, systemPathWith,
 } = require('../lib/platform');
-const { mkTmp } = require('../lib/scratch');
-const { until, alive, SPAWN_DEADLINE } = require('../lib/process');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 const DETACH = path.join(LIB, 'detach.js');
@@ -41,27 +39,16 @@ const jsPath = (p) => JSON.stringify(p.replace(/\\/g, '/'));
 const rcOf = (out) => { const m = /rc=(\d+)\n$/.exec(out); return m ? Number(m[1]) : null; };
 const ranOf = (out) => { const m = /(?:^|\n)ran=(\d*)\nrc=\d+\n$/.exec(out); return m ? m[1] : null; };
 
-/** A run started without waiting, its stdout gathered; `result()` resolves on close. */
-const startDetached = (args, env = RUN_ENV) => {
-  const child = spawn(BASH, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '';
-  let err = '';
-  child.stdout.on('data', (chunk) => { out += chunk.toString(); });
-  child.stderr.on('data', (chunk) => { err += chunk.toString(); });
-  const closed = new Promise((resolve) => { child.on('close', resolve); });
-  return { child, result: () => closed.then(() => ({ out, err })) };
-};
-
-const run = async () => {
+const cases = async () => {
   group('detach: the argument list');
 
   await test('a bad argument list: exit 2, nothing launched', () => {
     const dir = mkTmp('detach-usage-');
-    const log = path.join(dir, 'log');
+    const logFile = path.join(dir, 'log');
     const done = path.join(dir, 'done');
     const ran = path.join(dir, 'ran');
     const cmd = [process.execPath, '-e', `require('fs').writeFileSync(${JSON.stringify(ran)}, '')`];
-    const bad = [[], [log], [log, done], [log, done, '--'], [log, done, ...cmd]];
+    const bad = [[], [logFile], [logFile, done], [logFile, done, '--'], [logFile, done, ...cmd]];
     for (const args of bad) {
       const res = detach(...args);
       assertEq(res.status, 2, `usage error for argv ${JSON.stringify(args)}, stderr: ${res.stderr}`);
@@ -74,16 +61,16 @@ const run = async () => {
 
   await test('a parent that launches detach.js and exits at once: the command completes, done holds its code', async () => {
     const dir = mkTmp('detach-run-');
-    const log = path.join(dir, 'log');
+    const logFile = path.join(dir, 'log');
     const done = path.join(dir, 'done');
-    fs.writeFileSync(log, 'stale line from an earlier run\n');
+    fs.writeFileSync(logFile, 'stale line from an earlier run\n');
     const cmd = [process.execPath, '-e', "setTimeout(() => { console.log('finished'); process.exit(4); }, 2000)"];
     // The parent hands detach.js its own argv and exits with its code, at once.
     const parent = spawnSync(process.execPath, ['-e', [
       "const r = require('child_process').spawnSync(process.execPath, process.argv.slice(1), { encoding: 'utf8' });",
       'process.stdout.write(r.stdout || ""); process.stderr.write(r.stderr || "");',
       'process.exit(r.status === null ? 1 : r.status);',
-    ].join(' '), DETACH, log, done, '--', ...cmd], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    ].join(' '), DETACH, logFile, done, '--', ...cmd], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(parent.status, 0, `detach.js exits 0, stderr: ${parent.stderr}`);
     assert(/^\d+\s*$/.test(parent.stdout), `detach.js prints the supervisor's pid, got: ${JSON.stringify(parent.stdout)}`);
     const pid = Number(parent.stdout.trim());
@@ -91,7 +78,7 @@ const run = async () => {
     assert(!fs.existsSync(done), 'the command was still running when its launcher had exited');
     assert(await until(() => fs.existsSync(done)), `the done file never appeared at ${done}`);
     assertEq(fs.readFileSync(done, 'utf8'), '4\n', "the done file holds the command's exit code");
-    const text = fs.readFileSync(log, 'utf8');
+    const text = fs.readFileSync(logFile, 'utf8');
     assert(text.includes('finished'), `the log holds the command's output, got: ${JSON.stringify(text)}`);
     assert(!text.includes('stale line'), `the log was truncated first, got: ${JSON.stringify(text)}`);
   });
@@ -100,14 +87,14 @@ const run = async () => {
     // The suite and the CI watch are both shell commands, and on Windows a
     // shell child writes nothing to a log the supervisor opened append-only.
     const dir = mkTmp('detach-shell-');
-    const log = path.join(dir, 'log');
+    const logFile = path.join(dir, 'log');
     const done = path.join(dir, 'done');
-    const res = spawnSync(process.execPath, [DETACH, log, done, '--', BASH, ...NO_RC, '-c', 'echo from-the-shell; echo to-stderr >&2; exit 3'],
+    const res = spawnSync(process.execPath, [DETACH, logFile, done, '--', BASH, ...NO_RC, '-c', 'echo from-the-shell; echo to-stderr >&2; exit 3'],
       { encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(res.status, 0, `detach.js exits 0, stderr: ${res.stderr}`);
     assert(await until(() => fs.existsSync(done)), `the done file never appeared at ${done}`);
     assertEq(fs.readFileSync(done, 'utf8'), '3\n', "the done file holds the shell's exit code");
-    const text = fs.readFileSync(log, 'utf8');
+    const text = fs.readFileSync(logFile, 'utf8');
     assert(text.includes('from-the-shell'), `the log holds the shell's stdout, got: ${JSON.stringify(text)}`);
     assert(text.includes('to-stderr'), `the log holds the shell's stderr, got: ${JSON.stringify(text)}`);
   });
@@ -121,24 +108,20 @@ const run = async () => {
     const lock = path.join(dir, 'lock');
     const go = path.join(dir, 'go');
     const script = `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(7)},50)`;
-    const child = spawn(BASH, runDetachedArgs(dir, script), { env: RUN_ENV, stdio: ['ignore', 'pipe', 'pipe'] });
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (chunk) => { out += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { err += chunk.toString(); });
-    const closed = new Promise((resolve) => { child.on('close', resolve); });
+    const runner = start(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
     try {
       const pidFile = path.join(lock, 'pid');
       assert(await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() !== ''),
-        `the run wrote its pid into the lock, stderr: ${err}`);
+        `the run wrote its pid into the lock, stderr: ${runner.stderr()}`);
       fs.writeFileSync(pidFile, `${process.pid}\n`);
       fs.writeFileSync(go, '');
-      assert(await until(() => child.exitCode !== null), `the run never returned, stdout: ${out}`);
-      await closed;
-      assertEq(rcOf(out), 7, `the command's own code, stdout: ${JSON.stringify(out)}, stderr: ${err}`);
+      assert(await until(() => runner.child.exitCode !== null), `the run never returned, stdout: ${runner.stdout()}`);
+      await runner.done;
+      const out = runner.stdout();
+      assertEq(rcOf(out), 7, `the command's own code, stdout: ${JSON.stringify(out)}, stderr: ${runner.stderr()}`);
       assert(fs.existsSync(lock), 'the lock the newer pid holds is still there');
     } finally {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      await runner.end('SIGKILL');
     }
   });
 
@@ -165,25 +148,24 @@ const run = async () => {
       const dir = mkTmp('detach-race-');
       const lock = path.join(dir, 'lock');
       const go = path.join(dir, 'go');
-      const first = startDetached(runDetachedArgs(dir,
-        `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(0)},20)`));
+      const first = start(BASH, runDetachedArgs(dir,
+        `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(0)},20)`), { env: RUN_ENV });
       // B marks the moment its spin starts: under load its shell can come up
       // after A would otherwise have finished and dropped the lock.
       const spinning = `${lock}.spinning`;
-      const second = startDetached(runDetachedArgs(dir, 'process.exit(5)',
-        ': > "$2.spinning"; seen=; until [ -e "$2/done" ]; do if [ -d "$2" ]; then seen=1; elif [ -n "$seen" ]; then break; fi; done'));
+      const second = start(BASH, runDetachedArgs(dir, 'process.exit(5)',
+        ': > "$2.spinning"; seen=; until [ -e "$2/done" ]; do if [ -d "$2" ]; then seen=1; elif [ -n "$seen" ]; then break; fi; done'), { env: RUN_ENV });
       try {
         assert(await until(() => fs.existsSync(path.join(lock, 'pid'))), `round ${round}: run A took the lock`);
         assert(await until(() => fs.existsSync(spinning)), `round ${round}: run B is spinning on the done file`);
         fs.writeFileSync(go, '');
         assert(await until(() => first.child.exitCode !== null && second.child.exitCode !== null),
           `round ${round}: both runs returned`);
-        const a = await first.result();
-        const b = await second.result();
-        assertEq(rcOf(a.out), 0, `round ${round}: run A's own code, stdout: ${JSON.stringify(a.out)}, stderr: ${a.err}`);
-        assertEq(rcOf(b.out), 5, `round ${round}: run B's own code, stdout: ${JSON.stringify(b.out)}, stderr: ${b.err}`);
+        await Promise.all([first.done, second.done]);
+        assertEq(rcOf(first.stdout()), 0, `round ${round}: run A's own code, stdout: ${JSON.stringify(first.stdout())}, stderr: ${first.stderr()}`);
+        assertEq(rcOf(second.stdout()), 5, `round ${round}: run B's own code, stdout: ${JSON.stringify(second.stdout())}, stderr: ${second.stderr()}`);
       } finally {
-        for (const { child } of [first, second]) if (child.exitCode === null) child.kill('SIGKILL');
+        await Promise.all([first.end('SIGKILL'), second.end('SIGKILL')]);
       }
     }
   });
@@ -208,6 +190,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -16,7 +16,7 @@ const docsStaged = () => {
   return r;
 };
 
-const run = async () => {
+const cases = async () => {
   group('commit-gate: stage-and-commit compounds fail closed (issue #155)');
 
   await test('ports "git add -A && git commit over a CLEAN index: exit 2"', async () => {
@@ -60,7 +60,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

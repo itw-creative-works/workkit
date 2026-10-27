@@ -10,7 +10,7 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/h
 const { shellPath } = require('../../lib/platform');
 const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/publish: the reasons not to');
 
   await test('no home repo is a named skip, and nothing is built', () => {
@@ -152,6 +152,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

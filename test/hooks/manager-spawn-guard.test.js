@@ -19,7 +19,7 @@ const MODELS = { fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: '
 const config = (user) => mods('manager').managerConfig(ladder, user, undefined);
 const warn = (type, given, parent = MODELS.opus, cfg = config()) => textOf(mods('spawn-guard').spawnGuardWarning(cfg, type, given, parent));
 
-const run = async () => {
+const cases = async () => {
   group('manager-spawn-guard: rule 1, a hand-passed model on a class spawn');
   for (const cls of ['scout', 'worker', 'verifier', 'advisor']) {
     for (const name of cls === 'advisor' ? [cls, `workkit:${cls}`] : [cls]) {
@@ -66,7 +66,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

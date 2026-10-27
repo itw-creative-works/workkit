@@ -8,7 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { cleanup, git, mkRemote, mkWorld, inHome } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: the clone');
 
   await test('an absent path is cloned, and ~/.workkit is never made a git repo', () => {
@@ -73,6 +73,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

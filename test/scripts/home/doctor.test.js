@@ -9,7 +9,7 @@ const {
   cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, commitKit, dropRunnerLine, STAMP,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow/home: doctor');
 
   await test('no home configured is a notice naming the command', () => {
@@ -242,6 +242,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

@@ -9,8 +9,8 @@ const { mods, runResult } = require('../lib/mods-inputs');
 // A run that records each argv and answers `result`.
 const recorder = (result = runResult({ stdout: '{"ok":true}\n' })) => {
   const calls = [];
-  const run = async (argv, init) => { calls.push({ argv: [...argv], init }); return result; };
-  return { run, calls };
+  const answer = async (argv, init) => { calls.push({ argv: [...argv], init }); return result; };
+  return { run: answer, calls };
 };
 
 // The argv after the program, whatever spelling of gh it was run as.
@@ -22,7 +22,7 @@ const argsOf = (call) => {
 // The value after a flag, undefined when the flag is not there.
 const flag = (args, name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 
-const run = async () => {
+const cases = async () => {
   group('gh.js: issueView');
 
   await test('issueView asks gh issue view <n> --json <fields>, with no --repo when none is given', async () => {
@@ -78,7 +78,7 @@ const run = async () => {
 };
 
 module.exports = async () => {
-  await run();
+  await cases();
   return summary();
 };
 

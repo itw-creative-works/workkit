@@ -6,7 +6,7 @@
 const { group, test, assert, summary, selfRun } = require('../../lib/harness');
 const { say, dropPathWithoutGh } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('workflow:standards: the setup pester');
 
   await test('ports "an engine in the plugin cache: the pester says so"', () => {
@@ -21,6 +21,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

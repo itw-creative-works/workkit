@@ -8,7 +8,7 @@ const {
   resetCache, className, cleanup, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, collect,
 } = require('./helpers');
 
-const run = async () => {
+const cases = async () => {
   group('tower/telemetry: subagent attribution');
 
   await test('a subagent is attributed to its class through the parent tool_use', () => {
@@ -99,6 +99,6 @@ const run = async () => {
   return summary();
 };
 
-module.exports = run;
+module.exports = cases;
 
-if (require.main === module) selfRun(run);
+if (require.main === module) selfRun(cases);

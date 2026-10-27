@@ -6,14 +6,12 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { WORKKIT_DIR: W } = require('../../lib/harness');
+const { WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, basePathWithout,
   joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
-const { mkTmp } = require('../../lib/scratch');
-const { SPAWN_DEADLINE } = require('../../lib/process');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'standards.sh');
