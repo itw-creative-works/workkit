@@ -79,10 +79,10 @@ const touchedGit = (args: string[], branch: any, status: string | undefined) => 
   return list(status.split('\n').filter((l) => l.length > 3 && !l.startsWith('?? ')).map((l) => l.slice(3)))
 }
 
-// The git reads behind a commit the gate judges, from `opts.git`: `staged` and
-// `changed` (`diff [--cached] --name-only`, `added` and `deleted` their A and D
-// statuses), `headTime`, `blobs` by `HEAD:<path>` and `:<path>`, `indexTree`;
-// `broken` makes the staged read resolve to nothing. Null for any other read.
+// The git reads behind a commit the gate judges, from `opts.git`: `staged`, `changed`
+// (`diff [--cached] --name-only`, `added`/`deleted` their A and D), `headTime`, `blobs`
+// by `HEAD:<path>` and `:<path>`, `indexTree`; `broken` makes the staged read resolve to
+// nothing; `unstarted` makes the HEAD reads answer as a timed-out run. Null for any other read.
 const commitGit = (args: string[], git: any) => {
   let sub = args
   while (sub[0] === '-c') sub = sub.slice(2)
@@ -98,6 +98,8 @@ const commitGit = (args: string[], git: any) => {
     if (filter === 'd') return lines(list.filter((p) => !git.deleted.includes(p)))
     return lines(list)
   }
+  const headRead = (sub[0] === 'log' && sub.includes('--format=%ct')) || (sub[0] === 'rev-parse' && sub.includes('--verify') && spec === 'HEAD')
+  if (headRead && git.unstarted) return { value: { exitCode: 1, stdout: '', stderr: 'timed out', isStdoutTruncated: false, isStderrTruncated: false, isStarted: false } }
   if (sub[0] === 'log' && sub.includes('--format=%ct')) return ok(`${git.headTime}\n`)
   if (sub[0] === 'show' && spec.includes(':')) return spec in git.blobs ? ok(git.blobs[spec]) : ok('', `fatal: path '${spec}' does not exist\n`, 128)
   if (sub[0] === 'rev-parse' && sub.includes('--verify') && spec.includes(':')) return spec in git.blobs ? ok(`${'b'.repeat(40)}\n`) : ok('', '', 1)

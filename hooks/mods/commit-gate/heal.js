@@ -15,17 +15,29 @@ const CHECKS = '.github/workflows/checks.yml';
 
 const lines = (text) => text.split('\n').filter(Boolean);
 
-/** A heal arm whose tool failed: neither yes nor no, so the commit is held by name. */
+/** A tool the gate needed failed (a heal arm's, a git read): neither yes nor no, so the commit is held by name. */
 export class HealHeld extends Error {}
 
-// A tool's failure as the hold's text: the arm, the command, its status and stderr.
-function held(check, cmd, rc, stderr) {
+/**
+ * A tool's failure as the hold: the check, the command, its status and stderr.
+ * The gatherer throws it too, for a git read of HEAD that fails.
+ * @param {string} check the check that could not run
+ * @param {string} cmd the command as run
+ * @param {number|string|null} rc its exit status, or 'non-zero' for a read that answered nothing
+ * @param {string} stderr its stderr
+ * @returns {HealHeld}
+ */
+export function held(check, cmd, rc, stderr) {
   const err = String(stderr ?? '').replace(/\n+$/, '');
   return new HealHeld(`the ${check} check could not run: \`${cmd}\` exited ${rc}${err ? ` (${err})` : ''}. Its answer is unknown, so the commit is held; fix what failed, then commit.`);
 }
 
-// A run the program never started for is a failure whatever status it carries.
-const started = (r) => r.isStarted !== false;
+/**
+ * A run the program never started for is a failure whatever status it carries.
+ * @param {object} r a run's result
+ * @returns {boolean}
+ */
+export const started = (r) => r.isStarted !== false;
 
 /**
  * The heal arms over the commit's facts; none writes a file, the rewrite

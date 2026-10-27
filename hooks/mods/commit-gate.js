@@ -13,7 +13,7 @@ import { isChangelog, linterPath } from './changelog-guard.js';
 import { findGitCommit } from './command.js';
 import { closedIssues, closesAny, commitFlags, isDocPath, isManifest, namedIssues, sharedTrailers } from './commit-gate/checks.js';
 import { budgetLine } from './commit-gate/budget.js';
-import { HealHeld, healArms } from './commit-gate/heal.js';
+import { HealHeld, healArms, held, started } from './commit-gate/heal.js';
 import { issueView } from './gh.js';
 import { userDirOf } from './log.js';
 import { markerPath, reviewMarkerPath, suiteMarkerPath, windowsKit } from './markers.js';
@@ -186,26 +186,40 @@ function sharedCheck(command) {
 // The eight checks over a commit placed in an origin repo, its files known.
 async function judge(facts, root, flags, files, notices) {
   const heal = healArms(facts, root, flags.all);
+  let hasCode = flags.pathspec;
+  for (const path of files) {
+    if (isDocPath(path) || (isManifest(path) && (await heal.versionBumpOnly(path)))) continue;
+    hasCode = true;
+    break;
+  }
+  const bookkeeping = !flags.pathspec && files.length > 0 && (await heal.isBookkeeping(files));
+  const tests = hasTestScript(parseJson(await facts.read(`${root}/package.json`)));
+  const hasChangelog = (await facts.read(`${root}/CHANGELOG.md`)) !== null;
+  const verdict = sharedCheck(facts.command)
+    ?? (!bookkeeping && !flags.pathspec && tests ? await newFilesCheck(facts, root, flags.all) : null)
+    ?? (hasCode && !bookkeeping ? await reviewCheck(facts) : null)
+    ?? (await lintCheck(facts, root, files, flags, hasChangelog))
+    ?? (!flags.pathspec && hasChangelog && closesAny(facts.command) && !files.some(isChangelog) ? deny(TEXT.fixes) : null)
+    ?? (hasChangelog ? await issueChecks(facts, facts.command, notices) : null);
+  if (verdict) return verdict;
+  if (hasCode && tests) return flags.pathspec ? deny(TEXT.pathspec) : await suiteCheck(facts, root, flags.all, notices);
+  if (tests) notices.push(TEXT.noCode);
+  return null;
+}
+
+// The commit's files, the first-commit stand-down, then the eight checks; a
+// held read (a heal arm's tool, HEAD's time) is the deny it names.
+async function judged(facts, root, flags) {
   try {
-    let hasCode = flags.pathspec;
-    for (const path of files) {
-      if (isDocPath(path) || (isManifest(path) && (await heal.versionBumpOnly(path)))) continue;
-      hasCode = true;
-      break;
+    const files = [...(await facts.staged), ...(flags.all ? await facts.changed : [])].filter(Boolean);
+    const notices = [];
+    if (files.length === 0 && !flags.pathspec) {
+      return hasTestScript(parseJson(await facts.read(`${root}/package.json`))) ? { context: TEXT.nothing } : null;
     }
-    const bookkeeping = !flags.pathspec && files.length > 0 && (await heal.isBookkeeping(files));
-    const tests = hasTestScript(parseJson(await facts.read(`${root}/package.json`)));
-    const hasChangelog = (await facts.read(`${root}/CHANGELOG.md`)) !== null;
-    const verdict = sharedCheck(facts.command)
-      ?? (!bookkeeping && !flags.pathspec && tests ? await newFilesCheck(facts, root, flags.all) : null)
-      ?? (hasCode && !bookkeeping ? await reviewCheck(facts) : null)
-      ?? (await lintCheck(facts, root, files, flags, hasChangelog))
-      ?? (!flags.pathspec && hasChangelog && closesAny(facts.command) && !files.some(isChangelog) ? deny(TEXT.fixes) : null)
-      ?? (hasChangelog ? await issueChecks(facts, facts.command, notices) : null);
+    if ((await facts.headTime) === null) return { context: TEXT.firstCommit };
+    const verdict = await judge(facts, root, flags, files, notices);
     if (verdict) return verdict;
-    if (hasCode && tests) return flags.pathspec ? deny(TEXT.pathspec) : await suiteCheck(facts, root, flags.all, notices);
-    if (tests) notices.push(TEXT.noCode);
-    return null;
+    return notices.length > 0 ? { context: notices.join('\n') } : null;
   } catch (error) {
     if (error instanceof HealHeld) return deny(error.message);
     throw error;
@@ -237,15 +251,7 @@ export async function commitGateVerdict(facts) {
   const root = await facts.root;
   if (!root) return deny(TEXT.noRepo);
   if (await facts.originless) return null;
-  const files = [...(await facts.staged), ...(flags.all ? await facts.changed : [])].filter(Boolean);
-  const notices = [];
-  if (files.length === 0 && !flags.pathspec) {
-    return hasTestScript(parseJson(await facts.read(`${root}/package.json`))) ? { context: TEXT.nothing } : null;
-  }
-  if ((await facts.headTime) === null) return { context: TEXT.firstCommit };
-  const verdict = await judge(facts, root, flags, files, notices);
-  if (verdict) return verdict;
-  return notices.length > 0 ? { context: notices.join('\n') } : null;
+  return judged(facts, root, flags);
 }
 
 // The value `fn` resolves to, asked once and only when read.
@@ -293,10 +299,24 @@ export async function commitGateGuard(g) {
   };
   const treeId = once(async () => treeHash(g.run, kit, await top()));
   const linter = linterPath(g.env, kit);
-  const list = (argv) => once(async () => lines(await text(['git', '-c', 'core.quotePath=false', ...argv])));
-  const staged = list(['diff', '--cached', '--name-only']);
-  const changed = list(['diff', '--name-only']);
-  const headTime = once(async () => Number((await text(['git', 'log', '-1', '--format=%ct']))?.trim()) || null);
+  // A path list the checks need; a failed read is the hold it names, never an empty list.
+  const list = (check, argv) => once(async () => {
+    const full = ['git', '-c', 'core.quotePath=false', ...argv];
+    const r = await at(full);
+    if (!started(r) || r.exitCode !== 0) throw held(check, full.join(' '), r.exitCode, r.stderr);
+    return lines(r.stdout);
+  });
+  const staged = list('staged files', ['diff', '--cached', '--name-only']);
+  const changed = list('changed files', ['diff', '--name-only']);
+  // HEAD's time: null before the first commit, and a hold when git cannot
+  // read the HEAD it has (never the first-commit stand-down).
+  const headTime = once(async () => {
+    const r = await at(['git', 'log', '-1', '--format=%ct']);
+    if (started(r) && r.exitCode === 0) return Number(r.stdout.trim()) || null;
+    const head = await at(['git', 'rev-parse', '--verify', '--quiet', 'HEAD']);
+    if (started(head) && head.exitCode === 1) return null;
+    throw held('HEAD time', 'git log -1 --format=%ct', r.exitCode, r.stderr);
+  });
   const reviewMarker = once(async () => g.stat(await reviewMarkerPath(await top(), home)));
   const suiteRecord = once(async () => g.read(await suiteMarkerPath(await top(), home)));
   const scriptShell = once(async () => {

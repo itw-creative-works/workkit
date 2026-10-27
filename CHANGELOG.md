@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#469](../../issues/469) - The commit gate holds a commit when git cannot answer a read it needs (HEAD's time, the staged list, a timed-out run), naming the read, instead of standing down as a first or empty commit.
+
 ## [0.83.0] - 2026-10-27
 
 ### Added

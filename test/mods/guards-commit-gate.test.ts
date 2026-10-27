@@ -103,4 +103,12 @@ describe('tool.call Bash: commit-gate fails closed', () => {
     expect(w.toolRan).toBeUndefined()
     expect(verdicts(w, 'safety:commit-gate')).toEqual(['crashed'])
   })
+
+  test('given a git that never starts for the HEAD reads (a timeout): the commit is held naming the read, never the first-commit stand-down', { plugins: [TOOL_SPY] }, async ($, on) => {
+    const w = world(on, { files: { [`${REPO}/app.js`]: 'const x = 1;\n' }, git: { staged: ['app.js'], added: ['app.js'], unstarted: true } })
+    await bash($, 'git commit -m "feat: thing"')
+    expect(denyOf(w)).toBe(`${PREFIX}the HEAD time check could not run: \`git log -1 --format=%ct\` exited 1 (timed out). Its answer is unknown, so the commit is held; fix what failed, then commit.`)
+    expect(w.toolRan).toBeUndefined()
+    expect(verdicts(w, 'safety:commit-gate')).toEqual(['run'])
+  })
 })
