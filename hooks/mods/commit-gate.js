@@ -1,17 +1,17 @@
 /**
  * hooks/mods/commit-gate.js: safety:commit-gate. Every real `git commit`
- * passes seven checks, in this order: 1 new source files carry tests, 2 code
- * carries a fresh review marker, 3 added CHANGELOG entries match the format,
- * 4 a `Fixes #N` commit stages its entry, 6 every closed issue carries a
- * `Proof:` comment, 7 every named open issue is at status:complete, 5 code
- * carries the record a green root `npm test` wrote. A commit the gate cannot
- * place is denied; a stand-down is said, all of them in one notice
- * (docs/hooks.md § safety:commit-gate).
+ * passes eight checks, in this order: 8 each closing trailer names one issue,
+ * 1 new source files carry tests, 2 code carries a fresh review marker, 3
+ * added CHANGELOG entries match the format, 4 a `Fixes #N` commit stages its
+ * entry, 6 every closed issue carries a `Proof:` comment, 7 every named open
+ * issue is at status:complete, 5 code carries the record a green root
+ * `npm test` wrote. A commit the gate cannot place is denied; a stand-down
+ * is said, all of them in one notice (docs/hooks.md § safety:commit-gate).
  */
 
 import { isChangelog, linterPath } from './changelog-guard.js';
 import { findGitCommit } from './command.js';
-import { closedIssues, closesAny, commitFlags, isDocPath, isManifest, namedIssues } from './commit-gate/checks.js';
+import { closedIssues, closesAny, commitFlags, isDocPath, isManifest, namedIssues, sharedTrailers } from './commit-gate/checks.js';
 import { budgetLine } from './commit-gate/budget.js';
 import { HealHeld, healArms } from './commit-gate/heal.js';
 import { issueView } from './gh.js';
@@ -50,6 +50,11 @@ const newFilesText = (list) => `the commit adds new source files (${list}) but t
 const lintText = (stderr) => `the CHANGELOG entry does not match the format (see docs/project-state.md). ${String(stderr ?? '').replace(/\n+$/, '')}`;
 const unpassedText = (list) => `the message names issues the owner has not passed: ${list}. The owner's pass moves an issue to status:complete before a commit names it (docs/project-state.md, "The park"): leave the work uncommitted until then, or drop the reference.`;
 const unprovedText = (list) => `the message closes${list}, and no comment there opens with a \`Proof:\` line. A proof is a hard gate (docs/project-state.md, "The proof"): the agent that built the item comments the Proof: line first, one entry per layer with the command or the reason it was skipped, and only then does the trailer close the issue.`;
+const sharedText = (trailers) => {
+  const open = trailers.flatMap(({ issues }) => issues.slice(1).map((n) => `#${n}`)).join(' ');
+  const form = trailers.flatMap(({ keyword, issues }) => issues.map((n) => `  ${keyword} #${n}`)).join('\n');
+  return `a closing line names more than one issue, and GitHub closes only the first (the release tools read it the same way), so this commit would leave ${open} open. Give each issue its own line, then commit:\n${form}`;
+};
 const noGreenText = (log) => `the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run and writes its output to ${log}), then commit.`;
 
 // A folder's real path joined to the name as written (wk_physical_path); null when it cannot be resolved.
@@ -172,7 +177,13 @@ async function suiteCheck(facts, root, all, notices) {
   return deny(noGreenText(await suiteLogOf(facts, root)));
 }
 
-// The seven checks over a commit placed in an origin repo, its files known.
+// Check 8: no closing trailer names a second issue on its line.
+function sharedCheck(command) {
+  const trailers = sharedTrailers(command);
+  return trailers.length > 0 ? deny(sharedText(trailers)) : null;
+}
+
+// The eight checks over a commit placed in an origin repo, its files known.
 async function judge(facts, root, flags, files, notices) {
   const heal = healArms(facts, root, flags.all);
   try {
@@ -185,7 +196,8 @@ async function judge(facts, root, flags, files, notices) {
     const bookkeeping = !flags.pathspec && files.length > 0 && (await heal.isBookkeeping(files));
     const tests = hasTestScript(parseJson(await facts.read(`${root}/package.json`)));
     const hasChangelog = (await facts.read(`${root}/CHANGELOG.md`)) !== null;
-    const verdict = (!bookkeeping && !flags.pathspec && tests ? await newFilesCheck(facts, root, flags.all) : null)
+    const verdict = sharedCheck(facts.command)
+      ?? (!bookkeeping && !flags.pathspec && tests ? await newFilesCheck(facts, root, flags.all) : null)
       ?? (hasCode && !bookkeeping ? await reviewCheck(facts) : null)
       ?? (await lintCheck(facts, root, files, flags, hasChangelog))
       ?? (!flags.pathspec && hasChangelog && closesAny(facts.command) && !files.some(isChangelog) ? deny(TEXT.fixes) : null)

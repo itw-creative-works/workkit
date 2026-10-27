@@ -6,9 +6,8 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE,
+  group, test, assert, assertEq, summary, selfRun, run,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, NO_RC, NODE_DIR, shellPath, joinPath,
@@ -62,7 +61,7 @@ const holdBreaking = (w) => {
 };
 
 // The fixture's suite run straight in the working folder.
-const folderRun = (w) => spawnSync(process.execPath, ['run.js'], { cwd: w.repo, encoding: 'utf8' }).status;
+const folderRun = (w) => run(process.execPath, ['run.js'], { cwd: w.repo }).status;
 
 // npm beside this node naming the script shell wired into the world's machine
 // folder, as `workkit setup` leaves a machine.
@@ -74,11 +73,9 @@ const proveEnv = (w) => ({
 });
 
 const prove = (w) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(CLI), 'prove'], {
-    cwd: w.repo, env: proveEnv(w), input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
-  });
-  assert(res.status !== null, `workkit prove finished (no timeout, no signal): ${res.error || ''}`);
-  return { code: res.status, said: `${res.stdout || ''}${res.stderr || ''}` };
+  const res = run(BASH, [...NO_RC, shellPath(CLI), 'prove'], { cwd: w.repo, env: proveEnv(w), input: '' });
+  assert(res.status !== null, `workkit prove finished (no timeout, no signal): timedOut ${res.timedOut}, signal ${res.signal}`);
+  return { code: res.status, said: res.output };
 };
 
 /** The record a green run left for the world's repo, or undefined. */

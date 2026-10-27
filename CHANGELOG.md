@@ -12,9 +12,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - [#470](../../issues/470) - `standards.sh --command-link` makes `~/.local/bin/workkit` alone and exits 0, with no repo, no terminal and no wizard, so a cloud bootstrap can install the command the setup pester checks for.
 
 ### Changed
-- [#467](../../issues/467) - The checkpoint's bold safe-to-compact line is the reply's last line, with nothing under it: a note about agents still running sits inside the Filed trail above it, and every later turn-final reply before the compaction ends with the same line.
+- [#469](../../issues/469) - The test library fails loud on a refused signal (`endTree` throws, `end()` rejects, naming the pid), `end()` rejects when a child survives `SIGKILL`, `caseFrame` reads `file:///` and `at async` frames, and six more suites spawn through it. `safety:commit-gate` bounces a closing line naming more than one issue.
+- [#467](../../issues/467) - The checkpoint's bold safe-to-compact line is the last line of the checkpoint reply, with nothing under it: a note about agents still running sits inside the Filed trail above it, and no later reply carries the line, a sign-off after a task notification included.
 - [#468](../../issues/468) - Node 22.12 to 22.19 flags no test inside a `describe` marked todo, so the runner counted that describe as a failure and the root suite ran red there; the floor moves to 22.22, the first version proven green here (the fix landed in 22.20).
 - [#466](../../issues/466) - The review picks its light tier by kind of change, not line count; workers also run the suites requiring a changed file; the change tracker nags only at a park, a block or a close; a written Spec opens with one plain sentence stating its behaviour rule.
+
+### Fixed
+- [#471](../../issues/471) - `workflow:snapshot` runs on `classic.PostToolUseFailure` too, so a claim whose Bash call failed after the label landed still gets its snapshot. On a failed call the hook keeps only the numbers GitHub lists at `status:building`.
 
 ## [0.82.0] - 2026-10-24
 

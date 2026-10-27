@@ -49,7 +49,7 @@ export const READ_GUARDS = [
   { hook: 'safety:capture-guard', run: captureGuardGuard },
 ];
 
-/** The hooks on `classic.PostToolUse` for Bash; they never block. */
+/** The hooks on `classic.PostToolUse` and `classic.PostToolUseFailure` for Bash; they never block. */
 export const POST_BASH_GUARDS = [
   { hook: 'workflow:snapshot', run: snapshotGuard },
 ];
@@ -95,14 +95,16 @@ const guardEnv = (io, env) => shellEnvOf(env, windowsKit(io.pluginRoot) ? 'win32
  * only by a guard that needs it.
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {object} env the variables the module read
- * @param {{command: string, cwd: string}} call the command and its folder
+ * @param {{command: string, cwd: string, failed?: boolean}} call the command, its folder, and whether
+ *   the call already ran and failed (a `classic.PostToolUseFailure`)
  * @returns {object}
  */
-export function bashFacts(io, env, { command, cwd }) {
+export function bashFacts(io, env, { command, cwd, failed = false }) {
   let origin = null;
   return {
     command,
     cwd,
+    failed,
     env: guardEnv(io, env),
     originless: () => (origin ??= originless(cwd, io.run)),
     exists: (rel) => io.exists(`${cwd}/${rel}`),
@@ -127,7 +129,7 @@ export function bashFacts(io, env, { command, cwd }) {
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {object} env the variables the module read
  * @param {Array<{hook: string, run: function}>} guards the chain, in order
- * @param {object} facts `{ command, cwd }` for Bash, `{ tool, input, cwd, file, typed, dir, gateDir }` for a file
+ * @param {object} facts `{ command, cwd, failed }` for Bash, `{ tool, input, cwd, file, typed, dir, gateDir }` for a file
  * @returns {Promise<{fires: Array<[string, string]>, deny: string|null, notice: string|null, error: *}>}
  *   each fire's hook and verdict for the hooks log, the first deny, the notices as one entry, a throw
  */

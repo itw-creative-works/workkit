@@ -3,8 +3,10 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawn, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { spawnSync } = require('child_process');
+const {
+  group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE, start,
+} = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
@@ -73,10 +75,7 @@ const cases = async () => {
     for (let round = 1; round <= 20; round++) {
       fs.rmSync(address, { recursive: true, force: true });
       // eslint-disable-next-line no-await-in-loop
-      await Promise.all([0, 1, 2].map(() => new Promise((resolve) => {
-        const child = spawn(BASH, [...NO_RC, shellPath(SCRIPT), '--engine-link'], { env, stdio: 'ignore' });
-        child.on('close', resolve);
-      })));
+      await Promise.all([0, 1, 2].map(() => start(BASH, [...NO_RC, shellPath(SCRIPT), '--engine-link'], { env }).done));
       const made = fs.lstatSync(address, { throwIfNoEntry: false });
       assert(!!made && made.isSymbolicLink(), `round ${round}: the address is a symlink, not gone`);
       assertEq(fs.realpathSync(address), fs.realpathSync(ENGINE), `round ${round}: and it resolves to this engine`);

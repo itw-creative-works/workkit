@@ -1,8 +1,7 @@
 /**
  * Watching a process a suite started without waiting for it: whether a pid is
  * alive, a bounded poll for a condition, a pid read from the file a script
- * left, both streams of a captured child, the one spawn deadline and the
- * pipe grace.
+ * left, the one spawn deadline and the pipe grace.
  */
 
 const fs = require('fs');
@@ -58,19 +57,6 @@ const elapsedUntil = async (predicate, ms = SPAWN_DEADLINE) => {
 /** The pid a script wrote to <file>, as a number. */
 const readPid = (file) => Number(fs.readFileSync(file, 'utf8').trim());
 
-/**
- * What the user actually sees: both streams of a child spawned with piped
- * stdout and stderr, in one string, read through the returned function.
- * @param {import('child_process').ChildProcess} child
- * @returns {Function}
- */
-const collect = (child) => {
-  let out = '';
-  child.stdout.on('data', (chunk) => { out += chunk.toString(); });
-  child.stderr.on('data', (chunk) => { out += chunk.toString(); });
-  return () => out;
-};
-
 module.exports = {
-  SPAWN_DEADLINE, PIPE_GRACE_MS, alive, until, elapsedUntil, readPid, collect,
+  SPAWN_DEADLINE, PIPE_GRACE_MS, alive, until, elapsedUntil, readPid,
 };

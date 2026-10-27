@@ -3,9 +3,9 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
+  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, start,
 } = require('../../lib/harness');
 const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, cygpathStub, joinPath,
@@ -91,14 +91,9 @@ const cases = async () => {
       'wk_home_set_slug owner/workkit',
     ].join('\n');
     const [codes, slugCode] = await Promise.all([
-      Promise.all(repos.map((repo) => new Promise((resolve) => {
-        const child = spawn(BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], { env, stdio: 'ignore' });
-        child.on('close', (code) => resolve(code));
-      }))),
-      new Promise((resolve) => {
-        const child = spawn(BASH, [...NO_RC, '-c', setSlug], { env, stdio: 'ignore' });
-        child.on('close', (code) => resolve(code));
-      }),
+      Promise.all(repos.map((repo) => start(BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], { env }).done
+        .then((exit) => exit.status))),
+      start(BASH, [...NO_RC, '-c', setSlug], { env }).done.then((exit) => exit.status),
     ]);
     assertEq(codes.join(','), '0,0,0', `every session finished, none of them ended on a step another one won: ${codes.join(',')}`);
     // Swept before it is asserted on, never after: a regression here writes a

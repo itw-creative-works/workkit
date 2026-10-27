@@ -1,7 +1,7 @@
 // Hooks index parity: every hook the kit runs is the hooks module's, read from
 // the module itself (the names hooks/register.js and hooks/mods/ log under).
 // hooks/hooks.json names the module and nothing else, and the module registers
-// on the nine events.
+// on the ten events.
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
@@ -63,12 +63,12 @@ const cases = async () => {
     assert(fs.existsSync(path.join(HOOKS_DIR, 'register.js')), 'hooks/register.js exists');
   });
 
-  await test('the module registers on the nine events and nothing else', () => {
-    const nine = [
-      'agent.spawn', 'classic.PostToolUse', 'classic.PreToolUse', 'classic.SessionStart',
+  await test('the module registers on the ten events and nothing else', () => {
+    const ten = [
+      'agent.spawn', 'classic.PostToolUse', 'classic.PostToolUseFailure', 'classic.PreToolUse', 'classic.SessionStart',
       'classic.Stop', 'classic.SubagentStart', 'classic.UserPromptSubmit', 'session.end', 'tool.call',
     ];
-    assertEq(moduleEvents().join(','), nine.join(','), 'the events hooks/register.js hooks');
+    assertEq(moduleEvents().join(','), ten.join(','), 'the events hooks/register.js hooks');
   });
 
   await test('the module names every hook, the thirteen former shell hooks among them', () => {

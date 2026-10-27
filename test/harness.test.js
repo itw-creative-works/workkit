@@ -1,9 +1,11 @@
 // Tests for the one entry, workflow/test/lib/harness.js: it carries every
-// export of the concern files behind it, and a suite written on that one
-// require alone runs the same by file and under the kit's runner.
+// export of the concern files behind it, a suite written on that one require
+// alone runs the same by file and under the kit's runner, and a failure prints
+// the first stack frame outside the library, whatever shape the frame takes.
 
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { stripVTControlCharacters } = require('util');
 const {
   group, test, assert, assertEq, summary, selfRun, mkTmp, run,
@@ -50,6 +52,30 @@ const node = (root, args) => {
   return { code: res.status, output: stripVTControlCharacters(res.output) };
 };
 
+// A suite on the library whose one case throws an error carrying `stack`.
+const THROWS = (stack) => `
+const { test, summary, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
+module.exports = async () => {
+  await test('throws', () => { const err = new Error('boom'); err.stack = ${JSON.stringify(stack)}; throw err; });
+  return summary();
+};
+if (require.main === module) selfRun(module.exports);
+`;
+
+const DIM = '\x1b[2m';
+const RESET = '\x1b[0m';
+
+// `stack` thrown by a one-case suite run by file: the suite's exit, its output,
+// and the dimmed frame lines under the failure message.
+const framesOf = (dir, stack) => {
+  const file = path.join(dir, 'throws.test.js');
+  fs.writeFileSync(file, THROWS(stack));
+  const res = run(process.execPath, [file]);
+  const frames = res.output.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith(DIM))
+    .map((l) => l.slice(DIM.length, l.lastIndexOf(RESET)));
+  return { status: res.status, output: res.output, frames };
+};
+
 // How many case lines in `output` carry the pass mark, and the fail mark.
 const marks = (output) => {
   const lines = output.split(/\r?\n/).map((l) => l.trim());
@@ -76,6 +102,41 @@ const cases = async () => {
     assertEq(pooled.code, 0, `under the runner exits 0, got:\n${pooled.output}`);
     assertEq(JSON.stringify(marks(pooled.output)), JSON.stringify({ passed: 3, failed: 0 }), `under the runner, the same three, got:\n${pooled.output}`);
     assert(pooled.output.includes('3 passed, 0 failed'), `the runner's totals agree, got:\n${pooled.output}`);
+  });
+
+  group('harness: the failure frame');
+
+  await test('a stack carrying only a file:/// frame outside the library prints that frame as its path', () => {
+    const dir = mkTmp('frame-');
+    const outside = path.join(dir, 'x.js');
+    const url = pathToFileURL(outside).href;
+    for (const frame of [`at ${url}:3:5`, `at fn (${url}:3:5)`]) {
+      const { status, output, frames } = framesOf(dir, `Error: boom\n    ${frame}`);
+      assertEq(status, 1, `the case failed, got:\n${output}`);
+      assertEq(frames.length, 1, `one frame line for "${frame}", got:\n${output}`);
+      assert(frames[0].includes(`${outside}:3:5`) && !frames[0].includes('file:'), `"${frame}" prints as its path, got: ${frames[0]}`);
+    }
+  });
+
+  await test('an `at async` frame with no parentheses, outside the library, prints as its path', () => {
+    const dir = mkTmp('frame-');
+    const outside = path.join(dir, 'x.js');
+    for (const frame of [`at async ${outside}:3:5`, `at async ${pathToFileURL(outside).href}:3:5`]) {
+      const { status, output, frames } = framesOf(dir, `Error: boom\n    ${frame}`);
+      assertEq(status, 1, `the case failed, got:\n${output}`);
+      assertEq(frames.length, 1, `one frame line for "${frame}", got:\n${output}`);
+      assert(frames[0].includes(`${outside}:3:5`) && !frames[0].includes('file:'), `"${frame}" prints as its path, got: ${frames[0]}`);
+    }
+  });
+
+  await test('a file:/// frame inside the library is skipped and the next frame, outside it, prints', () => {
+    const dir = mkTmp('frame-');
+    const inside = pathToFileURL(path.join(KIT_LIB, 'harness.js')).href;
+    const outside = path.join(dir, 'y.js');
+    const { status, output, frames } = framesOf(dir, `Error: boom\n    at ${inside}:10:5\n    at ${outside}:7:9`);
+    assertEq(status, 1, `the case failed, got:\n${output}`);
+    assertEq(frames.length, 1, `one frame line, got:\n${output}`);
+    assert(frames[0].includes(`${outside}:7:9`), `the outside frame prints, not the library's, got: ${frames[0]}`);
   });
 };
 

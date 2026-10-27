@@ -4,6 +4,7 @@
 // It is the library's one entry: every concern file's exports ride on its own.
 
 const path = require('path');
+const { fileURLToPath } = require('url');
 const { openCase, drain, CASE_INDENT } = require('./log');
 
 // The workflow state directory's name for the test layer. The engine and the
@@ -15,6 +16,9 @@ let failed = 0;
 const failures = [];
 const skips = [];
 
+// A stack line with its file:/// URL (an ESM frame) in path form, so it reads as a plain frame.
+const pathForm = (line) => line.replace(/file:\/\/\S+?(?=:\d+:\d+\)?$)/, (url) => fileURLToPath(url));
+
 // The first stack frame outside this library: the line in the suite that threw.
 // The stack opens with the message, so its lines are skipped before frames are read.
 const caseFrame = (err) => {
@@ -22,9 +26,9 @@ const caseFrame = (err) => {
   const message = String(err?.message ?? '');
   const at = stack.indexOf(message);
   return (at === -1 ? stack : stack.slice(at + message.length)).split('\n')
-    .map((line) => line.trim())
+    .map((line) => pathForm(line.trim()))
     .find((line) => {
-      const file = line.match(/^at (?:.* \()?(.+?):\d+:\d+\)?$/)?.[1];
+      const file = line.match(/^at (?:async )?(?:.* \()?(.+?):\d+:\d+\)?$/)?.[1];
       return file !== undefined && path.isAbsolute(file) && !file.startsWith(`${__dirname}${path.sep}`);
     });
 };

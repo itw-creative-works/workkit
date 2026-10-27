@@ -2,7 +2,8 @@
  * hooks/mods/commit-gate/checks.js: the commit gate's reads of plain text: the
  * commit clause's flags, what a committed path is (docs, a version manifest),
  * the version stamp's JSON compare, and the issues a message closes and
- * names. Plain functions; the git and gh reads are the gatherer's.
+ * names, and a closing line naming more than one. Plain functions; the git
+ * and gh reads are the gatherer's.
  */
 
 import { redirectSpan, wordsOf } from '../command.js';
@@ -19,6 +20,8 @@ const ELSEWHERE = "Run the commit from the repo's own directory so the gate can 
 
 // The trailer that closes an issue, read per line off the RAW command.
 const TRAILER = /(^|[^A-Za-z0-9])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[ \t\r\f\v]+#[0-9]+/gim;
+// A closing trailer whose #N is followed by more bare #M, apart only by spaces, commas or `and`.
+const SHARED = new RegExp(`${TRAILER.source}((?:(?:[ \\t,]|\\band\\b)+#[0-9]+\\b)+)`, 'gim');
 // A #N glued to a run that opens with a letter, `_`, `.`, `/`, `-`, `&` or `$` is another thing's.
 const GLUED = /[A-Za-z_./&$-][A-Za-z0-9_./&$-]*#[0-9]+/g;
 
@@ -157,4 +160,19 @@ export function closedIssues(command) {
 export function namedIssues(command) {
   const numbers = [...command.replace(GLUED, '').matchAll(/#([0-9]+)/g)].map((m) => Number(m[1]));
   return [...new Set(numbers)].sort((x, y) => x - y);
+}
+
+/**
+ * Every closing trailer that names more than one issue on its line
+ * (`Fixes #1 #2`, `Fixes #1, #2`, `Fixes #1 and #2`): GitHub closes only the
+ * first, and the release tools read it the same way. A number with its own
+ * keyword (`Fixes #1, fixes #2`) or after other words is no part of it.
+ * @param {string} command the raw command
+ * @returns {{keyword: string, issues: number[]}[]} the keyword as written, every number in order
+ */
+export function sharedTrailers(command) {
+  return [...command.matchAll(SHARED)].map((m) => ({
+    keyword: m[2],
+    issues: [...m[0].slice(m[1].length).matchAll(/#([0-9]+)/g)].map((n) => Number(n[1])),
+  }));
 }

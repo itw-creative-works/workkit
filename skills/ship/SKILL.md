@@ -68,7 +68,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
 
 3. **CHANGELOG**: add the entry under `[Unreleased]` (§ CHANGELOG format). The release commit moves it to a version section, never the work commit.
 
-4. **Commit message**: Conventional Commits, types feat/fix/docs/chore/refactor/test; subject lowercase, imperative, ≤72 chars; no version numbers in ordinary commits. Write it straight into the commit, never printed in chat first. Add `Fixes #N` for every issue this ship completes: GitHub closes it when the commit lands on the default branch. Always a HEREDOC:
+4. **Commit message**: Conventional Commits, types feat/fix/docs/chore/refactor/test; subject lowercase, imperative, ≤72 chars; no version numbers in ordinary commits. Write it straight into the commit, never printed in chat first. Add a `Fixes #N` line for every issue this ship completes, one issue per line: GitHub closes each when the commit lands on the default branch, and a line naming two (`Fixes #1 #2`) closes only the first, so `safety:commit-gate` check 8 bounces it. Always a HEREDOC:
    ```bash
    git commit -m "$(cat <<'EOF'
    <type>(<scope>): <subject>
@@ -76,6 +76,7 @@ Autonomous ship pipeline: read the config, pick the bump, then run every step de
    <body: what and why, plain sentences>
 
    Fixes #<issue>
+   Fixes #<another issue>
    EOF
    )"
    ```

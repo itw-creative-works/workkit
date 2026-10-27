@@ -1,4 +1,4 @@
-// classic.PostToolUse (Bash) through the hooks module: workflow:snapshot on
+// classic.PostToolUse and PostToolUseFailure (Bash) through the hooks module: workflow:snapshot on
 // POST_BASH_GUARDS, which never blocks: a claim runs the snapshot.sh entry's
 // take (an add, while a live snapshot is not stale), a release leaving none
 // building runs its drop, each through $.process.run. The plan's own cases
@@ -17,6 +17,9 @@ const CLAIM = (n: number) => `gh issue edit ${n} --add-label status:building`
 
 const posted = ($: any, command: string) => $.classic.PostToolUse({
   tool_name: 'Bash', tool_input: { command }, tool_response: {}, tool_use_id: 'toolu_1', session_id: SID, cwd: REPO,
+})
+const failed = ($: any, command: string) => $.classic.PostToolUseFailure({
+  tool_name: 'Bash', tool_input: { command }, tool_use_id: 'toolu_1', error: 'Exit code 1', session_id: SID, cwd: REPO,
 })
 const world = (on: any, opts: any = {}) => mkWorld(on, { env: { TMPDIR: TMP }, ...opts })
 
@@ -47,6 +50,17 @@ describe('classic.PostToolUse Bash: workflow:snapshot, the Contract cases', () =
     const runs = snapshotRuns(w)
     expect(runs.map((x: any) => x.args[0])).toEqual(['drop'])
     expect(runs[0].args[1]).toBe(REPO)
+  })
+})
+
+describe('classic.PostToolUseFailure Bash: workflow:snapshot', () => {
+  test('given a failed Bash call holding a claim of #10, GitHub listing #10 as building, then bash snapshot.sh take <root> 10 ran and nothing was denied', async ($, on) => {
+    const w = world(on, { gh: { issues: [issue(10, 'status:building')] } })
+    const r = await failed($, `${CLAIM(10)} && ls /w/nowhere`)
+    expect(r?.block).toBeUndefined()
+    const runs = snapshotRuns(w)
+    expect(runs.map((x: any) => x.args[0])).toEqual(['take'])
+    expect(runs[0].args.slice(1)).toEqual([REPO, '10'])
   })
 })
 

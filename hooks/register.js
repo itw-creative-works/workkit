@@ -1,6 +1,6 @@
 /**
  * hooks/register.js: the workkit hooks module, the twenty-nine in-process
- * hooks on nine events (docs/hooks.md § The hooks module). The one file that
+ * hooks on ten events (docs/hooks.md § The hooks module). The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
  * and this file gathers their facts (or hands a mods gatherer the engine calls
  * as plain functions), gates them, logs each fire and answers.
@@ -231,7 +231,7 @@ async function caught($, hook, work) {
 }
 
 // The classic events whose input carries the session's folder as `cwd`.
-const CARRIES_CWD = new Set(['PostToolUse', 'SessionStart', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
+const CARRIES_CWD = new Set(['PostToolUse', 'PostToolUseFailure', 'SessionStart', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
 
 // Every fire of a dispatch in the hooks log, the one writer every handler
 // calls: one line per fire (log.js's line and cap), the session and folder
@@ -475,6 +475,9 @@ async function fileFacts($, e) {
   return { tool: e.tool, input, cwd, file, typed: filePathOf({ tool_input: input, cwd }), dir, gateDir: e.tool === 'Read' || e.tool === 'Grep' ? cwd : dir };
 }
 
+// The facts of a Bash call that already ran, and whether it failed.
+const postBashFacts = (e, failed) => async () => ({ command: e.tool_input?.command ?? '', cwd: e.cwd ?? '', failed });
+
 export function register(on) {
   on('classic.PostToolUse', { tool_name: ['Edit', 'Write'] }, async ($, e, next) => {
     const env = await envOf($);
@@ -577,9 +580,13 @@ export function register(on) {
 
   on('tool.call', { tool: ['Read', 'Grep'] }, ($, e, next) => guardChain($, e, next, 'tool.call', READ_GUARDS, () => fileFacts($, e))).catch(failClosed);
 
-  // Never a block: a hook here acts after the command ran.
+  // Never a block: a hook here acts after the command ran. A failed call fires
+  // PostToolUseFailure instead, though a step before the failure may have landed.
   on('classic.PostToolUse', { tool_name: 'Bash' }, ($, e, next) => guardChain($, e, next, 'PostToolUse', POST_BASH_GUARDS,
-    async () => ({ command: e.tool_input?.command ?? '', cwd: e.cwd ?? '' }))).catch(passOn);
+    postBashFacts(e, false))).catch(passOn);
+
+  on('classic.PostToolUseFailure', { tool_name: 'Bash' }, ($, e, next) => guardChain($, e, next, 'PostToolUseFailure', POST_BASH_GUARDS,
+    postBashFacts(e, true))).catch(passOn);
 
   on('agent.spawn', async ($, e, next) => {
     const env = await envOf($);

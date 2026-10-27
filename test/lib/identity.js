@@ -5,8 +5,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
-const { assert, mkTmp, SPAWN_DEADLINE } = require('./harness');
+const { spawnSync } = require('child_process');
+const {
+  assert, mkTmp, until, start, SPAWN_DEADLINE,
+} = require('./harness');
 const { IS_WINDOWS, SYSTEM_PATH, which, homeEnv } = require('./platform');
 
 const KIT = path.join(__dirname, '..', '..');
@@ -116,23 +118,19 @@ server.listen(0, '127.0.0.1', () => process.stdout.write(server.address().port +
  * in order, the last repeating) and 501 to anything else: `{ url, requests(),
  * close() }`, where `requests()` lists `{ method, url, auth, body }`, body as text.
  */
-const startServer = (routes, dir) => new Promise((resolve, reject) => {
+const startServer = async (routes, dir) => {
   const logFile = path.join(dir, `server-requests-${process.hrtime.bigint()}.log`);
-  const child = spawn(process.execPath, ['-e', SERVER, JSON.stringify(routes), logFile],
-    { stdio: ['ignore', 'pipe', 'inherit'] });
-  child.once('error', reject);
-  child.stdout.once('data', (chunk) => resolve({
-    url: `http://127.0.0.1:${String(chunk).trim()}`,
+  const server = start(process.execPath, ['-e', SERVER, JSON.stringify(routes), logFile]);
+  await until(() => server.stdout().endsWith('\n') || server.child.exitCode !== null);
+  assert(server.stdout().endsWith('\n'), `the stand-in server printed its port, stderr: ${server.stderr()}`);
+  return {
+    url: `http://127.0.0.1:${server.stdout().trim()}`,
     requests: () => (fs.existsSync(logFile)
       ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
       : []),
-    close: () => new Promise((done) => {
-      if (child.exitCode !== null) return done();
-      child.once('exit', () => done());
-      child.kill();
-    }),
-  }));
-});
+    close: () => server.end(),
+  };
+};
 
 /** A stand-in token service answering `POST /token` with `status` and `body` (an object). */
 const startService = (status, body) => startServer(

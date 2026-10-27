@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, run } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath, gitPath } = require('../../lib/platform');
 const { mods } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
@@ -20,8 +20,8 @@ const {
 const { daysAgo, agedFile } = require('../../lib/workflow-home');
 
 // A kit script run for real in <cwd> with the world's env.
-const runScript = (world, name, args = [], cwd = world.repo) => spawnSync(BASH, [...NO_RC, shellPath(path.join(KIT, 'scripts', name)), ...args], {
-  cwd, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+const runScript = (world, name, args = [], cwd = world.repo) => run(BASH, [...NO_RC, shellPath(path.join(KIT, 'scripts', name)), ...args], {
+  cwd, env: world.env,
 });
 
 // Every file under <dir>, at any depth; none when it is not there.
@@ -76,11 +76,9 @@ const cases = async () => {
     stage(r, 'app.js', 'const x = 2;\n');
     r.headTime = Number(world.git('log', '-1', '--format=%ct').trim());
     blocks(await judge(r, 'git commit -m "feat"'), T.noReview, 'blocked before the skill runs');
-    const res = spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
+    const res = run(BASH, [...NO_RC, '-c', skillLine()], {
       cwd: world.repo,
       env: { ...world.env, CLAUDE_PLUGIN_ROOT: shellPath(KIT) },
-      encoding: 'utf8',
-      timeout: SPAWN_DEADLINE,
     });
     assertEq(res.status, 0, `the marker script runs, got: ${res.stderr}`);
     assert(fs.existsSync(marker), `and writes exactly the file the module names: ${marker}`);

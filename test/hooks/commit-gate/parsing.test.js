@@ -1,14 +1,17 @@
 // Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
-// hooks/mods/commit-gate.js: command parsing, and the hardening of prefixed,
-// wrapped and command-position spellings. Each case ports the HEAD case its
+// hooks/mods/commit-gate.js: command parsing, the hardening of prefixed,
+// wrapped and command-position spellings, and a closing trailer that names more
+// than one issue on one line. Each ported case ports the HEAD case its
 // name quotes; "no cwd" is a fact with an empty cwd now. Dropped with the
 // shell mechanism: "a broken perl blocks only commands carrying the commit
 // word" (the module strips quotes in JavaScript, with no perl to break).
 // The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const { group, test, summary, selfRun } = require('../../lib/harness');
 const {
-  ELSEWHERE, T, mkRepo, stage, write, commit, touchMarker, judge, blocks, passes,
+  group, test, assert, summary, selfRun,
+} = require('../../lib/harness');
+const {
+  ELSEWHERE, PREFIX, T, mkRepo, stage, write, commit, touchMarker, judge, denyOf, blocks, passes,
 } = require('./helpers');
 
 // A repo with app.js staged and no review marker: a gated commit blocks for review.
@@ -17,6 +20,17 @@ const codeStaged = () => {
   stage(r, 'app.js', 'const x = 1;\n');
   return r;
 };
+
+// Code staged and reviewed in a repo that keeps no CHANGELOG.md: a closing
+// trailer meets no other check, so only the one-issue-per-line check can block.
+const reviewedCode = () => {
+  const r = codeStaged();
+  touchMarker(r);
+  return r;
+};
+
+// The commit of `message` over a reviewed repo: its block text, or null.
+const trailerDeny = async (message) => denyOf(await judge(reviewedCode(), `git commit -m "feat: a thing\n\n${message}"`));
 
 // README.md staged, while tracked.js carries an unstaged edit an -a would take.
 const docsWithTrackedEdit = () => {
@@ -172,6 +186,34 @@ const cases = async () => {
 
   await test('ports "a glob token in the clause is not expanded against the process cwd (set -f)": -? is not -a', async () => {
     passes(await judge(docsWithTrackedEdit(), 'git commit -m "docs" -?'), '', 'docs-only commit, the glob token read as written');
+  });
+
+  group('commit-gate: one issue per closing line');
+
+  await test('a closing line naming three issues bounces, naming the two it leaves open and showing one Fixes line per issue', async () => {
+    const deny = await trailerDeny('Fixes #455 #456 #460');
+    assert(deny !== null && deny.startsWith(PREFIX), `the commit is blocked, got: ${deny}`);
+    assert(deny.includes('#456') && deny.includes('#460'), `the block names #456 and #460, got: ${deny}`);
+    assert(/Fixes #455[ \t]*\r?\n[ \t]*Fixes #456/.test(deny), `the block shows Fixes #455, then Fixes #456 on the next line, got: ${deny}`);
+  });
+
+  await test('a comma or an `and` between the issues bounces too', async () => {
+    for (const message of ['Fixes #455, #456', 'Fixes #455 and #456']) {
+      const deny = await trailerDeny(message);
+      assert(deny !== null && deny.startsWith(PREFIX) && deny.includes('#456'), `"${message}" is blocked naming #456, got: ${deny}`);
+    }
+  });
+
+  await test('one Fixes line per issue passes', async () => {
+    passes(await judge(reviewedCode(), 'git commit -m "feat: a thing\n\nFixes #455\nFixes #456"'), '', 'each issue on its own line');
+  });
+
+  await test('two keywords on one line, each with its own issue, pass', async () => {
+    passes(await judge(reviewedCode(), 'git commit -m "feat: a thing\n\nFixes #455, fixes #456"'), '', 'each number has its own keyword');
+  });
+
+  await test('an issue named later on the line, after other words, passes', async () => {
+    passes(await judge(reviewedCode(), 'git commit -m "feat: a thing\n\nFixes #455 after #440 landed"'), '', 'only #455 is a closing reference');
   });
 };
 

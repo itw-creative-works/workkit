@@ -40,14 +40,35 @@ async function place(clause, { cwd, roster, slugOf }, sawCd) {
   return { dir: folder, repo };
 }
 
+// A failed call may have failed at the claim itself, so only the numbers
+// GitHub lists as building are taken; each other one is named in a note.
+async function failedClaim({ dir, repo }, issues, facts) {
+  const list = await facts.building(dir, repo, { claim: true });
+  if (list !== null && typeof list === 'object') return [list];
+  const building = list === null ? null : issuesBuilding(list);
+  const listed = building === null ? [] : building.map(String);
+  const kept = issues.filter((n) => listed.includes(n));
+  const missed = issues.filter((n) => !kept.includes(n)).map((n) => `#${n}`).join(', ');
+  const where = repo ? ` in ${repo}` : '';
+  const steps = kept.length > 0 ? [{ take: dir, issues: kept, repo }] : [];
+  if (!missed) return steps;
+  const why = building === null
+    ? `GitHub's status:building list${where} could not be read`
+    : `GitHub does not list ${missed}${where} as status:building`;
+  return [...steps, { note: `the command failed and ${why}, so no snapshot was taken for ${missed}.` }];
+}
+
 /**
  * What a Bash command asks of the snapshot, one step per clause that claims
  * or releases, in order: take (the folder, the claimed numbers and the repo
  * named), drop (a release GitHub says left nothing building), or a note for
  * a flip it cannot place. A release that leaves an issue building is no step.
- * @param {{command: string, cwd: string, roster: object|null, slugOf: function, building: function}} facts
+ * On a failed call a claim takes only the numbers GitHub lists as building.
+ * @param {{command: string, cwd: string, roster: object|null, slugOf: function, building: function, failed: boolean}} facts
  *   the command, its folder, the parsed ~/.workkit/.repos.json, `slugOf(dir)` async a folder's
- *   origin slug, `building(dir, repo)` async gh's status:building list there, null when unread
+ *   origin slug, `building(dir, repo, { claim })` async gh's status:building list there, null when
+ *   unread (`claim` set for a failed call's claim, answered `{ note }` for a folder in no git
+ *   repository), and whether the Bash call failed
  * @returns {Promise<Array<{take: string, issues: string[], repo: string}|{drop: string, repo: string}|{note: string}>>}
  */
 export async function snapshotPlan(facts) {
@@ -65,6 +86,7 @@ export async function snapshotPlan(facts) {
     }
     const placed = await place(clause, facts, sawCd);
     if (placed.note) steps.push(placed);
+    else if (claim && facts.failed) steps.push(...(await failedClaim(placed, ghIssueNumbers(detect, 'edit'), facts)));
     else if (claim) steps.push({ take: placed.dir, issues: ghIssueNumbers(detect, 'edit'), repo: placed.repo });
     else {
       const list = await facts.building(placed.dir, placed.repo);
@@ -74,15 +96,16 @@ export async function snapshotPlan(facts) {
   return steps;
 }
 
+// The note for a step whose folder lies in no git repository.
+const noRepoNote = (dir, repo, cwd) => (dir === cwd
+  ? "the session's folder lies in no git repository, so no snapshot was taken or dropped."
+  : `${repo}'s roster folder ${dir} lies in no git repository, so no snapshot was taken or dropped for it.`);
+
 // One take or drop step run through the entry in its repo: a note, or null.
 async function runStep(step, facts, snapOf) {
   const dir = step.take ?? step.drop;
   const root = await facts.top(dir);
-  if (!root) {
-    return dir === facts.cwd
-      ? "the session's folder lies in no git repository, so no snapshot was taken or dropped."
-      : `${step.repo}'s roster folder ${dir} lies in no git repository, so no snapshot was taken or dropped for it.`;
-  }
+  if (!root) return noRepoNote(dir, step.repo, facts.cwd);
   const entry = (mode, ...args) => facts.run(['bash', `${facts.pluginRoot}/hooks/lib/snapshot.sh`, mode, root, ...args], { cwd: root, timeoutMs: LONG_RUN_MS });
   if (step.drop) {
     await entry('drop');
@@ -122,12 +145,14 @@ export async function snapshotGuard(facts) {
     cwd: facts.cwd,
     roster: await rosterOf(facts.env, facts.read),
     slugOf: (dir) => repoSlug(dir, facts.run),
-    // No snapshot there is nothing to drop, so GitHub is not asked.
-    building: async (dir, repo) => {
+    // A release with no snapshot there has nothing to drop, so GitHub is not asked.
+    building: async (dir, repo, { claim = false } = {}) => {
       const root = await facts.top(dir);
-      if (!root || (await facts.list(await snapOf(root))).length === 0) return null;
+      if (!root && claim) return { note: noRepoNote(dir, repo, facts.cwd) };
+      if (!root || (!claim && (await facts.list(await snapOf(root))).length === 0)) return null;
       return buildingList(facts.run, { repo, cwd: root });
     },
+    failed: facts.failed,
   });
   const notes = [];
   for (const step of steps) {

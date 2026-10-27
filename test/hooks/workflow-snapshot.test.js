@@ -1,5 +1,5 @@
 // Tests for workflow:snapshot: snapshotPlan({ command, cwd, roster, slugOf,
-// building }) in hooks/mods/snapshot.js decides a take at a claim and a drop at
+// building, failed }) in hooks/mods/snapshot.js decides a take at a claim and a drop at
 // the release of the last building issue, and the copy runs for real through
 // `bash hooks/lib/snapshot.sh take|add|stale|drop <root> ...` in a temp repo
 // with its own home. Each case ports the HEAD case its name quotes. Dropped:
@@ -40,10 +40,10 @@ const SLUGS = { [HERE]: 'acme/repo', [OTHER]: 'owner/other' };
 
 /**
  * snapshotPlan over `command` from the session repo, gh's building answer
- * `list` (null when it cannot answer); hands back the plan and how often the
- * building list was read.
+ * `list` (null when it cannot answer), `failed` when the Bash call failed;
+ * hands back the plan and how often the building list was read.
  */
-const planOf = async (command, { list = [], roster = ROSTER, cwd = HERE } = {}) => {
+const planOf = async (command, { list = [], roster = ROSTER, cwd = HERE, failed = false } = {}) => {
   let asked = 0;
   const plan = await mods('snapshot').snapshotPlan({
     command,
@@ -51,6 +51,7 @@ const planOf = async (command, { list = [], roster = ROSTER, cwd = HERE } = {}) 
     roster,
     slugOf: async (dir) => SLUGS[dir] ?? '',
     building: async () => { asked++; return list === null ? null : json(list); },
+    failed,
   });
   return { plan, asked };
 };
@@ -59,6 +60,10 @@ const stepsOf = (plan) => (Array.isArray(plan) ? plan : (plan ? [plan] : []));
 const rootsOf = (plan, key) => stepsOf(plan).filter((s) => s && s[key]).map((s) => s[key]).join(',') || null;
 const takes = (plan) => rootsOf(plan, 'take');
 const drops = (plan) => rootsOf(plan, 'drop');
+// Every issue number the plan's takes record, sorted; every notice's text, joined.
+const takenIssues = (plan) => stepsOf(plan).filter((s) => s && s.take).flatMap((s) => s.issues.map(String)).sort();
+const notesOf = (plan) => stepsOf(plan).filter((s) => s && s.note).map((s) => s.note).join('\n');
+const names = (text, n) => new RegExp(`(^|\\D)${n}(\\D|$)`).test(text);
 
 /**
  * A repo with a root package.json, `src/x.js` and a test, committed; a
@@ -273,6 +278,32 @@ const cases = async () => {
     const { code, calls } = stale(w, building(6));
     assertEq(code, 1, 'an empty recorded list is live');
     assertEq(calls.length, 0, 'and asks GitHub nothing');
+  });
+
+  group('workflow:snapshot: a failed call');
+
+  await test('a failed call claiming #10, GitHub listing #10 as building: the snapshot is taken for #10', async () => {
+    const { plan } = await planOf(CLAIM(10), { list: building(10), failed: true });
+    assertEq(takes(plan), HERE, 'the claim takes the session repo');
+    assertEq(json(takenIssues(plan)), json(['10']), 'the take records #10');
+  });
+
+  await test('a failed call claiming #10, GitHub not listing #10: nothing taken, a notice naming #10', async () => {
+    const { plan } = await planOf(CLAIM(10), { list: building(4), failed: true });
+    assertEq(takes(plan) || drops(plan), null, 'no snapshot taken or dropped');
+    assert(names(notesOf(plan), 10), `a notice names #10, got: ${json(plan)}`);
+  });
+
+  await test('a failed call claiming #1 and #2, only #1 listed: the snapshot is taken for #1, the notice names #2', async () => {
+    const { plan } = await planOf('gh issue edit 1 2 --add-label status:building', { list: building(1), failed: true });
+    assertEq(json(takenIssues(plan)), json(['1']), 'the take records #1 alone');
+    assert(names(notesOf(plan), 2), `a notice names #2, got: ${json(plan)}`);
+  });
+
+  await test('a successful call\'s claim takes the snapshot with no building read, though GitHub lists nothing', async () => {
+    const { plan, asked } = await planOf(CLAIM(10), { list: [], failed: false });
+    assertEq(json(takenIssues(plan)), json(['10']), 'the take records #10');
+    assertEq(asked, 0, 'no building read');
   });
 
   group('workflow:snapshot: removal');

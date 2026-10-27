@@ -84,9 +84,9 @@ Status changes ARE checkpoint work. Apply every owner word that moves an issue's
 - The trail is the whole reply: nothing prints before it but the timestamp.
 - `**✅ Safe to compact or continue in a new session.**` prints ONLY when every enumerated item is on the board, and it is the reply's LAST line: nothing prints under it.
 - An item still unfiled: the last line starts `Still unfiled:` followed by what is left, and the bold line does not print. For example: `Still unfiled: the owner's ruling on the palette colors.`
-- A checkpoint run from the compaction nudge binds every later turn-final message until the compaction: each ends with the same bold line as its last line, on the same condition. A sign-off after a task notification is one short line, then the bold line; never a second trail.
-- A checkpoint run for any other reason ("harden this chat") has no later-reply rule.
-- A local harness may bounce a reply that breaks this; nothing in the kit does.
+- The bold line ends the checkpoint reply alone, whatever the reason the checkpoint ran: a reply in a turn that ran no checkpoint never ends on it.
+- A sign-off after a task notification is one short line with no bold line, never a second trail.
+- A local harness may bounce the checkpoint reply that breaks this; nothing in the kit does.
 
 ## Rules
 

@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, mkTmp, until, alive, SPAWN_DEADLINE, start,
+  group, test, assert, assertEq, summary, selfRun, mkTmp, until, alive, run, start,
 } = require('../lib/harness');
 const {
   BASH, NO_RC, NODE_DIR, shellPath, stubTool, systemPathWith,
@@ -17,7 +17,7 @@ const {
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 const DETACH = path.join(LIB, 'detach.js');
 
-const detach = (...args) => spawnSync(process.execPath, [DETACH, ...args], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+const detach = (...args) => run(process.execPath, [DETACH, ...args]);
 
 /**
  * `wk_run_detached <log> <lock> -- node -e <script>` in a shell that sourced
@@ -66,11 +66,11 @@ const cases = async () => {
     fs.writeFileSync(logFile, 'stale line from an earlier run\n');
     const cmd = [process.execPath, '-e', "setTimeout(() => { console.log('finished'); process.exit(4); }, 2000)"];
     // The parent hands detach.js its own argv and exits with its code, at once.
-    const parent = spawnSync(process.execPath, ['-e', [
+    const parent = run(process.execPath, ['-e', [
       "const r = require('child_process').spawnSync(process.execPath, process.argv.slice(1), { encoding: 'utf8' });",
       'process.stdout.write(r.stdout || ""); process.stderr.write(r.stderr || "");',
       'process.exit(r.status === null ? 1 : r.status);',
-    ].join(' '), DETACH, logFile, done, '--', ...cmd], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    ].join(' '), DETACH, logFile, done, '--', ...cmd]);
     assertEq(parent.status, 0, `detach.js exits 0, stderr: ${parent.stderr}`);
     assert(/^\d+\s*$/.test(parent.stdout), `detach.js prints the supervisor's pid, got: ${JSON.stringify(parent.stdout)}`);
     const pid = Number(parent.stdout.trim());
@@ -89,8 +89,7 @@ const cases = async () => {
     const dir = mkTmp('detach-shell-');
     const logFile = path.join(dir, 'log');
     const done = path.join(dir, 'done');
-    const res = spawnSync(process.execPath, [DETACH, logFile, done, '--', BASH, ...NO_RC, '-c', 'echo from-the-shell; echo to-stderr >&2; exit 3'],
-      { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const res = detach(logFile, done, '--', BASH, ...NO_RC, '-c', 'echo from-the-shell; echo to-stderr >&2; exit 3');
     assertEq(res.status, 0, `detach.js exits 0, stderr: ${res.stderr}`);
     assert(await until(() => fs.existsSync(done)), `the done file never appeared at ${done}`);
     assertEq(fs.readFileSync(done, 'utf8'), '3\n', "the done file holds the shell's exit code");
@@ -136,7 +135,7 @@ const cases = async () => {
     fs.writeFileSync(path.join(lock, 'pid'), `${dead}\n`);
     fs.writeFileSync(path.join(lock, 'done'), '0\n');
     const script = `require('fs').writeFileSync(${jsPath(ran)},'');process.exit(6)`;
-    const res = spawnSync(BASH, runDetachedArgs(dir, script), { env: RUN_ENV, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const res = run(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
     assertEq(rcOf(res.stdout || ''), 6, `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`);
     assert(fs.existsSync(ran), 'the command ran');
   });
@@ -172,7 +171,7 @@ const cases = async () => {
 
   await test('WK_RAN_CODE: the command\'s code after it ran, empty when the runner could not start', () => {
     const dir = mkTmp('detach-ran-');
-    const ran = spawnSync(BASH, runDetachedArgs(dir, 'process.exit(7)'), { env: RUN_ENV, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const ran = run(BASH, runDetachedArgs(dir, 'process.exit(7)'), { env: RUN_ENV });
     assertEq(rcOf(ran.stdout || ''), 7, `the command's code comes back, stdout: ${JSON.stringify(ran.stdout)}, stderr: ${ran.stderr}`);
     assertEq(ranOf(ran.stdout || ''), '7', `WK_RAN_CODE holds it, stdout: ${JSON.stringify(ran.stdout)}`);
 
@@ -181,8 +180,8 @@ const cases = async () => {
     const bin = path.join(mkTmp('detach-nonode-'), 'bin');
     fs.mkdirSync(bin);
     stubTool(bin, 'node', ['#!/bin/bash', 'exit 1']);
-    const failed = spawnSync(BASH, runDetachedArgs(mkTmp('detach-ran-'), 'process.exit(7)', 'WK_RAN_CODE=7'),
-      { env: { PATH: systemPathWith(bin, NODE_DIR) }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const failed = run(BASH, runDetachedArgs(mkTmp('detach-ran-'), 'process.exit(7)', 'WK_RAN_CODE=7'),
+      { env: { PATH: systemPathWith(bin, NODE_DIR) } });
     assertEq(rcOf(failed.stdout || ''), 1, `the runner's 1, stdout: ${JSON.stringify(failed.stdout)}, stderr: ${failed.stderr}`);
     assertEq(ranOf(failed.stdout || ''), '', `WK_RAN_CODE is empty, stdout: ${JSON.stringify(failed.stdout)}`);
   });

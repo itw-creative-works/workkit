@@ -16,24 +16,44 @@ const LADDER = ['SIGINT', 'SIGTERM', 'SIGKILL'];
 const END_GRACE = 1500;
 
 /**
- * Send <signal> to <target> (a pid, or a group as -pid); a process gone or not
- * ours is no error.
- * @returns {boolean} whether the target was gone (ESRCH)
+ * Send <signal> to <target> (a pid, or a group as -pid).
+ * @returns {'sent'|'gone'|'refused'} gone on ESRCH, refused on EPERM
  */
 const trySignal = (target, signal) => {
   try {
     process.kill(target, signal);
-    return false;
+    return 'sent';
   } catch (err) {
-    if (err.code !== 'ESRCH' && err.code !== 'EPERM') throw err;
-    return err.code === 'ESRCH';
+    if (err.code === 'ESRCH') return 'gone';
+    if (err.code === 'EPERM') return 'refused';
+    throw err;
   }
+};
+
+/**
+ * trySignal, with a refusal thrown as `<who>: signal refused for pid <pid> (EPERM)`,
+ * so a process not ours is never read as alive and waited on.
+ * @returns {'sent'|'gone'}
+ */
+const send = (who, target, pid, signal) => {
+  const outcome = trySignal(target, signal);
+  if (outcome === 'refused') throw new Error(`${who}: signal refused for pid ${pid} (EPERM)`);
+  return outcome;
+};
+
+// The group <pid> leads, else <pid> alone. kill(-1) is every process this user
+// may signal, not a group, so pid 1 is signalled alone. A refused group falls
+// through too: on macOS a leader that exited unreaped refuses its group, so only
+// a refusal of the pid itself throws.
+const signalTree = (who, pid, signal) => {
+  if (pid === 1 || trySignal(-pid, signal) !== 'sent') send(who, pid, pid, signal);
 };
 
 /**
  * End the tree a raw <pid> heads: the group it leads, else the pid; on Windows
  * `taskkill /T /F` ends its whole tree. A pid that is not a positive integer
- * throws, since 0 or a negative one signals the caller's own group or another.
+ * throws, since 0 or a negative one signals the caller's own group or another;
+ * a refused signal throws `endTree: signal refused for pid <N> (EPERM)`.
  * @param {number} pid
  * @param {string} [signal]
  */
@@ -43,7 +63,7 @@ const endTree = (pid, signal = 'SIGTERM') => {
     spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', timeout: SPAWN_DEADLINE });
     return;
   }
-  if (trySignal(-pid, signal)) trySignal(pid, signal);
+  signalTree('endTree', pid, signal);
 };
 
 /**
@@ -74,10 +94,14 @@ const run = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE } = {}) => 
 /**
  * Start <cmd> without waiting, stdout and stderr piped. `done` resolves once the
  * child has exited and its streams closed, PIPE_GRACE_MS after the exit at most.
- * A watchdog at <deadline> marks `timedOut` and calls `end()`. `end(signal)` climbs
- * the ladder from that rung while the target lives: a detached child's group, else
- * the child alone; on Windows one `taskkill` tree end. A signal off the ladder
- * rejects; a child that never spawned ends at once, `done` rejecting with the error.
+ * A watchdog at <deadline> marks `timedOut` and calls `end()`, whose rejection
+ * rejects `done`. `end(signal)` climbs the ladder from that rung while the target
+ * lives: a detached child's group, else the child alone; on Windows one `taskkill`
+ * tree end. A signal off the ladder rejects; a child that never spawned ends at
+ * once, `done` rejecting with the error. A refused rung rejects `end: signal refused for pid <N> (EPERM)`, and a target
+ * still alive END_GRACE after SIGKILL rejects `end: pid <N> survived SIGKILL`.
+ * On Windows, once a detached leader has exited, `end()` reaches no grandchild:
+ * `taskkill /T` finds a tree only through a living root.
  * @param {string} cmd
  * @param {string[]} args
  * @param {{cwd?: string, env?: object, deadline?: number, detached?: boolean}} [opts]
@@ -107,10 +131,9 @@ const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = fals
       resolve();
     });
   });
-  const done = new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', () => resolve({ ...exit, timedOut }));
-  });
+  const { promise: done, resolve: settleDone, reject: failDone } = Promise.withResolvers();
+  child.once('error', failDone);
+  child.once('close', () => settleDone({ ...exit, timedOut }));
   // `done` still rejects for whoever awaits it; a caller that only awaits
   // `end()` must not die of the unhandled rejection.
   done.catch(() => {});
@@ -118,7 +141,9 @@ const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = fals
   // A detached group outlives its leader, so its life is the group's, not the child's.
   // Windows has no process group: its one end is taskkill's tree end.
   const group = detached && !IS_WINDOWS;
-  const lives = () => (group ? !trySignal(-child.pid, 0) : !gone());
+  // A group whose members exited but are not yet reaped answers EPERM on macOS,
+  // so the zero probe reads it as gone, as `_wk_group_gone` does; a real rung's refusal throws.
+  const lives = () => (group ? trySignal(-child.pid, 0) === 'sent' : !gone());
   // Wait until the target is gone or END_GRACE has passed, polled as the shell's
   // `_wk_group_gone` does, since a group has no exit event.
   const settle = () => until(() => !lives(), END_GRACE);
@@ -132,10 +157,11 @@ const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = fals
     } else {
       for (const rung of LADDER.slice(LADDER.indexOf(signal))) {
         if (!lives()) break;
-        if (group) endTree(child.pid, rung);
-        else trySignal(child.pid, rung);
+        if (group) signalTree('end', child.pid, rung);
+        else send('end', child.pid, child.pid, rung);
         await settle();
       }
+      if (lives()) throw new Error(`end: pid ${child.pid} survived SIGKILL`);
     }
     await exited;
     // The exit's own grace closes the streams, so output written while ending is read.
@@ -145,7 +171,8 @@ const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = fals
   const watchdog = setTimeout(() => {
     if (gone()) return;
     timedOut = true;
-    end();
+    // No caller awaits the watchdog's end, so its rejection fails `done` instead.
+    end().catch(failDone);
   }, deadline);
   watchdog.unref();
 

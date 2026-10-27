@@ -377,7 +377,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
 
   // The engine beneath every event the module hooks: it answers as given, and
   // `reached` names each event that got this far.
-  for (const ev of ['UserPromptSubmit', 'SessionStart', 'PostToolUse', 'SubagentStart', 'PreToolUse', 'Stop']) {
+  for (const ev of ['UserPromptSubmit', 'SessionStart', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'PreToolUse', 'Stop']) {
     on(`classic.${ev}`, () => { world.reached.push(`classic.${ev}`); return {} })
   }
   on('tool.call', ($: any, e: any) => { world.toolRan = e; return { result: { text: 'ran' } } })

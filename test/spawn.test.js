@@ -1,8 +1,8 @@
 // Tests for workflow/test/lib/spawn.js through the one entry: run() keeps both
 // streams and the exit, start() streams while its child runs and end() ends its
 // group, climbing INT, TERM, KILL only while the child lives, a deadline ends a
-// child that never exits, and endTree() ends a group and refuses a pid that is
-// not a positive integer.
+// child that never exits, and endTree() ends a group, refuses a pid that is
+// not a positive integer and throws on a signal the system refuses.
 
 const fs = require('fs');
 const path = require('path');
@@ -60,6 +60,9 @@ const TRAPS = (record) => `
   process.stdout.write("ready\\n");
 `;
 
+// Spins until the pid in $1 is a zombie: exited, its parent not yet told.
+const UNTIL_ZOMBIE = 'until ps -o stat= -p "$1" | grep -q Z; do :; done';
+
 // Exits 4 at once, on its own.
 const EXITS = 'process.exit(4);';
 
@@ -72,6 +75,15 @@ const settle = async (promise) => {
   promise.then((v) => { value = v; });
   await until(() => value !== undefined);
   return value;
+};
+
+// The first process owned by root with a pid above 1, or null. Never pid 1: a
+// user that is not root is refused kill(1), but where pid 1 is this user's own
+// entrypoint the case's TERM would be real.
+const rootOwnedPid = () => {
+  const rows = run('ps', ['-A', '-o', 'pid=,uid=']).stdout.trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
+  const row = rows.find(([pid, uid]) => uid === 0 && pid > 1);
+  return row ? row[0] : null;
 };
 
 // Kills each of `pids`, a gone one no error, so a failed case leaves no process behind.
@@ -170,6 +182,36 @@ const cases = async () => {
     }
   });
 
+  await testUnless(IS_WINDOWS, 'Windows ends a child through one taskkill, no signal probe')(
+    'end() on a detached child that exited and is not yet reaped resolves, and done reports its exit 0',
+    async () => {
+      const child = start('/bin/sh', ['-c', 'exit 0'], { detached: true });
+      // Blocks the loop until the child is a zombie, so the signal probe meets it unreaped.
+      const stretch = run('/bin/sh', ['-c', UNTIL_ZOMBIE, 'sh', String(child.pid)]);
+      assertEq(stretch.status, 0, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`);
+      let rejected;
+      await child.end().catch((err) => { rejected = err; });
+      assertEq(rejected?.message, undefined, 'end() resolves on a child that already exited');
+      const exit = await settle(child.done);
+      assertEq(exit?.status, 0, `done reports the child's own exit, got: ${JSON.stringify(exit)}`);
+    },
+  );
+
+  await testUnless(IS_WINDOWS, 'Windows ends a tree through taskkill, not a signal')(
+    'endTree on a detached child that exited and is not yet reaped ends quietly, and done reports its exit 0',
+    async () => {
+      const child = start('/bin/sh', ['-c', 'exit 0'], { detached: true });
+      // Blocks the loop until the child is a zombie, so endTree meets it unreaped.
+      const stretch = run('/bin/sh', ['-c', UNTIL_ZOMBIE, 'sh', String(child.pid)]);
+      assertEq(stretch.status, 0, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`);
+      let threw;
+      try { endTree(child.pid, 'SIGKILL'); } catch (err) { threw = err; }
+      assertEq(threw?.message, undefined, 'endTree does not throw on a leader that already exited');
+      const exit = await settle(child.done);
+      assertEq(exit?.status, 0, `done reports the child's own exit, got: ${JSON.stringify(exit)}`);
+    },
+  );
+
   await test('the watchdog: a child that never exits is ended at its deadline and done reports timedOut', async () => {
     const forever = start(process.execPath, ['-e', FOREVER], { deadline: SHORT });
     const exit = await settle(forever.done);
@@ -246,6 +288,19 @@ const cases = async () => {
       assert(/endTree: pid must be a positive integer/.test(threw?.message), `endTree(${pid}) throws the guard's error`);
     }
   });
+
+  const rootPid = IS_WINDOWS || process.getuid() === 0 ? null : rootOwnedPid();
+  await testUnless(rootPid === null, IS_WINDOWS ? 'Windows ends a tree through taskkill, not a signal'
+    : process.getuid() === 0 ? 'root may signal any process, so nothing refuses the signal'
+      : 'no process owned by root, pid above 1, is listed here')(
+    'endTree throws when the system refuses the signal: a root process signalled by a user that is not root names EPERM and the pid',
+    () => {
+      let threw;
+      try { endTree(rootPid, 'SIGTERM'); } catch (err) { threw = err; }
+      assert(/EPERM/.test(threw?.message) && new RegExp(`\\bpid ${rootPid}\\b`).test(threw?.message),
+        `endTree throws naming EPERM and pid ${rootPid}, got: ${threw?.message}`);
+    },
+  );
 };
 
 module.exports = async () => {
