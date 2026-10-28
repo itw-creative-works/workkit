@@ -56,11 +56,12 @@ home_steps() {
   wk_home_setup "$@"
 }
 
-# cloud_na <label>: a step a cloud session has no use for, one line in the skip
-# voice, counted by nothing. The table holds every not-applicable reason, one
-# shared wherever setup, update and doctor print the same step.
+# cloud_na <step>: a step a cloud session has no use for, one line in the skip
+# voice labelled by the step (`signin` by identity), counted by nothing. The table
+# holds every not-applicable reason, one shared wherever setup, update and doctor
+# print the same step.
 cloud_na() {
-  local why
+  local why label="$1"
   case "$1" in
     plugin)   why="the session installs plugins from its settings" ;;
     schedule) why="the 9am job is a Mac's launchd" ;;
@@ -71,14 +72,15 @@ cloud_na() {
     site)     why="publishing runs from your own machine" ;;
     repo)     why="a repo joins through its committed .workkit/settings.json" ;;
     identity) why="workkit-agent[bot]'s install is an owner's click on GitHub" ;;
+    signin)   why="the session's GitHub proxy signs every call as the account"; label=identity ;;
     *) wk_error "cloud_na: no reason for $1"; return 1 ;;
   esac
-  wk_skip "$1: not applicable in a cloud session; $why"
+  wk_skip "$label: not applicable in a cloud session; $why"
 }
 
 # setup --cloud: the gh login check, the links and npm's script-shell as update
-# makes them, then the sign-in from WORKKIT_LOGIN. Every other step is one
-# cloud_na line; it asks nothing and opens nothing.
+# makes them. Every other step is one cloud_na line; it asks nothing and opens
+# nothing.
 cloud_steps() {
   wk_section "💻 This machine"
   cloud_na plugin
@@ -94,7 +96,7 @@ cloud_steps() {
   cloud_na secrets
 
   wk_section "🪪 Identity"
-  identity_cloud_step
+  identity_report machine
 
   wk_section "🌐 Dashboard site"
   cloud_na site

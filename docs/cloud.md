@@ -19,7 +19,7 @@ What never travels on its own: user-level `~/.claude` (personal skills, hooks, o
 3. **Register plugin marketplaces by source the session can reach.** A marketplace registered as a local directory path resolves only on the machine that registered it. A github source works everywhere. Against a private repo it needs the session's GitHub token to read; a public repo drops even that.
 4. **Secrets ride as environment secrets, never files.** The proven pair from this kit's own cloud job (`jobs/README.md`): `CLAUDE_CODE_OAUTH_TOKEN` for the model, a scoped GitHub token for the board. MCP upstreams that call remote APIs add their keys the same way.
 
-   The bot identity's sign-in rides the same way: a `WORKKIT_LOGIN` environment secret holding the login file's content, which `workkit setup --cloud` writes to `~/.workkit/identity/login.json`: the variable is the transport, `login.json` the client's own store. It is the cloud twin of `workkit setup --login`, the device flow a session has no browser for.
+   The bot identity needs no secret: `workkit-agent[bot]` does not act in a session, since the session's GitHub proxy signs every call as the account, and the kit's `gh` calls run as the account through REST ([gh in a session](#gh-in-a-session)).
 
 ## What cannot travel, and its cloud twin
 
@@ -30,6 +30,15 @@ What never travels on its own: user-level `~/.claude` (personal skills, hooks, o
 | Session transcripts and local git history | this machine's private state | none, by construction: the nightly summaries name that skip |
 | Keychain auth | OS secret store | the environment secrets above |
 | Desktop notifiers, keep-awake | no display, nothing to keep awake | degrade to no-ops |
+
+## gh in a session
+
+A cloud session reaches GitHub only through its proxy, which signs every request as the account the session belongs to and serves REST on the session's own repos alone: GraphQL answers 403, and another repo answers 403 until the session attaches it.
+
+- **What works.** The `gh` shim (`workflow/identity/gh`, linked by `workkit setup --cloud`) serves the kit's verbs through REST: `issue list|view|edit|comment|close|create`, `label list|create|edit` and `auth status` become `gh api repos/<owner>/<repo>/...` calls (`workflow/identity/rest.js`), printed in gh's own shape, so the hooks, the heal, `workkit note` and the skills run unchanged. `gh api` on a REST route works as it does anywhere.
+- **What does not.** Any other verb or subcommand, and any `-h`/`--help`, runs the real gh, so a GraphQL one (`gh pr`, `gh repo view`) answers the proxy's 403. A field or flag of a served verb the shim does not serve (`--json blockedBy`, `--web`) stops with a line naming it; `blockedBy` is the one field the status skill loses there, so it drops it from its query and orders by its fallback signals. `issue list --search` goes through REST's search route, which the proxy may refuse.
+- **Writes land as the account.** The proxy overwrites any other token, so the shim fetches no `workkit-agent[bot]` token there, and every claim, label and comment posts as you.
+- **The login check.** `workkit setup --cloud` and `workkit doctor` read the login with `gh api user -q .login`, which the shim's `auth status` answers the same way.
 
 ## The working precedent
 

@@ -17,7 +17,7 @@ disallowed-tools: AskUserQuestion
 
 ## Repo mode (default: a project repo is the cwd)
 
-One query does it: `gh issue list --state open --json number,title,labels,assignees,blockedBy --limit 1000`. Answer in plain language, in this shape:
+One query does it: `gh issue list --state open --json number,title,labels,assignees,blockedBy --limit 1000`. In a cloud session, where the kit's gh shim does not serve `blockedBy`, drop it from the query; the dependency order then comes from the fallback signals below. Answer in plain language, in this shape:
 
 0. **The tally**: the digest OPENS with one count line. It gives total open issues, then the count per `status:` and per `type:` label (e.g. "12 open, status: 1 complete, 2 qa, 3 blocked, 4 specced, 2 backlog · type: 5 bugs, 6 enhancements, 1 idea").
 1. **Ready to ship**: `status:complete` issues: checked, passed, waiting on nothing but the word "ship". One bullet each, then one closing line saying they all go in the next ship. They lead because they are the shortest path to an empty tree.

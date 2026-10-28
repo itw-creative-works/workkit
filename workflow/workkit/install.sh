@@ -34,7 +34,15 @@ check_gh() {
     wk_warn "gh: not installed; the label heals and the board need it (https://cli.github.com)"
     return 1
   fi
-  if wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1; then
+  local signed_in=0 login
+  if wk_is_cloud; then
+    # A cloud session's proxy answers REST alone, signed as the account.
+    login="$(wk_spin 'checking the gh login' gh api user -q .login 2>/dev/null)" || login=''
+    [[ -n "$login" ]] && signed_in=1
+  elif wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1; then
+    signed_in=1
+  fi
+  if [[ "$signed_in" -eq 1 ]]; then
     wk_skip "gh: installed and authenticated"
   else
     wk_warn "gh: installed but not authenticated; run \`gh auth login\`"

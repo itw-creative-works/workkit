@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# workflow/identity/gh: the gh shim, linked to ~/.local/bin/gh so it outranks
-# the real gh. Inside a Claude session a bookkeeping verb on a rostered repo runs
-# the real gh as the workkit App, its token in GH_TOKEN for that one process, or
-# not at all; everything else runs the real gh untouched, as the owner.
+# workflow/identity/gh: the gh shim, linked to ~/.local/bin/gh ahead of the real
+# gh. A cloud session's issue, label and auth verbs go through rest.js; elsewhere
+# in a Claude session a bookkeeping verb on a rostered repo runs as the workkit
+# App (GH_TOKEN, one process) or not at all; the rest run the real gh as the owner.
 
 set -uo pipefail
 
@@ -89,6 +89,8 @@ bot_verb() {
   in_list "$verb" "${BOT_VERBS[@]}" || return 1
   shift
   in_list -h "$@" || in_list --help "$@" && return 1
+  # The subcommand rule is the twin of `run` in ./rest.js, shape for shape:
+  # change one and change the other.
   for arg in "$@"; do
     if [[ "$skip" -eq 1 ]]; then skip=0; continue; fi
     case "$arg" in
@@ -135,13 +137,46 @@ flag_repo() {
   return 1
 }
 
+# repo_of <args...>: the repo a call acts on: the flag, else GH_REPO, else any
+# issue or pull request URL among the arguments, else the cwd's origin; empty
+# when none answers. Needs lib/slug.sh sourced.
+repo_of() {
+  local flag
+  flag="$(flag_repo "$@")" || flag="${GH_REPO:-}"
+  if [[ -n "$flag" ]]; then
+    # The slug helper takes every spelling gh does (a URL, github.com/, .git); the
+    # leading slash lets a bare owner/name through its path match.
+    wk_slug_from_remote "/$flag"
+  else
+    url_repo "$@" || wk_repo_slug .
+  fi
+}
+
+# shellcheck source=../lib/platform.sh
+. "$KIT_DIR/workflow/lib/platform.sh"
+
+# A cloud session's proxy serves REST alone and signs every call as the account,
+# so no bot token is fetched there: rest.js judges every issue, label and auth
+# call, with the real gh and the repo handed over in the environment, and every
+# other verb runs the real gh untouched.
+if wk_is_cloud; then
+  case "${1:-}" in
+    issue|label|auth)
+      # shellcheck source=../lib/slug.sh
+      . "$KIT_DIR/workflow/lib/slug.sh"
+      REPO=''
+      [[ "$1" == auth ]] || REPO="$(repo_of "$@")"
+      WORKKIT_REAL_GH="$GH" GH_REPO="$REPO" exec node "$KIT_DIR/workflow/identity/rest.js" "$@"
+      ;;
+  esac
+  exec "$GH" "$@"
+fi
+
 if [[ -z "${CLAUDECODE:-}" || "${WORKKIT_IDENTITY_OFF:-}" == 1 || "${1:-}" == auth ]] \
   || ! bot_verb "$@"; then
   exec "$GH" "$@"
 fi
 
-# shellcheck source=../lib/platform.sh
-. "$KIT_DIR/workflow/lib/platform.sh"
 # shellcheck source=../lib/slug.sh
 . "$KIT_DIR/workflow/lib/slug.sh"
 
@@ -151,16 +186,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-# The repo: the flag, else GH_REPO, else any issue or pull request URL among
-# the arguments, else the cwd's origin.
-FLAG_REPO="$(flag_repo "$@")" || FLAG_REPO="${GH_REPO:-}"
-if [[ -n "$FLAG_REPO" ]]; then
-  # The slug helper takes every spelling gh does (a URL, github.com/, .git); the
-  # leading slash lets a bare owner/name through its path match.
-  REPO="$(wk_slug_from_remote "/$FLAG_REPO")"
-else
-  REPO="$(url_repo "$@" || wk_repo_slug .)"
-fi
+REPO="$(repo_of "$@")"
 if [[ -z "$REPO" ]] || ! wk_roster_path "$REPO" >/dev/null; then
   exec "$GH" "$@"
 fi

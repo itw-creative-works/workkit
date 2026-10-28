@@ -11,6 +11,9 @@ const {
 } = require('./harness');
 const { IS_WINDOWS, SYSTEM_PATH, which, homeEnv } = require('./platform');
 
+/** The identity line a cloud session prints, in doctor and in setup --cloud. */
+const IDENTITY_NA = 'identity: not applicable in a cloud session; the session\'s GitHub proxy signs every call as the account';
+
 const KIT = path.join(__dirname, '..', '..');
 
 // GitHub's device-code answer, as its docs show one.
@@ -200,6 +203,6 @@ const atTerminal = (argv, { env, cwd, dir }) => {
 };
 
 module.exports = {
-  DEVICE_CODE, INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf,
+  IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf,
   startServer, startService, scratchKit, scratchEnv, attentionCount, PTY, atTerminal,
 };

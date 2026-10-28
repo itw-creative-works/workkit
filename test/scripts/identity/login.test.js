@@ -226,48 +226,6 @@ const cases = async () => {
     }
   });
 
-  group('identity/login: the sign-in from WORKKIT_LOGIN');
-
-  // Made-up logins, shaped like login.json.
-  const ENV_LOGIN = { token: 'ghu_envfixture', login: 'envbot' };
-  const OTHER_LOGIN = { token: 'ghu_otherfixture', login: 'otherbot' };
-  const fromEnv = (envHome, value) => command(envHome, ['--from-env'], { WORKKIT_LOGIN: value });
-  const envLoginPath = (envHome) => path.join(envHome, '.workkit', 'identity', 'login.json');
-
-  await test('--from-env leaves a login.json holding the same login byte for byte, and prints no wrote line', () => {
-    const envHome = mkTmp('wk-login-env-same-');
-    fs.mkdirSync(path.dirname(envLoginPath(envHome)), { recursive: true });
-    // Pretty-printed, unlike the one-line JSON a write produces, so any rewrite shows.
-    const before = `${JSON.stringify(ENV_LOGIN, null, 2)}\n`;
-    fs.writeFileSync(envLoginPath(envHome), before);
-    const res = fromEnv(envHome, JSON.stringify(ENV_LOGIN));
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(fs.readFileSync(envLoginPath(envHome), 'utf8'), before, 'login.json is untouched');
-    assert(!res.stdout.includes('wrote'), `no wrote line, got: ${res.stdout}`);
-  });
-
-  await test('--from-env rewrites a login.json holding another login, and says it wrote', () => {
-    const envHome = mkTmp('wk-login-env-other-');
-    fs.mkdirSync(path.dirname(envLoginPath(envHome)), { recursive: true });
-    fs.writeFileSync(envLoginPath(envHome), JSON.stringify(OTHER_LOGIN));
-    const res = fromEnv(envHome, JSON.stringify(ENV_LOGIN));
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(JSON.stringify(readWrittenLogin(envHome)), JSON.stringify(ENV_LOGIN), 'login.json holds the variable\'s login');
-    assert(res.stdout.includes(`wrote ${envLoginPath(envHome)} from WORKKIT_LOGIN`), `the wrote line names the file, got: ${res.stdout}`);
-  });
-
-  await test('--from-env refuses a value that is not JSON, or lacks the token or the login: exit 1, a message quoting none of it, nothing written', () => {
-    const bad = ['not-json-ghu_badfixture', JSON.stringify({ token: 'ghu_badfixture' }), JSON.stringify({ login: 'badfixturebot' })];
-    for (const value of bad) {
-      const envHome = mkTmp('wk-login-env-bad-');
-      const res = fromEnv(envHome, value);
-      assertEq(res.status, 1, `${value}: exit 1, stderr: ${res.stderr}`);
-      assert(res.stderr.includes('WORKKIT_LOGIN must hold'), `${value}: the message names the variable, got: ${res.stderr}`);
-      assert(!/badfixture/.test(`${res.stdout}${res.stderr}`), `${value}: the output quotes none of the value, got: ${res.stdout}${res.stderr}`);
-      assertEq(fs.existsSync(envLoginPath(envHome)), false, `${value}: no login.json`);
-    }
-  });
-
   for (const [key, value] of Object.entries(envBefore)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;

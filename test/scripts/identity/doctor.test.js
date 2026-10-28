@@ -7,7 +7,7 @@
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  INSTALL_FIX, writeLogin, useTokenService, startService, attentionCount,
+  IDENTITY_NA, INSTALL_FIX, writeLogin, useTokenService, startService, attentionCount,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const { NODE_DIR, joinPath } = require('../../lib/platform');
@@ -56,11 +56,14 @@ const repoLines = (said) => section(said, 'This repo').split('\n')
 
 /**
  * A scratch machine with no repo and nothing cloned: the plugin installed,
- * ~/.local/bin on PATH, gh signed in unless `ghAuthed` is false, and a home
- * repo named `repo` in the settings when given.
+ * ~/.local/bin on PATH, gh signed in unless `ghAuthed` is false, `gh api user`
+ * answering `login` (by default octocat when signed in, nothing otherwise), and
+ * a home repo named `repo` in the settings when given.
  */
-const mkMachine = ({ repo, ghAuthed = true } = {}) => {
-  const world = mkWorld({ pluginInstalled: true, binOnPath: true, ghAuthed });
+const mkMachine = ({ repo, ghAuthed = true, login = ghAuthed ? 'octocat' : '' } = {}) => {
+  const world = mkWorld({
+    pluginInstalled: true, binOnPath: true, ghAuthed, login,
+  });
   if (repo) seedSettings(world, { repo, publish: false, url: null });
   return world;
 };
@@ -171,6 +174,42 @@ const cases = async () => {
       }
     } finally {
       cleanup(authed.root); cleanup(unauthed.root);
+    }
+  });
+
+  await test('case 12: in a cloud session gh api user is the gh check: a login is authenticated though gh auth status fails, no login warns as today', () => {
+    const viaRest = mkMachine({ ghAuthed: false, login: 'octocat' });
+    const noLogin = mkMachine({ ghAuthed: true, login: '' });
+    const authed = mkMachine();
+    try {
+      const cloud = machineDoctor(viaRest, 'true');
+      assert(cloud.said.includes('gh: installed and authenticated') && !/⚠ gh:/.test(cloud.said),
+        `a login answered: gh is installed and authenticated, got: ${cloud.said}`);
+      assertEq(attentionCount(cloud.said), attentionCount(machineDoctor(authed, 'true').said),
+        'and no more attention than a machine gh fully signs in');
+      assert(/⚠ gh: installed but not authenticated; run `gh auth login`/.test(machineDoctor(viaRest).err),
+        'on a machine the check is still gh auth status');
+      assert(/⚠ gh: installed but not authenticated; run `gh auth login`/.test(machineDoctor(noLogin, 'true').err),
+        'in a cloud session no login warns with the text it always had');
+    } finally {
+      cleanup(viaRest.root); cleanup(noLogin.root); cleanup(authed.root);
+    }
+  });
+
+  await test('in a cloud session the identity line is one not-applicable line on stdout, signed in or not, and the tally counts nothing for it', () => {
+    const bare = mkMachine();
+    const signed = mkMachine();
+    writeLogin(signed.home, { token: 'ghu_doctoruser', login: 'octocat' });
+    try {
+      const unsigned = machineDoctor(bare, 'true');
+      const set = machineDoctor(signed, 'true');
+      for (const [label, res] of [['not signed in', unsigned], ['signed in', set]]) {
+        assert(res.out.includes(IDENTITY_NA), `${label}: the not-applicable line prints on stdout, got: ${res.said}`);
+        assert(!/⚠ identity:|signed in as @|not signed in/.test(res.said), `${label}: and no sign-in line beside it, got: ${res.said}`);
+      }
+      assertEq(attentionCount(unsigned.said), attentionCount(set.said), 'no login.json counts nothing more than a login');
+    } finally {
+      cleanup(bare.root); cleanup(signed.root);
     }
   });
 

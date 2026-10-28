@@ -178,31 +178,21 @@ const cases = async () => {
     }
   });
 
-  await test('case 12 (cloud): no login file in a cloud session exits 3 naming WORKKIT_LOGIN and workkit setup --cloud, never the device flow', async () => {
+  await test('case 12: not signed in, for no login file and for the service\'s 401: exit 3 naming workkit setup --login', async () => {
     const { home, command } = tokenKit();
     useTokenService(home, TOKEN_URL);
-    const res = command([REPO], { CLAUDE_CODE_REMOTE: 'true' });
-    assertEq(res.status, 3, `exit 3, stderr: ${res.stderr}`);
-    assert(res.stderr.includes('WORKKIT_LOGIN'), `stderr names WORKKIT_LOGIN, got: ${res.stderr}`);
-    assert(res.stderr.includes('workkit setup --cloud'), `stderr names workkit setup --cloud, got: ${res.stderr}`);
-    assert(!res.stderr.includes('setup --login'), `and never setup --login, got: ${res.stderr}`);
-    assertEq(res.stdout, '', 'no token on stdout');
-  });
+    const bare = command([REPO]);
+    assertEq(bare.status, 3, `no login file: exit 3, stderr: ${bare.stderr}`);
+    assert(bare.stderr.includes('workkit setup --login'), `no login file: stderr names workkit setup --login, got: ${bare.stderr}`);
 
-  await test('case 12 (cloud): the service\'s 401 in a cloud session exits 3 with the client\'s fix alone, never the service\'s setup --login', async () => {
-    const { home, command } = tokenKit();
     writeLogin(home, { token: USER_TOKEN, login: 'octocat' });
     const server = await startService(401, { error: 'not signed in', fix: 'run workkit setup --login' });
     try {
       useTokenService(home, `${server.url}/token`);
-      const res = command([REPO], { CLAUDE_CODE_REMOTE: 'true', GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url });
-      assertEq(res.status, 3, `exit 3, stderr: ${res.stderr}`);
-      assert(res.stderr.includes('WORKKIT_LOGIN'), `stderr names WORKKIT_LOGIN, got: ${res.stderr}`);
-      assert(res.stderr.includes('workkit setup --cloud'), `stderr names workkit setup --cloud, got: ${res.stderr}`);
-      assert(!res.stderr.includes('setup --login'), `and never setup --login, got: ${res.stderr}`);
-      assertEq(res.stdout, '', 'no token on stdout');
-      const posts = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
-      assertEq(posts.length, 1, `the one request reached the stand-in, got: ${JSON.stringify(server.requests())}`);
+      const refused = command([REPO], { GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url });
+      assertEq(refused.status, 3, `401: exit 3, stderr: ${refused.stderr}`);
+      assert(refused.stderr.includes('workkit setup --login'), `401: stderr names workkit setup --login, got: ${refused.stderr}`);
+      assertEq(`${bare.stdout}${refused.stdout}`, '', 'no token on stdout');
     } finally {
       await server.close();
     }

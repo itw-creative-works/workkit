@@ -14,7 +14,9 @@ const {
   BASH, NO_RC, NODE_DIR, shellPath, systemPathWith, homeEnv, basePathWithout,
 } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
-const { makeGhStub, ghCalls, ghEnvs } = require('../../lib/gh-stub');
+const {
+  makeGhStub, ghCalls, ghEnvs, ghRequests,
+} = require('../../lib/gh-stub');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const { mkRosterHome } = require('../../lib/roster');
 const {
@@ -74,18 +76,23 @@ const mkWorld = ({ signedIn = true, cache = true, tokenUrl = NO_SERVICE } = {}) 
  * CLAUDECODE unset, `env` adds variables, and `noJq` swaps the system part for
  * a mirror holding no jq. Neither token name is in the env, so null means unset.
  * `keyboard: true` runs it at script's terminal, `stderr` then all it showed.
+ * `remote` is CLAUDE_CODE_REMOTE (unset by default); `api`, when given, the stub's `gh api` routes.
  */
 const runShim = (world, args, {
   claude = true, cwd = world.rostered, env: extra = {}, extraDirs = [], noJq = false, keyboard = false,
+  remote, api = null,
 } = {}) => {
   // The stub holds one issue fixture, so a view of it answers the way gh does.
-  const stub = makeGhStub({ env: ['GH_TOKEN'], field: 'body', issues: { 1: 'x' } });
+  const stub = makeGhStub({
+    env: ['GH_TOKEN'], field: 'body', issues: { 1: 'x' }, api,
+  });
   const dirs = [path.dirname(world.shim), ...extraDirs, stub.binDir];
   const env = homeEnv(world.home, {
     PATH: noJq
       ? [...dirs, basePathWithout(world.root, 'jq')].join(path.delimiter)
       : systemPathWith(...dirs, NODE_DIR),
     ...(claude ? { CLAUDECODE: '1' } : {}),
+    ...(remote === undefined ? {} : { CLAUDE_CODE_REMOTE: remote }),
     ...extra,
   });
   delete env.GH_TOKEN;
@@ -99,7 +106,7 @@ const runShim = (world, args, {
   const res = spawnSync(BASH, [...NO_RC, shellPath(world.shim), ...args],
     { cwd, env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return {
-    code: res.status, stderr: res.stderr || '', calls: ghCalls(stub), envs: ghEnvs(stub),
+    code: res.status, stderr: res.stderr || '', calls: ghCalls(stub), envs: ghEnvs(stub), requests: ghRequests(stub),
   };
 };
 
@@ -361,6 +368,44 @@ const cases = async () => {
       } finally {
         await service.close();
       }
+    }
+  });
+
+  group('identity/gh: a cloud session and off it');
+
+  await test('case 9: off the cloud (CLAUDE_CODE_REMOTE unset or false) a verb the cloud translates runs the real gh once, whole, with no gh api call', async () => {
+    const world = mkWorld();
+    const comment = ['issue', 'comment', '1', '--body', 'x'];
+    for (const remote of [undefined, 'false']) {
+      const res = runShim(world, comment, { cwd: world.unrostered, remote, api: {} });
+      assertRan(res, comment, null, `CLAUDE_CODE_REMOTE=${remote}`);
+      assertEq(res.requests.length, 0, `CLAUDE_CODE_REMOTE=${remote}: no gh api call`);
+    }
+  });
+
+  await test('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', async () => {
+    const comment = ['issue', 'comment', '1', '--body', 'x'];
+    const api = {
+      'POST repos/acme/rostered/issues/1/comments': {
+        status: 201,
+        body: { id: 2001, html_url: 'https://github.com/acme/rostered/issues/1#issuecomment-2001', body: 'x', user: { login: 'owner' } },
+      },
+    };
+    const asAccount = (res, what) => {
+      assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()})`);
+      assert(res.calls.length > 0 && res.calls.every((c) => c[0] === 'api'), `${what}: only gh api runs, got ${fmtCalls(res.calls)}`);
+      assert(res.envs.every((e) => e.GH_TOKEN === null), `${what}: no GH_TOKEN reaches gh, got: ${JSON.stringify(res.envs)}`);
+    };
+    asAccount(runShim(mkWorld(), comment, { remote: 'true', api }), 'a cached token on disk');
+
+    // The stand-in is the token service, so a call that asked the client would show as a request.
+    const service = await startService(200, { token: 'ghs_never', expires_at: '2099-01-01T00:00:00Z' });
+    try {
+      const world = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
+      asAccount(runShim(world, comment, { remote: 'true', api }), 'nothing cached');
+      assertEq(service.requests().length, 0, `the token service is never asked, got: ${JSON.stringify(service.requests())}`);
+    } finally {
+      await service.close();
     }
   });
 };

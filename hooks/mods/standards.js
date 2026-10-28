@@ -37,7 +37,7 @@ const outputOf = (result) => `${result.stdout ?? ''}${result.stderr ?? ''}`;
 const setupLine = (state) => {
   const where = state.isInCache ? ' (the engine in the plugin cache)' : '';
   if (state.isCloud) {
-    return `SETUP: workkit is not set up in this cloud session (${state.cliLink} is missing). The workkit command and the bot identity's sign-in are absent until it is. Run \`bash ${state.engine}/workkit.sh setup --cloud\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
+    return `SETUP: workkit is not set up in this cloud session (${state.cliLink} is missing). The workkit command is absent until it is. Run \`bash ${state.engine}/workkit.sh setup --cloud\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
   }
   return `SETUP: workkit is not set up on this machine (${state.cliLink} is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Run \`bash ${state.engine}/workkit.sh setup\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
 };

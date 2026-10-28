@@ -6,9 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { TOKEN_URL, INSTALL_URL } = require('./app');
-const {
-  loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX, LOGIN_HINT,
-} = require('./login');
+const { loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX } = require('./login');
 const { splitRepo } = require('../slug');
 const { userDir } = require('../user-dir');
 
@@ -19,6 +17,8 @@ const USAGE = 'usage: token.js <owner/repo> | token.js --installation <owner/rep
   + '  <owner/repo> exits 3 when not signed in, 4 when the App is not installed on the repo, 1 on any other failure';
 // The token form's exit codes, read by the gh shim.
 const EXIT_CODES = { not_signed_in: 3, not_installed: 4 };
+// The command every not-signed-in refusal names.
+const LOGIN_HINT = `run \`${LOGIN_FIX}\``;
 
 /**
  * A refusal with its reason, `code` one of `not_signed_in`, `not_installed`,
@@ -128,8 +128,8 @@ const refusal = (status, text, repo) => {
   }
   const said = body && typeof body === 'object' ? body : {};
   const { code, mustName, hint } = refusalOf(status, repo);
-  // The service cannot see which session asked, so a sign-in's fix is the
-  // client's own hint in place of the service's.
+  // A sign-in's fix is the client's own hint in place of the service's, so
+  // the command it names is this kit's whatever the service says.
   const ownFix = code === 'not_signed_in';
   const words = [said.error, ownFix ? '' : said.fix].filter((w) => typeof w === 'string' && w).join(': ');
   let message = words || `the token service answered HTTP ${status} for ${repo}`;
