@@ -56,6 +56,54 @@ home_steps() {
   wk_home_setup "$@"
 }
 
+# cloud_na <label>: a step a cloud session has no use for, one line in the skip
+# voice, counted by nothing. The table holds every not-applicable reason, one
+# shared wherever setup, update and doctor print the same step.
+cloud_na() {
+  local why
+  case "$1" in
+    plugin)   why="the session installs plugins from its settings" ;;
+    schedule) why="the 9am job is a Mac's launchd" ;;
+    tower)    why="the dashboard runs on your own machine" ;;
+    home)     why="the home repo is cloned on your own machine" ;;
+    runner)   why="the cloud brief's runner is compared on your own machine" ;;
+    secrets)  why="the cloud brief's secrets are set from your own machine" ;;
+    site)     why="publishing runs from your own machine" ;;
+    repo)     why="a repo joins through its committed .workkit/settings.json" ;;
+    identity) why="workkit-agent[bot]'s install is an owner's click on GitHub" ;;
+    *) wk_error "cloud_na: no reason for $1"; return 1 ;;
+  esac
+  wk_skip "$1: not applicable in a cloud session; $why"
+}
+
+# setup --cloud: the gh login check, the links and npm's script-shell as update
+# makes them, then the sign-in from WORKKIT_LOGIN. Every other step is one
+# cloud_na line; it asks nothing and opens nothing.
+cloud_steps() {
+  wk_section "💻 This machine"
+  cloud_na plugin
+  check_gh || true
+  machine_links
+  cloud_na schedule
+  cloud_na tower
+
+  wk_section "🏠 Home repo"
+  cloud_na home
+
+  wk_section "🔑 Cloud brief secrets"
+  cloud_na secrets
+
+  wk_section "🪪 Identity"
+  identity_cloud_step
+
+  wk_section "🌐 Dashboard site"
+  cloud_na site
+
+  wk_section "📁 This repo"
+  cloud_na repo
+  cloud_na identity
+}
+
 cmd_setup() {
   case "${1:-}" in
     --token)
@@ -73,6 +121,11 @@ cmd_setup() {
       home_steps force || return 1
       return 0
       ;;
+    --cloud)
+      wk_title "☁️ workkit setup --cloud: this cloud session"
+      cloud_steps
+      return 0
+      ;;
     '') ;;
     *) wk_error "setup: unknown option $1"; return 1 ;;
   esac
@@ -81,11 +134,8 @@ cmd_setup() {
 
   wk_section "💻 This machine"
   install_plugin
-  check_gh
-  refresh_engine_link
-  link_command
-  link_gh_shim
-  script_shell
+  check_gh || true
+  machine_links
   install_cron
   # The tower pointer is about this machine's dashboard, not the repo the shell
   # stands in: it lives here, not under "This repo".

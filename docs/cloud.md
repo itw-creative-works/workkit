@@ -19,6 +19,8 @@ What never travels on its own: user-level `~/.claude` (personal skills, hooks, o
 3. **Register plugin marketplaces by source the session can reach.** A marketplace registered as a local directory path resolves only on the machine that registered it. A github source works everywhere. Against a private repo it needs the session's GitHub token to read; a public repo drops even that.
 4. **Secrets ride as environment secrets, never files.** The proven pair from this kit's own cloud job (`jobs/README.md`): `CLAUDE_CODE_OAUTH_TOKEN` for the model, a scoped GitHub token for the board. MCP upstreams that call remote APIs add their keys the same way.
 
+   The bot identity's sign-in rides the same way: a `WORKKIT_LOGIN` environment secret holding the login file's content, which `workkit setup --cloud` writes to `~/.workkit/identity/login.json`: the variable is the transport, `login.json` the client's own store. It is the cloud twin of `workkit setup --login`, the device flow a session has no browser for.
+
 ## What cannot travel, and its cloud twin
 
 | Machine piece | Why it stays | The cloud twin |

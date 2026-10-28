@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#473](../../issues/473) - `workkit setup --cloud` sets up a cloud session: the links, the `gh` shim, npm's script-shell, and the sign-in written from `WORKKIT_LOGIN`; every other step says not applicable. In the cloud, `workkit doctor` counts no schedule, home repo or secrets, and it counts an unauthenticated `gh` everywhere.
+- [#473](../../issues/473) - In a cloud session, the not-signed-in refusal names `WORKKIT_LOGIN` and `workkit setup --cloud` in place of the device-flow command `workkit setup --login`, which the cloud cannot run; a token service 401 reads the client's fix alone, never the service's device-flow command.
+
 ## [0.83.1] - 2026-10-27
 
 ### Fixed

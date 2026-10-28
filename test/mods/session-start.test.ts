@@ -261,6 +261,13 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(line).not.toContain('plugin cache')
   })
 
+  test('a cloud session (CLAUDE_CODE_REMOTE=true): the pester names setup --cloud, never the wizard', async ($, on) => {
+    mkWorld(on, { setup: false, env: { CLAUDE_CODE_REMOTE: 'true' } })
+    const line = contextOf(await start($, REPO)).split('\n').find((l: string) => l.startsWith('SETUP:')) || ''
+    expect(line).toContain('workkit.sh setup --cloud')
+    expect(line).not.toMatch(/workkit\.sh setup`/)
+  })
+
   test('ports "a machine with no schedule installed never gets one": the daily run calls workkit update --auto', async ($, on) => {
     const w = mkWorld(on)
     await start($, REPO)

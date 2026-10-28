@@ -1,7 +1,8 @@
 // workflow/identity/login.js: the user's sign-in. GitHub's device flow with
 // the App's Client ID gives a user token, kept in `identity/login.json`; the
-// token service trades it for the bot's per-repo token.
-// Usage: node login.js [--open <opener>]
+// token service trades it for the bot's per-repo token. `--from-env` writes it
+// from WORKKIT_LOGIN instead, a cloud session's copy of that file.
+// Usage: node login.js [--open <opener>] | --from-env
 
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -15,9 +16,16 @@ const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 // The device flow's own rule: a slow_down answer adds five seconds to the interval.
 const SLOW_DOWN_S = 5;
 const DEFAULT_INTERVAL_S = 5;
-const USAGE = 'usage: login.js [--open <opener>]';
-// The command every not-signed-in message names.
-const LOGIN_FIX = 'workkit setup --login';
+const USAGE = 'usage: login.js [--open <opener>] | --from-env';
+// The variable a cloud session carries the login file's content in.
+const LOGIN_ENV = 'WORKKIT_LOGIN';
+// The command every not-signed-in message names, and the hint around it. A
+// cloud session has no device flow: its login comes from LOGIN_ENV.
+const IS_CLOUD = process.env.CLAUDE_CODE_REMOTE === 'true';
+const LOGIN_FIX = IS_CLOUD ? 'workkit setup --cloud' : 'workkit setup --login';
+const LOGIN_HINT = IS_CLOUD
+  ? `set ${LOGIN_ENV} in the environment to your machine's login.json, then run \`${LOGIN_FIX}\``
+  : `run \`${LOGIN_FIX}\``;
 
 /**
  * The login file: `<userDir>/identity/login.json`.
@@ -61,16 +69,46 @@ const writeOwnerOnly = (file, entry) => {
 };
 
 /**
+ * Whether an entry carries the two fields a login needs: a token and a login,
+ * each a non-empty string.
+ * @param {*} entry
+ * @returns {boolean}
+ */
+const isLogin = (entry) => Boolean(entry)
+  && typeof entry.token === 'string' && entry.token !== ''
+  && typeof entry.login === 'string' && entry.login !== '';
+
+/**
  * The login written owner-only. An entry without a token and a login is a
  * caller's bug, refused before anything lands on disk.
  * @param {string} file
  * @param {{token: string, login: string}} entry
  */
 const writeLogin = (file, entry) => {
-  if (!entry || typeof entry.token !== 'string' || !entry.token || typeof entry.login !== 'string' || !entry.login) {
-    throw new TypeError('a login needs a token and a login');
-  }
+  if (!isLogin(entry)) throw new TypeError('a login needs a token and a login');
   writeOwnerOnly(file, { token: entry.token, login: entry.login });
+};
+
+/**
+ * The login from WORKKIT_LOGIN's value (the login file's content), written
+ * when the file is absent or holds another. A value that is not JSON with a
+ * token and a login throws, quoting none of it, since it carries a token.
+ * @param {string} file
+ * @param {string|undefined} value
+ * @returns {boolean} whether it wrote
+ */
+const loginFromEnv = (file, value) => {
+  let entry = null;
+  try {
+    entry = JSON.parse(value);
+  } catch {
+    // Not JSON: refused below, never echoed.
+  }
+  if (!isLogin(entry)) throw new Error(`${LOGIN_ENV} must hold the login file's content: JSON with a token and a login`);
+  const stored = readLogin(file);
+  if (stored && stored.token === entry.token && stored.login === entry.login) return false;
+  writeLogin(file, entry);
+  return true;
 };
 
 /**
@@ -225,11 +263,17 @@ const signIn = async ({
 };
 
 /**
- * The command form: sign in, opening the page with `--open <opener>`.
+ * The command form: sign in, opening the page with `--open <opener>`, or with
+ * `--from-env` write WORKKIT_LOGIN's login, one line when it wrote.
  * @param {string[]} argv
  * @returns {Promise<number>} the exit code
  */
 const main = async (argv) => {
+  if (argv.length === 1 && argv[0] === '--from-env') {
+    const file = loginFile();
+    if (loginFromEnv(file, process.env[LOGIN_ENV])) process.stdout.write(`wrote ${file} from ${LOGIN_ENV}\n`);
+    return 0;
+  }
   if (argv.length === 0) {
     await signIn();
     return 0;
@@ -250,4 +294,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = { loginFile, readLogin, writeLogin, signIn, loginStatus, writeOwnerOnly, LOGIN_FIX };
+module.exports = {
+  loginFile, readLogin, writeLogin, loginFromEnv, signIn, loginStatus, writeOwnerOnly, LOGIN_FIX, LOGIN_HINT,
+};

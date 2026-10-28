@@ -236,3 +236,11 @@ script_shell() {
   esac
   return 0
 }
+
+# The four pointers in their one order, as update, setup and setup --cloud make them.
+machine_links() {
+  refresh_engine_link
+  link_command
+  link_gh_shim
+  script_shell
+}

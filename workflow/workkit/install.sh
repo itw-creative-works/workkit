@@ -27,16 +27,18 @@ install_plugin() {
 
 # gh is how the whole standard reaches its issues; an unauthenticated one turns
 # the label heals, the board, and the brief into skips. Report, never fix: `gh
-# auth login` is a browser flow and a human's to run.
+# auth login` is a browser flow and a human's to run. Returns 1 on a warning,
+# which doctor counts.
 check_gh() {
   if ! command -v gh >/dev/null 2>&1; then
     wk_warn "gh: not installed; the label heals and the board need it (https://cli.github.com)"
-    return 0
+    return 1
   fi
   if wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1; then
     wk_skip "gh: installed and authenticated"
   else
     wk_warn "gh: installed but not authenticated; run \`gh auth login\`"
+    return 1
   fi
 }
 

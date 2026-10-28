@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# workflow/workkit/identity.sh: the agent's GitHub identity, workkit-agent[bot]: setup's
-# sign-in and install steps and the two doctor lines. Sourced by workkit.sh, functions only; every
-# name it reads, and the IDENTITY_* status it sets, are the entry's, save the install poll's own
-# IDENTITY_INSTALL_*. The rules are the client's: `token.js` answers, and this says what it did.
+# workflow/workkit/identity.sh: the agent's GitHub identity, workkit-agent[bot]: setup's sign-in
+# and install steps, the cloud's sign-in from WORKKIT_LOGIN, and the two doctor lines. Sourced by
+# workkit.sh, functions only; every name it reads, and the IDENTITY_* status it sets, are the entry's,
+# save the install poll's own IDENTITY_INSTALL_*. `token.js` answers, and this says what it did.
 
 # Whether the client can be asked at all: node, jq, the engine library, and
 # token.js beside this engine. Each failure is a named skip: not drift.
@@ -92,13 +92,18 @@ identity_signed_slug() {
 }
 
 # The sign-in verdict: the ok line and 0 when signed in, else the warning
-# naming the command and 1.
+# naming the command and 1; a cloud session has no device flow, so its fix is
+# the variable setup --cloud reads.
 identity_say_status() {
   if [[ "$IDENTITY_SIGNED_IN" == 'true' ]]; then
     wk_ok "identity: signed in as @$IDENTITY_USER"
     return 0
   fi
-  wk_warn "identity: not signed in; run \`workkit setup --login\`"
+  if wk_is_cloud; then
+    wk_warn "identity: not signed in; set WORKKIT_LOGIN in the environment to your machine's login.json, then run \`workkit setup --cloud\`"
+  else
+    wk_warn "identity: not signed in; run \`workkit setup --login\`"
+  fi
   return 1
 }
 
@@ -149,6 +154,22 @@ identity_report() {
   identity_precheck || return 0
   identity_read_status || return 1
   identity_say_status
+}
+
+# setup --cloud's identity step: WORKKIT_LOGIN, the login file's content, handed
+# to login.js, which writes it when the file is absent or differs; then the
+# machine line. Unset, the machine line alone. Always returns 0.
+identity_cloud_step() {
+  local out rc=0
+  if [[ -n "${WORKKIT_LOGIN:-}" ]] && identity_precheck >/dev/null; then
+    out="$(node "$IDENTITY_LOGIN" --from-env 2>&1)" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+      wk_warn "identity: ${out:-login.js --from-env failed with no message}"
+    elif [[ -n "$out" ]]; then
+      wk_ok "identity: $out"
+    fi
+  fi
+  identity_report machine || true
 }
 
 # The poll's check: one silent lookup, kept in IDENTITY_INSTALL_RC and

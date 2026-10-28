@@ -400,6 +400,17 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     cleanup(world.root); cleanup(kit);
   });
 
+  await test('update in a cloud session lists no secrets and says the step is not applicable', () => {
+    const world = mkHomeWorld({ secrets: [], authToken: LOGIN_TOKEN, binOnPath: true });
+    world.env.CLAUDE_CODE_REMOTE = 'true';
+    const { kit, script } = mkKit(SLUG);
+    const { code, out } = runCli(world, ['update'], { script });
+    assertEq(code, 0, 'exit 0');
+    assert(!world.ghCalls().some((c) => isCall(c, 'secret', 'list')), `no secret listing is asked for: ${fmtCalls(world.ghCalls())}`);
+    assert(out.includes('secrets: not applicable in a cloud session'), `the not-applicable line prints, got: ${out}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
   await test('doctor reports one line per value, and counts what needs attention', () => {
     const world = mkHomeWorld({
       pluginInstalled: true,

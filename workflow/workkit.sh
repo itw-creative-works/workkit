@@ -105,6 +105,10 @@ usage: workkit <command> [args]
   setup --home         that wizard's home repo step alone, forced: create the
                        private <login>/workkit and make ~/.workkit/tower its
                        clone, asking nothing, with or without a terminal
+  setup --cloud        that wizard for a cloud session: the workkit and gh
+                       symlinks, npm's script-shell, the gh login check and
+                       the sign-in from WORKKIT_LOGIN; every other step is a
+                       not-applicable line, asking nothing
   update [--auto]      re-run the machine-side installs: the engine address,
                        the workkit and gh symlinks, npm's script-shell, and
                        the schedule (only where one is already installed).

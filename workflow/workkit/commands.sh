@@ -12,14 +12,15 @@ cmd_update() {
   esac
 
   wk_title "🔄 workkit update in $KIT_DIR"
-  refresh_engine_link
-  link_command
-  link_gh_shim
-  script_shell
+  machine_links
   update_cron
   # Reported, never wired: the daily --auto run is the one path that must not
   # prompt or mint, so a missing value is a line and nothing else.
-  secrets_report update || true
+  if wk_is_cloud; then
+    cloud_na secrets
+  else
+    secrets_report update || true
+  fi
   # The daily --auto run links the gh shim on a machine set up before the
   # identity shipped, and this line is how that machine hears it must sign in.
   # The ok line is stdout and --auto drops it; the warning rides stderr.
@@ -111,14 +112,16 @@ cmd_doctor() {
     if wk_spin 'reading the installed plugins' claude plugin list --json 2>/dev/null | grep -q "\"$PLUGIN_ID\""; then
       wk_ok "plugin: $PLUGIN_ID is installed"
     else
-      wk_warn "plugin: $PLUGIN_ID is not installed; run \`workkit setup\`"
+      local fix='workkit setup'
+      wk_is_cloud && fix='workkit setup --cloud'
+      wk_warn "plugin: $PLUGIN_ID is not installed; run \`$fix\`"
       attention=$((attention + 1))
     fi
   else
     wk_skip "plugin: no claude CLI on this machine"
   fi
 
-  check_gh
+  check_gh || attention=$((attention + 1))
 
   local linked
   linked="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
@@ -154,7 +157,11 @@ cmd_doctor() {
 
   script_shell doctor || attention=$((attention + 1))
 
-  if [[ "$(uname -s)" != "Darwin" ]]; then
+  # A cloud session keeps no schedule, home clone or secrets of its own: each
+  # is one cloud_na line (workkit/setup.sh), counted by nothing.
+  if wk_is_cloud; then
+    cloud_na schedule
+  elif [[ "$(uname -s)" != "Darwin" ]]; then
     wk_skip "schedule: launchd is macOS"
   elif [[ ! -f "$DAILY_PLIST" ]]; then
     wk_warn "schedule: the 9am job is not installed; run \`workkit setup\`"
@@ -183,7 +190,10 @@ cmd_doctor() {
   # The home repo: whether one is named, whether the folder is its clone, and
   # where that clone stands against its upstream.
   wk_section "🏠 Home repo"
-  if [[ "$HOME_LIBS" -ne 1 ]]; then
+  if wk_is_cloud; then
+    cloud_na home
+    cloud_na runner
+  elif [[ "$HOME_LIBS" -ne 1 ]]; then
     wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
     attention=$((attention + 1))
   else
@@ -199,7 +209,11 @@ cmd_doctor() {
 
   wk_section "🔑 Cloud brief secrets"
   local secrets_attention=0
-  secrets_report doctor || secrets_attention=$?
+  if wk_is_cloud; then
+    cloud_na secrets
+  else
+    secrets_report doctor || secrets_attention=$?
+  fi
   attention=$((attention + secrets_attention))
 
   wk_section "📁 This repo"

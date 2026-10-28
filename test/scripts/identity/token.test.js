@@ -178,6 +178,36 @@ const cases = async () => {
     }
   });
 
+  await test('case 12 (cloud): no login file in a cloud session exits 3 naming WORKKIT_LOGIN and workkit setup --cloud, never the device flow', async () => {
+    const { home, command } = tokenKit();
+    useTokenService(home, TOKEN_URL);
+    const res = command([REPO], { CLAUDE_CODE_REMOTE: 'true' });
+    assertEq(res.status, 3, `exit 3, stderr: ${res.stderr}`);
+    assert(res.stderr.includes('WORKKIT_LOGIN'), `stderr names WORKKIT_LOGIN, got: ${res.stderr}`);
+    assert(res.stderr.includes('workkit setup --cloud'), `stderr names workkit setup --cloud, got: ${res.stderr}`);
+    assert(!res.stderr.includes('setup --login'), `and never setup --login, got: ${res.stderr}`);
+    assertEq(res.stdout, '', 'no token on stdout');
+  });
+
+  await test('case 12 (cloud): the service\'s 401 in a cloud session exits 3 with the client\'s fix alone, never the service\'s setup --login', async () => {
+    const { home, command } = tokenKit();
+    writeLogin(home, { token: USER_TOKEN, login: 'octocat' });
+    const server = await startService(401, { error: 'not signed in', fix: 'run workkit setup --login' });
+    try {
+      useTokenService(home, `${server.url}/token`);
+      const res = command([REPO], { CLAUDE_CODE_REMOTE: 'true', GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url });
+      assertEq(res.status, 3, `exit 3, stderr: ${res.stderr}`);
+      assert(res.stderr.includes('WORKKIT_LOGIN'), `stderr names WORKKIT_LOGIN, got: ${res.stderr}`);
+      assert(res.stderr.includes('workkit setup --cloud'), `stderr names workkit setup --cloud, got: ${res.stderr}`);
+      assert(!res.stderr.includes('setup --login'), `and never setup --login, got: ${res.stderr}`);
+      assertEq(res.stdout, '', 'no token on stdout');
+      const posts = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
+      assertEq(posts.length, 1, `the one request reached the stand-in, got: ${JSON.stringify(server.requests())}`);
+    } finally {
+      await server.close();
+    }
+  });
+
   await test('case 12a: no login file at a keyboard: tokenWithSignIn says why on out, signs in once and hands on the token; away from one it never signs in', async () => {
     const { tokenWithSignIn, IdentityError } = load();
     const home = mkTmp('wk-identity-signin-');
@@ -277,7 +307,7 @@ const cases = async () => {
     assertEq(retried.posts.length, 2, '401 then 200: two service calls');
     assertEq(retried.posts[0].headers.get('authorization'), `Bearer ${USER_TOKEN}`, 'the first call carries the old bearer');
     assertEq(retried.posts[1].headers.get('authorization'), 'Bearer ghu_resignedin', 'the retry carries the new one');
-    assert(retried.before.includes('not signed in: run workkit setup --login') && retried.before.includes('signing in now'),
+    assert(retried.before.includes('not signed in: run `workkit setup --login`') &&retried.before.includes('signing in now'),
       `401 then 200: out carries the refusal's message and signing in now before the sign-in, got: ${JSON.stringify(retried.before)}`);
 
     const twice = await attempt([REFUSED, REFUSED], true);

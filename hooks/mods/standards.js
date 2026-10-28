@@ -33,8 +33,12 @@ function engineLines(text) {
 
 const outputOf = (result) => `${result.stdout ?? ''}${result.stderr ?? ''}`;
 
+// A cloud session gets its own form of setup, the one that asks nothing.
 const setupLine = (state) => {
   const where = state.isInCache ? ' (the engine in the plugin cache)' : '';
+  if (state.isCloud) {
+    return `SETUP: workkit is not set up in this cloud session (${state.cliLink} is missing). The workkit command and the bot identity's sign-in are absent until it is. Run \`bash ${state.engine}/workkit.sh setup --cloud\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
+  }
   return `SETUP: workkit is not set up on this machine (${state.cliLink} is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Run \`bash ${state.engine}/workkit.sh setup\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
 };
 
@@ -60,9 +64,9 @@ const healReport = (root, heal, update) => {
  * The session-start report, or null when there is nothing to say.
  * @param {object} state what the hook found before any heal ran: `isSetUp`,
  *   `cliLink` (the CLI link setup makes), `engine` (its physical path),
- *   `isInCache`, `root` (null outside a repo), `broken` (a broken install's
- *   line, for a repo that said yes) and `offer` (the engine's `--announce`
- *   text for an undecided repo)
+ *   `isInCache`, `isCloud` (CLAUDE_CODE_REMOTE is true), `root` (null outside
+ *   a repo), `broken` (a broken install's line, for a repo that said yes) and
+ *   `offer` (the engine's `--announce` text for an undecided repo)
  * @param {object|null} healResult the heal's `{ exitCode, stdout, stderr }`,
  *   null when none ran today, so a result means an enabled repo
  * @param {object|null} updateResult `workkit update --auto`'s, null when none ran
@@ -99,7 +103,9 @@ export async function standardsGather(io, env, e) {
   const engine = env.WORKFLOW_DIR || `${io.pluginRoot}/workflow`;
   const cliLink = `${homeOf(env)}/.local/bin/workkit`;
   const isSetUp = await io.exists(cliLink);
-  const state = { isSetUp, cliLink, engine, isInCache: false, root: null, broken: null, offer: '' };
+  const state = {
+    isSetUp, cliLink, engine, isInCache: false, isCloud: env.CLAUDE_CODE_REMOTE === 'true', root: null, broken: null, offer: '',
+  };
   if (!isSetUp) {
     state.engine = (await io.real(engine)) ?? engine;
     state.isInCache = await inPluginCache(io, env, engine);

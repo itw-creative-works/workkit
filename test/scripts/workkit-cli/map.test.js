@@ -15,7 +15,7 @@ const cases = async () => {
     const world = mkWorld();
     const { code, out } = runCli(world, []);
     assertEq(code, 0, 'exit 0');
-    for (const word of ['usage: workkit', 'setup', 'update', 'doctor', 'enable', 'decline', 'heal [repo]', 'note']) {
+    for (const word of ['usage: workkit', 'setup', 'setup --cloud', 'update', 'doctor', 'enable', 'decline', 'heal [repo]', 'note']) {
       assert(out.includes(word), `the map names ${word}, got: ${out}`);
     }
     cleanup(world.root);

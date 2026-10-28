@@ -1,7 +1,8 @@
 // Tests for `workkit doctor`'s identity lines: the sign-in under This machine
 // and the App's installation under This repo. Each run is a scratch kit in a
 // scratch repo whose origin is acme/rostered, the user's dir the scratch home's
-// ~/.workkit, and the token service a real local stand-in.
+// ~/.workkit, and the token service a real local stand-in. Then the doctor in a
+// cloud session and off it, on a scratch machine with no repo.
 // The shared prologue is ../workkit-cli/helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
@@ -9,8 +10,9 @@ const {
   INSTALL_FIX, writeLogin, useTokenService, startService, attentionCount,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
+const { NODE_DIR, joinPath } = require('../../lib/platform');
 const {
-  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit,
+  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit, seedSettings,
 } = require('../workkit-cli/helpers');
 
 /**
@@ -51,6 +53,25 @@ const NOT_SIGNED_IN = /not signed in; run `?workkit setup --login`?/;
 /** The This repo lines naming acme/rostered's installation. */
 const repoLines = (said) => section(said, 'This repo').split('\n')
   .filter((l) => l.includes('acme/rostered') && /installed/.test(l));
+
+/**
+ * A scratch machine with no repo and nothing cloned: the plugin installed,
+ * ~/.local/bin on PATH, gh signed in unless `ghAuthed` is false, and a home
+ * repo named `repo` in the settings when given.
+ */
+const mkMachine = ({ repo, ghAuthed = true } = {}) => {
+  const world = mkWorld({ pluginInstalled: true, binOnPath: true, ghAuthed });
+  if (repo) seedSettings(world, { repo, publish: false, url: null });
+  return world;
+};
+
+/** `workkit doctor` on `world`, node on PATH, CLAUDE_CODE_REMOTE `remote` when given. */
+const machineDoctor = (world, remote) => runCli(world, ['doctor'], {
+  env: { PATH: joinPath(world.env.PATH, NODE_DIR), ...(remote === undefined ? {} : { CLAUDE_CODE_REMOTE: remote }) },
+});
+
+/** The doctor's indented lines about the home repo itself. */
+const homeLines = (said) => said.split('\n').filter((l) => /^ +\S+ home:/.test(l));
 
 const cases = async () => {
   group('workkit doctor: identity');
@@ -117,6 +138,52 @@ const cases = async () => {
     } finally {
       await service.close();
       cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
+    }
+  });
+
+  group('workkit doctor: in a cloud session and off it');
+
+  await test('case 4: in a cloud session, a home repo named with nothing cloned is a not-applicable home line the tally does not count', () => {
+    const named = mkMachine({ repo: 'owner/workkit' });
+    const unnamed = mkMachine();
+    try {
+      const withRepo = machineDoctor(named, 'true');
+      const lines = homeLines(withRepo.said);
+      assert(lines.length > 0, `a home line prints, got: ${withRepo.said}`);
+      assert(lines.every((l) => !l.includes('⚠')), `and it is no warning, got: ${lines.join(' | ')}`);
+      assert(lines.every((l) => l.includes('not applicable')), `and it says not applicable, got: ${lines.join(' | ')}`);
+      assertEq(attentionCount(withRepo.said), attentionCount(machineDoctor(unnamed, 'true').said),
+        'a named home with nothing cloned counts nothing more than no home at all');
+    } finally {
+      cleanup(named.root); cleanup(unnamed.root);
+    }
+  });
+
+  await test('case 5: gh not authenticated is one more item in the tally, on a machine and in a cloud session', () => {
+    const authed = mkMachine();
+    const unauthed = mkMachine({ ghAuthed: false });
+    try {
+      for (const remote of [undefined, 'true']) {
+        const label = remote ? 'in a cloud session' : 'on a machine';
+        const without = machineDoctor(unauthed, remote);
+        assert(/^ +⚠ gh: [^\n]*not authenticated/m.test(without.err), `${label}: the gh warning prints, got: ${without.said}`);
+        assertEq(attentionCount(without.said) - attentionCount(machineDoctor(authed, remote).said), 1, `${label}: it is one attention item`);
+      }
+    } finally {
+      cleanup(authed.root); cleanup(unauthed.root);
+    }
+  });
+
+  await test('case 6: off the cloud the doctor is unchanged: CLAUDE_CODE_REMOTE unset or not true reads the same, and a home named with nothing cloned stays a counted warning', () => {
+    const named = mkMachine({ repo: 'owner/workkit' });
+    const unnamed = mkMachine();
+    try {
+      const off = machineDoctor(named);
+      assertEq(machineDoctor(named, 'false').said, off.said, 'CLAUDE_CODE_REMOTE=false is off the cloud');
+      assert(homeLines(off.said).some((l) => /⚠ home:[^\n]*nothing is cloned/.test(l)), `the home warning prints, got: ${off.said}`);
+      assertEq(attentionCount(off.said) - attentionCount(machineDoctor(unnamed).said), 1, 'and it is one attention item');
+    } finally {
+      cleanup(named.root); cleanup(unnamed.root);
     }
   });
 

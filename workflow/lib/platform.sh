@@ -95,6 +95,12 @@ wk_hooks_log() {
   WK_HOOKS_LOG="$(wk_user_dir)/hooks.log"
 }
 
+# wk_is_cloud: a claude.ai/code cloud session, which Claude Code marks with
+# CLAUDE_CODE_REMOTE=true. Setup's --cloud and doctor read it.
+wk_is_cloud() {
+  [[ "${CLAUDE_CODE_REMOTE:-}" == 'true' ]]
+}
+
 # wk_npm_script_shell: npm's script-shell value. npm on Windows ends it with a
 # CRLF a command substitution keeps half of; npm's own exit status comes back.
 wk_npm_script_shell() {
