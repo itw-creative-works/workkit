@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.84.2] - 2026-10-29
+
 ### Changed
 
 - (no issue) - The `crlfJq` test stub drops its `singleValueClean` option: every line it writes keeps its `\r`, a one-line answer included, so any jq call missing `-b` fails its case.
