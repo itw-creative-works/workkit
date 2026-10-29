@@ -11,7 +11,7 @@ const {
   group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, shellPath, systemPathWith, homeEnv, basePathWithout,
+  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, systemPathWith, homeEnv, basePathWithout,
 } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -383,7 +383,7 @@ const cases = async () => {
     }
   });
 
-  await test('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', async () => {
+  await testUnless(IS_WINDOWS, NO_NODE_STUB)('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', async () => {
     const comment = ['issue', 'comment', '1', '--body', 'x'];
     const api = {
       'POST repos/acme/rostered/issues/1/comments': {

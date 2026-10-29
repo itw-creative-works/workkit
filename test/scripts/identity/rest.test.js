@@ -9,10 +9,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { isDeepStrictEqual } = require('util');
 const {
-  group, test, assert, assertEq, summary, selfRun, mkTmp, seeded, SPAWN_DEADLINE,
+  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, seeded, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, shellPath, systemPathWith, homeEnv,
+  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, systemPathWith, homeEnv,
 } = require('../../lib/platform');
 const { makeGhStub, ghCalls, ghRequests } = require('../../lib/gh-stub');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
@@ -159,9 +159,11 @@ const LIST_PAGES = [
 const LISTED = [...Array.from({ length: 100 }, (_, i) => 300 - i).filter((n) => n !== 250), 200, 199, 198];
 
 const cases = async () => {
+  // rest.js starts the stub `gh` from Node, which Windows cannot do by name.
+  const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
   group('identity/gh in a cloud session: auth');
 
-  await test('case 1: auth status names the login gh api user answers, exit 0; an empty login exits 1 with gh\'s not-logged-in line', async () => {
+  await runTest('case 1: auth status names the login gh api user answers, exit 0; an empty login exits 1 with gh\'s not-logged-in line', async () => {
     const res = runCloud(['auth', 'status'], { api: { 'GET user': { body: { login: 'octocat', id: 583231, type: 'User' } } } });
     assertOk(res, 'auth status with a login');
     const lines = `${res.stdout}${res.stderr}`.split('\n').filter((l) => l.trim());
@@ -177,7 +179,7 @@ const cases = async () => {
 
   group('identity/gh in a cloud session: issue reads');
 
-  await test('case 2: issue list reads every page of open issues with the label, drops the pull request, and prints gh\'s array', async () => {
+  await runTest('case 2: issue list reads every page of open issues with the label, drops the pull request, and prints gh\'s array', async () => {
     const api = {
       'GET repos/acme/rostered/issues': { pages: LIST_PAGES },
       'GET repos/other/rostered/issues': { pages: [[restIssue('other/rostered', 12, { labels: ['status:building'] })]] },
@@ -212,7 +214,7 @@ const cases = async () => {
     }
   });
 
-  await test('case 2: issue list --search sends the search to search/issues scoped to the repo\'s open issues, and prints every page\'s items', async () => {
+  await runTest('case 2: issue list --search sends the search to search/issues scoped to the repo\'s open issues, and prints every page\'s items', async () => {
     const page = (numbers) => ({
       total_count: 3, incomplete_results: false, items: numbers.map((n) => restIssue('acme/rostered', n, { labels: ['status:qa'] })),
     });
@@ -229,7 +231,7 @@ const cases = async () => {
     assertSame(printed[0].labels.map((l) => l.name), ['status:qa'], 'labels[].name');
   });
 
-  await test('case 2: issue list with no --json prints gh\'s plain rows: number, state, title, labels in their order, updatedAt', async () => {
+  await runTest('case 2: issue list with no --json prints gh\'s plain rows: number, state, title, labels in their order, updatedAt', async () => {
     const api = {
       'GET repos/acme/rostered/issues': {
         pages: [[
@@ -248,7 +250,7 @@ const cases = async () => {
     ].join('\n'), 'gh\'s rows, the pull request dropped');
   });
 
-  await test('case 3: issue view reads the issue and its comments and prints them with gh\'s field names, state upper-cased', async () => {
+  await runTest('case 3: issue view reads the issue and its comments and prints them with gh\'s field names, state upper-cased', async () => {
     const api = {
       'GET repos/acme/rostered/issues/7': {
         body: restIssue('acme/rostered', 7, { labels: ['status:qa', 'type:bug'], body: 'The body of #7.\n\n## Spec\nIt works.' }),
@@ -277,7 +279,7 @@ const cases = async () => {
     assertSame(bare.requests.map((r) => r.path), ['repos/acme/rostered/issues/7'], 'no comments asked, no /comments request');
   });
 
-  await test('case 3: issue view and issue view --comments with no --json print gh\'s plain text', async () => {
+  await runTest('case 3: issue view and issue view --comments with no --json print gh\'s plain text', async () => {
     const api = {
       'GET repos/acme/rostered/issues/7': {
         body: restIssue('acme/rostered', 7, { labels: ['type:bug', 'status:qa'], comments: 2, body: 'The body of #7.\n' }),
@@ -309,7 +311,7 @@ const cases = async () => {
 
   group('identity/gh in a cloud session: issue writes');
 
-  await test('case 4: issue edit adds labels with one POST then one DELETE per removed label; a title and body become one PATCH', async () => {
+  await runTest('case 4: issue edit adds labels with one POST then one DELETE per removed label; a title and body become one PATCH', async () => {
     const base = 'repos/acme/rostered/issues/7';
     const api = {
       [`POST ${base}/labels`]: { body: [restLabel('status:qa')] },
@@ -339,7 +341,7 @@ const cases = async () => {
     assertEq(writes(fromFile)[0].body.body, '## Spec\n\nFrom a file.\n', 'carrying the file\'s text as the body');
   });
 
-  await test('case 5: issue comment posts the body, from --body or --body-file, and prints the comment\'s URL', async () => {
+  await runTest('case 5: issue comment posts the body, from --body or --body-file, and prints the comment\'s URL', async () => {
     const url = 'https://github.com/acme/rostered/issues/7#issuecomment-2002';
     const api = {
       'POST repos/acme/rostered/issues/7/comments': { status: 201, body: restComment(7, 2002, { body: 'x', login: 'octocat', createdAt: UPDATED }) },
@@ -359,7 +361,7 @@ const cases = async () => {
     assertEq(fromFile.stdout, `${url}\n`, 'and the comment URL prints');
   });
 
-  await test('case 6: issue close --comment posts the comment, then PATCHes the issue closed', async () => {
+  await runTest('case 6: issue close --comment posts the comment, then PATCHes the issue closed', async () => {
     const api = {
       'POST repos/acme/rostered/issues/7/comments': { status: 201, body: restComment(7, 2003, { body: 'x', login: 'octocat', createdAt: UPDATED }) },
       'PATCH repos/acme/rostered/issues/7': { body: restIssue('acme/rostered', 7, { state: 'closed' }) },
@@ -372,7 +374,7 @@ const cases = async () => {
     assertEq(writes(res)[1].body.state, 'closed', 'the PATCH closes it');
   });
 
-  await test('case 6: issue close --reason "not planned" PATCHes the issue closed with REST\'s not_planned reason', async () => {
+  await runTest('case 6: issue close --reason "not planned" PATCHes the issue closed with REST\'s not_planned reason', async () => {
     const api = { 'PATCH repos/acme/rostered/issues/7': { body: restIssue('acme/rostered', 7, { state: 'closed', state_reason: 'not_planned' }) } };
     const res = runCloud(['issue', 'close', '7', '--reason', 'not planned'], { api });
     assertOk(res, 'issue close --reason');
@@ -380,7 +382,7 @@ const cases = async () => {
     assertSame([writes(res)[0].body.state, writes(res)[0].body.state_reason], ['closed', 'not_planned'], 'closed, with the reason');
   });
 
-  await test('case 7: issue create posts the title, body and labels and prints the new issue\'s URL', async () => {
+  await runTest('case 7: issue create posts the title, body and labels and prints the new issue\'s URL', async () => {
     const api = {
       'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 475, { labels: ['status:inbox', 'type:feature'] }) },
     };
@@ -394,7 +396,7 @@ const cases = async () => {
 
   group('identity/gh in a cloud session: labels');
 
-  await test('case 8: label list reads every page; label create POSTs and label edit PATCHes the named label', async () => {
+  await runTest('case 8: label list reads every page; label create POSTs and label edit PATCHes the named label', async () => {
     const names = [...Array.from({ length: 100 }, (_, i) => `area:${String(i).padStart(3, '0')}`), 'status:qa', 'type:bug'];
     const api = {
       'GET repos/acme/rostered/labels': { pages: [names.slice(0, 100).map(restLabel), names.slice(100).map(restLabel)] },
@@ -420,7 +422,7 @@ const cases = async () => {
     assertSame([patch.description, patch.color], ['Built, checking.', 'FBCA04'], 'description and color');
   });
 
-  await test('case 8: label edit --name PATCHes the old label with the new name', async () => {
+  await runTest('case 8: label edit --name PATCHes the old label with the new name', async () => {
     const api = { 'PATCH repos/acme/rostered/labels/status:qa': { body: restLabel('status:check') } };
     const res = runCloud(['label', 'edit', 'status:qa', '--name', 'status:check'], { api });
     assertOk(res, 'label edit --name');
@@ -430,7 +432,7 @@ const cases = async () => {
 
   group('identity/gh in a cloud session: the proxy\'s refusal');
 
-  await test('case 11: a repo the session has not attached answers the proxy\'s 403, relayed with its message, exit 1', async () => {
+  await runTest('case 11: a repo the session has not attached answers the proxy\'s 403, relayed with its message, exit 1', async () => {
     const api = { 'GET repos/other/unattached/issues': { status: 403, body: { message: NOT_ATTACHED } } };
     const res = runCloud(['issue', 'list', '--state', 'open', '--json', 'number', '--repo', 'other/unattached'], { api });
     assertEq(res.code, 1, `gh's exit 1, stderr: ${res.stderr}`);
@@ -458,7 +460,7 @@ const cases = async () => {
     assertSame(writes(res), [], 'no issue is created');
   });
 
-  await test('a subcommand REST does not serve (issue develop) runs the real gh once, whole, with no gh api call', async () => {
+  await runTest('a subcommand REST does not serve (issue develop) runs the real gh once, whole, with no gh api call', async () => {
     const argv = ['issue', 'develop', '7', '--name', 'fix-7'];
     const res = runCloud(argv, { api: {} });
     assertOk(res, 'issue develop');
