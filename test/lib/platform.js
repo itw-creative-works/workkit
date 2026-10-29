@@ -192,11 +192,13 @@ const NO_NODE_STUB = 'no stub is startable by name from Node on Windows';
 
 /**
  * A `jq` on PATH that writes CRLF the way the Windows build does, handing back
- * jq's own exit status. On Windows the real tool is the stub (translating again
- * would write `\r\r\n`). `singleValueClean` models Windows bash stripping a
- * trailing CRLF in a command substitution: a one-line answer comes back clean,
- * every line of a multi-line answer keeps its carriage return. A piped one-line
- * read keeps its `\r` on Windows, so a case about one asks with the option off.
+ * jq's own exit status; like that build, `-b` (`--binary`, or a short cluster
+ * holding `b`) makes it write LF. On Windows the real tool is the stub
+ * (translating again would write `\r\r\n`). `singleValueClean` models Windows
+ * bash stripping a trailing CRLF in a command substitution: a one-line answer
+ * comes back clean, every line of a multi-line answer keeps its carriage
+ * return. A piped one-line read keeps its `\r` on Windows, so a case about one
+ * asks with the option off.
  * @param {string} dir - the PATH directory, which must exist
  * @param {object} [options] - `singleValueClean`, the bash half modelled above
  * @returns {string|null} the stub that was written, or null with no jq to wrap
@@ -207,9 +209,14 @@ const crlfJq = (dir, { singleValueClean = false } = {}) => {
   const translate = singleValueClean
     ? "perl -0777 -pe 's/\\r?\\n/\\r\\n/g unless tr/\\n// <= 1'"
     : "perl -pe 's/\\n/\\r\\n/'";
+  const jq = `"${shellPath(real)}" "$@"`;
   const body = IS_WINDOWS
-    ? [`exec "${shellPath(real)}" "$@"`]
-    : [`"${shellPath(real)}" "$@" | ${translate}`, 'exit "${PIPESTATUS[0]}"'];
+    ? [`exec ${jq}`]
+    : [
+      `for a in "$@"; do case $a in --binary) exec ${jq};; --*) ;; -*b*) exec ${jq};; esac; done`,
+      `${jq} | ${translate}`,
+      'exit "${PIPESTATUS[0]}"',
+    ];
   return stubTool(dir, 'jq', ['#!/bin/bash', ...body]);
 };
 

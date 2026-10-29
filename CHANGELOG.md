@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- (no issue) - The `crlfJq` test stub writes LF when jq gets `-b` (`--binary`), as the real Windows build does, so a suite can prove a script passes the flag.
+
 ## [0.84.0] - 2026-10-28
 
 ### Added
