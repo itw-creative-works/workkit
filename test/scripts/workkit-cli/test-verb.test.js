@@ -11,11 +11,11 @@ const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, shellPath, joinPath, basePathWithout,
+  NODE_DIR, shellPath, joinPath, basePathWithout,
 } = require('../../lib/platform');
 const { treeHash } = require('../../lib/suite-record');
 const {
-  EXE_CLAUDE_HOME, wireShell, scratchNpmrc, skipWithoutWrapper, recorded, assertRecord, packaged,
+  wiredNpmEnv, skipWithoutWrapper, recorded, assertRecord, packaged,
 } = require('../../lib/script-shell');
 const { TOTALS, mkCoreRepo } = require('../../lib/core-repo');
 const {
@@ -31,12 +31,7 @@ const writePackage = (repo, scripts) => fs.writeFileSync(path.join(repo, 'packag
 const runTest = (world, args = [], { cwd, env = {} } = {}) => {
   const res = runCli(world, ['test', ...args], {
     cwd,
-    env: {
-      PATH: joinPath(NODE_DIR, world.env.PATH),
-      NPM_CONFIG_USERCONFIG: scratchNpmrc(wireShell(world.workflowHome)),
-      ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
-      ...env,
-    },
+    env: { ...wiredNpmEnv(world), ...env },
   });
   return { ...res, lines: stripVTControlCharacters(res.said).split(/\r?\n/) };
 };

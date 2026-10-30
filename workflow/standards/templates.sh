@@ -46,7 +46,7 @@ ensure_ci_workflow() {
     if [[ "$rc" -eq 0 ]]; then
       [[ -z "$out" ]] || wk_ok "$out"
     else
-      wk_warn "checks: could not remove the kit clone step from $dest${out:+: $out}"
+      wk_warn_lines checks "checks: could not remove the kit clone step from $dest${out:+: $out}"
       needs_attention=1
     fi
     return 0

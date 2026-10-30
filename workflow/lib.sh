@@ -27,8 +27,7 @@ WK_HOME_SETTINGS="$WK_USER_DIR/settings.json"
 WK_HOME_REPOS="$WK_USER_DIR/.repos.json"
 WK_HOME_CACHE="$WK_USER_DIR/.cache.json"
 
-# The one git repo in the global layer: the clone of `<login>/workkit`.
-WK_HOME_DIR="$WK_USER_DIR/tower"
+WK_HOME_DIR="$(wk_tower_dir)"
 # `omega build` resolves only inside the target, not at the brand root
 # (README § Publishing the dashboard).
 WK_HOME_TARGET="$WK_HOME_DIR/targets/web"

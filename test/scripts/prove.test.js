@@ -9,18 +9,15 @@ const path = require('path');
 const {
   group, test, assert, assertEq, summary, selfRun, run,
 } = require('../lib/harness');
-const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, shellPath, joinPath,
-} = require('../lib/platform');
+const { shellPath } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
 const { suiteMarkerPath, reviewMarkerPath } = require('../lib/suite-record');
 const {
-  skipWithoutWrapper, scratchNpmrc, wireShell, EXE_CLAUDE_HOME, assertRecord,
+  skipWithoutWrapper, wiredNpmEnv, assertRecord,
 } = require('../lib/script-shell');
+const { runCli } = require('./workkit-cli/helpers');
 const { gateOn } = require('../lib/real-gate');
-
-const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -63,20 +60,7 @@ const holdBreaking = (w) => {
 // The fixture's suite run straight in the working folder.
 const folderRun = (w) => run(process.execPath, ['run.js'], { cwd: w.repo }).status;
 
-// npm beside this node naming the script shell wired into the world's machine
-// folder, as `workkit setup` leaves a machine.
-const proveEnv = (w) => ({
-  ...w.env,
-  PATH: joinPath(NODE_DIR, w.env.PATH),
-  NPM_CONFIG_USERCONFIG: scratchNpmrc(wireShell(w.workflowHome)),
-  ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
-});
-
-const prove = (w) => {
-  const res = run(BASH, [...NO_RC, shellPath(CLI), 'prove'], { cwd: w.repo, env: proveEnv(w), input: '' });
-  assert(res.status !== null, `workkit prove finished (no timeout, no signal): timedOut ${res.timedOut}, signal ${res.signal}`);
-  return { code: res.status, said: res.output };
-};
+const prove = (w) => runCli(w, ['prove'], { cwd: w.repo, env: wiredNpmEnv(w) });
 
 /** The record a green run left for the world's repo, or undefined. */
 const recorded = (w) => {
@@ -126,7 +110,7 @@ const cases = async () => {
     const review = reviewMarkerPath(w.workflowHome, w.repo);
     fs.mkdirSync(path.dirname(review), { recursive: true });
     fs.writeFileSync(review, '');
-    const out = await gateOn(w.repo, 'git commit -m "feat: thing"', { ...proveEnv(w), TMPDIR: shellPath(w.tmp) });
+    const out = await gateOn(w.repo, 'git commit -m "feat: thing"', { ...wiredNpmEnv(w), TMPDIR: shellPath(w.tmp) });
     assertEq(out.deny, null, 'the commit of the staged tree passes the gate');
     assert(out.context.includes('suite proved'), `check 5 stands down on the record, got: ${out.context}`);
     cleanup(w.dir);

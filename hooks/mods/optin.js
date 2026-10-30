@@ -3,8 +3,8 @@
  * in: the command's cd steps, the repos its gh clauses name through the
  * roster, and the cwd decide, and a command the walk cannot place runs the
  * guards, so a guard fails closed (docs/hooks.md § Where every hook stands
- * down). The roster's one reader, the folder a gh clause acts on (`place`)
- * and the path fold live here too.
+ * down). The roster's one reader and the folder a gh clause acts on
+ * (`place`) live here too.
  */
 
 import {
@@ -30,7 +30,7 @@ const NAMES_GH_REPO = /--repo|-R|github\.com\/[\s\S]*\/issues\/|github\.com\/[\s
  * @param {string} path the folder
  * @returns {boolean}
  */
-export const isAbsolute = (path) => path.startsWith('/') || /^[A-Za-z]:\//.test(path);
+const isAbsolute = (path) => path.startsWith('/') || /^[A-Za-z]:\//.test(path);
 const isGh = (word) => word === 'gh' || word.endsWith('/gh');
 
 /**
@@ -82,7 +82,7 @@ function moves(words, peel) {
  * @param {string} path the path
  * @returns {string}
  */
-export function fold(path) {
+function fold(path) {
   let p = path.replace(/\\/g, '/');
   if (!/\/\.\.?(\/|$)/.test(p)) return p;
   let head = '';

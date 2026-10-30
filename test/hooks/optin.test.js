@@ -45,7 +45,7 @@ const stands = async (command, cwd, opts) => {
 const cases = async () => {
   group('optin: a repo that has not opted in');
 
-  await test('ports "no settings file: commit-gate, suite-guard and docs:change-tracker step aside"', async () => {
+  await test('ports "no settings file: commit-gate and docs:change-tracker step aside"', async () => {
     for (const [answer, settings, opted] of [['enabled', SETTINGS.enabled, true], ['none', null, false]]) {
       const r = await ask('git status', '/w/r', { repos: { '/w/r': settings } });
       assertEq(r.opted, opted, `a repo answering ${answer}`);

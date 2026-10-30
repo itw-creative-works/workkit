@@ -31,7 +31,7 @@ const intakeBody = (issue, repo) => {
     '',
     '## Description',
     '',
-    `Reported by \`@${issue.author?.login || 'unknown'}\` on ${repo}#${issue.number}:`,
+    `Reported by @${issue.author?.login || 'unknown'} on ${repo}#${issue.number}:`,
     '',
     quoted,
     '',

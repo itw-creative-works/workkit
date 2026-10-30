@@ -39,6 +39,29 @@ _hook_snapshot_modules_list() {
   )
 }
 
+# _hook_snapshot_rel_in <root> <dir>: <dir>'s path under the physical <root>,
+# links resolved; 1 when it is not there or lies outside.
+_hook_snapshot_rel_in() {
+  local real
+  real=$(cd -P "$2" 2>/dev/null && pwd -P) || return 1
+  case "$real" in "$1"/*) printf '%s\n' "${real#"$1"/}" ;; *) return 1 ;; esac
+}
+
+# _hook_snapshot_kit_rels <dir>: the kit's paths lying inside <dir>, a ./-led
+# path a line: the markers folder (wk_markers_dir), where the snapshot itself
+# is built, and every path in the kit home (wk_user_dir) that git ignores there.
+_hook_snapshot_kit_rels() {
+  local root rel
+  root=$(cd -P "$1" 2>/dev/null && pwd -P) || return 0
+  ! rel=$(_hook_snapshot_rel_in "$root" "$(wk_markers_dir)") || printf './%s\n' "$rel"
+  rel=$(_hook_snapshot_rel_in "$root" "$(wk_user_dir)") || return 0
+  (
+    set -o pipefail
+    git -C "$root" ls-files -z --others --ignored --exclude-standard --directory -- ":(literal)$rel" \
+      | while IFS= read -r -d '' rel; do printf './%s\n' "${rel%/}"; done
+  )
+}
+
 # _hook_snapshot_is_held <held> <rel>: whether ./<rel> is a line of <held>.
 _hook_snapshot_is_held() { case $'\n'"$1"$'\n' in *$'\n'"./$2"$'\n'*) return 0 ;; esac; return 1; }
 
@@ -47,14 +70,16 @@ _hook_snapshot_is_held() { case $'\n'"$1"$'\n' in *$'\n'"./$2"$'\n'*) return 0 ;
 _hook_snapshot_held_under() { case $'\n'"$1" in *$'\n'"./$2/"*) return 0 ;; esac; return 1; }
 
 # _hook_snapshot_copy <src> <dest> [rel]...: every entry of <src> (or each rel
-# whose parent <dest> holds) into <dest>, `.git` and each package's
-# node_modules left out (the fill rebuilds those from the live repo), symlinks
-# kept. The tools' words go to stderr.
+# whose parent <dest> holds) into <dest>, symlinks kept, `.git`, each package's
+# node_modules and the kit paths <src> holds (_hook_snapshot_kit_rels) left
+# out. The tools' words go to stderr.
 _hook_snapshot_copy() {
-  local src="$1" dest="$2" entry rel held anchor="" flags=(-pPR) rels=() excludes=(--exclude=./.git)
+  local src="$1" dest="$2" entry rel held kit anchor="" flags=(-pPR) rels=() excludes=(--exclude=./.git)
   shift 2
   held=$(_hook_snapshot_modules_list "$src") \
     || { echo "could not list the package node_modules folders under $src" >&2; return 1; }
+  kit=$(_hook_snapshot_kit_rels "$src") || { echo "could not list the kit's paths under $src" >&2; return 1; }
+  held="$held"$'\n'"$kit"
   for rel in "$@"; do
     rel="${rel%/}"
     ! _hook_snapshot_is_held "$held" "$rel" || continue
@@ -99,9 +124,9 @@ _hook_snapshot_glob_quote() {
 }
 
 # _hook_snapshot_put <src> <dest> <rel> <held> <cp flag>...: <rel> copied whole
-# into <dest> by cp, unless it is a package's node_modules (in <held>, the
-# ./-led list: left out) or a folder holding one, which is made and walked
-# entry by entry.
+# into <dest> by cp, unless it is a package's node_modules or a kit path (in
+# <held>, the ./-led list: left out) or a folder holding one, which is made and
+# walked entry by entry.
 _hook_snapshot_put() {
   local src="$1" dest="$2" rel="$3" held="$4" entry
   shift 4
@@ -182,34 +207,15 @@ _hook_snapshot_record() {
   done
 }
 
-# hook_issues_building [repo]: the open issues at status:building, run in the
-# current directory: one line each, the number, a tab and the matching label;
-# 2 when gh cannot answer. Never agent:claimed: an agent:ok item keeps that
-# claim through the park. Consumer: hook_snapshot_stale. Its gh argv changes
-# together with buildingList in hooks/mods/gh.js.
-hook_issues_building() {
-  local repo="${1:-}" list
-  command -v gh >/dev/null 2>&1 || return 2
-  command -v jq >/dev/null 2>&1 || return 2
-  if [ -n "$repo" ]; then
-    list=$(gh issue list --repo "$repo" --state open --label status:building --limit 1000 --json number,labels 2>/dev/null) || return 2
-  else
-    list=$(gh issue list --state open --label status:building --limit 1000 --json number,labels 2>/dev/null) || return 2
-  fi
-  [ -n "$list" ] || return 2
-  hook_jq -r '.[] | [.number, ([.labels[]?.name // "" | select(. == "status:building")] | join(","))]
-    | select(.[1] != "") | "\(.[0])\t\(.[1])"' <<<"$list" 2>/dev/null || return 2
-}
-
 # hook_snapshot_stale <root> [repo]: 0 when none of the snapshot's issues is
 # still at status:building, 1 while one is or none is recorded (a claim whose
 # numbers could not be read), 2 when GitHub cannot answer. The read runs in
-# <root>, against [repo] when one is given.
+# <root>, against [repo] when one is given (wk_issues_building, workflow/lib/hold.sh).
 hook_snapshot_stale() {
   local dir building n
   dir=$(hook_snapshot_dir "$1") || return 2
   grep -q '[^[:space:]]' "$dir/issues" 2>/dev/null || return 1
-  building=$(cd "$1" 2>/dev/null && hook_issues_building "${2:-}") || return 2
+  building=$(cd "$1" 2>/dev/null && wk_issues_building "${2:-}") || return 2
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     printf '%s\n' "$building" | cut -f1 | grep -qx -- "$n" && return 1

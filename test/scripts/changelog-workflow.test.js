@@ -73,8 +73,9 @@ const cases = async () => {
   });
 
   await test('this repo\'s own checks.yml calls the same workflow the same way', () => {
-    assertEq(jobBlock(read(OWN_CHECKS), 'changelog'), jobBlock(read(TEMPLATE), 'changelog'),
-      'the kit runs the check its callers run');
+    const uses = (text) => (jobBlock(text, 'changelog') || '').split('\n').find((line) => USES_RE.test(line)) ?? null;
+    assert(uses(read(TEMPLATE)), 'the template\'s changelog job has a uses: line');
+    assertEq(uses(read(OWN_CHECKS)), uses(read(TEMPLATE)), 'the kit runs the check its callers run');
   });
 
   return summary();

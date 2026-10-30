@@ -11,10 +11,10 @@ const HOOKS_DIR = path.join(REPO, 'hooks');
 const MODS_DIR = path.join(HOOKS_DIR, 'mods');
 const HOOKS_JSON = path.join(HOOKS_DIR, 'hooks.json');
 
-// The thirteen that ran as shell hooks before the module took them.
+// The twelve that ran as shell hooks before the module took them.
 const MIGRATED = [
   'docs:change-tracker', 'safety:capture-guard', 'safety:commit-gate', 'safety:commit-language', 'safety:findings-guard',
-  'safety:issue-guard', 'safety:proof-guard', 'safety:release-taken', 'safety:spec-guard', 'safety:suite-guard',
+  'safety:issue-guard', 'safety:proof-guard', 'safety:release-taken', 'safety:spec-guard',
   'safety:tree-guard', 'safety:vendor-guard', 'workflow:snapshot',
 ];
 
@@ -71,7 +71,7 @@ const cases = async () => {
     assertEq(moduleEvents().join(','), ten.join(','), 'the events hooks/register.js hooks');
   });
 
-  await test('the module names every hook, the thirteen former shell hooks among them', () => {
+  await test('the module names every hook, the twelve former shell hooks among them', () => {
     const missing = MIGRATED.filter((name) => !moduleHooks().includes(name));
     assertEq(missing.join(','), '', 'the former shell hooks the module does not name');
   });

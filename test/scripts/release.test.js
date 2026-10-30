@@ -1,7 +1,8 @@
 // Tests for workflow/ship/release.js: the ship's release commit in one command (the
 // bump, the commit-link backfill, the dated section; a refusal writes nothing).
 // Each case builds a real repo with real `Fixes #N` commits, and the child's scratch
-// home reaches no gh account, so the handle is absent: the offline release.
+// home reaches no gh account, so the handle is absent: the offline release. The
+// bump runs the real npm, offline, so a fetch it tried would fail the case.
 
 const path = require('path');
 const fs = require('fs');
@@ -9,8 +10,8 @@ const { spawnSync, execFileSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
-const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
 const { mods } = require('../lib/mods-inputs');
+const { skipWithoutNpm, npmEnv } = require('../lib/core-repo');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'release.js');
 
@@ -81,6 +82,37 @@ const WORKSPACE_ROOT = '{\n  "name": "scratch",\n  "private": true,\n  "workspac
 const member = (name, version) => `{\n  "name": "${name}",\n  "version": "${version}",\n  "private": false\n}\n`;
 const PLUGIN_FILE = path.join('.claude-plugin', 'plugin.json');
 
+const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
+// A lockfile as npm writes one: the version at the top and in the root entry
+// (absent when the root has none), and a dependency at the same version, which
+// is not the package's and must not move.
+const lockfile = (rootVersion, packages) => json({
+  name: 'scratch',
+  ...(rootVersion ? { version: rootVersion } : {}),
+  lockfileVersion: 3,
+  requires: true,
+  packages,
+});
+const LOCK = lockfile('1.2.3', {
+  '': { name: 'scratch', version: '1.2.3' },
+  'node_modules/dep': { version: '1.2.3' },
+});
+const VERSIONED_ROOT = json({
+  name: 'scratch', version: '1.2.3', private: true, workspaces: ['packages/*'],
+});
+/** A workspaces lockfile: the root entry, then each member's link and its own entry. */
+const workspaceLock = (rootVersion) => lockfile(rootVersion, {
+  '': { name: 'scratch', ...(rootVersion ? { version: rootVersion } : {}), workspaces: ['packages/*'] },
+  'node_modules/scratch-core': { resolved: 'packages/core', link: true },
+  'node_modules/scratch-other': { resolved: 'packages/other', link: true },
+  'packages/core': { name: 'scratch-core', version: '1.2.3' },
+  'packages/other': { name: 'scratch-other', version: '0.4.0' },
+});
+const MEMBERS = {
+  'packages/core/package.json': member('scratch-core', '1.2.3'),
+  'packages/other/package.json': member('scratch-other', '0.4.0'),
+};
+
 /** The text of a version file with its top-level version bumped to 1.3.0. */
 const bumped = (text) => text.replace('"version": "1.2.3"', '"version": "1.3.0"');
 
@@ -127,7 +159,7 @@ const release = (dir, args) => {
   const home = mkTmp('release-');
   const res = spawnSync(process.execPath, [SCRIPT, ...args, '--dir', dir], {
     cwd: home,
-    env: homeEnv(home, { PATH: SYSTEM_PATH }),
+    env: npmEnv(home, { npm_config_offline: 'true' }),
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
@@ -136,6 +168,7 @@ const release = (dir, args) => {
 };
 
 const read = (dir, file) => fs.readFileSync(path.join(dir, file), 'utf8');
+const parsed = (dir, file) => JSON.parse(read(dir, file));
 const exists = (dir, file) => fs.existsSync(path.join(dir, file));
 
 /** An entry line as the backfill writes it, its commit link after the issue. */
@@ -152,14 +185,20 @@ const assertRefused = (dir, res, says) => {
 };
 
 const cases = async () => {
+  skipWithoutNpm();
   group('release: the version bump');
 
-  await test('the version lands and every other byte of package.json stays', () => {
-    const { dir } = mkRepo();
+  await test('a single package moves package.json and both lockfile spots, and names each', () => {
+    const { dir } = mkRepo({ files: { 'package-lock.json': LOCK } });
     const res = release(dir, ['1.3.0']);
     assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
-    assertEq(read(dir, 'package.json'), bumped(PACKAGE), 'only the first version line changed');
-    assertEq(res.stdout, 'released 1.3.0 (package.json): 3 entries moved, 0 kept under [Unreleased]\n', 'the line names the file');
+    assertEq(JSON.stringify(parsed(dir, 'package.json')),
+      '{"name":"scratch","version":"1.3.0","description":"a fixture","config":{"version":"1.2.3"}}', 'only the top-level version moved');
+    const lock = parsed(dir, 'package-lock.json');
+    assertEq(lock.version, '1.3.0', 'the lockfile\'s top-level version');
+    assertEq(lock.packages[''].version, '1.3.0', 'the lockfile\'s root entry');
+    assertEq(lock.packages['node_modules/dep'].version, '1.2.3', 'a dependency at the old number stays');
+    assertEq(res.stdout, 'released 1.3.0 (package.json, package-lock.json): 3 entries moved, 0 kept under [Unreleased]\n', 'the line names both');
     cleanup(dir);
   });
 
@@ -183,30 +222,79 @@ const cases = async () => {
     cleanup(dir);
   });
 
-  await test('both files carrying a version are both bumped, each keeping its own line ending', () => {
-    const { dir } = mkRepo({ pkg: PACKAGE.replace(/\n/g, '\r\n'), plugin: PLUGIN });
+  await test('a plugin manifest moves with package.json and the lockfile, each keeping its own line ending', () => {
+    const { dir } = mkRepo({ pkg: PACKAGE.replace(/\n/g, '\r\n'), plugin: PLUGIN, files: { 'package-lock.json': LOCK } });
     const res = release(dir, ['1.3.0']);
     assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
-    assertEq(read(dir, 'package.json'), bumped(PACKAGE).replace(/\n/g, '\r\n'), 'package.json bumped, still CRLF');
-    assertEq(read(dir, PLUGIN_FILE), bumped(PLUGIN), 'the manifest bumped, still LF');
-    assertEq(res.stdout, 'released 1.3.0 (package.json, .claude-plugin/plugin.json): 3 entries moved, 0 kept under [Unreleased]\n', 'the line names both');
+    assertEq(read(dir, PLUGIN_FILE), bumped(PLUGIN), 'the manifest bumped, every other byte kept');
+    const pkg = read(dir, 'package.json');
+    assertEq(JSON.parse(pkg).version, '1.3.0', 'package.json bumped');
+    assert(!/(^|[^\r])\n/.test(pkg), `package.json still CRLF, got: ${JSON.stringify(pkg)}`);
+    assertEq(parsed(dir, 'package-lock.json').packages[''].version, '1.3.0', 'the lockfile bumped');
+    assertEq(res.stdout, 'released 1.3.0 (package.json, .claude-plugin/plugin.json, package-lock.json): 3 entries moved, 0 kept under [Unreleased]\n', 'the line names all three');
     cleanup(dir);
   });
 
-  await test('a workspace member at the old version moves with the release; one at another version stays', () => {
-    const lockstep = member('scratch-core', '1.2.3');
-    const apart = member('scratch-other', '0.4.0');
+  await test('a workspaces repo moves the root, each lockstep member and their lockfile entries; a member at another version stays', () => {
+    const { dir } = mkRepo({ pkg: VERSIONED_ROOT, files: { ...MEMBERS, 'package-lock.json': workspaceLock('1.2.3') } });
+    const res = release(dir, ['1.3.0']);
+    assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
+    assertEq(parsed(dir, 'package.json').version, '1.3.0', 'the root bumped');
+    assertEq(parsed(dir, 'packages/core/package.json').version, '1.3.0', 'the lockstep member bumped');
+    assertEq(read(dir, 'packages/other/package.json'), MEMBERS['packages/other/package.json'], 'the member at its own version untouched');
+    const lock = parsed(dir, 'package-lock.json');
+    assertEq(lock.version, '1.3.0', 'the lockfile\'s top-level version');
+    assertEq(lock.packages[''].version, '1.3.0', 'the lockfile\'s root entry');
+    assertEq(lock.packages['packages/core'].version, '1.3.0', 'the lockstep member\'s lockfile entry');
+    assertEq(lock.packages['packages/other'].version, '0.4.0', 'the other member\'s lockfile entry stays');
+    assert(!exists(dir, 'node_modules'), 'npm installed nothing');
+    assertEq(res.stdout, 'released 1.3.0 (package.json, packages/core/package.json, package-lock.json): 3 entries moved, 0 kept under [Unreleased]\n', 'the line names each file');
+    cleanup(dir);
+  });
+
+  await test('an unversioned workspace root under a plugin manifest stays, and its lockstep member moves', () => {
     const { dir } = mkRepo({
-      pkg: WORKSPACE_ROOT,
-      plugin: PLUGIN,
-      files: { 'packages/core/package.json': lockstep, 'packages/other/package.json': apart },
+      pkg: WORKSPACE_ROOT, plugin: PLUGIN, files: { ...MEMBERS, 'package-lock.json': workspaceLock(null) },
     });
     const res = release(dir, ['1.3.0']);
     assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
     assertEq(read(dir, PLUGIN_FILE), bumped(PLUGIN), 'the manifest bumped');
-    assertEq(read(dir, 'packages/core/package.json'), bumped(lockstep), 'the lockstep member bumped, every other byte kept');
-    assertEq(read(dir, 'packages/other/package.json'), apart, 'the member at its own version untouched');
     assertEq(read(dir, 'package.json'), WORKSPACE_ROOT, 'the unversioned root untouched');
+    assertEq(parsed(dir, 'packages/core/package.json').version, '1.3.0', 'the lockstep member bumped');
+    const lock = parsed(dir, 'package-lock.json');
+    assertEq(lock.packages['packages/core'].version, '1.3.0', 'its lockfile entry bumped');
+    assertEq(lock.version, undefined, 'the lockfile gains no root version');
+    cleanup(dir);
+  });
+
+  await test('a lockstep member with no name moves by its folder', () => {
+    const nameless = '{\n  "version": "1.2.3",\n  "private": true\n}\n';
+    const { dir } = mkRepo({ pkg: WORKSPACE_ROOT, plugin: PLUGIN, files: { 'packages/core/package.json': nameless } });
+    const res = release(dir, ['1.3.0']);
+    assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
+    assertEq(parsed(dir, 'packages/core/package.json').version, '1.3.0', 'the nameless member bumped');
+    cleanup(dir);
+  });
+
+  await test('a workspaces repo with no lockfile gets none, and its lockstep member moves', () => {
+    const { dir } = mkRepo({ pkg: VERSIONED_ROOT, files: MEMBERS });
+    const res = release(dir, ['1.3.0']);
+    assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
+    assertEq(parsed(dir, 'package.json').version, '1.3.0', 'the root bumped');
+    assertEq(parsed(dir, 'packages/core/package.json').version, '1.3.0', 'the lockstep member bumped');
+    assert(!exists(dir, 'package-lock.json'), 'no lockfile appears');
+    assertEq(res.stdout, 'released 1.3.0 (package.json, packages/core/package.json): 3 entries moved, 0 kept under [Unreleased]\n', 'the line names no lockfile');
+    cleanup(dir);
+  });
+
+  await test('the release step makes no commit and no tag', () => {
+    const { dir } = mkRepo({ files: { 'package-lock.json': LOCK } });
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const res = release(dir, ['1.3.0']);
+    assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
+    assertEq(git(dir, 'rev-parse', 'HEAD'), head, 'HEAD did not move');
+    assertEq(git(dir, 'tag', '--list'), '', 'no tag');
+    assertEq(git(dir, 'status', '--porcelain', '--', 'package.json'), 'M package.json', 'the bump waits uncommitted');
     cleanup(dir);
   });
 
@@ -358,15 +446,14 @@ const cases = async () => {
 
   group('release: line endings');
 
-  await test('a CRLF CHANGELOG and package.json come back CRLF', () => {
+  await test('a CRLF CHANGELOG comes back CRLF', () => {
     const crlf = (t) => t.replace(/\n/g, '\r\n');
-    const { dir } = mkRepo({ changelog: crlf(CHANGELOG), pkg: crlf(PACKAGE) });
+    const { dir } = mkRepo({ changelog: crlf(CHANGELOG) });
     const res = release(dir, ['1.3.0']);
     assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
     const text = read(dir, 'CHANGELOG.md');
     assert(!/(^|[^\r])\n/.test(text), 'no bare LF in the CHANGELOG');
     assert(text.includes(`## [Unreleased]\r\n\r\n## [1.3.0] - ${today()}\r\n`), `moved, got: ${JSON.stringify(text.slice(0, 200))}`);
-    assertEq(read(dir, 'package.json'), crlf(PACKAGE.replace('"version": "1.2.3"', '"version": "1.3.0"')), 'package.json bumped, still CRLF');
     cleanup(dir);
   });
 
@@ -391,6 +478,25 @@ const cases = async () => {
   });
   await refuses('no version file at all', ['1.3.0'], 'neither package.json nor .claude-plugin/plugin.json', {
     pkg: null,
+  });
+  await test('a version script failing after npm wrote puts every file back, and the fixed rerun releases', () => {
+    // The member's script fails after npm has written the root, the member and the lockfile.
+    const failing = json({ name: 'scratch-core', version: '1.2.3', scripts: { version: 'exit 1' } });
+    const files = { ...MEMBERS, 'packages/core/package.json': failing, 'package-lock.json': workspaceLock('1.2.3') };
+    const { dir } = mkRepo({ pkg: VERSIONED_ROOT, plugin: PLUGIN, files });
+    const names = ['package.json', 'packages/core/package.json', 'package-lock.json', PLUGIN_FILE, 'CHANGELOG.md'];
+    const before = names.map((f) => read(dir, f));
+    assertRefused(dir, release(dir, ['1.3.0']), 'npm version');
+    names.forEach((f, i) => assertEq(read(dir, f), before[i], `${f} as it was`));
+    fs.writeFileSync(path.join(dir, 'packages/core/package.json'), MEMBERS['packages/core/package.json']);
+    const rerun = release(dir, ['1.3.0']);
+    assertEq(rerun.code, 0, `the rerun exits 0 (stderr: ${rerun.stderr})`);
+    assertEq(parsed(dir, 'package-lock.json').packages['packages/core'].version, '1.3.0', 'the rerun moved the lockfile');
+    cleanup(dir);
+  });
+  await refuses('a lockstep member whose folder has whitespace', ['1.3.0'], "workspace folder 'packages/my core' has whitespace", {
+    pkg: VERSIONED_ROOT,
+    files: { 'packages/my core/package.json': member('scratch-core', '1.2.3') },
   });
   await refuses('a CHANGELOG with no [Unreleased] heading', ['1.3.0'], 'no [Unreleased] heading', {
     changelog: ['# Changelog', '', ...RELEASED].join('\n'),
@@ -426,14 +532,16 @@ const cases = async () => {
 
   await test('its version files are the ones the commit gate passes as bookkeeping', () => {
     // The gate's version manifests (isManifest in hooks/mods/commit-gate/checks.js)
-    // are VERSION_FILES at the root and nested, and nothing else.
+    // are VERSION_FILES at the root and nested, and the lockfile npm moves with
+    // them, and nothing else.
     const files = /const VERSION_FILES = \[([^\]]+)\]/.exec(fs.readFileSync(SCRIPT, 'utf8'));
     assert(files, 'release.js declares VERSION_FILES');
     const names = files[1].split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
     const { isManifest } = mods('commit-gate/checks');
     const missed = names.flatMap((n) => [n, `packages/a/${n}`]).filter((p) => !isManifest(p));
     assertEq(missed.join(', '), '', 'every version file, at the root and nested, is a manifest to the gate');
-    const others = ['package-lock.json', 'plugin.json', 'packages/a/package.json.bak', 'claude-plugin/plugin.json', 'app.js'];
+    assert(isManifest('package-lock.json'), 'the lockfile npm moves with them is one too');
+    const others = ['plugin.json', 'packages/a/package.json.bak', 'claude-plugin/plugin.json', 'app.js'];
     assertEq(others.filter((p) => isManifest(p)).join(', '), '', 'and nothing beside them is');
   });
 };

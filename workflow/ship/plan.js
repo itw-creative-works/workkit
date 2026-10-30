@@ -4,7 +4,8 @@
 // and which are skipped and why (the rules and the lines: `skills/ship/SKILL.md`
 // Step 5). Members are read from their own package.json files, never through
 // `npm query .workspace`, which answers nothing before `npm install`. The
-// library release.js and publish.js require; publish.js does the publishing.
+// library release.js and publish.js require, with how both start npm and name
+// its end; publish.js does the publishing.
 //
 // Run from the repo root:
 //   workkit ship plan [--dir <root>]
@@ -15,6 +16,17 @@ const { isSemver } = require('./semver');
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'];
 const GLOB_RE = /[*?[]/;
+// On Windows npm is `npm.cmd`, which Node starts only through a shell; every argument
+// passed to it (a package name, a version, a flag, a workspace folder, which the release
+// step refuses when it has whitespace) has none, so the shell form is safe.
+const NPM_SHELL = process.platform === 'win32';
+
+/** How an npm call ended, for a line that names it: its exit code, or why it never had one. */
+const npmEnd = (res) => {
+  if (res.error) return `npm could not be run, ${res.error.code || res.error.message}`;
+  if (res.status === null) return `npm was killed by ${res.signal}`;
+  return `npm exited ${res.status}`;
+};
 
 /** A refusal: the plan cannot be made, and the message says why. */
 class PlanError extends Error {
@@ -224,4 +236,6 @@ if (require.main === module) {
   process.exitCode = report(process.argv.slice(2)).code;
 }
 
-module.exports = { plan, expandWorkspaces, PlanError, report };
+module.exports = {
+  plan, expandWorkspaces, PlanError, report, NPM_SHELL, npmEnd,
+};

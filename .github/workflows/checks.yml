@@ -14,19 +14,42 @@
 # the hooks) meets the same bar before merge.
 #
 # This repo also runs it on a push to main: the plugin ships the hooks that gate
-# everything else, so a red main must show without a pull request. A push that
-# changes only the CHANGELOG and the version files runs nothing (the work commit
-# before it already proved that code), and neither does a tag push.
+# everything else, so a red main must show without a pull request. A push whose
+# every change is the CHANGELOG or a version stamp (the commit gate's version-only
+# rule) runs no suite, since the work commit before it already proved that code;
+# a tag push runs nothing.
 name: checks
 
 on:
   pull_request:
   push:
     branches: [main]
-    paths-ignore: [CHANGELOG.md, .claude-plugin/plugin.json, packages/core/package.json]
 
 jobs:
+  scope:
+    # Whether the suite runs: always for a pull request; for a push unless it is a
+    # release stamp, which .github/scripts/release-push.sh answers.
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        if: github.event_name == 'push'
+      # The checkout is the pushed commit alone; the script needs <before> too, and
+      # a fetch that fails leaves it unreadable, which the script answers with run.
+      - id: scope
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != push ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            git fetch -q --depth=1 origin "$BEFORE" || true
+            bash .github/scripts/release-push.sh "$BEFORE" >> "$GITHUB_OUTPUT"
+          fi
   suite:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     # Ubuntu and Windows: the suites that need a provisioned Mac skip themselves
     # and say so, and a macOS runner bills at ten times the rate for no added
     # coverage. Windows runs the Git Bash spellings and the script shell's build.
@@ -68,11 +91,18 @@ jobs:
         run: npm test
   test:
     # The one check branch protection requires by name: a matrix job reports
-    # one check per leg, so this fans them in and fails unless every leg passed.
-    needs: suite
+    # one check per leg, so this fans them in and fails unless every leg passed,
+    # or the scope job passed and answered skip.
+    needs: [scope, suite]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: test "${{ needs.suite.result }}" = success
+      - env:
+          SUITE: ${{ needs.suite.result }}
+          SCOPE: ${{ needs.scope.result }}
+          RUN: ${{ needs.scope.outputs.run }}
+        run: test "$SUITE" = success || { test "$SCOPE" = success && test "$RUN" = false; }
   changelog:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main

@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// The ship's release commit in one command: the bump, the backfill, and the
-// move of every `[Unreleased]` entry not in `--keep` under a new version
-// section (`workflow/README.md`, the ship/release.js row). Every check passes
-// before a write, so a refusal leaves each file as it was; CRLF stays CRLF.
+// The ship's release commit in one command: the bump (through npm, so the
+// lockfile moves too), the backfill, and the move of every `[Unreleased]` entry
+// not in `--keep` under a new version section (`workflow/README.md`, the
+// ship/release.js row). Every check passes before a write; CRLF stays CRLF.
 //
 // Run from the repo root:
 //   workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const {
   ISSUE_LINK_RE, SECTION_RE, sectionKind, parseEntries,
 } = require('../changelog/lint');
@@ -17,7 +18,9 @@ const {
   repoSlug, commitsByIssue, authorHandle, fill, defaultRange,
 } = require('../changelog/changelog-links');
 const { isSemver } = require('./semver');
-const { expandWorkspaces, PlanError } = require('./plan');
+const {
+  expandWorkspaces, PlanError, NPM_SHELL, npmEnd,
+} = require('./plan');
 
 const USAGE = 'usage: workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
 // The files a repo keeps its version in, by path from the root: every one is in
@@ -51,33 +54,44 @@ const versionOf = (text, name) => {
 };
 
 /**
- * A version file with its version set to `version`, by text: only the value
- * inside the first `"version": "<old>"` changes.
+ * A version file's top-level version, refusing one already at `version`.
  * @param {string} text - the file as read
  * @param {string} version - the new version, already known to be semver
  * @param {string} name - the file's path from the root, for the messages
  * @returns {string|null} null when the file carries no top-level version
  */
-const bumpVersion = (text, version, name) => {
+const currentVersion = (text, version, name) => {
   const current = versionOf(text, name);
   if (typeof current !== 'string') return null;
   if (current === version) {
     throw new ReleaseError(`release: ${name} is already at ${version}; nothing was written.`);
   }
+  return current;
+};
+
+/**
+ * A version file npm does not know with its version set to `version`, by
+ * text: only the value inside the first `"version": "<current>"` changes.
+ * @param {string} text - the file as read
+ * @param {string} current - its version, from currentVersion
+ * @param {string} version - the new version
+ * @returns {string}
+ */
+const bumpVersion = (text, current, version) => {
   const escaped = current.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const line = new RegExp(`("version"\\s*:\\s*")${escaped}(")`);
   return text.replace(line, (_, open, close) => `${open}${version}${close}`);
 };
 
 /**
- * The lockstep members' bumps: every workspace member of the root package.json
- * whose version is `old`; a member at any other version moves on its own.
+ * The lockstep members: every workspace member of the root package.json whose
+ * version is `old`; a member at any other version moves on its own.
  * @param {string} root - the repo root
  * @param {string} old - the version the root's version files carried
- * @param {string} version - the new version
- * @returns {Array<{name: string, file: string, text: string}>}
+ * @returns {Array<{name: string, dir: string}>} each member's package.json and
+ *   folder, by path from the root
  */
-const memberBumps = (root, old, version) => {
+const lockstepMembers = (root, old) => {
   const rootFile = path.join(root, 'package.json');
   if (!fs.existsSync(rootFile)) return [];
   const { workspaces } = JSON.parse(fs.readFileSync(rootFile, 'utf8'));
@@ -89,14 +103,52 @@ const memberBumps = (root, old, version) => {
     if (!(err instanceof PlanError)) throw err;
     throw new ReleaseError(`release: the workspace members cannot be read (${err.message}); nothing was written.`);
   }
-  const bumps = [];
+  const members = [];
   for (const dir of dirs.sort()) {
     const file = path.join(dir, 'package.json');
     const name = path.relative(root, file).split(path.sep).join('/');
     const text = fs.readFileSync(file, 'utf8');
-    if (versionOf(text, name) === old) bumps.push({ name, file, text: bumpVersion(text, version, name) });
+    if (versionOf(text, name) !== old) continue;
+    const folder = path.posix.dirname(name);
+    if (/\s/.test(folder)) {
+      throw new ReleaseError(`release: workspace folder '${folder}' has whitespace, which npm's Windows shell start would split; nothing was written.`);
+    }
+    members.push({ name, dir: folder });
   }
-  return bumps;
+  return members;
+};
+
+/**
+ * Set the version through npm: package.json, each lockstep member's, and the
+ * lockfile's spots for each, with no commit and no tag. A workspaces bump ends
+ * in an install that syncs the lockfile; `--package-lock-only` keeps that
+ * install to the lockfile and node_modules untouched, and with no lockfile
+ * `--no-workspaces-update` skips it, so none is made. npm writes before its
+ * `version` script runs, so on any failure every file it may write is put back.
+ * @param {string} root - the repo root
+ * @param {string} version - the new version
+ * @param {object} bump - { withRoot: whether package.json carries a version, members: lockstepMembers' }
+ */
+const npmVersion = (root, version, { withRoot, members }) => {
+  const lockfile = path.join(root, 'package-lock.json');
+  const args = ['version', version, '--no-git-tag-version', '--package-lock-only', '--no-update-notifier'];
+  for (const m of members) args.push(`--workspace=${m.dir}`);
+  if (withRoot && members.length > 0) args.push('--include-workspace-root');
+  if (members.length > 0 && !fs.existsSync(lockfile)) args.push('--no-workspaces-update');
+  const saved = ['package.json', ...members.map((m) => m.name), 'package-lock.json'].map((name) => {
+    const file = path.join(root, name);
+    return { file, bytes: fs.existsSync(file) ? fs.readFileSync(file) : null };
+  });
+  const res = spawnSync('npm', args, {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: NPM_SHELL,
+  });
+  if (res.status === 0) return;
+  for (const { file, bytes } of saved) {
+    if (bytes === null) fs.rmSync(file, { force: true });
+    else fs.writeFileSync(file, bytes);
+  }
+  const said = (res.stderr || '').split('\n').map((l) => l.trim()).find(Boolean);
+  throw new ReleaseError(`release: npm ${args.join(' ')} failed (${npmEnd(res)}${said ? `: ${said}` : ''}); every file npm wrote was put back, and nothing else was written.`);
 };
 
 /** Does this line head the `[Unreleased]` section? */
@@ -202,21 +254,23 @@ const release = (root, { version, keep, dryRun, date }) => {
   if (!fs.existsSync(logFile)) {
     throw new ReleaseError(`release: no CHANGELOG.md in ${root}; nothing was written.`);
   }
-  const bumps = [];
-  let old;
+  const found = [];
   for (const name of VERSION_FILES) {
     const file = path.join(root, name);
     if (!fs.existsSync(file)) continue;
-    const before = fs.readFileSync(file, 'utf8');
-    const text = bumpVersion(before, version, name);
-    if (text === null) continue;
-    old ??= versionOf(before, name);
-    bumps.push({ name, file, text });
+    const text = fs.readFileSync(file, 'utf8');
+    const current = currentVersion(text, version, name);
+    if (current !== null) found.push({ name, file, text, current });
   }
-  if (bumps.length === 0) {
+  if (found.length === 0) {
     throw new ReleaseError(`release: neither ${VERSION_FILES.join(' nor ')} carries a version; nothing was written.`);
   }
-  bumps.push(...memberBumps(root, old, version));
+  // npm owns package.json and the lockfile; a version file it does not know is set by text.
+  const npm = { withRoot: found[0].name === 'package.json', members: lockstepMembers(root, found[0].current) };
+  const byNpm = npm.withRoot || npm.members.length > 0;
+  const byText = found.filter((f) => f.name !== 'package.json');
+  const bumped = [...found.map((f) => f.name), ...npm.members.map((m) => m.name)];
+  if (byNpm && fs.existsSync(path.join(root, 'package-lock.json'))) bumped.push('package-lock.json');
 
   const range = defaultRange(root);
   let byIssue;
@@ -246,12 +300,14 @@ const release = (root, { version, keep, dryRun, date }) => {
       .map((n) => `release: #${n} has no closing commit in ${range}; its entry moved without a commit link: add a "Fixes #${n}" trailer, or link it by hand.`),
   ];
 
+  // npm goes first: it is the write that can still fail, and then nothing else is written.
   if (!dryRun) {
-    for (const bump of bumps) fs.writeFileSync(bump.file, bump.text);
+    if (byNpm) npmVersion(root, version, npm);
+    for (const f of byText) fs.writeFileSync(f.file, bumpVersion(f.text, f.current, version));
     fs.writeFileSync(logFile, result.lines.join(eol));
   }
   return {
-    bumped: bumps.map((b) => b.name), moved: result.moved, kept: result.kept, warnings,
+    bumped, moved: result.moved, kept: result.kept, warnings,
   };
 };
 

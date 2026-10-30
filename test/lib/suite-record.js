@@ -2,8 +2,8 @@
 // path (and the package record's, the review marker's, the suite log's and the
 // lock's) under a workflow home's markers folder, the package record's lines, the working tree's hash
 // by the temp-index recipe, and the suite and package records planted as a green
-// `npm test` would leave them. Consumers: the suite-guard, commit-gate,
-// script-shell, proof-guard and _lib suites.
+// `npm test` would leave them. Consumers: the script-shell wrapper's suites
+// (script-shell, suite-hold), and the commit-gate, proof-guard and _lib suites.
 
 const crypto = require('crypto');
 const fs = require('fs');

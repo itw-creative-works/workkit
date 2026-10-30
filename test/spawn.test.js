@@ -1,6 +1,7 @@
 // Tests for packages/core/test/lib/spawn.js through the one entry: run() keeps both
 // streams and the exit, start() streams while its child runs and end() ends its
-// group, climbing INT, TERM, KILL only while the child lives, a deadline ends a
+// group, climbing INT, TERM, KILL only while the child lives, its stdin carries
+// the input given, else is empty, a deadline ends a
 // child that never exits, and endTree() ends a group, refuses a pid that is
 // not a positive integer and throws on a signal the system refuses.
 
@@ -65,6 +66,12 @@ const UNTIL_ZOMBIE = 'until ps -o stat= -p "$1" | grep -q Z; do :; done';
 
 // Exits 4 at once, on its own.
 const EXITS = 'process.exit(4);';
+
+// Writes all its stdin back to stdout, then exits 0 once stdin ends.
+const ECHOES = 'process.stdin.pipe(process.stdout);';
+
+// More than a pipe buffer holds, so a child that never reads leaves a write pending.
+const BIG_INPUT = 'x'.repeat(1 << 20);
 
 // A bound short enough that only a deadline can end the child first.
 const SHORT = 300;
@@ -236,6 +243,27 @@ const cases = async () => {
     } finally {
       endAll(grand);
     }
+  });
+
+  await test('start with input: the child reads the string on its stdin, then stdin ends', async () => {
+    const child = start(process.execPath, ['-e', ECHOES], { input: 'line one\nline two\n' });
+    const exit = await settle(child.done);
+    assertEq(exit?.status, 0, `the child exited once its stdin ended, got: ${JSON.stringify(exit)}`);
+    assertEq(child.stdout(), 'line one\nline two\n', 'the child echoed its input');
+  });
+
+  await test('start without input: the child sees an empty stdin at once, no hang', async () => {
+    const child = start(process.execPath, ['-e', ECHOES]);
+    const exit = await settle(child.done);
+    assertEq(exit?.status, 0, `the child exited on its own, got: ${JSON.stringify(exit)}`);
+    assertEq(exit.timedOut, false, 'no deadline ended it');
+    assertEq(child.stdout(), '', 'its stdin was empty');
+  });
+
+  await test('start with input a child exits without reading: done reports its exit, the unread write no crash', async () => {
+    const child = start(process.execPath, ['-e', EXITS], { input: BIG_INPUT });
+    const exit = await settle(child.done);
+    assertEq(exit?.status, 4, `the child's own exit status, got: ${JSON.stringify(exit)}`);
   });
 
   await test('a child that never spawned: end() resolves, done rejects with the spawn error, and the suite goes on', async () => {

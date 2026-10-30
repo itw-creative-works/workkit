@@ -208,6 +208,42 @@ const cases = async () => {
     assertEq(tree[CACHED], 'file module.exports = 9;\n', 'the ignored folder\'s module is copied as it is');
   });
 
+  // World `w` whose home's .workkit is the repo's dotfiles/.workkit, `ignore`
+  // its lines in .gitignore, settings.json tracked there.
+  const homeInRepo = (w, ignore) => {
+    w.write('.gitignore', `node_modules/\ndist/\n.env\n${ignore.join('\n')}\n`);
+    w.write(path.join('dotfiles', '.workkit', 'settings.json'), '{}\n');
+    w.git('add', '-A');
+    w.git('commit', '-q', '-m', 'home in the repo');
+    fs.symlinkSync(path.join(w.repo, 'dotfiles', '.workkit'), w.workflowHome, 'dir');
+    return w;
+  };
+  const homeKeys = (tree, dir) => Object.keys(tree).filter((k) => k.startsWith(path.join('dotfiles', '.workkit', dir))).join(',');
+
+  await test('a home whose .workkit links into the repo: the take leaves out every path git ignores there and copies the rest', () => {
+    const w = homeInRepo(mkWorld(), ['dotfiles/.workkit/*', '!dotfiles/.workkit/settings.json', '!dotfiles/.workkit/notes.md']);
+    w.write(path.join('dotfiles', '.workkit', 'tower', 'README.md'), 'the home clone\n');
+    w.write(path.join('dotfiles', '.workkit', 'hooks.log'), 'a hook line\n');
+    w.write(path.join('dotfiles', '.workkit', 'identity', 'login.json'), '{}\n');
+    w.write(path.join('dotfiles', '.workkit', 'notes.md'), 'not ignored\n');
+    w.write(path.join('tower', 'README.md'), 'the repo\'s own\n');
+    take(w, 5);
+    const tree = takenTree(w);
+    for (const dir of ['markers', 'tower', 'hooks.log', 'identity']) assertEq(homeKeys(tree, dir), '', `no ${dir} path in the snapshot`);
+    assertEq(tree[path.join('dotfiles', '.workkit', 'settings.json')], 'file {}\n', 'the tracked file is copied');
+    assertEq(tree[path.join('dotfiles', '.workkit', 'notes.md')], 'file not ignored\n', 'the untracked file git does not ignore is copied');
+    assertEq(tree[path.join('tower', 'README.md')], 'file the repo\'s own\n', 'the repo\'s own tower folder is copied');
+  });
+
+  await test('a home whose .workkit links into a repo that ignores nothing there: the take still leaves the markers folder out', () => {
+    const w = homeInRepo(mkWorld(), []);
+    w.write(path.join('dotfiles', '.workkit', 'hooks.log'), 'a hook line\n');
+    take(w, 5);
+    const tree = takenTree(w);
+    assertEq(homeKeys(tree, 'markers'), '', 'no markers path in the snapshot');
+    assertEq(tree[path.join('dotfiles', '.workkit', 'hooks.log')], 'file a hook line\n', 'a file git does not ignore is copied');
+  });
+
   await test('ports "a second claim while the snapshot is live adds its number and leaves the tree alone": stale answers live, add records the number', () => {
     const w = mkWorld();
     take(w, 5);

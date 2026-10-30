@@ -5,6 +5,7 @@
 # `npm test`, run detached, writes the suite record; every other green `test`
 # event (narrowed anywhere, or a nested package's bare run) runs in the
 # foreground and writes the package record; every other script is plain sh.
+# A bare root run first asks the full-suite hold (lib/hold.sh).
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
@@ -60,8 +61,14 @@ load_libs() {
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
   # shellcheck source=./lib/platform.sh
   . "$SCRIPT_DIR/lib/platform.sh"
+  # shellcheck source=./lib/participation.sh
+  . "$SCRIPT_DIR/lib/participation.sh"
+  # shellcheck source=./lib/slug.sh
+  . "$SCRIPT_DIR/lib/slug.sh"
   # shellcheck source=./lib/suite.sh
   . "$SCRIPT_DIR/lib/suite.sh"
+  # shellcheck source=./lib/hold.sh
+  . "$SCRIPT_DIR/lib/hold.sh"
   # shellcheck source=./lib/changelog.sh
   . "$SCRIPT_DIR/lib/changelog.sh"
   # shellcheck source=./lib/detach.sh
@@ -96,6 +103,10 @@ main() {
   if [ "$rel" != . ] || [ "${2:-}" != "${npm_lifecycle_script:-}" ]; then
     recorded_run "$root" "$rel" "$@"
   fi
+
+  # The full-suite hold (lib/hold.sh) before anything else the root run does: a
+  # refusal runs no suite and writes no record; a root `pretest` has already run.
+  wk_suite_hold "$root" wk_tree_hash || exit 1
 
   # The gate's cheap check first, so a bad CHANGELOG entry costs a second, not
   # a suite: every tracked CHANGELOG.md the working tree modifies. -z keeps a

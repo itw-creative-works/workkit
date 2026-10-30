@@ -191,6 +191,27 @@ const cases = async () => {
     }
   });
 
+  await test('a clone step removal that fails in two lines is two indented checks warnings, none at column 0 and none blank', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    writePackage(repo, true);
+    writeChecks(repo, withCloneStep(template()));
+    // Only the removal's awk call sets CLONE; every other awk runs for real.
+    fs.writeFileSync(path.join(stub.binDir, 'awk'), [
+      '#!/bin/sh',
+      'if [ -n "$CLONE" ]; then printf \'awk: write failed\\n\\nretry later\\n\' >&2; exit 2; fi',
+      'exec /usr/bin/awk "$@"',
+    ].join('\n'), { mode: 0o755 });
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    const lines = output.split('\n');
+    assert(lines.some((l) => /^ +⚠ checks: could not remove the kit clone step from \.github\/workflows\/checks\.yml: awk: write failed$/.test(l)),
+      `the first line is an indented checks warning, got: ${output}`);
+    assert(lines.some((l) => /^ +⚠ checks: retry later$/.test(l)), `the second line is an indented checks warning of its own, got: ${output}`);
+    assert(!lines.some((l) => /^retry later/.test(l)), `no line lands at column 0, got: ${output}`);
+    assert(!lines.some((l) => /⚠ checks: ?$/.test(l)), `the blank line is no empty warning, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
   await test('a repo with no checks.yml gets the template whole', () => {
     const repo = makeRepo();
     const stub = makeGhStub();

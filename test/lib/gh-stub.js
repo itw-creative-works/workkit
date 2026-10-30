@@ -1,6 +1,7 @@
-// The PATH-shim `gh` the workflow-snapshot and identity shim suites run against:
-// a stub answering `issue view` (and `issue list`) from a fixture, and `gh api`
-// from route fixtures, recording each call, its directory and the env names
+// The PATH-shim `gh` the workflow-snapshot, suite-hold and identity shim suites
+// run against: a stub answering `issue view` (and `issue list`, one answer or one
+// per repo) from a fixture, and `gh api` from route fixtures, recording each
+// call, its directory and the env names
 // asked for; the world with no `gh` at all. Run as a program, it is the stub's
 // `gh api` half.
 
@@ -15,18 +16,21 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 
 /**
  * A `gh` on its own bin folder answering `issue view <N> --json <field>` with `{ <field>: issues[N] }`
- * (an unknown number exits 1) and, given `list`, every `issue list` with that array whatever its flags.
+ * (an unknown number exits 1) and, given `list`, every `issue list` with that array whatever its flags;
+ * given `lists`, an `issue list` answers per repo instead.
  * @param {object} [opts]
  * @param {string} [opts.field] - the JSON field the fixture fills (`comments`, `body`)
  * @param {object} [opts.issues] - issue number to that field's value
  * @param {object[]} [opts.list] - the `issue list` answer, shaped like gh's (`[{ number, labels: [{ name }] }]`)
+ * @param {object} [opts.lists] - `issue list` answers by the repo asked about (`-R`/`--repo`, else the folder's
+ *   origin), keyed by its last path segment (`repo` for FIXTURE_ORIGIN); `[]` for any other repo
  * @param {boolean} [opts.fails] - every view (and list) exits 1 with a line on stderr, the way an offline gh does
  * @param {string[]} [opts.env] - variable names each call records, one JSON line per call, read by `ghEnvs`
  * @param {object} [opts.api] - `gh api` answers by `<METHOD> <route>`, each `{ status, body }` or `{ pages }` (`answerApi`)
  * @returns {{binDir: string, logFile: string, cwdFile: string, envFile: string, requestFile: string, dir: string}}
  */
 const makeGhStub = ({
-  field, issues = {}, list = null, fails = false, env = [], api = null,
+  field, issues = {}, list = null, lists = null, fails = false, env = [], api = null,
 } = {}) => {
   const dir = mkTmp('gh-stub-');
   const logFile = path.join(dir, 'gh.log');
@@ -41,6 +45,9 @@ const makeGhStub = ({
   const envFile = path.join(dir, 'env.jsonl');
   const listFile = path.join(dir, 'list.json');
   if (list) fs.writeFileSync(listFile, JSON.stringify(list));
+  const listsDir = path.join(dir, 'lists');
+  fs.mkdirSync(listsDir, { recursive: true });
+  for (const [name, value] of Object.entries(lists || {})) fs.writeFileSync(path.join(listsDir, `${name}.json`), JSON.stringify(value));
   const apiFile = path.join(dir, 'api.json');
   const requestFile = path.join(dir, 'requests.jsonl');
   if (api) fs.writeFileSync(apiFile, JSON.stringify(api));
@@ -68,6 +75,22 @@ const makeGhStub = ({
     ...(list ? [
       'if [[ "$1 $2" == "issue list" ]]; then',
       ...(fails ? offline : [`  cat "${shellPath(listFile)}"`, '  exit 0']),
+      'fi',
+    ] : []),
+    ...(lists ? [
+      'if [[ "$1 $2" == "issue list" ]]; then',
+      ...(fails ? offline : [
+        "  repo=''; prev=''",
+        '  for a in "$@"; do',
+        '    case "$prev" in -R|--repo) repo=$a ;; esac',
+        '    case "$a" in --repo=*) repo=${a#--repo=} ;; esac',
+        '    prev=$a',
+        '  done',
+        '  [[ -n "$repo" ]] || repo=$(git remote get-url origin 2>/dev/null)',
+        '  name=${repo%.git}; name=${name##*/}',
+        `  cat "${shellPath(listsDir)}/$name.json" 2>/dev/null || echo '[]'`,
+        '  exit 0',
+      ]),
       'fi',
     ] : []),
     'exit 0',

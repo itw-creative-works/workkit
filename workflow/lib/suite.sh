@@ -122,9 +122,10 @@ wk_suite_index_tree() {
   git -C "$1" write-tree 2>/dev/null
 }
 
-# wk_suite_proved <repo_root> <tree>: the marker exists and its first line is <tree>. The
-# guards read it through its module twin, suiteProved in hooks/mods/suite.js:
-# suite-guard with the working tree's hash, commit-gate with the real index's id.
+# wk_suite_proved <repo_root> <tree>: the marker exists and its first line is <tree>.
+# Consumer: wk_suite_hold (lib/hold.sh). The guards read it through its module
+# twin, suiteProved in hooks/mods/suite.js: commit-gate with the real index's
+# id, proof-guard with the working tree's hash.
 wk_suite_proved() { _wk_record_holds wk_suite_marker_path "$1" "$2"; }
 
 # wk_pkg_proved <repo_root> <tree> <pkg>: the package record's first line is

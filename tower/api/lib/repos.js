@@ -137,7 +137,7 @@ const discoverRepos = (opts = {}) => {
   // The home repo, which the roster never carries: known by path, and listed
   // only when not declined and its origin matches `site.repo`, never a foreign
   // checkout parked there. The path is in git's spelling, so both compares
-  // below match the roster keys on Windows.
+  // below match the roster keys on Windows. wk_tower_dir's rule.
   const tower = gitPath(path.join(workflowHome, 'tower'));
   const towerDeclined = !!registered && typeof registered === 'object' && registered[tower] === 'declined';
   if (!towerDeclined && !found.some((r) => r.path === tower) && fs.existsSync(path.join(tower, '.git'))) {

@@ -58,6 +58,15 @@ const cases = async () => {
     assertEq(pub.state, 'open', 'the public issue stays open');
   });
 
+  await test('intake names the reporter as a bare mention: Reported by @octo on the public repo#N, no backticks', () => {
+    const world = mkPublicWorld({ issues: { public: [{ ...REPORT, author: 'octo' }], private: [PRIVATE_OPEN] } });
+    const res = world.run(['intake']);
+    assertEq(res.code, 0, `intake exits 0 (${said(res)})`);
+    const [issue] = madeIssues(world);
+    assert(issue.body.split('\n').includes(`Reported by @octo on ${PUBLIC}#44:`),
+      `the body carries the bare mention line, got: ${issue.body}`);
+  });
+
   await test('intake skips a public issue that already has a status: label', () => {
     const labelled = {
       number: 45, title: 'Already routed', author: 'someone', body: 'x', labels: ['status:building'],

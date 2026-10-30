@@ -132,8 +132,8 @@ const cases = async () => {
   await test('hook_jq hands back jq\'s own exit status, never the strip\'s', () => {
     // A caller that asks a question (`jq -e`, `jq empty`) reads the status and
     // nothing else, and a wrapper ending in a pipe would answer every one of
-    // them yes. hook_issues_building in hooks/lib/snapshot.sh leans on it: a
-    // failed read there is its `|| return 2`.
+    // them yes. wk_issues_building in workflow/lib/hold.sh leans on the engine's
+    // wk_jq status this answers through: a failed read there is its `|| return 2`.
     const dir = crlfWorld();
     const env = { PATH: systemPathWith(dir) };
     const ask = (json) => runLib(`printf '%s' '${json}' | hook_jq -e '.v' >/dev/null; printf '%s' "$?"`, env).stdout;

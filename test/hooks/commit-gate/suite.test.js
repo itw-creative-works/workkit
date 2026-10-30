@@ -64,6 +64,27 @@ const mkNestedPluginRepo = () => {
   return r;
 };
 
+// A workspaces lockfile as npm writes one: the version at the top, in the root
+// entry and in the member's, beside a dependency's entry; `dep` overrides that entry's version.
+const lockfile = (version, dep = '4.17.21') => `${JSON.stringify({
+  name: 'fixture',
+  version,
+  lockfileVersion: 3,
+  requires: true,
+  packages: {
+    '': { name: 'fixture', version, workspaces: ['sub'] },
+    'node_modules/@fixture/sub': { resolved: 'sub', link: true },
+    'node_modules/lodash': { version: dep },
+    sub: { name: '@fixture/sub', version },
+  },
+}, null, 2)}\n`;
+const mkLockRepo = () => {
+  const r = mkReleaseRepo();
+  stage(r, 'package-lock.json', lockfile('1.0.0'));
+  commit(r);
+  return r;
+};
+
 // A code commit, reviewed, everything staged.
 const codeCommit = () => {
   const r = mkReleaseRepo();
@@ -199,6 +220,22 @@ const cases = async () => {
     const r = mkNestedPluginRepo();
     stage(r, NESTED_MANIFEST, manifest('1.0.1', { homepage: 'https://example.com' }));
     await gatesAsCode(r);
+  });
+
+  await test('a release commit whose lockfile moves only its version spots: no record required', async () => {
+    const r = mkLockRepo();
+    stage(r, 'package.json', pkg('1.0.1'));
+    stage(r, 'package-lock.json', lockfile('1.0.1'));
+    recordNotRequired(await judge(r, 'git commit -m "chore(release): 1.0.1"'), r);
+  });
+
+  await test('a lockfile whose dependency entry moves beside the version spots gates as code', async () => {
+    const r = mkLockRepo();
+    stage(r, 'package.json', pkg('1.0.1'));
+    stage(r, 'package-lock.json', lockfile('1.0.1', '4.17.22'));
+    blocks(await judge(r, 'git commit -m "chore(release): 1.0.1"'), T.noReview, 'a moved dependency is code');
+    touchMarker(r);
+    recordRequired(await judge(r, 'git commit -m "chore(release): 1.0.1"'), r);
   });
 
   group('commit-gate: the suite record');

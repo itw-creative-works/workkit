@@ -171,7 +171,7 @@ sweep_public_mirror() {
   err="$(mktemp)"
   out="$(node "$SCRIPT_DIR/public/mirror.js" --all 2>"$err")" || true
   while IFS= read -r line; do [[ -n "$line" ]] && wk_ok "$line"; done <<<"$out"
-  while IFS= read -r line; do [[ -n "$line" ]] && wk_warn "$line"; done <"$err"
+  wk_warn_lines public "$(<"$err")"
   rm -f "$err"
   return 0
 }

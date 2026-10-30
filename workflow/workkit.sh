@@ -68,6 +68,7 @@ if ! declare -f wk_ok >/dev/null 2>&1; then
   wk_info()  { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }
   wk_warn()  { printf '%s\n' "$1" >&2; }
   wk_error() { printf '%s\n' "$1" >&2; }
+  wk_warn_lines() { printf '%s\n' "$2" >&2; }
   wk_title() { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }
   wk_section() { [[ "$QUIET" -eq 1 ]] || printf '\n%s\n' "$1"; }
   wk_done()  { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$1"; }

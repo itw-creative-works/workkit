@@ -8,18 +8,7 @@
 //   workkit ship publish [--dir <root>]
 
 const { spawnSync } = require('child_process');
-const { report } = require('./plan');
-
-// On Windows npm is `npm.cmd`, which Node starts only through a shell; every argument
-// passed here (a package name, a version, a flag) has no whitespace, so the shell form is safe.
-const NPM_SHELL = process.platform === 'win32';
-
-/** How an npm call ended, for a line that names it: its exit code, or why it never had one. */
-const npmEnd = (res) => {
-  if (res.error) return `npm could not be run, ${res.error.code || res.error.message}`;
-  if (res.status === null) return `npm was killed by ${res.signal}`;
-  return `npm exited ${res.status}`;
-};
+const { report, NPM_SHELL, npmEnd } = require('./plan');
 
 /**
  * Is `name@version` already on the registry? The `safety:release-taken` hook's

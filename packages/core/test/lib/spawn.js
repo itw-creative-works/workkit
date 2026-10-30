@@ -98,13 +98,14 @@ export const run = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE } = 
  * group, else the child alone; on Windows one `taskkill` tree end, which reaches no grandchild once a detached leader
  * has exited. A signal off the ladder rejects; a child that never spawned ends at once, `done` rejecting with the error.
  * A refused rung rejects `end: signal refused for pid <N> (EPERM)`; alive END_GRACE after SIGKILL, `end: pid <N> survived SIGKILL`.
+ * With `input`, stdin is a pipe the string is written to, then closed; without it, stdin is ignored.
  * @param {string} cmd
  * @param {string[]} args
- * @param {{cwd?: string, env?: object, deadline?: number, detached?: boolean}} [opts]
+ * @param {{cwd?: string, env?: object, input?: string, deadline?: number, detached?: boolean}} [opts]
  * @returns {{child: object, pid: number, output: Function, stdout: Function, stderr: Function, done: Promise, end: Function}}
  */
-export const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = false } = {}) => {
-  const child = spawn(cmd, args, { cwd, env, detached, stdio: ['ignore', 'pipe', 'pipe'] });
+export const start = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE, detached = false } = {}) => {
+  const child = spawn(cmd, args, { cwd, env, detached, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
   let all = '';
@@ -129,6 +130,12 @@ export const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached
   });
   const { promise: done, resolve: settleDone, reject: failDone } = Promise.withResolvers();
   child.once('error', failDone);
+  if (input !== undefined) {
+    // A child that exits without reading it all leaves the write unfinished: its exit answers, the broken pipe
+    // (EPIPE, or EOF on Windows) does not.
+    child.stdin.on('error', (error) => { if (error.code !== 'EPIPE' && error.code !== 'EOF') failDone(error); });
+    child.stdin.end(input);
+  }
   child.once('close', () => settleDone({ ...exit, timedOut }));
   // `done` still rejects for whoever awaits it; a caller that only awaits
   // `end()` must not die of the unhandled rejection.

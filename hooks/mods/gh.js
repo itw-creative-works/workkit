@@ -23,7 +23,7 @@ export async function issueView(run, n, fields, { repo = '', ...init } = {}) {
 /**
  * `gh issue list [--repo <repo>] --state open --label status:building`, every
  * one up to gh's 1000 with its labels, the list `issuesBuilding` reads. Its
- * argv changes together with hook_issues_building in hooks/lib/snapshot.sh.
+ * argv changes together with wk_issues_building in workflow/lib/hold.sh.
  * @param {function} run runs `(argv, init)`, resolving `{ exitCode, stdout }`
  * @param {{repo?: string, cwd?: string}} [init] the repo it names ('' for the folder's), and the run's options
  * @returns {Promise<string|null>} gh's JSON text, null when gh could not answer

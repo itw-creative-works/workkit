@@ -28,13 +28,16 @@ const block = (lines, key, indent) => {
   return at === -1 ? null : [lines[at], ...childrenOf(lines, at)];
 };
 
+// The text after a key's colon on its own line, its comment stripped.
+const inlineValue = (keyBlock) => keyBlock[0].replace(/\s#.*$/, '').split(':').slice(1).join(':').trim();
+
 // A list value in either YAML spelling, `key: [a, b]` or `- a` lines below it.
 const listValue = (keyBlock) => {
-  const inline = keyBlock[0].replace(/\s#.*$/, '').split(':').slice(1).join(':').trim();
+  const inline = inlineValue(keyBlock);
   if (inline.startsWith('[')) {
     return inline.replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean);
   }
   return keyBlock.slice(1).filter(isContent).map((line) => unquote(line.trim().replace(/^- /, '')));
 };
 
-module.exports = { indentOf, isComment, isContent, childrenOf, block, listValue };
+module.exports = { indentOf, isComment, isContent, childrenOf, block, inlineValue, listValue };

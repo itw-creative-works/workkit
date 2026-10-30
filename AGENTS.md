@@ -14,10 +14,11 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
 ├── .github/workflows/    # checks.yml (the suite, every pull request and every push to main but a release-only one) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
+├── .github/scripts/      # release-push.sh (checks.yml's scope job: whether a push is a release stamp only)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
-│   ├── register.js       # the hooks module: the thirty in-process hooks, the one file that touches `$`
+│   ├── register.js       # the hooks module: the twenty-nine in-process hooks, the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
-│   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage,proof}/, prove.sh and the snapshot entry, never a hook)
+│   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage,proof}/, prove.sh, the snapshot entry and .github/scripts/release-push.sh, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
 │   └── manager/          # resources/ladder.json (the tier SSOT)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
@@ -43,11 +44,11 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 ## Hooks
 
-All thirty run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session. Settings and the hooks log name a hook by `prefix:name`.
+All twenty-nine run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session. Settings and the hooks log name a hook by `prefix:name`.
 
 A repo that has not opted in gets none of the hooks: the module's gate stands every one down there but the setup reminder, the restart notice and the secrets guard (`docs/hooks.md` § Where every hook stands down).
 
-The index of all thirty and what each one does: `docs/hooks.md` § The hooks module.
+The index of all twenty-nine and what each one does: `docs/hooks.md` § The hooks module.
 
 ## Agents
 
@@ -116,7 +117,7 @@ A world built the same way for every case has one home too: `seeded(build)` in t
 
 A case only one platform can answer names its skip through the harness's `skip()`. On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree.
 
-The Windows lane runs in CI: `checks.yml` runs the suite on Linux and Windows for every pull request and every push to `main`, except a push that changes only `CHANGELOG.md` and `.claude-plugin/plugin.json`; a tag push runs nothing.
+The Windows lane runs in CI: `checks.yml` runs the suite on Linux and Windows for every pull request and every push to `main`, except a release push, whose every change is the CHANGELOG or a version stamp by the commit gate's version-only rule (`.github/scripts/release-push.sh` decides it, so a dependency change in the lockfile still runs); a tag push runs nothing.
 
 Lanes per layer (`docs/project-state.md` § The proof):
 - Unit: a module called directly.

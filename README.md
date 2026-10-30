@@ -24,7 +24,7 @@ When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the P
 Setup also links a `gh` shim there: inside a Claude session on your machine it posts the agent's issue bookkeeping as `workkit-agent[bot]`, in a cloud session it runs the kit's verbs through REST as the signed-in account, and everywhere else `gh` is yours as before. For that you sign in once per machine (setup asks, opens GitHub in your browser and finishes the sign-in itself; `workkit setup --login` does it again, and a bookkeeping call at a terminal signs you in itself), and the App must be installed once per account or org on the repos workkit works in, from <https://github.com/apps/workkit-agent> (setup offers that page for the repo you are standing in, and `workkit setup --bot` offers it alone); without either, the agent's bookkeeping stops and tells you which ([docs/setup.md § The bot identity](docs/setup.md#the-bot-identity)).
 `workkit doctor` shows what is set up, and `workkit help` lists every command.
 Start a new Claude Code session so the plugin loads.
-Setup adds the kit's allow rules, `Bash(workkit ship:*)`, `Bash(workkit review:*)` and `Bash(npm publish:*)`, to `permissions.allow` in your `~/.claude/settings.json`, so auto mode does not block the commands a ship or a review runs, `workkit review mark` among them; it adds only the missing ones and leaves the rest of the file as it is, and `workkit doctor` names any that goes missing. The skills also run `gh issue ...` often; to skip most of those prompts, add `Bash(gh issue *)` there yourself.
+Setup adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in your `~/.claude/settings.json`, so auto mode does not block the commands a ship or a review runs, `workkit review mark` among them; it adds only the missing ones and leaves the rest of the file as it is, and `workkit doctor` names any that goes missing. The skills also run `gh issue ...` often; to skip most of those prompts, add `Bash(gh issue *)` there yourself.
 
 To work on workkit itself, install from a clone instead; the clone then outranks the plugin copy:
 
@@ -83,7 +83,7 @@ The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to
 
 | Part | Count | What it does |
 |---|---|---|
-| [Hooks](docs/hooks.md) | 30 | Run by themselves: at session start, before edits and commits, and when a reply ends. All of them run inside Claude Code as one module |
+| [Hooks](docs/hooks.md) | 29 | Run by themselves: at session start, before edits and commits, and when a reply ends. All of them run inside Claude Code as one module |
 | [Agents](docs/agents.md) | 5 | The crew your chat delegates to, each briefed from a role template in [`briefs/`](briefs/) |
 | Skills | 9 | Procedures Claude follows when your words match, or when you type `/workkit:<name>` |
 | [Dashboard](tower/README.md) | 7 pages | `workkit tower` opens a local view of every board, the running agents, token spend, and repo health |

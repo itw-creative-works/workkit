@@ -21,6 +21,17 @@ export function settingsOptedIn(text) {
 }
 
 /**
+ * Whether the repo at a root opted in: its `.workkit/settings.json` judged by
+ * settingsOptedIn.
+ * @param {string} root the repo root
+ * @param {function} read async, a file's text or null
+ * @returns {Promise<boolean>}
+ */
+export async function rootOptedIn(root, read) {
+  return settingsOptedIn(await read(`${root}/.workkit/settings.json`));
+}
+
+/**
  * Whether a hook runs whatever the repo decided.
  * @param {string} hook the hook as settings name it (`workflow:standards`)
  * @returns {boolean}

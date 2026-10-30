@@ -80,14 +80,14 @@ export function isDocPath(path) {
 }
 
 /**
- * Whether a path is a version manifest, a package.json or a
- * .claude-plugin/plugin.json at any depth, which a version-only bump keeps out
- * of the code a commit carries.
+ * Whether a path is a version manifest, a package.json, its package-lock.json
+ * or a .claude-plugin/plugin.json at any depth, which a version-only bump
+ * keeps out of the code a commit carries.
  * @param {string} path a repo-relative path
  * @returns {boolean}
  */
 export function isManifest(path) {
-  return /(^|\/)package\.json$/.test(path) || /(^|\/)\.claude-plugin\/plugin\.json$/.test(path);
+  return /(^|\/)package(-lock)?\.json$/.test(path) || /(^|\/)\.claude-plugin\/plugin\.json$/.test(path);
 }
 
 // A value as text with every object's keys sorted, so two parses compare whole.
@@ -104,6 +104,15 @@ const parsedObject = (text) => {
   return isPlain(value) ? value : null;
 };
 
+// `strip` over the object, and over a lockfile's other version spots: each
+// local package's entry (the root, a workspace member), never a dependency's.
+function stamps(object, strip) {
+  const top = strip(object);
+  if (object.lockfileVersion === undefined || !isPlain(object.packages)) return top;
+  const local = (key, entry) => isPlain(entry) && !key.split('/').includes('node_modules');
+  return { ...top, packages: Object.fromEntries(Object.entries(object.packages).map(([key, entry]) => [key, local(key, entry) ? strip(entry) : entry])) };
+}
+
 // The object less its version, every dependency pin equal to that version marked as moving with it.
 function lockstep(object) {
   const { version = null, ...rest } = object;
@@ -116,8 +125,8 @@ function lockstep(object) {
 
 /**
  * Whether two texts of one JSON file differ only in `version`, or in it and
- * the exact dependency pins equal to it on each side. Text that does not parse
- * as an object is a no.
+ * the exact dependency pins equal to it on each side; in a lockfile, also in
+ * each local package entry's. Text that does not parse as an object is a no.
  * Its shell twin is hook_version_only_change in hooks/lib/tree.sh.
  * @param {string} head the file at HEAD
  * @param {string} copy the bytes the commit carries
@@ -127,8 +136,9 @@ export function versionOnly(head, copy) {
   const a = parsedObject(head);
   const b = parsedObject(copy);
   if (!a || !b) return false;
-  const bare = ({ version, ...rest }) => canonical(rest);
-  return bare(a) === bare(b) || canonical(lockstep(a)) === canonical(lockstep(b));
+  const bare = ({ version, ...rest }) => rest;
+  const same = (strip) => canonical(stamps(a, strip)) === canonical(stamps(b, strip));
+  return same(bare) || same(lockstep);
 }
 
 /**

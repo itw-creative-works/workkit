@@ -141,8 +141,8 @@ REPO_SETTINGS="$WORKKIT_DIR/settings.json"
 
 # The `home` state, the tower clone, known by path. Compared by physical path
 # (cd + pwd -P, since realpath is not on every machine), so a symlinked home
-# directory is still one folder. lib.sh owns the address.
-HOME_CLONE_DIR="${WK_HOME_DIR:-$WK_USER_DIR/tower}"
+# directory is still one folder. wk_tower_dir owns the address.
+HOME_CLONE_DIR="$WK_HOME_DIR"
 
 seed_user_settings
 

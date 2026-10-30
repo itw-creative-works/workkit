@@ -17,15 +17,28 @@ hook_working_paths() {
   return "$rc"
 }
 
-# hook_version_only_change <root> <path>: whether <path>, tracked in HEAD,
-# differs from HEAD's copy only in its top-level "version", both parsed as JSON
-# objects; untracked, missing or unparsable is a no. The JS twin is versionOnly
-# in hooks/mods/commit-gate/checks.js, which also lets lockstep pins move.
+# hook_is_manifest <path>: whether <path> is a version file a release stamps
+# (package.json, package-lock.json, .claude-plugin/plugin.json, at any depth).
+# The JS twin is isManifest in hooks/mods/commit-gate/checks.js.
+hook_is_manifest() {
+  [[ "$1" =~ (^|/)package(-lock)?\.json$ || "$1" =~ (^|/)\.claude-plugin/plugin\.json$ ]]
+}
+
+# hook_version_only_change <root> <path>: whether <path>, tracked in HEAD, differs
+# from HEAD's copy only in its top-level "version" (a lockfile's local package entries'
+# too), both JSON objects; untracked, missing or unparsable is a no. The JS twin is
+# versionOnly in hooks/mods/commit-gate/checks.js, which also lets lockstep pins move.
 hook_version_only_change() {
   [ -f "$1/$2" ] || return 1
   git -C "$1" rev-parse -q --verify "HEAD:$2" >/dev/null 2>&1 || return 1
   git -C "$1" show "HEAD:$2" 2>/dev/null \
-    | hook_jq -e -s --slurpfile copy "$1/$2" \
-      '. as $head | ($head + $copy | length == 2 and all(type == "object"))
-        and ($head[0] | del(.version)) == ($copy[0] | del(.version))' >/dev/null 2>&1
+    | hook_jq -e -s --slurpfile copy "$1/$2" '
+      def unstamped: del(.version)
+        | if has("lockfileVersion") and (.packages | type) == "object" then
+            .packages |= with_entries(
+              if (.value | type) == "object" and (.key | split("/") | index("node_modules") | not)
+              then .value |= del(.version) else . end)
+          else . end;
+      . as $head | ($head + $copy | length == 2 and all(type == "object"))
+        and ($head[0] | unstamped) == ($copy[0] | unstamped)' >/dev/null 2>&1
 }

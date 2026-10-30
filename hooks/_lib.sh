@@ -1,7 +1,7 @@
 #!/bin/bash
 # hooks/_lib.sh: the hook library's entry, sourced and never executed, by the
 # shell that still needs it: workflow/{review,triage,proof}/*.sh, workflow/prove.sh, snapshot.sh's
-# entry and the dotfiles hooks. The constants, the platform seam, hook_jq and the engine sources live
+# entry, .github/scripts/release-push.sh and the dotfiles hooks. The constants, the platform seam, hook_jq and the engine sources live
 # here; the helper groups live one file per concern under hooks/lib/, sourced
 # at the foot. Add a helper only with a second named consumer.
 
@@ -62,6 +62,11 @@ hook_sha1() { wk_sha1 "$@"; }
 # engine names for the same reason; workflow/prove.sh reads them through here.
 # shellcheck source=../workflow/lib/suite.sh
 . "$HOOK_LIB_DIR/../workflow/lib/suite.sh"
+
+# The full-suite hold (wk_suite_hold) and the building list it reads
+# (wk_issues_building), which prove.sh and the snapshot read through here.
+# shellcheck source=../workflow/lib/hold.sh
+. "$HOOK_LIB_DIR/../workflow/lib/hold.sh"
 
 # The helper groups: each defines functions and sets nothing, so sourcing runs
 # nothing and every name they read is defined above.

@@ -69,6 +69,19 @@ wk_info()  { if [[ "${QUIET:-0}" != '1' ]]; then wk_out wk_say '›' "$WK_C_CYAN
 wk_warn()  { wk_say '⚠' "$WK_C_YELLOW" "$WK_C_BOLD$WK_C_YELLOW" "$WK_C_YELLOW" "$1" >&2; return 0; }
 wk_error() { wk_say '✖' "$WK_C_RED" "$WK_C_BOLD$WK_C_RED" "$WK_C_RED" "$1" >&2; return 0; }
 
+# Warns each non-blank line of <text> on its own, prefixed `<topic>: ` unless it
+# has it, so a tool's later lines sit under the section's indent, not at column 0.
+# Usage: wk_warn_lines <topic> <text>
+wk_warn_lines() {
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" == "$1":* ]] || line="$1: $line"
+    wk_warn "$line"
+  done <<<"$2"
+  return 0
+}
+
 # The indent is set whatever QUIET says: it is the shape of the run, not output.
 wk_title() {
   WK_LOG_INDENT='  '

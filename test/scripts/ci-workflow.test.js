@@ -1,12 +1,13 @@
 /* eslint-disable no-console */
-// Tests for .github/workflows/checks.yml, read as text: a push runs the suite
-// only on main and never for a push touching only the release files, and a
-// pull request still runs it.
+// Tests for .github/workflows/checks.yml, read as text: a push runs on main
+// and a pull request still runs, and the jobs are wired so the scope job's
+// run answer gates the suite and the changelog check, while the required
+// `test` job waits on both scope and suite.
 
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
-const { indentOf, isContent, block, listValue } = require('../lib/workflow-yaml');
+const { indentOf, isContent, block, inlineValue, listValue } = require('../lib/workflow-yaml');
 
 const WORKFLOW = path.join(__dirname, '..', '..', '.github', 'workflows', 'checks.yml');
 
@@ -16,10 +17,16 @@ const childIndent = (keyBlock) => {
   return first ? indentOf(first) : -1;
 };
 
+// `needs:` as a list, whether written as one name or as a list.
+const needsOf = (keyBlock) => {
+  const one = inlineValue(keyBlock);
+  return one && !one.startsWith('[') ? [one] : listValue(keyBlock);
+};
+
 const cases = async () => {
   group('checks.yml: the triggers');
 
-  await test('a push runs only on main and skips one touching only CHANGELOG.md and the plugin manifest; a pull request still runs', () => {
+  await test('a push runs only on main; a pull request still runs', () => {
     const lines = fs.readFileSync(WORKFLOW, 'utf8').split(/\r?\n/);
     const on = block(lines, 'on', 0);
     assert(on, 'checks.yml has a top-level `on:`');
@@ -31,9 +38,31 @@ const cases = async () => {
     const branches = filters === -1 ? null : block(push, 'branches', filters);
     assert(branches, 'on.push carries `branches`');
     assertEq(JSON.stringify(listValue(branches)), JSON.stringify(['main']), 'on.push.branches');
-    const ignored = block(push, 'paths-ignore', filters);
-    assert(ignored, 'on.push carries `paths-ignore`');
-    assertEq(JSON.stringify(listValue(ignored).sort()), JSON.stringify(['.claude-plugin/plugin.json', 'CHANGELOG.md', 'packages/core/package.json']), 'on.push.paths-ignore');
+  });
+
+  group('checks.yml: the jobs');
+
+  await test('suite and changelog need scope and run only on its run answer; test needs scope and suite', () => {
+    const lines = fs.readFileSync(WORKFLOW, 'utf8').split(/\r?\n/);
+    const jobs = block(lines, 'jobs', 0);
+    assert(jobs, 'checks.yml has a top-level `jobs:`');
+    const at = childIndent(jobs);
+    const job = (name) => {
+      const found = block(jobs, name, at);
+      assert(found, `jobs.${name} exists`);
+      return found;
+    };
+    const key = (name, k) => {
+      const j = job(name);
+      const found = block(j, k, childIndent(j));
+      assert(found, `jobs.${name} carries \`${k}\``);
+      return found;
+    };
+    for (const name of ['suite', 'changelog']) {
+      assertEq(JSON.stringify(needsOf(key(name, 'needs'))), JSON.stringify(['scope']), `jobs.${name}.needs`);
+      assertEq(inlineValue(key(name, 'if')), "needs.scope.outputs.run == 'true'", `jobs.${name}.if`);
+    }
+    assertEq(JSON.stringify(needsOf(key('test', 'needs')).sort()), JSON.stringify(['scope', 'suite']), 'jobs.test.needs');
   });
 
   return summary();

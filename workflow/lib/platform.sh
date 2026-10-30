@@ -215,6 +215,11 @@ wk_markers_dir() {
   printf '%s\n' "$(wk_user_dir)/markers"
 }
 
+# wk_tower_dir: the one git repo in the global layer, the clone of `<login>/workkit`.
+wk_tower_dir() {
+  printf '%s\n' "$(wk_user_dir)/tower"
+}
+
 # wk_marker_path <dir> <anchor>: the marker file <markers dir>/<dir> holds for
 # <anchor>, keyed by its wk_sha1. Every marker name is derived here, so a
 # writer and its readers never drift apart.

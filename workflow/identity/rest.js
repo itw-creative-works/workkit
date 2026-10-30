@@ -28,7 +28,7 @@ class GhFailure extends Error {
   }
 }
 
-/** A call this translator cannot serve, said on stderr with exit 1. */
+/** A call this translator cannot serve, or one gh itself refuses, said on stderr with exit 1. */
 class UsageError extends Error {
   constructor(message) {
     super(message);
@@ -407,6 +407,18 @@ const removeLabel = (ctx, n, name) => {
 };
 
 /**
+ * Refuses, before any write, a label the repo lacks, as gh does; REST would create
+ * it. gh matches a label's name in any case.
+ * @param {{gh: string, repo: string}} ctx
+ * @param {string[]} names
+ */
+const requireLabels = (ctx, names) => {
+  const known = new Set(getJson(ctx, `repos/${ctx.repo}/labels`, ['--paginate']).map((l) => l.name.toLowerCase()));
+  const missing = names.find((name) => !known.has(name.toLowerCase()));
+  if (missing !== undefined) throw new UsageError(`could not add label: '${missing}' not found`);
+};
+
+/**
  * `issue edit`: labels added in one POST, each removed one DELETEd, title and
  * body in one PATCH; the issue's URL printed per issue, as gh prints it.
  * @returns {number}
@@ -421,6 +433,7 @@ const issueEdit = (ctx, argv) => {
   const add = flags['add-label'] || [];
   const remove = flags['remove-label'] || [];
   if (!add.length && !remove.length && !patch.length) throw new UsageError('gh: field to edit flag required when not running interactively');
+  if (add.length) requireLabels(ctx, add);
   for (const n of args.map(numberOf)) {
     if (add.length) send(ctx, 'POST', `repos/${ctx.repo}/issues/${n}/labels`, field('labels', add));
     for (const name of remove) removeLabel(ctx, n, name);
@@ -476,7 +489,10 @@ const issueCreate = (ctx, argv) => {
   repoOf(ctx);
   if (flags.title === undefined) throw new UsageError('gh: --title required when not running interactively');
   const fields = [...field('title', flags.title), ...field('body', bodyOf(flags) || '')];
-  if (flags.label) fields.push(...field('labels', flags.label));
+  if (flags.label) {
+    requireLabels(ctx, flags.label);
+    fields.push(...field('labels', flags.label));
+  }
   process.stdout.write(`${send(ctx, 'POST', `repos/${ctx.repo}/issues`, fields).html_url}\n`);
   return 0;
 };

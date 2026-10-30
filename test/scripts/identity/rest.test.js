@@ -158,6 +158,10 @@ const LIST_PAGES = [
 ];
 const LISTED = [...Array.from({ length: 100 }, (_, i) => 300 - i).filter((n) => n !== 250), 200, 199, 198];
 
+// acme/rostered's labels, the route a label-adding write reads first.
+const REPO_LABELS = { 'GET repos/acme/rostered/labels': { pages: [['status:qa', 'status:building', 'agent:claimed', 'status:inbox', 'type:feature'].map(restLabel)] } };
+const NO_LABEL = "could not add label: 'status:qq' not found";
+
 const cases = async () => {
   // rest.js starts the stub `gh` from Node, which Windows cannot do by name.
   const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
@@ -314,6 +318,7 @@ const cases = async () => {
   await runTest('case 4: issue edit adds labels with one POST then one DELETE per removed label; a title and body become one PATCH', async () => {
     const base = 'repos/acme/rostered/issues/7';
     const api = {
+      ...REPO_LABELS,
       [`POST ${base}/labels`]: { body: [restLabel('status:qa')] },
       [`DELETE ${base}/labels/status:building`]: { body: [restLabel('agent:claimed'), restLabel('status:qa')] },
       [`DELETE ${base}/labels/agent:claimed`]: { body: [restLabel('status:qa')] },
@@ -321,9 +326,10 @@ const cases = async () => {
     };
     const flip = runCloud(['issue', 'edit', '7', '--add-label', 'status:qa', '--remove-label', 'status:building,agent:claimed'], { api });
     assertOk(flip, 'issue edit --add-label --remove-label');
-    assertSame(routes(writes(flip)), [
+    assertSame(routes(flip.requests), [
+      ['GET', 'repos/acme/rostered/labels'],
       ['POST', `${base}/labels`], ['DELETE', `${base}/labels/status:building`], ['DELETE', `${base}/labels/agent:claimed`],
-    ], 'the add, then each removal');
+    ], 'the repo\'s labels read, then the add, then each removal');
     const added = writes(flip)[0].body;
     assertSame(Array.isArray(added) ? added : added.labels, ['status:qa'], 'the POST carries the added label');
 
@@ -339,6 +345,19 @@ const cases = async () => {
     assertOk(fromFile, 'issue edit --body-file');
     assertSame(routes(writes(fromFile)), [['PATCH', base]], 'one PATCH');
     assertEq(writes(fromFile)[0].body.body, '## Spec\n\nFrom a file.\n', 'carrying the file\'s text as the body');
+  });
+
+  await runTest('case 4: issue edit --add-label naming a label the repo lacks exits 1 with gh\'s not-found line and writes nothing; case differs, still found', async () => {
+    const base = 'repos/acme/rostered/issues/7';
+    const api = { ...REPO_LABELS, [`POST ${base}/labels`]: { body: [restLabel('status:qa')] } };
+    const res = runCloud(['issue', 'edit', '7', '--add-label', 'status:qa,status:qq'], { api });
+    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
+    assertEq(res.stderr, `${NO_LABEL}\n`, 'gh\'s not-found line');
+    assertSame(writes(res), [], 'no label is added');
+
+    const cased = runCloud(['issue', 'edit', '7', '--add-label', 'Status:QA'], { api });
+    assertOk(cased, 'issue edit --add-label in another case');
+    assertSame(routes(writes(cased)), [['POST', `${base}/labels`]], 'the add goes through, as gh matches a label by name in any case');
   });
 
   await runTest('case 5: issue comment posts the body, from --body or --body-file, and prints the comment\'s URL', async () => {
@@ -384,14 +403,24 @@ const cases = async () => {
 
   await runTest('case 7: issue create posts the title, body and labels and prints the new issue\'s URL', async () => {
     const api = {
+      ...REPO_LABELS,
       'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 475, { labels: ['status:inbox', 'type:feature'] }) },
     };
     const res = runCloud(['issue', 'create', '--title', 'A note', '--body', 'Noted.', '--label', 'status:inbox,type:feature'], { api });
     assertOk(res, 'issue create');
-    assertSame(routes(writes(res)), [['POST', 'repos/acme/rostered/issues']], 'one POST to the issues');
+    assertSame(routes(res.requests), [['GET', 'repos/acme/rostered/labels'], ['POST', 'repos/acme/rostered/issues']],
+      'the repo\'s labels read, then one POST to the issues');
     const sent = writes(res)[0].body;
     assertSame([sent.title, sent.body, sent.labels], ['A note', 'Noted.', ['status:inbox', 'type:feature']], 'title, body and labels');
     assertEq(res.stdout, 'https://github.com/acme/rostered/issues/475\n', 'the issue URL, as gh prints it');
+  });
+
+  await runTest('case 7: issue create --label naming a label the repo lacks exits 1 with gh\'s not-found line and creates no issue', async () => {
+    const api = { ...REPO_LABELS, 'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 476) } };
+    const res = runCloud(['issue', 'create', '--title', 'A note', '--body', 'Noted.', '--label', 'status:qq,type:feature'], { api });
+    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
+    assertEq(res.stderr, `${NO_LABEL}\n`, 'gh\'s not-found line');
+    assertSame(writes(res), [], 'no issue is created');
   });
 
   group('identity/gh in a cloud session: labels');

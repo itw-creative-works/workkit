@@ -1,8 +1,9 @@
 // A repo on the workkit-core package, the way a repo installs it: a test script
 // of `workkit test`, the package linked in by a real `npm install` from the
 // kit's packages/core, a test/lib/harness.js re-exporting `workkit-core/test`,
-// and two suites, a and b. Consumers: test/scripts/workkit-core.test.js and
-// test/scripts/workkit-cli/test-verb.test.js.
+// and two suites, a and b. Consumers: test/scripts/workkit-core.test.js,
+// test/scripts/workkit-cli/test-verb.test.js and test/scripts/release.test.js
+// (the npm precondition and env alone).
 
 const fs = require('fs');
 const path = require('path');
@@ -30,22 +31,32 @@ const skipWithoutNpm = () => {
 };
 
 /**
- * npm in `cwd` with `args`, on a machine with no kit: a scratch home and user
- * npmrc, node and the system tools alone on PATH, npm's own script shell.
+ * The env npm runs under on a machine with no kit: the scratch home `home` and
+ * an empty user npmrc in it, node and the system tools alone on PATH.
+ * @param {string} home - the scratch home, which must exist
+ * @param {object} [extra] - more of the child's env
+ * @returns {object}
+ */
+const npmEnv = (home, extra = {}) => {
+  const npmrc = path.join(home, 'npmrc');
+  fs.writeFileSync(npmrc, '');
+  return homeEnv(home, {
+    PATH: joinPath(NODE_DIR, SYSTEM_PATH),
+    NPM_CONFIG_USERCONFIG: npmrc,
+    // npm runs a script through ComSpec on Windows, and cmd.exe reads SystemRoot.
+    ...(IS_WINDOWS ? { ComSpec: process.env.ComSpec, SystemRoot: process.env.SystemRoot } : {}),
+    ...extra,
+  });
+};
+
+/**
+ * npm in `cwd` with `args`, on a machine with no kit (npmEnv), npm's own script shell.
  * @returns {{code: ?number, output: string}}
  */
 const npmIn = (cwd, args) => {
-  const home = mkTmp('core-npm-home-');
-  const npmrc = path.join(home, 'npmrc');
-  fs.writeFileSync(npmrc, '');
   const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', ...args], {
     cwd,
-    env: homeEnv(home, {
-      PATH: joinPath(NODE_DIR, SYSTEM_PATH),
-      NPM_CONFIG_USERCONFIG: npmrc,
-      // npm runs a script through ComSpec on Windows, and cmd.exe reads SystemRoot.
-      ...(IS_WINDOWS ? { ComSpec: process.env.ComSpec, SystemRoot: process.env.SystemRoot } : {}),
-    }),
+    env: npmEnv(mkTmp('core-npm-home-')),
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
@@ -87,5 +98,5 @@ const mkCoreRepo = () => {
 const TOTALS = (passed, suites) => new RegExp(`^${passed} passed, 0 failed \\(\\d+(?:\\.\\d+)?s, ${suites} suites?\\)$`);
 
 module.exports = {
-  CORE, SUITE, TOTALS, skipWithoutNpm, npmIn, mkCoreRepo,
+  CORE, SUITE, TOTALS, skipWithoutNpm, npmEnv, npmIn, mkCoreRepo,
 };

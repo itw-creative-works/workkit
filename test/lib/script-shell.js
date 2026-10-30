@@ -3,9 +3,10 @@
  * (its own home and TMPDIR), a committed scratch repo, npm spawned with the
  * wrapper named by `--script-shell`, the record a green root run leaves and the
  * package record every other green test run leaves, and npm's script shell as
- * setup wires it (the wrapper, or on Windows the built executable).
+ * setup wires it (the wrapper, or on Windows the built executable), and the
+ * env a `workkit` verb runs npm under (wiredNpmEnv).
  * Consumers: test/scripts/script-shell.test.js, script-shell-detached.test.js,
- * prove.test.js and workkit-cli/test-verb.test.js.
+ * suite-hold.test.js, prove.test.js and workkit-cli/test-verb.test.js.
  */
 
 const fs = require('fs');
@@ -154,7 +155,20 @@ const assertRecord = (text, tree, msg) => {
 /** The package record's lines for <repo> in <world>, as JSON so a case compares them whole. */
 const packaged = (world, repo) => JSON.stringify(pkgRecord(world.workflowHome, repo));
 
+/**
+ * The env a `workkit` verb runs npm under in <world> (a script-shell world or a
+ * git-repo one): the world's own, npm beside this node, and a scratch user
+ * npmrc naming the script shell wired into its machine folder, as `workkit
+ * setup` leaves a machine.
+ */
+const wiredNpmEnv = (world) => ({
+  ...world.env,
+  PATH: joinPath(NODE_DIR, world.env.PATH),
+  NPM_CONFIG_USERCONFIG: scratchNpmrc(wireShell(world.workflowHome)),
+  ...(IS_WINDOWS ? { WORKFLOW_CLAUDE_HOME: EXE_CLAUDE_HOME } : {}),
+});
+
 module.exports = {
-  WRAPPER, EXE_CLAUDE_HOME, wireShell, scratchNpmrc,
+  WRAPPER, EXE_CLAUDE_HOME, wireShell, scratchNpmrc, wiredNpmEnv,
   cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord, packaged,
 };

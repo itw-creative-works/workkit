@@ -64,6 +64,12 @@ const CHANGELOGS = [
   'CHANGELOG.md.bak', 'xCHANGELOG.md', 'changelog.md', 'CHANGELOG', 'CHANGELOG.md/x', 'docs/OLD-CHANGELOG.md',
 ];
 
+const MANIFESTS = [
+  'package.json', 'package-lock.json', 'packages/a/package.json', 'packages/a/package-lock.json',
+  '.claude-plugin/plugin.json', 'x/.claude-plugin/plugin.json', 'plugin.json', 'xpackage.json',
+  'package.json.bak', 'fixtures/app.json', 'npm-shrinkwrap.json', 'package-lock.jsonx',
+];
+
 // A repo's settings text; null writes no file.
 const SETTINGS = [
   null, '', '{}', '{ "version": 1 }\n', '{ "version": 1, "enabled": true }\n', '{ "version": 1, "enabled": false }\n',
@@ -316,6 +322,13 @@ const cases = async () => {
     assertEq(missing.map((a) => a.join(' ')).join('; '), '', `the shell reads the module never made, it made: ${JSON.stringify(reads)}`);
   });
 
+  group('twins: the version file test, hook_is_manifest in hooks/lib/tree.sh against isManifest in hooks/mods/commit-gate/checks.js');
+
+  await test('hook_is_manifest and isManifest agree on every fixture', () => {
+    const shell = bashAnswers(lib('hooks', 'lib', 'tree.sh'), 'hook_is_manifest', MANIFESTS);
+    agree(MANIFESTS, shell, (p) => mods('commit-gate/checks').isManifest(p), 'the version file test');
+  });
+
   group('twins: the version-only change, hook_version_only_change in hooks/lib/tree.sh against versionOnly in hooks/mods/commit-gate/checks.js');
 
   // One JSON file's HEAD text, then its working copy: the version alone, another key too, a copy that does not parse.
@@ -336,16 +349,38 @@ const cases = async () => {
     fs.rmSync(w.dir, { recursive: true, force: true });
   });
 
-  group('twins: the status:building list, hook_issues_building in hooks/lib/snapshot.sh against buildingList in hooks/mods/gh.js');
+  // A lockfile's HEAD text, then its working copy: every version spot moved
+  // (the top, the root entry, a member's), and a dependency's entry moved too.
+  const lock = (version, dep) => `${JSON.stringify({
+    name: 'w',
+    version,
+    lockfileVersion: 3,
+    packages: { '': { name: 'w', version }, 'node_modules/dep': { version: dep }, 'packages/a': { name: 'a', version } },
+  }, null, 2)}\n`;
+  const LOCK_HEAD = lock('1.0.0', '2.0.0');
+  const LOCK_CHANGES = { 'stamp-lock.json': lock('1.1.0', '2.0.0'), 'dep-lock.json': lock('1.1.0', '2.1.0') };
 
-  await test('hook_issues_building and buildingList ask gh with the same argv, with and without a repo', async () => {
+  await test('hook_version_only_change and versionOnly read a lockfile\'s version spots alike, and a dependency\'s entry as no stamp', () => {
+    const files = Object.keys(LOCK_CHANGES);
+    const w = mkRepo('twins-lock-', Object.fromEntries(files.map((f) => [f, LOCK_HEAD])), undefined, { optIn: false });
+    for (const f of files) w.write(f, LOCK_CHANGES[f]);
+    const shell = bashAnswers(lib('hooks', '_lib.sh'), `hook_version_only_change "${shellPath(w.repo)}"`, files);
+    agree(files, shell, (f) => mods('commit-gate/checks').versionOnly(LOCK_HEAD, LOCK_CHANGES[f]), 'the lockfile stamp');
+    assertEq(JSON.stringify(shell), JSON.stringify([true, false]), 'only the version spots moving is version-only');
+    fs.rmSync(w.dir, { recursive: true, force: true });
+  });
+
+  group('twins: the status:building list, wk_issues_building in workflow/lib/hold.sh against buildingList in hooks/mods/gh.js');
+
+  await test('wk_issues_building and buildingList ask gh with the same argv, with and without a repo', async () => {
     for (const repo of ['', 'acme/widgets']) {
       const gh = recordingTool('gh', '[]');
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('hooks', '_lib.sh')}"; hook_issues_building ${repo}`], {
+      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; . "${lib('workflow', 'lib', 'hold.sh')}"; wk_issues_building ${repo}`], {
         env: { PATH: gh.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const shell = gh.calls();
       assertEq(shell.length, 1, `${repo || 'no repo'}: the shell asks gh once, stderr: ${res.stderr}`);
+      assertEq(res.status, 0, `${repo || 'no repo'}: the shell reads gh's answer, stderr: ${res.stderr}`);
       const runs = [];
       await mods('gh').buildingList(async (argv) => { runs.push(argv); return runResult({ stdout: '[]' }); }, { repo });
       assertEq(JSON.stringify(runs[0].slice(1)), JSON.stringify(shell[0]), `${repo || 'no repo'}: the same argv`);

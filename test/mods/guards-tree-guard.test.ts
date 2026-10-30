@@ -51,13 +51,13 @@ describe('tool.call Bash: the chain around its guards', () => {
     expect(w.toolRan).toBeUndefined()
   })
 
-  test('one Bash call through the ten guards writes its fire lines with one read and one write of hooks.log', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('one Bash call through the nine guards writes its fire lines with one read and one write of hooks.log', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = mkWorld(on)
     await bash($, 'ls')
     const logFile = `${HOME}/.workkit/hooks.log`
     const ops = w.fsOps.filter((o: any) => o.path === logFile).map((o: any) => o.op)
     expect(ops).toEqual(['read', 'write'])
-    const guards = ['commit-gate', 'commit-language', 'release-taken', 'tree-guard', 'issue-guard', 'proof-guard', 'spec-guard', 'suite-guard', 'capture-guard', 'findings-guard']
+    const guards = ['commit-gate', 'commit-language', 'release-taken', 'tree-guard', 'issue-guard', 'proof-guard', 'spec-guard', 'capture-guard', 'findings-guard']
     const logged = new Set(hooksLog(w).map((l: any) => l.hook))
     expect(guards.filter((g) => !logged.has(`safety:${g}`))).toEqual([])
   })

@@ -5,7 +5,7 @@
  * (docs/hooks.md § workflow:standards).
  */
 
-import { settingsOptedIn } from './gate.js';
+import { rootOptedIn } from './gate.js';
 import { homeOf, pad } from './log.js';
 import { parseJson } from './settings.js';
 import { LONG_RUN_MS } from './suite.js';
@@ -120,7 +120,7 @@ export async function standardsGather(io, env, e) {
   if (!(await io.exists(standards))) broken = `workflow engine not found at ${standards}. Reinstall the workkit plugin.`;
   else if ((await io.read(manifest)) === null) broken = `workflow manifest missing or unreadable at ${manifest}. Reinstall the workkit plugin.`;
   if (broken) {
-    state.broken = settingsOptedIn(await io.read(`${root}/.workkit/settings.json`)) ? broken : null;
+    state.broken = (await rootOptedIn(root, io.read)) ? broken : null;
     return standardsContext(state, null, null);
   }
   // The engine owns the participation states; its answer is stdout's last line.

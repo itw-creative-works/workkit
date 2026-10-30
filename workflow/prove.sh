@@ -102,6 +102,7 @@ main() {
   root=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not inside a git repository"
   wk_has_test_script "$root" || fail "$root declares no test script, so there is no suite to prove"
   command -v npm >/dev/null 2>&1 || fail "npm is not on PATH"
+  wk_suite_hold "$root" wk_suite_index_tree || exit 1
 
   # The root run's log and lock: one full run at a time, and a kill of this
   # shell leaves the run going to its record and its cleanup.

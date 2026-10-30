@@ -12,7 +12,7 @@ import { originless, repoSlug } from './command.js';
 import { commitGateGuard } from './commit-gate.js';
 import { commitLanguageGuard } from './commit-language.js';
 import { findingsGuardGuard } from './findings-guard.js';
-import { settingsOptedIn } from './gate.js';
+import { rootOptedIn } from './gate.js';
 import { issueGuardGuard } from './issue-guard.js';
 import { shellEnvOf, windowsKit } from './markers.js';
 import { isOptinExempt, optinRepo, rootOf, rosterOf } from './optin.js';
@@ -21,7 +21,6 @@ import { publicMirrorGuard } from './public-mirror.js';
 import { releaseTakenGuard } from './release-taken.js';
 import { snapshotGuard } from './snapshot.js';
 import { specGuardGuard } from './spec-guard.js';
-import { suiteGuardGuard } from './suite-guard.js';
 import { treeGuardGuard } from './tree-guard.js';
 import { vendorGuardGuard } from './vendor-guard.js';
 
@@ -34,7 +33,6 @@ export const BASH_GUARDS = [
   { hook: 'safety:issue-guard', run: issueGuardGuard },
   { hook: 'safety:proof-guard', run: proofGuardGuard },
   { hook: 'safety:spec-guard', run: specGuardGuard },
-  { hook: 'safety:suite-guard', run: suiteGuardGuard },
   { hook: 'safety:capture-guard', run: captureGuardGuard },
   { hook: 'safety:findings-guard', run: findingsGuardGuard },
 ];
@@ -76,7 +74,7 @@ async function bashOpted(io, env, { command, cwd }) {
 /**
  * The opt-in gate for a folder: the repo holding it, climbed to the nearest
  * folder that exists for a path not made yet (rootOf), judged by
- * settingsOptedIn. The file chains and every other handler gate through it.
+ * rootOptedIn. The file chains and every other handler gate through it.
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {string|undefined} dir the folder; none is a no
  * @returns {Promise<boolean>}
@@ -84,7 +82,7 @@ async function bashOpted(io, env, { command, cwd }) {
 export async function folderOpted(io, dir) {
   if (!dir) return false;
   const root = await rootOf(dir, io.top, io.exists);
-  return root !== null && settingsOptedIn(await io.read(`${root}/.workkit/settings.json`));
+  return root !== null && (await rootOptedIn(root, io.read));
 }
 
 // The variables as a guard reads them: each folder the one Git Bash means, so

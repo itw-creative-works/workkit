@@ -211,17 +211,16 @@ describe('tool.call Bash: safety:proof-guard, the repo a qa flip names', () => {
 })
 
 describe('tool.call Bash: the gh guards keep hooks.json\'s order', () => {
-  test('each guard fires once per command, after tree-guard: proof-guard, spec-guard, suite-guard, then findings-guard', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('each guard fires once per command, after tree-guard: proof-guard, spec-guard, then findings-guard', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = mkWorld(on)
     await bash($, 'ls')
     const order = hooksLog(w).map((l: any) => l.hook)
     const at = (hook: string) => order.indexOf(hook)
-    for (const hook of ['safety:proof-guard', 'safety:spec-guard', 'safety:suite-guard', 'safety:findings-guard']) {
+    for (const hook of ['safety:proof-guard', 'safety:spec-guard', 'safety:findings-guard']) {
       expect(order.filter((h: string) => h === hook)).toHaveLength(1)
     }
     expect(at('safety:tree-guard')).toBeLessThan(at('safety:proof-guard'))
     expect(at('safety:proof-guard')).toBeLessThan(at('safety:spec-guard'))
-    expect(at('safety:spec-guard')).toBeLessThan(at('safety:suite-guard'))
-    expect(at('safety:suite-guard')).toBeLessThan(at('safety:findings-guard'))
+    expect(at('safety:spec-guard')).toBeLessThan(at('safety:findings-guard'))
   })
 })
