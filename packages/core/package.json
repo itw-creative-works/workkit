@@ -1,6 +1,6 @@
 {
   "name": "workkit-core",
-  "version": "0.84.2",
+  "version": "0.85.0",
   "description": "The workkit test runner and its harness: `workkit test` runs a repo's suites in worker processes and prints one totals line.",
   "private": false,
   "type": "module",
