@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { assert, skipSuite, mkTmp, seeded, SPAWN_DEADLINE } = require('./harness');
 const {
-  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, which, joinPath, homeEnv,
+  IS_WINDOWS, BASH, NO_RC, NODE_DIR, SYSTEM_PATH, which, joinPath, homeEnv,
 } = require('./platform');
 
 const CORE = path.join(__dirname, '..', '..', 'packages', 'core');
@@ -40,7 +40,12 @@ const npmIn = (cwd, args) => {
   fs.writeFileSync(npmrc, '');
   const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', ...args], {
     cwd,
-    env: homeEnv(home, { PATH: joinPath(NODE_DIR, SYSTEM_PATH), NPM_CONFIG_USERCONFIG: npmrc }),
+    env: homeEnv(home, {
+      PATH: joinPath(NODE_DIR, SYSTEM_PATH),
+      NPM_CONFIG_USERCONFIG: npmrc,
+      // npm runs a script through ComSpec on Windows, and cmd.exe reads SystemRoot.
+      ...(IS_WINDOWS ? { ComSpec: process.env.ComSpec, SystemRoot: process.env.SystemRoot } : {}),
+    }),
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });

@@ -22,6 +22,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 ### Fixed
 
 - [#475](../../issues/475) [`c09720a`](../../commit/c09720a) Thanks [@ianwieds]! - The gh shim's not-installed refusal names the install page with the owner pre-selected, the one `workkit setup` opens, then `or run: workkit setup --bot`, a new flag that runs only the App install step.
+- (no issue) - The workkit-core suites' `npmIn` helper passes `ComSpec` and `SystemRoot` through on Windows, so npm can run a package script there; both cases failed with `spawn cmd.exe ENOENT` on Windows CI.
 
 ## [0.84.2] - 2026-10-29
 
