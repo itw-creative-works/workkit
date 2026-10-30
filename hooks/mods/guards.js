@@ -17,6 +17,7 @@ import { issueGuardGuard } from './issue-guard.js';
 import { shellEnvOf, windowsKit } from './markers.js';
 import { isOptinExempt, optinRepo, rootOf, rosterOf } from './optin.js';
 import { proofGuardGuard } from './proof-guard.js';
+import { publicMirrorGuard } from './public-mirror.js';
 import { releaseTakenGuard } from './release-taken.js';
 import { snapshotGuard } from './snapshot.js';
 import { specGuardGuard } from './spec-guard.js';
@@ -52,6 +53,7 @@ export const READ_GUARDS = [
 /** The hooks on `classic.PostToolUse` and `classic.PostToolUseFailure` for Bash; they never block. */
 export const POST_BASH_GUARDS = [
   { hook: 'workflow:snapshot', run: snapshotGuard },
+  { hook: 'workflow:public-mirror', run: publicMirrorGuard },
 ];
 
 /** The refusal a chain that failed before its answer leads with; the failure's kind follows. */

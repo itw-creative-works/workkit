@@ -118,6 +118,11 @@ cmd_setup() {
       identity_step force || return 1
       return 0
       ;;
+    --bot)
+      wk_title "🤖 workkit setup --bot: workkit-agent[bot]'s install on this repo's owner"
+      identity_install_step force || return 1
+      return 0
+      ;;
     --home)
       wk_title "🏠 workkit setup --home: the home repo"
       home_steps force || return 1

@@ -54,10 +54,13 @@ const recordingSignIn = (home, token, out) => {
 
 /**
  * A fetch answering each `POST <TOKEN_URL>` with the next of `grants`, recording
- * each call: `[token, expiresAt]` is a grant, `{ status, body }` a refusal.
+ * each call: `[token, expiresAt]` is a grant, `{ status, body }` a refusal. A
+ * `GET .../users/<owner>` is GitHub's, answered with the id `ids` holds for that
+ * owner, else a 404, and recorded in `reads`.
  */
-const fakeService = (grants) => {
+const fakeService = (grants, ids = {}) => {
   const posts = [];
+  const reads = [];
   const others = [];
   const fetch = async (input, init = {}) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -69,10 +72,17 @@ const fakeService = (grants) => {
       const [token, expiresAt] = grant;
       return json(200, { token, expires_at: expiresAt });
     }
+    const owner = method === 'GET' ? url.match(/\/users\/([^/]+)$/) : null;
+    if (owner) {
+      reads.push({ url, headers: new Headers(init.headers) });
+      return owner[1] in ids ? json(200, { login: owner[1], id: ids[owner[1]] }) : json(404, { message: 'Not Found' });
+    }
     others.push(`${method} ${url}`);
     return json(599, { error: `fake fetch has no route for ${method} ${url}` });
   };
-  return { fetch, posts, others };
+  return {
+    fetch, posts, reads, others,
+  };
 };
 
 /**
@@ -318,7 +328,26 @@ const cases = async () => {
     assertEq(notInstalled.runs, 0, '412 at a keyboard: a refusal other than not_signed_in never signs in');
   });
 
-  await test('case 13: the service\'s 401 exits 3 naming workkit setup --login, 412 exits 4 with its fix, 403 exits 1 naming no write access, 500 exits 1 with its message', async () => {
+  await test('a 412 names the install page pre-selected on the owner, its id read from GitHub with no bearer, and the bare page when that read fails; the next line is or run: workkit setup --bot', async () => {
+    const { tokenFor } = load();
+    const page = 'https://github.com/apps/workkit-agent/installations/new';
+    for (const [label, ids, named] of [
+      ['an owner id', { acme: 4242 }, `${page}/permissions?suggested_target_id=4242`],
+      ['no owner id', {}, page],
+    ]) {
+      const service = fakeService([{ status: 412, body: { error: 'not installed', fix: INSTALL_FIX } }], ids);
+      const err = await failureOf(() => tokenFor(REPO, {
+        settings: SETTINGS, fetch: service.fetch, now: NOW, cacheDir: mkTmp('wk-identity-cache-'), loginFile: signedIn(),
+      }));
+      assertEq(err.code, 'not_installed', `${label}: not_installed`);
+      assertEq(err.message, `not installed: install workkit-agent[bot] on acme: ${named}\nor run: workkit setup --bot`,
+        `${label}: the refusal names that page, then the --bot command`);
+      assertEq(service.reads.length, 1, `${label}: one id read, other calls: ${service.others.join(', ')}`);
+      assertEq(service.reads[0].headers.get('authorization'), null, `${label}: the public read carries no sign-in`);
+    }
+  });
+
+  await test('case 13: the service\'s 401 exits 3 naming workkit setup --login, 412 exits 4 with the install page, 403 exits 1 naming no write access, 500 exits 1 with its message', async () => {
     const answers = [
       [401, { error: 'not signed in', fix: 'run workkit setup --login' }, 3, /workkit setup --login/],
       [412, { error: 'not installed', fix: INSTALL_FIX }, 4, /https:\/\/github\.com\/apps\/workkit-agent/],
@@ -336,7 +365,7 @@ const cases = async () => {
         assertEq(res.status, exit, `${status}: exit ${exit}, stderr: ${res.stderr}`);
         assert(pattern.test(res.stderr), `${status}: stderr matches ${pattern}, got: ${res.stderr}`);
         assert(!res.stderr.includes('workkit login'), `${status}: no stderr line names workkit login, got: ${res.stderr}`);
-        assertEq(server.requests().filter((r) => r.url !== '/token').length, 0,
+        assertEq(server.requests().filter((r) => r.url === '/login/device/code').length, 0,
           `${status}: no device-code request, got: ${JSON.stringify(server.requests())}`);
         assertEq(res.stdout, '', `${status}: no token on stdout`);
         const posts = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
@@ -350,7 +379,7 @@ const cases = async () => {
 
   group('identity/token: the command form');
 
-  await test('case 14: --status prints the four fields, --installation answers installed or not installed, and tokenUrlOf({}) is the Worker\'s URL', async () => {
+  await test('case 14: --status prints the four fields, --installation and --probe answer installed or not installed, only --installation reading and naming the install page, and tokenUrlOf({}) is the Worker\'s URL', async () => {
     const { tokenUrlOf } = load();
     assertEq(tokenUrlOf({}), 'https://workkit.itwcreativeworks.com/token', 'the default token URL');
     assertEq(tokenUrlOf(SETTINGS), TOKEN_URL, 'identity.tokenUrl wins');
@@ -378,17 +407,25 @@ const cases = async () => {
       [200, { token: 'ghs_install_probe', expires_at: '2099-01-01T00:00:00Z' }, 'installed'],
       [412, { error: 'not installed', fix: INSTALL_FIX }, 'not installed'],
     ]) {
-      const server = await startService(code, body);
-      try {
-        useTokenService(home, `${server.url}/token`);
-        const res = command(['--installation', REPO]);
-        assertEq(res.stdout.trim(), said, `${code}: --installation prints ${said} (stderr: ${res.stderr})`);
-        if (code === 200) assertEq(res.status, 0, 'installed exits 0');
-        const posts = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
-        assertEq(posts.length, 1, `${code}: asked the service through identity.tokenUrl, got: ${JSON.stringify(server.requests())}`);
-        assertEq(JSON.stringify(JSON.parse(posts[0].body)), JSON.stringify({ repo: 'acme/widgets' }), `${code}: for the repo`);
-      } finally {
-        await server.close();
+      for (const form of ['--installation', '--probe']) {
+        const server = await startService(code, body);
+        try {
+          useTokenService(home, `${server.url}/token`);
+          const res = command([form, REPO], { GITHUB_API_URL: server.url });
+          assertEq(res.stdout.trim(), said, `${code}: ${form} prints ${said} (stderr: ${res.stderr})`);
+          assertEq(res.status, 0, `${code}: ${form} exits 0`);
+          const posts = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
+          assertEq(posts.length, 1, `${code}: ${form} asked the service through identity.tokenUrl, got: ${JSON.stringify(server.requests())}`);
+          assertEq(JSON.stringify(JSON.parse(posts[0].body)), JSON.stringify({ repo: 'acme/widgets' }), `${code}: ${form} for the repo`);
+          const reads = server.requests().filter((r) => r.url === '/users/acme');
+          const paged = code === 412 && form === '--installation';
+          assertEq(reads.length, paged ? 1 : 0, `${code}: ${form} reads the owner's id ${paged ? 'once' : 'never'}, got: ${JSON.stringify(reads)}`);
+          if (code === 412) {
+            assertEq(res.stderr.includes('or run: workkit setup --bot'), paged, `${code}: ${form} ${paged ? 'names' : 'never names'} the install page, got: ${res.stderr}`);
+          }
+        } finally {
+          await server.close();
+        }
       }
     }
   });

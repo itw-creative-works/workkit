@@ -15,7 +15,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
 ├── .github/workflows/    # checks.yml (the suite, every pull request and every push to main but a release-only one) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
-│   ├── register.js       # the hooks module: the twenty-nine in-process hooks, the one file that touches `$`
+│   ├── register.js       # the hooks module: the thirty in-process hooks, the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
 │   ├── _lib.sh           # the shell library's entry (sourced by scripts/, prove.sh and the snapshot entry, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
@@ -23,13 +23,14 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, test/ (the test runner), templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, public/, templates)
+├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`), a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── scripts/              # four scripts, the only platform-touching commands the skills and agents have: the two markers the skills call (review, triage), red-proof.sh (the verifier's red run), review-covers.sh (the ship's review tier)
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · tests.md (the test bar and runner) · setup.md (the install walkthrough) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
 │   └── assets/           # the README's hero and its mark in two inks, rendered by the showcase repo (ITW-Creative-Works/showcase, private)
-├── test/                 # run.js (hands off to the kit's runner, workflow/test/run.js) + the hook/script/tower suites (npm test)
+├── test/                 # the hook/script/tower suites (npm test, which is `workkit test`, workkit-core's runner)
 └── .workkit/             # settings.json is COMMITTED (this repo's own opt-in)
 ```
 
@@ -43,11 +44,11 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 ## Hooks
 
-All twenty-nine run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session. Settings and the hooks log name a hook by `prefix:name`.
+All thirty run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session. Settings and the hooks log name a hook by `prefix:name`.
 
 A repo that has not opted in gets none of the hooks: the module's gate stands every one down there but the setup reminder, the restart notice and the secrets guard (`docs/hooks.md` § Where every hook stands down).
 
-The index of all twenty-nine and what each one does: `docs/hooks.md` § The hooks module.
+The index of all thirty and what each one does: `docs/hooks.md` § The hooks module.
 
 ## Agents
 
@@ -59,9 +60,9 @@ Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `re
 
 ## The engine (`workflow/`)
 
-Agent-agnostic: shell + Node, which is why the hooks call it rather than contain it. It calls the `claude` CLI in two places only: the setup commands in `workflow/workkit/` (the plugin's install and list, and `claude setup-token`) and the test runner's mod half (`claude plugin test`, run only when `test/mods/*.test.ts` exist).
+Agent-agnostic: shell + Node, which is why the hooks call it rather than contain it. It calls the `claude` CLI in one place only: the setup commands in `workflow/workkit/` (the plugin's install and list, and `claude setup-token`); the test runner's mod half (`claude plugin test`) lives in `workkit-core`.
 
-`workkit.sh` is the one command and the from-zero entry point: `setup [--token | --login | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `test [paths]` · `prove`.
+`workkit.sh` is the one command and the from-zero entry point: `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `test [paths]` · `prove` · `public intake|mirror|close`.
 
 Beside it live the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI, the ship's four helpers in `ship/` (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
 
@@ -81,7 +82,7 @@ Each step is gated by what the environment it woke up in can do; the brief itsel
 
 What a test must be worth and may cost (the bar), and the shape every repo's runner keeps: `docs/tests.md`.
 
-`npm test` runs `test/run.js`, which hands off to the runner the kit ships, `workflow/test/run.js` (its library in `workflow/test/lib/`; `workkit test` hands its arguments to this `npm test`); `test/lib/harness.js` is a one-line re-export of its entry, which carries the whole library, and `test/lib/serial.js` is this repo's serial list.
+`npm test` is `workkit test`, the bin of the runner the kit ships as the npm package `workkit-core` (`packages/core/`, its library in `test/lib/` there; the global `workkit test` hands its arguments to this `npm test`); `test/lib/harness.js` is a one-line re-export of `workkit-core/test`, which carries the whole library, and `test/lib/serial.js` is this repo's serial list.
 
 A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip. Suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`, plus the library's own suites at the `test/` root (`runner`, `node-test`, `harness`, `log`, `spawn`).
 

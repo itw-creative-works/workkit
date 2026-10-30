@@ -3,7 +3,8 @@
  * in: the command's cd steps, the repos its gh clauses name through the
  * roster, and the cwd decide, and a command the walk cannot place runs the
  * guards, so a guard fails closed (docs/hooks.md § Where every hook stands
- * down). The roster's one reader, and the path fold, live here too.
+ * down). The roster's one reader, the folder a gh clause acts on (`place`)
+ * and the path fold live here too.
  */
 
 import {
@@ -11,7 +12,7 @@ import {
   stepDirs, stripHeredocs, stripQuotes,
 } from './command.js';
 import { settingsOptedIn } from './gate.js';
-import { ghClauses, ghRepo } from './gh-edit.js';
+import { ghClauses, ghRepo, ghRepoIsHere } from './gh-edit.js';
 import { userDirOf } from './log.js';
 import { parseJson } from './settings.js';
 
@@ -160,6 +161,27 @@ export async function rosterPath(slug, roster, slugOf) {
     if (state === 'enabled' && String((await slugOf(path)) ?? '').toLowerCase() === want) return path;
   }
   return null;
+}
+
+/**
+ * The folder a gh clause acts on and the repo it named ('' for none), or a
+ * note, worded for workflow:snapshot, naming why it cannot be placed;
+ * workflow:public-mirror reads the folder alone.
+ * @param {string} clause one clause
+ * @param {{cwd: string, roster: object|null, slugOf: function}} facts the command's folder, the roster, `slugOf(dir)`
+ * @param {boolean} sawCd whether a cd came before the clause
+ * @returns {Promise<{dir: string, repo: string}|{note: string}>}
+ */
+export async function place(clause, { cwd, roster, slugOf }, sawCd) {
+  const repo = ghRepo(clause);
+  if (repo === null) return { note: 'a --repo value could not be read (a variable, a substitution or a quoted span), so no snapshot was taken or dropped for it.' };
+  if (repo === '' || ghRepoIsHere(repo, String((await slugOf(cwd)) ?? ''))) {
+    if (repo === '' && sawCd) return { note: 'the command changes directory before a flip naming no --repo, so no snapshot was taken or dropped for it.' };
+    return { dir: cwd, repo };
+  }
+  const folder = await rosterPath(repo, roster, slugOf);
+  if (!folder) return { note: `${repo} is not opted in on this machine's workkit roster (absent or declined), so no snapshot was taken or dropped for it.` };
+  return { dir: folder, repo };
 }
 
 /**

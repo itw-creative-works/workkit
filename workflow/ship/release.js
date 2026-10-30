@@ -17,6 +17,7 @@ const {
   repoSlug, commitsByIssue, authorHandle, fill, defaultRange,
 } = require('../changelog/changelog-links');
 const { isSemver } = require('./semver');
+const { expandWorkspaces, PlanError } = require('./publish-plan');
 
 const USAGE = 'usage: release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
 // The files a repo keeps its version in, by path from the root: every one is in
@@ -40,6 +41,15 @@ const today = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
+/** A version file's top-level version, refusing a file that does not parse. */
+const versionOf = (text, name) => {
+  try {
+    return JSON.parse(text).version;
+  } catch {
+    throw new ReleaseError(`release: ${name} does not parse as JSON; nothing was written.`);
+  }
+};
+
 /**
  * A version file with its version set to `version`, by text: only the value
  * inside the first `"version": "<old>"` changes.
@@ -49,12 +59,7 @@ const today = () => {
  * @returns {string|null} null when the file carries no top-level version
  */
 const bumpVersion = (text, version, name) => {
-  let current;
-  try {
-    current = JSON.parse(text).version;
-  } catch {
-    throw new ReleaseError(`release: ${name} does not parse as JSON; nothing was written.`);
-  }
+  const current = versionOf(text, name);
   if (typeof current !== 'string') return null;
   if (current === version) {
     throw new ReleaseError(`release: ${name} is already at ${version}; nothing was written.`);
@@ -62,6 +67,36 @@ const bumpVersion = (text, version, name) => {
   const escaped = current.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const line = new RegExp(`("version"\\s*:\\s*")${escaped}(")`);
   return text.replace(line, (_, open, close) => `${open}${version}${close}`);
+};
+
+/**
+ * The lockstep members' bumps: every workspace member of the root package.json
+ * whose version is `old`; a member at any other version moves on its own.
+ * @param {string} root - the repo root
+ * @param {string} old - the version the root's version files carried
+ * @param {string} version - the new version
+ * @returns {Array<{name: string, file: string, text: string}>}
+ */
+const memberBumps = (root, old, version) => {
+  const rootFile = path.join(root, 'package.json');
+  if (!fs.existsSync(rootFile)) return [];
+  const { workspaces } = JSON.parse(fs.readFileSync(rootFile, 'utf8'));
+  if (workspaces === undefined) return [];
+  let dirs;
+  try {
+    dirs = expandWorkspaces(root, workspaces, []);
+  } catch (err) {
+    if (!(err instanceof PlanError)) throw err;
+    throw new ReleaseError(`release: the workspace members cannot be read (${err.message}); nothing was written.`);
+  }
+  const bumps = [];
+  for (const dir of dirs.sort()) {
+    const file = path.join(dir, 'package.json');
+    const name = path.relative(root, file).split(path.sep).join('/');
+    const text = fs.readFileSync(file, 'utf8');
+    if (versionOf(text, name) === old) bumps.push({ name, file, text: bumpVersion(text, version, name) });
+  }
+  return bumps;
 };
 
 /** Does this line head the `[Unreleased]` section? */
@@ -168,15 +203,20 @@ const release = (root, { version, keep, dryRun, date }) => {
     throw new ReleaseError(`release: no CHANGELOG.md in ${root}; nothing was written.`);
   }
   const bumps = [];
+  let old;
   for (const name of VERSION_FILES) {
     const file = path.join(root, name);
     if (!fs.existsSync(file)) continue;
-    const text = bumpVersion(fs.readFileSync(file, 'utf8'), version, name);
-    if (text !== null) bumps.push({ name, file, text });
+    const before = fs.readFileSync(file, 'utf8');
+    const text = bumpVersion(before, version, name);
+    if (text === null) continue;
+    old ??= versionOf(before, name);
+    bumps.push({ name, file, text });
   }
   if (bumps.length === 0) {
     throw new ReleaseError(`release: neither ${VERSION_FILES.join(' nor ')} carries a version; nothing was written.`);
   }
+  bumps.push(...memberBumps(root, old, version));
 
   const range = defaultRange(root);
   let byIssue;

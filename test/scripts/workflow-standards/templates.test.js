@@ -1,12 +1,12 @@
 // Tests for standards.sh: the issue templates, the CI workflow, the kit clone
-// step in checks.yml, and the CHANGELOG separator.
+// step's removal from checks.yml, and the CHANGELOG separator.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { block, listValue, isContent } = require('../../lib/workflow-yaml');
-const { splitCloneStep, withoutCloneStep } = require('../../lib/checks-template');
+const { block, listValue } = require('../../lib/workflow-yaml');
+const { withCloneStep } = require('../../lib/checks-template');
 const { WORKFLOW_DIR, cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
 
 const cases = async () => {
@@ -116,90 +116,79 @@ const cases = async () => {
 
   // Read live in each case, so a reworded template never meets a stale copy.
   const template = () => readFile(path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml'));
-  const NO_TEST = 'checks.yml: no Test step as the template names it; the kit clone step was not added';
   const writeChecks = (repo, body) => {
     const file = path.join(repo, '.github', 'workflows', 'checks.yml');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, body);
     return file;
   };
+  // The repo's package.json, on the workkit-core package or not.
+  const writePackage = (repo, onCore) => fs.writeFileSync(path.join(repo, 'package.json'), `${JSON.stringify({
+    name: 'fixture', private: true, scripts: { test: 'workkit test' }, ...(onCore ? { devDependencies: { 'workkit-core': '^1.0.0' } } : {}),
+  }, null, 2)}\n`);
 
-  await test('an older checks.yml gains the template\'s clone step right before Test, every other line kept', () => {
+  await test('in a repo on workkit-core, the clone step is removed from checks.yml and every other line kept', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
+    writePackage(repo, true);
     const tpl = template();
-    const file = writeChecks(repo, withoutCloneStep(tpl));
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    const [head, step, tail] = splitCloneStep(tpl);
-    const healed = readFile(file).split('\n');
-    assertEq(healed.slice(0, head.length).join('\n'), head.join('\n'), `every line above the step is kept, got: ${output}`);
-    assertEq(healed.slice(-tail.length).join('\n'), tail.join('\n'), 'and every line from the Test step on');
-    assertEq(healed.slice(head.length, -tail.length).filter(isContent).join('\n'), step.filter(isContent).join('\n'),
-      'the template\'s clone step in between, so the steps run in the template\'s order');
-    assert(output.includes('checks.yml: kit clone step added'), `reported, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a CRLF older checks.yml gains the clone step in its own line endings, every other line kept', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const tpl = template();
-    const file = writeChecks(repo, withoutCloneStep(tpl).split('\n').join('\r\n'));
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    const [head, step, tail] = splitCloneStep(tpl);
-    const raw = readFile(file);
-    const bare = raw.split('\n').slice(0, -1).filter((line) => !line.endsWith('\r'));
-    assertEq(bare.length, 0, `every line keeps the file's CRLF ending, got LF-only: ${JSON.stringify(bare)}`);
-    const healed = raw.split('\r\n');
-    assertEq(healed.slice(0, head.length).join('\n'), head.join('\n'), `every line above the step is kept, got: ${output}`);
-    assertEq(healed.slice(-tail.length).join('\n'), tail.join('\n'), 'and every line from the Test step on');
-    assertEq(healed.slice(head.length, -tail.length).filter(isContent).join('\n'), step.filter(isContent).join('\n'),
-      'the template\'s clone step in between');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('the clone step is added once: a second heal changes nothing', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const tpl = template();
-    const older = withoutCloneStep(tpl);
-    const file = writeChecks(repo, older);
-    runScript(repo, { pathPrefix: stub.binDir });
-    const once = readFile(file);
-    assert(once !== older, 'the first heal added the step');
-    runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), once, 'idempotent');
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a checks.yml already carrying the clone step, anywhere in its steps, is left byte for byte', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const tpl = template();
-    const [head, step, tail] = splitCloneStep(tpl);
-    const at = head.indexOf('      - name: Install dependencies');
-    assert(at !== -1, 'the template installs dependencies in a named step');
-    const owned = [...head.slice(0, at), ...step, ...head.slice(at), ...tail].join('\n');
-    const file = writeChecks(repo, owned);
-    const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), owned, `the repo's own placement stands, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  await test('a checks.yml whose Test step was renamed is left as found, with one warning', () => {
-    const repo = makeRepo();
-    const stub = makeGhStub();
-    const tpl = template();
-    const older = withoutCloneStep(tpl);
-    const renamed = older.replace('      - name: Test\n', '      - name: Unit tests\n');
-    assert(renamed !== older, 'the older copy carries the template\'s Test step to rename');
-    const file = writeChecks(repo, renamed);
+    const file = writeChecks(repo, withCloneStep(tpl));
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), renamed, `no step is added, got: ${output}`);
-    assertEq(output.split(NO_TEST).length - 1, 1, `the warning, once, got: ${output}`);
-    assertEq(code, 0, `a warning, never a failed heal, got: ${output}`);
-    assert(!output.includes('not fully standardized'), `and the repo is not flagged, got: ${output}`);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assertEq(readFile(file), tpl, `the template as it ships, the step and its comment gone, got: ${output}`);
     cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('in a repo on workkit-core, a CRLF checks.yml loses the clone step and keeps its CRLF endings', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    writePackage(repo, true);
+    const crlf = (text) => text.replace(/\r?\n/g, '\r\n');
+    const tpl = template();
+    const file = writeChecks(repo, crlf(withCloneStep(tpl)));
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assertEq(readFile(file), crlf(tpl), `the template in CRLF, the step gone, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  // A step the repo wrote itself may clone the kit with the same line; only the
+  // step under the retired step's name is the kit's.
+  await test('in a repo on workkit-core, a step of the repo\'s own that clones the kit survives', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    writePackage(repo, true);
+    const tpl = template();
+    const own = [
+      '      - name: Fetch the kit for the hooks suites',
+      '        run: git clone --depth 1 https://github.com/itw-creative-works/workkit "$RUNNER_TEMP/workkit"',
+    ];
+    const withOwn = (text) => {
+      const lines = text.split('\n');
+      const at = lines.indexOf('      - name: Test');
+      assert(at > 0, 'the template carries the Test step');
+      return [...lines.slice(0, at), ...own, ...lines.slice(at)].join('\n');
+    };
+    const file = writeChecks(repo, withCloneStep(withOwn(tpl)));
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assertEq(readFile(file), withOwn(tpl), `the kit step gone, the repo's own kept, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  // The two shapes a repo not yet on the package can carry: an older copy with
+  // the step, and the template as it ships now, without it.
+  await test('in a repo without workkit-core, checks.yml is left byte for byte, the clone step or none', () => {
+    const tpl = template();
+    for (const [shape, body] of [['with the clone step', withCloneStep(tpl)], ['without it', tpl]]) {
+      const repo = makeRepo();
+      const stub = makeGhStub();
+      writePackage(repo, false);
+      const file = writeChecks(repo, body);
+      const { output } = runScript(repo, { pathPrefix: stub.binDir });
+      assertEq(readFile(file), body, `${shape}: as found, got: ${output}`);
+      cleanup(repo); cleanup(stub.dir);
+    }
   });
 
   await test('a repo with no checks.yml gets the template whole', () => {

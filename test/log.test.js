@@ -10,7 +10,7 @@ const {
   group, test, assert, summary, selfRun, mkTmp, run,
 } = require('./lib/harness');
 
-const HARNESS = path.join(__dirname, '..', 'workflow', 'test', 'lib', 'harness.js');
+const HARNESS = path.join(__dirname, '..', 'packages', 'core', 'test', 'lib', 'harness.js');
 
 // A suite on the kit's harness: a passing and a failing case that each log one
 // line, then a closing case that bounds what prints under the failing one.
@@ -91,7 +91,7 @@ const cases = async () => {
     const { file, lines } = runSuite();
     const block = under(lines, 'the failing case', 'the closing case');
     assert(block.some((l) => l.includes(`${file}:`)), `a frame naming ${file}, got:\n${block.join('\n')}`);
-    const harnessFrame = `${path.join('workflow', 'test', 'lib', 'harness.js')}:`;
+    const harnessFrame = `${path.join('packages', 'core', 'test', 'lib', 'harness.js')}:`;
     assert(!block.some((l) => l.includes(harnessFrame)), `no frame from the harness, got:\n${block.join('\n')}`);
   });
 };

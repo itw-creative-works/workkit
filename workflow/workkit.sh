@@ -102,6 +102,10 @@ usage: workkit <command> [args]
                        GitHub (the device flow) so the agent's issue
                        bookkeeping posts as workkit-agent[bot], replacing any
                        sign-in already here, with or without a terminal
+  setup --bot          that wizard's App install step alone, forced: offer
+                       workkit-agent[bot]'s install page, pre-selected on this
+                       repo's owner, and wait until the install lands; sign
+                       in first with setup --login
   setup --home         that wizard's home repo step alone, forced: create the
                        private <login>/workkit and make ~/.workkit/tower its
                        clone, asking nothing, with or without a terminal
@@ -138,6 +142,14 @@ usage: workkit <command> [args]
   prove                run the root suite on exactly the staged tree, in a copy
                        outside the repo, and record it on green, so a commit
                        of it passes the gate while other work stays unstaged
+  public intake        take each new issue on the paired public repo into this
+                       repo's inbox, linked, with the intake comment on it
+  public mirror <N>... | --all
+                       copy each linked issue's status label onto its public
+                       issue, posting nothing
+  public close <version> <N>...
+                       close each linked public issue with the version and its
+                       CHANGELOG entry
 
 The engine it drives lives beside this script; the spec both implement is
 docs/project-state.md in the kit.
@@ -167,11 +179,9 @@ SECRET_MAX_AGE_DAYS=330
 # installation check (`bounded_read`).
 SECRETS_TIMEOUT="${WORKKIT_GH_TIMEOUT:-10}"
 
-# The agent's GitHub identity (workkit/identity.sh): the client, the sign-in,
-# and the App's constants (the install page is read from it when needed).
+# The agent's GitHub identity (workkit/identity.sh): the client and the sign-in.
 IDENTITY_CLIENT="$SCRIPT_DIR/identity/token.js"
 IDENTITY_LOGIN="$SCRIPT_DIR/identity/login.js"
-IDENTITY_APP="$SCRIPT_DIR/identity/app.js"
 
 # How long the token handover waits for Pages to serve the publish before it
 # prints the URL instead. The override is the suite's seam.
@@ -211,6 +221,8 @@ IDENTITY_USER=''
 . "$SCRIPT_DIR/workkit/commands.sh"
 # shellcheck source=./workkit/log.sh
 . "$SCRIPT_DIR/workkit/log.sh"
+# shellcheck source=./workkit/public.sh
+. "$SCRIPT_DIR/workkit/public.sh"
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
@@ -223,6 +235,7 @@ case "${1:-help}" in
   brief)   shift; cmd_brief "$@" ;;
   log)     shift; cmd_log "$@" ;;
   test)    shift; cmd_test "$@" ;;
+  public)  shift; cmd_public "$@" ;;
   tower)
     shift
     # The tower lives in the kit, not the engine: a partial copy that holds

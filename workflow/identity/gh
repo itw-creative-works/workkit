@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # workflow/identity/gh: the gh shim, linked to ~/.local/bin/gh ahead of the real
 # gh. A cloud session's issue, label and auth verbs go through rest.js; elsewhere
-# in a Claude session a bookkeeping verb on a rostered repo runs as the workkit
-# App (GH_TOKEN, one process) or not at all; the rest run the real gh as the owner.
+# in a Claude session a bookkeeping verb on a rostered repo, or on the public repo
+# a rostered one pairs with, runs as the workkit App (GH_TOKEN, one process) or
+# not at all; the rest run the real gh as the owner.
 
 set -uo pipefail
 
@@ -152,6 +153,16 @@ repo_of() {
   fi
 }
 
+# names_public <folder> <owner/name lowercased>: whether the folder's committed
+# `.workkit/settings.json` names that slug as its `public` repo, any letter case;
+# the match wk_roster_path runs over the roster for a paired public repo.
+names_public() {
+  local public
+  [[ -r "$1/.workkit/settings.json" ]] || return 1
+  public="$(wk_jq -r '.public // empty | strings' "$1/.workkit/settings.json" 2>/dev/null)" || return 1
+  [[ -n "$public" && "$(printf '%s' "$public" | tr '[:upper:]' '[:lower:]')" == "$2" ]]
+}
+
 # shellcheck source=../lib/platform.sh
 . "$KIT_DIR/workflow/lib/platform.sh"
 
@@ -186,8 +197,9 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+# A rostered repo is the bot's, and so is the public repo an enabled one pairs with.
 REPO="$(repo_of "$@")"
-if [[ -z "$REPO" ]] || ! wk_roster_path "$REPO" >/dev/null; then
+if [[ -z "$REPO" ]] || { ! wk_roster_path "$REPO" >/dev/null && ! wk_roster_path "$REPO" names_public >/dev/null; }; then
   exec "$GH" "$@"
 fi
 

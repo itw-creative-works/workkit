@@ -79,8 +79,8 @@ const cases = async () => {
     const fns = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     assertEq(fns.code, 0, `it sources clean, stderr: ${fns.err}`);
     assertEq(fns.out, 'wk_changelog_job_block wk_changelog_job_rewrite wk_changelog_job_runs_copy '
-      + 'wk_checks_clone_block wk_checks_clone_line wk_checks_clone_step '
-      + 'wk_checks_header wk_checks_heal_rewrite wk_checks_push_trigger wk_checks_template wk_checks_top wk_checks_top_count wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_first_lines wk_retired_checks_headers '
+      + 'wk_checks_clone_line wk_checks_drop_clone_step '
+      + 'wk_checks_header wk_checks_heal_rewrite wk_checks_push_trigger wk_checks_template wk_checks_top wk_checks_top_count wk_has_core_package wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_first_lines wk_retired_checks_headers '
       + 'wk_workflows_run_copy ', `the functions, got: ${fns.out}`);
     const vars = (first) => spawnSync(BASH, [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE }).stdout;

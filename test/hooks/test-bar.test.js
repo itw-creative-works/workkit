@@ -342,12 +342,12 @@ const cases = async () => {
   });
 
   await test('the deadline\'s own home, in the kit or a consumer repo: no deadline finding', () => {
-    assertEq(ruleLines(write('workflow/test/lib/process.js', PROCESS_HOME), 'deadline').join('\n'), '', 'the kit\'s process.js is exempt');
+    assertEq(ruleLines(write('packages/core/test/lib/process.js', PROCESS_HOME), 'deadline').join('\n'), '', 'the kit\'s process.js is exempt');
     assertEq(ruleLines(write('tests/lib/process.js', PROCESS_HOME), 'deadline').join('\n'), '', 'and a consumer repo\'s');
   });
 
   await test('the grace in the kit\'s spawn.js: no deadline finding; the same line at test/lib/spawn.js still named', () => {
-    assertEq(ruleLines(write('workflow/test/lib/spawn.js', SPAWN_HOME), 'deadline').join('\n'), '', 'the kit\'s spawn.js is a deadline home');
+    assertEq(ruleLines(write('packages/core/test/lib/spawn.js', SPAWN_HOME), 'deadline').join('\n'), '', 'the kit\'s spawn.js is a deadline home');
     names(write('test/lib/spawn.js', SPAWN_HOME), 'test/lib/spawn.js', 2, 'deadline');
   });
 

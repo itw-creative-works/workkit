@@ -218,16 +218,25 @@ const asFile = (r, x, name) => {
   return file;
 };
 
-/** wk_checks_heal_rewrite <a> <b> run for real, its stdout, or null when it fails. */
-const realRewrite = (a, b) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"; wk_checks_heal_rewrite "$2" "$3"', 'bash', shellPath(JOB), shellPath(a), shellPath(b)],
-    { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+/**
+ * wk_checks_heal_rewrite <a> <b> run for real from `cwd`, the folder whose
+ * package.json it reads, its stdout, or null when it fails.
+ */
+const realRewrite = (a, b, cwd) => {
+  // After lib/platform.sh, as standards.sh sources it: the rewrite asks wk_jq.
+  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"; . "$2"; wk_checks_heal_rewrite "$3" "$4"', 'bash',
+    shellPath(path.join(WORKFLOW_DIR, 'lib', 'platform.sh')), shellPath(JOB), shellPath(a), shellPath(b)],
+    { cwd, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return res.status === 0 ? res.stdout : null;
 };
 
+// The rewrite as the gate runs it, at the repo root: a scratch folder holding the
+// working tree's package.json, the one file of the repo the rewrite reads.
 const rewriteOf = (r, a, b) => {
   const template = onDisk(b) ? b : (typeof b === 'string' && b.includes('\n') ? asFile(r, b, 'template.yml') : TEMPLATE);
-  return realRewrite(asFile(r, a, 'checks.yml'), template);
+  const root = mkTmp('cg-rewrite-root-');
+  if ('package.json' in r.work) fs.writeFileSync(path.join(root, 'package.json'), r.work['package.json']);
+  return realRewrite(asFile(r, a, 'checks.yml'), template, root);
 };
 
 // A working tree file's text by repo path, else a file on disk; null for none.

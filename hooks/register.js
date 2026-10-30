@@ -1,5 +1,5 @@
 /**
- * hooks/register.js: the workkit hooks module, the twenty-nine in-process
+ * hooks/register.js: the workkit hooks module, the thirty in-process
  * hooks on ten events (docs/hooks.md § The hooks module). The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
  * and this file gathers their facts (or hands a mods gatherer the engine calls

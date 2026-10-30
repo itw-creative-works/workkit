@@ -207,7 +207,7 @@ const dropPathWithoutGh = () => {
 };
 
 module.exports = {
-  cleanup, makeGhStub, ghCalls, ghEnvs, ghRequests, pathWithoutGh, dropPathWithoutGh,
+  cleanup, makeGhStub, ghCalls, ghEnvs, ghRequests, pathWithoutGh, dropPathWithoutGh, viaJq,
 };
 
 if (require.main === module) process.exitCode = answerApi(process.argv.slice(2));

@@ -1,4 +1,4 @@
-// The suites the kit's runner (workflow/test/run.js) holds back for its serial tail, run one
+// The suites the kit's runner (packages/core/test/run.js) holds back for its serial tail, run one
 // at a time after the parallel wave: each touches a fixed shared path, named
 // beside its entry. Paths are relative to test/. AGENTS.md § Tests.
 

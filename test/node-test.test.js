@@ -1,11 +1,11 @@
-// Tests for isNodeTestSuite in workflow/test/lib/node-test.js: the shape check
+// Tests for isNodeTestSuite in packages/core/test/lib/node-test.js: the shape check
 // the runner reads from a suite's text before loading it, over known source
 // texts that do and do not import node:test.
 
 const {
   group, test, assertEq, summary, selfRun,
 } = require('./lib/harness');
-const { isNodeTestSuite } = require('../workflow/test/lib/node-test');
+const { isNodeTestSuite } = require('../packages/core/test/lib/node-test');
 
 const cases = async () => {
   group('isNodeTestSuite: a real import reads true');

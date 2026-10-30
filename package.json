@@ -4,11 +4,17 @@
   "engines": {
     "node": ">=22.22"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "brief": "bash jobs/morning.sh --now",
     "nightly": "bash jobs/claude-nightly.sh --now",
     "start": "npm run tower",
-    "test": "node test/run.js",
+    "test": "workkit test",
     "tower": "bash tower/start.sh"
+  },
+  "devDependencies": {
+    "workkit-core": "*"
   }
 }

@@ -76,6 +76,9 @@ const PLUGIN = [
   '',
 ].join('\n');
 const UNVERSIONED = '{\n  "name": "scratch",\n  "private": true\n}\n';
+// The kit's own shape: an unversioned workspace root over its packages/* members.
+const WORKSPACE_ROOT = '{\n  "name": "scratch",\n  "private": true,\n  "workspaces": ["packages/*"]\n}\n';
+const member = (name, version) => `{\n  "name": "${name}",\n  "version": "${version}",\n  "private": false\n}\n`;
 const PLUGIN_FILE = path.join('.claude-plugin', 'plugin.json');
 
 /** The text of a version file with its top-level version bumped to 1.3.0. */
@@ -85,12 +88,12 @@ const COMMITS = ['feat: one\n\nFixes #1', 'feat: two\n\nFixes #2', 'fix: three\n
 
 /**
  * A repo holding the CHANGELOG and the version files (`pkg`, and `plugin` when
- * given; a null `pkg` writes no package.json), a GitHub origin unless `remote`
- * is false, then one commit per message.
+ * given; a null `pkg` writes no package.json), any `files` (path to text), a
+ * GitHub origin unless `remote` is false, then one commit per message.
  * The shas come back keyed by the issue each message closes.
  */
 const mkRepo = ({
-  changelog = CHANGELOG, pkg = PACKAGE, plugin = null, commits = COMMITS, remote = true,
+  changelog = CHANGELOG, pkg = PACKAGE, plugin = null, commits = COMMITS, remote = true, files = {},
 } = {}) => {
   const dir = mkTmp('release-');
   git(dir, 'init', '-q', '-b', 'main');
@@ -103,6 +106,10 @@ const mkRepo = ({
     fs.writeFileSync(path.join(dir, PLUGIN_FILE), plugin);
   }
   fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), changelog);
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), text);
+  }
   git(dir, 'add', '-A');
   git(dir, 'commit', '-qm', 'initial');
   const shas = {};
@@ -183,6 +190,23 @@ const cases = async () => {
     assertEq(read(dir, 'package.json'), bumped(PACKAGE).replace(/\n/g, '\r\n'), 'package.json bumped, still CRLF');
     assertEq(read(dir, PLUGIN_FILE), bumped(PLUGIN), 'the manifest bumped, still LF');
     assertEq(res.stdout, 'released 1.3.0 (package.json, .claude-plugin/plugin.json): 3 entries moved, 0 kept under [Unreleased]\n', 'the line names both');
+    cleanup(dir);
+  });
+
+  await test('a workspace member at the old version moves with the release; one at another version stays', () => {
+    const lockstep = member('scratch-core', '1.2.3');
+    const apart = member('scratch-other', '0.4.0');
+    const { dir } = mkRepo({
+      pkg: WORKSPACE_ROOT,
+      plugin: PLUGIN,
+      files: { 'packages/core/package.json': lockstep, 'packages/other/package.json': apart },
+    });
+    const res = release(dir, ['1.3.0']);
+    assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
+    assertEq(read(dir, PLUGIN_FILE), bumped(PLUGIN), 'the manifest bumped');
+    assertEq(read(dir, 'packages/core/package.json'), bumped(lockstep), 'the lockstep member bumped, every other byte kept');
+    assertEq(read(dir, 'packages/other/package.json'), apart, 'the member at its own version untouched');
+    assertEq(read(dir, 'package.json'), WORKSPACE_ROOT, 'the unversioned root untouched');
     cleanup(dir);
   });
 

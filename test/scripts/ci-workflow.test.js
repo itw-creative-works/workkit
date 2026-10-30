@@ -33,7 +33,7 @@ const cases = async () => {
     assertEq(JSON.stringify(listValue(branches)), JSON.stringify(['main']), 'on.push.branches');
     const ignored = block(push, 'paths-ignore', filters);
     assert(ignored, 'on.push carries `paths-ignore`');
-    assertEq(JSON.stringify(listValue(ignored).sort()), JSON.stringify(['.claude-plugin/plugin.json', 'CHANGELOG.md']), 'on.push.paths-ignore');
+    assertEq(JSON.stringify(listValue(ignored).sort()), JSON.stringify(['.claude-plugin/plugin.json', 'CHANGELOG.md', 'packages/core/package.json']), 'on.push.paths-ignore');
   });
 
   return summary();

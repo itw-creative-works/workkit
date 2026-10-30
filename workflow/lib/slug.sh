@@ -32,11 +32,12 @@ wk_is_kit_checkout() {
   wk_repo_slug "$1" | grep -Eiq '^[^/]+/workkit$'
 }
 
-# wk_roster_path <owner/name>: the folder of this machine's roster whose origin
-# is that slug, any letter case, enabled entries only; 1 when none is. Loads
-# platform.sh beside this when the caller has not, for wk_user_dir and wk_jq.
+# wk_roster_path <owner/name> [<match>]: the folder of this machine's roster
+# whose origin is that slug, any letter case, enabled entries only, or with
+# <match> the first for which `<match> <folder> <slug lowercased>` exits 0; 1 when
+# none is. Loads platform.sh beside this when the caller has not, for wk_user_dir and wk_jq.
 wk_roster_path() {
-  local want key roster
+  local want key roster match="${2:-}"
   [[ -n "${1:-}" ]] || return 1
   declare -F wk_user_dir >/dev/null || . "${BASH_SOURCE[0]%/*}/platform.sh"
   command -v jq >/dev/null 2>&1 || return 1
@@ -45,10 +46,13 @@ wk_roster_path() {
   want="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   while IFS= read -r key; do
     [[ -n "$key" ]] || continue
-    if [[ "$(wk_repo_slug "$key" | tr '[:upper:]' '[:lower:]')" == "$want" ]]; then
-      printf '%s\n' "$key"
-      return 0
+    if [[ -n "$match" ]]; then
+      "$match" "$key" "$want" || continue
+    elif [[ "$(wk_repo_slug "$key" | tr '[:upper:]' '[:lower:]')" != "$want" ]]; then
+      continue
     fi
+    printf '%s\n' "$key"
+    return 0
   done < <(wk_jq -r '(.repos // {}) | to_entries[] | select(.value == "enabled") | .key' "$roster" 2>/dev/null)
   return 1
 }

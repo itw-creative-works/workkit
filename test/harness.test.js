@@ -1,4 +1,4 @@
-// Tests for the one entry, workflow/test/lib/harness.js: it carries every
+// Tests for the one entry, packages/core/test/lib/harness.js: it carries every
 // export of the concern files behind it, a suite written on that one require
 // alone runs the same by file and under the kit's runner, and a failure prints
 // the first stack frame outside the library, whatever shape the frame takes.
@@ -11,8 +11,8 @@ const {
   group, test, assert, assertEq, summary, selfRun, mkTmp, run,
 } = require('./lib/harness');
 
-const KIT_LIB = path.join(__dirname, '..', 'workflow', 'test', 'lib');
-const RUNNER = path.join(__dirname, '..', 'workflow', 'test', 'run.js');
+const KIT_LIB = path.join(__dirname, '..', 'packages', 'core', 'test', 'lib');
+const RUNNER = path.join(__dirname, '..', 'packages', 'core', 'test', 'run.js');
 const CONCERNS = ['process', 'scratch', 'seed', 'suites', 'log', 'spawn'];
 
 // A suite on the one require alone, reaching a scratch folder, a wait, a child

@@ -42,14 +42,13 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
  * screen with the token last; `mintExit` is a mint that did not finish.
  * `pagesRef` and `pagesBuilds` answer the token handover's reads, one
  * `[status, commit]` per poll with the last repeating. `login` is who `gh api
- * user` says you are, and `ownerId` what `gh api users/<owner> --jq .id` prints;
- * absent, each falls through to the stub's exit with nothing printed. Both
+ * user` says you are; absent, the stub's exit with nothing printed. Both
  * openers record and copy the page they were handed, so no real browser opens.
  */
 const mkWorld = ({
   pluginInstalled = false, ghAuthed = true, claude = true, binOnPath = false,
   secrets = null, authToken = '', claudeToken = '', mintExit = 0,
-  pagesRef = '', pagesBuilds = [], login = '', ownerId = '',
+  pagesRef = '', pagesBuilds = [], login = '',
 } = {}) => {
   const root = mkTmp('workkit-cli-');
   const bin = path.join(root, 'bin');
@@ -113,12 +112,6 @@ const mkWorld = ({
     ...(login ? [
       'if [[ "$1" == \'api\' && "$2" == \'user\' ]]; then',
       `  printf '%s\\n' '${login}'`,
-      '  exit 0',
-      'fi',
-    ] : []),
-    ...(ownerId ? [
-      'if [[ "$1" == \'api\' && "$2" == users/* && "$*" == *\' --jq .id\'* ]]; then',
-      `  printf '%s\\n' '${ownerId}'`,
       '  exit 0',
       'fi',
     ] : []),

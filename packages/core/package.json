@@ -1,0 +1,29 @@
+{
+  "name": "workkit-core",
+  "version": "0.84.2",
+  "description": "The workkit test runner and its harness: `workkit test` runs a repo's suites in worker processes and prints one totals line.",
+  "private": false,
+  "type": "module",
+  "license": "FSL-1.1-MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itw-creative-works/workkit.git",
+    "directory": "packages/core"
+  },
+  "engines": {
+    "node": ">=22.22"
+  },
+  "files": [
+    "bin",
+    "test"
+  ],
+  "bin": {
+    "workkit": "bin/workkit.js"
+  },
+  "exports": {
+    "./test": "./test/index.js"
+  },
+  "scripts": {
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../LICENSE.md','LICENSE.md')\""
+  }
+}

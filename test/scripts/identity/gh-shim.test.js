@@ -329,13 +329,19 @@ const cases = async () => {
     },
   );
 
-  await test('case 17: the service answers 412, the verb exits 4 with the install page, and gh never runs', async () => {
-    const service = await startService(412, { error: 'not installed', fix: INSTALL_FIX });
+  await test('case 17: the service answers 412, the verb exits 4 naming the install page pre-selected on the owner, then or run: workkit setup --bot, and gh never runs', async () => {
+    // One stand-in is both the service and GitHub's API, which answers acme's id.
+    const service = await startServer([
+      { method: 'POST', url: '/token', status: 412, body: JSON.stringify({ error: 'not installed', fix: INSTALL_FIX }) },
+      { method: 'GET', url: '/users/acme', status: 200, body: JSON.stringify({ login: 'acme', id: 4242 }) },
+    ], mkTmp('wk-identity-service-'));
     try {
       const world = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
-      const res = runShim(world, ['issue', 'comment', '1', '--body', 'x']);
+      const res = runShim(world, ['issue', 'comment', '1', '--body', 'x'], { env: { GITHUB_API_URL: service.url } });
       assertEq(res.code, 4, `exit 4, stderr: ${res.stderr}`);
-      assert(res.stderr.includes('https://github.com/apps/workkit-agent'), `stderr carries the install page, got: ${res.stderr}`);
+      const page = 'https://github.com/apps/workkit-agent/installations/new/permissions?suggested_target_id=4242';
+      assert(res.stderr.includes(`install workkit-agent[bot] on acme: ${page}\nor run: workkit setup --bot\n`),
+        `stderr names the pre-selected page, then the --bot command, got: ${res.stderr}`);
       assertEq(res.calls.length, 0, `the real gh never runs, got ${fmtCalls(res.calls)}`);
       const posts = service.requests().filter((r) => r.method === 'POST' && r.url === '/token');
       assert(posts.length > 0, `the client asked the stand-in, got: ${JSON.stringify(service.requests())}`);
@@ -406,6 +412,34 @@ const cases = async () => {
       assertEq(service.requests().length, 0, `the token service is never asked, got: ${JSON.stringify(service.requests())}`);
     } finally {
       await service.close();
+    }
+  });
+
+  group('identity/gh: a paired public repo');
+
+  await test('the shim posts public-repo writes as the bot for a paired repo, and leaves an unpaired outside repo to the owner\'s gh', async () => {
+    const world = mkWorld();
+    const settings = path.join(world.rostered, '.workkit', 'settings.json');
+    fs.mkdirSync(path.dirname(settings), { recursive: true });
+    fs.writeFileSync(settings, `${JSON.stringify({ version: 1, enabled: true, public: 'acme/public' })}\n`);
+    // Both outside repos hold a cached token, so only the pairing tells them apart.
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    for (const [name, token] of [['acme--public', 'ghs_publictoken'], ['acme--outside', 'ghs_outsidetoken']]) {
+      fs.writeFileSync(path.join(world.home, '.workkit', 'identity', `${name}.json`), JSON.stringify({ token, expiresAt }), { mode: 0o600 });
+    }
+    const writes = (repo) => [
+      ['issue', 'comment', '44', '--body', 'x', '-R', repo],
+      ['issue', 'edit', '44', '--add-label', 'status:qa', '-R', repo],
+      ['issue', 'close', '44', '-R', repo],
+    ];
+    for (const cwd of [world.rostered, world.unrostered]) {
+      const where = cwd === world.rostered ? 'from the paired repo' : 'from an unrostered repo';
+      for (const argv of writes('acme/public')) {
+        assertRan(runShim(world, argv, { cwd }), argv, 'ghs_publictoken', `gh ${argv.join(' ')} ${where}`);
+      }
+      for (const argv of writes('acme/outside')) {
+        assertRan(runShim(world, argv, { cwd }), argv, null, `gh ${argv.join(' ')} ${where}`);
+      }
     }
   });
 };

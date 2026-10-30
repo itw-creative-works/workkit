@@ -27,6 +27,7 @@ bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/triage-marker.sh"
 ## Sources to drain (the FULL drain; § Scoped mode reads only the named issues)
 
 1. **Open `status:inbox` issues** on the cwd repo: `gh issue list --state open --label status:inbox --json number,title,body,labels --limit 1000`.
+   - A repo paired with a public issue repo (`"public": "<owner>/<repo>"` in its `.workkit/settings.json`) runs `workkit public intake` FIRST. Each new public report becomes a linked `status:inbox` issue here, printed one line each, so this list holds it. Route it like any other, its `type:` label included. Intake happens here and nowhere else (the pairing: the workkit plugin's `docs/project-state.md` § Capture).
 2. **`.workkit/capture.md`**: the local, gitignored capture file (offline moments, free-form dumps).
 3. **Mid-chat note dumps**: same routing, no file needed first.
 4. **The HQ pass**: the home repo's open `status:inbox` issues, routed with the same table, from any repo: `gh issue list --repo <site.repo> --state open --label status:inbox ... --limit 1000` (`site.repo` from `~/.workkit/settings.json`).
@@ -117,3 +118,4 @@ Instead of draining the inbox, sweep the OPEN board and apply the same litmus te
 - Never invent priority. `priority:` is the owner's call unless the entry states urgency.
 - Ambiguous entries: file your best call and flag it `(check placement)` in the Filed trail. Do NOT stop to ask per entry.
 - Never `agent:ok` on the owner's behalf. That permission is theirs to grant.
+- What a linked public issue may be told: the workkit plugin's `docs/project-state.md` § Capture.

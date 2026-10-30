@@ -2,8 +2,8 @@
  * safety:commit-gate judged through the hooks module over a real scratch repo:
  * commitGateGuard over bashFacts (hooks/mods/guards.js) built from engine calls
  * this machine answers, git, bash, npm and node run for real with the env
- * given, files read and statted off disk. Consumers: test/scripts/prove.test.js
- * and script-shell.test.js.
+ * given, files read and statted off disk. Consumers: test/scripts/prove.test.js,
+ * script-shell.test.js, and test/hooks/public-mirror.test.js (`ioIn` alone).
  */
 
 const fs = require('fs');
@@ -62,4 +62,4 @@ const gateOn = async (repo, command, env) => {
   };
 };
 
-module.exports = { gateOn };
+module.exports = { gateOn, ioIn };

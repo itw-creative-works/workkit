@@ -1,7 +1,7 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. Eleven rows: the test package,
+// function (spawned) and to the JavaScript export (required), and the two must agree. Twelve rows: the test package,
 // the opt-in read, the machine folder, the CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint
-// block's sentence, the working-diff reads, the version-only change, the status:building list.
+// block's sentence, the working-diff reads, the version-only change, the status:building list, the public slug.
 
 const fs = require('fs');
 const os = require('os');
@@ -350,6 +350,28 @@ const cases = async () => {
       await mods('gh').buildingList(async (argv) => { runs.push(argv); return runResult({ stdout: '[]' }); }, { repo });
       assertEq(JSON.stringify(runs[0].slice(1)), JSON.stringify(shell[0]), `${repo || 'no repo'}: the same argv`);
     }
+  });
+
+  group('twins: the public slug, PUBLIC_SLUG_RE in workflow/standards/labels.sh against SLUG_RE and the Public: link in workflow/public/lib.js');
+
+  // `public` key values; the first four are slugs.
+  const PUBLIC_KEYS = [
+    'acme/public', 'Acme-Co/free-proxy-list', 'a1/b.c_d-e', 'acme/.github', 'acme', '', 'acme/', '/public',
+    'acme/public/x', 'ac me/public', 'acme_co/public', 'acme/pub$lic', 'https://github.com/acme/public',
+  ];
+
+  await test('the heal and the verbs take the same values as a slug, and the Public: link reads those alone', () => {
+    const script = `. "${lib('workflow', 'standards', 'labels.sh')}"
+while IFS= read -r p; do if [[ "$p" =~ $PUBLIC_SLUG_RE ]]; then echo 1; else echo 0; fi; done <<<"$FIXTURES"`;
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], {
+      env: { PATH: SYSTEM_PATH, FIXTURES: PUBLIC_KEYS.join('\n') }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    const shell = (res.stdout || '').split('\n').filter(Boolean).map((a) => a === '1');
+    assertEq(shell.length, PUBLIC_KEYS.length, `one answer per value, stderr: ${res.stderr}`);
+    assertEq(JSON.stringify(shell.slice(0, 5)), JSON.stringify([true, true, true, true, false]), 'the four slugs pass, a bare owner does not');
+    const { SLUG_RE, publicLink } = require(path.join(KIT, 'workflow', 'public', 'lib.js'));
+    agree(PUBLIC_KEYS, shell, (k) => SLUG_RE.test(k), 'PUBLIC_SLUG_RE against SLUG_RE');
+    agree(PUBLIC_KEYS, shell, (k) => publicLink(`Public: https://github.com/${k}/issues/1`) !== null, 'PUBLIC_SLUG_RE against the Public: link');
   });
 };
 

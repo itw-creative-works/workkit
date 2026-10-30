@@ -1,4 +1,4 @@
-// Tests for workflow/test/lib/spawn.js through the one entry: run() keeps both
+// Tests for packages/core/test/lib/spawn.js through the one entry: run() keeps both
 // streams and the exit, start() streams while its child runs and end() ends its
 // group, climbing INT, TERM, KILL only while the child lives, a deadline ends a
 // child that never exits, and endTree() ends a group, refuses a pid that is

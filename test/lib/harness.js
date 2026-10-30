@@ -1,1 +1,1 @@
-module.exports = require('../../workflow/test/lib/harness.js');
+module.exports = require('workkit-core/test');

@@ -1,6 +1,7 @@
-// Tests for standards.sh: a participating repo's `npm test` prints the totals
-// line, else the heal says so in one line and never bounces; a test script of
-// `workkit test` and a suite folder at tests/ are named as drift the same way.
+// Tests for standards.sh: a participating repo passes the test runner check when
+// its devDependencies name workkit-core, whatever script wraps `workkit test`,
+// read off package.json alone; any other repo gets one warning naming both
+// changes, never a bounce. A suite folder at tests/ is named as drift the same way.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -11,82 +12,69 @@ const {
 const { stripVTControlCharacters } = require('util');
 const { cleanup, makeRepo, makeGhStub, runScript } = require('./helpers');
 
-const LINE = 'standards: npm test does not print the totals line';
-
-// A participating repo whose package.json runs `script` as its test, with
-// `files` (name to body) beside it.
-const repoTesting = (script, files = {}) => {
+// A participating repo whose package.json runs `script` as its test, `pkg`
+// merged over it, with `files` (name to body) beside it.
+const repoTesting = (script, files = {}, pkg = {}) => {
   const repo = makeRepo();
-  fs.writeFileSync(path.join(repo, 'package.json'), `${JSON.stringify({ name: 'fixture', private: true, scripts: { test: script } }, null, 2)}\n`);
-  for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(repo, name), body);
+  fs.writeFileSync(path.join(repo, 'package.json'),
+    `${JSON.stringify({ name: 'fixture', private: true, scripts: { test: script }, ...pkg }, null, 2)}\n`);
+  for (const [name, body] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(repo, name)), { recursive: true });
+    fs.writeFileSync(path.join(repo, name), body);
+  }
   return repo;
 };
 
-const linesOf = (output) => output.split(/\r?\n/).filter((line) => line.includes(LINE));
+const ON_CORE = { devDependencies: { 'workkit-core': '^1.0.0' } };
 
-// The drift line a test script of `workkit test` gets, naming the runner to point at.
-const scriptLines = (output) => stripVTControlCharacters(output).split(/\r?\n/)
-  .filter((line) => /(?:^|\s)test script: .*node test\/run\.js/.test(line));
+// The heal's test-runner warnings, and the one naming both changes the check asks for.
+const warnings = (output) => stripVTControlCharacters(output).split(/\r?\n/)
+  .filter((line) => line.trim().startsWith('\u26a0 test script:'));
+const asksForCore = (line) => line.includes('npm i -D workkit-core') && line.includes('"test": "workkit test"');
+
+// The old hand-off to the kit's runner, which names `/run.js` and the totals
+// wording a file grep would have accepted.
+const HANDOFF = [
+  "const path = require('path');",
+  "const engine = process.env.WORKKIT_ENGINE || path.join(require('os').homedir(), '.claude', 'workkit');",
+  "require(path.join(engine, 'test/run.js')); // prints N passed, M failed",
+  '',
+].join('\n');
 
 const cases = async () => {
-  group('standards.sh: the test script');
+  group('standards.sh: the test runner');
 
-  await test('an npm test that prints no totals line gets the one heal line and exit 0', () => {
-    const repo = repoTesting('node x.js', { 'x.js': "console.log('all good');\n" });
-    const stub = makeGhStub();
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, `exit 0, got: ${output}`);
-    assertEq(linesOf(output).length, 1, `the line, once, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  // The heal reads the file a node, bash or sh script names, one level down,
-  // for `/run.js` or the totals wording; a miss is a warning, never a bounce.
-  const HANDOFF = [
-    "const path = require('path');",
-    "const engine = process.env.WORKKIT_ENGINE || path.join(require('os').homedir(), '.claude', 'workkit');",
-    "require(path.join(engine, 'test/run.js'));",
-    '',
-  ].join('\n');
-
-  await test('an npm test of node tests/run.js handing off to the kit runner gets no line', () => {
-    const repo = repoTesting('node tests/run.js');
-    fs.mkdirSync(path.join(repo, 'tests'));
-    fs.writeFileSync(path.join(repo, 'tests', 'run.js'), HANDOFF);
-    const stub = makeGhStub();
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, `exit 0, got: ${output}`);
-    assert(linesOf(output).length === 0, `no test-script line, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
-
-  // The script alone differs between the two repos.
-  await test('a test script of workkit test gets the test script line naming node test/run.js, node test/run.js none, exit 0 both ways', () => {
-    const stub = makeGhStub();
-    for (const [script, count] of [['workkit test', 1], ['node test/run.js', 0]]) {
-      const repo = repoTesting(script);
-      fs.mkdirSync(path.join(repo, 'test'));
-      fs.writeFileSync(path.join(repo, 'test', 'run.js'), HANDOFF);
+  // A wrapper is a script of the repo's own that runs `workkit test` inside it.
+  for (const [shape, script, files] of [
+    ['a test script of workkit test', 'workkit test', {}],
+    ['a wrapper test script', 'bash test/run.sh', { 'test/run.sh': '#!/usr/bin/env bash\nworkkit test "$@"\n' }],
+  ]) {
+    await test(`devDependencies naming workkit-core and ${shape}: no warning, exit 0`, () => {
+      const repo = repoTesting(script, files, ON_CORE);
+      const stub = makeGhStub();
       const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-      assertEq(code, 0, `${script}: exit 0, got: ${output}`);
-      assertEq(scriptLines(output).length, count, `${script}: the test script line ${count} time(s), got: ${output}`);
-      if (count === 0) assertEq(linesOf(output).length, 0, `${script}: no totals line either, got: ${output}`);
-      cleanup(repo);
-    }
-    cleanup(stub.dir);
-  });
+      assertEq(code, 0, `exit 0, got: ${output}`);
+      assertEq(warnings(output).join('\n'), '', `no test-runner warning, got: ${output}`);
+      cleanup(repo); cleanup(stub.dir);
+    });
+  }
 
-  await test('an npm test of bash tests/run.sh running node "$here/run.js" gets no line', () => {
-    const repo = repoTesting('bash tests/run.sh');
-    fs.mkdirSync(path.join(repo, 'tests'));
-    fs.writeFileSync(path.join(repo, 'tests', 'run.sh'), '#!/usr/bin/env bash\nhere="$(cd "$(dirname "$0")" && pwd)"\nnode "$here/run.js"\n');
-    fs.writeFileSync(path.join(repo, 'tests', 'run.js'), HANDOFF);
-    const stub = makeGhStub();
-    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, `exit 0, got: ${output}`);
-    assert(linesOf(output).length === 0, `no test-script line, got: ${output}`);
-    cleanup(repo); cleanup(stub.dir);
-  });
+  // The hand-off file beside each script is one a file grep would pass.
+  for (const [shape, script, pkg] of [
+    ['a node test/run.js hand-off with no workkit-core', 'node test/run.js', {}],
+    ['a test script of workkit test with no workkit-core', 'workkit test', {}],
+  ]) {
+    await test(`${shape}: one warning naming npm i -D workkit-core and "test": "workkit test", exit 0`, () => {
+      const repo = repoTesting(script, { 'test/run.js': HANDOFF }, pkg);
+      const stub = makeGhStub();
+      const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+      assertEq(code, 0, `a warning, never a failed heal, got: ${output}`);
+      const lines = warnings(output);
+      assertEq(lines.length, 1, `one test-runner warning, got: ${output}`);
+      assert(asksForCore(lines[0]), `it names both changes, got: ${lines[0]}`);
+      cleanup(repo); cleanup(stub.dir);
+    });
+  }
 
   group('standards.sh: the suite folder');
 

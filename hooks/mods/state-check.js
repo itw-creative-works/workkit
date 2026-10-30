@@ -12,6 +12,9 @@ import { parseJson } from './settings.js';
 
 const plural = (n) => (n === 1 ? '' : 's');
 
+/** The close of every nudge whose fix is mechanical: the agent makes it, never asks. */
+export const FIX_NOW = "Make this fix now, in this session, without asking; it rides the session's next commit like any small fix found on the way.";
+
 /**
  * The open inbox count `gh issue list --json number` printed; 0 for anything
  * that is not a list.
@@ -47,9 +50,9 @@ export function stateCheckContext(facts) {
   // Claude Code reads AGENTS.md itself, and a project CLAUDE.md stops that read.
   if (typeof claude === 'string' && !isUserClaude) {
     if (rowsOf(claude).every((row) => /^\s*$|^\s*@AGENTS\.md\s*$/.test(row))) {
-      msg.push('CLAUDE.md is only the @AGENTS.md pointer, and Claude Code reads AGENTS.md itself. Delete it: git rm CLAUDE.md.');
+      msg.push(`CLAUDE.md is only the @AGENTS.md pointer, and Claude Code reads AGENTS.md itself. Delete it: git rm CLAUDE.md. ${FIX_NOW}`);
     } else if (typeof agents !== 'string') {
-      msg.push('CLAUDE.md holds content and no AGENTS.md sits beside it; a project CLAUDE.md stops Claude Code reading AGENTS.md. Rename it: git mv CLAUDE.md AGENTS.md (the rename keeps its history).');
+      msg.push(`CLAUDE.md holds content and no AGENTS.md sits beside it; a project CLAUDE.md stops Claude Code reading AGENTS.md. Rename it: git mv CLAUDE.md AGENTS.md (the rename keeps its history). ${FIX_NOW}`);
     } else {
       msg.push('CLAUDE.md holds content beside an AGENTS.md; a project CLAUDE.md stops Claude Code reading AGENTS.md. Merge it into AGENTS.md by hand, then git rm CLAUDE.md.');
     }
@@ -57,10 +60,10 @@ export function stateCheckContext(facts) {
   if (typeof agents === 'string') {
     const { lines, dense } = agentsBudget(agents);
     if (lines > AGENTS_MAX_LINES) {
-      msg.push(`AGENTS.md is ${lines} lines (budget ${AGENTS_MAX_LINES}). Move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits.`);
+      msg.push(`AGENTS.md is ${lines} lines (budget ${AGENTS_MAX_LINES}). Move deep references to docs/<topic>.md and keep pointer lines; the board-guard hook bounces writes until it fits. ${FIX_NOW}`);
     }
     if (dense > 0) {
-      msg.push(`AGENTS.md has ${dense} line${plural(dense)} over ${AGENTS_MAX_BYTES} bytes (density rule). Bulletize them or move the detail to docs/<topic>.md; the board-guard hook bounces writes until it fits.`);
+      msg.push(`AGENTS.md has ${dense} line${plural(dense)} over ${AGENTS_MAX_BYTES} bytes (density rule). Bulletize them or move the detail to docs/<topic>.md; the board-guard hook bounces writes until it fits. ${FIX_NOW}`);
     }
   }
   return msg.length > 0 ? msg.join(' ') : null;

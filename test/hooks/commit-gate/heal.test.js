@@ -15,7 +15,7 @@ const {
   WORKFLOW_DIR, JOB, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, write, gitRm, unlink, commit, proveTree,
   judge, denyOf, blocks, passes, realRewrite,
 } = require('./helpers');
-const { withoutCloneStep } = require('../../lib/checks-template');
+const { withCloneStep } = require('../../lib/checks-template');
 
 // A repo with a committed settings.json: the stamp arm only exempts an edit
 // that touches nothing but the version key.
@@ -58,12 +58,12 @@ const healedChecks = () => {
   const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
   return withPushTrigger(`${template.slice(from, to).join('\n')}\n${PR_ONLY}`);
 };
-// The heal's kit clone step written into a body, read back from its scratch copy.
-const withCloneStep = (body) => {
+// The heal's removal of the kit clone step from a body, read back from its scratch copy.
+const droppedCloneStep = (body) => {
   const file = scratchFile(body);
-  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"\nwk_checks_clone_step "$2"', 'bash', shellPath(JOB), shellPath(file)],
+  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"\nwk_checks_drop_clone_step "$2"', 'bash', shellPath(JOB), shellPath(file)],
     { encoding: 'utf8', timeout: SPAWN_DEADLINE });
-  assertEq(res.status, 0, `wk_checks_clone_step answers, stderr: ${res.stderr}`);
+  assertEq(res.status, 0, `wk_checks_drop_clone_step answers, stderr: ${res.stderr}`);
   return fs.readFileSync(file, 'utf8');
 };
 const PUSH = /^ {2}push:/m;
@@ -177,17 +177,17 @@ const cases = async () => {
     passes(await judge(r, 'git commit -m "chore(workflow): run checks on a push"'), NOTICE.proved, 'the heal\'s push trigger alone needs no review');
   });
 
-  await test('the kit clone step added alone to an older checks.yml is bookkeeping, no marker: exit 0', async () => {
+  await test('the kit clone step removed alone from checks.yml in a repo on workkit-core is bookkeeping, no marker: exit 0', async () => {
     const r = mkStampedRepo();
-    stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
-    const older = withoutCloneStep(fs.readFileSync(TEMPLATE, 'utf8'));
+    stage(r, 'package.json', '{ "devDependencies": { "workkit-core": "*" }, "scripts": { "test": "workkit test" } }\n');
+    const older = withCloneStep(fs.readFileSync(TEMPLATE, 'utf8'));
     stage(r, CHECKS, older);
     commit(r);
-    const healed = withCloneStep(older);
-    assert(healed !== older, 'the step is in the diff');
+    const healed = droppedCloneStep(older);
+    assert(healed !== older, 'the removal is in the diff');
     stage(r, CHECKS, healed);
     proveTree(r);
-    passes(await judge(r, 'git commit -m "chore(workflow): clone the kit in CI"'), NOTICE.proved, 'the heal\'s clone step alone needs no review');
+    passes(await judge(r, 'git commit -m "chore(workflow): drop the kit clone step from CI"'), NOTICE.proved, 'the heal\'s clone step removal alone needs no review');
   });
 
   await test('ports "the copy deleted while checks.yml still runs it, no marker: exit 2"', async () => {
@@ -263,11 +263,14 @@ const cases = async () => {
 
   group('changelog-job.sh rewrite: the entry over wk_checks_heal_rewrite');
 
+  // Both run from a repo on workkit-core, so the clone step body is rewritten too.
   await test('given the run of `changelog-job.sh rewrite a b` and `wk_checks_heal_rewrite a b`: the same text', () => {
-    for (const body of [oldChecks('.github/changelog-lint.cjs'), PR_ONLY, withoutCloneStep(fs.readFileSync(TEMPLATE, 'utf8'))]) {
+    const root = mkTmp('cg-heal-root-');
+    fs.writeFileSync(path.join(root, 'package.json'), '{ "devDependencies": { "workkit-core": "*" } }\n');
+    for (const body of [oldChecks('.github/changelog-lint.cjs'), PR_ONLY, withCloneStep(fs.readFileSync(TEMPLATE, 'utf8'))]) {
       const a = scratchFile(body);
-      const entry = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', shellPath(a), shellPath(TEMPLATE)], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
-      const fn = realRewrite(a, TEMPLATE);
+      const entry = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', shellPath(a), shellPath(TEMPLATE)], { cwd: root, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+      const fn = realRewrite(a, TEMPLATE, root);
       assert(fn !== null && fn !== body, 'the function rewrites the file');
       assertEq(entry.status, 0, `the entry exits 0, stderr: ${entry.stderr}`);
       assertEq(entry.stdout, fn, 'and prints the function\'s text byte for byte');

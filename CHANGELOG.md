@@ -7,6 +7,20 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#479](../../issues/479) - A private repo can pair with a public issue repo (`"public": "<owner>/<repo>"`): triage takes its new issues in through `workkit public intake`, each status change mirrors onto the linked public issue, and the ship's close comments the fixing version and closes it, all as workkit-agent[bot].
+
+- [#478](../../issues/478) - The test runner ships as the npm package `workkit-core`: a repo runs `npm i -D workkit-core` and sets `"test": "workkit test"`, so tests run without the kit installed and CI needs no kit clone; the heal checks for the package and removes the old clone step.
+
+### Changed
+
+- [#480](../../issues/480) - A session-start nudge with a mechanical fix (deleting or renaming a repo `CLAUDE.md`, or bringing AGENTS.md back inside its line or density budget) now tells the agent to make the fix in that session without asking.
+
+### Fixed
+
+- [#475](../../issues/475) - The gh shim's not-installed refusal names the install page with the owner pre-selected, the one `workkit setup` opens, then `or run: workkit setup --bot`, a new flag that runs only the App install step.
+
 ## [0.84.2] - 2026-10-29
 
 ### Changed

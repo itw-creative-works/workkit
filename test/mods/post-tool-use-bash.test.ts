@@ -1,8 +1,7 @@
-// classic.PostToolUse and PostToolUseFailure (Bash) through the hooks module: workflow:snapshot on
-// POST_BASH_GUARDS, which never blocks: a claim runs the snapshot.sh entry's
-// take (an add, while a live snapshot is not stale), a release leaving none
-// building runs its drop, each through $.process.run. The plan's own cases
-// and the copy are test/hooks/workflow-snapshot.test.js.
+// classic.PostToolUse and PostToolUseFailure (Bash) through the hooks module, POST_BASH_GUARDS, which
+// never blocks: workflow:snapshot's take, add and drop through the snapshot.sh entry, and
+// workflow:public-mirror's public/mirror.js after a status edit in a paired repo, each through
+// $.process.run. The plans' own cases: test/hooks/workflow-snapshot.test.js and public-mirror.test.js.
 
 import { test, expect, describe } from 'claude-code/testing'
 import { mkWorld, hooksLog, REPO, HOME, SID } from '../lib/mod-world.ts'
@@ -61,6 +60,31 @@ describe('classic.PostToolUseFailure Bash: workflow:snapshot', () => {
     const runs = snapshotRuns(w)
     expect(runs.map((x: any) => x.args[0])).toEqual(['take'])
     expect(runs[0].args.slice(1)).toEqual([REPO, '10'])
+  })
+})
+
+// The session repo paired with a public issue repo in its committed settings.
+const PAIRED = { [REPO]: '{ "version": 1, "enabled": true, "public": "acme/public" }\n' }
+const mirrorRuns = (w: any) => w.runs('public/mirror.js')
+
+describe('classic.PostToolUse Bash: workflow:public-mirror', () => {
+  test('given a paired repo and gh issue edit 12 --add-label status:qa, then node public/mirror.js 12 ran from the root and nothing was denied', async ($, on) => {
+    const w = world(on, { repos: PAIRED })
+    const r = await posted($, 'gh issue edit 12 --add-label status:qa')
+    expect(r?.block).toBeUndefined()
+    const runs = mirrorRuns(w)
+    expect(runs.length).toBe(1)
+    expect(runs[0].argv.slice(-1)).toEqual(['12'])
+    expect(runs[0].init.cwd).toBe(REPO)
+  })
+})
+
+describe('classic.PostToolUseFailure Bash: workflow:public-mirror', () => {
+  test('given a failed Bash call holding gh issue edit 12 --add-label status:qa in a paired repo, then no mirror ran', async ($, on) => {
+    const w = world(on, { repos: PAIRED })
+    const r = await failed($, 'gh issue edit 12 --add-label status:qa && ls /w/nowhere')
+    expect(r?.block).toBeUndefined()
+    expect(mirrorRuns(w)).toEqual([])
   })
 })
 

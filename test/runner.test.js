@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
-// Tests for workflow/test/run.js, the kit's suite runner test/run.js hands off
-// to: a named skip stays green and a real throw fails, paths narrow a run, suites
+// Tests for packages/core/test/run.js, the kit's suite runner the workkit bin
+// runs: a named skip stays green and a real throw fails, paths narrow a run, suites
 // run whole in a worker pool with a serial tail after the wave, a crashed,
 // unloadable or orphaned worker fails or dies loudly, a node:test suite reports
 // in the same lines, the suite folder is test/ before tests/, and every suite runs by file.
@@ -14,7 +14,7 @@ const {
 } = require('./lib/harness');
 const { which, basePathWithout, joinPath, NODE_DIR } = require('./lib/platform');
 
-const KIT_TEST = path.join(__dirname, '..', 'workflow', 'test');
+const KIT_TEST = path.join(__dirname, '..', 'packages', 'core', 'test');
 const RUNNER = path.join(KIT_TEST, 'run.js');
 
 // The fixture's serial tail: every fixture names its own (none by default).

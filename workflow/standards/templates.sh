@@ -32,22 +32,23 @@ ensure_issue_forms() {
 
 # ── 2b. Required-checks CI workflow ──
 # Installed once and never overwritten: the copy is the repo's to extend, and
-# only gains the template's kit clone step. Presence is the check, so a repo
-# that wants no Actions run empties the file rather than deleting it, which the
-# next heal would re-install.
+# only loses the retired kit clone step, once the repo's devDependencies name
+# workkit-core. Presence is the check, so a repo that wants no Actions run
+# empties the file rather than deleting it, which the next heal would re-install.
 ensure_ci_workflow() {
   local dest=".github/workflows/checks.yml" src out rc=0
   src="$(wk_checks_template)"
 
   if [[ -f "$dest" ]]; then
     wk_skip "checks: $dest already present"
-    [[ -s "$dest" && -f "$src" ]] || return 0
-    out="$(wk_checks_clone_step "$dest" 2>&1)" || rc=$?
-    case "$rc" in
-      0) [[ -z "$out" ]] || wk_ok "$out" ;;
-      2) wk_warn "$out" ;;
-      *) wk_warn "checks: could not add the kit clone step to $dest${out:+: $out}"; needs_attention=1 ;;
-    esac
+    [[ -s "$dest" ]] && wk_has_core_package || return 0
+    out="$(wk_checks_drop_clone_step "$dest" 2>&1)" || rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+      [[ -z "$out" ]] || wk_ok "$out"
+    else
+      wk_warn "checks: could not remove the kit clone step from $dest${out:+: $out}"
+      needs_attention=1
+    fi
     return 0
   fi
   if [[ ! -f "$src" ]]; then

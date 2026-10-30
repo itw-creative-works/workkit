@@ -70,11 +70,11 @@ BUILDING_LABEL="status:building"
 SPECCED_LABEL="status:specced"
 
 # The state directory's name for the engine layer. hooks/_lib.sh and
-# workflow/test/lib/harness.js hold their own copy, so change all three together.
+# packages/core/test/lib/harness.js hold their own copy, so change all three together.
 WORKKIT_DIR=".workkit"
 
 # Bump it when a new heal or drift check lands (README § The standard version).
-STANDARD_VERSION=9
+STANDARD_VERSION=10
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Diagnostics go to stderr: stdout is the machine answer of --state and
@@ -215,9 +215,12 @@ ensure_changelog_separator
 ensure_changelog_job
 remove_changelog_linter_copies
 ensure_branch_protection
+read_public_repo
 sync_labels
+sync_public_labels
 sweep_stale_claims
 flip_claimed_specced
+sweep_public_mirror
 check_issue_labels
 check_hook_layer
 check_test_runner

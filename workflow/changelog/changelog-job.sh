@@ -188,76 +188,53 @@ wk_checks_clone_line() {
   printf '%s\n' 'git clone --depth 1 https://github.com/itw-creative-works/workkit'
 }
 
-# wk_checks_clone_block <template>: the template's clone step, the comment run
-# at the step indent above its `- ` line included, then a tab and that indent.
-# Fails, printing nothing, when no step carries the clone line.
-wk_checks_clone_block() {
-  CLONE="$(wk_checks_clone_line)" awk -v BINMODE=3 '
-    function done_step(   k) {
-      if (!hit) return
-      for (k = 1; k <= nc; k++) print cur[k]
-      printf "\t%d\n", ind
-      found = 1
-      exit
-    }
-    BEGIN { ind = -1 }
-    { sub(/\r$/, "") }
-    ind < 0 && /^ *steps:[[:space:]]*$/ { s = 1; next }
-    s && ind < 0 && /^ *- / { match($0, /^ */); ind = RLENGTH }
-    ind < 0 { next }
-    { match($0, /^ */); i = RLENGTH }
-    !/^[[:space:]]*$/ && i < ind { done_step(); exit }
-    i == ind && /^ *#/ { pend[++np] = $0; next }
-    i == ind && /^ *- / { done_step(); nc = 0; hit = 0 }
-    {
-      for (k = 1; k <= np; k++) cur[++nc] = pend[k]
-      np = 0
-      cur[++nc] = $0
-      if (index($0, ENVIRON["CLONE"])) hit = 1
-    }
-    END { if (!found && hit) done_step(); if (!found) exit 1 }
-  ' "$1"
+# wk_has_core_package [dir]: 0 when <dir>/package.json (the cwd's by default)
+# names workkit-core in its devDependencies; check_test_runner asks it too. Only
+# jq's status is read, so no carriage return reaches a comparison.
+wk_has_core_package() {
+  local pkg="${1:-.}/package.json"
+  [[ -f "$pkg" ]] && wk_jq -e '(.devDependencies // {}) | type == "object" and has("workkit-core")' "$pkg" >/dev/null 2>&1
 }
 
-# wk_checks_clone_step <checks.yml> [template]: the template's clone step
-# written into the file before its `- name: Test` step (and the comment run
-# above it), reindented to that step, in the file's own line ending; prints the
-# change. 0 changed or already carrying it, 2 no Test step (the warning), 1 a failure.
-wk_checks_clone_step() {
-  local file="$1" has=0 out block tmp="$1.clone.$$" status=0
+# wk_checks_drop_clone_step <checks.yml>: every step under the retired step's
+# name that carries the clone line taken out of the file in place, with the
+# comment run at its indent above it, in the file's own line ending; a step the
+# repo wrote itself stays. Prints the change. 0 removed or none there, 1 a failure.
+wk_checks_drop_clone_step() {
+  local file="$1" has=0 tmp="$1.clone.$$" status=0
   grep -qF -- "$(wk_checks_clone_line)" "$file" || has=$?
-  case "$has" in 0) return 0 ;; 1) ;; *) return 1 ;; esac
-  out="$(wk_checks_clone_block "${2:-$(wk_checks_template)}")" || {
-    printf 'checks.yml: the template has no kit clone step\n' >&2
-    return 1
-  }
-  block="${out%$'\t'*}"
-  BLOCK="${block%$'\n'}" TIND="${out##*$'\t'}" awk -v BINMODE=3 '
-    BEGIN { eol = "\n" }
-    NR == 1 && /\r$/ { eol = "\r\n" }
+  case "$has" in 0) ;; 1) return 0 ;; *) return 1 ;; esac
+  CLONE="$(wk_checks_clone_line)" STEP="- name: Check out the workkit kit's runner" awk -v BINMODE=3 '
+    function ind(s) { match(s, /^ */); return RLENGTH }
     { line[NR] = $0; b[NR] = $0; sub(/\r$/, "", b[NR]) }
     END {
-      for (n = 1; n <= NR; n++) if (b[n] ~ /^ *- name: Test[[:space:]]*$/) break
-      if (n > NR) exit 2
-      match(b[n], /^ */); pad = sprintf("%" RLENGTH "s", "")
-      at = n
-      while (at > 1 && substr(b[at - 1], 1, length(pad) + 1) == pad "#") at--
-      for (k = 1; k < at; k++) print line[k]
-      nl = split(ENVIRON["BLOCK"], l, "\n")
-      for (k = 1; k <= nl; k++) printf "%s%s%s", (l[k] == "" ? "" : pad), substr(l[k], ENVIRON["TIND"] + 1), eol
-      for (k = at; k <= NR; k++) print line[k]
+      for (n = 1; n <= NR; n++) {
+        if (b[n] ~ /^[[:space:]]*#/ || !index(b[n], ENVIRON["CLONE"])) continue
+        # The step is the nearest `- ` line at or above, indented less than the clone line.
+        for (s = n; s >= 1; s--) if (b[s] ~ /^ *- / && (s == n || ind(b[s]) < ind(b[n]))) break
+        if (s < 1) continue
+        p = ind(b[s])
+        t = substr(b[s], p + 1); sub(/[[:space:]]+$/, "", t)
+        if (t != ENVIRON["STEP"]) continue
+        from = s
+        while (from > 1 && b[from - 1] ~ /^ *#/ && ind(b[from - 1]) == p) from--
+        for (to = s + 1; to <= NR && (b[to] ~ /^[[:space:]]*$/ || ind(b[to]) > p); to++) ;
+        for (k = from; k < to; k++) gone[k] = 1
+        removed = 1
+      }
+      if (!removed) exit 3
+      for (k = 1; k <= NR; k++) if (!(k in gone)) print line[k]
     }
   ' "$file" >"$tmp" || status=$?
-  if [[ "$status" -eq 2 ]]; then
+  if [[ "$status" -eq 3 ]]; then
     rm -f "$tmp"
-    printf 'checks.yml: no Test step as the template names it; the kit clone step was not added\n' >&2
-    return 2
+    return 0
   fi
   if [[ "$status" -ne 0 ]] || ! mv "$tmp" "$file"; then
     rm -f "$tmp"
     return 1
   fi
-  printf 'checks.yml: kit clone step added\n'
+  printf 'checks.yml: kit clone step removed\n'
 }
 
 # wk_changelog_job_rewrite <checks.yml> <template>: the file as the heal leaves
@@ -338,14 +315,16 @@ wk_changelog_job_rewrite() {
 }
 
 # wk_checks_heal_rewrite <checks.yml> <template>: the file as the heal leaves
-# it, wk_changelog_job_rewrite and then the kit clone step; a file with no Test
-# step keeps the first alone. A failed read or write fails it.
+# it, wk_changelog_job_rewrite and then, in a repo whose package.json names
+# workkit-core (wk_has_core_package, read in the cwd), the kit clone step
+# dropped. A failed read or write fails it.
 wk_checks_heal_rewrite() {
   local tmp status=0
   tmp="$(mktemp)" || return 1
   if wk_changelog_job_rewrite "$1" "$2" >"$tmp"; then
-    wk_checks_clone_step "$tmp" "$2" >/dev/null || status=$?
-    [[ "$status" -ne 2 ]] || status=0
+    if wk_has_core_package; then
+      wk_checks_drop_clone_step "$tmp" >/dev/null || status=1
+    fi
     [[ "$status" -ne 0 ]] || cat "$tmp" || status=1
   else
     status=1
@@ -362,6 +341,8 @@ wk_checks_heal_rewrite() {
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${#BASH_SOURCE[@]}" -eq 1 ]; then
   set -uo pipefail
   set -f
+  # shellcheck source=../lib/platform.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/../lib/platform.sh"
   usage() { echo "changelog-job.sh: usage: rewrite <checks.yml> [template] | copies | names <file|-> [copy]" >&2; exit 64; }
   case "${1:-}" in
     rewrite) [ -n "${2:-}" ] || usage; wk_checks_heal_rewrite "$2" "${3:-$(wk_checks_template)}" ;;

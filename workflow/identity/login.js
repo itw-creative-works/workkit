@@ -92,6 +92,12 @@ const loginStatus = (file) => {
 const hostOf = (name, fallback) => (process.env[name] || fallback).replace(/\/+$/, '');
 
 /**
+ * GitHub's API host: `GITHUB_API_URL`, else api.github.com.
+ * @returns {string}
+ */
+const apiUrl = () => hostOf('GITHUB_API_URL', DEFAULT_API);
+
+/**
  * One JSON POST to the device flow's host, its answer parsed. A failing status
  * still returns a body that carries an `error`, the flow's own vocabulary;
  * any other refusal, or a body that is not JSON, throws naming the endpoint.
@@ -125,7 +131,7 @@ const postJson = async (fetch, url, body) => {
  * @returns {Promise<string>}
  */
 const userLogin = async (fetch, token) => {
-  const url = `${hostOf('GITHUB_API_URL', DEFAULT_API)}/user`;
+  const url = `${apiUrl()}/user`;
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -250,4 +256,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = { loginFile, readLogin, writeLogin, signIn, loginStatus, writeOwnerOnly, LOGIN_FIX };
+module.exports = {
+  loginFile, readLogin, writeLogin, signIn, loginStatus, writeOwnerOnly, apiUrl, LOGIN_FIX,
+};

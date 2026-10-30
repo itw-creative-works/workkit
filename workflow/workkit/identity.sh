@@ -47,9 +47,10 @@ identity_read_status() {
 
 # The client's installation lookup, bounded like the secrets listing, its
 # message folded onto stdout so the caller reads one answer: the verdict on the
-# first line, the client's message after it.
+# first line, the client's message after it. `--probe` asks for the verdict alone.
+# Usage: identity_installation <slug> [--probe]
 identity_installation() {
-  bounded_read node "$IDENTITY_CLIENT" --installation "$1" 2>&1
+  bounded_read node "$IDENTITY_CLIENT" "${2:---installation}" "$1" 2>&1
 }
 
 # The installation lookup under the spinner, its answer as identity_installation
@@ -62,7 +63,7 @@ identity_install_lookup() {
 # warning carrying the service's message or the failure, and 1.
 # Usage: identity_install_say <slug> <lookup exit code> <lookup answer>
 identity_install_say() {
-  local slug="$1" rc="$2" answer="$3" verdict message=''
+  local slug="$1" rc="$2" answer="$3" verdict message='' said line
   verdict="${answer%%$'\n'*}"
   [[ "$answer" == *$'\n'* ]] && message="${answer#*$'\n'}"
   if [[ "$rc" -eq 0 && "$verdict" == 'installed' ]]; then
@@ -70,12 +71,18 @@ identity_install_say() {
     return 0
   fi
   if [[ "$rc" -eq 0 && "$verdict" == 'not installed' ]]; then
-    wk_warn "identity: workkit-agent[bot] is not installed on $slug${message:+: $message}"
+    said="identity: workkit-agent[bot] is not installed on $slug${message:+: $message}"
   elif [[ -z "$answer" ]]; then
-    wk_warn "identity: the installation check on $slug did not answer within ${SECRETS_TIMEOUT}s"
+    said="identity: the installation check on $slug did not answer within ${SECRETS_TIMEOUT}s"
   else
-    wk_warn "identity: the installation check on $slug failed: $answer"
+    said="identity: the installation check on $slug failed: $answer"
   fi
+  # Each later line of the client's message (the refusal's `or run:`) is a warning
+  # of its own, so it sits under the section's indent rather than at column 0.
+  while IFS= read -r line; do
+    [[ "$line" == identity:* ]] || line="identity: $line"
+    wk_warn "$line"
+  done <<<"$said"
   return 1
 }
 
@@ -156,41 +163,55 @@ identity_report() {
   identity_say_status
 }
 
-# The poll's check: one silent lookup, kept in IDENTITY_INSTALL_RC and
-# IDENTITY_INSTALL_ANSWER for the step to word; 0 only when installed.
+# The poll's check: one silent lookup that reads no install page, kept in
+# IDENTITY_INSTALL_RC and IDENTITY_INSTALL_ANSWER for the step to word; 0 only when installed.
 identity_install_probe() {
   IDENTITY_INSTALL_RC=0
-  IDENTITY_INSTALL_ANSWER="$(identity_installation "$1")" || IDENTITY_INSTALL_RC=$?
+  IDENTITY_INSTALL_ANSWER="$(identity_installation "$1" --probe)" || IDENTITY_INSTALL_RC=$?
   [[ "$IDENTITY_INSTALL_RC" -eq 0 && "${IDENTITY_INSTALL_ANSWER%%$'\n'*}" == 'installed' ]]
 }
 
-# The App's install page for <owner>, pre-selected on it: INSTALL_URL from app.js
-# (passed as an argument so Git Bash converts its path) plus the owner's id from one
-# gh read, the bare page when that read fails. The owner is suggested and the repo list
-# is not: the App installs once per owner, and one repo pre-selected would send the owner's others back here.
-identity_install_page() {
-  local page owner_id
-  page="$(node -p 'require(process.argv[1]).INSTALL_URL' "$IDENTITY_APP")/installations/new"
-  owner_id="$(wk_spin "reading the id of $1" gh api "users/$1" --jq .id 2>/dev/null)" || owner_id=''
-  [[ -n "$owner_id" ]] || { printf '%s' "$page"; return 0; }
-  printf '%s/permissions?suggested_target_id=%s' "$page" "$owner_id"
+# setup --bot's repo: the cwd's origin, printed, when signed in; else the warning
+# naming what to do first, and 1. The opt-in is not asked: the flag is the ask.
+identity_bot_slug() {
+  local slug
+  identity_precheck >&2 && identity_read_status || return 1
+  if [[ "$IDENTITY_SIGNED_IN" != 'true' ]]; then
+    wk_warn "identity: not signed in; run \`workkit setup --login\` first"
+    return 1
+  fi
+  slug="$(wk_repo_slug "$PWD")"
+  if [[ -z "$slug" ]]; then
+    wk_warn "identity: $PWD has no GitHub origin to install workkit-agent[bot] for"
+    return 1
+  fi
+  printf '%s' "$slug"
 }
 
-# Setup's This repo step, signed in and for a repo whose opt-in is enabled:
-# installed is said; not installed at a keyboard offers the install page (an
-# owner's click on GitHub, never automatic) and polls until it is there or
-# skipped; a no, a skip, or no keyboard is the warning with that page. Always returns 0.
+# Setup's This repo step, signed in and opted in: installed is said; not installed
+# at a keyboard offers the install page (an owner's click, never automatic) and polls;
+# a no, a skip, or no keyboard warns with that page. Returns 0; `force` (setup --bot)
+# runs in any repo with a GitHub origin and returns 1 unless the App ends installed.
 identity_install_step() {
-  local slug owner page
-  [[ "$(repo_state)" == 'enabled' ]] && slug="$(identity_signed_slug)" || return 0
+  local force="${1:-}" fail=0 slug owner page
+  if [[ -n "$force" ]]; then
+    fail=1
+    slug="$(identity_bot_slug)" || return 1
+  else
+    [[ "$(repo_state)" == 'enabled' ]] && slug="$(identity_signed_slug)" || return 0
+  fi
   IDENTITY_INSTALL_RC=0
   IDENTITY_INSTALL_ANSWER="$(identity_install_lookup "$slug")" || IDENTITY_INSTALL_RC=$?
   if [[ "$IDENTITY_INSTALL_RC" -ne 0 || "${IDENTITY_INSTALL_ANSWER%%$'\n'*}" != 'not installed' ]]; then
-    identity_install_say "$slug" "$IDENTITY_INSTALL_RC" "$IDENTITY_INSTALL_ANSWER" || true
+    identity_install_say "$slug" "$IDENTITY_INSTALL_RC" "$IDENTITY_INSTALL_ANSWER" || return "$fail"
     return 0
   fi
   owner="${slug%%/*}"
-  page="$(identity_install_page "$owner")"
+  # The refusal's first line ends on the install page the client built, so the
+  # lookup's one read of the owner's id serves the offer and the warning alike.
+  page="${IDENTITY_INSTALL_ANSWER#*$'\n'}"
+  page="${page%%$'\n'*}"
+  page="${page##*: }"
   if interactive && wk_ask_yes "Install workkit-agent[bot] on $owner now?" y; then
     wk_info "identity: install workkit-agent[bot] on $owner at $page"
     wk_open_url "$page"
@@ -198,7 +219,7 @@ identity_install_step() {
   fi
   if [[ "$IDENTITY_INSTALL_RC" -eq 0 && "${IDENTITY_INSTALL_ANSWER%%$'\n'*}" == 'not installed' ]]; then
     wk_warn "identity: workkit-agent[bot] is not installed on $slug; install it on $owner at $page"
-    return 0
+    return "$fail"
   fi
-  identity_install_say "$slug" "$IDENTITY_INSTALL_RC" "$IDENTITY_INSTALL_ANSWER" || true
+  identity_install_say "$slug" "$IDENTITY_INSTALL_RC" "$IDENTITY_INSTALL_ANSWER" || return "$fail"
 }

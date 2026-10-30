@@ -271,4 +271,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { plan, PlanError };
+module.exports = { plan, expandWorkspaces, PlanError };

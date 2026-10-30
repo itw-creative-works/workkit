@@ -9,10 +9,10 @@
 
 import { repoSlug } from './command.js';
 import { buildingList } from './gh.js';
-import { ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghRepo, ghRepoIsHere, ghSteps, hasLabel } from './gh-edit.js';
+import { ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghSteps, hasLabel } from './gh-edit.js';
 import { userDirOf } from './log.js';
 import { snapshotMarkerPath } from './markers.js';
-import { rosterOf, rosterPath } from './optin.js';
+import { place, rosterOf } from './optin.js';
 import { issuesBuilding } from './proof.js';
 import { LONG_RUN_MS } from './suite.js';
 
@@ -25,19 +25,6 @@ import { LONG_RUN_MS } from './suite.js';
 function snapshotTriggers(command) {
   if (!command || !ghNames(command, 'edit|close')) return false;
   return /status:(building|qa|complete)/.test(command) || ghNames(command, 'close');
-}
-
-// The folder a clause's flip acts on and the repo it named ('' for none), or a note.
-async function place(clause, { cwd, roster, slugOf }, sawCd) {
-  const repo = ghRepo(clause);
-  if (repo === null) return { note: 'a --repo value could not be read (a variable, a substitution or a quoted span), so no snapshot was taken or dropped for it.' };
-  if (repo === '' || ghRepoIsHere(repo, String((await slugOf(cwd)) ?? ''))) {
-    if (repo === '' && sawCd) return { note: 'the command changes directory before a flip naming no --repo, so no snapshot was taken or dropped for it.' };
-    return { dir: cwd, repo };
-  }
-  const folder = await rosterPath(repo, roster, slugOf);
-  if (!folder) return { note: `${repo} is not opted in on this machine's workkit roster (absent or declined), so no snapshot was taken or dropped for it.` };
-  return { dir: folder, repo };
 }
 
 // A failed call may have failed at the claim itself, so only the numbers

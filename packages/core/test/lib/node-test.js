@@ -1,8 +1,8 @@
-// The runner's second suite shape (workflow/test/run.js): a file written on
+// The runner's second suite shape (test/run.js): a file written on
 // `node:test`, told apart by its text since requiring it runs its tests, and run
 // through Node's own `run()` into the result object a kit-harness suite sends.
 
-const { run } = require('node:test');
+import { run } from 'node:test';
 
 // Met outside any quote: a `require('node:test')` call, or the specifier of an
 // `import ... from` or bare `import` naming it.
@@ -18,7 +18,7 @@ const ERROR_LINE = /^\w*Error(?: \[[^\]]+\])?: (.+)$/;
  * @param {string} text the suite file's source
  * @returns {boolean}
  */
-const isNodeTestSuite = (text) => {
+export const isNodeTestSuite = (text) => {
   let quote = '';
   for (const line of text.split('\n')) {
     if (!quote && COMMENT.test(line.trim())) continue;
@@ -50,7 +50,7 @@ const isNodeTestSuite = (text) => {
  * @param {string} rel the suite's path relative to test/, its name in a failure
  * @returns {Promise<{passed: number, failed: number, failures: object[], skips: object[]}>}
  */
-const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
+export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
   const result = { passed: 0, failed: 0, failures: [], skips: [] };
   const stderrLines = [];
   const stream = run({ files: [suite], concurrency: 1 });
@@ -86,5 +86,3 @@ const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
   stream.on('error', reject);
   stream.on('end', () => resolve(result));
 });
-
-module.exports = { isNodeTestSuite, runNodeTest };

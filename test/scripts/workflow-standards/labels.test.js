@@ -4,14 +4,27 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W, mkTmp,
+  group, test, testUnless, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W, mkTmp,
 } = require('../../lib/harness');
-const { gitPath, crlfJq, joinPath } = require('../../lib/platform');
+const {
+  gitPath, crlfJq, joinPath, IS_WINDOWS, NO_NODE_STUB,
+} = require('../../lib/platform');
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
   desiredLabels, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, runScript,
   repoVersion,
 } = require('./helpers');
+
+// The repo a gh call names by flag, '' for the cwd's own.
+const target = (c) => {
+  const at = c.findIndex((a) => a === '-R' || a === '--repo');
+  if (at !== -1) return c[at + 1];
+  const inline = c.find((a) => a.startsWith('--repo='));
+  return inline ? inline.slice('--repo='.length) : '';
+};
+
+// The mirror sweep's Node half starts gh by name, which no stub answers on Windows.
+const nodeTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 const cases = async () => {
   group('standards.sh: labels');
@@ -172,6 +185,49 @@ const cases = async () => {
     assertEq(code, 1, 'exit non-zero');
     assert(output.includes('could not update'), `names the failure, got: ${output}`);
     assertEq(repoVersion(repo), 1, 'not stamped');
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('the label heal makes the status: labels on the public repo and no other group', () => {
+    const repo = makeRepo({ settings: '{ "version": 1, "enabled": true, "public": "acme/public" }\n' });
+    const stub = makeGhStub({ labels: [] });
+    runScript(repo, { pathPrefix: stub.binDir });
+    const calls = ghCalls(stub);
+    const onPublic = calls.filter((c) => isCall(c, 'label', 'create') && target(c) === 'acme/public').map((c) => c[2]);
+    const statuses = desiredLabels().filter((l) => l.name.startsWith('status:')).map((l) => l.name);
+    assertEq(JSON.stringify([...onPublic].sort()), JSON.stringify([...statuses].sort()),
+      `every status: label and nothing else on acme/public; calls: ${fmtCalls(calls)}`);
+    for (const { name, description, color } of desiredLabels().filter((l) => statuses.includes(l.name))) {
+      const made = calls.find((c) => isCall(c, 'label', 'create', name) && target(c) === 'acme/public');
+      assert(made.includes(description) && made.includes(color), `${name} carries its description and color, got: ${fmtCalls([made])}`);
+    }
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await nodeTest('the session-start sweep runs the mirror over the open linked issues, and a failed mirror is a warning, never a failed heal', () => {
+    const repo = makeRepo({ settings: '{ "version": 1, "enabled": true, "public": "acme/public" }\n' });
+    // The stub answers the public issue's read with no JSON, so the mirror of #12 fails.
+    const stub = makeGhStub({
+      labels: desiredLabels(),
+      issues: [{
+        number: 12, title: 'Split the lists', body: 'Public: https://github.com/acme/public/issues/44\n\nThe fix.', labels: [{ name: 'status:qa' }, { name: 'type:bug' }],
+      }],
+    });
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    const reads = ghCalls(stub).filter((c) => isCall(c, 'issue', 'view', '44') && target(c) === 'acme/public');
+    assertEq(reads.length, 1, `the sweep read the public issue of #12, calls: ${fmtCalls(ghCalls(stub))}`);
+    assert(output.includes('the status of #12 did not reach its public issue'), `the failed mirror is a warning, got: ${output}`);
+    assertEq(code, 0, `the heal still exits 0, got: ${output}`);
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  await test('a public key that is not a slug is a heal warning naming the key, with no public calls', () => {
+    const repo = makeRepo({ settings: '{ "version": 1, "enabled": true, "public": "acme public" }\n' });
+    const stub = makeGhStub({ labels: desiredLabels() });
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    assert(output.includes('public key') && output.includes("'acme public'"), `the warning names the key and its value, got: ${output}`);
+    const outside = ghCalls(stub).filter((c) => target(c) !== '' || isCall(c, 'issue', 'view'));
+    assertEq(outside.length, 0, `no call reaches a public repo, got: ${fmtCalls(outside)}`);
     cleanup(repo); cleanup(stub.dir);
   });
 

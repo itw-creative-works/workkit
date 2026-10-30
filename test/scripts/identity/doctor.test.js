@@ -102,7 +102,7 @@ const cases = async () => {
     }
   });
 
-  await test('case 19: This repo, signed in with the origin on the roster: a 200 is installed and ok, a 412 a warning carrying the install page', async () => {
+  await test('case 19: This repo, signed in with the origin on the roster: a 200 is installed and ok, a 412 a warning carrying the install page, then or run: workkit setup --bot as its own indented warning', async () => {
     const scene = mkScene();
     writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
     const installed = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
@@ -121,6 +121,8 @@ const cases = async () => {
       const warn = doctor(scene);
       assert(repoLines(warn.said).some((l) => l.includes('not installed')), `it says the App is not installed on acme/rostered, got: ${warn.said}`);
       assert(warn.said.includes('https://github.com/apps/workkit-agent'), `and carries the install page, got: ${warn.said}`);
+      assert(section(warn.said, 'This repo').split('\n').some((l) => /^ +⚠ identity: or run: workkit setup --bot$/.test(l)),
+        `the refusal's next line is a warning of its own under This repo, got: ${warn.said}`);
       assertEq(attentionCount(warn.said) - attentionCount(ok.said), 1, 'not installed is one attention item');
     } finally {
       await installed.close();

@@ -1,7 +1,7 @@
 // Tests for `workkit setup`'s Identity step (the sign-in, offered at a keyboard
-// and named otherwise), `setup --login` (that step alone and forced), and the
-// App install offer under This repo. Each setup run is a scratch kit with the
-// user's dir the scratch home's ~/.workkit.
+// and named otherwise), `setup --login` (that step alone and forced), the App
+// install offer under This repo, and `setup --bot` (that offer alone and forced).
+// Each setup run is a scratch kit with the user's dir the scratch home's ~/.workkit.
 // The world has no node unless a case adds it: without it the step is a named
 // skip. GitHub is never reached: its hosts point at a local stand-in or nothing.
 // The shared prologue is ../workkit-cli/helpers.js.
@@ -18,7 +18,6 @@ const {
   INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, startServer,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
-const { isCall } = require('../../lib/argv-log');
 const {
   cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkSetupKit, inCli, AT_TERMINAL,
 } = require('../workkit-cli/helpers');
@@ -90,7 +89,7 @@ const setup = ({ node = true, before = () => {} } = {}) => withSetupScene(SIGN_I
 
 const SIGN_IN_QUESTION = 'Sign in to GitHub now, so the agent\'s issue bookkeeping posts as workkit-agent[bot]? [Y/n]';
 const INSTALL_QUESTION = 'Install workkit-agent[bot] on acme now? [Y/n]';
-// The id the gh stub answers for acme, and the install page pre-selected on it.
+// The id GitHub's stand-in answers for acme, and the install page pre-selected on it.
 const OWNER_ID = '4242';
 const INSTALL_BARE = 'https://github.com/apps/workkit-agent/installations/new';
 const INSTALL_NEW = `${INSTALL_BARE}/permissions?suggested_target_id=${OWNER_ID}`;
@@ -103,33 +102,40 @@ const MINTED = { status: 200, body: JSON.stringify({ token: 'ghs_probe', expires
 const installWarnings = (said, page = INSTALL_NEW) => said.split('\n').filter((l) => /not installed/.test(l) && l.includes(page));
 
 /**
- * Run `workkit setup` in a scratch repo whose origin is acme/rostered: opted in
- * unless `optIn` is false, on the roster when `rostered`, signed in unless
- * `signedIn` is false, the token service a stand-in answering `POST /token`
- * with `answers` in order. At the terminal seam when `input` is given, else
- * with no terminal. The gh stub answers acme's id with `ownerId`, nothing when
- * empty. The install page opens in the shell, so its call is read at once.
+ * Run `workkit setup` (`setup --bot` when `bot`) in a scratch repo whose origin
+ * is acme/rostered (none when `origin` is false): opted in unless `optIn` is
+ * false, on the roster when `rostered`, signed in unless `signedIn` is false,
+ * the token service a stand-in answering `POST /token` with `answers` in
+ * order. At the terminal seam when
+ * `input` is given, else with no terminal. The same stand-in is GitHub's API,
+ * answering acme's id with `ownerId`, a 501 when empty; `idReads` are its reads
+ * of that id. The install page opens in the shell, so its call is read at once.
  */
 const installSetup = ({
-  signedIn = true, optIn = true, rostered = false, answers, input, ownerId = OWNER_ID,
-}) => withSetupScene([{ method: 'POST', url: '/token', answers }], async ({
+  signedIn = true, optIn = true, rostered = false, answers, input, ownerId = OWNER_ID, bot = false, origin = true,
+}) => withSetupScene([
+  { method: 'POST', url: '/token', answers },
+  ...(ownerId ? [{ method: 'GET', url: '/users/acme', status: 200, body: JSON.stringify({ login: 'acme', id: Number(ownerId) }) }] : []),
+], async ({
   world, script, repo, server,
 }) => {
-  const env = signInEnv(world);
+  const env = signInEnv(world, { extra: { GITHUB_API_URL: server.url } });
   if (rostered) rosterRepo(world, repo, 'acme/rostered', { script, env });
-  else mkOriginRepo(repo, 'https://github.com/acme/rostered.git');
+  else if (origin) mkOriginRepo(repo, 'https://github.com/acme/rostered.git');
   if (!optIn) fs.rmSync(path.join(repo, W, 'settings.json'));
   if (signedIn) writeLogin(world.home, { token: 'ghu_setupuser', login: 'octocat' });
   useTokenService(world.home, `${server.url}/token`);
   const res = input === undefined
-    ? runCli(world, ['setup'], { cwd: repo, script, env })
-    : setupAtTerminal(world, { repo, script, input, env });
+    ? runCli(world, ['setup', ...(bot ? ['--bot'] : [])], { cwd: repo, script, env })
+    : setupAtTerminal(world, {
+      repo, script, input, env, args: bot ? '--bot' : '',
+    });
   const asked = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
-  const idReads = world.ghCalls().filter((c) => isCall(c, 'api', 'users/acme'));
+  const idReads = server.requests().filter((r) => r.method === 'GET' && r.url === '/users/acme');
   return {
-    ...res, asked, idReads, opened: world.openerCalls(),
+    ...res, asked, idReads, opened: world.openerCalls(), claudeCalls: world.claudeCalls(),
   };
-}, { ownerId });
+});
 
 const cases = async () => {
   group('workkit setup: identity');
@@ -278,10 +284,10 @@ const cases = async () => {
     assertEq(res.asked.length, 3, `the step's lookup, the poll's first check, then the one Enter asked for, got: ${JSON.stringify(res.asked)}`);
     assert(res.said.includes(INSTALLED), `the third answer is the ok line, got: ${res.said}`);
     assertEq(installWarnings(res.said).length, 0, `and no not-installed warning, got: ${res.said}`);
-    assertEq(res.idReads.length, 1, `the owner's id was read from gh once, got: ${JSON.stringify(res.idReads)}`);
+    assertEq(res.idReads.length, 1, `the owner's id was read once, by the step's lookup and never by the poll, got: ${JSON.stringify(res.idReads)}`);
   });
 
-  await test('case 23: a 412 at a keyboard with a gh that answers nothing for the owner\'s id, y opens the bare install page once', async () => {
+  await test('case 23: a 412 at a keyboard with a GitHub that answers nothing for the owner\'s id, y opens the bare install page once', async () => {
     const res = await installSetup({ answers: [NOT_INSTALLED, MINTED], input: 'y\n', ownerId: '' });
     assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_BARE]]), 'the opener ran once, on the bare install page');
     assert(res.said.includes(INSTALLED), `the poll's 200 is still the ok line, got: ${res.said}`);
@@ -302,6 +308,7 @@ const cases = async () => {
       assertEq(res.asked.length, asks, `${label}: ${why}, got: ${JSON.stringify(res.asked)}`);
       assert(!res.said.includes(INSTALLED), `${label}: no ok line, got: ${res.said}`);
       assert(installWarnings(res.said).length > 0, `${label}: the warning carries the install page, got: ${res.said}`);
+      assertEq(res.idReads.length, 1, `${label}: the owner's id was read once whatever the poll asked, got: ${JSON.stringify(res.idReads)}`);
     }
   });
 
@@ -326,6 +333,52 @@ const cases = async () => {
     const bare = await installSetup({ answers: [NOT_INSTALLED], ownerId: '' });
     assert(installWarnings(bare.said, INSTALL_BARE).length > 0, `no keyboard, no id: the warning carries the bare install page, got: ${bare.said}`);
     assertEq(installWarnings(bare.said).length, 0, `no keyboard, no id: and never the pre-selected one, got: ${bare.said}`);
+  });
+
+  group('workkit setup --bot');
+
+  await test('setup --bot in an enabled repo whose owner lacks the App asks, opens the pre-selected page and polls; the 200 is the ok line, exit 0, and nothing else of setup runs', async () => {
+    const res = await installSetup({ answers: [NOT_INSTALLED, NOT_INSTALLED, MINTED], input: 'y\n\n', bot: true });
+    assertEq(res.code, 0, `exit 0, got: ${res.said}`);
+    assert(res.said.includes(INSTALL_QUESTION), `it puts the install question, got: ${res.said}`);
+    assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_NEW]]), 'the opener ran once, on the pre-selected install page');
+    assert(res.said.includes(POLL_KEYS), `it polls, got: ${res.said}`);
+    assert(res.said.includes(INSTALLED), `the poll's 200 is the ok line, got: ${res.said}`);
+    assert(!res.claudeCalls.some((c) => c.includes('install')), 'no plugin install');
+    for (const title of ['This machine', 'Home repo', 'Dashboard site']) {
+      assert(!res.said.includes(title), `no "${title}" section, got: ${res.said}`);
+    }
+  });
+
+  await test('setup --bot when not signed in exits 1 naming workkit setup --login, asks the service nothing and opens nothing', async () => {
+    const res = await installSetup({ signedIn: false, answers: [NOT_INSTALLED], bot: true });
+    assertEq(res.code, 1, `exit 1, got: ${res.said}`);
+    assert(/not signed in[^\n]*workkit setup --login/.test(res.said), `it says to run workkit setup --login first, got: ${res.said}`);
+    assertEq(res.asked.length, 0, `the service is never asked, got: ${JSON.stringify(res.asked)}`);
+    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+  });
+
+  await test('setup --bot with the App not installed and no keyboard exits 1, its warning naming the pre-selected install page, nothing opened', async () => {
+    const res = await installSetup({ answers: [NOT_INSTALLED], bot: true });
+    assertEq(res.code, 1, `exit 1, got: ${res.said}`);
+    assert(installWarnings(res.said).length > 0, `the warning names the pre-selected install page, got: ${res.said}`);
+    assertEq(res.idReads.length, 1, `the owner's id was read once, got: ${JSON.stringify(res.idReads)}`);
+    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+  });
+
+  await test('setup --bot in a repo with no GitHub origin exits 1 saying so, and asks the service nothing', async () => {
+    const res = await installSetup({ answers: [NOT_INSTALLED], bot: true, origin: false });
+    assertEq(res.code, 1, `exit 1, got: ${res.said}`);
+    assert(res.said.includes('has no GitHub origin to install workkit-agent[bot] for'), `the warning says there is no origin, got: ${res.said}`);
+    assertEq(res.asked.length, 0, `the service is never asked, got: ${JSON.stringify(res.asked)}`);
+  });
+
+  await test('setup --bot where the App is already installed prints the installed line, exit 0, and asks nothing', async () => {
+    const res = await installSetup({ answers: [MINTED], input: '', bot: true });
+    assertEq(res.code, 0, `exit 0, got: ${res.said}`);
+    assert(res.said.includes(INSTALLED), `the ok line names the repo, got: ${res.said}`);
+    assert(!res.said.includes(INSTALL_QUESTION), `no install question, got: ${res.said}`);
+    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
   });
 
   return summary();

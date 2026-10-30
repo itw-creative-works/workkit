@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// The kit's test runner, over the repo `--root <dir>` names (else the cwd): every
+// The kit's test runner, over the repo at the cwd: every
 // `test/**/*.test.js` in worker processes, a parallel wave then the serial tail
 // the repo's `test/lib/serial.js` names, then the mod half (`claude plugin test`
 // over `test/mods/*.test.ts`), totalled; non-zero on any failure. Suite paths
-// after `--` narrow the run. A repo reaches it through a `test/run.js` that
-// calls `main`. A repo with no `test/` is read from `tests/`.
+// after `--` narrow the run. A repo reaches it through `workkit test`, the
+// package's bin. A repo with no `test/` is read from `tests/`.
 
-const fs = require('fs');
-const path = require('path');
-const { stripVTControlCharacters } = require('util');
-const { fork, spawnSync } = require('child_process');
-const { findSuites, findModSuites, POOL } = require('./lib/suites');
-const { isNodeTestSuite, runNodeTest } = require('./lib/node-test');
-const { PIPE_GRACE_MS } = require('./lib/process');
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { stripVTControlCharacters } from 'node:util';
+import { fork, spawnSync } from 'node:child_process';
+import { findSuites, findModSuites, POOL } from './lib/suites.js';
+import { isNodeTestSuite, runNodeTest } from './lib/node-test.js';
+import { PIPE_GRACE_MS } from './lib/process.js';
+
+// Suites and a repo's serial list are CommonJS, loaded by absolute path.
+const require = createRequire(import.meta.url);
 
 const TAIL_LINES = 3;
 const SLOWEST = 5;
@@ -27,25 +31,12 @@ const suiteDir = (root) => {
   return !isDir(dir) && isDir(legacy) ? legacy : dir;
 };
 
-// The repo the run covers and the suite paths it was handed: `--root <dir>`
-// anywhere, `--` dropped, every other argument a suite path.
+// The repo the run covers, the cwd, and the suite paths it was handed: `--`
+// dropped, every other argument a suite path.
 const parseArgs = (argv) => {
-  let rootArg = process.cwd();
-  const paths = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--root') {
-      if (i + 1 >= argv.length) {
-        console.error('--root needs a folder');
-        process.exit(1);
-      }
-      rootArg = argv[++i];
-    } else if (argv[i] !== '--') {
-      paths.push(argv[i]);
-    }
-  }
-  const root = path.resolve(rootArg);
+  const root = process.cwd();
   const testDir = suiteDir(root);
-  return { root, testDir, modDir: path.join(testDir, 'mods'), paths };
+  return { root, testDir, modDir: path.join(testDir, 'mods'), paths: argv.filter((arg) => arg !== '--') };
 };
 
 // The repo's serial tail, relative to the suite folder; none without a serial.js.
@@ -161,7 +152,7 @@ const runOne = async (suite, testDir) => {
 // order, its message (null when it ended without one) and its wall time in ms.
 const runWorker = (suite, testDir) => new Promise((resolve) => {
   const began = Date.now();
-  const child = fork(__filename, ['--worker', suite, testDir], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  const child = fork(import.meta.filename, ['--worker', suite, testDir], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   const chunks = [];
   let result = null;
   let settled = false;
@@ -190,11 +181,11 @@ const crashMessage = ({ output, code, signal, error }) => {
 
 /**
  * One run over a repo: the whole of what `npm test` prints and exits with.
- * @param {string[]} argv `[--root <dir>] [--] [suite paths...]`, or a worker's
+ * @param {string[]} argv `[--] [suite paths...]`, or a worker's
  *   `--worker <suite> <suite dir>`
  * @returns {Promise<void>}
  */
-const main = async (argv) => {
+export const main = async (argv) => {
   if (argv[0] === '--worker') {
     // A parent that is gone takes its workers with it.
     process.on('disconnect', () => process.exit(1));
@@ -307,6 +298,4 @@ const main = async (argv) => {
   process.exitCode = failed > 0 ? 1 : 0;
 };
 
-if (require.main === module) main(process.argv.slice(2));
-
-module.exports = { main };
+if (import.meta.main) main(process.argv.slice(2));

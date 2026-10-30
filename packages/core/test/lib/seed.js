@@ -3,8 +3,8 @@
 // copy writes alone, and no case is handed the seed. mkTmp removes every seed
 // when the process exits.
 
-const fs = require('fs');
-const { mkTmp } = require('./scratch');
+import fs from 'node:fs';
+import { mkTmp } from './scratch.js';
 
 /**
  * @param {function(string, *): void} build - fills the empty seed folder, given
@@ -12,7 +12,7 @@ const { mkTmp } = require('./scratch');
  * @returns {function(string, *=): void} the copier: `(dir, shape)` copies that
  *   shape's seed into `dir`, made if missing and merged into if not
  */
-const seeded = (build) => {
+export const seeded = (build) => {
   const seeds = new Map();
   return (dir, shape = null) => {
     const key = JSON.stringify(shape);
@@ -25,5 +25,3 @@ const seeded = (build) => {
     fs.cpSync(seeds.get(key), dir, { recursive: true, verbatimSymlinks: true });
   };
 };
-
-module.exports = { seeded };

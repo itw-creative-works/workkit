@@ -4,9 +4,9 @@
 // the temp dir is a symlink on macOS, and a child's output names the resolved
 // form.
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const made = [];
 
@@ -18,10 +18,8 @@ process.on('exit', () => {
 });
 
 /** A fresh folder in the temp dir, named `<prefix>XXXXXX`, removed at exit. */
-const mkTmp = (prefix) => {
+export const mkTmp = (prefix) => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   made.push(dir);
   return dir;
 };
-
-module.exports = { mkTmp };

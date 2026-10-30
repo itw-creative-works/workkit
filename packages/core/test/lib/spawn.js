@@ -4,9 +4,9 @@
  * the deadline), and the end of the process group a child leads.
  */
 
-const { spawn, spawnSync } = require('child_process');
-const { inspect } = require('util');
-const { SPAWN_DEADLINE, PIPE_GRACE_MS, until } = require('./process');
+import { spawn, spawnSync } from 'node:child_process';
+import { inspect } from 'node:util';
+import { SPAWN_DEADLINE, PIPE_GRACE_MS, until } from './process.js';
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -57,7 +57,7 @@ const signalTree = (who, pid, signal) => {
  * @param {number} pid
  * @param {string} [signal]
  */
-const endTree = (pid, signal = 'SIGTERM') => {
+export const endTree = (pid, signal = 'SIGTERM') => {
   if (!Number.isInteger(pid) || pid <= 0) throw new Error(`endTree: pid must be a positive integer, got ${inspect(pid)}`);
   if (IS_WINDOWS) {
     spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', timeout: SPAWN_DEADLINE });
@@ -74,7 +74,7 @@ const endTree = (pid, signal = 'SIGTERM') => {
  * @param {{cwd?: string, env?: object, input?: string, deadline?: number}} [opts]
  * @returns {{status: ?number, signal: ?string, stdout: string, stderr: string, output: string, timedOut: boolean}}
  */
-const run = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE } = {}) => {
+export const run = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE } = {}) => {
   const result = spawnSync(cmd, args, {
     cwd, env, input, timeout: deadline, killSignal: 'SIGKILL', encoding: 'utf8', stdio: 'pipe',
   });
@@ -92,22 +92,18 @@ const run = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE } = {}) => 
 };
 
 /**
- * Start <cmd> without waiting, stdout and stderr piped. `done` resolves once the
- * child has exited and its streams closed, PIPE_GRACE_MS after the exit at most.
- * A watchdog at <deadline> marks `timedOut` and calls `end()`, whose rejection
- * rejects `done`. `end(signal)` climbs the ladder from that rung while the target
- * lives: a detached child's group, else the child alone; on Windows one `taskkill`
- * tree end. A signal off the ladder rejects; a child that never spawned ends at
- * once, `done` rejecting with the error. A refused rung rejects `end: signal refused for pid <N> (EPERM)`, and a target
- * still alive END_GRACE after SIGKILL rejects `end: pid <N> survived SIGKILL`.
- * On Windows, once a detached leader has exited, `end()` reaches no grandchild:
- * `taskkill /T` finds a tree only through a living root.
+ * Start <cmd> without waiting, stdout and stderr piped. `done` resolves once the child has exited and its streams
+ * closed, PIPE_GRACE_MS after the exit at most. A watchdog at <deadline> marks `timedOut` and calls `end()`, whose
+ * rejection rejects `done`. `end(signal)` climbs the ladder from that rung while the target lives: a detached child's
+ * group, else the child alone; on Windows one `taskkill` tree end, which reaches no grandchild once a detached leader
+ * has exited. A signal off the ladder rejects; a child that never spawned ends at once, `done` rejecting with the error.
+ * A refused rung rejects `end: signal refused for pid <N> (EPERM)`; alive END_GRACE after SIGKILL, `end: pid <N> survived SIGKILL`.
  * @param {string} cmd
  * @param {string[]} args
  * @param {{cwd?: string, env?: object, deadline?: number, detached?: boolean}} [opts]
  * @returns {{child: object, pid: number, output: Function, stdout: Function, stderr: Function, done: Promise, end: Function}}
  */
-const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = false } = {}) => {
+export const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = false } = {}) => {
   const child = spawn(cmd, args, { cwd, env, detached, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
@@ -180,5 +176,3 @@ const start = (cmd, args, { cwd, env, deadline = SPAWN_DEADLINE, detached = fals
     child, pid: child.pid, output: () => all, stdout: () => out, stderr: () => err, done, end,
   };
 };
-
-module.exports = { run, start, endTree };

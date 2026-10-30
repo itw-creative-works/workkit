@@ -7,7 +7,8 @@
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf, stateFacts } = require('../lib/mods-inputs');
 
-const say = (facts) => textOf(mods('state-check').stateCheckContext(stateFacts(facts)));
+const { FIX_NOW, stateCheckContext } = mods('state-check');
+const say = (facts) => textOf(stateCheckContext(stateFacts(facts)));
 
 const cases = async () => {
   group('state-check: status:inbox issues');
@@ -94,6 +95,34 @@ const cases = async () => {
   await test('ports "several dense lines: the count is plural"', () => {
     const out = say({ agents: `# repo\n${`${'x'.repeat(500)}\n`.repeat(3)}` });
     assert(out.includes('3 lines over 400 bytes'), `counts them, got: ${out}`);
+  });
+
+  group('state-check: a mechanical fix is made now, never asked');
+
+  const times = (text, part) => text.split(part).length - 1;
+  const mechanical = [
+    ['a pointer-only CLAUDE.md', { claude: '@AGENTS.md\n', agents: '# repo\n' }],
+    ['a content CLAUDE.md with no AGENTS.md', { claude: '# Big Doc\n\nlots of rules\n' }],
+    ['a dense AGENTS.md', { agents: `# repo\n${'x'.repeat(500)}\n` }],
+    ['an AGENTS.md over its line budget', { agents: `# repo\n${'line\n'.repeat(255)}` }],
+  ];
+  for (const [name, facts] of mechanical) {
+    await test(`${name}: the nudge carries the fix-now instruction once`, () => {
+      const out = say(facts);
+      assertEq(times(out, FIX_NOW), 1, `one fix-now instruction, got: ${out}`);
+    });
+  }
+
+  await test('the hand merge of a CLAUDE.md beside an AGENTS.md, a judgment call, carries no fix-now instruction', () => {
+    const out = say({ claude: 'Use tabs.\n', agents: '# repo\n' });
+    assert(out.includes('by hand'), `the merge nudge fires, got: ${out}`);
+    assertEq(times(out, FIX_NOW), 0, `no fix-now instruction, got: ${out}`);
+  });
+
+  await test('the inbox and capture nudges, which need triage, carry no fix-now instruction', () => {
+    const out = say({ inbox: 2, capture: 'note\n' });
+    assert(out.includes('workkit:triage'), `both nudges fire, got: ${out}`);
+    assertEq(times(out, FIX_NOW), 0, `no fix-now instruction, got: ${out}`);
   });
 };
 

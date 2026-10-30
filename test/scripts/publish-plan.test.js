@@ -179,6 +179,17 @@ const cases = async () => {
     cleanup(dir);
   });
 
+  // The kit read as it stands: its one member publishes at the plugin's version.
+  await test('on the kit itself: publish workkit-core at the kit\'s version, unscoped, and never the root', () => {
+    const kit = path.join(__dirname, '..', '..');
+    const { version } = JSON.parse(fs.readFileSync(path.join(kit, '.claude-plugin', 'plugin.json'), 'utf8'));
+    const { code, stdout, stderr } = runPlan(kit);
+    assertEq(code, 0, `a plan is exit 0, stderr: ${stderr}`);
+    const lines = stdout.split('\n').filter(Boolean);
+    assertEq(lines.filter((l) => l.startsWith('publish ')).join('\n'), `publish workkit-core ${version} unscoped`, `the one publish line, got: ${stdout}`);
+    assert(!lines.some((l) => l.split(' ')[1] === 'workkit'), `the root is in no line, got: ${stdout}`);
+  });
+
   await test('a dependency on a skipped member orders nothing, and a loop through one is no cycle', () => {
     const dir = mkRepo({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },

@@ -140,6 +140,17 @@ const cases = async () => {
     assertEq(out, '', `prints nothing, got: ${out}`);
   });
 
+  await test('with a match, the first enabled folder it accepts answers, handed the slug lowercased', () => {
+    const { home, enabled } = rosterWorld();
+    // The match accepts any folder holding a `paired` file naming the slug, the declined one included.
+    const { repos } = JSON.parse(fs.readFileSync(path.join(home, '.workkit', '.repos.json'), 'utf8'));
+    for (const folder of Object.keys(repos)) fs.writeFileSync(path.join(folder, 'paired'), 'acme/public\n');
+    const paired = 'paired() { [[ "$(cat "$1/paired" 2>/dev/null)" == "$2" ]]; }';
+    const { code, out, err } = inSeam(`${paired}\nwk_roster_path "$1" paired`, ['Acme/Public'], home);
+    assertEq(code, 0, `found, stderr: ${err}`);
+    assertEq(out.trim(), gitPath(enabled), 'the enabled folder the match accepts, never the declined one');
+  });
+
   await test('a slug no roster entry carries returns 1', () => {
     const { home } = rosterWorld();
     const { code, out } = roster(home, 'owner/absent');

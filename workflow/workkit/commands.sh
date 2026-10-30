@@ -83,9 +83,10 @@ cmd_brief() {
 # The repo's own `npm test` at its root, the arguments after `--`, and nothing
 # else: npm runs it through the script shell, so the one recorder sees the run.
 cmd_test() {
-  # npm names the running script, so a test script of `workkit test` would loop.
+  # Inside an npm test, `workkit` is the package's bin; reaching this one means
+  # it is missing, and running npm test again would loop.
   if [[ "${npm_lifecycle_event:-}" == test ]]; then
-    wk_error "test: workkit test was started inside an npm test, so it stops instead of looping; a test script of \`workkit test\` must point at the runner (node test/run.js)"
+    wk_error "test: workkit-core is not installed here: run npm install"
     exit 1
   fi
   if ! command -v npm >/dev/null 2>&1; then

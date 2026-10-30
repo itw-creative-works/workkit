@@ -1,36 +1,19 @@
 #!/usr/bin/env bash
-# workflow/standards/tests.sh: the check that a repo's `npm test` prints the
-# runner's totals line, read off package.json and never run, and that its
+# workflow/standards/tests.sh: the check that a repo's `npm test` runs
+# workkit-core's runner, read off package.json and never run, and that its
 # suites live under `test/`. Sourced by standards.sh, functions only.
 
-# ── 6. npm test prints the totals line ──
-# Silent for `node`, `bash` or `sh` over a file that names a runner path
-# (`test/run.js`, the kit's `workflow/test/run.js`, a `run.js` beside it) or
-# carries the totals line itself, read one level deep; `workkit test` would loop,
-# and it and any other script get one line each, never a flag on the run.
+# ── 6. npm test runs workkit-core's runner ──
+# Silent when devDependencies names workkit-core (wk_has_core_package, read off
+# package.json, never run), whatever script wraps `workkit test`; any other test
+# script gets one line naming both changes, never a flag on the run.
 check_test_runner() {
-  local script file="" word words=()
+  local script
   [[ -f package.json ]] || return 0
   script="$(wk_jq -r '.scripts.test // "" | if type == "string" then . else "" end' package.json 2>/dev/null)" || return 0
   [[ -n "$script" ]] || return 0
-
-  case "$script" in
-    'workkit test'|'workkit test '*)
-      wk_warn "test script: \`workkit test\` would loop through npm test; set it to \`node test/run.js\`"
-      return 0
-      ;;
-    'node '*|'bash '*|'sh '*)
-      # The file is the first argument that is no flag (`node --no-warnings x.js`).
-      read -ra words <<<"${script#* }"
-      for word in ${words[@]+"${words[@]}"}; do
-        case "$word" in -*) ;; *) file="$word"; break ;; esac
-      done
-      if [[ -n "$file" && -f "$file" ]] && grep -qE '/run\.js|passed, .*failed' "$file" 2>/dev/null; then
-        return 0
-      fi
-      ;;
-  esac
-  wk_warn "standards: npm test does not print the totals line"
+  wk_has_core_package && return 0
+  wk_warn "test script: npm test does not run workkit-core's runner; run \`npm i -D workkit-core\` and set \`\"test\": \"workkit test\"\`"
 }
 
 # ── 6b. The suites live under test/ ──

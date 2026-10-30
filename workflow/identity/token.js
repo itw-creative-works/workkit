@@ -1,24 +1,28 @@
 // workflow/identity/token.js: the client. `tokenFor` hands back the repo's App
 // token, cached under `identity/` while five minutes remain, else asked of the
 // token service with the user's sign-in. Usage: node token.js <owner/repo> |
-// --installation <owner/repo> | --status (the token form exits 0, 3, 4 or 1).
+// --installation <owner/repo> | --probe <owner/repo> | --status (the token form
+// exits 0, 3, 4 or 1).
 
 const fs = require('fs');
 const path = require('path');
-const { TOKEN_URL, INSTALL_URL } = require('./app');
+const { TOKEN_URL } = require('./app');
 const { loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX } = require('./login');
+const { installPage } = require('./install-page');
 const { splitRepo } = require('../slug');
 const { userDir } = require('../user-dir');
 
 const RENEW_MARGIN_MS = 5 * 60 * 1000;
 // A hung service fails loudly at this bound instead of stalling every gh call.
 const FETCH_TIMEOUT_MS = 15000;
-const USAGE = 'usage: token.js <owner/repo> | token.js --installation <owner/repo> | token.js --status\n'
+const USAGE = 'usage: token.js <owner/repo> | token.js --installation <owner/repo> | token.js --probe <owner/repo> | token.js --status\n'
   + '  <owner/repo> exits 3 when not signed in, 4 when the App is not installed on the repo, 1 on any other failure';
 // The token form's exit codes, read by the gh shim.
 const EXIT_CODES = { not_signed_in: 3, not_installed: 4 };
 // The command every not-signed-in refusal names.
 const LOGIN_HINT = `run \`${LOGIN_FIX}\``;
+// The line after every not-installed refusal's page: setup's install step alone.
+const BOT_HINT = 'or run: workkit setup --bot';
 
 /**
  * A refusal with its reason, `code` one of `not_signed_in`, `not_installed`,
@@ -102,24 +106,29 @@ const freshCache = (file, now) => {
  * carry whatever the service said, appended when its own words lack them.
  * @param {number} status
  * @param {string} repo
+ * @param {string} page the install page, for a 412
  * @returns {{code: string, mustName: string, hint: string}}
  */
-const refusalOf = (status, repo) => {
+const refusalOf = (status, repo, page) => {
   if (status === 401) return { code: 'not_signed_in', mustName: LOGIN_FIX, hint: LOGIN_HINT };
-  if (status === 412) return { code: 'not_installed', mustName: INSTALL_URL, hint: `install workkit-agent[bot] on ${repo}: ${INSTALL_URL}` };
+  if (status === 412) {
+    const { owner } = splitRepo(repo);
+    return { code: 'not_installed', mustName: page, hint: `install workkit-agent[bot] on ${owner}: ${page}\n${BOT_HINT}` };
+  }
   if (status === 403) return { code: 'no_write_access', mustName: 'no write access', hint: `no write access to ${repo}` };
   return { code: 'service_refused', mustName: '', hint: '' };
 };
 
 /**
  * The service's refusal as an IdentityError: its `error` and `fix` when the
- * body is JSON (a 401's fix the client's own hint), else the HTTP status.
+ * body is JSON (a 401's and a 412's fix the client's own hint), else the HTTP status.
  * @param {number} status
  * @param {string} text the response body
  * @param {string} repo
+ * @param {string} page the install page, for a 412
  * @returns {IdentityError}
  */
-const refusal = (status, text, repo) => {
+const refusal = (status, text, repo, page) => {
   let body = null;
   try {
     body = JSON.parse(text);
@@ -127,10 +136,11 @@ const refusal = (status, text, repo) => {
     // Not JSON: the status alone names the refusal.
   }
   const said = body && typeof body === 'object' ? body : {};
-  const { code, mustName, hint } = refusalOf(status, repo);
-  // A sign-in's fix is the client's own hint in place of the service's, so
-  // the command it names is this kit's whatever the service says.
-  const ownFix = code === 'not_signed_in';
+  const { code, mustName, hint } = refusalOf(status, repo, page);
+  // A sign-in's and an install's fix are the client's own hint in place of the
+  // service's, so the command and the page they name are this kit's whatever the
+  // service says.
+  const ownFix = code === 'not_signed_in' || code === 'not_installed';
   const words = [said.error, ownFix ? '' : said.fix].filter((w) => typeof w === 'string' && w).join(': ');
   let message = words || `the token service answered HTTP ${status} for ${repo}`;
   if (ownFix) message = `${message}: ${hint}`;
@@ -151,16 +161,19 @@ const signedIn = (file) => {
 
 /**
  * One request to the token service for the repo's App token, with the user's
- * bearer.
+ * bearer. A 412 reads the install page for its message unless `page` is false.
  * @param {string} repo owner/name
  * @param {object} opts
  * @param {object} opts.settings
  * @param {Function} opts.fetch
  * @param {{token: string}} opts.login
+ * @param {boolean} [opts.page] defaults to true
  * @returns {Promise<{token: string, expiresAt: string}>}
  */
-const requestToken = async (repo, { settings, fetch, login }) => {
-  splitRepo(repo);
+const requestToken = async (repo, {
+  settings, fetch, login, page: withPage = true,
+}) => {
+  const { owner } = splitRepo(repo);
   const url = tokenUrlOf(settings);
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
   let res;
@@ -176,7 +189,10 @@ const requestToken = async (repo, { settings, fetch, login }) => {
     throw new IdentityError('service_refused', `the token service at ${url} ${why}`);
   }
   const text = await res.text();
-  if (res.status !== 200) throw refusal(res.status, text, repo);
+  if (res.status !== 200) {
+    const page = res.status === 412 && withPage ? await installPage(owner, { fetch }) : '';
+    throw refusal(res.status, text, repo, page);
+  }
 
   let body = null;
   try {
@@ -277,18 +293,23 @@ const printToken = async (repo) => {
 
 /**
  * The installation form, the same request as a token: `installed`, or
- * `not installed` with the service's message (the install page) on stderr.
+ * `not installed` with the refusal (the install page) on stderr. The probe
+ * form (`page` false) prints the verdict alone and reads no install page.
  * @param {string} repo
+ * @param {object} [opts]
+ * @param {boolean} [opts.page] defaults to true
  * @returns {Promise<number>}
  */
-const printInstallation = async (repo) => {
+const printInstallation = async (repo, { page = true } = {}) => {
   const login = signedIn(loginFile());
   try {
-    await requestToken(repo, { settings: readSettings(), fetch: globalThis.fetch, login });
+    await requestToken(repo, {
+      settings: readSettings(), fetch: globalThis.fetch, login, page,
+    });
   } catch (err) {
     if (!(err instanceof IdentityError) || err.code !== 'not_installed') throw err;
     await say(process.stdout, 'not installed\n');
-    process.stderr.write(`${err.message}\n`);
+    if (page) process.stderr.write(`${err.message}\n`);
     return 0;
   }
   await say(process.stdout, 'installed\n');
@@ -296,14 +317,16 @@ const printInstallation = async (repo) => {
 };
 
 /**
- * The command forms: a token, `installed` / `not installed`, or the status
- * object as JSON. Any failure not given its own code throws, which exits 1.
+ * The command forms: a token, `installed` / `not installed` (with the page or,
+ * probed, without), or the status object as JSON. Any failure not given its own
+ * code throws, which exits 1.
  * @param {string[]} argv
  * @returns {Promise<number>} the exit code
  */
 const main = async (argv) => {
   if (argv.length === 1 && !argv[0].startsWith('-')) return printToken(argv[0]);
   if (argv.length === 2 && argv[0] === '--installation') return printInstallation(argv[1]);
+  if (argv.length === 2 && argv[0] === '--probe') return printInstallation(argv[1], { page: false });
   if (argv.length === 1 && argv[0] === '--status') {
     const status = { ...loginStatus(loginFile()), tokenUrl: tokenUrlOf(readSettings()) };
     process.stdout.write(`${JSON.stringify(status)}\n`);
