@@ -17,17 +17,16 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── register.js       # the hooks module: the thirty in-process hooks, the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
-│   ├── _lib.sh           # the shell library's entry (sourced by scripts/, prove.sh and the snapshot entry, never a hook)
+│   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage,proof}/, prove.sh and the snapshot entry, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
 │   └── manager/          # resources/ladder.json (the tier SSOT)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, public/, templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, templates)
 ├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`), a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
-├── scripts/              # four scripts, the only platform-touching commands the skills and agents have: the two markers the skills call (review, triage), red-proof.sh (the verifier's red run), review-covers.sh (the ship's review tier)
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · tests.md (the test bar and runner) · setup.md (the install walkthrough) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
 │   └── assets/           # the README's hero and its mark in two inks, rendered by the showcase repo (ITW-Creative-Works/showcase, private)
 ├── test/                 # the hook/script/tower suites (npm test, which is `workkit test`, workkit-core's runner)
@@ -62,9 +61,18 @@ Nine, namespaced `workkit:<name>`: `feature` · `interview` · `diagnose` · `re
 
 Agent-agnostic: shell + Node, which is why the hooks call it rather than contain it. It calls the `claude` CLI in one place only: the setup commands in `workflow/workkit/` (the plugin's install and list, and `claude setup-token`); the test runner's mod half (`claude plugin test`) lives in `workkit-core`.
 
-`workkit.sh` is the one command and the from-zero entry point: `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `test [paths]` · `prove` · `public intake|mirror|close`.
+`workkit.sh` is the one command and the from-zero entry point:
 
-Beside it live the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI, the ship's four helpers in `ship/` (`publish-plan.js`, `release.js`, `ship-items.sh`, `ci-watch.sh`), the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle. Every file and every step: `workflow/README.md`.
+- `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `prove`;
+- the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|plan|publish` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
+
+Beside it live:
+
+- the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
+- the ship's steps in `ship/` (`items.sh`, `release.js`, `watch.sh`, `plan.js`, `publish.js`), the review and triage markers and the review tier in `review/` and `triage/`, the verifier's red run in `proof/`;
+- the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle.
+
+Every file and every step: `workflow/README.md`.
 
 ## The tower (`tower/`)
 

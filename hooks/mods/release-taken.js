@@ -155,7 +155,7 @@ function narrowed(pkgs, workspaces) {
   return { pkgs: kept };
 }
 
-// One job per package with publish intent (workflow/ship/publish-plan.js's rule).
+// One job per package with publish intent (workflow/ship/plan.js's rule).
 function jobsOf(pkgs, notices) {
   const jobs = [];
   for (const { file, pkg } of pkgs) {

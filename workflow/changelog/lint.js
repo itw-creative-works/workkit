@@ -4,7 +4,7 @@
 // (`docs/project-state.md` § CHANGELOG entries). The guards call it at write
 // and commit time, and CI runs it `--unreleased-only`.
 //
-// CLI: node changelog.js <file> [--added-only] [--staged] [--unreleased-only]
+// CLI: workkit changelog lint <file> [--added-only] [--staged] [--unreleased-only]
 //   --added-only judges only the entries this change added (vs HEAD); --staged
 //   reads the index; --unreleased-only judges only [Unreleased], the CI mode.
 //   Exits 1 with the violations on stderr, 0 when clean.
@@ -273,7 +273,7 @@ const main = (argv) => {
   const flags = new Set(argv.filter((a) => a.startsWith('--')));
   const file = argv.find((a) => !a.startsWith('--'));
   if (!file) {
-    console.error('usage: changelog.js <file> [--added-only] [--staged] [--unreleased-only]');
+    console.error('usage: workkit changelog lint <file> [--added-only] [--staged] [--unreleased-only]');
     return 2;
   }
 

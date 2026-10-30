@@ -7,6 +7,19 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#482](../../issues/482) - `workkit setup`, `setup --cloud` and the daily update keep the kit's allow rules (`workkit ship`, `workkit review`, `npm publish`) in the global Claude settings, through a symlink, adding only what is missing; `workkit doctor` names a missing rule.
+
+### Changed
+
+- [#483](../../issues/483) - A file's size against its code-line bar is never a finding: the false-positive list names it, a builder never raises it, and no report to the owner names a line count.
+- [#481](../../issues/481) - Every script a skill or agent ran by path is a verb: `workkit ship items|release|watch|plan|publish`, `workkit review covers|mark`, `workkit triage mark`, `workkit proof red`, `workkit changelog lint`, `workkit state`. The `scripts/` folder is gone, and publish-plan splits into plan and publish.
+
+### Fixed
+
+- [#477](../../issues/477) - When the client cannot report the sign-in state and its message spans several lines, `workkit doctor`, `setup` and `update` print each line as an indented identity warning, never at column 0.
+
 ## [0.85.0] - 2026-10-29
 
 ### Added

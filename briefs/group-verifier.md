@@ -2,7 +2,7 @@
 
 Role: group-verifier (`workkit:verifier`), defined in `agents/verifier.md` § Behavior.
 Repo: {{repo}}
-Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, scripts/ and skills/ path here is the kit's).
+Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, workflow/ and skills/ path here is the kit's).
 Read first: {{guides}}
 Spec: the `### Contract` of {{issue}}.
 
@@ -11,7 +11,7 @@ Spec: the `### Contract` of {{issue}}.
 {{task}}
 
 The task names the pair's two briefs; their Paths sections are the SPLIT lists and the red-proof arguments. Judge the pair's merged diff against both briefs and the Contract. Answer the five pair checks, CASES, SPLIT, RED, GREEN and WORTH, and the three DRIFT questions, each as a scored finding.
-RED runs `scripts/red-proof.sh` over the feature-developer's source paths with the test-developer's test files, in the runnable form `agents/verifier.md` gives, `--live` ahead of the paths when the suite talks to a running server. A group with no test surface skips RED and says so.
+RED runs `workkit proof red` over the feature-developer's source paths with the test-developer's test files, in the runnable form `agents/verifier.md` gives, `--live` ahead of the paths when the suite talks to a running server. A group with no test surface skips RED and says so.
 
 ## Diff
 

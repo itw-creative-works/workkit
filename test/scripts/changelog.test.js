@@ -1,13 +1,14 @@
-// Tests for workflow/changelog/changelog.js: the CHANGELOG entry rules and the CLI
-// docs:changelog-guard and safety:commit-gate call. The added-only tests build
-// real git repos: which lines a change added is a question only git answers.
+// Tests for workflow/changelog/lint.js (`workkit changelog lint`): the CHANGELOG
+// entry rules and the CLI docs:changelog-guard and safety:commit-gate call. The
+// added-only tests build real git repos: which lines a change added is a question
+// only git answers.
 
 const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 
-const MODULE = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
+const MODULE = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'lint.js');
 const { parseEntries, lintText, RULES } = require(MODULE);
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };

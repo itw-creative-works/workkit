@@ -10,17 +10,20 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, run } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath, gitPath } = require('../../lib/platform');
+const {
+  BASH, NO_RC, shellPath, gitPath, joinPath,
+} = require('../../lib/platform');
 const { mods } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
 const { gateOn } = require('../../lib/real-gate');
+const { workkitBin } = require('../../lib/workkit-bin');
 const {
   KIT, PREFIX, T, mkRepo, stage, write, commit, touchMarker, staleMarker, judge, blocks, passes,
 } = require('./helpers');
 const { daysAgo, agedFile } = require('../../lib/workflow-home');
 
-// A kit script run for real in <cwd> with the world's env.
-const runScript = (world, name, args = [], cwd = world.repo) => run(BASH, [...NO_RC, shellPath(path.join(KIT, 'scripts', name)), ...args], {
+// A kit script, by its path under workflow/, run for real in <cwd> with the world's env.
+const runScript = (world, rel, args = [], cwd = world.repo) => run(BASH, [...NO_RC, shellPath(path.join(KIT, 'workflow', rel)), ...args], {
   cwd, env: world.env,
 });
 
@@ -29,12 +32,12 @@ const filesUnder = (dir) => (fs.existsSync(dir)
   ? fs.readdirSync(dir, { recursive: true }).map((rel) => path.join(dir, rel)).filter((p) => fs.statSync(p).isFile())
   : []);
 
-// The marker script the review skill calls, and the skill's own line calling
-// it, run for real: the skill, the script and the module's marker path cannot
-// drift apart. CLAUDE_PLUGIN_ROOT is handed over the way a hook command does.
+// The review skill's own marker line, run for real with the kit's `workkit`
+// on PATH: the skill, the verb, the script and the module's marker path cannot
+// drift apart.
 const skillLine = () => {
   const skill = fs.readFileSync(path.join(KIT, 'skills', 'review', 'SKILL.md'), 'utf8');
-  const line = skill.split('\n').find((l) => l.includes('scripts/review-marker.sh') && l.startsWith('bash '));
+  const line = skill.split('\n').find((l) => l.startsWith('workkit review mark'));
   assert(line, 'the skill carries the marker line');
   return line;
 };
@@ -78,9 +81,9 @@ const cases = async () => {
     blocks(await judge(r, 'git commit -m "feat"'), T.noReview, 'blocked before the skill runs');
     const res = run(BASH, [...NO_RC, '-c', skillLine()], {
       cwd: world.repo,
-      env: { ...world.env, CLAUDE_PLUGIN_ROOT: shellPath(KIT) },
+      env: { ...world.env, PATH: joinPath(workkitBin(), world.env.PATH) },
     });
-    assertEq(res.status, 0, `the marker script runs, got: ${res.stderr}`);
+    assertEq(res.status, 0, `the marker verb runs, got: ${res.stderr}`);
     assert(fs.existsSync(marker), `and writes exactly the file the module names: ${marker}`);
     r.marker = { mtimeMs: fs.statSync(marker).mtimeMs };
     passes(await judge(r, 'git commit -m "feat"'), '', 'so the commit passes');
@@ -109,7 +112,7 @@ const cases = async () => {
 
   group('commit-gate: the review marker under the workflow home');
 
-  await test('the full marker read 5 days later, past another marker write: review-covers.sh and the gate both still see it', async () => {
+  await test('the full marker read 5 days later, past another marker write: review covers and the gate both still see it', async () => {
     const world = mkGitRepo('cg-aged-', { 'app.js': 'const x = 1;\n' }, daysAgo(7));
     // HEAD and the edit predate the review, so only the markers' age is in play.
     const amend = spawnSync('git', ['commit', '--amend', '--no-edit', '-q'], {
@@ -118,15 +121,15 @@ const cases = async () => {
     assertEq(amend.status, 0, `HEAD is redated: ${amend.stderr}`);
     world.write('app.js', 'const x = 2;\n', daysAgo(6));
     world.git('add', 'app.js');
-    const wrote = runScript(world, 'review-marker.sh', ['full']);
-    assertEq(wrote.status, 0, `review-marker.sh full runs, got: ${wrote.stderr}`);
+    const wrote = runScript(world, 'review/mark.sh', ['full']);
+    assertEq(wrote.status, 0, `review/mark.sh full runs, got: ${wrote.stderr}`);
     const aged = filesUnder(path.join(world.workflowHome, 'markers'));
     assertEq(aged.length, 2, `the plain and the full marker are under the workflow home, got: ${aged}`);
     for (const file of aged) agedFile(file, 5);
-    const later = runScript(world, 'triage-marker.sh', [], world.dir);
+    const later = runScript(world, 'triage/mark.sh', [], world.dir);
     assertEq(later.status, 0, `a later marker write runs its sweep, got: ${later.stderr}`);
-    const covers = runScript(world, 'review-covers.sh');
-    assertEq(covers.stdout, 'review-covers: covered\n', `review-covers.sh still sees the full marker, got: ${covers.stdout}${covers.stderr}`);
+    const covers = runScript(world, 'review/covers.sh');
+    assertEq(covers.stdout, 'review-covers: covered\n', `review/covers.sh still sees the full marker, got: ${covers.stdout}${covers.stderr}`);
     const gate = await gateOn(world.repo, 'git commit -m "feat"', world.env);
     assertEq(gate.deny, null, 'and the gate still sees the review marker');
     fs.rmSync(world.dir, { recursive: true, force: true });

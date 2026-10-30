@@ -2,7 +2,7 @@
 # workflow/lib/detach.sh: the bash side of the detached runner (detach.js): a
 # command that outlives the shell that started it, one per lock, its output
 # tailed to this shell while it runs. Sourced, functions only, by
-# script-shell.sh and ship/ci-watch.sh; it reads wk_pid_alive and wk_end_run
+# script-shell.sh and ship/watch.sh; it reads wk_pid_alive and wk_end_run
 # from platform.sh.
 
 # wk_body_traps <prefix> [<before-exit command>]: a detached body's traps. Its

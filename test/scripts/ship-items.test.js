@@ -1,7 +1,8 @@
-// Tests for workflow/ship/ship-items.sh: the ship's Step 0c read, the open qa and
-// complete issues one line each with the proof call made. `gh` is a stub answering
-// from fixtures; jq is the machine's own, since the proof read is a jq expression.
-// The proof rule is hooks/mods/proof.js's, cased in test/hooks/proof-guard/.
+// Tests for workflow/ship/items.sh (`workkit ship items`): the ship's Step 0c
+// read, the open qa and complete issues one line each with the proof call made.
+// `gh` is a stub answering from fixtures; jq is the machine's own, since the
+// proof read is a jq expression. The proof rule is hooks/mods/proof.js's, cased
+// in test/hooks/proof-guard/.
 
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +13,7 @@ const {
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'ship-items.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'items.sh');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -68,7 +69,7 @@ const lines = (out) => out.split('\n').filter(Boolean);
 const assertList = (actual, expected, msg) => assertEq(JSON.stringify(actual), JSON.stringify(expected), msg);
 
 const cases = async () => {
-  group('ship-items.sh: the lines');
+  group('ship items: the lines');
 
   await test('qa lines first, then complete, each by number ascending', () => {
     const w = mkWorld({
@@ -95,7 +96,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('ship-items.sh: the proof call');
+  group('ship items: the proof call');
 
   await test('a comment opening with Proof: is proved', () => {
     const w = mkWorld({ complete: [issue(1, 'one', 'looks good', 'Proof: unit: node tests/x.test.js')] });
@@ -132,7 +133,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('ship-items.sh: nothing, a failure, and the repo');
+  group('ship items: nothing, a failure, and the repo');
 
   await test('nothing at either stage prints the one line and exits 0', () => {
     const w = mkWorld();

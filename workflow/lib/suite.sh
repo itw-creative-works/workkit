@@ -4,7 +4,7 @@
 # test run proved, with each package folder it covered), where each is kept, and
 # the two tree ids they are compared with, plus the paths of the detached runs'
 # logs and locks. Sourced, functions only, by script-shell.sh (the records'
-# writer), ship/ci-watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
+# writer), ship/watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
 # wk_marker_path, wk_sweep_markers and wk_git_path from platform.sh.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a

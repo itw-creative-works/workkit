@@ -47,32 +47,33 @@ Setup also has three choices it asks only at a terminal: whether to turn workkit
 3. **The engine's address.** Points `~/.claude/workkit` at the `workflow/` folder of the copy setup runs from (see [The engine's address](#the-engines-address)).
 4. **The `workkit` command.** Links it into `~/.local/bin`, and the `gh` shim beside it (see [The bot identity](#the-bot-identity)). When that folder is not on your PATH, setup prints the `export` line to add; it never edits a shell rc file.
 5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper. From then on a root `npm test` records the tree it proved, lints any new CHANGELOG entry before the suite starts, keeps running if the call that started it is cut, and logs to `.workkit/suite.log`. The kit's own wrapper reached through a linked folder reads as current. A value someone else set is warned about and left alone. The setting is made only when the wrapper exists behind the engine's address; with that link missing, setup prints a named skip and `script-shell` stays unset. On Windows, setup first builds the kit's script shell with the compiler every Windows ships.
-6. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.sh`. This is macOS only (launchd); everywhere else the brief runs in the cloud.
-7. **The dashboard.** Says how to start it: `workkit tower`, the local one of the [three ways to see your board](#three-ways-to-see-your-board).
+6. **The allow rules.** Adds the kit's allow rules, `Bash(workkit ship:*)`, `Bash(workkit review:*)` and `Bash(npm publish:*)`, to `permissions.allow` in `~/.claude/settings.json`, so auto mode does not block the commands a ship or a review runs. Only the missing rules are added, after the ones already there, and every other key stays as it is; a file that holds them all is not written. A settings file that is a link is written at its target, a missing one is created holding only the rules, and one that is not valid JSON is left alone and warned about by a human's run and by doctor, never by the daily run. `workkit update` and the daily `update --auto` keep the rules too (the daily run creates no `~/.claude`), and `workkit doctor` names each one that is missing.
+7. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.sh`. This is macOS only (launchd); everywhere else the brief runs in the cloud.
+8. **The dashboard.** Says how to start it: `workkit tower`, the local one of the [three ways to see your board](#three-ways-to-see-your-board).
 
 **Home repo**
 
-8. **The repo.** Creates your private home repo, `<login>/workkit`, after one confirm, and clones it into `~/.workkit/tower` (see [The home repo](#the-home-repo)). Without a terminal it creates nothing and names `workkit setup --home`, which runs the Home repo steps alone and asks nothing, with or without a terminal.
-9. **The cloud brief.** Copies the brief's GitHub Actions workflow, and the code it runs, into that clone.
+9. **The repo.** Creates your private home repo, `<login>/workkit`, after one confirm, and clones it into `~/.workkit/tower` (see [The home repo](#the-home-repo)). Without a terminal it creates nothing and names `workkit setup --home`, which runs the Home repo steps alone and asks nothing, with or without a terminal.
+10. **The cloud brief.** Copies the brief's GitHub Actions workflow, and the code it runs, into that clone.
 
 **Cloud brief secrets**
 
-10. **The brief's two secrets.** Sets them on the home repo, never on this one: this repo is the plugin everybody installs. The Claude token is minted only if you say yes at the prompt. The GitHub token is set from the `gh` login your machine already has.
+11. **The brief's two secrets.** Sets them on the home repo, never on this one: this repo is the plugin everybody installs. The Claude token is minted only if you say yes at the prompt. The GitHub token is set from the `gh` login your machine already has.
 
 **Identity**
 
-11. **The bot identity.** Says whether this machine is signed in to workkit, the one sign-in that lets the agent's issue bookkeeping post as `workkit-agent[bot]`. Not signed in at a keyboard, it asks whether to sign in now (Enter is yes), opens GitHub's device page in your browser and prints the code to enter there, then finishes the sign-in itself once you approve it. A no, or no keyboard, prints a warning naming `workkit setup --login`, which runs this step alone with or without a terminal, asks nothing, and signs you in again even when you already are. A machine without Node or jq gets a named skip (see [The bot identity](#the-bot-identity)).
+12. **The bot identity.** Says whether this machine is signed in to workkit, the one sign-in that lets the agent's issue bookkeeping post as `workkit-agent[bot]`. Not signed in at a keyboard, it asks whether to sign in now (Enter is yes), opens GitHub's device page in your browser and prints the code to enter there, then finishes the sign-in itself once you approve it. A no, or no keyboard, prints a warning naming `workkit setup --login`, which runs this step alone with or without a terminal, asks nothing, and signs you in again even when you already are. A machine without Node or jq gets a named skip (see [The bot identity](#the-bot-identity)).
 
 **Dashboard site**
 
-12. **Publishing.** Asks once whether to publish your own copy of the dashboard to GitHub Pages. A fresh yes also asks for a custom domain, then publishes the site and hands your `gh` login token to its Settings page.
+13. **Publishing.** Asks once whether to publish your own copy of the dashboard to GitHub Pages. A fresh yes also asks for a custom domain, then publishes the site and hands your `gh` login token to its Settings page.
 
 **This repo**
 
-13. **Joining.** Offers to turn workkit on for the repo you are standing in.
-14. **The App's install.** Signed in, in a repo opted in to workkit (its committed `.workkit/settings.json` says enabled), it asks the token service whether `workkit-agent[bot]` is installed there. When it is not, it builds the App's install page pre-selected on the repo's owner (the bare page when the owner's id cannot be read); at a keyboard it asks whether to install it there now (Enter is yes), opens that page in your browser, and waits, asking the service again every 15 seconds: Enter checks now, `s` skips. Installed, it says so; a no, a skip, or no keyboard prints a warning naming the same page. `workkit setup --bot` runs this step alone, in any repo with a GitHub origin, opted in or not, and exits 1 unless the App ends installed.
+14. **Joining.** Offers to turn workkit on for the repo you are standing in.
+15. **The App's install.** Signed in, in a repo opted in to workkit (its committed `.workkit/settings.json` says enabled), it asks the token service whether `workkit-agent[bot]` is installed there. When it is not, it builds the App's install page pre-selected on the repo's owner (the bare page when the owner's id cannot be read); at a keyboard it asks whether to install it there now (Enter is yes), opens that page in your browser, and waits, asking the service again every 15 seconds: Enter checks now, `s` skips. Installed, it says so; a no, a skip, or no keyboard prints a warning naming the same page. `workkit setup --bot` runs this step alone, in any repo with a GitHub origin, opted in or not, and exits 1 unless the App ends installed.
 
-**In a cloud session** (claude.ai/code, where `CLAUDE_CODE_REMOTE` is `true`), run `workkit setup --cloud` instead. It checks the gh login as setup and doctor do everywhere, makes the engine's address, the `workkit` command and the `gh` shim (creating `~/.local/bin`), and points npm's `script-shell` at the kit. The bot does not act there: the session's GitHub proxy signs every request as your account, so the `gh` shim serves the kit's issue, label and auth verbs through REST as you ([gh in a session](cloud.md#gh-in-a-session)), and nothing signs in. Every other step (the plugin, the schedule, the tower, the home repo, the cloud brief's secrets, the sign-in, publishing, joining, the App's install) prints one not-applicable line. It asks nothing and opens nothing. `standards.sh --command-link` makes the command link alone, for a bootstrap that runs no setup at all; a cloud bootstrap that does run setup calls `workkit setup --cloud`, which makes the link itself. In the cloud, `workkit doctor` likewise shows the schedule, the home repo, its runner, the secrets and the sign-in as not applicable and counts none of them.
+**In a cloud session** (claude.ai/code, where `CLAUDE_CODE_REMOTE` is `true`), run `workkit setup --cloud` instead. It checks the gh login as setup and doctor do everywhere, makes the engine's address, the `workkit` command and the `gh` shim (creating `~/.local/bin`), points npm's `script-shell` at the kit, and adds the kit's allow rules to `~/.claude/settings.json`. The bot does not act there: the session's GitHub proxy signs every request as your account, so the `gh` shim serves the kit's issue, label and auth verbs through REST as you ([gh in a session](cloud.md#gh-in-a-session)), and nothing signs in. Every other step (the plugin, the schedule, the tower, the home repo, the cloud brief's secrets, the sign-in, publishing, joining, the App's install) prints one not-applicable line. It asks nothing and opens nothing. `standards.sh --command-link` makes the command link alone, for a bootstrap that runs no setup at all; a cloud bootstrap that does run setup calls `workkit setup --cloud`, which makes the link itself. In the cloud, `workkit doctor` likewise shows the schedule, the home repo, its runner, the secrets and the sign-in as not applicable and counts none of them.
 
 Afterwards, `workkit doctor` reports what is set up and what has drifted, and `workkit help` is the map of every command.
 
@@ -128,7 +129,7 @@ The dashboard comes in three tiers. Each reads the same issues on GitHub, so you
 
 - **The central copy, out of the box.** Open <https://itw-creative-works.github.io/workkit/>, the kit's own GitHub Pages site for now, so the address may move. Paste a GitHub token once on its Settings page, which lists the permissions the token needs. The token stays in that browser. [`tower/README.md`](../tower/README.md#the-three-modes) has the detail on tokens. The site holds no data and reads GitHub live; it finds your home repo, `<login>/workkit`, from the token, so it needs no copy of your own. It is rebuilt on every workkit release.
 - **The local tower.** `workkit tower` serves the dashboard on this machine through your `gh` login, so it asks for no token. It is the only tier that shows the running agents, token spend and repo health, since those live on the machine.
-- **Your own published copy.** `workkit publish` puts the dashboard on your home repo's GitHub Pages, for a custom domain or full control over what is served. Setup asks once whether to publish (step 12). [The home repo](#the-home-repo) says how the copy is built and what it holds.
+- **Your own published copy.** `workkit publish` puts the dashboard on your home repo's GitHub Pages, for a custom domain or full control over what is served. Setup asks once whether to publish (step 13). [The home repo](#the-home-repo) says how the copy is built and what it holds.
 
 ## Opting a repo in
 
@@ -148,10 +149,9 @@ hooks/            hooks.json + the hooks module (register.js, mods/) + the shell
 agents/           the crew (namespaced workkit:<name>)
 briefs/           the role brief templates, one per crew job (the manager fills the slots)
 skills/           the nine workflow skills (namespaced workkit:<name>)
-workflow/         the agent-agnostic engine
+workflow/         the agent-agnostic engine, and the scripts behind its verbs (workkit review covers is the ship's review tier)
 tower/            the dashboard: api/ (the JSON API) + app/ (the OMEGA dashboard)
 jobs/             the 9am job: summaries, brief, publish: payload builders, runners, launchd schedule
-scripts/          four scripts: the review and triage markers, red-proof (the verifier's red run), review-covers (the ship's review tier)
 docs/             project-state.md (the spec) · agents.md (the crew contract) · hooks.md (what each hook does) · setup.md (this page) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook) · assets/ (the README's hero and mark)
 test/             npm test
 ```

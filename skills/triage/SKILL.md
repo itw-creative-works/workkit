@@ -17,12 +17,11 @@ Labels (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label li
 FULL drain only; a scoped run sets none (§ Scoped mode). Run it before reading anything:
 
 ```sh
-bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/triage-marker.sh"
+workkit triage mark
 ```
 
 - It records that triage is running. `safety:capture-guard` checks it before a read of `.workkit/capture.md` or the rewrite that clears drained entries. That rewrite is an agent's only write to the file. Adding to it is the owner's alone; it is their capture surface at every other moment.
 - The script keys the marker to the session's repo root, which the capture file belongs to (`$HOME` outside every repo). It names the marker by the same key rule the hook reads it with (`wk_marker_path`, `triageMarkerPath` in the hooks module), so the two cannot drift.
-- `CLAUDE_PLUGIN_ROOT` is set only inside hook commands. The fallback reaches the plugin root through the engine's stable address. `~/.claude/workkit` is the engine folder INSIDE the plugin; its parent is the plugin.
 
 ## Sources to drain (the FULL drain; § Scoped mode reads only the named issues)
 
@@ -31,7 +30,7 @@ bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/triage-marker.sh"
 2. **`.workkit/capture.md`**: the local, gitignored capture file (offline moments, free-form dumps).
 3. **Mid-chat note dumps**: same routing, no file needed first.
 4. **The HQ pass**: the home repo's open `status:inbox` issues, routed with the same table, from any repo: `gh issue list --repo <site.repo> --state open --label status:inbox ... --limit 1000` (`site.repo` from `~/.workkit/settings.json`).
-   - This is how the nursery drains, since no session ever opens in the clone. `wk.sh note` files a capture made outside every participating repo straight onto the home repo, so it drains here. Captures cluster around one project: propose graduation (§ Graduation).
+   - This is how the nursery drains, since no session ever opens in the clone. `workkit note` files a capture made outside every participating repo straight onto the home repo, so it drains here. Captures cluster around one project: propose graduation (§ Graduation).
 
 Split every source into discrete entries. A wall of mixed notes fans out to MANY destinations, never one blob. A dump issue fans out to N new issues and comments. Then close it with the Filed trail as its closing comment.
 

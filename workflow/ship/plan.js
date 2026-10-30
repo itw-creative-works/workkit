@@ -3,21 +3,18 @@
 // The ship's publish plan: which packages of a repo go to npm, in which order,
 // and which are skipped and why (the rules and the lines: `skills/ship/SKILL.md`
 // Step 5). Members are read from their own package.json files, never through
-// `npm query .workspace`, which answers nothing before `npm install`.
+// `npm query .workspace`, which answers nothing before `npm install`. The
+// library release.js and publish.js require; publish.js does the publishing.
 //
 // Run from the repo root:
-//   node ~/.claude/workkit/ship/publish-plan.js [--run] [--dir <root>]
+//   workkit ship plan [--dir <root>]
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { isSemver } = require('./semver');
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'];
 const GLOB_RE = /[*?[]/;
-// On Windows npm is `npm.cmd`, which Node starts only through a shell; every argument
-// passed here (a package name, a version, a flag) has no whitespace, so the shell form is safe.
-const NPM_SHELL = process.platform === 'win32';
 
 /** A refusal: the plan cannot be made, and the message says why. */
 class PlanError extends Error {
@@ -183,71 +180,27 @@ const plan = (root) => {
   };
 };
 
-/** How an npm call ended, for a line that names it: its exit code, or why it never had one. */
-const npmEnd = (res) => {
-  if (res.error) return `npm could not be run, ${res.error.code || res.error.message}`;
-  if (res.status === null) return `npm was killed by ${res.signal}`;
-  return `npm exited ${res.status}`;
-};
-
 /**
- * Is `name@version` already on the registry? The `safety:release-taken` hook's
- * npm question, flag for flag, asked here since that hook never sees a publish
- * inside this run. E404 answers free; any other failure stands the check down
- * on stderr and answers free, so npm itself refuses a taken version.
+ * The CLI's shared half: read `--dir`, make the plan, print its lines. Any
+ * other argument is refused, so a flag meant for another command never runs
+ * this one silently.
+ * @param {string[]} argv - the arguments after the script
+ * @returns {{code: number, root?: string, result?: object}} the exit code, and
+ *   on 0 the root and the plan, for publish.js to publish
  */
-const onRegistry = (root, { name, version }) => {
-  const res = spawnSync('npm', ['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {
-    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: NPM_SHELL,
-  });
-  if (res.status === 0) return res.stdout.trim() === version;
-  const stderr = res.stderr || '';
-  if (res.status !== null && stderr.includes('E404')) return false;
-  const why = stderr.split('\n')[0].trim() || npmEnd(res);
-  console.error(`publish-plan: the npm check stood down for ${name}@${version}: ${why}; publishing anyway, npm refuses a taken version.`);
-  return false;
-};
-
-/** Publish the plan's `publish` lines in order; the first failure stops the run. */
-const publishAll = (root, result) => {
-  let published = 0;
-  for (const [i, p] of result.publish.entries()) {
-    if (onRegistry(root, p)) {
-      console.log(`skipped ${p.name} ${p.version} already on npm`);
-      continue;
+const report = (argv) => {
+  let dir;
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== '--dir') {
+      console.error(`publish-plan: ${argv[i]} is not an argument this command takes; it takes only --dir <root>.`);
+      return { code: 2 };
     }
-    const args = ['publish'];
-    if (result.workspaces) args.push(`--workspace=${p.name}`);
-    if (p.scoped) args.push('--access', 'public');
-    const res = spawnSync('npm', args, { cwd: root, stdio: 'inherit', shell: NPM_SHELL });
-    if (res.status !== 0) {
-      const left = result.publish.slice(i + 1).map((l) => l.name);
-      const end = res.error || res.status === null ? npmEnd(res) : `exit ${res.status}`;
-      console.error(`publish-plan: npm publish failed for ${p.name}@${p.version} (${end}); ${published} published, ${left.length} not attempted: ${left.join(', ') || 'none'}.`);
-      return 1;
+    dir = argv[i + 1];
+    if (dir === undefined || dir.startsWith('--')) {
+      console.error('publish-plan: --dir needs a value.');
+      return { code: 2 };
     }
-    published += 1;
-    console.log(`published ${p.name} ${p.version}`);
-  }
-  if (result.publish.length > 0 && published === 0) {
-    console.log('nothing to publish: every package is already on npm at its version');
-  }
-  return 0;
-};
-
-const main = (argv) => {
-  let badFlag = null;
-  const flag = (name) => {
-    const at = argv.indexOf(name);
-    if (at === -1) return undefined;
-    const value = argv[at + 1];
-    if (value === undefined || value.startsWith('--')) badFlag = name;
-    return value;
-  };
-  const dir = flag('--dir');
-  if (badFlag) {
-    console.error(`publish-plan: ${badFlag} needs a value.`);
-    return 2;
+    i += 1;
   }
 
   const root = path.resolve(dir || process.cwd());
@@ -257,18 +210,18 @@ const main = (argv) => {
   } catch (err) {
     if (!(err instanceof PlanError)) throw err;
     console.error(err.message);
-    return 1;
+    return { code: 1 };
   }
   for (const note of result.notes) console.error(note);
   for (const p of result.publish) console.log(`publish ${p.name} ${p.version} ${p.scoped ? 'scoped' : 'unscoped'}`);
   for (const s of result.skip) console.log(`skip ${s.name} ${s.version} ${s.reason}`);
-  return argv.includes('--run') ? publishAll(root, result) : 0;
+  return { code: 0, root, result };
 };
 
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards console.log output
   // still buffered for a pipe.
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = report(process.argv.slice(2)).code;
 }
 
-module.exports = { plan, expandWorkspaces, PlanError };
+module.exports = { plan, expandWorkspaces, PlanError, report };

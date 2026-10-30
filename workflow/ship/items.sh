@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# ship-items: what a ship carries, with the proof call already read: the open
-# issues at `status:qa` then `status:complete`, one `<stage> #<N>
-# <proved|unproved> <title>` line each (`workflow/README.md`, the
-# ship/ship-items.sh row). Usage: ship-items.sh [--repo owner/name]; without
-# --repo gh resolves the repo from the current directory.
+# workkit ship items: what a ship carries, with the proof call already read:
+# the open issues at `status:qa` then `status:complete`, one `<stage> #<N>
+# <proved|unproved> <title>` line each (`workflow/README.md`, the ship/items.sh
+# row). Usage: workkit ship items [--repo owner/name]; without --repo gh
+# resolves the repo from the current directory.
 
 set -euo pipefail
 
@@ -19,9 +19,9 @@ fail() {
   exit 1
 }
 
-# A usage error is exit 2, the code ci-watch.sh beside it uses for one.
+# A usage error is exit 2, the code watch.sh beside it uses for one.
 usage() {
-  printf 'ship-items: %s (usage: ship-items.sh [--repo owner/name])\n' "$1" >&2
+  printf 'ship-items: %s (usage: workkit ship items [--repo owner/name])\n' "$1" >&2
   exit 2
 }
 

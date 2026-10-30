@@ -1,13 +1,14 @@
 #!/bin/bash
-# scripts/review-covers.sh: does a full-panel review cover the working diff? The
-# full-panel marker (`scripts/review-marker.sh full`, keyed on the repo root) must
-# be newer than every modified, staged and untracked path but the heal's version
-# stamp, and than the folder a deleted path left. A diff of that stamp or nothing
-# is stale, since commits are unseen. Covered exits 0, stale 1, a usage or git failure 2.
+# workflow/review/covers.sh (`workkit review covers`): does a full-panel review
+# cover the working diff? The full-panel marker (`workkit review mark full`,
+# keyed on the repo root) must be newer than every modified, staged and
+# untracked path but the heal's version stamp, and than the folder a deleted
+# path left. A diff of that stamp or nothing is stale, since commits are
+# unseen. Covered exits 0, stale 1, a usage or git failure 2.
 
 set -euo pipefail
 
-. "${BASH_SOURCE[0]%/*}/../hooks/_lib.sh"
+. "${BASH_SOURCE[0]%/*}/../../hooks/_lib.sh"
 
 root=$(git rev-parse --show-toplevel 2>/dev/null || true)
 if [ -z "$root" ]; then

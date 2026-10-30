@@ -72,7 +72,7 @@ const nodeLogger = (world) => {
   stubTool(bin, 'node', ['#!/bin/bash', recordArgv(logFile), `exec "${shellPath(process.execPath)}" "$@"`]);
   return {
     env: { PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH) },
-    lintCalls: () => readArgv(logFile).filter((argv) => argv.some((a) => a.includes('changelog/changelog.js'))),
+    lintCalls: () => readArgv(logFile).filter((argv) => argv.some((a) => a.includes('changelog/lint.js'))),
   };
 };
 

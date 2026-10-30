@@ -78,7 +78,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
   - The feature-developer's brief starts from `briefs/feature-developer.md` and names its source paths and the issue's `### Contract`.
   - The test-developer's brief starts from `briefs/test-developer.md` and names its test paths, the Contract and the Description.
   - A group with no test surface gets one worker, its brief from `briefs/docs-developer.md`.
-- Verify: one blind `workkit:verifier` per group over the pair's merged diff, its brief from `briefs/group-verifier.md`, red first proven through `scripts/red-proof.sh` (the form: `docs/agents.md` § Crew sizing), one fix round; then ONE review panel over the batch diff (phase 5), then park every issue.
+- Verify: one blind `workkit:verifier` per group over the pair's merged diff, its brief from `briefs/group-verifier.md`, red first proven through `workkit proof red` (the form: `docs/agents.md` § Crew sizing), one fix round; then ONE review panel over the batch diff (phase 5), then park every issue.
 - The `workkit:verifier` runs twice: when the build claims done, and after the review (phase 5). The full review panel assembles only in phase 5. `workkit:scout` is recon: dispatch it at any point.
 - A finding that names a class ("one more site reads the value the same wrong way") gets one `workkit:scout` sweep of the whole class before the worker round, so the class is one round, never one round per instance.
 - An edit that touches many test files rides its own batch: the batch's first qa flip needs a green `npm test` recorded on the parked tree for every package owning a touched test file, so a wide edit makes every other item in the batch wait on those runs.
@@ -93,7 +93,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 - Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
 - A ≥80 finding is built in the batch, or said in chat under **🧭 Findings** (filed only when `findings.file` is on or the owner says file), before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
 - After the review: ONE light verification pass over the fixes (its brief from `briefs/fix-verifier.md`), ONE worker round for what it finds, then retouch the review marker so it covers the parked diff, with `full` only when that review was the full panel (the retouch closes its round; `workkit:review` § 5), then the park:
-  `bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"` (add `full` after a full panel)
+  `workkit review mark` (add `full` after a full panel)
 - A finding made after that round is said or filed per the fix-or-file rule, never worked in another round. The one exception is a bug in a `safety:` hook, fixed before the park.
 - Done-criteria:
   - green at every layer the change has a surface on (`docs/project-state.md` § The proof);
@@ -105,7 +105,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 - Build done, tests green, review passed: the work STAYS IN THE WORKING TREE, uncommitted until the owner's pass. `safety:commit-gate` bounces a commit whose message names an open issue not at `status:complete`.
 - The park is MECHANICAL, not a question. It happens the moment the done-criteria above are met.
 - Say what to check, then flip. The comment lands FIRST so the park carries the record: the proof is a hard gate, and without it an item can neither reach `status:complete` nor close (spec § The proof).
-- The comment's first line is `Proof:`, one entry per layer: the command, or the reason it was skipped, and beside them the red-proof run (the `scripts/red-proof.sh` line the verifier printed). The check reads it first.
+- The comment's first line is `Proof:`, one entry per layer: the command, or the reason it was skipped, and beside them the red-proof run (the `workkit proof red` line the verifier printed). The check reads it first.
 - The rest of the comment is the whole handover: what changed, what to look at, and where. Where is the page to open, the command to run, or the diff to read when the change has no surface.
 
 ```

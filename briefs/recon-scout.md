@@ -2,7 +2,7 @@
 
 Role: recon-scout (`workkit:scout`), defined in `agents/scout.md`.
 Repo: {{repo}}
-Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, scripts/ and skills/ path here is the kit's).
+Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, workflow/ and skills/ path here is the kit's).
 
 ## Task
 

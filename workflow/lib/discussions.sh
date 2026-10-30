@@ -62,8 +62,7 @@ wk_disc_meta() {
   # never wrong.
   if [[ -d "$WK_USER_DIR" ]] || mkdir -p "$WK_USER_DIR" 2>/dev/null; then
     if wk_take_state_lock; then locked=1; fi
-    [[ -f "$WK_HOME_CACHE" ]] || printf '{}\n' >"$WK_HOME_CACHE" 2>/dev/null || true
-    wk_json_edit "$WK_HOME_CACHE" --arg s "$slug" --argjson m "$fresh" \
+    wk_json_edit_or_create "$WK_HOME_CACHE" --arg s "$slug" --argjson m "$fresh" \
       '.homeCache = ((.homeCache // {}) + { ($s): $m })' >/dev/null 2>&1 || true
     if [[ "$locked" -eq 1 ]]; then wk_drop_state_lock; fi
   fi

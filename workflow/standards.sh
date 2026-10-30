@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LABELS_JSON="$SCRIPT_DIR/labels.json"
 TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
-CHANGELOG_LINTER="$SCRIPT_DIR/changelog/changelog.js"
+CHANGELOG_LINTER="$SCRIPT_DIR/changelog/lint.js"
 
 # The CRLF-safe jq, named here as well as reached through lib.sh since this
 # script reads JSON from its first step. Sourcing it twice is harmless.

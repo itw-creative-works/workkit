@@ -44,7 +44,7 @@ const changelogRepo = (words) => {
 const cases = async () => {
   group('workflow/lib/changelog.sh: wk_changelog_lint resolves the linter');
 
-  await test("with no WORKFLOW_DIR it runs the engine's own changelog.js", () => {
+  await test("with no WORKFLOW_DIR it runs the engine's own lint.js", () => {
     const long = lint(changelogRepo(62));
     assertEq(long.code, 1, `a 62-word entry fails, got: ${long.stdout}|${long.stderr}`);
     assert(long.stderr.startsWith('the CHANGELOG entry does not match the format (see docs/project-state.md). '),
@@ -58,7 +58,7 @@ const cases = async () => {
     const engine = mkTmp('changelog-lint-engine-');
     const argvFile = path.join(engine, 'argv.json');
     fs.mkdirSync(path.join(engine, 'changelog'));
-    fs.writeFileSync(path.join(engine, 'changelog', 'changelog.js'), [
+    fs.writeFileSync(path.join(engine, 'changelog', 'lint.js'), [
       `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));`,
       "console.error('the stand-in linter said no');",
       'process.exit(1);',

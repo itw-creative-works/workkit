@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { META_RE, ISSUE_LINK_RE, parseEntries } = require('../changelog/changelog');
+const { META_RE, ISSUE_LINK_RE, parseEntries } = require('../changelog/lint');
 const { isSemver } = require('../ship/semver');
 const {
   PublicError, runGh, ghJson, ghWrite, outLine, warnLine, pairing, publicLink, issueNumbers, main,

@@ -12,19 +12,21 @@ const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, WORKKIT_DIR: W, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const {
+  BASH, NO_RC, shellPath, joinPath,
+} = require('../../lib/platform');
+const { workkitBin } = require('../../lib/workkit-bin');
 const { mods } = require('../../lib/mods-inputs');
 const {
   HOME_CAPTURE, FRESH, READ, judge, read, bash, refuses, allows,
 } = require('./helpers');
 
-// The marker script the triage skill calls, and the skill's own line calling
-// it: the test runs the line, so the skill and the module's marker path cannot
-// drift apart. CLAUDE_PLUGIN_ROOT is handed over the way a hook hands it over.
+// The triage skill's own marker line, run with the kit's `workkit` on PATH:
+// the skill, the verb and the module's marker path cannot drift apart.
 const PLUGIN_ROOT = path.join(__dirname, '..', '..', '..');
 const SKILL = path.join(PLUGIN_ROOT, 'skills', 'triage', 'SKILL.md');
 const skillLine = () => {
-  const line = fs.readFileSync(SKILL, 'utf8').split('\n').find((l) => l.includes('scripts/triage-marker.sh') && l.startsWith('bash '));
+  const line = fs.readFileSync(SKILL, 'utf8').split('\n').find((l) => l.startsWith('workkit triage mark'));
   assert(line, 'the skill carries the marker line');
   return line;
 };
@@ -32,10 +34,11 @@ const skillLine = () => {
 const TMP = mkTmp('capture-guard-tmp-');
 const SCRATCH_HOME = mkTmp('capture-guard-home-');
 const SCRATCH_WH = path.join(SCRATCH_HOME, '.workkit');
+const BIN = workkitBin();
 const runSkillLine = (cwd) => spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
   cwd,
   env: {
-    ...process.env, HOME: shellPath(SCRATCH_HOME), WORKFLOW_HOME: shellPath(SCRATCH_WH), TMPDIR: shellPath(TMP), CLAUDE_PLUGIN_ROOT: shellPath(PLUGIN_ROOT),
+    ...process.env, HOME: shellPath(SCRATCH_HOME), WORKFLOW_HOME: shellPath(SCRATCH_WH), TMPDIR: shellPath(TMP), PATH: joinPath(BIN, process.env.PATH),
   },
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,

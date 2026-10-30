@@ -2,7 +2,7 @@
 
 Role: firestore-scout (`workkit:scout`), the Firestore rules lens of `skills/review/SKILL.md` § 2.
 Repo: {{repo}}
-Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, scripts/ and skills/ path here is the kit's).
+Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, workflow/ and skills/ path here is the kit's).
 
 ## Task
 

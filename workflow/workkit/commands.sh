@@ -158,6 +158,10 @@ cmd_doctor() {
 
   script_shell doctor || attention=$((attention + 1))
 
+  local allow_attention=0
+  report_allow_rules || allow_attention=$?
+  attention=$((attention + allow_attention))
+
   # A cloud session keeps no schedule, home clone or secrets of its own: each
   # is one cloud_na line (workkit/setup.sh), counted by nothing.
   if wk_is_cloud; then

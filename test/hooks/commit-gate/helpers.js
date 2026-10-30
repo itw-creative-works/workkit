@@ -20,7 +20,7 @@ const KIT = fs.realpathSync(path.join(__dirname, '..', '..', '..'));
 const WORKFLOW_DIR = path.join(KIT, 'workflow');
 const JOB = path.join(WORKFLOW_DIR, 'changelog', 'changelog-job.sh');
 const TEMPLATE = path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml');
-const LINTER = path.join(WORKFLOW_DIR, 'changelog', 'changelog.js');
+const LINTER = path.join(WORKFLOW_DIR, 'changelog', 'lint.js');
 // npm's script-shell as setup wires it: the wrapper beside this checkout's engine.
 const WRAPPER = fs.realpathSync(path.join(WORKFLOW_DIR, 'script-shell.sh'));
 

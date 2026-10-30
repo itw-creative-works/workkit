@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# ci-watch: the ship's CI watch, a pushed sha in and one answer out. Usage:
-# ci-watch.sh <sha>. Exit 0 green (or no CI for push), 1 red, 2 usage, 3 not
-# queued yet, 4 gh failed or the watch did not finish, 5 a watch already
-# running, 130 interrupted; the lines and the log: `workflow/README.md`, the
-# ship/ci-watch.sh row. The foreground runs this file as `--watch-body <sha>`,
+# workkit ship watch: the ship's CI watch, a pushed sha in and one answer out.
+# Usage: workkit ship watch <sha>. Exit 0 green (or no CI for push), 1 red, 2
+# usage, 3 not queued yet, 4 gh failed or the watch did not finish, 5 a watch
+# already running, 130 interrupted; the lines and the log: `workflow/README.md`,
+# the ship/watch.sh row. The foreground runs this file as `--watch-body <sha>`,
 # detached, and tails its log. The push trigger is a top-level `on:` naming
 # `push` in any of its YAML shapes; a `push` nested deeper is not one.
 
@@ -11,7 +11,7 @@
 # parses a function whole, and a watch outlives many edits to the kit.
 
 usage() {
-  printf 'usage: ci-watch.sh <sha>\n' >&2
+  printf 'usage: workkit ship watch <sha>\n' >&2
   printf '  finds the runs for a pushed sha, watches every one, and says green or red\n' >&2
   exit 2
 }
@@ -132,7 +132,7 @@ foreground() {
   root="$(repo_root)"
   log="$(wk_ci_log_path "$root")"
   lock="$(wk_ci_lock_path "$root")"
-  wk_run_detached "$log" "$lock" -- "$BASH" "$SCRIPT_DIR/ci-watch.sh" --watch-body "$SHA" || rc=$?
+  wk_run_detached "$log" "$lock" -- "$BASH" "$SCRIPT_DIR/watch.sh" --watch-body "$SHA" || rc=$?
   if ((rc == 3)) && [[ -n "$WK_HELD_PID" ]]; then
     printf 'ci-watch: a watch is already running for %s (pid %s); its output is in %s\n' \
       "$(watched_sha "$log")" "$WK_HELD_PID" "$log" >&2

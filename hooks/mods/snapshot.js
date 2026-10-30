@@ -1,6 +1,6 @@
 /**
  * hooks/mods/snapshot.js: workflow:snapshot. The claim of an issue to
- * status:building takes the repo snapshot scripts/red-proof.sh runs against,
+ * status:building takes the repo snapshot `workkit proof red` runs against,
  * or adds its number to the live one (replacing it once stale); a release (a
  * qa or complete flip, or a close) leaving no issue there at status:building
  * drops it. The copy, fill and sweep stay in hooks/lib/snapshot.sh, run

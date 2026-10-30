@@ -82,6 +82,22 @@ QUIET=0
 # backgrounded run finishes rather than hanging.
 interactive() { [[ -t 0 ]]; }
 
+# run_verb <verb> <sub> [args]: the rule behind every verb with subcommands,
+# `workkit <verb> <sub>` runs workflow/<verb>/<sub>.sh or .js. Exec'd, so the
+# script's output and exit code are the command's.
+run_verb() {
+  local verb="$1" sub="$2" base="$SCRIPT_DIR/$1/$2"
+  shift 2
+  if [[ -f "$base.sh" ]]; then
+    exec bash "$base.sh" "$@"
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    wk_error "$verb $sub: the verb runs node, and there is no node on PATH"
+    return 1
+  fi
+  exec node "$base.js" "$@"
+}
+
 usage() {
   cat <<'EOF'
 workkit: the issue workflow, one command.
@@ -135,6 +151,8 @@ usage: workkit <command> [args]
   decline [repo]       record this developer's no for the repo, personally
   heal [repo]          re-run the standards heal on the repo now, the same
                        pass a session makes once a day, without the wait
+  state [repo]         print the repo's participation: enabled, disabled,
+                       declined, undecided, home or nogit
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
   test [paths]         hand the paths to this repo's npm test, run at its root,
@@ -150,6 +168,28 @@ usage: workkit <command> [args]
   public close <version> <N>...
                        close each linked public issue with the version and its
                        CHANGELOG entry
+  ship items           list the open issues at qa then complete, each with
+                       whether it carries its Proof: line
+  ship release <x.y.z> [--keep N,M]
+                       the release: the bump, the [Unreleased] move and the
+                       entry backfill, every check before any write
+  ship watch <sha>     watch every CI run for a pushed sha and answer green or
+                       red by exit code
+  ship plan            print which packages publish to npm, in which order,
+                       and which are skipped and why; publishes nothing
+  ship publish         publish that plan in order, asking npm first, stopping
+                       at the first failure
+  review covers        whether the full-panel review marker covers the
+                       working diff: exit 0 covered, 1 stale
+  review mark [full]   record that the review ran on this repo; full records
+                       the full panel too
+  triage mark          record that a triage drain is under way, so the capture
+                       guard lets it read the capture file
+  proof red [--live] <path>... -- <command>...
+                       run the command against the paths as the claim found
+                       them, so the tests must fail: exit 0 red, 1 green
+  changelog lint <file> [--added-only] [--staged] [--unreleased-only]
+                       check the CHANGELOG entries against the entry format
 
 The engine it drives lives beside this script; the spec both implement is
 docs/project-state.md in the kit.
@@ -223,6 +263,18 @@ IDENTITY_USER=''
 . "$SCRIPT_DIR/workkit/log.sh"
 # shellcheck source=./workkit/public.sh
 . "$SCRIPT_DIR/workkit/public.sh"
+# shellcheck source=./workkit/ship.sh
+. "$SCRIPT_DIR/workkit/ship.sh"
+# shellcheck source=./workkit/review.sh
+. "$SCRIPT_DIR/workkit/review.sh"
+# shellcheck source=./workkit/triage.sh
+. "$SCRIPT_DIR/workkit/triage.sh"
+# shellcheck source=./workkit/proof.sh
+. "$SCRIPT_DIR/workkit/proof.sh"
+# shellcheck source=./workkit/changelog.sh
+. "$SCRIPT_DIR/workkit/changelog.sh"
+# shellcheck source=./workkit/allow.sh
+. "$SCRIPT_DIR/workkit/allow.sh"
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
@@ -236,6 +288,11 @@ case "${1:-help}" in
   log)     shift; cmd_log "$@" ;;
   test)    shift; cmd_test "$@" ;;
   public)  shift; cmd_public "$@" ;;
+  ship)    shift; cmd_ship "$@" ;;
+  review)  shift; cmd_review "$@" ;;
+  triage)  shift; cmd_triage "$@" ;;
+  proof)   shift; cmd_proof "$@" ;;
+  changelog) shift; cmd_changelog "$@" ;;
   tower)
     shift
     # The tower lives in the kit, not the engine: a partial copy that holds
@@ -246,10 +303,11 @@ case "${1:-help}" in
     fi
     exec bash "$TOWER_START" "$@"
     ;;
-  # These five hand the whole run to another script, which speaks for itself.
+  # These six hand the whole run to another script, which speaks for itself.
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
   heal)    shift; exec bash "$STANDARDS" "${1:-$PWD}" ;;
+  state)   shift; exec bash "$STANDARDS" --state "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;
   prove)   shift; exec bash "$PROVE" "$@" ;;
   *)

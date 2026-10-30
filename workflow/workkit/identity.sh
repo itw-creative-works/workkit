@@ -26,9 +26,20 @@ identity_precheck() {
   return 0
 }
 
+# Warns each non-blank line of <text> on its own, prefixed `identity: ` unless it
+# has it, so a client's later lines sit under the section's indent, not at column 0.
+identity_warn_lines() {
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" == identity:* ]] || line="identity: $line"
+    wk_warn "$line"
+  done <<<"$1"
+}
+
 # Reads `token.js --status` once per run into the IDENTITY_* status; clearing
 # IDENTITY_SIGNED_IN asks again. A client that cannot answer (a settings file
-# that does not parse, say) is one warning with its message, and a return of 1.
+# that does not parse, say) warns its message, a line per warning, and returns 1.
 identity_read_status() {
   local json fields rc=0 sep=$'\x1f'
   [[ -n "$IDENTITY_SIGNED_IN" ]] && return 0
@@ -38,7 +49,7 @@ identity_read_status() {
     fields="$(printf '%s' "$json" | wk_jq -r '[(.signedIn | tostring), (.login // "")] | join("\u001f")' 2>/dev/null)" || rc=$?
   fi
   if [[ "$rc" -ne 0 || -z "$fields" ]]; then
-    wk_warn "identity: the client could not report its state: ${json:-no output}"
+    identity_warn_lines "identity: the client could not report its state: ${json:-no output}"
     return 1
   fi
   IFS="$sep" read -r IDENTITY_SIGNED_IN IDENTITY_USER <<<"$fields"
@@ -63,7 +74,7 @@ identity_install_lookup() {
 # warning carrying the service's message or the failure, and 1.
 # Usage: identity_install_say <slug> <lookup exit code> <lookup answer>
 identity_install_say() {
-  local slug="$1" rc="$2" answer="$3" verdict message='' said line
+  local slug="$1" rc="$2" answer="$3" verdict message='' said
   verdict="${answer%%$'\n'*}"
   [[ "$answer" == *$'\n'* ]] && message="${answer#*$'\n'}"
   if [[ "$rc" -eq 0 && "$verdict" == 'installed' ]]; then
@@ -77,12 +88,7 @@ identity_install_say() {
   else
     said="identity: the installation check on $slug failed: $answer"
   fi
-  # Each later line of the client's message (the refusal's `or run:`) is a warning
-  # of its own, so it sits under the section's indent rather than at column 0.
-  while IFS= read -r line; do
-    [[ "$line" == identity:* ]] || line="identity: $line"
-    wk_warn "$line"
-  done <<<"$said"
+  identity_warn_lines "$said"
   return 1
 }
 

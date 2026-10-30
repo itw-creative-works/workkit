@@ -19,8 +19,8 @@ _hook_write_marker() {
   printf '%s\n' "$1"
 }
 
-# The skill marker paths: the writers (the two marker scripts) and
-# review-covers.sh (the full panel) name the file here; the module's guards
+# The skill marker paths: the writers (the two mark.sh scripts) and
+# review/covers.sh (the full panel) name the file here; the module's guards
 # read it through markerPath in hooks/mods/markers.js, the same key rule. The proved-tree records' are
 # wk_suite_marker_path and wk_pkg_marker_path (workflow/lib/suite.sh).
 hook_review_marker_path() { wk_marker_path claude-review-marker "$1"; }

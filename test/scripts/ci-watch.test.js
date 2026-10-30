@@ -1,7 +1,7 @@
-// Tests for workflow/ship/ci-watch.sh: the ship's CI watch, a sha in and one
-// answer out as an exit code, so every case asserts the code and the line
-// together. `gh` is a stub answering from fixture files the case writes, and the
-// retries are env overrides set to two tries with no wait.
+// Tests for workflow/ship/watch.sh (`workkit ship watch`): the ship's CI watch, a
+// sha in and one answer out as an exit code, so every case asserts the code and
+// the line together. `gh` is a stub answering from fixture files the case writes,
+// and the retries are env overrides set to two tries with no wait.
 
 const path = require('path');
 const fs = require('fs');
@@ -15,7 +15,7 @@ const {
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 const { ciLockPath } = require('../lib/suite-record');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'ci-watch.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'watch.sh');
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const OTHER_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
 const LIST_ARGV = ['run', 'list', '--commit', SHA, '--json', 'databaseId,name,status,conclusion,url'];
@@ -150,7 +150,7 @@ const listCalls = (w) => w.calls().filter((c) => isCall(c, 'run', 'list'));
 const watchCalls = (w) => w.calls().filter((c) => isCall(c, 'run', 'watch'));
 
 const cases = async () => {
-  group('ci-watch.sh: green');
+  group('ship watch: green');
 
   await test('one green run prints one line naming the workflow and the URL, exit 0', async () => {
     const w = makeWorld({ runs: [runRow(11, 'Checks')] });
@@ -176,7 +176,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('ci-watch.sh: red');
+  group('ship watch: red');
 
   await test('a red run names the workflow, the failing job and the URL, prints the log tail, exit 1', async () => {
     const tail = Array.from({ length: 50 }, (_, i) => `log line ${i + 1}`).join('\n');
@@ -232,7 +232,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('ci-watch.sh: finding the run');
+  group('ship watch: finding the run');
 
   await test('a list that is empty first is asked again, and the run it then finds is watched', async () => {
     const w = makeWorld({ runs: [runRow(41, 'Checks')], empty: 1 });
@@ -253,7 +253,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('ci-watch.sh: no run');
+  group('ship watch: no run');
 
   const DISPATCH = 'name: Manual\non:\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n';
   const PR_BRANCH_PUSH = 'name: PR\non:\n  pull_request:\n    branches:\n      - push\njobs: {}\n';
@@ -290,14 +290,14 @@ const cases = async () => {
     });
   }
 
-  group('ci-watch.sh: refusals');
+  group('ship watch: refusals');
 
   await test('no sha, a non-hex sha, and one too short or too long are usage, exit 2, no gh call', async () => {
     const w = makeWorld({ runs: [runRow(51, 'Checks')] });
     for (const args of [[], ['main'], ['abc123'], [`${SHA}0`], [SHA, 'extra']]) {
       const { code, err } = runWatch(w, args);
       assertEq(code, 2, `exit 2 for [${args}]`);
-      assert(err.includes('usage: ci-watch.sh <sha>'), `usage on stderr for [${args}], got: ${err}`);
+      assert(/usage: .*<sha>/.test(err), `usage on stderr for [${args}], got: ${err}`);
     }
     assertEq(w.calls().length, 0, 'gh never asked');
     const { code } = runWatch(w, ['abc1234']);
@@ -327,7 +327,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('ci-watch.sh: the detached watch');
+  group('ship watch: the detached watch');
 
   await test('the answer reaches stdout and .workkit/ci.log alike, from the watching line to the exit line', async () => {
     const w = makeWorld({ runs: [runRow(81, 'Checks')] });
@@ -349,7 +349,7 @@ const cases = async () => {
   await signalTest('a TERM to the invoking shell\'s group leaves the watch to write its exit line to the log', async () => {
     const w = makeWorld({ runs: [runRow(82, 'Checks')], watchSleep: 2 });
     // The invoking shell leads its own group and the TERM goes to the whole
-    // group, ci-watch.sh included, the way a tool's cut ends a call.
+    // group, watch.sh included, the way a tool's cut ends a call.
     const shell = startWatch(w, [], {
       bashArgs: [...NO_RC, '-c', 'bash --noprofile --norc "$0" "$1"; exit $?', shellPath(SCRIPT), SHA],
       detached: true,
@@ -447,7 +447,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('ci-watch.sh: the script itself');
+  group('ship watch: the script itself');
 
   await test('an in-place rewrite of the script during the watch changes nothing: the green answer, no fragment read', async () => {
     // The twin of script-shell.test.js's case: a copy of the kit, rewritten by
@@ -455,7 +455,7 @@ const cases = async () => {
     const w = makeWorld({ runs: [runRow(86, 'Checks')] });
     const kit = path.join(w.dir, 'kit', 'workflow');
     fs.cpSync(path.join(__dirname, '..', '..', 'workflow'), kit, { recursive: true });
-    const copy = path.join(kit, 'ship', 'ci-watch.sh');
+    const copy = path.join(kit, 'ship', 'watch.sh');
     fs.writeFileSync(path.join(w.fx, 'rewrite'), shellPath(copy));
     const res = spawnSync(BASH, [...NO_RC, shellPath(copy), SHA], { cwd: w.repo, env: watchEnv(w), encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const r = { code: res.status, out: res.stdout || '', err: res.stderr || '' };

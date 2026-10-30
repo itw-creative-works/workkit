@@ -116,7 +116,7 @@ function absolute(path, cwd, home) {
 
 /**
  * The guard's run over a chain's facts, Bash (`command`) or file (`tool`,
- * `input`): the marker is the one `scripts/triage-marker.sh` writes for the
+ * `input`): the marker is the one `workkit triage mark` writes for the
  * capture file's anchor.
  * @param {object} facts the chain's facts, with `top`, `read`, `stat`, `now` and `env`
  * @returns {Promise<{deny: string}|null>}

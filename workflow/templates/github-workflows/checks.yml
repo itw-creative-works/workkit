@@ -21,7 +21,7 @@
 #
 # The `changelog` job is the only job the heal adds to an EXISTING checks.yml,
 # appended once at the end of `jobs:`. It calls the kit's reusable workflow,
-# which runs the kit's own changelog.js over this repo's [Unreleased] section,
+# which runs the kit's own changelog/lint.js over this repo's [Unreleased] section,
 # so the linter lives in the kit and nowhere else.
 name: checks
 

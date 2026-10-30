@@ -1,6 +1,6 @@
 // Tests for docs:changelog-guard's logic, changelogGuardVerdict(path,
 // lintResult) in hooks/mods/changelog-guard.js. The lint result is the real
-// linter's, run the way the module runs it (`node changelog.js <file>
+// linter's, run the way the module runs it (`node lint.js <file>
 // --added-only`), so judging only what a change added is proved end to end.
 // The rules are test/scripts/changelog.test.js's; the wiring cases (no
 // file_path, a file that is gone, the registration) are
@@ -12,7 +12,7 @@ const { spawnSync, execFileSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { mods, textOf, runResult } = require('../lib/mods-inputs');
 
-const LINTER = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'changelog.js');
+const LINTER = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'lint.js');
 const ISSUE = '[#4](https://github.com/o/r/issues/4)';
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -98,10 +98,10 @@ const cases = async () => {
 
   group('changelog-guard.js: linterPath');
 
-  await test('linterPath is the plugin\'s workflow/changelog/changelog.js, and WORKFLOW_DIR wins over <pluginRoot>/workflow', () => {
+  await test('linterPath is the plugin\'s workflow/changelog/lint.js, and WORKFLOW_DIR wins over <pluginRoot>/workflow', () => {
     const { linterPath } = mods('changelog-guard');
-    assertEq(linterPath({}, '/k'), '/k/workflow/changelog/changelog.js', 'the plugin root\'s engine');
-    assertEq(linterPath({ WORKFLOW_DIR: '/e' }, '/k'), '/e/changelog/changelog.js', 'WORKFLOW_DIR names another engine');
+    assertEq(linterPath({}, '/k'), '/k/workflow/changelog/lint.js', 'the plugin root\'s engine');
+    assertEq(linterPath({ WORKFLOW_DIR: '/e' }, '/k'), '/e/changelog/lint.js', 'WORKFLOW_DIR names another engine');
   });
 };
 

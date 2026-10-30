@@ -2,7 +2,7 @@
 
 Role: test-developer (`workkit:worker`), defined in `docs/agents.md` § Crew sizing.
 Repo: {{repo}}
-Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, scripts/ and skills/ path here is the kit's).
+Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, workflow/ and skills/ path here is the kit's).
 Read first: {{guides}}
 Spec: the `### Contract` and the Description of {{issue}}. Where this brief and the Contract differ, the Contract wins; say so in the report.
 

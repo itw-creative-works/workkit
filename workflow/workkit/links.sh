@@ -237,10 +237,12 @@ script_shell() {
   return 0
 }
 
-# The four pointers in their one order, as update, setup and setup --cloud make them.
+# The four pointers in their one order, then the kit's allow rules (allow.sh),
+# as update, setup and setup --cloud make them.
 machine_links() {
   refresh_engine_link
   link_command
   link_gh_shim
   script_shell
+  keep_allow_rules
 }

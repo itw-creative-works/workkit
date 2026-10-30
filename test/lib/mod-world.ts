@@ -34,7 +34,7 @@ const KIT_DEFAULT: Record<string, string> = {
   'workflow/standards.sh': '#!/usr/bin/env bash\n',
   'workflow/labels.json': '{ "version": 1, "groups": {} }\n',
   'workflow/workkit.sh': '#!/usr/bin/env bash\n',
-  'workflow/changelog/changelog.js': '// linter\n',
+  'workflow/changelog/lint.js': '// linter\n',
   'docs/project-state.md': '# project state\n',
 }
 
@@ -344,8 +344,8 @@ export const mkWorld = (on: any, opts: any = {}) => {
       if (world.gh === 'offline') return ok('', 'error connecting to api.github.com\n', 1)
       return ok(JSON.stringify(world.gh.issues))
     }
-    const script = argv.find((a) => /(standards|workkit|changelog|hooks)\.(sh|js)$/.test(a)) || ''
-    if (script.endsWith('changelog.js')) return ok(world.lint.stdout || '', world.lint.stderr || '', world.lint.exitCode)
+    const script = argv.find((a) => /(standards|workkit|changelog\/lint|hooks)\.(sh|js)$/.test(a)) || ''
+    if (script.endsWith('changelog/lint.js')) return ok(world.lint.stdout || '', world.lint.stderr || '', world.lint.exitCode)
     if (script.endsWith('standards.sh')) {
       if (argv.includes('--state')) return ok(`${world.standards.state}\n`)
       if (argv.includes('--announce')) {

@@ -57,7 +57,7 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 - The `workkit:verifier` agent scores every collected finding 0–100: "how certain is this a real issue a maintainer would fix?"
 - It is never a finder in the same pass. Finder-never-scores is the integrity core of both tiers.
 - It gets the finding and the relevant code, and re-checks the claim against the actual file before scoring.
-- The false-positive list scores 0: linter-catchable, no written rule, unreachable hypotheticals, and a Parity finding whose file has no sibling. The score measures how real a problem is; what happens to it is the fix-or-file rule's (`docs/project-state.md` § How big is one issue).
+- The false-positive list in `agents/reviewer.md` scores 0. The score measures how real a problem is; what happens to it is the fix-or-file rule's (`docs/project-state.md` § How big is one issue).
 - Where a lens attached its own confidence, the scorer's number wins.
 - The final ship/fix/rework verdict stays with the dispatching session: frontier-or-session judgment by construction.
 
@@ -76,14 +76,13 @@ Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 
 - After the report, record that review ran, from inside the repo under review.
 - The `safety:commit-gate` hook checks this marker before it allows a code commit. The script names the marker by the same key rule the hook reads it with (`wk_marker_path`, `reviewMarkerPath` in the hooks module), so the two cannot drift.
-- The light tier runs it plain. The full tier passes `full`, and so does the retouch that closes a full panel's fix round (`workkit:feature` § 5); `full` also writes the full-panel marker beside the plain one; `scripts/review-covers.sh` reads only that one.
+- The light tier runs it plain. The full tier passes `full`, and so does the retouch that closes a full panel's fix round (`workkit:feature` § 5); `full` also writes the full-panel marker beside the plain one; `workkit review covers` reads only that one.
 
 ```sh
-bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh"        # light tier
-bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh" full   # full tier
+workkit review mark        # light tier
+workkit review mark full   # full tier
 ```
 
-- `CLAUDE_PLUGIN_ROOT` is set only inside hook commands. The fallback reaches the plugin root through the engine's stable address: `~/.claude/workkit` is the engine folder INSIDE the plugin, and its parent is the plugin itself.
 
 ## Gotchas
 
@@ -91,4 +90,4 @@ bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/workkit/..}/scripts/review-marker.sh" 
 - A report FILE is the explicit-ask exception. Name its path in the brief only for a large artifact meant to be read selectively, and never ask a lens without Write for one.
 - Do not re-run a full panel over edits that merely implement findings the scorer already judged this session: that reviews the review's own output.
   - The honest check is a light verification pass: "does each edit implement its finding without contradictions?"
-  - The `workkit:ship` panel (its step 3.2b) runs light when `scripts/review-covers.sh` says the full-panel marker covers the ship diff, and full otherwise.
+  - The `workkit:ship` panel (its step 3.2b) runs light when `workkit review covers` says the full-panel marker covers the ship diff, and full otherwise.

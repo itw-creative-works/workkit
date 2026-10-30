@@ -1,6 +1,6 @@
 #!/bin/bash
 # hooks/lib/tree.sh: the working diff's path list, the one spelling
-# hooks/lib/snapshot.sh, scripts/red-proof.sh and scripts/review-covers.sh
+# hooks/lib/snapshot.sh, workflow/proof/red.sh and workflow/review/covers.sh
 # read, and whether a path differs from HEAD in its version alone.
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
 # nothing.

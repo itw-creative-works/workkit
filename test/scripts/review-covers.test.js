@@ -1,7 +1,8 @@
-// Tests for scripts/review-covers.sh: whether the full-panel review marker is
-// newer than every path in the working diff. Every case is a real throwaway git
-// repo; the marker is written by scripts/review-marker.sh itself under the
-// case's own workflow home, so the machine's real marker is never touched.
+// Tests for workflow/review/covers.sh (`workkit review covers`): whether the
+// full-panel review marker is newer than every path in the working diff. Every
+// case is a real throwaway git repo; the marker is written by
+// workflow/review/mark.sh (`workkit review mark`) itself under the case's own
+// workflow home, so the machine's real marker is never touched.
 
 const fs = require('fs');
 const path = require('path');
@@ -12,9 +13,9 @@ const {
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 
-const SCRIPTS = path.join(__dirname, '..', '..', 'scripts');
-const SCRIPT = path.join(SCRIPTS, 'review-covers.sh');
-const MARKER_SCRIPT = path.join(SCRIPTS, 'review-marker.sh');
+const REVIEW = path.join(__dirname, '..', '..', 'workflow', 'review');
+const SCRIPT = path.join(REVIEW, 'covers.sh');
+const MARKER_SCRIPT = path.join(REVIEW, 'mark.sh');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -51,7 +52,7 @@ const spawnIn = (w, script, cwd = w.repo, args = []) => {
 };
 
 const writeMarker = (w, cwd = w.repo) => assertEq(spawnIn(w, MARKER_SCRIPT, cwd, ['full']).code, 0,
-  'review-marker.sh full wrote the markers');
+  'mark.sh full wrote the markers');
 
 /** The one full-panel marker the case's workflow home holds. */
 const fullMarker = (w) => {
@@ -61,7 +62,7 @@ const fullMarker = (w) => {
 };
 
 const cases = async () => {
-  group('review-covers.sh: the verdict');
+  group('review covers: the verdict');
 
   await test('a marker newer than every edited, staged, deleted and untracked path: covered', () => {
     const w = mkWorld();
@@ -134,7 +135,7 @@ const cases = async () => {
   await test('only the plain review marker: stale, no full-panel marker', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
-    assertEq(spawnIn(w, MARKER_SCRIPT).code, 0, 'review-marker.sh wrote the plain marker');
+    assertEq(spawnIn(w, MARKER_SCRIPT).code, 0, 'mark.sh wrote the plain marker');
     const { code, out, err } = spawnIn(w, SCRIPT);
     assertEq(code, 1, `exit 1: ${out}${err}`);
     assertEq(out, 'review-covers: stale: no full-panel marker\n', `a lone lens covers nothing: ${out}${err}`);
@@ -150,7 +151,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('review-covers.sh: the heal\'s version stamp');
+  group('review covers: the heal\'s version stamp');
 
   await test('a code edit before the marker, then only the settings version stamped: covered', () => {
     const w = mkWorld();
@@ -206,12 +207,12 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('review-marker.sh: the plain and the full-panel marker');
+  group('review mark: the plain and the full-panel marker');
 
-  // The markers review-marker.sh left under the case's workflow home, by folder.
+  // The markers mark.sh left under the case's workflow home, by folder.
   const markersAfter = (args) => {
     const w = mkWorld();
-    assertEq(spawnIn(w, MARKER_SCRIPT, w.repo, args).code, 0, `review-marker.sh ${args.join(' ')} exits 0`);
+    assertEq(spawnIn(w, MARKER_SCRIPT, w.repo, args).code, 0, `mark.sh ${args.join(' ')} exits 0`);
     const markers = path.join(w.workflowHome, 'markers');
     const count = (dir) => (fs.existsSync(path.join(markers, dir)) ? fs.readdirSync(path.join(markers, dir)).length : 0);
     const found = { plain: count('claude-review-marker'), full: count('claude-review-full-marker') };
@@ -219,15 +220,15 @@ const cases = async () => {
     return found;
   };
 
-  await test('review-marker.sh full writes both review markers', () => {
+  await test('mark.sh full writes both review markers', () => {
     assertEq(JSON.stringify(markersAfter(['full'])), JSON.stringify({ plain: 1, full: 1 }), 'the plain and the full-panel marker');
   });
 
-  await test('review-marker.sh with no argument writes the plain marker alone', () => {
+  await test('mark.sh with no argument writes the plain marker alone', () => {
     assertEq(JSON.stringify(markersAfter([])), JSON.stringify({ plain: 1, full: 0 }), 'no full-panel marker');
   });
 
-  group('review-covers.sh: usage');
+  group('review covers: usage');
 
   await test('a git read that fails (no commit yet): exit 2 with one review-covers: line', () => {
     const w = mkWorld();

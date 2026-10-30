@@ -28,7 +28,7 @@ check_hook_layer() {
   local module=""
   check_hook_module && module="; the hooks module loads"
 
-  # The shell the scripts still source (scripts/*.sh, workflow/prove.sh, the
+  # The shell the scripts still source (workflow/{review,triage,proof}/*.sh, workflow/prove.sh, the
   # snapshot entry): `bash -n` on each piece, since a sourcing script never
   # parses what it sources until it runs.
   local piece pieces_checked=0

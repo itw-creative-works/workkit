@@ -1,10 +1,10 @@
-// Tests for scripts/red-proof.sh: the tests run in a copy built from the repo's
-// snapshot, where the named source paths are as the snapshot holds them and
-// every other change since is live; with --live they run in the live tree, the
-// named paths swapped for the run. Every case is a real throwaway git repo
-// whose snapshot is made by hand in the claim's layout, in a home of its own,
-// with a TMPDIR of its own so the worktree the script makes is seen to go;
-// nothing is stubbed.
+// Tests for workflow/proof/red.sh (`workkit proof red`): the tests run in a copy
+// built from the repo's snapshot, where the named source paths are as the
+// snapshot holds them and every other change since is live; with --live they run
+// in the live tree, the named paths swapped for the run. Every case is a real
+// throwaway git repo whose snapshot is made by hand in the claim's layout, in a
+// home of its own, with a TMPDIR of its own so the worktree the script makes is
+// seen to go; nothing is stubbed.
 
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +18,7 @@ const {
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'red-proof.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'proof', 'red.sh');
 const NO_SNAPSHOT = 'red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)';
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
@@ -166,7 +166,7 @@ const assertNoWorktree = (w) => {
 };
 
 const cases = async () => {
-  group('red-proof.sh: the verdict');
+  group('proof red: the verdict');
 
   await test('an edited source the new test needs: red, exit 0, the shared tree untouched', () => {
     const w = mkWorld();
@@ -197,7 +197,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: no snapshot');
+  group('proof red: no snapshot');
 
   await test('a repo with no snapshot: exit 2 with the one line, never a verdict', () => {
     const w = mkWorld();
@@ -211,7 +211,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: the snapshot');
+  group('proof red: the snapshot');
 
   await test('a gitignored .env in a repo with one root package.json is in the copy', () => {
     const w = mkRepo('red-proof-env-', {
@@ -414,7 +414,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: the copy');
+  group('proof red: the copy');
 
   await test('a named directory: every file under it is the snapshot\'s in the copy', () => {
     const w = mkWorld();
@@ -542,7 +542,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: workspaces');
+  group('proof red: workspaces');
 
   await test('a package\'s own node_modules is reachable from the copy: dep resolves, green, exit 1', () => {
     const w = mkWorkspaces();
@@ -586,7 +586,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: a command that cannot run');
+  group('proof red: a command that cannot run');
 
   await test('a command not on PATH: exit 2, never red', () => {
     const w = mkWorld();
@@ -610,7 +610,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: naming a path');
+  group('proof red: naming a path');
 
   await test('an absolute path to the source: red, exit 0', () => {
     const w = mkWorld();
@@ -658,7 +658,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: usage');
+  group('proof red: usage');
 
   await test('no --, no path, no command: exit 2 with one red-proof: line', () => {
     const w = mkWorld();
@@ -695,7 +695,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh: a module that fails to load');
+  group('proof red: a module that fails to load');
 
   await test('a test failing on Cannot find module: exit 2 naming the module, never red', () => {
     const w = mkWorld();
@@ -747,7 +747,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('red-proof.sh --live');
+  group('proof red --live');
 
   // The live state a --live run must hand back: the named file's bytes, the
   // working status and the worktree list.

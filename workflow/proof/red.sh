@@ -1,15 +1,15 @@
 #!/bin/bash
-# scripts/red-proof.sh [--live] <path>... -- <command>...: prove the tests check
-# the source. The command runs in a detached worktree of HEAD filled from the
-# repo's snapshot (workflow:snapshot takes it at the claim), every path changed
-# since laid on live, save the named paths, kept as the snapshot holds them;
-# --live swaps the named paths in the live tree instead, restored on exit. Red
-# exits 0, green 1, any other stop 2 with a `red-proof:` line on stderr. The
-# verdict is stdout's last line.
+# workflow/proof/red.sh (`workkit proof red [--live] <path>... -- <command>...`):
+# prove the tests check the source. The command runs in a detached worktree of
+# HEAD filled from the repo's snapshot (workflow:snapshot takes it at the
+# claim), every path changed since laid on live, save the named paths, kept as
+# the snapshot holds them; --live swaps the named paths in the live tree
+# instead, restored on exit. Red exits 0, green 1, any other stop 2 with a
+# `red-proof:` line on stderr. The verdict is stdout's last line.
 
 set -euo pipefail
 
-. "${BASH_SOURCE[0]%/*}/../hooks/_lib.sh"
+. "${BASH_SOURCE[0]%/*}/../../hooks/_lib.sh"
 
 fail() {
   echo "red-proof: $1" >&2
@@ -17,7 +17,7 @@ fail() {
 }
 
 usage() {
-  fail "$1 (usage: red-proof.sh [--live] <path>... -- <command>...)"
+  fail "$1 (usage: workkit proof red [--live] <path>... -- <command>...)"
 }
 
 live=0

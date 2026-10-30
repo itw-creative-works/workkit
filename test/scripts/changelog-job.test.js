@@ -236,7 +236,7 @@ const cases = async () => {
   for (const [cmd, want] of [
     ['node .github/changelog-lint.cjs CHANGELOG.md', 0],
     ['node ./.github/changelog-lint.js CHANGELOG.md', 0],
-    ['node .workkit-kit/workflow/changelog/changelog.js CHANGELOG.md', 1],
+    ['node .workkit-kit/workflow/changelog/lint.js CHANGELOG.md', 1],
   ]) {
     await test(`a job running \`${cmd}\` ${want === 0 ? 'runs' : 'does not run'} the copy`, () => {
       const { code } = overFile(`${JOBS}  changelog:\n    steps:\n      - run: ${cmd}\n`, 'wk_changelog_job_runs_copy "$1"');

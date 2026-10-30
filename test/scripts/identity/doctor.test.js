@@ -5,6 +5,8 @@
 // cloud session and off it, on a scratch machine with no repo.
 // The shared prologue is ../workkit-cli/helpers.js.
 
+const fs = require('fs');
+const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
   IDENTITY_NA, INSTALL_FIX, writeLogin, useTokenService, startService, attentionCount,
@@ -98,6 +100,28 @@ const cases = async () => {
       assertEq(attentionCount(bare.said) - attentionCount(set.said), 1, 'not signed in is one attention item');
     } finally {
       await service.close();
+      cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
+    }
+  });
+
+  await test('This machine: a client whose --status fails with a two-line message is two indented identity warnings, none at column 0 and none blank', () => {
+    const scene = mkScene();
+    // The scene's kit holds its own client; this one refuses --status in two lines
+    // with a blank line between them.
+    fs.writeFileSync(path.join(scene.kit, 'workflow', 'identity', 'token.js'), [
+      "process.stderr.write('settings.json does not parse\\n\\nfix it, then run workkit doctor again\\n');",
+      'process.exit(1);',
+    ].join('\n'));
+    try {
+      const res = doctor(scene);
+      const lines = res.err.split('\n');
+      assert(lines.some((l) => /^ +⚠ identity: the client could not report its state: settings\.json does not parse$/.test(l)),
+        `the first line is an indented identity warning, got: ${res.said}`);
+      assert(lines.some((l) => /^ +⚠ identity: fix it, then run workkit doctor again$/.test(l)),
+        `the second line is an indented identity warning of its own, got: ${res.said}`);
+      assert(!res.said.split('\n').some((l) => /^fix it, then run/.test(l)), `no line lands at column 0, got: ${res.said}`);
+      assert(!lines.some((l) => /⚠ identity: ?$/.test(l)), `the blank line is no empty warning, got: ${res.said}`);
+    } finally {
       cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
     }
   });

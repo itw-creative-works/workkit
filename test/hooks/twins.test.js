@@ -238,7 +238,7 @@ const cases = async () => {
     assertEq(engine('widgets'), module('widgets'), 'and the two JavaScript readers answer no match alike');
   });
 
-  group('twins: the Proof pattern, workflow/ship/ship-items.sh against PROOF_RE in hooks/mods/proof.js');
+  group('twins: the Proof pattern, workflow/ship/items.sh against PROOF_RE in hooks/mods/proof.js');
 
   // Comment bodies a Proof: read meets; the last five carry no Proof: at a line start.
   const BODIES = [
@@ -248,9 +248,9 @@ const cases = async () => {
   ];
 
   await test("the ship's jq test and PROOF_RE match the same comment bodies", () => {
-    const src = fs.readFileSync(path.join(KIT, 'workflow', 'ship', 'ship-items.sh'), 'utf8');
+    const src = fs.readFileSync(path.join(KIT, 'workflow', 'ship', 'items.sh'), 'utf8');
     const found = src.match(/test\("([^"]*Proof:[^"]*)"\)/);
-    assert(found, 'ship-items.sh tests each comment against a Proof: pattern');
+    assert(found, 'items.sh tests each comment against a Proof: pattern');
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', 'jq -c "map(test(\\"$PATTERN\\"))"'], {
       env: { PATH: SYSTEM_PATH, PATTERN: found[1] }, input: JSON.stringify(BODIES), encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });

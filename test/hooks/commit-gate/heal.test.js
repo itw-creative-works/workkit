@@ -227,7 +227,7 @@ const cases = async () => {
   });
 
   await test('ports "a linter copy ADDED is not bookkeeping, no marker: exit 2"', async () => {
-    const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog', 'changelog.js'), 'utf8');
+    const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog', 'lint.js'), 'utf8');
     const nl = engine.indexOf('\n');
     const r = mkRepo();
     stage(r, '.github/changelog-lint.cjs',

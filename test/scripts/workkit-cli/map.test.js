@@ -1,5 +1,5 @@
-// Tests for workflow/workkit.sh: the map (no arguments, help, an unknown command)
-// and the script itself.
+// Tests for workflow/workkit.sh: the map (no arguments, help, every verb it
+// lists, an unknown command) and the script itself.
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
@@ -18,6 +18,18 @@ const cases = async () => {
     for (const word of ['usage: workkit', 'setup', 'setup --cloud', 'update', 'doctor', 'enable', 'decline', 'heal [repo]', 'note']) {
       assert(out.includes(word), `the map names ${word}, got: ${out}`);
     }
+    cleanup(world.root);
+  });
+
+  await test('the map names every script verb with each of its subcommands, and state', () => {
+    const world = mkWorld();
+    const entries = runCli(world, []).out.split('\n').map((l) => l.trim());
+    const verbs = [
+      'ship items', 'ship release', 'ship watch', 'ship plan', 'ship publish', 'review covers', 'review mark',
+      'triage mark', 'proof red', 'changelog lint', 'state [repo]',
+    ];
+    const missing = verbs.filter((v) => !entries.some((l) => l.startsWith(v)));
+    assertEq(missing.join(', '), '', 'the map entries it lacks');
     cleanup(world.root);
   });
 

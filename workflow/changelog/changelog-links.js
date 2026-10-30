@@ -12,10 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-// What an entry is, and what "already linked" means, come from changelog.js,
+// What an entry is, and what "already linked" means, come from lint.js,
 // the same shapes the guards enforce. A second copy here would drift, and the
 // two files would disagree about which entries still need filling.
-const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./changelog');
+const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./lint');
 
 // What a repo is called comes from ../slug.js, the twin of lib/slug.sh, for the
 // same reason.

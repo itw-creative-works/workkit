@@ -3,7 +3,7 @@
 # before a root suite: the linter's resolution and its message. The hooks
 # module resolves the linter itself (linterPath in hooks/mods/changelog-guard.js),
 # for docs:changelog-guard and commit-gate check 3. Sourced, functions only; the
-# rules themselves are ../changelog/changelog.js.
+# rules themselves are ../changelog/lint.js.
 
 # wk_is_changelog <path>: <path> names a CHANGELOG.md, at the root or below.
 wk_is_changelog() {
@@ -20,8 +20,8 @@ wk_changelog_linter() {
   local dir="${WORKFLOW_DIR:-}"
   command -v node >/dev/null 2>&1 || return 1
   [ -n "$dir" ] || dir="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd -P)"
-  [ -f "$dir/changelog/changelog.js" ] || return 1
-  printf '%s\n' "$dir/changelog/changelog.js"
+  [ -f "$dir/changelog/lint.js" ] || return 1
+  printf '%s\n' "$dir/changelog/lint.js"
 }
 
 # wk_changelog_lint_file <file> [--staged]: lint the entries <file> adds (vs
@@ -30,7 +30,7 @@ wk_changelog_linter() {
 wk_changelog_lint_file() {
   local linter
   if ! linter=$(wk_changelog_linter); then
-    printf 'changelog: no node or no changelog.js to lint %s with\n' "$1" >&2
+    printf 'changelog: no node or no changelog/lint.js to lint %s with\n' "$1" >&2
     return 1
   fi
   node "$linter" "$1" --added-only ${2:+"$2"} >/dev/null

@@ -16,13 +16,13 @@ Spec (SSOT for every rule below): the workkit plugin's `docs/project-state.md`.
 Run the reporter and migrate exactly what it names:
 
 ```sh
-bash ~/.claude/workkit/standards.sh --state <repo>   # is the repo even opted in?
-bash ~/.claude/workkit/standards.sh <repo>           # the drift report
+workkit state <repo>   # is the repo even opted in?
+workkit heal <repo>    # the drift report
 ```
 
 - Deriving the list again here would let the two disagree about what counts as drift.
 - Report silent: the repo is already at the standard. Say so and stop.
-- Not opted in: not migrated. Offer `--enable` and stop. Migrating a repo that never said yes writes issues into someone else's tracker.
+- Not opted in: not migrated. Offer `workkit enable` and stop. Migrating a repo that never said yes writes issues into someone else's tracker.
 - An argument narrows the run: `files` does §1 only, `changelog` does §2 only. Default is both.
 
 ## 1. Retired files → issues
@@ -42,12 +42,12 @@ An item whose home is genuinely unclear: file it `status:inbox` and mark it `(ch
 
 ## 2. CHANGELOG history → the entry format
 
-- The entry rules and their reasoning: the workkit plugin's `docs/project-state.md` § CHANGELOG entries. The machine SSOT is `~/.claude/workkit/changelog/changelog.js`.
+- The entry rules and their reasoning: the workkit plugin's `docs/project-state.md` § CHANGELOG entries. The machine SSOT is the kit's CHANGELOG linter, `workkit changelog lint`.
 - In short: one short paragraph per entry, at most 50 words. It starts with `[#N](../../issues/N)` or the literal `(no issue)`, then ` - ` before the prose.
 - The depth is NOT deleted: it already lives in the commit each entry links to. That makes the compression safe.
 
 **The WHOLE file migrates, and the linter cannot scope this work for you.**
-- `changelog.js`'s section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard).
+- The linter's section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard).
 - So a pre-issue era section (`## [cp1–cp99]: …`) lints green while every entry in it is still a massive old-format line.
 - Scope by EYEBALL: every `## ` section with bullets under it migrates. Any long-line entry anywhere means the work is not done.
 - Pre-issue-tracker entries take the literal `(no issue)`.
@@ -75,7 +75,7 @@ Rewriting a released entry is a rewrite of the RECORD. Compress the prose; never
 Reassemble in order, then gate on the whole file:
 
 ```sh
-node ~/.claude/workkit/changelog/changelog.js CHANGELOG.md
+workkit changelog lint CHANGELOG.md
 ```
 
 - Whole file, not `--added-only`: this pass rewrites history rather than adding lines. It must exit 0 before the work is done.
@@ -84,7 +84,7 @@ node ~/.claude/workkit/changelog/changelog.js CHANGELOG.md
 ## 3. Close out
 
 - Report the before/after: section count (must be equal), entry count, file size.
-- Stamp the standard forward by re-running `bash ~/.claude/workkit/standards.sh <repo>`. With the drift gone, it writes the version itself. Do not hand-edit `.workkit/settings.json`.
+- Stamp the standard forward by re-running `workkit heal <repo>`. With the drift gone, it writes the version itself. Do not hand-edit `.workkit/settings.json`.
 - CHANGELOG entry + commit belong to the normal flow (`workkit:ship`), not to this skill. Migrating is not shipping.
 
 ## Rules

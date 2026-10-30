@@ -1,5 +1,5 @@
 #!/bin/bash
-# hooks/lib/snapshot.sh: the repo snapshot scripts/red-proof.sh runs against,
+# hooks/lib/snapshot.sh: the repo snapshot workflow/proof/red.sh runs against,
 # which workflow:snapshot takes at the claim to status:building: its folder,
 # take, add issues, the stale check, drop, and the per-run copy's worktree and
 # fill, which workflow/prove.sh shares.

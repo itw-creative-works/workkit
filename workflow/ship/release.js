@@ -6,20 +6,20 @@
 // before a write, so a refusal leaves each file as it was; CRLF stays CRLF.
 //
 // Run from the repo root:
-//   node ~/.claude/workkit/ship/release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]
+//   workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]
 
 const fs = require('fs');
 const path = require('path');
 const {
   ISSUE_LINK_RE, SECTION_RE, sectionKind, parseEntries,
-} = require('../changelog/changelog');
+} = require('../changelog/lint');
 const {
   repoSlug, commitsByIssue, authorHandle, fill, defaultRange,
 } = require('../changelog/changelog-links');
 const { isSemver } = require('./semver');
-const { expandWorkspaces, PlanError } = require('./publish-plan');
+const { expandWorkspaces, PlanError } = require('./plan');
 
-const USAGE = 'usage: release.js <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
+const USAGE = 'usage: workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
 // The files a repo keeps its version in, by path from the root: every one is in
 // the commit gate's version-stamp list (isManifest in hooks/mods/commit-gate/checks.js), which
 // passes these bumps, and a nested package.json's or plugin manifest's, as bookkeeping.
