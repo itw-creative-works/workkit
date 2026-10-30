@@ -7,22 +7,24 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.87.0] - 2026-10-30
+
 ### Added
 
-- [#485](../../issues/485) - The test library's `start` takes an `input` string, as `run` does: the child reads it on its stdin, which then closes, so a background child can be fed input; without it stdin stays empty.
+- [#485](../../issues/485) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - The test library's `start` takes an `input` string, as `run` does: the child reads it on its stdin, which then closes, so a background child can be fed input; without it stdin stays empty.
 
 ### Fixed
 
-- [#477](../../issues/477) - A standards run whose kit clone step removal fails in several lines prints each line as its own indented `checks:` warning, none at column 0.
-- [#484](../../issues/484) - A public issue taken in by `workkit public intake` names its reporter on the private issue as a clickable `@login` mention, no longer as code.
-- [#486](../../issues/486) - The red snapshot leaves out the kit's markers folder when `~/.workkit` resolves to a folder inside the repo, so it no longer copies other repos' snapshots or a partial copy of itself.
-- [#487](../../issues/487) - In a cloud session, `gh issue edit --add-label` and `gh issue create --label` naming a label the repo lacks fail as real gh does, `could not add label: '<name>' not found`, and write nothing, where the REST stand-in used to create the label.
-- [#488](../../issues/488) - The red snapshot also leaves out the kit's tower folder when `~/.workkit` resolves to a folder inside the repo that ignores it, so it no longer copies the home clone and its `node_modules`; a repo's own folder named `tower` is still copied.
-- [#489](../../issues/489) - `workkit ship release` bumps the version through `npm version --no-git-tag-version`, so `package-lock.json` moves with `package.json` and the package's version scripts run; the commit gate passes a lockfile that moves only its version spots as a version stamp, and the kit's CI skips it.
-- [#490](../../issues/490) - A full suite run is judged in the repo it lands in: a root `npm test` or `workkit prove` in another repo gets that repo's proved record and `status:building` list, never the session repo's, and a run in no git repo gets no verdict.
-- [#491](../../issues/491) - When `~/.workkit` resolves to a folder inside the repo, the red snapshot leaves out every path git ignores there (`hooks.log`, `identity/`, the state files) and always its markers folder; tracked files and untracked ones git does not ignore are still copied.
-- [#492](../../issues/492) - The kit's CI skips the suite on a push only when every change is the CHANGELOG or a version stamp by the commit gate's version-only rule, so a dependency change in `package-lock.json` runs the Linux and Windows suite again; `paths-ignore` is gone and a `scope` job decides.
-- [#493](../../issues/493) - The full-suite hold now runs inside npm's root test run and `workkit prove`, judged by the repo the run lands in, only in Claude sessions and repos that opted in, with no command parsing; the `safety:suite-guard` hook is gone.
+- [#477](../../issues/477) [`072d19d`](../../commit/072d19d) Thanks [@ianwieds]! - A standards run whose kit clone step removal fails in several lines prints each line as its own indented `checks:` warning, none at column 0.
+- [#484](../../issues/484) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - A public issue taken in by `workkit public intake` names its reporter on the private issue as a clickable `@login` mention, no longer as code.
+- [#486](../../issues/486) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - The red snapshot leaves out the kit's markers folder when `~/.workkit` resolves to a folder inside the repo, so it no longer copies other repos' snapshots or a partial copy of itself.
+- [#487](../../issues/487) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - In a cloud session, `gh issue edit --add-label` and `gh issue create --label` naming a label the repo lacks fail as real gh does, `could not add label: '<name>' not found`, and write nothing, where the REST stand-in used to create the label.
+- [#488](../../issues/488) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - The red snapshot also leaves out the kit's tower folder when `~/.workkit` resolves to a folder inside the repo that ignores it, so it no longer copies the home clone and its `node_modules`; a repo's own folder named `tower` is still copied.
+- [#489](../../issues/489) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - `workkit ship release` bumps the version through `npm version --no-git-tag-version`, so `package-lock.json` moves with `package.json` and the package's version scripts run; the commit gate passes a lockfile that moves only its version spots as a version stamp, and the kit's CI skips it.
+- [#490](../../issues/490) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - A full suite run is judged in the repo it lands in: a root `npm test` or `workkit prove` in another repo gets that repo's proved record and `status:building` list, never the session repo's, and a run in no git repo gets no verdict.
+- [#491](../../issues/491) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - When `~/.workkit` resolves to a folder inside the repo, the red snapshot leaves out every path git ignores there (`hooks.log`, `identity/`, the state files) and always its markers folder; tracked files and untracked ones git does not ignore are still copied.
+- [#492](../../issues/492) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - The kit's CI skips the suite on a push only when every change is the CHANGELOG or a version stamp by the commit gate's version-only rule, so a dependency change in `package-lock.json` runs the Linux and Windows suite again; `paths-ignore` is gone and a `scope` job decides.
+- [#493](../../issues/493) [`6536e99`](../../commit/6536e99) Thanks [@ianwieds]! - The full-suite hold now runs inside npm's root test run and `workkit prove`, judged by the repo the run lands in, only in Claude sessions and repos that opted in, with no command parsing; the `safety:suite-guard` hook is gone.
 
 ## [0.86.0] - 2026-10-29
 
