@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- (no issue) - On Windows, `workkit ship release` and `workkit ship publish` start npm as one command line, so Node prints no `DEP0190` warning on stderr.
+
 ## [0.87.0] - 2026-10-30
 
 ### Added

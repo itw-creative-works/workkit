@@ -7,8 +7,7 @@
 // Run from the repo root:
 //   workkit ship publish [--dir <root>]
 
-const { spawnSync } = require('child_process');
-const { report, NPM_SHELL, npmEnd } = require('./plan');
+const { report, spawnNpm, npmEnd } = require('./plan');
 
 /**
  * Is `name@version` already on the registry? The `safety:release-taken` hook's
@@ -17,8 +16,8 @@ const { report, NPM_SHELL, npmEnd } = require('./plan');
  * on stderr and answers free, so npm itself refuses a taken version.
  */
 const onRegistry = (root, { name, version }) => {
-  const res = spawnSync('npm', ['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {
-    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: NPM_SHELL,
+  const res = spawnNpm(['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (res.status === 0) return res.stdout.trim() === version;
   const stderr = res.stderr || '';
@@ -39,7 +38,7 @@ const publishAll = (root, result) => {
     const args = ['publish'];
     if (result.workspaces) args.push(`--workspace=${p.name}`);
     if (p.scoped) args.push('--access', 'public');
-    const res = spawnSync('npm', args, { cwd: root, stdio: 'inherit', shell: NPM_SHELL });
+    const res = spawnNpm(args, { cwd: root, stdio: 'inherit' });
     if (res.status !== 0) {
       const left = result.publish.slice(i + 1).map((l) => l.name);
       const end = res.error || res.status === null ? npmEnd(res) : `exit ${res.status}`;

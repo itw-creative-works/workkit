@@ -10,7 +10,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   ISSUE_LINK_RE, SECTION_RE, sectionKind, parseEntries,
 } = require('../changelog/lint');
@@ -19,7 +18,7 @@ const {
 } = require('../changelog/changelog-links');
 const { isSemver } = require('./semver');
 const {
-  expandWorkspaces, PlanError, NPM_SHELL, npmEnd,
+  expandWorkspaces, PlanError, spawnNpm, npmEnd,
 } = require('./plan');
 
 const USAGE = 'usage: workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
@@ -139,8 +138,8 @@ const npmVersion = (root, version, { withRoot, members }) => {
     const file = path.join(root, name);
     return { file, bytes: fs.existsSync(file) ? fs.readFileSync(file) : null };
   });
-  const res = spawnSync('npm', args, {
-    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: NPM_SHELL,
+  const res = spawnNpm(args, {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (res.status === 0) return;
   for (const { file, bytes } of saved) {

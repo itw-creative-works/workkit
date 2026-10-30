@@ -11,15 +11,20 @@
 //   workkit ship plan [--dir <root>]
 
 const fs = require('fs');
+const { spawnSync } = require('child_process');
 const path = require('path');
 const { isSemver } = require('./semver');
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'];
 const GLOB_RE = /[*?[]/;
-// On Windows npm is `npm.cmd`, which Node starts only through a shell; every argument
-// passed to it (a package name, a version, a flag, a workspace folder, which the release
-// step refuses when it has whitespace) has none, so the shell form is safe.
-const NPM_SHELL = process.platform === 'win32';
+/**
+ * Runs npm with `args`, as `spawnSync` would. On Windows npm is `npm.cmd`, which Node starts
+ * only through a shell, and Node warns on stderr when a shell start gets an argument list;
+ * no argument has whitespace (the release step refuses a folder with it), so it goes as one line.
+ */
+const spawnNpm = (args, opts) => (process.platform === 'win32'
+  ? spawnSync(['npm', ...args].join(' '), { ...opts, shell: true })
+  : spawnSync('npm', args, opts));
 
 /** How an npm call ended, for a line that names it: its exit code, or why it never had one. */
 const npmEnd = (res) => {
@@ -237,5 +242,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  plan, expandWorkspaces, PlanError, report, NPM_SHELL, npmEnd,
+  plan, expandWorkspaces, PlanError, report, spawnNpm, npmEnd,
 };
