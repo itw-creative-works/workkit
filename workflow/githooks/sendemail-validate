@@ -8,7 +8,9 @@
 # parses a function whole.
 
 load_libs() {
-  KIT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+  # Two steps: Git Bash collapses `..` in a Windows-spelled path before it reads
+  # the engine link, so the kit is found from the folder the link resolves to.
+  KIT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && cd -P ../.. && pwd -P)"
   # shellcheck source=../lib/platform.sh
   . "$KIT_DIR/workflow/lib/platform.sh"
   # shellcheck source=../lib/participation.sh

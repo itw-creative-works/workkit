@@ -194,9 +194,9 @@ const localNoon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0).toISOString();
 const MONDAY = localNoon(2026, 8, 3);
 const TUESDAY = localNoon(2026, 8, 4);
 
-// A case resting on the `gh` shim the script itself spawns: no stub is
-// startable by name from Node on Windows (`stubTool`), so there the sealed
-// machine gh answers an empty board instead.
+// A case resting on the `gh` shim the script itself spawns: it still skips on
+// Windows (`stubTool`, `NO_NODE_STUB`), its stub written before the launcher,
+// where the sealed machine gh would answer an empty board instead.
 const newsTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 module.exports = {

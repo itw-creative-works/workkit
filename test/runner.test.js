@@ -708,8 +708,8 @@ describe.skip('the parked group', () => {
 
   await test('with no claude binary the mod half reads skipped with its reason and the Node half still runs', () => {
     const tmp = mkTmp('runner-noclaude-');
-    // node's own folder beside the built PATH: a linked node is not startable
-    // by name from Node on Windows (the gh-stub world without gh does the same).
+    // node's own folder beside the built PATH, so the runner's node is the real
+    // one on either platform (the gh-stub world without gh does the same).
     const PATH = joinPath(basePathWithout(tmp, 'claude'), NODE_DIR);
     assert(!which('claude', PATH), 'the fixture PATH holds no claude');
     const { code, output } = runModHalf(PATH);

@@ -11,7 +11,7 @@ const {
   mkPublicWorld, publicLine, said, PRIVATE, PUBLIC,
 } = require('./helpers');
 
-// The verb's Node half starts gh by name, which no stub answers on Windows.
+// The verb's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
 const test = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 const REPORT = {

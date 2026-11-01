@@ -14,7 +14,7 @@ const { mkPublicWorld, publicLine, PUBLIC, PRIVATE } = require('../scripts/publi
 
 const HOOK = 'workflow:public-mirror';
 
-// The mirror the hook starts runs gh by name from Node, which no stub answers on Windows.
+// The mirror the hook starts runs gh by name from Node; written before the stub launcher, it still skips on Windows.
 const test = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 // A Bash call whose gh write no command parser sees: a script runs it.

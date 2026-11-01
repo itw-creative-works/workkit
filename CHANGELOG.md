@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- (no issue) - The 0.88.0 git hooks and `gh` shim gate work on Windows, where their first CI run was red: a hook finds the kit past Git Bash's `..` collapse, the shim hands its gate the real `gh` in git's spelling, and PATH stubs carry a launcher Node starts by name.
+
 ## [0.88.0] - 2026-11-01
 
 ### Changed

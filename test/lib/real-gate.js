@@ -24,8 +24,10 @@ const NOT_STARTED = (argv) => ({
 const gateOn = async (repo, env, { unstarted = () => false } = {}) => {
   const io = ioIn(env);
   const run = async (argv, init) => (unstarted(argv) ? NOT_STARTED(argv) : io.run(argv, init));
-  const g = mods('guards').bashFacts({ ...io, run }, env, { command: '', cwd: repo });
-  const v = await mods('commit-gate').preCommitVerdict(mods('commit-gate').commitFacts(g, repo));
+  // The root as the pre-commit judge is handed it: git's own spelling of it.
+  const root = await io.top(repo);
+  const g = mods('guards').bashFacts({ ...io, run }, env, { command: '', cwd: root });
+  const v = await mods('commit-gate').preCommitVerdict(mods('commit-gate').commitFacts(g, root));
   return {
     deny: v && typeof v.deny === 'string' ? v.deny : null,
     context: v && v.context !== undefined ? textOf(v.context) : '',

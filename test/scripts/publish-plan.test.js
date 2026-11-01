@@ -257,9 +257,9 @@ const cases = async () => {
   group('ship publish');
 
   // Every case here puts a fake `npm` in front of the script under test, which
-  // spawns it directly: no stub is startable that way on Windows
-  // (test/lib/platform.js, `stubTool`), so each case would ask the machine's
-  // own npm instead of the one it wrote, and publish for real.
+  // spawns it directly. Each still skips on Windows (test/lib/platform.js,
+  // `stubTool`, `NO_NODE_STUB`): its stub predates the launcher, and a case that
+  // missed it would ask the machine's own npm and publish for real.
   const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
   await runTest('publishes in plan order, asking the registry first, with --workspace and --access public only when scoped', () => {

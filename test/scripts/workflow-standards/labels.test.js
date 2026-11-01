@@ -22,7 +22,7 @@ const target = (c) => {
   return inline ? inline.slice('--repo='.length) : '';
 };
 
-// The mirror sweep's Node half starts gh by name, which no stub answers on Windows.
+// The mirror sweep's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
 const nodeTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 const cases = async () => {

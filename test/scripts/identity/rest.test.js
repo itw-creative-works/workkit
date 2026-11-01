@@ -174,7 +174,7 @@ const REPO_LABELS = { 'GET repos/acme/rostered/labels': { pages: [['status:qa', 
 const NO_LABEL = "could not add label: 'status:qq' not found";
 
 const cases = async () => {
-  // rest.js starts the stub `gh` from Node, which Windows cannot do by name.
+  // rest.js starts the stub `gh` from Node; written before the stub launcher, these still skip on Windows.
   const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
   group('identity/gh in a cloud session: auth');
 

@@ -11,7 +11,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, until, alive, start, endTree, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
-  stubTool, stubNode, pathWith, systemPathWith,
+  stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
@@ -405,6 +405,50 @@ const cases = async () => {
     const dead = spawnSync(process.execPath, ['-e', '0']).pid;
     const gone = inPlatform(`wk_pid_alive ${dead}`, env);
     assert(gone.code !== 0 && gone.code !== null, `a pid that has ended answers non-zero, got: ${gone.code}`);
+  });
+
+  // The test library's own seam rather than platform.sh: the `.exe` launcher
+  // test/lib/platform.js puts beside a PATH stub so Node starts it by name.
+  group('test/lib/platform.js: the stub launcher');
+
+  const onlyWindows = testUnless(!IS_WINDOWS || !fs.existsSync(WINDOWS_CSC), 'the launcher needs Windows and its C# compiler');
+
+  await onlyWindows('a stub is started from Node by its bare name, its argv whole and its exit code back', () => {
+    const dir = mkTmp('wf-platform-');
+    stubTool(dir, 'gh', ['#!/bin/bash', 'echo "$1|$2"', 'exit 3']);
+    const res = spawnSync('gh', ['a "b" c', 'd e'],
+      { env: { ...process.env, PATH: pathWith(dir) }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    assertEq(res.status, 3, `the stub's exit code, error: ${res.error || ''} stderr: ${res.stderr}`);
+    assertEq(res.stdout, 'a "b" c|d e\n', 'each argument whole, quotes and spaces kept');
+    cleanup(dir);
+  });
+
+  await onlyWindows('an exe mirrored by linkTool is started from Node by its bare name', () => {
+    const dir = mkTmp('wf-platform-');
+    linkTool(dir, which('git'));
+    assert(fs.existsSync(path.join(dir, 'git.exe')), 'the mirror holds the launcher, ahead of the real git on PATH');
+    const res = spawnSync('git', ['--version'],
+      { env: { ...process.env, PATH: joinPath(dir, SYSTEM_PATH) }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    assertEq(res.status, 0, `git answered, error: ${res.error || ''} stderr: ${res.stderr}`);
+    assert(res.stdout.startsWith('git version'), `git's own answer, got: ${JSON.stringify(res.stdout)}`);
+    cleanup(dir);
+  });
+
+  await onlyWindows('two stubs in one process share one launcher build', () => {
+    const dir = mkTmp('wf-platform-');
+    stubTool(dir, 'one', ['#!/bin/bash', 'exit 0']);
+    const first = fs.readFileSync(path.join(dir, 'one.exe'));
+    // csc stamps every build with a fresh id, so the byte-equal cache entry is this build;
+    // only finished `<digest>.exe` entries are read, never another build's temp file.
+    const cacheDir = path.join(os.tmpdir(), 'workkit-stub-launcher');
+    const cached = fs.readdirSync(cacheDir).filter((name) => /^[0-9a-f]{12}\.exe$/.test(name))
+      .map((name) => path.join(cacheDir, name)).filter((file) => fs.readFileSync(file).equals(first));
+    assertEq(cached.length, 1, `one cached launcher matches the copy, got: ${cached.join(', ')}`);
+    const built = fs.statSync(cached[0]).mtimeMs;
+    stubTool(dir, 'two', ['#!/bin/bash', 'exit 0']);
+    assert(fs.readFileSync(path.join(dir, 'two.exe')).equals(first), 'the second stub got the same launcher');
+    assertEq(fs.statSync(cached[0]).mtimeMs, built, 'csc did not run again: the cached build is untouched');
+    cleanup(dir);
   });
 
   return summary();

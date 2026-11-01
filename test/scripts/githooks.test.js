@@ -12,7 +12,7 @@ const {
   group, test, assert, assertEq, summary, selfRun, run, mkTmp,
 } = require('../lib/harness');
 const {
-  SH, shellPath, joinPath, systemPathWith, stubNode,
+  SH, shellPath, gitPath, joinPath, systemPathWith, stubNode,
 } = require('../lib/platform');
 const { mkRepo, commitGh } = require('../lib/git-repo');
 const { plantRecord, reviewMarkerPath, kitIndexTree } = require('../lib/suite-record');
@@ -217,7 +217,7 @@ const cases = async () => {
     // with no scissors in the file it exits 1, so the commit never lands.
     const editor = path.join(w.tmp, 'editor.sh');
     hookAt(editor, ['grep -q \' >8 \' "$1" || exit 1', '{ printf \'docs: note the watcher\\n\\nA plain body.\\n\'; sed -n \'/ >8 /,$p\' "$1"; } > "$1.new"', 'mv "$1.new" "$1"']);
-    landed(commit(w, ['-v'], { env: { GIT_EDITOR: shellPath(editor) } }), 'the diff text under the scissors');
+    landed(commit(w, ['-v'], { env: { GIT_EDITOR: gitPath(editor) } }), 'the diff text under the scissors');
   });
 
   await test('an amend with nothing newly staged is judged on its message: two issues on one closing line bounce on check 8', () => {

@@ -211,8 +211,9 @@ const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT
 });
 
 // A case that reads what the `gh` shim recorded. The node composers the script
-// runs spawn gh directly, and no stub is startable that way on Windows
-// (`stubTool`), so there the sealed machine gh answers those reads.
+// runs spawn gh directly, and the case still skips on Windows (`stubTool`,
+// `NO_NODE_STUB`): its stub predates the launcher, and the sealed machine gh
+// would answer those reads there.
 const composerTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 module.exports = {

@@ -46,7 +46,7 @@ const withSetupScene = async (routes, fn, worldOpts = {}) => {
  * Asserts login.js opened the device page once with the world's opener. It
  * runs the opener detached, so a first call is awaited for until's own default,
  * the budget the login suite gives the same opener, then a moment more for a
- * second. Windows names its skip: node cannot spawn the bash stub.
+ * second. Written before the stub launcher, it still skips on Windows.
  */
 const assertDevicePageOpened = async (world, label) => {
   if (IS_WINDOWS) {

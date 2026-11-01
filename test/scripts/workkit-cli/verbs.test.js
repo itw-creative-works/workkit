@@ -50,8 +50,8 @@ const chain = () => mkPackages({
 });
 const CHAIN_PLAN = 'publish @s/a 1.0.0 scoped\npublish @s/b 1.0.0 scoped\npublish @s/c 1.0.0 scoped\n';
 
-// The publish cases put a fake `npm` ahead of node's own; node cannot start
-// that stub by name on Windows and would reach the real npm instead.
+// The publish cases put a fake `npm` ahead of node's own; written before the
+// stub launcher, they still skip on Windows.
 const npmTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 const cases = async () => {

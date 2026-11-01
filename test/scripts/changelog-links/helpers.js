@@ -73,7 +73,8 @@ const runScript = (cwd, stub, args = []) => {
 const readLog = (dir) => fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
 
 // Every suite asks this first: the script reaches its fake `gh` through
-// execFile, and no stub is startable that way on Windows (`stubTool`).
+// execFile, and the suite still skips on Windows (`stubTool`, `NO_NODE_STUB`):
+// its stub predates the launcher.
 const skipOnWindows = () => {
   if (IS_WINDOWS) {
     skipSuite(NO_NODE_STUB);

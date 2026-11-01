@@ -2,7 +2,9 @@
 // between the Mac and Windows (AGENTS.md § Tests). Every export is the identity
 // on macOS and Linux; a dotfiles repo carries the same seam, name for name.
 
+const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { SPAWN_DEADLINE } = require('./harness');
@@ -172,10 +174,62 @@ const digestTool = (searchPath = process.env.PATH) => ['shasum', 'sha1sum']
 const toolStem = (file) => (IS_WINDOWS ? file.replace(/\.(exe|cmd|bat|com)$/i, '') : file);
 
 /**
+ * Compile the stub launcher's filled `source` into `exe`: a build beside it,
+ * hard linked into place, so a parallel suite never runs a half-written file. A
+ * build that fails throws with csc's output, never reading as no compiler.
+ * @param {string} source - stub-launcher.cs with its bash filled in
+ * @param {string} exe - the cache path, keyed by the source's digest
+ */
+const buildLauncher = (source, exe) => {
+  fs.mkdirSync(path.dirname(exe), { recursive: true });
+  const stem = exe.replace(/\.exe$/, `.${process.pid}`);
+  const src = `${stem}.cs`;
+  const tmp = `${stem}.tmp.exe`;
+  try {
+    fs.writeFileSync(src, source);
+    const res = spawnSync(WINDOWS_CSC, ['-nologo', '-optimize', '-target:exe', `-out:${tmp}`, src],
+      { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    if (res.status !== 0) {
+      throw new Error(`test/lib/platform: csc could not build the stub launcher: ${res.error || ''}${res.stderr}${res.stdout}`);
+    }
+    try {
+      fs.linkSync(tmp, exe);
+    } catch (e) {
+      // EEXIST: another suite's build of the same digest took the cache first,
+      // and it is the same launcher.
+      if (e.code !== 'EEXIST') throw e;
+    }
+  } finally {
+    fs.rmSync(src, { force: true });
+    fs.rmSync(tmp, { force: true });
+  }
+};
+
+let launcher;
+
+/**
+ * The `.exe` that starts the bash script of its own name beside it, built once
+ * per machine from stub-launcher.cs under the OS temp folder. Read at call time.
+ * @returns {string|null} its path on Windows with the compiler, else null
+ */
+const stubLauncher = () => {
+  if (launcher) return launcher;
+  if (!onWindows() || !WINDOWS_CSC || !fs.existsSync(WINDOWS_CSC)) return null;
+  const source = fs.readFileSync(path.join(__dirname, 'stub-launcher.cs'), 'utf8').replace('{{BASH}}', () => BASH);
+  const digest = crypto.createHash('sha1').update(source).digest('hex').slice(0, 12);
+  const exe = path.join(os.tmpdir(), 'workkit-stub-launcher', `${digest}.exe`);
+  if (!fs.existsSync(exe)) buildLauncher(source, exe);
+  launcher = exe;
+  return exe;
+};
+
+/**
  * Write a PATH stub named `name` that runs `lines` as bash. A shell finds it on
- * both platforms; Node on Windows does not (libuv appends only `.com` and `.exe`
- * to a bare name), so a case stubbing a tool the program under test spawns
- * directly names its skip there, and `homeEnv` keeps the real tool harmless.
+ * both platforms. Node on Windows does not find the script alone (libuv appends
+ * only `.com` and `.exe` to a bare name), so there it also gets the launcher as
+ * `<name>.exe` where the compiler exists. The cases written before the launcher
+ * still skip on every Windows (`NO_NODE_STUB`) until each is run there once, and
+ * `homeEnv` keeps the real tool harmless.
  * @param {string} dir - the PATH directory, which must exist
  * @param {string} name - the tool being stubbed, with no extension
  * @param {string[]} lines - the stub's bash source, shebang included
@@ -184,11 +238,13 @@ const toolStem = (file) => (IS_WINDOWS ? file.replace(/\.(exe|cmd|bat|com)$/i, '
 const stubTool = (dir, name, lines) => {
   const script = path.join(dir, name);
   fs.writeFileSync(script, `${lines.join('\n')}\n`, { mode: 0o755 });
+  const exe = stubLauncher();
+  if (exe) fs.copyFileSync(exe, `${script}.exe`);
   return script;
 };
 
 /** The skip reason for the stubTool rule above, stated once. */
-const NO_NODE_STUB = 'no stub is startable by name from Node on Windows';
+const NO_NODE_STUB = 'this case still skips on Windows: its stub predates the launcher';
 
 /**
  * A `node` stub at `<dir>/node` answering `--version` (and `-v`) with
@@ -253,7 +309,8 @@ const cygpathStub = (dir) => (IS_WINDOWS ? null : stubTool(dir, 'cygpath', [
 /**
  * Make `real` reachable from `dir`: a symlink on macOS and Linux. On Windows a
  * program loads its libraries from beside itself, so an executable gets a shim
- * that runs it where it lives and anything else is hard linked or copied.
+ * that runs it where it lives (its launcher with it, as `stubTool` writes one)
+ * and anything else is hard linked or copied.
  * @param {string} dir - the mirror directory, which must exist
  * @param {string} real - the tool, by absolute path
  * @returns {string|null} what was created, or null when nothing could be

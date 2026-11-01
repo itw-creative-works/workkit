@@ -13,7 +13,7 @@ const {
   group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, systemPathWith, homeEnv, basePathWithout, stubNode,
+  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, gitPath, systemPathWith, homeEnv, basePathWithout, stubNode,
 } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -616,7 +616,7 @@ const gateCases = async () => {
     assertEq(lines.length, 1, `one journal line, got: ${JSON.stringify(lines)}`);
     const [ms, ...fields] = lines[0];
     assert(Number(ms) >= before && Number(ms) <= after, `the line's epoch ms falls within the call, got: ${ms}`);
-    assertEq(JSON.stringify(fields), JSON.stringify(['issue', 'edit', 'acme/rostered', '7', 'status:qa', '', shellPath(world.rostered)]),
+    assertEq(JSON.stringify(fields), JSON.stringify(['issue', 'edit', 'acme/rostered', '7', 'status:qa', '', gitPath(world.rostered)]),
       'verb, sub, repo, numbers, labels added and removed, cwd');
   });
 
