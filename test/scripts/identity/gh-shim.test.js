@@ -13,7 +13,7 @@ const {
   group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, gitPath, systemPathWith, homeEnv, basePathWithout, stubNode,
+  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, gitPath, spawnBash, systemPathWith, homeEnv, basePathWithout, stubNode,
 } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -111,7 +111,7 @@ const runShim = (world, args, {
     };
   }
   const argv = script === undefined ? [...NO_RC, shellPath(world.shim), ...args] : [...NO_RC, '-c', script];
-  const res = spawnSync(BASH, argv, {
+  const res = spawnBash(argv, {
     cwd, env, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return {

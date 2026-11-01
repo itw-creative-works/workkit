@@ -87,9 +87,9 @@ const settle = async (promise) => {
 // The first process owned by root with a pid above 1, or null. Never pid 1: a
 // user that is not root is refused kill(1), but where pid 1 is this user's own
 // entrypoint the case's TERM would be real.
-const rootOwnedPid = () => {
+const rootOwnedPid = (skip = []) => {
   const rows = run('ps', ['-A', '-o', 'pid=,uid=']).stdout.trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
-  const row = rows.find(([pid, uid]) => uid === 0 && pid > 1);
+  const row = rows.find(([pid, uid]) => uid === 0 && pid > 1 && !skip.includes(pid));
   return row ? row[0] : null;
 };
 
@@ -324,9 +324,17 @@ const cases = async () => {
     'endTree throws when the system refuses the signal: a root process signalled by a user that is not root names EPERM and the pid',
     () => {
       let threw;
-      try { endTree(rootPid, 'SIGTERM'); } catch (err) { threw = err; }
-      assert(/EPERM/.test(threw?.message) && new RegExp(`\\bpid ${rootPid}\\b`).test(threw?.message),
-        `endTree throws naming EPERM and pid ${rootPid}, got: ${threw?.message}`);
+      let pid = rootPid;
+      const tried = [];
+      // A pick can exit between the listing and the signal, so a silent one is drawn again, three in all.
+      while (pid !== null && !threw) {
+        tried.push(pid);
+        try { endTree(pid, 'SIGTERM'); } catch (err) { threw = err; }
+        if (threw || tried.length === 3) break;
+        pid = rootOwnedPid(tried);
+      }
+      assert(/EPERM/.test(threw?.message) && new RegExp(`\\bpid ${pid}\\b`).test(threw?.message),
+        `endTree throws naming EPERM and pid ${pid}, got: ${threw?.message}`);
     },
   );
 };

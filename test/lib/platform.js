@@ -346,6 +346,21 @@ const systemPathWith = (...dirs) => [...dirs, SYSTEM_PATH].join(path.delimiter);
 /** One PATH out of entries already in this platform's spelling. */
 const joinPath = (...entries) => entries.filter(Boolean).join(path.delimiter);
 
+// Windows quoting: a backslash run before a quote or the end is doubled, the quote escaped.
+const windowsQuoted = (value) => `"${String(value).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+
+/**
+ * Spawn the test bash with `args` from Node. On Windows every argument goes
+ * double-quoted, verbatim: the msys runtime parses and globs a command line a
+ * native parent hands it, and a newer runtime dies on an unquoted `labels[]=`.
+ * @param {string[]} args
+ * @param {object} [options] - spawnSync's
+ * @returns {object} spawnSync's result
+ */
+const spawnBash = (args, options = {}) => (IS_WINDOWS
+  ? spawnSync(BASH, args.map(windowsQuoted), { ...options, argv0: windowsQuoted(BASH), windowsVerbatimArguments: true })
+  : spawnSync(BASH, args, options));
+
 /**
  * A spawn env whose world is the scratch home `home`, in every spelling a tool
  * reads a home by: HOME in the shell's spelling, USERPROFILE (Node's homedir on
@@ -426,7 +441,7 @@ const asWindows = (fn) => {
 
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, gitPath, which, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
+  shellPath, gitPath, which, spawnBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, asWindows,
 };

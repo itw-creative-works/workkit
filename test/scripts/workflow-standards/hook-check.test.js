@@ -109,7 +109,8 @@ const cases = async () => {
     const hooks = makeHooksDir();
     const stub = makeGhStub();
     const binDir = binDirWithout('shasum');
-    fs.rmSync(path.join(binDir, 'sha1sum'), { force: true });
+    // The mirror's sha1sum is a bash shim with its launcher beside it on Windows: both go.
+    for (const name of ['sha1sum', 'sha1sum.exe']) fs.rmSync(path.join(binDir, name), { force: true });
     const check = () => {
       const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
         env: {
