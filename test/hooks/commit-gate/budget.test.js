@@ -1,4 +1,4 @@
-// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
+// Tests for safety:commit-gate's logic, preCommitVerdict(facts) in
 // hooks/mods/commit-gate.js, the budget line: a recorded root run longer than
 // `tests.budget` (whole minutes, the repo's .workkit/settings.json over the
 // machine's settings.json) says so beside the proved notice, and the record
@@ -24,7 +24,7 @@ const recordWithMs = (r, ms) => {
 // its root run recorded as taking `ms`.
 const timedCommit = (tests, ms) => {
   const r = mkReleaseRepo();
-  stage(r, '.workkit/settings.json', `${JSON.stringify({ version: 1, enabled: true, ...(tests ? { tests } : {}) }, null, 2)}\n`);
+  stage(r, '.workkit/settings.json', `${JSON.stringify({ enabled: true, ...(tests ? { tests } : {}) }, null, 2)}\n`);
   commit(r);
   stage(r, 'app.js', 'const x = 2;\n');
   touchMarker(r);
@@ -43,7 +43,7 @@ const cases = async () => {
   group('commit-gate: the root run against tests.budget');
 
   await test('a recorded root run past tests.budget prints the test-budget line and the record still proves the tree', async () => {
-    const v = await judge(timedCommit({ budget: 2 }, 5 * MINUTE_MS), 'git commit -m "feat: thing"');
+    const v = await judge(timedCommit({ budget: 2 }, 5 * MINUTE_MS), 'feat: thing');
     assertEq(denyOf(v), null, 'the commit passes');
     const lines = contextOf(v).split('\n');
     assert(lines.includes(NOTICE.proved), `the proved notice, got: ${contextOf(v)}`);
@@ -51,19 +51,19 @@ const cases = async () => {
   });
 
   await test('no tests.budget: no test-budget line', async () => {
-    const v = await judge(timedCommit(null, 5 * MINUTE_MS), 'git commit -m "feat: thing"');
+    const v = await judge(timedCommit(null, 5 * MINUTE_MS), 'feat: thing');
     assertEq(denyOf(v), null, 'the commit passes');
     assertEq(contextOf(v), NOTICE.proved, 'the proved notice alone');
   });
 
   await test('a tests.budget only in the machine settings file prints the test-budget line', async () => {
-    const v = await judge(userBudget(timedCommit(null, 5 * MINUTE_MS), { budget: 3 }), 'git commit -m "feat: thing"');
+    const v = await judge(userBudget(timedCommit(null, 5 * MINUTE_MS), { budget: 3 }), 'feat: thing');
     assertEq(denyOf(v), null, 'the commit passes');
     assert(contextOf(v).split('\n').includes('test-budget: the root run took 5m, the budget is 3m'), `the budget line, got: ${contextOf(v)}`);
   });
 
   await test("the repo's tests.budget wins over the machine's", async () => {
-    const v = await judge(userBudget(timedCommit({ budget: 10 }, 5 * MINUTE_MS), { budget: 2 }), 'git commit -m "feat: thing"');
+    const v = await judge(userBudget(timedCommit({ budget: 10 }, 5 * MINUTE_MS), { budget: 2 }), 'feat: thing');
     assertEq(contextOf(v), NOTICE.proved, "the repo's 10m budget holds the 5m run: no budget line");
   });
 };

@@ -434,11 +434,12 @@ const cases = async () => {
 
   group('release: the printed line');
 
-  await test('--dry-run prints the same line and writes nothing', () => {
+  await test('--dry-run ends on a dry run: would release line and writes nothing', () => {
     const { dir } = mkRepo();
     const res = release(dir, ['1.3.0', '--keep', '3', '--dry-run']);
     assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
-    assertEq(res.stdout, 'released 1.3.0 (package.json): 2 entries moved, 1 kept under [Unreleased]\n', 'the one line');
+    const lines = res.stdout.split('\n').filter(Boolean);
+    assert(lines[lines.length - 1].startsWith('dry run: would release'), `the last line says what it would do, got: ${res.stdout}`);
     assertEq(read(dir, 'package.json'), PACKAGE, 'package.json untouched');
     assertEq(read(dir, 'CHANGELOG.md'), CHANGELOG, 'CHANGELOG untouched');
     cleanup(dir);

@@ -12,7 +12,6 @@ const {
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
   desiredLabels, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, runScript,
-  repoVersion,
 } = require('./helpers');
 
 // The repo a gh call names by flag, '' for the cwd's own.
@@ -100,8 +99,8 @@ const cases = async () => {
 
     // The repro: a repo with no labels and a board that conforms. The heal
     // finishes silently, and each create carries the manifest's own description
-    // and colour byte for byte.
-    const empty = makeRepo();
+    // and colour byte for byte. Its settings carry a version key for jq to remove.
+    const empty = makeRepo({ settings: '{ "version": 9, "enabled": true }\n' });
     const home = mkTmp('wf-std-');
     const none = makeGhStub({
       labels: [],
@@ -125,7 +124,7 @@ const cases = async () => {
     // rewrites every line of them with a `\r` on it. One of the two is committed,
     // so its shape would flip with whichever machine healed last.
     const settings = readFile(path.join(empty, W, 'settings.json'));
-    assert(settings.includes('"version"'), `the version was stamped, got: ${JSON.stringify(settings)}`);
+    assert(settings.includes('"enabled"') && !settings.includes('"version"'), `the version key was removed, got: ${JSON.stringify(settings)}`);
     assert(!settings.includes('\r'), `and the committed file is LF, got: ${JSON.stringify(settings)}`);
     const roster = readFile(path.join(home, '.repos.json'));
     assertEq(rosterOf(home)[gitPath(fs.realpathSync(empty))], 'enabled', 'the roster recorded the repo');
@@ -173,7 +172,6 @@ const cases = async () => {
     assertEq(code, 1, 'a heal that could not finish exits non-zero');
     assert(output.includes('could not create'), `names the failure, got: ${output}`);
     assert(output.includes('not fully standardized'), `and reports the repo as unfinished, got: ${output}`);
-    assertEq(repoVersion(repo), 1, 'the version is not stamped, so the heal is asked again');
     cleanup(repo); cleanup(stub.dir);
   });
 
@@ -184,12 +182,11 @@ const cases = async () => {
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     assertEq(code, 1, 'exit non-zero');
     assert(output.includes('could not update'), `names the failure, got: ${output}`);
-    assertEq(repoVersion(repo), 1, 'not stamped');
     cleanup(repo); cleanup(stub.dir);
   });
 
   await test('the label heal makes the status: labels on the public repo and no other group', () => {
-    const repo = makeRepo({ settings: '{ "version": 1, "enabled": true, "public": "acme/public" }\n' });
+    const repo = makeRepo({ settings: '{ "enabled": true, "public": "acme/public" }\n' });
     const stub = makeGhStub({ labels: [] });
     runScript(repo, { pathPrefix: stub.binDir });
     const calls = ghCalls(stub);
@@ -205,7 +202,7 @@ const cases = async () => {
   });
 
   await nodeTest('the session-start sweep runs the mirror over the open linked issues, and a failed mirror is a warning, never a failed heal', () => {
-    const repo = makeRepo({ settings: '{ "version": 1, "enabled": true, "public": "acme/public" }\n' });
+    const repo = makeRepo({ settings: '{ "enabled": true, "public": "acme/public" }\n' });
     // The stub answers the public issue's read with no JSON, so the mirror of #12 fails.
     const stub = makeGhStub({
       labels: desiredLabels(),
@@ -222,7 +219,7 @@ const cases = async () => {
   });
 
   await test('a public key that is not a slug is a heal warning naming the key, with no public calls', () => {
-    const repo = makeRepo({ settings: '{ "version": 1, "enabled": true, "public": "acme public" }\n' });
+    const repo = makeRepo({ settings: '{ "enabled": true, "public": "acme public" }\n' });
     const stub = makeGhStub({ labels: desiredLabels() });
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     assert(output.includes('public key') && output.includes("'acme public'"), `the warning names the key and its value, got: ${output}`);

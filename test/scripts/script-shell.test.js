@@ -1,6 +1,7 @@
 // Tests for workflow/script-shell.sh, npm's script shell: a green root `npm test`
 // records the tree it proved, every other green test run records its package,
-// and every other script passes straight through.
+// an install-time script in an opted-in repo is followed by the git hooks'
+// re-point, and every other script passes straight through.
 // The detached run and the checks before it are script-shell-detached.test.js;
 // the world both run npm in is test/lib/script-shell.js.
 
@@ -17,8 +18,27 @@ const {
   scratchNpmrc, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged, assertRecord,
 } = require('../lib/script-shell');
 const { gateOn: gateIn } = require('../lib/real-gate');
+const { runLib } = require('../lib/hook-lib');
+const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const ROOT = path.join(__dirname, '..', '..');
+const KIT_HOOKS = path.join(ROOT, 'workflow', 'githooks');
+
+const OPT_IN = OPT_IN_SHAPES.current;
+const DECLINED = '{ "version": 1, "enabled": false }\n';
+// A prepare script that takes the hooks path for the repo's own hooks, as husky's does.
+const HUSKY = 'git config core.hooksPath .husky/_';
+
+// A committed repo whose package.json carries <scripts>; `settings` is its
+// .workkit/settings.json text, none when null.
+const repoWith = (scripts, settings = OPT_IN) => mkRepo({ scripts },
+  settings === null ? {} : { '.workkit/settings.json': settings });
+
+const hooksPathOf = (repo) => git(repo, 'config', '--local', '--get', 'core.hooksPath');
+const isOurs = (value) => value !== '' && fs.existsSync(value) && fs.realpathSync(value) === fs.realpathSync(KIT_HOOKS);
+
+// `npm install` in <repo> as the owner's terminal runs it: no Claude session.
+const install = (world, repo) => npm(world, repo, ['install', '--no-audit', '--no-fund'], world.wrapper, { CLAUDECODE: undefined });
 
 // A copy of the wrapper and its libs under <world.root>/claude/workkit, so a
 // case may rewrite it. On Windows the world's exe reaches the copy through
@@ -36,10 +56,9 @@ const mkWrapperCopy = (world) => {
     : { shell: shellPath(file), env: {}, file };
 };
 
-// The commit gate, through the hooks module, asked about a plain code commit in
-// <repo>, on a machine whose npm names the world's script shell.
-const gateOn = (world, repo) => gateIn(repo, 'git commit -m "feat: x"',
-  { ...world.env, NPM_CONFIG_USERCONFIG: scratchNpmrc(world.wrapper) });
+// The commit gate, through the hooks module, asked about what <repo> has
+// staged, on a machine whose npm names the world's script shell.
+const gateOn = (world, repo) => gateIn(repo, { ...world.env, NPM_CONFIG_USERCONFIG: scratchNpmrc(world.wrapper) });
 
 const cases = async () => {
   skipWithoutWrapper();
@@ -144,7 +163,7 @@ const cases = async () => {
     const tree = treeHash(repo);
     const res = npm(world, repo, ['test', '--', 'only/one.test.js']);
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
-    assertEq(packaged(world, repo), JSON.stringify([tree, '.']), 'the tree it ran on, then the root package');
+    assertEq(packaged(world, repo), JSON.stringify([`${tree} .`]), 'the tree it ran on, then the root package');
     assertEq(recorded(world, repo), undefined, 'a narrowed run never touches the suite record');
     cleanup(world.root); cleanup(repo);
   });
@@ -158,7 +177,7 @@ const cases = async () => {
     const res = npm(world, path.join(repo, 'packages', 'foo'), ['test']);
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
     assert(res.out.includes('nested-ran'), `the nested script ran, got: ${res.out}`);
-    assertEq(packaged(world, repo), JSON.stringify([tree, 'packages/foo']), 'the folder relative to the root');
+    assertEq(packaged(world, repo), JSON.stringify([`${tree} packages/foo`]), 'the folder relative to the root');
     assertEq(recorded(world, repo), undefined, 'a nested suite is not the root suite');
     cleanup(world.root); cleanup(repo);
   });
@@ -172,7 +191,7 @@ const cases = async () => {
     const res = npm(world, repo, ['test', '-w', 'foo']);
     assertEq(res.code, 0, `exit 0, got: ${res.err}`);
     assert(res.out.includes('member-ran'), `the member's script ran, got: ${res.out}`);
-    assertEq(packaged(world, repo), JSON.stringify([tree, 'packages/foo']), "the member's folder, never the root");
+    assertEq(packaged(world, repo), JSON.stringify([`${tree} packages/foo`]), "the member's folder, never the root");
     assertEq(recorded(world, repo), undefined, "a member's suite is not the root suite");
     cleanup(world.root); cleanup(repo);
   });
@@ -199,7 +218,7 @@ const cases = async () => {
     cleanup(world.root); cleanup(repo);
   });
 
-  await test('a second package green on the same tree is appended', () => {
+  await test('a second package green on the same tree gets its own line', () => {
     const world = mkWorld();
     const repo = mkRepo({ scripts: { test: 'node -e "process.exit(0)"' } }, {
       'packages/foo/package.json': { name: 'foo', scripts: { test: 'exit 0' } },
@@ -207,20 +226,33 @@ const cases = async () => {
     const tree = treeHash(repo);
     assertEq(npm(world, repo, ['test', '--', 'only/one.test.js']).code, 0, 'the narrowed root run is green');
     assertEq(npm(world, path.join(repo, 'packages', 'foo'), ['test']).code, 0, 'the nested run is green');
-    assertEq(packaged(world, repo), JSON.stringify([tree, '.', 'packages/foo']), 'one tree line, then both packages');
+    assertEq(packaged(world, repo), JSON.stringify([`${tree} .`, `${tree} packages/foo`]), 'one line per package, each on the tree');
     cleanup(world.root); cleanup(repo);
   });
 
-  await test('a green run on a changed tree starts the package record over', () => {
+  await test("workspace members run with -w each record on their own id: an edit in one leaves the other's line proved", () => {
     const world = mkWorld();
-    const repo = mkRepo({ scripts: { test: 'node -e "process.exit(0)"' } }, {
-      'packages/foo/package.json': { name: 'foo', scripts: { test: 'exit 0' } },
+    const member = (name, extra = {}) => ({ name, version: '1.0.0', scripts: { test: 'exit 0' }, ...extra });
+    const repo = mkRepo({ private: true, workspaces: ['packages/*'], scripts: { test: 'exit 0' } }, {
+      'packages/a/package.json': member('a'),
+      'packages/a/index.js': 'module.exports = 1;\n',
+      'packages/b/package.json': member('b'),
+      'packages/b/index.js': 'module.exports = 2;\n',
+      'packages/c/package.json': member('c', { dependencies: { a: '1.0.0' } }),
     });
-    assertEq(npm(world, repo, ['test', '--', 'only/one.test.js']).code, 0, 'the narrowed root run is green');
-    fs.writeFileSync(path.join(repo, 'app.js'), 'const x = 2;\n');
-    const tree = treeHash(repo);
-    assertEq(npm(world, path.join(repo, 'packages', 'foo'), ['test']).code, 0, 'the nested run is green');
-    assertEq(packaged(world, repo), JSON.stringify([tree, 'packages/foo']), "the new tree's line and its package alone");
+    // Each member's id: the tree less the members it neither is nor depends on.
+    const aId = treeHash(repo, ['packages/b', 'packages/c']);
+    assertEq(npm(world, repo, ['test', '-w', 'a']).code, 0, 'a is green');
+    assertEq(npm(world, repo, ['test', '-w', 'b']).code, 0, 'b is green');
+    fs.writeFileSync(path.join(repo, 'packages', 'b', 'index.js'), 'module.exports = 20;\n');
+    const bId = treeHash(repo, ['packages/a', 'packages/c']);
+    assertEq(npm(world, repo, ['test', '-w', 'b']).code, 0, 'b is green after its edit');
+    assertEq(JSON.stringify(JSON.parse(packaged(world, repo)).sort()), JSON.stringify([`${aId} packages/a`, `${bId} packages/b`].sort()),
+      "a's line unchanged, b's on its new id");
+    const root = git(repo, 'rev-parse', '--show-toplevel');
+    const proved = runLib(`wk_pkg_proved "${root}" "$(wk_tree_hash "${root}" packages/a)" packages/a`,
+      { ...world.env, WORKKIT_NODE: shellPath(process.execPath) });
+    assertEq(proved.code, 0, `a is still proved on the tree as it is now, got: ${proved.stderr}`);
     cleanup(world.root); cleanup(repo);
   });
 
@@ -245,6 +277,49 @@ const cases = async () => {
     assertEq(npm(world, repo, ['run', 'build']).code, 0, 'the other script is green');
     assert(!fs.existsSync(suiteLogPath(world.workflowHome, repo)), 'no suite log under the workflow home');
     assert(!fs.existsSync(path.join(repo, '.workkit', 'suite.log')), 'no suite log in the repo');
+    cleanup(world.root); cleanup(repo);
+  });
+
+  group('script-shell: an install-time script re-points the git hooks');
+
+  await test('a prepare that takes core.hooksPath for husky: after npm install it is ours again, the husky folder saved', () => {
+    const world = mkWorld();
+    const repo = repoWith({ prepare: HUSKY });
+    const res = install(world, repo);
+    assertEq(res.code, 0, `npm install exits 0, got: ${res.out}${res.err}`);
+    assert(isOurs(hooksPathOf(repo)), `core.hooksPath is the kit's githooks, got: ${hooksPathOf(repo)}`);
+    assertEq(git(repo, 'config', '--local', '--get', 'workkit.hooksPath'), '.husky/_', 'the repo\'s own folder is saved for ours to chain to');
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('a prepare that exits 3 after taking the path: npm install fails, and the hooks are still ours', () => {
+    const world = mkWorld();
+    const repo = repoWith({ prepare: `${HUSKY} && exit 3` });
+    const res = install(world, repo);
+    assert(res.code !== 0, `npm install fails with its script, got: ${res.code}`);
+    assert(isOurs(hooksPathOf(repo)), `core.hooksPath is the kit's githooks, got: ${hooksPathOf(repo)}`);
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await test('a repo with no settings, and one that declined: the install leaves core.hooksPath at husky\'s', () => {
+    for (const [label, settings] of [['no .workkit/settings.json', null], ['a declined repo', DECLINED]]) {
+      const world = mkWorld();
+      const repo = repoWith({ prepare: HUSKY }, settings);
+      assertEq(install(world, repo).code, 0, `${label}: npm install exits 0`);
+      assertEq(hooksPathOf(repo), '.husky/_', `${label}: nothing re-pointed`);
+      cleanup(world.root); cleanup(repo);
+    }
+  });
+
+  await test('npm run build in an opted-in repo: the script runs, core.hooksPath untouched', () => {
+    const world = mkWorld();
+    const mark = path.join(world.root, 'built');
+    const repo = repoWith({ build: 'echo built > "$WK_MARK"' });
+    git(repo, 'config', 'core.hooksPath', '.husky/_');
+    const res = npm(world, repo, ['run', 'build'], world.wrapper, { WK_MARK: shellPath(mark) });
+    assertEq(res.code, 0, `npm run build exits 0, got: ${res.err}`);
+    assertEq(fs.readFileSync(mark, 'utf8'), 'built\n', 'the build script ran');
+    assertEq(hooksPathOf(repo), '.husky/_', 'a script outside install time re-points nothing');
     cleanup(world.root); cleanup(repo);
   });
 

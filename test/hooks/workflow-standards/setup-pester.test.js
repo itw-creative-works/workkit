@@ -9,7 +9,7 @@ const { say, dropPathWithoutGh } = require('./helpers');
 const cases = async () => {
   group('workflow:standards: the setup pester');
 
-  await test('ports "an engine in the plugin cache: the pester says so"', () => {
+  await test('an engine in the plugin cache: the pester says so', () => {
     const engine = '/w/home/.claude/plugins/cache/workkit/workkit/0.0.0/workflow';
     const ctx = say({ participation: 'enabled', isSetUp: false, engine, isInCache: true });
     const line = ctx.split('\n').find((l) => l.startsWith('SETUP:')) || '';

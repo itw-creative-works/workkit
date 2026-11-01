@@ -32,7 +32,7 @@ const world = (on: any, opts: any = {}, markers: Record<string, number> = {}) =>
 }
 
 describe('tool.call Bash: safety:capture-guard', () => {
-  test('ports "a content-reading command: exit 2": the deny, its run line logged, the command not run', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('a content-reading command: exit 2: the deny, its run line logged, the command not run', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on)
     await bash($, 'cat .workkit/capture.md')
     expect(denyOf(w)).toBe(READ)
@@ -40,20 +40,20 @@ describe('tool.call Bash: safety:capture-guard', () => {
     expect(verdicts(w)).toEqual(['run'])
   })
 
-  test('ports "a fresh marker opens the Bash path too: exit 0": the repo-keyed marker', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('a fresh marker opens the Bash path too: exit 0: the repo-keyed marker', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, {}, { [REPO_MARKER]: 0 })
     await bash($, 'cat .workkit/capture.md')
     expect(denyOf(w)).toBeNull()
     expect(w.toolRan?.command).toBe('cat .workkit/capture.md')
   })
 
-  test('ports "a marker 31 minutes old: exit 2" on the Bash path', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('a marker 31 minutes old: exit 2 on the Bash path', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, {}, { [REPO_MARKER]: 31 * 60 })
     await bash($, 'cat .workkit/capture.md')
     expect(denyOf(w)).toBe(READ)
   })
 
-  test('ports "the ~/ spelling resolves to the same anchor": blocked with no marker, opened by the $HOME-keyed one', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('the ~/ spelling resolves to the same anchor: blocked with no marker, opened by the $HOME-keyed one', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on)
     await bash($, 'cat ~/.workkit/capture.md')
     expect(denyOf(w)).toBe(READ)
@@ -63,7 +63,7 @@ describe('tool.call Bash: safety:capture-guard', () => {
     expect(denyOf(w, 1)).toBeNull()
   })
 
-  test('ports "the braced HOME spelling resolves like the bare one" and "a cwd outside any git repo still keys off the .workkit parent"', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('a capture file in no repo keys off its .workkit parent, the braced HOME spelling like the bare one', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, {}, { [HOME_MARKER]: 0 })
     await bash($, 'cat "$HOME/.workkit/capture.md"')
     await bash($, 'cat "${HOME}/.workkit/capture.md"')
@@ -71,7 +71,7 @@ describe('tool.call Bash: safety:capture-guard', () => {
     expect(denyOf(w, 1)).toBeNull()
   })
 
-  test('ports "an append into the capture file: exit 2 with and without a marker": a marker does not open it', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('an append into the capture file: exit 2 with and without a marker: a marker does not open it', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, {}, { [REPO_MARKER]: 0 })
     await bash($, 'echo "- a thought" >> .workkit/capture.md')
     expect(denyOf(w)).toBe(WRITE(ROUTE_OFF))
@@ -79,7 +79,7 @@ describe('tool.call Bash: safety:capture-guard', () => {
     expect(denyOf(w, 1)).toBe(WRITE(ROUTE_OFF))
   })
 
-  test('ports "findings.file on: the refusal names the status:inbox route": read from the repo settings', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('findings.file on: the refusal names the status:inbox route: read from the repo settings', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, { repos: { [REPO]: JSON.stringify({ version: 1, enabled: true, findings: { file: true } }) } })
     await bash($, 'echo "- a thought" >> .workkit/capture.md')
     expect(denyOf(w)).toBe(WRITE(ROUTE_ON))

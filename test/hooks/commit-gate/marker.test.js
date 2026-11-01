@@ -1,8 +1,5 @@
-// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
-// hooks/mods/commit-gate.js: scope (only commits are gated) and the review
-// marker a code commit needs. Each case ports the HEAD case its name quotes.
-// Dropped with the shell mechanism: "a machine with neither shasum nor
-// sha1sum" (the module digests through crypto.subtle, with no tool to miss).
+// Tests for safety:commit-gate's logic, preCommitVerdict(facts) in
+// hooks/mods/commit-gate.js: the review marker a code commit needs.
 // The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
 const path = require('path');
@@ -18,7 +15,7 @@ const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
 const { gateOn } = require('../../lib/real-gate');
 const { workkitBin } = require('../../lib/workkit-bin');
 const {
-  KIT, PREFIX, T, mkRepo, stage, write, commit, touchMarker, staleMarker, judge, blocks, passes,
+  KIT, PREFIX, T, mkRepo, stage, touchMarker, staleMarker, judge, blocks, passes,
 } = require('./helpers');
 const { daysAgo, agedFile } = require('../../lib/workflow-home');
 
@@ -45,30 +42,26 @@ const skillLine = () => {
 const cases = async () => {
   group('commit-gate: scope');
 
-  await test('ports "non-commit command: exit 0"', async () => {
-    passes(await judge(mkRepo(), 'git status && npm test'), '', 'only commits are gated');
-  });
-
-  await test('ports "commit with nothing staged: exit 0 (git will fail it anyway)"', async () => {
-    passes(await judge(mkRepo(), 'git commit -m "x"'), '', 'empty commits pass through');
+  await test('commit with nothing staged: exit 0 (git will fail it anyway)', async () => {
+    passes(await judge(mkRepo(), 'chore: x'), '', 'empty commits pass through');
   });
 
   group('commit-gate: review marker');
 
-  await test('ports "staged code, no review marker: exit 2 naming workkit:review"', async () => {
+  await test('staged code, no review marker: exit 2 naming workkit:review', async () => {
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 1;\n');
-    blocks(await judge(r, 'git commit -m "feat"'), T.noReview, 'unreviewed code commit must block');
+    blocks(await judge(r, 'feat: thing'), T.noReview, 'unreviewed code commit must block');
   });
 
-  await test('ports "staged code + fresh marker: exit 0"', async () => {
+  await test('staged code + fresh marker: exit 0', async () => {
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 1;\n');
     touchMarker(r);
-    passes(await judge(r, 'git commit -m "feat"'), '', 'reviewed commit passes');
+    passes(await judge(r, 'feat: thing'), '', 'reviewed commit passes');
   });
 
-  await test('ports "the review skill\'s own line writes the marker this gate checks": at the path markers.js names', async () => {
+  await test('the review skill\'s own line writes the marker this gate checks: at the path markers.js names', async () => {
     const world = mkGitRepo('cg-skill-', { 'app.js': 'const x = 1;\n' });
     // As the live sides build it: the root in git's spelling, under the folder
     // the module reads for the WORKFLOW_HOME the script is handed.
@@ -78,7 +71,7 @@ const cases = async () => {
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 2;\n');
     r.headTime = Number(world.git('log', '-1', '--format=%ct').trim());
-    blocks(await judge(r, 'git commit -m "feat"'), T.noReview, 'blocked before the skill runs');
+    blocks(await judge(r, 'feat: thing'), T.noReview, 'blocked before the skill runs');
     const res = run(BASH, [...NO_RC, '-c', skillLine()], {
       cwd: world.repo,
       env: { ...world.env, PATH: joinPath(workkitBin(), world.env.PATH) },
@@ -86,28 +79,20 @@ const cases = async () => {
     assertEq(res.status, 0, `the marker verb runs, got: ${res.stderr}`);
     assert(fs.existsSync(marker), `and writes exactly the file the module names: ${marker}`);
     r.marker = { mtimeMs: fs.statSync(marker).mtimeMs };
-    passes(await judge(r, 'git commit -m "feat"'), '', 'so the commit passes');
+    passes(await judge(r, 'feat: thing'), '', 'so the commit passes');
   });
 
-  await test('ports "docs-only staged, no marker: exit 0 (review not required)"', async () => {
+  await test('docs-only staged, no marker: exit 0 (review not required)', async () => {
     const r = mkRepo();
     stage(r, 'README.md', '# docs\n');
-    passes(await judge(r, 'git commit -m "docs"'), '', 'docs-only commits skip the review requirement');
+    passes(await judge(r, 'docs: readme'), '', 'docs-only commits skip the review requirement');
   });
 
-  await test('ports "marker OLDER than the last commit: exit 2 (stale review)"', async () => {
+  await test('marker OLDER than the last commit: exit 2 (stale review)', async () => {
     const r = mkRepo();
     staleMarker(r);
     stage(r, 'app.js', 'const x = 1;\n');
-    blocks(await judge(r, 'git commit -m "feat"'), T.stale, 'a marker from before the last commit must not count');
-  });
-
-  await test('ports "-a flag counts modified tracked files: exit 2 without marker"', async () => {
-    const r = mkRepo();
-    stage(r, 'app.js', 'const x = 1;\n');
-    commit(r);
-    write(r, 'app.js', 'const x = 2;\n');
-    blocks(await judge(r, 'git commit -am "tweak"'), T.noReview, '-a commits are classified from modified tracked files');
+    blocks(await judge(r, 'feat: thing'), T.stale, 'a marker from before the last commit must not count');
   });
 
   group('commit-gate: the review marker under the workflow home');
@@ -130,7 +115,7 @@ const cases = async () => {
     assertEq(later.status, 0, `a later marker write runs its sweep, got: ${later.stderr}`);
     const covers = runScript(world, 'review/covers.sh');
     assertEq(covers.stdout, 'review-covers: covered\n', `review/covers.sh still sees the full marker, got: ${covers.stdout}${covers.stderr}`);
-    const gate = await gateOn(world.repo, 'git commit -m "feat"', world.env);
+    const gate = await gateOn(world.repo, world.env);
     assertEq(gate.deny, null, 'and the gate still sees the review marker');
     fs.rmSync(world.dir, { recursive: true, force: true });
   });
@@ -143,7 +128,7 @@ const cases = async () => {
     const old = path.join(world.tmp, 'claude-review-marker', crypto.createHash('sha1').update(root).digest('hex'));
     fs.mkdirSync(path.dirname(old), { recursive: true });
     fs.writeFileSync(old, '');
-    const gate = await gateOn(world.repo, 'git commit -m "feat"', world.env);
+    const gate = await gateOn(world.repo, world.env);
     assertEq((gate.deny || '').replace(/\n$/, ''), `${PREFIX}${T.noReview}`, 'the temp-folder marker opens nothing');
     fs.rmSync(world.dir, { recursive: true, force: true });
   });

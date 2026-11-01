@@ -362,7 +362,7 @@ cloud_machine() {
     [[ "$slug" == */* ]] || continue
     dir="$WK_DIR/cloud/$slug"
     mkdir -p "$dir/.workkit"
-    printf '{\n  "version": 1,\n  "enabled": true\n}\n' >"$dir/.workkit/settings.json"
+    printf '{\n  "enabled": true\n}\n' >"$dir/.workkit/settings.json"
     if ! wk_is_repo_root "$dir"; then
       git init -q "$dir" >/dev/null 2>&1 || continue
     fi

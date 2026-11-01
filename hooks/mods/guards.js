@@ -8,33 +8,20 @@
  */
 
 import { captureGuardGuard } from './capture-guard.js';
-import { originless, repoSlug } from './command.js';
-import { commitGateGuard } from './commit-gate.js';
-import { commitLanguageGuard } from './commit-language.js';
-import { findingsGuardGuard } from './findings-guard.js';
 import { rootOptedIn } from './gate.js';
-import { issueGuardGuard } from './issue-guard.js';
 import { shellEnvOf, windowsKit } from './markers.js';
-import { isOptinExempt, optinRepo, rootOf, rosterOf } from './optin.js';
-import { proofGuardGuard } from './proof-guard.js';
+import { optinRepo, originless, rootOf } from './optin.js';
 import { publicMirrorGuard } from './public-mirror.js';
 import { releaseTakenGuard } from './release-taken.js';
 import { snapshotGuard } from './snapshot.js';
-import { specGuardGuard } from './spec-guard.js';
 import { treeGuardGuard } from './tree-guard.js';
 import { vendorGuardGuard } from './vendor-guard.js';
 
 /** The Bash guards on `tool.call`, run in the order listed here. */
 export const BASH_GUARDS = [
-  { hook: 'safety:commit-gate', run: commitGateGuard },
-  { hook: 'safety:commit-language', run: commitLanguageGuard },
   { hook: 'safety:release-taken', run: releaseTakenGuard },
   { hook: 'safety:tree-guard', run: treeGuardGuard },
-  { hook: 'safety:issue-guard', run: issueGuardGuard },
-  { hook: 'safety:proof-guard', run: proofGuardGuard },
-  { hook: 'safety:spec-guard', run: specGuardGuard },
   { hook: 'safety:capture-guard', run: captureGuardGuard },
-  { hook: 'safety:findings-guard', run: findingsGuardGuard },
 ];
 
 /** The guards on `tool.call` for Edit and Write. */
@@ -58,14 +45,12 @@ export const POST_BASH_GUARDS = [
 export const GUARDS_FAILED = 'workkit: the guards failed before they could judge this call, so it did not run: ';
 
 // The opt-in gate for a Bash command (optin.js), its reads made through io.
-async function bashOpted(io, env, { command, cwd }) {
+async function bashOpted(io, { command, cwd }) {
   const { opted } = await optinRepo({
     command,
     cwd,
-    roster: await rosterOf(env, io.read),
     toplevel: io.top,
     settingsOf: (root) => io.read(`${root}/.workkit/settings.json`),
-    slugOf: (dir) => repoSlug(dir, io.run),
     exists: io.exists,
   });
   return opted;
@@ -90,21 +75,22 @@ export async function folderOpted(io, dir) {
 const guardEnv = (io, env) => shellEnvOf(env, windowsKit(io.pluginRoot) ? 'win32' : 'posix');
 
 /**
- * The Bash guards' facts: the command and its folder, the variables, the
- * reads, a scratch write and the kit's folder; the origin is asked once, and
- * only by a guard that needs it.
- * @param {object} io the engine calls register.js hands over (`ioOf`)
+ * The Bash guards' facts: the command and its folder, the gh journal lines
+ * the call left, the variables, the reads, a scratch write and the kit's
+ * folder; the origin is asked once, and only by a guard that needs it. The gh
+ * shim's gate and the git hooks' judge build theirs here too.
+ * @param {object} io the engine calls register.js hands over (`ioOf`), or the real machine's (workflow/lib/io.js)
  * @param {object} env the variables the module read
- * @param {{command: string, cwd: string, failed?: boolean}} call the command, its folder, and whether
- *   the call already ran and failed (a `classic.PostToolUseFailure`)
+ * @param {{command: string, cwd: string, lines?: object[]}} call the command, its folder, and the
+ *   journal lines (journalLines in markers.js) a call that already ran wrote, none before it runs
  * @returns {object}
  */
-export function bashFacts(io, env, { command, cwd, failed = false }) {
+export function bashFacts(io, env, { command, cwd, lines = [] }) {
   let origin = null;
   return {
     command,
     cwd,
-    failed,
+    lines,
     env: guardEnv(io, env),
     originless: () => (origin ??= originless(cwd, io.run)),
     exists: (rel) => io.exists(`${cwd}/${rel}`),
@@ -124,12 +110,12 @@ export function bashFacts(io, env, { command, cwd, failed = false }) {
  * Runs one chain over its facts: a Bash chain (facts carrying `command`) is
  * gated by optinRepo, a file chain by the repo holding `facts.gateDir`, climbed
  * to the nearest folder that exists. A guard
- * outside an opted-in repo stands down unless it is exempt; a guard that
+ * outside an opted-in repo stands down; a guard that
  * throws ends the chain with the error, for the handler to rethrow.
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {object} env the variables the module read
  * @param {Array<{hook: string, run: function}>} guards the chain, in order
- * @param {object} facts `{ command, cwd, failed }` for Bash, `{ tool, input, cwd, file, typed, dir, gateDir }` for a file
+ * @param {object} facts `{ command, cwd, lines }` for Bash, `{ tool, input, cwd, file, typed, dir, gateDir }` for a file
  * @returns {Promise<{fires: Array<[string, string]>, deny: string|null, notice: string|null, error: *}>}
  *   each fire's hook and verdict for the hooks log, the first deny, the notices as one entry, a throw
  */
@@ -137,13 +123,13 @@ export async function runChain(io, env, guards, facts) {
   const chain = { fires: [], deny: null, notice: null, error: null };
   if (guards.length === 0) return chain;
   const isBash = typeof facts.command === 'string';
-  const opted = isBash ? await bashOpted(io, env, facts) : await folderOpted(io, facts.gateDir);
+  const opted = isBash ? await bashOpted(io, facts) : await folderOpted(io, facts.gateDir);
   const gathered = isBash ? bashFacts(io, env, facts) : {
     ...facts, env: guardEnv(io, env), read: io.read, run: io.run, top: io.top, stat: io.stat, now: io.now,
   };
   const notices = [];
   for (const { hook, run } of guards) {
-    if (!opted && !isOptinExempt(hook)) {
+    if (!opted) {
       chain.fires.push([hook, 'stood-down']);
       continue;
     }

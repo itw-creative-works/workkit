@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow standards: bring a repo to the issue-workflow standard, idempotently.
 # The heals live in standards/; what each does: workflow/README.md, the
-# standards.sh row, § The standard version and § The hook layer self-check.
+# standards.sh row, § Every heal runs and § The hook layer self-check.
 # Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link|--command-link|--home] [repo_dir]
 #   (no mode) heals an enabled repo; --state prints enabled | disabled |
 #   declined | undecided | home | nogit; --home heals only the tower clone;
@@ -14,7 +14,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LABELS_JSON="$SCRIPT_DIR/labels.json"
 TEMPLATES_DIR="$SCRIPT_DIR/templates"
 FORMS_DIR="$TEMPLATES_DIR/issue-forms"
-CHANGELOG_LINTER="$SCRIPT_DIR/changelog/lint.js"
 
 # The CRLF-safe jq, named here as well as reached through lib.sh since this
 # script reads JSON from its first step. Sourcing it twice is harmless.
@@ -39,6 +38,8 @@ CHANGELOG_LINTER="$SCRIPT_DIR/changelog/lint.js"
 . "$SCRIPT_DIR/standards/state.sh"
 # shellcheck source=./standards/gitignore.sh
 . "$SCRIPT_DIR/standards/gitignore.sh"
+# shellcheck source=./standards/githooks.sh
+. "$SCRIPT_DIR/standards/githooks.sh"
 # shellcheck source=./standards/templates.sh
 . "$SCRIPT_DIR/standards/templates.sh"
 # shellcheck source=./standards/changelog.sh
@@ -72,9 +73,6 @@ SPECCED_LABEL="status:specced"
 # The state directory's name for the engine layer. hooks/_lib.sh and
 # packages/core/test/lib/harness.js hold their own copy, so change all three together.
 WORKKIT_DIR=".workkit"
-
-# Bump it when a new heal or drift check lands (README § The standard version).
-STANDARD_VERSION=10
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Diagnostics go to stderr: stdout is the machine answer of --state and
@@ -158,9 +156,6 @@ existing_labels=""
 # Set by any heal that could not finish on its own: the run stays exit 0 (a
 # session start must never wedge) but says plainly that a human is needed.
 needs_attention=0
-# Set by report_drift when a check could not run for lack of a tool: the
-# version is not stamped past a check that never happened.
-drift_skipped=0
 
 state="$(resolve_state)"
 
@@ -205,8 +200,10 @@ wk_info "standards: $root"
 # Written by a real heal only: the probes and an unconsented repo exit above.
 ensure_engine_link
 register_in_roster
+remove_version_stamp
 ensure_workflow_ignored
 ensure_gitignore_basics
+ensure_git_hooks "$root"
 ensure_local_file capture.md
 ensure_local_file session.md agents/session.md
 ensure_issue_forms
@@ -225,24 +222,6 @@ check_issue_labels
 check_hook_layer
 check_test_runner
 check_test_folder
-
-# Below the current standard: report the drift, then stamp the version only if
-# every mechanical heal succeeded. A drift report is not a failure.
-repo_now="$(repo_version)"
-if [[ "$repo_now" -lt "$STANDARD_VERSION" ]]; then
-  # `|| true` suspends errexit for the call: report_drift returns 1 for "found
-  # something", and its node pipeline aborts under pipefail without node.
-  report_drift || true
-  if [[ "$needs_attention" -eq 0 ]]; then
-    if [[ "$drift_skipped" -eq 1 ]]; then
-      wk_skip "standards: version not stamped; the CHANGELOG drift check needs node, which is not available"
-    elif ! command -v jq >/dev/null 2>&1; then
-      wk_skip "standards: version not stamped; writing it needs jq, so the drift report repeats until it is installed"
-    elif wk_json_edit "$REPO_SETTINGS" --argjson v "$STANDARD_VERSION" '.version = $v'; then
-      wk_ok "standard version $repo_now → $STANDARD_VERSION"
-    fi
-  fi
-fi
 
 if [[ "$needs_attention" -eq 1 ]]; then
   wk_warn "standards: $root is not fully standardized; see the warning above"

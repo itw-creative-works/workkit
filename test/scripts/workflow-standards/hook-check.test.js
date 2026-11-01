@@ -137,7 +137,7 @@ const cases = async () => {
     const empty = mkTmp('wf-std-');
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: empty });
     assertEq(code, 0, 'exit 0');
-    assert(!output.includes('hooks:'), `no hooks.json means no hook layer to judge, got: ${output}`);
+    assert(!/(?<!git )hooks:/.test(output), `no hooks.json means no hook layer to judge, got: ${output}`);
     cleanup(repo); cleanup(stub.dir); cleanup(empty);
   });
 

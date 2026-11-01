@@ -2,9 +2,9 @@
 # workflow/review/covers.sh (`workkit review covers`): does a full-panel review
 # cover the working diff? The full-panel marker (`workkit review mark full`,
 # keyed on the repo root) must be newer than every modified, staged and
-# untracked path but the heal's version stamp, and than the folder a deleted
-# path left. A diff of that stamp or nothing is stale, since commits are
-# unseen. Covered exits 0, stale 1, a usage or git failure 2.
+# untracked path but the heal's removal of the retired version key, and than
+# the folder a deleted path left. A diff of that removal or nothing is stale,
+# since commits are unseen. Covered exits 0, stale 1, a usage or git failure 2.
 
 set -euo pipefail
 
@@ -43,7 +43,7 @@ fi
 
 judged=0
 while IFS= read -r -d '' rel; do
-  # The heal's version stamp is bookkeeping, never review matter.
+  # The heal's removal of the version key is bookkeeping, never review matter.
   if [ "$rel" = "$WORKKIT_DIR/settings.json" ] && hook_version_only_change "$root" "$rel"; then
     continue
   fi

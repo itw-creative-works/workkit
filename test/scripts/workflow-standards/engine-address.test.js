@@ -10,7 +10,9 @@ const {
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
-const { WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript } = require('./helpers');
+const {
+  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith,
+} = require('./helpers');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
 
@@ -21,11 +23,6 @@ const cases = async () => {
   // canonical checkout: this suite's SCRIPT is that checkout, and every claude
   // home below is a temp directory, so the machine's own address is untouched.
   const ENGINE = path.resolve(WORKFLOW_DIR);
-  const claudeHomeWith = () => {
-    const home = mkTmp('wf-std-');
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-    return { home, claude: path.join(home, '.claude') };
-  };
 
   await test('links ~/.claude/workkit at the engine it is running from', () => {
     const repo = makeRepo();

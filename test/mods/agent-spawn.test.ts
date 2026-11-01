@@ -51,7 +51,7 @@ describe('agent.spawn: the Contract cases', () => {
 })
 
 describe('agent.spawn: pass-through (manager-resolver suite)', () => {
-  test('ports "updatedInput preserves prompt and subagent_type, and allows"', async ($, on) => {
+  test('updatedInput preserves prompt and subagent_type, and allows', async ($, on) => {
     const w = mkWorld(on)
     const r = await spawn($, 'workkit:scout')
     expect(r.deny).toBeUndefined()
@@ -59,14 +59,14 @@ describe('agent.spawn: pass-through (manager-resolver suite)', () => {
   })
 
   for (const type of ['Explore']) {
-    test(`ports "subagent_type ${type} spawns untouched"`, async ($, on) => {
+    test(`subagent_type ${type} spawns untouched`, async ($, on) => {
       const w = mkWorld(on)
       await spawn($, type)
       expect(w.spawned[0].model).toBeUndefined()
     })
   }
 
-  test('ports "missing ladder file fails open"', async ($, on) => {
+  test('missing ladder file fails open', async ($, on) => {
     const w = mkWorld(on)
     w.touchKit('hooks/manager/resources/ladder.json', null)
     await spawn($, 'workkit:worker')
@@ -74,13 +74,13 @@ describe('agent.spawn: pass-through (manager-resolver suite)', () => {
     expect(w.spawned[0].model).toBeUndefined()
   })
 
-  test('ports "unparseable ladder fails open"', async ($, on) => {
+  test('unparseable ladder fails open', async ($, on) => {
     const w = mkWorld(on, { kit: { 'hooks/manager/resources/ladder.json': 'not json {' } })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBeUndefined()
   })
 
-  test('ports "HOOK_DISABLE=1 is a silent no-op"', async ($, on) => {
+  test('HOOK_DISABLE=1 is a silent no-op', async ($, on) => {
     const w = mkWorld(on, { env: { HOOK_DISABLE: '1' } })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBeUndefined()
@@ -90,28 +90,28 @@ describe('agent.spawn: pass-through (manager-resolver suite)', () => {
 describe('agent.spawn: advise mode (manager-resolver suite)', () => {
   const advise = { [`${HOME}/.workkit/settings.json`]: settings({ mode: 'advise' }) }
 
-  test('ports "class spawn with the WRONG model blocks"', async ($, on) => {
+  test('class spawn with the WRONG model blocks', async ($, on) => {
     const w = mkWorld(on, { files: advise })
     const r = await spawn($, 'workkit:scout', { model: 'opus' })
     expect(typeof r.deny).toBe('string')
     expect(w.spawned).toHaveLength(0)
   })
 
-  test('ports "class spawn already carrying the resolved model allows silently"', async ($, on) => {
+  test('class spawn already carrying the resolved model allows silently', async ($, on) => {
     const w = mkWorld(on, { files: advise })
     const r = await spawn($, 'workkit:scout', { model: FAST })
     expect(r.deny).toBeUndefined()
     expect(w.spawned[0].model).toBe(FAST)
   })
 
-  test('ports "non-class spawns still pass through in advise mode"', async ($, on) => {
+  test('non-class spawns still pass through in advise mode', async ($, on) => {
     const w = mkWorld(on, { files: advise })
     const r = await spawn($, 'Explore')
     expect(r.deny).toBeUndefined()
     expect(w.spawned[0].model).toBeUndefined()
   })
 
-  test('ports "a repo mode override switches the resolver to advise"', async ($, on) => {
+  test('a repo mode override switches the resolver to advise', async ($, on) => {
     const w = mkWorld(on, { repos: { [REPO]: settings({ mode: 'advise' }) } })
     const r = await spawn($, 'workkit:scout')
     expect(r.deny).toContain(FAST)
@@ -120,32 +120,32 @@ describe('agent.spawn: advise mode (manager-resolver suite)', () => {
 })
 
 describe('agent.spawn: the layers read off disk (manager-resolver suite)', () => {
-  test('ports "a repo tiers override moves the worker rung (git-resolved root)"', async ($, on) => {
+  test('a repo tiers override moves the worker rung (git-resolved root)', async ($, on) => {
     const w = mkWorld(on, { repos: { [REPO]: settings({ tiers: { workhorse: 'sonnet' } }) } })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBe('sonnet')
   })
 
-  test('ports "a subdirectory cwd resolves to the repo root"', async ($, on) => {
+  test('a subdirectory cwd resolves to the repo root', async ($, on) => {
     const w = mkWorld(on, { repos: { [REPO]: settings({ tiers: { workhorse: 'sonnet' } }) }, cwd: `${REPO}/src/deep` })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBe('sonnet')
   })
 
-  test('ports "a plain (non-git) cwd carries no repo layer": outside a repo the resolver stands down', async ($, on) => {
+  test('a plain (non-git) cwd carries no repo layer: outside a repo the resolver stands down', async ($, on) => {
     const w = mkWorld(on, { cwd: PLAIN, files: { [`${PLAIN}/.workkit/settings.json`]: settings({ tiers: { workhorse: 'haiku' } }) } })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBeUndefined()
     expect(hooksLog(w).some((l: any) => l.hook === 'manager:resolver' && l.verdict === 'stood-down')).toBe(true)
   })
 
-  test('ports "the user layer applies when the repo carries no settings"', async ($, on) => {
+  test('the user layer applies when the repo carries no settings', async ($, on) => {
     const w = mkWorld(on, { files: { [`${HOME}/.workkit/settings.json`]: settings({ tiers: { workhorse: 'haiku' } }) } })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBe('haiku')
   })
 
-  test('ports "with no MANAGER_USER_SETTINGS the user layer is the machine folder, WORKFLOW_HOME first"', async ($, on) => {
+  test('with no MANAGER_USER_SETTINGS the user layer is the machine folder, WORKFLOW_HOME first', async ($, on) => {
     const w = mkWorld(on, {
       env: { WORKFLOW_HOME: '/w/wh' },
       files: {
@@ -157,7 +157,7 @@ describe('agent.spawn: the layers read off disk (manager-resolver suite)', () =>
     expect(w.spawned[0].model).toBe('haiku')
   })
 
-  test('ports "the repo layer beats the user layer"', async ($, on) => {
+  test('the repo layer beats the user layer', async ($, on) => {
     const w = mkWorld(on, {
       repos: { [REPO]: settings({ tiers: { workhorse: 'sonnet' } }) },
       files: { [`${HOME}/.workkit/settings.json`]: settings({ tiers: { workhorse: 'haiku' } }) },
@@ -166,13 +166,13 @@ describe('agent.spawn: the layers read off disk (manager-resolver suite)', () =>
     expect(w.spawned[0].model).toBe('sonnet')
   })
 
-  test('ports "enabled: false passes a class spawn through untouched"', async ($, on) => {
+  test('enabled: false passes a class spawn through untouched', async ($, on) => {
     const w = mkWorld(on, { repos: { [REPO]: settings({ enabled: false }) } })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBeUndefined()
   })
 
-  test('ports "enabled: false in the user layer is overridable by the repo"', async ($, on) => {
+  test('enabled: false in the user layer is overridable by the repo', async ($, on) => {
     const w = mkWorld(on, {
       repos: { [REPO]: settings({ enabled: true }) },
       files: { [`${HOME}/.workkit/settings.json`]: settings({ enabled: false }) },
@@ -181,19 +181,19 @@ describe('agent.spawn: the layers read off disk (manager-resolver suite)', () =>
     expect(w.spawned[0].model).toBe('opus')
   })
 
-  test('ports "unparseable repo settings fall back to the ladder"', async ($, on) => {
+  test('unparseable repo settings decline the repo: the resolver stands down and the spawn passes through untouched', async ($, on) => {
     const w = mkWorld(on, { repos: { [REPO]: 'not json {' } })
     await spawn($, 'workkit:worker')
-    expect(w.spawned[0].model).toBe('opus')
+    expect(w.spawned[0].model).toBeUndefined()
   })
 
-  test('ports "settings without a manager block contribute nothing"', async ($, on) => {
+  test('settings without a manager block contribute nothing', async ($, on) => {
     const w = mkWorld(on, { repos: { [REPO]: OPTED_IN } })
     await spawn($, 'workkit:worker')
     expect(w.spawned[0].model).toBe('opus')
   })
 
-  test('ports "a user settings file with a severed tail still lets the repo layer win"', async ($, on) => {
+  test('a user settings file with a severed tail still lets the repo layer win', async ($, on) => {
     const user = `${settings({ tiers: { workhorse: 'haiku' } })}{`
     const w = mkWorld(on, {
       repos: { [REPO]: settings({ tiers: { workhorse: 'sonnet' } }) },

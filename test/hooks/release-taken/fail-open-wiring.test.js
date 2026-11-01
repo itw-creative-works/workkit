@@ -1,16 +1,14 @@
-// Tests for safety:release-taken's logic: failing open out loud. Each case
-// ports the HEAD case its name quotes;
-// "malformed JSON, exit 0" is dropped with the shell spawn.
+// Tests for safety:release-taken's logic: failing open out loud.
 // The shared prologue (the lookups, the verdict call, the texts) is ./helpers.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { RELEASE, judge } = require('./helpers');
+const { RELEASE, judge, judgeRelease } = require('./helpers');
 
 const cases = async () => {
   group('release-taken: fail-open');
 
-  await test('ports "a provider that cannot tell stands down out loud, and the commit stands"', async () => {
-    const { deny, text } = await judge(RELEASE, { npmFails: true, ghFails: true });
+  await test('a provider that cannot tell stands down out loud, and the commit stands', async () => {
+    const { deny, text } = await judgeRelease(RELEASE, { npmFails: true, ghFails: true });
     assertEq(deny, null, 'an unanswerable check never blocks a release');
     for (const line of [
       'release-taken: the npm check stood down for widget@1.2.3: npm error code ENOTFOUND request to https://registry.npmjs.org failed',
@@ -20,7 +18,7 @@ const cases = async () => {
     }
   });
 
-  await test('ports "a publish behind a cd cannot be placed, so it stands down out loud"', async () => {
+  await test('a publish behind a cd cannot be placed, so it stands down out loud', async () => {
     const { deny, text, calls } = await judge('cd /other && npm publish', { npmTaken: ['widget@1.2.3'] });
     assertEq(deny, null, 'the package the command would publish is not the one here');
     assertEq(text, 'release-taken: the command changes directory, so the package being published could not be placed and the check stood down.',
@@ -28,18 +26,8 @@ const cases = async () => {
     assertEq(calls.npm.length, 0, `the session directory package is never judged instead, got: ${calls.npm.join(' ')}`);
   });
 
-  await test('ports "a message in a file leaves no subject to read, and says so"', async () => {
-    for (const c of ['git commit -F msg.txt', 'git commit --file=msg.txt']) {
-      const { deny, text, calls } = await judge(c, { npmTaken: ['widget@1.2.3'], tags: ['v1.2.3'] });
-      assertEq(deny, null, `an unreadable subject never blocks: ${c}`);
-      assertEq(text, 'release-taken: the commit message is in a file, so the release subject could not be read and the check stood down.',
-        `says the check did not run for ${c}`);
-      assertEq(calls.npm.length + calls.github.length, 0, `nothing is asked for ${c}`);
-    }
-  });
-
-  await test('ports "a workspace member that is not there is named, never skipped in silence"', async () => {
-    const { deny, text } = await judge('git commit -m "chore(release): 2.0.0"', {
+  await test('a workspace member that is not there is named, never skipped in silence', async () => {
+    const { deny, text } = await judgeRelease('chore(release): 2.0.0', {
       pkg: { name: 'family', version: '2.0.0', private: true, workspaces: ['packages/gone', 'apps/*'] },
     });
     assertEq(deny, null, 'a member that is not there takes nothing with it');

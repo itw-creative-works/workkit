@@ -68,16 +68,18 @@ const cases = async () => {
     cleanup(dir);
   });
 
-  await test('a devDependency and a peerDependency order the publish too', () => {
+  await test('a devDependency, a peerDependency and an optionalDependency order the publish too', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
       members: {
         'packages/a': pub('a', '1.0.0', { devDependencies: { b: '^1.0.0' } }),
         'packages/b': pub('b', '1.0.0', { peerDependencies: { c: '*' } }),
-        'packages/c': pub('c', '1.0.0'),
+        'packages/c': pub('c', '1.0.0', { optionalDependencies: { d: '*' } }),
+        'packages/d': pub('d', '1.0.0'),
       },
     });
-    assertEq(plan(dir).publish.map((p) => p.name).join(','), 'c,b,a', 'every dependency field orders');
+    // By name alone c would go before d; the optional dependency puts d first.
+    assertEq(plan(dir).publish.map((p) => p.name).join(','), 'd,c,b,a', 'every dependency field orders');
     cleanup(dir);
   });
 

@@ -1,14 +1,13 @@
-// Tests for the Bash gate's logic, optinRepo({ command, cwd, roster, toplevel,
+// Tests for the Bash gate's logic, optinRepo({ command, cwd, toplevel,
 // settingsOf }) in hooks/mods/optin.js: which repo a Bash command acts on and
 // whether it opted in, the port of hook_optin_repo. Each case ports the
 // loader.test.js case its name quotes. Not here: the Edit and link cases (no
-// command, the classic.PreToolUse gate), issue-guard running everywhere (the
-// chain's exempt list), the hooks-log and HOOK_DISABLE cases, and every case
-// whose --repo names a ROSTERED repo, since finding that repo's folder reads
-// its origin: those run in test/mods/guards-commit-language.test.ts.
+// command, the classic.PreToolUse gate) and the hooks-log and HOOK_DISABLE
+// cases, which run in test/mods/guards-tree-guard.test.ts.
 
 const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods } = require('../lib/mods-inputs');
+const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 // Each world folder holds its `repo` and is in no repo itself; `/w/nowhere`
 // and `/tmp` are in none at all.
@@ -17,7 +16,7 @@ const OPTED = { dir: '/w/o', repo: '/w/o/repo' };
 const NOT = { dir: '/w/n', repo: '/w/n/repo' };
 // Each repo's .workkit/settings.json as text, the form the gate reads.
 const SETTINGS = {
-  enabled: '{ "version": 1, "enabled": true }\n',
+  enabled: OPT_IN_SHAPES.current,
   declined: '{ "version": 1, "enabled": false }\n',
   legacy: '{ "version": 1 }\n',
 };
@@ -27,11 +26,9 @@ const toplevelIn = (repos) => async (dir) => Object.keys(repos)
   .filter((root) => dir === root || dir.startsWith(`${root}/`))
   .sort((a, b) => b.length - a.length)[0] ?? null;
 
-// The roster is the parsed ~/.workkit/.repos.json, null when the machine has
-// none: every repo these cases name by --repo is off it. settingsOf answers a
-// root's settings text, null for no file.
-const ask = (command, cwd, { repos = REPOS, roster = null } = {}) => mods('optin').optinRepo({
-  command, cwd, roster, toplevel: toplevelIn(repos), settingsOf: async (root) => repos[root] ?? null,
+// settingsOf answers a root's settings text, null for no file.
+const ask = (command, cwd, { repos = REPOS } = {}) => mods('optin').optinRepo({
+  command, cwd, toplevel: toplevelIn(repos), settingsOf: async (root) => repos[root] ?? null,
 });
 
 const runs = async (command, cwd, opts) => {
@@ -45,7 +42,7 @@ const stands = async (command, cwd, opts) => {
 const cases = async () => {
   group('optin: a repo that has not opted in');
 
-  await test('ports "no settings file: commit-gate and docs:change-tracker step aside"', async () => {
+  await test('no settings file: commit-gate and docs:change-tracker step aside', async () => {
     for (const [answer, settings, opted] of [['enabled', SETTINGS.enabled, true], ['none', null, false]]) {
       const r = await ask('git status', '/w/r', { repos: { '/w/r': settings } });
       assertEq(r.opted, opted, `a repo answering ${answer}`);
@@ -53,7 +50,7 @@ const cases = async () => {
     }
   });
 
-  await test('ports ""enabled": false steps aside; a file with no enabled key runs"', async () => {
+  await test('"enabled": false steps aside; a file with no enabled key runs', async () => {
     for (const [answer, settings, opted] of [['declined', SETTINGS.declined, false], ['legacy', SETTINGS.legacy, true]]) {
       const r = await ask('git status', '/w/r', { repos: { '/w/r': settings } });
       assertEq(r.opted, opted, `a repo answering ${answer}`);
@@ -61,56 +58,50 @@ const cases = async () => {
     }
   });
 
-  await test('ports "a --repo or -R inside quoted text names no repo; an issue URL does": the off-roster half', async () => {
-    await runs('git commit -m "kill the watcher before gh --repo acme/x runs"', OPTED.repo);
-    await runs('gh issue edit 3 --body "run grep -R foo/bar, then token x"', OPTED.repo);
-    await stands('gh issue edit https://github.com/acme/other/issues/3 --add-label x', OPTED.repo, { roster: { version: 1, repos: {} } });
-  });
-
-  await test('ports "outside any git repo: issue-guard fires, nothing else": the gate says no', async () => {
+  await test('outside any git repo: the gate says no', async () => {
     for (const command of ['git commit -m "feat: add x"', 'npm test']) await stands(command, NOWHERE);
   });
 
   group('optin: a Bash command that changes folder');
 
-  await test('ports "cd into an opted-in repo from no repo runs the hook"', async () => {
+  await test('cd into an opted-in repo from no repo runs the hook', async () => {
     await runs(`cd ${OPTED.repo} && git status`, NOWHERE);
   });
 
-  await test('ports "cd into a repo not opted in from no repo stands down"', async () => {
+  await test('cd into a repo not opted in from no repo stands down', async () => {
     await stands(`cd ${NOT.repo} && ls`, NOWHERE);
   });
 
-  await test('ports "cd into an opted-in repo from a repo not opted in runs the hook"', async () => {
+  await test('cd into an opted-in repo from a repo not opted in runs the hook', async () => {
     await runs(`cd ${OPTED.repo}; ls`, NOT.repo);
   });
 
-  await test('ports "a second cd resolves from where the first landed"', async () => {
+  await test('a second cd resolves from where the first landed', async () => {
     await runs('cd repo && cd sub && ls', OPTED.dir);
     await runs(`cd ${OPTED.dir} && cd repo && ls`, NOT.dir);
   });
 
-  await test('ports "a cd inside a subshell does not move the steps after it"', async () => {
+  await test('a cd inside a subshell does not move the steps after it', async () => {
     await runs(`(cd ${NOT.dir}) ; cd repo && ls`, OPTED.dir);
     await stands(`(cd ${NOT.repo}) && ls`, NOWHERE);
   });
 
-  await test('ports "a cd the loader cannot follow runs the hook"', async () => {
+  await test('a cd the loader cannot follow runs the hook', async () => {
     for (const command of ['cd "$X" && ls', 'cd ~/x && ls', 'pushd /tmp && ls', 'cd -P /tmp && ls', 'env cd /tmp']) {
       await runs(command, NOWHERE);
     }
   });
 
-  await test('ports "a cd in a heredoc body or a quoted string is not a step"', async () => {
+  await test('a cd in a heredoc body or a quoted string is not a step', async () => {
     await stands(`cat > f <<EOF\ncd ${OPTED.repo}\nEOF`, NOWHERE);
     await stands(`echo "cd ${OPTED.repo}"`, NOWHERE);
   });
 
-  await test('ports "an opted-in cwd still runs the hook after a cd out of it"', async () => {
+  await test('an opted-in cwd still runs the hook after a cd out of it', async () => {
     await runs('cd /tmp && ls', OPTED.repo);
   });
 
-  await test('ports "a command with no cd is judged by the cwd alone"', async () => {
+  await test('a command with no cd is judged by the cwd alone', async () => {
     await stands('ls', NOWHERE);
     const r = await ask('ls', OPTED.repo);
     assertEq(r.opted, true, 'ls in the opted-in repo runs the hook');
@@ -119,7 +110,7 @@ const cases = async () => {
 
   group('optin: a Bash command that moves its target without a plain cd');
 
-  await test('ports "git -C, GIT_DIR, --git-dir, bash -c and eval aimed at an opted-in repo run the hook, from no repo"', async () => {
+  await test('git -C, GIT_DIR, --git-dir, bash -c and eval aimed at an opted-in repo run the hook, from no repo', async () => {
     const repo = OPTED.repo;
     for (const command of [
       `git -C ${repo} commit -m x`,
@@ -130,7 +121,7 @@ const cases = async () => {
     ]) await runs(command, NOWHERE);
   });
 
-  await test('ports "a backtick substitution, CDPATH and a quoted cd word run the hook, from no repo"', async () => {
+  await test('a backtick substitution, CDPATH and a quoted cd word run the hook, from no repo', async () => {
     for (const command of [
       `x=\`cd ${OPTED.repo} && git status\``,
       `CDPATH=${OPTED.dir} cd repo && ls`,
@@ -138,31 +129,8 @@ const cases = async () => {
     ]) await runs(command, NOWHERE);
   });
 
-  await test('ports "a --repo off the roster decides only a command made of gh steps alone"', async () => {
-    await stands('gh pr create --repo acme/nothere --fill', OPTED.repo);
-    await runs('git commit -m x && gh pr create --repo acme/nothere --fill', OPTED.repo);
-  });
-
-  await test('ports "a "cd" inside a word is no cd: a hash and a path still stand down"', async () => {
+  await test('a "cd" inside a word is no cd: a hash and a path still stand down', async () => {
     await stands('git log 3acd12f && ls /x/abcd', NOWHERE);
-  });
-
-  group('optin: a gh command naming more than one repo');
-
-  const OFF = 'gh issue view 1 --repo acme/other';
-
-  await test('ports "a --repo whose value cannot be read runs the hook, from no repo"', async () => {
-    await runs('gh issue edit 5 --repo "$R" --add-label status:qa', NOWHERE);
-  });
-
-  await test('ports "a gh clause naming no repo brings the cwd in: runs from an opted-in repo, stands down from no repo"', async () => {
-    const here = `${OFF}; gh issue edit 5 --add-label status:qa`;
-    await runs(here, OPTED.repo);
-    await stands(here, NOWHERE);
-  });
-
-  await test('ports "a gh repo value that cannot be read in a mixed command runs the hook, from no repo"', async () => {
-    await runs('ls && gh issue edit 5 --repo "$R"', NOWHERE);
   });
 
   group('optin.js: rosterOf, the one roster read');

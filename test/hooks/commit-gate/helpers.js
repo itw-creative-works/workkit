@@ -1,10 +1,11 @@
 // The shared prologue of the safety:commit-gate logic suites beside this one,
 // one suite per check: a repo held in memory (HEAD, the index, the working
-// tree), the facts commitGateVerdict(facts) in hooks/mods/commit-gate.js reads
-// off it, and the block and notice texts, byte for byte the shell hook's. The
-// stubbed reads answer from the same repo: `show`, `run` (git, the tree-hash
-// entry, npm's script-shell), `issueView`; `lint` runs the real changelog
-// linter over a scratch copy of the repo, `jobRewrite` the real heal rewrite.
+// tree), the facts preCommitVerdict(facts) and commitMsgVerdict(facts) in
+// hooks/mods/commit-gate.js read off it, and the block and notice texts, byte
+// for byte the shell hook's. The stubbed reads answer from the same repo:
+// `show`, `run` (git, npm's script-shell), `issueView`;
+// `lint` runs the real changelog linter over a scratch copy of the repo,
+// `jobRewrite` the real heal rewrite.
 
 const path = require('path');
 const fs = require('fs');
@@ -14,7 +15,7 @@ const { spawnSync } = require('child_process');
 const { assert, assertEq, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
-const { mkRepo: mkGitRepo, FIXTURE_ORIGIN } = require('../../lib/git-repo');
+const { mkRepo: mkGitRepo, FIXTURE_ORIGIN, OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const KIT = fs.realpathSync(path.join(__dirname, '..', '..', '..'));
 const WORKFLOW_DIR = path.join(KIT, 'workflow');
@@ -25,23 +26,14 @@ const LINTER = path.join(WORKFLOW_DIR, 'changelog', 'lint.js');
 const WRAPPER = fs.realpathSync(path.join(WORKFLOW_DIR, 'script-shell.sh'));
 
 const ROOT = '/w/repo';
-const ELSEWHERE = '/w/elsewhere';
 // The clock: HEAD was committed a minute before now; a fresh marker is now.
 const NOW_S = 1800000000;
 const HEAD_TIME = NOW_S - 60;
-const OPTED = '{ "version": 1, "enabled": true }\n';
+const OPTED = OPT_IN_SHAPES.current;
 
 // --- The texts, the shell hook's own. ---
 const PREFIX = 'commit-gate: BLOCKED this commit: ';
-const OWN_DIR = "Run the commit from the repo's own directory so the gate can see its staging.";
 const T = {
-  wrapped: "the commit is wrapped in an interpreter string (sh -c / eval); run a plain 'git commit ...' directly so the gate can read its flags and message.",
-  cd: "the command changes directory before committing; run a plain 'git commit' with the session already in the repo so the gate can see its staging.",
-  stage: "the command stages and commits in one call, so the gate cannot see what the commit will carry; stage first (its own command), then run a plain 'git commit'.",
-  dashC: `uses 'git -C'. ${OWN_DIR}`,
-  uses: (flag) => `uses '${flag}'. ${OWN_DIR}`,
-  sets: (name) => `sets ${name}. ${OWN_DIR}`,
-  noRepo: "the session's directory is not inside a git repository, so the gate cannot see what this commit would carry. cd into the repo's root as its own command first, then run a plain 'git commit' there.",
   newFiles: (list) => `the commit adds new source files (${list}) but touches no test file. The test obligation scales with the change (AGENTS.md §6): write/extend tests for the new files, stage them, then commit.`,
   noReview: 'the commit contains code and no review has run. Run the workkit:review skill on the diff first (it records a marker), then commit.',
   stale: "the review marker predates the last commit. This commit's code has not been reviewed. Run the workkit:review skill again, then commit.",
@@ -49,7 +41,6 @@ const T = {
   fixes: 'the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit.',
   unpassed: (list) => `the message names issues the owner has not passed: ${list}. The owner's pass moves an issue to status:complete before a commit names it (docs/project-state.md, "The park"): leave the work uncommitted until then, or drop the reference.`,
   unproved: (list) => `the message closes${list}, and no comment there opens with a \`Proof:\` line. A proof is a hard gate (docs/project-state.md, "The proof"): the agent that built the item comments the Proof: line first, one entry per layer with the command or the reason it was skipped, and only then does the trailer close the issue.`,
-  pathspec: 'a pathspec commit carries a tree the gate cannot compare with the record: stage the files and commit from the index.',
   disk: 'the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (`git add -A`), or run `workkit prove` to prove the staged tree alone (the suite runs on a copy of the index, and the folder stays as it is), then commit.',
   unwired: "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root `npm test` writes no record. Run `workkit setup` once, then `npm test` at the repo root, then commit.",
   // The record block names the suite log, whose path no fact carries: its two ends.
@@ -57,7 +48,7 @@ const T = {
   recordTail: '), then commit.',
 };
 const NOTICE = {
-  nothing: 'commit-gate: nothing staged and no -a/pathspec: the gate has nothing to judge, so no check ran (suite included).',
+  nothing: 'commit-gate: nothing staged: pre-commit has nothing to judge, so its checks did not run (suite included); commit-msg still judges the message.',
   proved: 'commit-gate: suite proved: a green root `npm test` recorded this tree.',
   noCode: 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).',
   unread: (n) => `commit-gate: could not read issue #${n} (gh could not answer), so its stage and proof checks did not run.`,
@@ -67,7 +58,8 @@ const NOTICE = {
 // --- The repo in memory. ---
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex');
 const blobOf = (text) => sha1(`blob ${Buffer.byteLength(text)}\0${text}`);
-const treeOf = (files) => sha1(`tree ${JSON.stringify(Object.keys(files).sort().map((p) => [p, files[p]]))}`);
+// A tree id as the kit takes one: `.workkit/` is left out.
+const treeOf = (files) => sha1(`tree ${JSON.stringify(Object.keys(files).filter((p) => !p.startsWith('.workkit/')).sort().map((p) => [p, files[p]]))}`);
 
 /**
  * A repo at ROOT with one commit: `.workkit/settings.json` unless `optIn` is
@@ -99,8 +91,6 @@ const stage = (r, name, text) => { r.index[name] = text; r.work[name] = text; };
 const write = (r, name, text) => { r.work[name] = text; };
 /** `git rm`: gone from the index and the working tree. */
 const gitRm = (r, name) => { delete r.index[name]; delete r.work[name]; };
-/** A file deleted from the working tree alone. */
-const unlink = (r, name) => { delete r.work[name]; };
 /** `git commit` of the index. */
 const commit = (r) => { r.head = { ...r.index }; };
 /** The review marker the skill records, newer than HEAD. */
@@ -113,8 +103,6 @@ const proveTree = (r, tree = workTree(r)) => { r.record = `${tree}\n`; };
 
 const workTree = (r) => treeOf(r.work);
 const indexTree = (r) => treeOf(r.index);
-// The tree `git commit -a` carries: the index with every tracked change taken.
-const allTree = (r) => treeOf(Object.fromEntries(Object.keys(r.index).filter((p) => p in r.work).map((p) => [p, r.work[p]])));
 
 const union = (a, b) => [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
 const stagedList = (r) => union(r.head, r.index).filter((p) => r.head[p] !== r.index[p]);
@@ -202,7 +190,6 @@ function git(r, args, dir, init) {
     }
     return runResult();
   }
-  if (sub === 'write-tree') return runResult({ stdout: `${indexTree(r)}\n` });
   if (sub === 'log') return runResult({ stdout: `${r.headTime}\n` });
   if (sub === 'hash-object') return hashed(r, more, init);
   return runResult({ exitCode: 1 });
@@ -255,13 +242,12 @@ const realRun = (argv, init) => {
 function runStub(r, cwd) {
   return async (argv, init = {}) => {
     r.calls.run.push({ argv: [...argv], init });
+    // A failOn answer with `isStarted: false` is a program that never started, its exit null;
+    // any other is a program that started, whatever its exit (a signal's is null).
     const failed = r.failOn ? r.failOn(argv) : null;
-    if (failed) return runResult(failed);
+    if (failed) return failed.isStarted === false ? { ...runResult(failed), exitCode: null, isStarted: false } : { ...runResult(failed), isStarted: true };
     const tool = path.basename(argv[0]);
     if (tool === 'git') return git(r, argv.slice(1), init.cwd || cwd, init);
-    if (argv.some((a) => a.endsWith('tree-hash.sh'))) {
-      return runResult({ stdout: `${argv.includes('-u') || argv.includes('--index') ? allTree(r) : workTree(r)}\n` });
-    }
     if (argv.some((a) => a.endsWith('changelog-job.sh')) && argv.includes('rewrite')) {
       const at = argv.indexOf('rewrite');
       const out = rewriteOf(r, argv[at + 1], argv[at + 2]);
@@ -289,6 +275,9 @@ function runStub(r, cwd) {
       for (const p of argv.slice(1).filter((a) => !a.startsWith('-') && a.startsWith(fs.realpathSync(os.tmpdir())))) fs.rmSync(p, { recursive: true, force: true });
       return runResult();
     }
+    // `bash <kit>/workflow/lib/tree-hash.sh <root> -i`, the gate's tree: the index's id.
+    const hash = argv.findIndex((a) => a.endsWith('tree-hash.sh'));
+    if (tool === 'bash' && hash >= 0 && argv[hash + 2] === '-i') return runResult({ stdout: `${indexTree(r)}\n` });
     if (tool === 'bash' && argv.slice(1).some((a) => a.startsWith(KIT))) return realRun(argv, init);
     return runResult({ exitCode: 127, stderr: `${tool}: command not found\n` });
   };
@@ -310,27 +299,26 @@ const materialize = (r) => {
 };
 
 /**
- * commitGateVerdict's facts off the repo, for `command` run from `cwd`. Past
- * the Contract's names it carries `originless` and `read(path)` (a working
- * tree file's text, or null), the reads its list leaves out (the run stub
- * answers the origin read too); `hashOf` is the real hash-object, autocrlf in;
- * `real` answers a file on disk, null for none; `indexTreeId` is the -a tree. `lintSource` is what the linter reads: the
- * index, or the working tree (an -a/--all commit, a pathspec commit).
+ * The facts the git hooks' judge gathers at the repo root, off the repo: the
+ * commit's index is `staged` and `treeId` (its tree, `.workkit/` left out), `changed` the
+ * working tree's edits, `diskTreeId` the working tree's id. Past the Contract's names it carries `originless` and
+ * `read(path)` (a working tree file's text, or null), the reads its list leaves
+ * out; `hashOf` is the real hash-object, autocrlf in; `real` answers a file on
+ * disk, null for none; `lint` reads the index, as the hook's own run does.
  */
-const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
-  const inside = inRepo(cwd);
-  const source = lintSource ?? (/(^|\s)(-[A-Za-z]*a[A-Za-z]*|--all)(\s|$)/.test(command) ? 'work' : 'index');
+const factsOf = (r) => {
   let scratch = null;
   return {
-    command,
-    cwd,
-    root: inside ? ROOT : null,
-    staged: inside ? stagedList(r) : [],
-    changed: inside ? changedList(r) : [],
+    cwd: ROOT,
+    root: ROOT,
+    staged: stagedList(r),
+    changed: changedList(r),
     headTime: r.headTime,
     reviewMarker: r.marker,
     suiteRecord: r.record,
-    treeId: inside ? workTree(r) : null,
+    treeId: indexTree(r),
+    // The folder's tree, which the record proves when the run had more on disk than the commit carries.
+    diskTreeId: workTree(r),
     isWindows: r.isWindows,
     scriptShell: r.scriptShell,
     scriptShellExe: r.scriptShellExe ?? null,
@@ -342,7 +330,7 @@ const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
       const side = sideOf(r, at);
       return file in side ? side[file] : null;
     },
-    run: runStub(r, cwd),
+    run: runStub(r, ROOT),
     issueView: async (n) => {
       r.calls.issueView.push(String(n));
       const issue = r.issues[n];
@@ -353,7 +341,7 @@ const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
     lint: async (p, ...rest) => {
       r.calls.lint.push([p, ...rest]);
       scratch ??= materialize(r);
-      const res = spawnSync(process.execPath, [LINTER, path.join(scratch, relOf(p)), '--added-only', ...(source === 'index' ? ['--staged'] : [])],
+      const res = spawnSync(process.execPath, [LINTER, path.join(scratch, relOf(p)), '--added-only', '--staged'],
         { cwd: scratch, encoding: 'utf8', timeout: SPAWN_DEADLINE });
       return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
     },
@@ -361,7 +349,7 @@ const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
       r.calls.jobRewrite.push([a, b]);
       return rewriteOf(r, a, b);
     },
-    originless: inside && r.origin === null,
+    originless: r.origin === null,
     read: async (p) => readWork(r, p),
     kitRoot: KIT,
     // On a Windows world `real` plays the stub cygpath: a leading drive is dropped first.
@@ -369,7 +357,6 @@ const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
       const q = r.isWindows && typeof p === 'string' ? p.replace(/^[A-Za-z]:/, '') : p;
       return onDisk(q) ? fs.realpathSync(q) : null;
     },
-    indexTreeId: async () => (inside ? allTree(r) : null),
     hashOf: async (p, text) => {
       scratch ??= materialize(r);
       const res = spawnSync('git', ['-c', `core.autocrlf=${r.autocrlf}`, 'hash-object', `--path=${relOf(p)}`, '--stdin'], { cwd: scratch, input: text, encoding: 'utf8' });
@@ -379,8 +366,22 @@ const factsOf = (r, command, { cwd = ROOT, lintSource } = {}) => {
   };
 };
 
-/** The verdict on `command` over the repo's facts. */
-const judge = (r, command, opts) => mods('commit-gate').commitGateVerdict(factsOf(r, command, opts));
+/**
+ * A commit of the index with `message`, as git runs its two hooks: pre-commit's
+ * verdict, then commit-msg's over the same facts, each notice kept in that
+ * order. A deny from either ends the commit; with nothing staged git stops
+ * before commit-msg, so only pre-commit's verdict is asked.
+ */
+const judge = async (r, message = 'feat: thing') => {
+  const gate = mods('commit-gate');
+  const facts = factsOf(r);
+  const pre = await gate.preCommitVerdict(facts);
+  if (pre && typeof pre.deny === 'string') return pre;
+  if (facts.staged.length === 0) return pre;
+  const msg = await gate.commitMsgVerdict({ ...facts, message });
+  if (msg && typeof msg.deny === 'string') return msg;
+  return { context: [pre, msg].map((v) => (v && v.context !== undefined ? textOf(v.context) : '')).filter(Boolean).join('\n') };
+};
 
 const denyOf = (v) => (v && typeof v.deny === 'string' ? v.deny.replace(/\n$/, '') : null);
 const contextOf = (v) => (v && v.context !== undefined ? textOf(v.context) : '');
@@ -432,8 +433,8 @@ const shipReadyRepo = () => {
 };
 
 module.exports = {
-  KIT, WORKFLOW_DIR, JOB, TEMPLATE, WRAPPER, ROOT, ELSEWHERE, NOW_S, PREFIX, T, NOTICE,
-  mkRepo, stage, write, gitRm, unlink, commit, touchMarker, staleMarker, dropMarker, proveTree,
+  KIT, WORKFLOW_DIR, JOB, TEMPLATE, WRAPPER, ROOT, NOW_S, PREFIX, T, NOTICE,
+  mkRepo, stage, write, gitRm, commit, touchMarker, staleMarker, dropMarker, proveTree,
   factsOf, judge, denyOf, contextOf, blocks, passes, recordBlocks, suiteRan, realRewrite,
   pkg, mkReleaseRepo, CHANGELOG, ISSUE, ENTRY, shipReadyRepo,
 };

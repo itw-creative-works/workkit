@@ -7,14 +7,15 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  NODE_DIR, SYSTEM_PATH, shellPath, joinPath,
+  NODE_DIR, SYSTEM_PATH, BASH, NO_RC, shellPath, joinPath,
 } = require('../lib/platform');
-const { mkRepo: mkGitRepo } = require('../lib/git-repo');
-const { suiteMarkerPath, plantRecord } = require('../lib/suite-record');
+const { mkRepo: mkGitRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
+const { suiteMarkerPath, plantRecord, kitIndexTree } = require('../lib/suite-record');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const {
   cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, wiredNpmEnv,
@@ -22,7 +23,7 @@ const {
 const { runCli } = require('./workkit-cli/helpers');
 
 const issue = (number) => ({ number, labels: [{ name: 'status:building' }, { name: 'type:feature' }] });
-const OPT_IN = '{ "version": 1, "enabled": true }\n';
+const OPT_IN = OPT_IN_SHAPES.current;
 const DECLINED = '{ "version": 1, "enabled": false }\n';
 const RAN = 'echo ran > "$WK_RAN"';
 const HELD = (n) => `still building: #${n}`;
@@ -60,6 +61,16 @@ const assertRefused = (res, text, label) => {
   assertEq(res.code, 1, `${label}: refused with exit 1, got: ${res.code} ${res.said}`);
   assert(res.said.includes(text), `${label}: the refusal says ${JSON.stringify(text)}, got: ${res.said}`);
   assert(!res.ran, `${label}: the suite never ran`);
+};
+
+// wk_suite_hold <root> <reader> called in bash with the libs script-shell.sh
+// sources before it, under `env`; the reader is the shell function `name() { body; }`.
+const LIBS = ['platform', 'participation', 'slug', 'suite', 'hold'].map((n) => path.join(__dirname, '..', '..', 'workflow', 'lib', `${n}.sh`));
+const holdWith = (root, name, body, env) => {
+  const script = `${LIBS.map((_, i) => `. "$${i + 1}"`).join('; ')}; ${name}() { ${body}; }; wk_suite_hold "$${LIBS.length + 1}" ${name}`;
+  const res = spawnSync(BASH, [...NO_RC, '-c', script, 'bash', ...LIBS.map(shellPath), shellPath(root)],
+    { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+  return { code: res.status, err: res.stderr || '' };
 };
 
 // The working tree made to differ from the index, so a record of one is no record of the other.
@@ -169,6 +180,28 @@ const cases = async () => {
     buildingB.done();
   });
 
+  group('suite hold: a tree that cannot be hashed');
+
+  await test('a reader that exits 1: one suite-hold line naming the failed hash, return 0, no refusal on an empty tree', () => {
+    const w = mkGitRepo('suite-hold-reader-', { 'app.js': 'const x = 1;\n' });
+    plantRecord(w.workflowHome, w.repo, '');
+    const gh = makeGhStub({ lists: { repo: [] } });
+    const res = holdWith(w.repo, 'failing_reader', 'return 1', { ...w.env, PATH: joinPath(gh.binDir, NODE_DIR, SYSTEM_PATH), CLAUDECODE: '1' });
+    assertEq(res.code, 0, `the run goes on, got: ${res.code} ${res.err}`);
+    assertEq(JSON.stringify(res.err.split('\n').filter(Boolean)), JSON.stringify(['suite-hold: the tree could not be hashed (failing_reader exited 1), so the proved-tree check did not run; the building hold still judges']),
+      'one stderr line naming the reader and its exit');
+    cleanup(w.dir);
+  });
+
+  await test('a reader that exits 1 with an issue building: the building hold still refuses', () => {
+    const w = mkGitRepo('suite-hold-reader-', { 'app.js': 'const x = 1;\n' });
+    const gh = makeGhStub({ lists: { repo: [issue(7)] } });
+    const res = holdWith(w.repo, 'failing_reader', 'return 1', { ...w.env, PATH: joinPath(gh.binDir, NODE_DIR, SYSTEM_PATH), CLAUDECODE: '1' });
+    assertEq(res.code, 1, `refused, got: ${res.code} ${res.err}`);
+    assert(res.err.includes(HELD(7)), `naming #7, got: ${res.err}`);
+    cleanup(w.dir);
+  });
+
   group('suite hold: workkit prove and workkit test');
 
   await test('case 9: workkit prove refuses with the index tree already recorded, or an issue building', () => {
@@ -193,7 +226,7 @@ const cases = async () => {
     };
     const recordedIndex = prove({ repo: [] }, (w) => {
       stageThenEdit(w);
-      plantRecord(w.workflowHome, w.repo, w.git('write-tree').trim());
+      plantRecord(w.workflowHome, w.repo, kitIndexTree(w.repo, w.env));
     });
     assertRefused(recordedIndex.res, PROVED, 'the index tree recorded');
     recordedIndex.done();

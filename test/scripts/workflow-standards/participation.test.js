@@ -10,8 +10,9 @@ const {
 const {
   IS_WINDOWS, SYSTEM_BASH, NO_RC, gitPath, shellPath,
 } = require('../../lib/platform');
+const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const {
-  WORKFLOW_DIR, cleanup, rosterOf, makeRepo, binDirWithout, runScript, STANDARD_VERSION,
+  WORKFLOW_DIR, cleanup, rosterOf, makeRepo, binDirWithout, runScript,
 } = require('./helpers');
 
 const cases = async () => {
@@ -206,10 +207,7 @@ const cases = async () => {
     const settings = path.join(repo, W, 'settings.json');
     assert(fs.existsSync(settings), 'the repo now carries its yes');
     const parsed = JSON.parse(fs.readFileSync(settings, 'utf8'));
-    assertEq(parsed.enabled, true, 'enabled: true');
-    // A repo opting in today is born at the current standard: there is no
-    // legacy layout for the drift report to find.
-    assertEq(parsed.version, STANDARD_VERSION, `version: ${STANDARD_VERSION}`);
+    assertEq(JSON.stringify(parsed), JSON.stringify({ enabled: true }), 'enabled: true, and no version key');
     assert(stdout.includes('commit it'), `says the file must be committed, got: ${stdout}`);
     assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'and the heal ran');
     assertEq(stateOf(repo), 'enabled', 'state');
@@ -233,7 +231,7 @@ const cases = async () => {
     // them. The text says enabled, so only the unreadable read can answer.
     const dir = mkTmp('wf-std-');
     const file = path.join(dir, 'settings.json');
-    fs.writeFileSync(file, '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(file, OPT_IN_SHAPES.current);
     fs.chmodSync(file, 0o000);
     const binDir = binDirWithout('jq');
     const res = spawnSync(SYSTEM_BASH, [

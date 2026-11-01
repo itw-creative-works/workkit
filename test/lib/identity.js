@@ -1,7 +1,8 @@
 // The shared fixtures of the identity suites: the user's sign-in as the login
 // store holds and writes it, the token service's address in the settings, a local
 // HTTP stand-in for GitHub or the token service, a scratch kit and its scrubbed env,
-// doctor's attention count, the response and failure helpers, and a keyboard run.
+// doctor's attention count, the response and failure helpers, a keyboard run, and
+// the gh journal the shim appends to, as text and split into its fields.
 
 const fs = require('fs');
 const path = require('path');
@@ -10,6 +11,7 @@ const {
   assert, mkTmp, until, start, SPAWN_DEADLINE,
 } = require('./harness');
 const { IS_WINDOWS, SYSTEM_PATH, which, homeEnv } = require('./platform');
+const { suiteMarkerPath } = require('./suite-record');
 
 /** The identity line a cloud session prints, in doctor and in setup --cloud. */
 const IDENTITY_NA = 'identity: not applicable in a cloud session; the session\'s GitHub proxy signs every call as the account';
@@ -28,6 +30,12 @@ const DEVICE_CODE = {
 // The token service's not-installed fix for acme.
 const INSTALL_FIX = 'install workkit-agent[bot] on acme: https://github.com/apps/workkit-agent';
 
+// The kit's install page pre-selected on an owner, less the id; the --bot line
+// after a refusal naming it; the refusal for an owner spelled Old whose id GitHub cannot give.
+const PRESELECTED = 'https://github.com/apps/workkit-agent/installations/new/permissions?suggested_target_id=';
+const BOT_HINT = 'or run: workkit setup --bot';
+const UNREADABLE = 'install workkit-agent[bot] on Old: owner id unreadable from GitHub, retry';
+
 /**
  * A GitHub stand-in's routes for a device flow that finishes at once: the code
  * carrying `userCode`, a first poll granting `accessToken`, `/user` as `login`.
@@ -37,6 +45,22 @@ const deviceFlowRoutes = ({ userCode, accessToken, login }) => [
   { method: 'POST', url: '/login/oauth/access_token', status: 200, body: JSON.stringify({ access_token: accessToken, token_type: 'bearer', scope: '' }) },
   { method: 'GET', url: '/user', status: 200, body: JSON.stringify({ login }) },
 ];
+
+/**
+ * A GitHub stand-in's route for `GET /repos/<sent>`, answering the repo's
+ * canonical `full_name` and owner `{ login, id }`, as GitHub does after a rename.
+ */
+const repoRoute = (sent, fullName, id) => ({
+  method: 'GET',
+  url: `/repos/${sent}`,
+  status: 200,
+  body: JSON.stringify({ full_name: fullName, owner: { login: fullName.split('/')[0], id } }),
+});
+
+/** A GitHub stand-in's route for the public `GET /users/<login>`, answering `{ login, id }`. */
+const userRoute = (login, id) => ({
+  method: 'GET', url: `/users/${login}`, status: 200, body: JSON.stringify({ login, id }),
+});
 
 /** Write `<home>/.workkit/identity/login.json` as `{ token, login }`, the folder made; returns its path. */
 const writeLogin = (home, { token, login }) => {
@@ -52,7 +76,7 @@ const readWrittenLogin = (home) => JSON.parse(fs.readFileSync(path.join(home, '.
 /** Point `<home>/.workkit/settings.json` at the token service `url`, merged into what is there. */
 const useTokenService = (home, url) => {
   const file = path.join(home, '.workkit', 'settings.json');
-  const current = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : { version: 1 };
+  const current = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ ...current, identity: { tokenUrl: url } }, null, 2)}\n`);
 };
@@ -89,9 +113,9 @@ const failureOf = async (fn) => {
 };
 
 // The server runs in its own process, so a suite blocked in spawnSync on the
-// command under test still gets its answer. A request matching a route by method
-// and url gets that route's answer, the next of its `answers` when it has them
-// (the last repeating); any other is a 501. Every one is recorded.
+// command under test still gets its answer. A request matching a route by method,
+// url and `whenBody` gets that route's answer, the next of its `answers` when it
+// has them (the last repeating); any other is a 501. Every one is recorded.
 const SERVER = `
 const http = require('http');
 const fs = require('fs');
@@ -104,7 +128,10 @@ const server = http.createServer((req, res) => {
   req.on('data', (chunk) => { body += chunk; });
   req.on('end', () => {
     fs.appendFileSync(log, JSON.stringify({ method: req.method, url: req.url, auth: req.headers.authorization || '', body }) + '\\n');
-    const i = routes.findIndex((r) => r.method === req.method && r.url === req.url);
+    let sent = null;
+    try { sent = JSON.parse(body); } catch {}
+    const wanted = (r) => !r.whenBody || (sent !== null && Object.keys(r.whenBody).every((k) => sent[k] === r.whenBody[k]));
+    const i = routes.findIndex((r) => r.method === req.method && r.url === req.url && wanted(r));
     const seq = i < 0 ? [] : (routes[i].answers || [routes[i]]);
     const hit = i < 0 ? null : seq[Math.min(hits[i], seq.length - 1)];
     if (i >= 0) hits[i] += 1;
@@ -118,7 +145,8 @@ server.listen(0, '127.0.0.1', () => process.stdout.write(server.address().port +
 /**
  * A local HTTP server answering each of `routes` (`{ method, url, status, body }`,
  * body a JSON string, or `{ method, url, answers: [{ status, body }] }` answered
- * in order, the last repeating) and 501 to anything else: `{ url, requests(),
+ * in order, the last repeating; a `whenBody` object narrows a route to requests
+ * whose JSON body holds each of its keys) and 501 to anything else: `{ url, requests(),
  * close() }`, where `requests()` lists `{ method, url, auth, body }`, body as text.
  */
 const startServer = async (routes, dir) => {
@@ -141,12 +169,29 @@ const startService = (status, body) => startServer(
   mkTmp('wk-identity-service-'),
 );
 
-/** A scratch kit holding a copy of this checkout's `workflow/`; returns the kit folder. */
+/**
+ * A scratch kit holding a copy of this checkout's `workflow/` and `hooks/`, the
+ * shim's gate loading the guards from the second; returns the kit folder.
+ */
 const scratchKit = () => {
   const kit = mkTmp('wk-identity-kit-');
-  fs.cpSync(path.join(KIT, 'workflow'), path.join(kit, 'workflow'), { recursive: true });
+  for (const dir of ['workflow', 'hooks']) fs.cpSync(path.join(KIT, dir), path.join(kit, dir), { recursive: true });
   return kit;
 };
+
+/**
+ * The gh journal's text for <dir>'s repo under the workflow <home>, '' when the
+ * file is absent. The file sits beside the suite record, keyed the same way:
+ * `<home>/markers/claude-gh-journal/<sha1 of the root>`.
+ */
+const journalFileText = (home, dir) => {
+  const record = suiteMarkerPath(home, dir);
+  const file = path.join(path.dirname(path.dirname(record)), 'claude-gh-journal', path.basename(record));
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+};
+
+/** journalFileText's lines, each split on its tabs. */
+const journalLines = (home, dir) => journalFileText(home, dir).split('\n').filter(Boolean).map((line) => line.split('\t'));
 
 /**
  * This run's env with `home` its home and `extra` added, always minus the user
@@ -159,6 +204,9 @@ const scratchEnv = (home, extra = {}) => {
   if (!('GITHUB_API_URL' in extra)) delete env.GITHUB_API_URL;
   return env;
 };
+
+/** The env pair pointing GitHub's web and API hosts at the stand-in `server`. */
+const hostsOf = (server) => ({ GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url });
 
 /** The count doctor's closing line gives, 0 when it reports everything current. */
 const attentionCount = (said) => {
@@ -203,6 +251,6 @@ const atTerminal = (argv, { env, cwd, dir }) => {
 };
 
 module.exports = {
-  IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf,
-  startServer, startService, scratchKit, scratchEnv, attentionCount, PTY, atTerminal,
+  IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf,
+  startServer, startService, scratchKit, scratchEnv, hostsOf, attentionCount, PTY, atTerminal, journalFileText, journalLines,
 };

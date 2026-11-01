@@ -11,7 +11,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, until, alive, start, endTree, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
-  stubTool, pathWith, systemPathWith,
+  stubTool, stubNode, pathWith, systemPathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
@@ -159,6 +159,44 @@ const cases = async () => {
     const bare = inPlatform('set -u; unset HOME; wk_user_dir');
     assertEq(bare.code, 0, `no unbound-variable abort: ${bare.err}`);
     assertEq(bare.out, '/.workkit\n', 'the default with no HOME');
+  });
+
+  group('platform.sh: wk_node');
+
+  /** A scratch home and a PATH folder, each holding the node stubs `nodes` names (`path`, `default`, nvm `vX.Y.Z`). */
+  const nodeWorld = (nodes) => {
+    const dir = mkTmp('wf-platform-node-');
+    const bin = path.join(dir, 'bin');
+    const home = path.join(dir, 'home');
+    fs.mkdirSync(home);
+    for (const [where, version] of Object.entries(nodes)) {
+      if (where === 'path') stubNode(bin, version);
+      else if (where === 'default') stubNode(path.join(home, '.nvm', 'default-bin'), version);
+      else stubNode(path.join(home, '.nvm', 'versions', 'node', where, 'bin'), version);
+    }
+    fs.mkdirSync(bin, { recursive: true });
+    return { env: { PATH: systemPathWith(bin), HOME: shellPath(home) }, bin, home };
+  };
+
+  await test('wk_node: a PATH node older than 22.12 is passed over for the newer one nvm keeps', () => {
+    const w = nodeWorld({ path: '20.15.1', 'v22.16.0': '22.16.0' });
+    const { code, out, err } = inPlatform('wk_node', w.env);
+    assertEq(code, 0, `a qualifying node was found, stderr: ${err}`);
+    assertEq(out.trim(), `${shellPath(w.home)}/.nvm/versions/node/v22.16.0/bin/node`, 'the nvm node, not the PATH one');
+  });
+
+  await test('wk_node: a PATH node at exactly 22.12.0 is the pick, ahead of a newer nvm node', () => {
+    const w = nodeWorld({ path: '22.12.0', 'v22.16.0': '22.16.0' });
+    const { code, out, err } = inPlatform('wk_node', w.env);
+    assertEq(code, 0, `the floor itself qualifies, stderr: ${err}`);
+    assertEq(out.trim(), `${shellPath(w.bin)}/node`, 'the PATH node, first in the order');
+  });
+
+  await test('wk_node: with no node at 22.12 or newer anywhere it looks, it prints nothing and exits 1', () => {
+    const w = nodeWorld({ path: '20.15.1', default: '21.7.3', 'v18.20.4': '18.20.4' });
+    const { code, out } = inPlatform('wk_node', w.env);
+    assertEq(code, 1, 'none qualifies');
+    assertEq(out, '', `no path printed, got: ${JSON.stringify(out)}`);
   });
 
   group("platform.sh: npm's script shell");

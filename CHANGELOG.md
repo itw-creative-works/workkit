@@ -7,6 +7,23 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#498](../../issues/498) - A test record's tree id leaves out `.workkit/`, for the working tree, each package and the index the commit gate and `workkit prove` compare, so a write there (the suite log, a marker, `settings.json`) no longer kills a green record.
+- [#495](../../issues/495) - The commit and `gh` guards judge the real action: git's own hooks at `~/.claude/workkit/githooks`, restored after install scripts, judge the staged tree and message; the `gh` shim judges each call's argv and journals its writes for the snapshot, public mirror and change tracker; three guards still parse command text.
+- [#494](../../issues/494) - Each package's test record is keyed to the code it can see, read from npm's `workspaces` and its members' dependency fields: an edit reruns only the package it lands in and the packages that depend on it, or every package when it lands outside every member.
+
+### Removed
+
+- [#498](../../issues/498) - The standard version and its drift report are gone: each daily heal runs every heal, removes the `version` key from `.workkit/settings.json`, `workkit enable` writes `{ "enabled": true }`, and `workkit:migrate` scans for the retired files itself. A machine still on an older kit writes the key back until it updates.
+
+### Fixed
+
+- [#500](../../issues/500) - A tool the gates cannot start is never read as an answer: the commit judge holds the commit naming it, check 3 and the changelog guard say they stood down, a failed git read denies the `status:qa` flip. The suite hold, opt-in, `#N` lines and `--dry-run` are fixed too.
+- [#499](../../issues/499) - The `status:qa` flip's tree-hash child runs with the gate's own environment, never the host's default, and when a package is still keyed to the whole tree for want of node, the block's head says so and names the fix.
+- [#496](../../issues/496) - `workkit ship watch` expands a short sha to the full commit id before it asks GitHub for runs, so a short sha no longer reads as "run not queued yet"; a sha the clone does not know exits 2 with a line saying so.
+- [#497](../../issues/497) - Before asking the token service, the client reads the repo's canonical owner (`GET /repos/<owner>/<repo>`) and asks under that name, so a clone whose remote spells a renamed owner gets its token; a not-installed refusal names the canonical owner's pre-selected install page, never the bare page.
+
 ## [0.87.1] - 2026-10-30
 
 ### Fixed

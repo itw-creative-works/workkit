@@ -2,9 +2,8 @@
  * hooks/mods/command.js: the command-text reads the Bash guards share: the
  * heredoc and quote strips, the `NAME=1` escape, the redirect `&` fold, the
  * prefix peel, the directory-change tests, the cd step, the step split and its
- * folder walk, the git-commit finder, the line-by-line test, and the origin
- * test that places a commit outside the pipeline. Plain functions over text;
- * the one that asks git takes `run`.
+ * folder walk, git's subcommand, the line-by-line test, and the slug rule over
+ * a remote. Plain functions over text.
  */
 
 /** The word a quoted span becomes under stripQuotes. */
@@ -15,19 +14,12 @@ const BARE_OPS = new Set(['>', '>>', '>|', '<', '<>', '<<', '<<-', '<<<']);
 const INTERPRETER = /^(?:.*\/)?(?:sh|bash|zsh|dash|ksh)$/;
 /** git's global options that take a separate value, so a walk never reads it as the subcommand. */
 export const GIT_VALUE_FLAGS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path']);
-const STAGING = new Set(['add', 'rm', 'mv', 'stage']);
 
 // A heredoc feeding an interpreter, whose body is executed code (grep's lines).
 const FED_HEREDOC = /(^|[^A-Za-z0-9_.-])(bash|sh|zsh|dash|ksh|eval|env)([ \t\r\f\v][^;&|\n]*)?<</m;
 const HEREDOC_BODY = /(<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\2)[\s\S]*?\n[\t ]*\3[\t ]*(?=\n|$)/g;
 const NAMES_DIR_CHANGE = /(^|[^A-Za-z0-9_.-])(cd|pushd|popd)([^A-Za-z0-9_.-]|$)/;
 const BLANK_STEP = /^[ \t\n\r\f\v]*$/;
-
-/**
- * The release subject's version, as a regex source: commit-language and
- * release-taken both read it, so one never accepts a release the other misses.
- */
-export const VERSION_RE = 'v?[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.-]+)?';
 
 /** The blank class without the newline, `[[:space:]]` as grep reads a line, for a regex source. */
 export const BLANK = '[ \\t\\v\\f\\r]';
@@ -243,7 +235,7 @@ export function namesDirChange(text) {
  * @param {string} word one word
  * @returns {string}
  */
-export function unquoteWord(word) {
+function unquoteWord(word) {
   const quoted = word.length > 1 && (word[0] === '"' || word[0] === "'") && word.at(-1) === word[0];
   return quoted ? word.slice(1, -1) : word;
 }
@@ -284,7 +276,7 @@ export function cdStep(dir, step) {
  * @param {string} text the command text
  * @returns {Array<{kind: 'open'|'close'|'step', text?: string}>}
  */
-export function cmdSteps(text) {
+function cmdSteps(text) {
   const events = [];
   let step = '';
   const emit = () => {
@@ -330,42 +322,6 @@ export function stepDirs(text) {
   return steps;
 }
 
-// Does the Nth (0-based) non-empty quoted span of `src` carry git and commit as words?
-function spanIsCommit(src, n) {
-  const span = quotedSpans(src).filter(({ start, end }) => end - start > 2)[n];
-  if (!span) return false;
-  const text = src.slice(span.start, span.end);
-  return /\bgit\b/.test(text) && /\bcommit\b/.test(text);
-}
-
-// An interpreter's arguments: does a -c string carry a commit? `ci` counts the
-// placeholders already walked, so the span sits at ordinal pi+ci.
-function interpreterWraps(args, src, pi, ci) {
-  let expect = false;
-  let i = 0;
-  while (i < args.length) {
-    const a = args[i];
-    if (a.startsWith(PLACEHOLDER) || a[0] === '"' || a[0] === "'") return expect && spanIsCommit(src, pi + ci);
-    if (isShortCluster(a)) {
-      let cut = a.indexOf(PLACEHOLDER);
-      if (cut === -1) cut = a.search(/["']/);
-      if (cut !== -1) return a.slice(0, cut).endsWith('c') && spanIsCommit(src, pi + ci);
-      if (a.includes('c')) expect = true;
-      i += 1;
-    } else if (a.startsWith('--')) {
-      ci += count(a, PLACEHOLDER);
-      i += 1;
-    } else if (isRedirectish(a) && redirectSpan(a) > 0) {
-      const n = Math.min(redirectSpan(a), args.length - i);
-      ci += count(args.slice(i, i + n).join(' '), PLACEHOLDER);
-      i += n;
-    } else {
-      return false;
-    }
-  }
-  return false;
-}
-
 /**
  * git's subcommand past its global options, a value-taking one consuming its
  * value and a redirect skipped whole, and the words after it.
@@ -391,41 +347,6 @@ export function gitSubcommand(args) {
 }
 
 /**
- * A real `git ... commit` clause past the peeled prefixes.
- * @param {string} command the command text
- * @returns {{clause: string, sawCd: boolean, sawStage: boolean, wrapped: boolean}}
- *   the quote-stripped commit clause ('' for none), whether a cd, pushd or
- *   popd clause came first, whether add/rm/mv/stage came before the commit,
- *   and whether an `sh -c` or eval string carries one (read by position)
- */
-export function findGitCommit(command) {
-  const found = { clause: '', sawCd: false, sawStage: false, wrapped: false };
-  const src = stripHeredocs(command);
-  let pi = 0;
-  for (const clause of foldRedirectAmp(stripQuotes(src)).split(/[;|&\n]/)) {
-    const nc = count(clause, PLACEHOLDER);
-    const words = wordsOf(clause);
-    const { skip, isEval, word } = peelPrefixes(words);
-    if (DIR_CHANGES.has(word)) found.sawCd = true;
-    const ci = count(words.slice(0, skip).join(' '), PLACEHOLDER);
-    const rest = words.slice(skip);
-    if (rest.length > 0) rest[0] = word;
-    const head = rest[0] ?? '';
-    if (isEval && (head.startsWith(PLACEHOLDER) || head[0] === '"' || head[0] === "'")) {
-      if (spanIsCommit(src, pi + ci)) found.wrapped = true;
-    } else if (isInterpreter(head)) {
-      if (interpreterWraps(rest.slice(1), src, pi, ci)) found.wrapped = true;
-    } else if (isGitWord(head)) {
-      const { sub } = gitSubcommand(rest.slice(1));
-      if (STAGING.has(sub)) found.sawStage = true;
-      if (sub === 'commit') return { ...found, clause };
-    }
-    pi += nc;
-  }
-  return found;
-}
-
-/**
  * `owner/repo` from a git remote URL or a local path in either separator,
  * null when it names none. The module's copy of slugFromRemote in
  * workflow/slug.js and wk_slug_from_remote in workflow/lib/slug.sh, shape for
@@ -438,29 +359,4 @@ export function slugFromRemote(url) {
   const trimmed = url.trim().replace(/[/\\]+$/, '').replace(/\.git$/, '');
   const m = trimmed.match(/[:/\\]([^:/\\]+)[/\\]([^/\\]+)$/);
   return m ? `${m[1]}/${m[2]}` : null;
-}
-
-/**
- * The origin slug of the git working tree at `dir`, '' when it has none (the
- * engine's rule: wk_repo_slug).
- * @param {string} dir the folder
- * @param {function} run runs `(argv, { cwd })`, resolving `{ exitCode, stdout }`
- * @returns {Promise<string>}
- */
-export async function repoSlug(dir, run) {
-  const remote = await run(['git', 'remote', 'get-url', 'origin'], { cwd: dir });
-  return remote.exitCode === 0 ? slugFromRemote(remote.stdout) ?? '' : '';
-}
-
-/**
- * Whether `cwd` is inside a git work tree with no origin: a scratch or fixture
- * repo, outside the pipeline. An empty cwd, or one in no repo, is not.
- * @param {string} cwd the folder the command runs in
- * @param {function} run runs `(argv, { cwd })`, resolving `{ exitCode, stdout }`
- * @returns {Promise<boolean>}
- */
-export async function originless(cwd, run) {
-  if (!cwd) return false;
-  const inside = await run(['git', 'rev-parse', '--is-inside-work-tree'], { cwd });
-  return inside.exitCode === 0 && (await repoSlug(cwd, run)) === '';
 }

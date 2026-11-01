@@ -37,21 +37,26 @@ prove_cleanup() {
 # always `prove: exit <code>`, for a reader of the log; only a green run whose
 # copy still holds the index's tree writes the record.
 prove_body() {
-  local root="$1" tree copy add_err fill_root sh_path rel before after rc=0 started ms ignored=()
+  local root="$1" tree staged index copy add_err fill_root sh_path rel before after rc=0 started ms ignored=()
   PROVE_ROOT="$root" PROVE_TMP="" PROVE_COPY="" PROVE_ADDED=0
   wk_body_traps prove prove_cleanup
-  tree=$(wk_suite_index_tree "$root") && [ -n "$tree" ] \
+  PROVE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/prove.XXXXXX") || fail "could not make a temp folder"
+  # One scratch copy of the index (the real one is never written): the copy's
+  # whole tree first, then the record's id, the same copy less .workkit/.
+  index=$(wk_index_copy "$root" "$PROVE_TMP") || fail "could not copy the index of $root into $PROVE_TMP"
+  staged=$(GIT_INDEX_FILE="$index" git -C "$root" write-tree 2>/dev/null) && [ -n "$staged" ] \
+    || fail "could not write the whole index's tree for the copy (an unmerged path blocks it); resolve it and stage again"
+  tree=$(wk_index_write_tree "$root" "$index") && [ -n "$tree" ] \
     || fail "could not write the index's tree (an unmerged path blocks it); resolve it and stage again"
   git -C "$root" rev-parse --verify -q HEAD >/dev/null || fail "$root has no commit to add a worktree of"
-  PROVE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/prove.XXXXXX") || fail "could not make a temp folder"
   copy="$PROVE_TMP/copy"
   PROVE_COPY="$copy"
 
   add_err=$(hook_snapshot_worktree_add "$root" "$copy" 2>&1) \
     || fail "could not add a worktree at $copy: $add_err"
   PROVE_ADDED=1
-  git -C "$copy" read-tree "$tree" && git -C "$copy" checkout-index -a \
-    || fail "could not check the index's tree $tree out into the copy"
+  git -C "$copy" read-tree "$staged" && git -C "$copy" checkout-index -a \
+    || fail "could not check the index's tree $staged out into the copy"
 
   # Only the paths an ignore pattern matches come from the live folder: an
   # untracked or unstaged file is the held work the copy leaves out. No

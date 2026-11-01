@@ -1,24 +1,23 @@
 /**
  * hooks/mods/release-taken.js: safety:release-taken. Bounces the release
  * commit (`chore(release): <x.y.z>`) and `npm publish` whose version npm or the
- * GitHub release tag already has, while the number is still free to change.
- * The lookups run concurrently; a check that cannot be made stands down out
- * loud, never blocking (docs/hooks.md § safety:release-taken).
+ * GitHub release tag already has, while the number is still free to change:
+ * the commit judged on its real subject in git's commit-msg hook, the publish
+ * read off the Bash text. The lookups run concurrently; a check that cannot be
+ * made stands down out loud, never blocking (docs/hooks.md § safety:release-taken).
  */
 
 import {
-  BLANK, PLACEHOLDER, VERSION_RE, findGitCommit, foldRedirectAmp, peelPrefixes, redirectSpan, slugFromRemote, stripHeredocs, stripQuotes, wordsOf,
+  PLACEHOLDER, clauseChangesDir, foldRedirectAmp, peelPrefixes, redirectSpan, slugFromRemote, stripHeredocs, stripQuotes, wordsOf,
 } from './command.js';
+import { VERSION_RE } from './commit-language.js';
 import { isPlain, parseJson } from './settings.js';
 
-const SUBJECT = `chore\\(release\\): ${VERSION_RE}`;
-const SUBJECT_AT = new RegExp(`(^|${BLANK})(-m|--message)[ \\t\\r\\f\\v=]*["']?${SUBJECT}|^${BLANK}*["']?${SUBJECT}`, 'm');
-const FILE_FLAG = /(^|[ \t\r\f\v])(-[A-Za-z]*F|--file)([ \t\r\f\v=]|$)/m;
+const RELEASE_SUBJECT = new RegExp(`^chore\\(release\\): (${VERSION_RE})$`);
 const GLOB = /[*?[]/;
 const LOOKUP_TIMEOUT_MS = 15000;
 
 const STOOD_DOWN = {
-  file: 'release-taken: the commit message is in a file, so the release subject could not be read and the check stood down.',
   cd: 'release-taken: the command changes directory, so the package being published could not be placed and the check stood down.',
   quoted: 'release-taken: a quoted workspace name could not be read, so the publish could not be placed and the check stood down.',
   empty: 'release-taken: a workspace flag names no workspace, so the publish could not be placed and the check stood down.',
@@ -31,14 +30,17 @@ const firstLine = (run, tool) => String(run.stderr ?? '').split('\n')[0] || `${t
 const answered = (notices) => (notices.length > 0 ? { context: notices.join('\n') } : null);
 
 // Does a clause RUN `npm publish`? Every clause is walked: the workspaces it
-// names are collected, and a publishing clause naming none checks them all.
+// names are collected, a publishing clause naming none checks them all, and
+// a cd, pushd or popd clause anywhere is seen.
 function npmPublish(stripped) {
   let found = false;
   let all = false;
+  let sawCd = false;
   let unreadable = '';
   const workspaces = [];
   for (const clause of foldRedirectAmp(stripped).split(/[;|&\n]/)) {
     const words = wordsOf(clause);
+    if (clauseChangesDir(words)) sawCd = true;
     const { skip, word } = peelPrefixes(words);
     if (!(word === 'npm' || word.endsWith('/npm'))) continue;
     const args = words.slice(skip + 1);
@@ -83,30 +85,21 @@ function npmPublish(stripped) {
       else if (value.includes(PLACEHOLDER)) unreadable = 'quoted';
     }
   }
-  return all ? { found, workspaces: [], unreadable: '' } : { found, workspaces, unreadable };
+  return all ? { found, sawCd, workspaces: [], unreadable: '' } : { found, sawCd, workspaces, unreadable };
 }
 
 /**
- * Which trigger a command is, read off its text alone: the release commit and
- * its version, a publish and the workspaces it names, a stand-down notice for
- * the two it cannot place, or null for any other command.
+ * Whether a command is a publish, read off its text alone: the workspaces it
+ * names, a stand-down notice for one behind a directory change, or null for
+ * any other command.
  * @param {string} command the Bash command
- * @returns {{trigger: string, version?: string, workspaces?: string[], unreadable?: string}|{notice: string}|null}
+ * @returns {{trigger: string, workspaces: string[], unreadable: string}|{notice: string}|null}
  */
 function releaseTrigger(command) {
-  if (!command) return null;
-  if (!command.includes('chore(release)') && !command.includes('publish')
-    && !(command.includes('commit') && (command.includes('-F') || command.includes('--file')))) return null;
-  const stripped = stripQuotes(stripHeredocs(command));
-  const found = findGitCommit(command);
-  if (found.clause || found.wrapped) {
-    const match = command.match(SUBJECT_AT)?.[0];
-    if (match) return { trigger: 'commit', version: match.slice(match.lastIndexOf(': ') + 2).replace(/^v/, '') };
-    if (FILE_FLAG.test(stripped)) return { notice: STOOD_DOWN.file };
-  }
-  const publish = npmPublish(stripped);
+  if (!command || !command.includes('publish')) return null;
+  const publish = npmPublish(stripQuotes(stripHeredocs(command)));
   if (!publish.found) return null;
-  if (found.sawCd) return { notice: STOOD_DOWN.cd };
+  if (publish.sawCd) return { notice: STOOD_DOWN.cd };
   return { trigger: 'publish', workspaces: publish.workspaces, unreadable: publish.unreadable };
 }
 
@@ -187,21 +180,10 @@ async function ask(job, lookups) {
   return { taken: String(run.stdout ?? '').replace(/\s/g, '') === job.version };
 }
 
-/**
- * release-taken's verdict on a Bash command.
- * @param {object} facts
- * @param {string} facts.command the Bash command
- * @param {string} facts.cwd the project folder: the git toplevel for a commit, the cwd for a publish
- * @param {object|null|false} facts.packageJson the parsed root package.json, null when absent, false when it does not parse
- * @param {object} facts.members each workspace member's parsed package.json (false when it does not parse) by folder from the root
- * @param {{npm: function, github: function}} facts.lookups `npm(name, version)` and `github(tag)`, async, `{ exitCode, stdout, stderr }`
- * @param {string} [facts.origin] the project's origin remote url, '' or absent for none; the bounce names its owner/name
- * @returns {Promise<{deny: string}|{context: string}|null>}
- */
-export async function releaseTakenVerdict({ command, cwd, packageJson, members = {}, lookups, origin }) {
-  const plan = releaseTrigger(command);
-  if (!plan) return null;
-  if (plan.notice) return { context: plan.notice };
+// The verdict over a plan's gathered project: npm asked for every package with
+// publish intent (a publish's named workspaces alone), and a release commit's
+// GitHub release tag once.
+async function judged(plan, { cwd, packageJson, members = {}, lookups, origin }) {
   const repo = slugFromRemote(origin ?? '') ?? '';
   const notices = [];
   let pkgs = packageSet(cwd, packageJson, members, notices);
@@ -226,6 +208,25 @@ export async function releaseTakenVerdict({ command, cwd, packageJson, members =
   return { deny: [...notices, ...taken.map((line) => `release-taken: BLOCKED ${what}: ${line}`), BUMP].join('\n') };
 }
 
+/**
+ * release-taken's verdict on a Bash command: an `npm publish` whose version
+ * npm already has bounces.
+ * @param {object} facts
+ * @param {string} facts.command the Bash command
+ * @param {string} facts.cwd the project folder, the cwd
+ * @param {object|null|false} facts.packageJson the parsed root package.json, null when absent, false when it does not parse
+ * @param {object} facts.members each workspace member's parsed package.json (false when it does not parse) by folder from the root
+ * @param {{npm: function, github: function}} facts.lookups `npm(name, version)` and `github(tag)`, async, `{ exitCode, stdout, stderr }`
+ * @param {string} [facts.origin] the project's origin remote url, '' or absent for none; the bounce names its owner/name
+ * @returns {Promise<{deny: string}|{context: string}|null>}
+ */
+export async function releaseTakenVerdict({ command, ...project }) {
+  const plan = releaseTrigger(command);
+  if (!plan) return null;
+  if (plan.notice) return { context: plan.notice };
+  return judged(plan, project);
+}
+
 // The project's origin remote url, '' when it has none.
 async function originOf(root, run) {
   const remote = await run(['git', 'remote', 'get-url', 'origin'], { cwd: root });
@@ -238,38 +239,64 @@ async function readPackage(read, path) {
   return raw === null ? null : parseJson(raw) ?? false;
 }
 
+// The project at `root`, read off disk: its package.json and each workspace member's.
+async function projectOf(root, { read, list }) {
+  const packageJson = await readPackage(read, `${root}/package.json`);
+  const members = {};
+  for (const pattern of patternsOf(packageJson)) {
+    const dir = pattern.slice(0, pattern.lastIndexOf('/'));
+    const folders = pattern.endsWith('/*') ? (await list(`${root}/${dir}`)).map((name) => `${dir}/${name}`) : [pattern];
+    for (const folder of GLOB.test(pattern) && !pattern.endsWith('/*') ? [] : folders) {
+      const pkg = await readPackage(read, `${root}/${folder}/package.json`);
+      if (pkg !== null) members[folder] = pkg;
+    }
+  }
+  return { packageJson, members };
+}
+
+// The two lookups, run from the project root.
+function lookupsAt(root, run) {
+  const at = { cwd: root, timeoutMs: LOOKUP_TIMEOUT_MS };
+  return {
+    npm: (name, version) => run(['npm', 'view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], at),
+    github: (tag) => run(['gh', 'release', 'view', tag, '--json', 'tagName', '-q', '.tagName'], at),
+  };
+}
+
+/**
+ * release-taken's verdict on a release commit's subject (`chore(release):
+ * <x.y.z>`), judged in git's commit-msg hook: npm asked for every package with
+ * publish intent and GitHub for the release `v<x.y.z>`. Any other subject is null.
+ * @param {{subject: string, root: string, facts: {read: function, list: function, run: function}}} args
+ *   the message's first line, the repo root, and the machine's reads
+ * @returns {Promise<{deny: string}|{context: string}|null>}
+ */
+export async function releaseCommitVerdict({ subject, root, facts }) {
+  const version = subject.trim().match(RELEASE_SUBJECT)?.[1];
+  if (!version) return null;
+  return judged({ trigger: 'commit', version: version.replace(/^v/, '') }, {
+    cwd: root,
+    ...(await projectOf(root, facts)),
+    origin: await originOf(root, facts.run),
+    lookups: lookupsAt(root, facts.run),
+  });
+}
+
 /**
  * The guard's run over the Bash facts: the project, its packages and the
- * lookups are gathered only for a command that is a trigger.
- * @param {{command: string, cwd: string, top: function, read: function, list: function, run: function}} facts
+ * lookups are gathered only for a command that is a publish.
+ * @param {{command: string, cwd: string, read: function, list: function, run: function}} facts
  *   the chain's facts and reads
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
 export async function releaseTakenGuard(facts) {
   const plan = releaseTrigger(facts.command);
   if (!plan || plan.notice) return plan && { context: plan.notice };
-  const root = plan.trigger === 'commit' ? await facts.top(facts.cwd) : facts.cwd;
-  if (!root) return null;
-  const packageJson = await readPackage(facts.read, `${root}/package.json`);
-  const members = {};
-  for (const pattern of patternsOf(packageJson)) {
-    const dir = pattern.slice(0, pattern.lastIndexOf('/'));
-    const folders = pattern.endsWith('/*') ? (await facts.list(`${root}/${dir}`)).map((name) => `${dir}/${name}`) : [pattern];
-    for (const folder of GLOB.test(pattern) && !pattern.endsWith('/*') ? [] : folders) {
-      const pkg = await readPackage(facts.read, `${root}/${folder}/package.json`);
-      if (pkg !== null) members[folder] = pkg;
-    }
-  }
-  const at = { cwd: root, timeoutMs: LOOKUP_TIMEOUT_MS };
-  return releaseTakenVerdict({
-    command: facts.command,
-    cwd: root,
-    packageJson,
-    members,
-    origin: plan.trigger === 'commit' ? await originOf(root, facts.run) : '',
-    lookups: {
-      npm: (name, version) => facts.run(['npm', 'view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], at),
-      github: (tag) => facts.run(['gh', 'release', 'view', tag, '--json', 'tagName', '-q', '.tagName'], at),
-    },
+  if (!facts.cwd) return null;
+  return judged(plan, {
+    cwd: facts.cwd,
+    ...(await projectOf(facts.cwd, facts)),
+    origin: '',
+    lookups: lookupsAt(facts.cwd, facts.run),
   });
 }

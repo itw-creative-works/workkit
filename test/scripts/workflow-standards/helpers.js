@@ -12,6 +12,7 @@ const {
   joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'standards.sh');
@@ -59,7 +60,7 @@ const winRosterKey = (repo) => (IS_WINDOWS
 // are made and the remote is never contacted (gh is stubbed).
 // Participation: the committed .workkit/settings.json is the repo's yes, so
 // every fixture carries one unless a test is exercising another state.
-const makeRepo = ({ remote = true, settings = '{ "version": 1, "enabled": true }\n' } = {}) => {
+const makeRepo = ({ remote = true, settings = OPT_IN_SHAPES.current } = {}) => {
   const dir = mkTmp('wf-std-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (remote) {
@@ -207,14 +208,25 @@ const runScript = (repoDir, {
   return { code: res.status, stdout, stderr, output: stdout + stderr };
 };
 
-// The standard version the engine stamps, and the one a repo carries.
-const STANDARD_VERSION = Number(
-  /^STANDARD_VERSION=(\d+)/m.exec(fs.readFileSync(SCRIPT, 'utf8'))[1],
-);
-const repoVersion = (dir) => JSON.parse(readFile(path.join(dir, W, 'settings.json'))).version;
+// A scratch home holding a real `.claude`, so the heal makes the engine's
+// address there; `claude` is the folder to pass as `claudeHome`.
+const claudeHomeWith = () => {
+  const home = mkTmp('wf-std-');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  return { home, claude: path.join(home, '.claude') };
+};
+
+// The same, its `workkit` already linked at this checkout's workflow folder,
+// as `~/.claude/workkit` stands on a machine.
+const linkedClaudeHome = () => {
+  const made = claudeHomeWith();
+  const link = path.join(made.claude, 'workkit');
+  fs.symlinkSync(path.resolve(WORKFLOW_DIR), link, 'junction');
+  return { ...made, link };
+};
 
 module.exports = {
   WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
   desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
-  binDirWithout, runScript, STANDARD_VERSION, repoVersion,
+  binDirWithout, runScript, claudeHomeWith, linkedClaudeHome,
 };

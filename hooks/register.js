@@ -1,6 +1,7 @@
 /**
- * hooks/register.js: the workkit hooks module, the twenty-nine in-process
- * hooks on ten events (docs/hooks.md § The hooks module). The one file that
+ * hooks/register.js: the workkit hooks module, the twenty-three in-process
+ * hooks on ten events (docs/hooks.md § The hooks module); seven guards run in
+ * the `gh` shim and git's hooks instead, release-taken in both. The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
  * and this file gathers their facts (or hands a mods gatherer the engine calls
  * as plain functions), gates them, logs each fire and answers.
@@ -13,11 +14,12 @@ import { changelogGuardVerdict, isChangelog, linterPath } from './mods/changelog
 import { checkpointContext } from './mods/checkpoint.js';
 import { closeGuardGather } from './mods/close-guard.js';
 import { featureContext, featureMatch } from './mods/feature.js';
+import { isSystemPrompt } from './mods/frame.js';
 import { isExempt } from './mods/gate.js';
 import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, folderOpted, runChain } from './mods/guards.js';
 import { appendLog, homeOf, logLine, pad, userDirOf } from './mods/log.js';
 import { crewClass, isAdvise, managerConfig } from './mods/manager.js';
-import { sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
+import { journalFor, journalMarkPath, journalTail, sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
 import { profileContext } from './mods/profile.js';
 import { reloadFingerprint, reloadGuardContext, surfacePaths } from './mods/reload-guard.js';
 import { resolverAdvice, resolverModel } from './mods/resolver.js';
@@ -278,8 +280,10 @@ async function changelogGuardHook($, env, file, text) {
   const linter = linterPath(env, $.plugin.root);
   if (!(await exists($, linter))) return null;
   const lint = await run($, ['node', linter, file, '--added-only'], { cwd: dirOf(file) });
-  // No node to run the linter, or a run past its timeout: the guard stands aside.
-  return lint.isStarted === false ? null : changelogGuardVerdict(file, lint);
+  // No node to run the linter, or a run past its timeout: the guard stands aside, out loud.
+  if (lint.isStarted !== false) return changelogGuardVerdict(file, lint);
+  $.ui.log(`docs/changelog-guard: the linter did not start (${lint.stderr.trim()}); the write is not judged`);
+  return null;
 }
 
 // A written file in the session's own repo as `{ root, rel }`, else null: the
@@ -448,13 +452,13 @@ const NOT_INPUT = new Set(['tool', 'tool_use_id', 'agentId']);
 // A guard chain that failed before its answer refuses, naming the failure's kind.
 const failClosed = ($, e, next) => (next.called ? next(e) : { deny: `${GUARDS_FAILED}${next.error.kind}` });
 
-// One guard chain (guards.js) over the facts `facts()` gathers: every fire
+// One guard chain (guards.js) over the facts `facts(env)` gathers: every fire
 // logged, a guard's throw rethrown for the .catch, the first deny answered,
 // else the event passed on with the notices as one entry and one owner line.
 async function guardChain($, e, next, event, guards, facts) {
   const env = await envOf($);
   if (env.HOOK_DISABLE === '1') return next(e);
-  const chain = await runChain(ioOf($, env), env, guards, await facts());
+  const chain = await runChain(ioOf($, env), env, guards, await facts(env));
   await logFires($, env, event === 'tool.call' ? 'PreToolUse' : event, e, chain.fires);
   if (chain.error) throw chain.error;
   if (chain.deny) return { deny: chain.deny };
@@ -476,8 +480,54 @@ async function fileFacts($, e) {
   return { tool: e.tool, input, cwd, file, typed: filePathOf({ tool_input: input, cwd }), dir, gateDir: e.tool === 'Read' || e.tool === 'Grep' ? cwd : dir };
 }
 
-// The facts of a Bash call that already ran, and whether it failed.
-const postBashFacts = (e, failed) => async () => ({ command: e.tool_input?.command ?? '', cwd: e.cwd ?? '', failed });
+// The gh journal of the folder's repo root (journalFor), under the machine folder.
+const journalAt = ($, env, cwd) => journalFor((dir) => gitTop($, dir), cwd, userDirOf(env));
+
+// The journal's length in bytes, measured and never read: the stat's size,
+// else `wc -c`; an absent journal is 0.
+async function journalSize($, journal) {
+  const stat = await $.fs.stat(journal).catch(() => null);
+  if (!stat) return 0;
+  if (typeof stat.size === 'number') return stat.size;
+  const counted = await run($, ['wc', '-c', journal]);
+  return counted.exitCode === 0 ? Number.parseInt(counted.stdout.trim(), 10) || 0 : 0;
+}
+
+// Before a Bash call runs: its mark holds the journal's path and its length.
+async function markJournal($, env, id, cwd) {
+  if (!id || !cwd) return;
+  const [journal, mark] = await Promise.all([journalAt($, env, cwd), journalMarkPath(id, userDirOf(env))]);
+  const dir = dirOf(mark);
+  if ((await $.fs.stat(dir).catch(() => null))?.kind !== 'dir') await run($, ['mkdir', '-p', dir]);
+  await quiet($.fs.write(mark, `${journal}\n${await journalSize($, journal)}`));
+}
+
+// After it ran: the lines past its mark in the journal the mark names, the
+// mark removed; no mark, no lines.
+async function journalSince($, env, e) {
+  if (!e.tool_use_id) return [];
+  const mark = await journalMarkPath(e.tool_use_id, userDirOf(env));
+  const held = await readText($, mark);
+  if (held === null) return [];
+  await run($, ['rm', '-f', mark]);
+  const [journal, bytes] = held.split('\n');
+  return journal ? journalTail((argv) => run($, argv), journal, Number(bytes)) : [];
+}
+
+// The owner prompt's turn start: the time and the length of the journal of its
+// cwd's root, for the Stop to read the turn's lines past. A harness frame (a
+// hand-back, a task notification) opens no turn, so it moves nothing.
+async function turnJournalHook($, env, e) {
+  if (!e.cwd || isSystemPrompt(e.prompt)) return null;
+  const journal = await journalAt($, env, e.cwd);
+  await storeSet($, e.session_id, 'turn-journal', { ms: await now($), bytes: await journalSize($, journal) });
+  return null;
+}
+
+// The facts of a Bash call that already ran: the journal lines its gh writes left.
+const postBashFacts = ($, e) => async (env) => ({
+  command: e.tool_input?.command ?? '', cwd: e.cwd ?? '', lines: await journalSince($, env, e).catch(() => []),
+});
 
 export function register(on) {
   on('classic.PostToolUse', { tool_name: ['Edit', 'Write'] }, async ($, e, next) => {
@@ -549,6 +599,7 @@ export function register(on) {
       caught($, HOOK.reloadGuard, reloadPromptHook($, env, e)),
       opted ? caught($, HOOK.checkpoint, checkpointHook($, e)) : null,
       opted ? caught($, HOOK.feature, featureHook($, e)) : null,
+      caught($, HOOK.changeTracker, turnJournalHook($, env, e)),
     ]);
     await logFires($, env, 'UserPromptSubmit', e, fires);
     return withContext(await next(e), contexts.filter(Boolean));
@@ -573,21 +624,25 @@ export function register(on) {
     return withContext(await next(e), warning ? [warning] : []);
   }).catch(passOn);
 
-  // tool.call carries no cwd: the folder is the session's, or the subagent's in a subagent.
-  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardChain($, e, next, 'tool.call', BASH_GUARDS,
-    async () => ({ command: e.command ?? '', cwd: await $.session.cwd() }))).catch(failClosed);
+  // tool.call carries no cwd: the folder is the session's, or the subagent's in a
+  // subagent. The journal mark is left first, for the PostToolUse to read past.
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardChain($, e, next, 'tool.call', BASH_GUARDS, async (env) => {
+    const cwd = await $.session.cwd();
+    await quiet(markJournal($, env, e.tool_use_id, cwd));
+    return { command: e.command ?? '', cwd };
+  })).catch(failClosed);
 
   on('tool.call', { tool: ['Edit', 'Write'] }, ($, e, next) => guardChain($, e, next, 'tool.call', FILE_GUARDS, () => fileFacts($, e))).catch(failClosed);
 
   on('tool.call', { tool: ['Read', 'Grep'] }, ($, e, next) => guardChain($, e, next, 'tool.call', READ_GUARDS, () => fileFacts($, e))).catch(failClosed);
 
   // Never a block: a hook here acts after the command ran. A failed call fires
-  // PostToolUseFailure instead, though a step before the failure may have landed.
+  // PostToolUseFailure instead, though a gh write before the failure may have landed.
   on('classic.PostToolUse', { tool_name: 'Bash' }, ($, e, next) => guardChain($, e, next, 'PostToolUse', POST_BASH_GUARDS,
-    postBashFacts(e, false))).catch(passOn);
+    postBashFacts($, e))).catch(passOn);
 
   on('classic.PostToolUseFailure', { tool_name: 'Bash' }, ($, e, next) => guardChain($, e, next, 'PostToolUseFailure', POST_BASH_GUARDS,
-    postBashFacts(e, true))).catch(passOn);
+    postBashFacts($, e))).catch(passOn);
 
   on('agent.spawn', async ($, e, next) => {
     const env = await envOf($);
@@ -610,12 +665,11 @@ export function register(on) {
   on('classic.Stop', async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
-    // One transcript read serves both gathers.
-    let messages;
-    const io = { ...ioOf($, env), messages: () => (messages ??= $.session.messages()) };
+    const io = ioOf($, env);
     const opted = await folderOpted(io, e.cwd);
     if (opted) await caught($, HOOK.closeGuard, closeGuardGather(io, env, e));
-    const nag = opted ? await caught($, HOOK.changeTracker, changeTrackerGather(io, env, e)) : null;
+    const turn = opted ? await storeGet($, e.session_id, 'turn-journal') : undefined;
+    const nag = opted ? await caught($, HOOK.changeTracker, changeTrackerGather(io, env, e, turn)) : null;
     await logFires($, env, 'Stop', e, [HOOK.closeGuard, HOOK.changeTracker].map((hook) => [hook, verdictOf(hook, opted)]));
     return nag ? next(e).then((r) => ({ ...r, block: [nag.block, r?.block].filter(Boolean).join('\n\n') })) : next(e);
   }).catch(passOn);

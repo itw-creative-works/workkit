@@ -11,8 +11,11 @@ const { group, test, assertEq, testUnless, summary, selfRun, mkTmp, SPAWN_DEADLI
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath,
 } = require('../lib/platform');
+const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const PARTICIPATION = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'participation.sh'));
+// Where wk_node lives, which every caller sources before this seam.
+const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -41,13 +44,13 @@ const settingsFile = (dir, body) => {
 const cases = async () => {
   group('participation.sh: sourcing it');
 
-  await test('sourcing defines the three functions', () => {
+  await test('sourcing defines the seven functions', () => {
     // The contract this file shares with platform.sh: a caller sources it at
     // load time and gets functions, in a shell whose options are its own.
     const out = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     assertEq(out.code, 0, `it sources clean, stderr: ${out.err}`);
-    assertEq(out.out, 'wk_is_repo_root wk_settings_declined wk_settings_enabled ',
-      `the three, and nothing else named wk_*, got: ${out.out}`);
+    assertEq(out.out, 'wk_githooks_kit wk_githooks_kitlike wk_githooks_spelled wk_is_repo_root wk_session_judges wk_settings_declined wk_settings_enabled ',
+      `the seven, and nothing else named wk_*, got: ${out.out}`);
   });
 
   await test('sourcing sets no variable and runs nothing', () => {
@@ -112,7 +115,7 @@ const cases = async () => {
       'the deliberate no');
     cleanup(dir);
     const other = mkTmp('wf-participation-');
-    assertEq(answers(settingsFile(other, '{ "version": 1, "enabled": true }\n')), 'no/yes', 'the yes');
+    assertEq(answers(settingsFile(other, OPT_IN_SHAPES.current)), 'no/yes', 'the yes');
     cleanup(other);
   });
 
@@ -142,12 +145,37 @@ const cases = async () => {
     cleanup(dir);
   });
 
+  await test('under node, only the top-level enabled key declines, and text that does not parse is declined', () => {
+    const declined = (body) => {
+      const dir = mkTmp('wf-participation-');
+      const file = settingsFile(dir, body);
+      const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nif wk_settings_declined ${JSON.stringify(shellPath(file))}; then printf yes; else printf no; fi`,
+        { WORKKIT_NODE: shellPath(process.execPath) });
+      cleanup(dir);
+      return out.out;
+    };
+    assertEq(declined('{"enabled": true, "manager": {"enabled": false}}'), 'no', 'a nested enabled: false leaves an opted-in repo in');
+    assertEq(declined('{"enabled": false}'), 'yes', 'the top-level decline');
+    assertEq(declined('{"manager": {"enabled": false}}'), 'no', 'a nested decline alone is the legacy opt-in');
+    assertEq(declined('not json'), 'yes', 'text that does not parse');
+    const both = (body) => {
+      const dir = mkTmp('wf-participation-');
+      const file = JSON.stringify(shellPath(settingsFile(dir, body)));
+      const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nfor f in wk_settings_declined wk_settings_enabled; do if $f ${file}; then printf yes; else printf no; fi; done`,
+        { WORKKIT_NODE: shellPath(process.execPath) });
+      cleanup(dir);
+      return out.out;
+    };
+    assertEq(both(''), 'nono', 'an empty file is no answer at all, neither declined nor enabled');
+    assertEq(both('  \n'), 'nono', 'and so is a whitespace-only one');
+  });
+
   await testUnless(IS_WINDOWS, NO_EXEC_BIT)('an unreadable file reads as declined, and says nothing on stderr', () => {
     // A guard reading this must not print the shell's complaint into a session's
     // context, so the silencing lives in the seam rather than at each call. The
     // text says enabled, so only the unreadable read can make it a decline.
     const dir = mkTmp('wf-participation-');
-    const file = settingsFile(dir, '{ "enabled": true }\n');
+    const file = settingsFile(dir, OPT_IN_SHAPES.current);
     fs.chmodSync(file, 0o000);
     const out = inSeam(`wk_settings_declined ${JSON.stringify(shellPath(file))}; printf 'rc=%s' "$?"`);
     assertEq(out.out, 'rc=0', 'unreadable is a decline, as the hooks module reads it');

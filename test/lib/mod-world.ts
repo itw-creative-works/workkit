@@ -4,9 +4,9 @@
 // under /w/; any other path is the kit's own folder, answered from KIT.
 
 import { mock } from 'claude-code/testing'
-import { MODELS } from './mod-fixtures.mjs'
+import { MODELS, OPT_IN_SHAPES } from './mod-fixtures.mjs'
 
-export { MODELS, row, SESSION_NOW, daysBefore, briefMarker } from './mod-fixtures.mjs'
+export { MODELS, OPT_IN_SHAPES, row, SESSION_NOW, daysBefore, briefMarker, ghEntry, journalText } from './mod-fixtures.mjs'
 
 // hooks/manager/resources/ladder.json, the fields the module reads; the test
 // environment has no fs, so the fixture carries its own copy.
@@ -22,7 +22,7 @@ export const HOME = '/w/home'
 export const REPO = '/w/repo'
 export const PLAIN = '/w/plain'
 export const SID = 'sess-1'
-export const OPTED_IN = '{ "version": 1, "enabled": true }\n'
+export const OPTED_IN = OPT_IN_SHAPES.current
 export const OPTED_OUT = '{ "version": 1, "enabled": false }\n'
 
 // The kit's load-time surfaces and the files the module reads from its own folder.
@@ -81,7 +81,7 @@ const touchedGit = (args: string[], branch: any, status: string | undefined) => 
 
 // The git reads behind a commit the gate judges, from `opts.git`: `staged`, `changed`
 // (`diff [--cached] --name-only`, `added`/`deleted` their A and D), `headTime`, `blobs`
-// by `HEAD:<path>` and `:<path>`, `indexTree`; `broken` makes the staged read resolve to
+// by `HEAD:<path>` and `:<path>`, `indexTree` (tree-hash.sh -i's answer); `broken` makes the staged read resolve to
 // nothing; `unstarted` makes the HEAD reads answer as a timed-out run. Null for any other read.
 const commitGit = (args: string[], git: any) => {
   let sub = args
@@ -103,7 +103,6 @@ const commitGit = (args: string[], git: any) => {
   if (sub[0] === 'log' && sub.includes('--format=%ct')) return ok(`${git.headTime}\n`)
   if (sub[0] === 'show' && spec.includes(':')) return spec in git.blobs ? ok(git.blobs[spec]) : ok('', `fatal: path '${spec}' does not exist\n`, 128)
   if (sub[0] === 'rev-parse' && sub.includes('--verify') && spec.includes(':')) return spec in git.blobs ? ok(`${'b'.repeat(40)}\n`) : ok('', '', 1)
-  if (sub[0] === 'write-tree') return ok(`${git.indexTree}\n`)
   return null
 }
 
@@ -120,7 +119,8 @@ const commitGit = (args: string[], git: any) => {
  * `git check-ignore` answers for, one ending in `/` a whole folder. `opts.git`,
  * `opts.scriptShell`, `opts.rewrite`: the commit reads (`commitGit`, the npm branch).
  * `opts.dirs`: folders that exist with nothing in them; a run whose `cwd` is no folder
- * the world holds (PLAIN and the session folder always are) does not start.
+ * the world holds (PLAIN and the session folder always are) does not start, nor does one
+ * of `opts.absent`'s tools (by name, as PATH would miss it).
  * A link to a folder carries every path beneath it.
  */
 export const mkWorld = (on: any, opts: any = {}) => {
@@ -249,11 +249,22 @@ export const mkWorld = (on: any, opts: any = {}) => {
     const init = e.init || {}
     world.calls.push({ argv, init })
     const runDir = init.cwd ? norm(init.cwd, world.cwd) : null
-    if (runDir && inWorld(runDir) && !isDir(through(runDir))) {
-      return { value: { exitCode: null, stdout: '', stderr: `spawn ${argv[0]} ENOENT`, isStdoutTruncated: false, isStderrTruncated: false, isStarted: false } }
-    }
     const base = (s: string) => s.split('/').pop() as string
     const cmd = base(argv[0])
+    if ((runDir && inWorld(runDir) && !isDir(through(runDir))) || (opts.absent || []).includes(cmd)) {
+      return { value: { exitCode: null, stdout: '', stderr: `spawn ${argv[0]} ENOENT`, isStdoutTruncated: false, isStderrTruncated: false, isStarted: false } }
+    }
+    // `tail -c +<N> <file>`: the file's bytes from offset N-1 on; an absent file exits 1 with no output.
+    if (cmd === 'tail' && argv[1] === '-c' && /^\+[0-9]+$/.test(argv[2] ?? '')) {
+      const text = fileText(norm(argv[3], world.cwd))
+      if (text === undefined) return ok('', '', 1)
+      return ok(new TextDecoder().decode(new TextEncoder().encode(text).slice(Number(argv[2].slice(1)) - 1)))
+    }
+    // `rm -f <file>...`: each file gone from the tree, an absent one no error.
+    if (cmd === 'rm' && argv[1] === '-f') {
+      for (const p of argv.slice(2)) files.delete(norm(p, world.cwd))
+      return ok()
+    }
     if (cmd === 'git') {
       let dir = init.cwd ? norm(init.cwd, world.cwd) : world.cwd
       const rest = argv.slice(1)
@@ -312,7 +323,9 @@ export const mkWorld = (on: any, opts: any = {}) => {
       if (world.npm.known.includes(spec.slice(0, spec.lastIndexOf('@')))) return ok()
       return ok('', 'npm error code E404\n', 1)
     }
-    if (argv.some((a) => a.endsWith('tree-hash.sh'))) return ok(`${world.treeId}\n`)
+    // `tree-hash.sh <root> -i` is the index's tree, any other form the working tree's.
+    const hash = argv.findIndex((a) => a.endsWith('tree-hash.sh'))
+    if (hash >= 0) return ok(`${argv[hash + 2] === '-i' ? world.git.indexTree : world.treeId}\n`)
     // `opts.rewrite`: the rewrite entry's stdout; `opts.scriptShell`: npm's value, npm missing when unset.
     if (argv.some((a) => a.endsWith('changelog-job.sh'))) return ok(opts.rewrite ?? '')
     if (cmd === 'npm' && argv.slice(1, 4).join(' ') === 'config get script-shell') {

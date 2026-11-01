@@ -353,7 +353,9 @@ const main = (argv) => {
     return 1;
   }
   for (const warning of result.warnings) console.error(warning);
-  console.log(`released ${args.version} (${result.bumped.join(', ')}): ${result.moved} entries moved, ${result.kept} kept under [Unreleased]`);
+  const what = `${args.version} (${result.bumped.join(', ')}): ${result.moved} entries`;
+  const kept = `${result.kept} kept under [Unreleased]`;
+  console.log(args.dryRun ? `dry run: would release ${what} to move, ${kept}` : `released ${what} moved, ${kept}`);
   return 0;
 };
 

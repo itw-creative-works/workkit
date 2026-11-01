@@ -1,15 +1,15 @@
-// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
-// hooks/mods/commit-gate.js: the CHANGELOG entry format (check 3, the real
-// linter run over a scratch copy of the repo through `lint`), and a Fixes #N
-// commit staging its CHANGELOG entry (check 4). Each case ports the HEAD case
-// its name quotes. Dropped with the shell mechanism: "reads a file mtime
-// under either stat dialect" (the module stats through $.fs, with no stat
-// tool to read).
-// The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
+// Tests for safety:commit-gate's logic in hooks/mods/commit-gate.js: the CHANGELOG entry
+// format (check 3, preCommitVerdict, the real linter run over a scratch copy of the repo
+// through `lint`), and a Fixes #N commit staging its CHANGELOG entry (check 4,
+// commitMsgVerdict). The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
+// The check's stand-downs run the real gate over a real scratch repo (test/lib/real-gate.js).
 
-const { group, test, assert, summary, selfRun } = require('../../lib/harness');
+const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
+const { SYSTEM_PATH } = require('../../lib/platform');
+const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
+const { gateOn } = require('../../lib/real-gate');
 const {
-  PREFIX, T, NOTICE, mkRepo, stage, write, commit, touchMarker, judge, denyOf, blocks, passes,
+  PREFIX, T, NOTICE, mkRepo, stage, commit, touchMarker, judge, denyOf, blocks, passes,
   CHANGELOG, ISSUE, ENTRY,
 } = require('./helpers');
 
@@ -33,76 +33,86 @@ const committedLog = (text) => {
 const cases = async () => {
   group('commit-gate: CHANGELOG entry format');
 
-  await test('ports "a staged 62-word entry: blocked with the shared message and the linter\'s word-cap line"', async () => {
+  await test('a staged 62-word entry: blocked with the shared message and the linter\'s word-cap line', async () => {
     const r = mkRepo();
     stage(r, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - ${new Array(61).fill('word').join(' ')} end.`));
-    const deny = lintBlocks(await judge(r, 'git commit -m "docs: changelog"'), 'blocked');
+    const deny = lintBlocks(await judge(r, 'docs: changelog'), 'blocked');
     assert(deny.includes('[word-cap] 62 words (max 50)'), `with the linter's line, got: ${deny}`);
   });
 
-  await test('ports "a staged entry in the format commits"', async () => {
+  await test('a staged entry in the format commits', async () => {
     const r = mkRepo();
     stage(r, 'CHANGELOG.md', CHANGELOG(`- ${ISSUE} - Plugins install from settings.json.`));
-    passes(await judge(r, 'git commit -m "docs: changelog"'), '', 'allowed');
+    passes(await judge(r, 'docs: changelog'), '', 'allowed');
   });
 
-  await test('ports "a legacy entry the commit did not touch does not block"', async () => {
+  await test('a legacy entry the commit did not touch does not block', async () => {
     const r = mkRepo();
     stage(r, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.'));
     commit(r);
     stage(r, 'CHANGELOG.md', CHANGELOG('- A legacy essay entry with no issue link.', `- ${ISSUE} - A new entry.`));
-    passes(await judge(r, 'git commit -m "docs: changelog"'), '', 'allowed');
+    passes(await judge(r, 'docs: changelog'), '', 'allowed');
   });
 
-  await test('ports "a -am commit is judged from the working tree, which is what it carries"', async () => {
-    const r = mkRepo();
-    stage(r, 'CHANGELOG.md', CHANGELOG());
-    commit(r);
-    write(r, 'CHANGELOG.md', CHANGELOG('- An unstaged essay entry with no issue link.'));
-    lintBlocks(await judge(r, 'git commit -am "docs: changelog"'), 'blocked');
-  });
-
-  await test('ports "a CRLF CHANGELOG is judged, not waved through"', async () => {
+  await test('a CRLF CHANGELOG is judged, not waved through', async () => {
     const r = mkRepo();
     stage(r, 'CHANGELOG.md', CHANGELOG('- an essay entry with no issue link.').replace(/\n/g, '\r\n'));
-    lintBlocks(await judge(r, 'git commit -m "docs: changelog"'), 'blocked');
+    lintBlocks(await judge(r, 'docs: changelog'), 'blocked');
   });
 
-  await test('ports "a pathspec commit still has its CHANGELOG judged"', async () => {
-    const r = mkRepo();
-    write(r, 'CHANGELOG.md', CHANGELOG('- an essay entry with no issue link.'));
-    touchMarker(r);
-    lintBlocks(await judge(r, 'git commit -m docs CHANGELOG.md', { lintSource: 'work' }), 'blocked for the CHANGELOG reason');
+  group('commit-gate: check 3 stands down out loud');
+
+  await test('a linter that did not start (no node on PATH): no deny, one check 3 stood down line; the linter file absent: no line, no deny', async () => {
+    const stoodDown = (out) => out.context.split('\n').filter((l) => l.startsWith('commit-gate: check 3 stood down: '));
+    const entryStaged = () => {
+      const w = mkGitRepo('cg-lint-start-', { 'CHANGELOG.md': CHANGELOG() });
+      w.write('CHANGELOG.md', ENTRY);
+      w.git('add', 'CHANGELOG.md');
+      return w;
+    };
+
+    const noNode = entryStaged();
+    const unstarted = await gateOn(noNode.repo, { ...noNode.env, PATH: SYSTEM_PATH });
+    assertEq(unstarted.deny, null, 'a linter that never started is no deny');
+    const lines = stoodDown(unstarted);
+    assertEq(lines.length, 1, `one stand-down line, got: ${unstarted.context}`);
+    assert(lines[0].startsWith('commit-gate: check 3 stood down: the CHANGELOG linter did not start (') && lines[0].endsWith(')'),
+      `naming the linter and why, got: ${lines[0]}`);
+
+    const absent = entryStaged();
+    const skipped = await gateOn(absent.repo, { ...absent.env, WORKFLOW_DIR: mkTmp('cg-no-engine-') });
+    assertEq(skipped.deny, null, 'no linter there is no deny');
+    assertEq(stoodDown(skipped).length, 0, `and no stand-down line, got: ${skipped.context}`);
   });
 
   group('commit-gate: a Fixes #N commit stages its CHANGELOG entry');
 
-  await test('ports "a Fixes trailer with no CHANGELOG staged blocks"', async () => {
-    blocks(await judge(committedLog(ENTRY), 'git commit -m "feat: a thing\n\nFixes #4"'), T.fixes, 'names the rule and the fix');
+  await test('a Fixes trailer with no CHANGELOG staged blocks', async () => {
+    blocks(await judge(committedLog(ENTRY), 'feat: a thing\n\nFixes #4'), T.fixes, 'names the rule and the fix');
   });
 
-  await test('ports "the same commit with the entry staged passes": a gh that cannot answer leaves one line', async () => {
+  await test('the same commit with the entry staged passes: a gh that cannot answer leaves one line', async () => {
     const r = committedLog(CHANGELOG());
     stage(r, 'CHANGELOG.md', ENTRY);
     r.ghFails = true;
-    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), NOTICE.unread(4), 'allowed');
+    passes(await judge(r, 'feat: a thing\n\nFixes #4'), NOTICE.unread(4), 'allowed');
   });
 
-  await test('ports "Closes and Resolves are the same trailer"', async () => {
+  await test('Closes and Resolves are the same trailer', async () => {
     for (const word of ['Closes', 'Resolves', 'closes']) {
-      blocks(await judge(committedLog(ENTRY), `git commit -m "feat: a thing\n\n${word} #12"`), T.fixes, `${word} #N closes an issue too`);
+      blocks(await judge(committedLog(ENTRY), `feat: a thing\n\n${word} #12`), T.fixes, `${word} #N closes an issue too`);
     }
   });
 
-  await test('ports "no trailer: the commit is not asked for an entry"', async () => {
-    passes(await judge(committedLog(ENTRY), 'git commit -m "feat: a thing that closes nothing"'), '', 'allowed');
+  await test('no trailer: the commit is not asked for an entry', async () => {
+    passes(await judge(committedLog(ENTRY), 'feat: a thing that closes nothing'), '', 'allowed');
   });
 
-  await test('ports "a repo that keeps no CHANGELOG.md is never asked for one"', async () => {
+  await test('a repo that keeps no CHANGELOG.md is never asked for one', async () => {
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 1;\n');
     touchMarker(r);
-    passes(await judge(r, 'git commit -m "feat: a thing\n\nFixes #4"'), '', 'allowed');
+    passes(await judge(r, 'feat: a thing\n\nFixes #4'), '', 'allowed');
   });
 };
 

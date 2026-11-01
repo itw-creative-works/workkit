@@ -42,29 +42,29 @@ const ask = async (w, key = 'findings.file') => {
 const cases = async () => {
   group('settingsLayers and settingGet: the repo file over the machine file');
 
-  await test('ports "no key in either file: prints nothing"', async () => {
-    assertEq(await ask(world({ repo: { version: 1, enabled: true }, user: { version: 1 } })), undefined,
+  await test('no key in either file: prints nothing', async () => {
+    assertEq(await ask(world({ repo: { enabled: true }, user: { version: 1 } })), undefined,
       'an absent key is no answer');
   });
 
-  await test('ports "true in the global file and no repo key: prints true"', async () => {
-    assertEq(await ask(world({ repo: { version: 1, enabled: true }, user: { findings: { file: true } } })), true,
+  await test('true in the global file and no repo key: prints true', async () => {
+    assertEq(await ask(world({ repo: { enabled: true }, user: { findings: { file: true } } })), true,
       'the machine file answers');
   });
 
-  await test('ports "false globally and true in the repo file: prints true"', async () => {
-    const w = world({ repo: { version: 1, enabled: true, findings: { file: true } }, user: { findings: { file: false } } });
+  await test('false globally and true in the repo file: prints true', async () => {
+    const w = world({ repo: { enabled: true, findings: { file: true } }, user: { findings: { file: false } } });
     assertEq(await ask(w), true, 'the repo file wins');
   });
 
-  await test('ports "true globally and false in the repo file: prints false"', async () => {
+  await test('true globally and false in the repo file: prints false', async () => {
     // A literal false is a value, never "absent": falling through to the
     // machine file here would turn the repo's override off.
-    const w = world({ repo: { version: 1, enabled: true, findings: { file: false } }, user: { findings: { file: true } } });
+    const w = world({ repo: { enabled: true, findings: { file: false } }, user: { findings: { file: true } } });
     assertEq(await ask(w), false, 'the repo file wins with false');
   });
 
-  await test('ports "outside any git repo: the global file alone"', async () => {
+  await test('outside any git repo: the global file alone', async () => {
     // The folder carries a settings file of its own, so a reader that took it
     // as the repo layer would answer false.
     const w = world({ repo: { findings: { file: false } }, user: { findings: { file: true } }, git: false });
@@ -83,14 +83,14 @@ const cases = async () => {
 
   const layers = async (w) => settings().settingsLayers(CWD, w.env, w.io);
 
-  await test('ports "hook_findings_on: true only when the setting reads true"', async () => {
+  await test('hook_findings_on: true only when the setting reads true', async () => {
     const { findingsOn } = settings();
     assertEq(findingsOn(...(await layers(world({ user: { findings: { file: true } } })))), true, 'true reads on');
     assertEq(findingsOn(...(await layers(world({ user: { findings: { file: false } } })))), false, 'false reads off');
     assertEq(findingsOn(...(await layers(world({ user: { version: 1 } })))), false, 'an absent key reads off');
   });
 
-  await test('ports "hook_findings_route: off and absent both print the chat route"', async () => {
+  await test('hook_findings_route: off and absent both print the chat route', async () => {
     const { findingsRoute } = settings();
     for (const user of [{ findings: { file: false } }, { version: 1 }]) {
       const said = findingsRoute(...(await layers(world({ user }))));

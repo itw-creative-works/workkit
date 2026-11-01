@@ -48,21 +48,21 @@ const append = (dir, line) => {
 const cases = async () => {
   group('changelog-guard: scope');
 
-  await test('ports "a file that is not a CHANGELOG is ignored"', () => {
+  await test('a file that is not a CHANGELOG is ignored', () => {
     const failing = runResult({ exitCode: 1, stderr: 'issue-link: no issue link\n' });
     assertEq(verdict('/w/repo/README.md', failing), '', 'the path decides, whatever a lint said');
   });
 
   group('changelog-guard: judging');
 
-  await test('ports "a new entry in the format passes"', () => {
+  await test('a new entry in the format passes', () => {
     const dir = mkRepo(doc());
     const file = append(dir, `- ${ISSUE} - Plugins install from settings.json.`);
     assertEq(verdict(file), '', 'passes');
     cleanup(dir);
   });
 
-  await test('ports "a new essay entry blocks with exit 2 and names the rule"', () => {
+  await test('a new essay entry blocks with exit 2 and names the rule', () => {
     const dir = mkRepo(doc());
     const file = append(dir, `- **Plugins are installed from a declaration.** ${new Array(60).fill('word').join(' ')}`);
     const out = verdict(file);
@@ -72,14 +72,14 @@ const cases = async () => {
   });
 
   // Adopting the format must never bounce a repo for its history.
-  await test('ports "a legacy entry the write did not touch does not block"', () => {
+  await test('a legacy entry the write did not touch does not block', () => {
     const dir = mkRepo(doc('- A legacy essay entry with no issue link at all.'));
     const file = append(dir, `- ${ISSUE} - A properly formatted new entry.`);
     assertEq(verdict(file), '', 'passes');
     cleanup(dir);
   });
 
-  await test('ports "a correct entry in a keepachangelog file with a link footer passes"', () => {
+  await test('a correct entry in a keepachangelog file with a link footer passes', () => {
     const dir = mkRepo(['# Changelog', '', '## [Unreleased]', '', '### Added', '', '[Unreleased]: https://github.com/o/r/compare/v1.0.0...HEAD', ''].join('\n'));
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('[Unreleased]:', `- ${ISSUE} - A correct new entry.\n\n[Unreleased]:`));
@@ -88,7 +88,7 @@ const cases = async () => {
   });
 
   // With no git to ask, everything is new: a first CHANGELOG is still judged.
-  await test('ports "a CHANGELOG outside git is judged in full"', () => {
+  await test('a CHANGELOG outside git is judged in full', () => {
     const dir = mkTmp('clg-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('- An essay entry with no issue link.'));

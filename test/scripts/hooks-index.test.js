@@ -11,11 +11,11 @@ const HOOKS_DIR = path.join(REPO, 'hooks');
 const MODS_DIR = path.join(HOOKS_DIR, 'mods');
 const HOOKS_JSON = path.join(HOOKS_DIR, 'hooks.json');
 
-// The twelve that ran as shell hooks before the module took them.
+// The former shell hooks the module runs; the gh and commit guards run in the
+// gh shim's gate and git's own hooks.
 const MIGRATED = [
-  'docs:change-tracker', 'safety:capture-guard', 'safety:commit-gate', 'safety:commit-language', 'safety:findings-guard',
-  'safety:issue-guard', 'safety:proof-guard', 'safety:release-taken', 'safety:spec-guard',
-  'safety:tree-guard', 'safety:vendor-guard', 'workflow:snapshot',
+  'docs:change-tracker', 'safety:capture-guard', 'safety:release-taken', 'safety:tree-guard', 'safety:vendor-guard',
+  'workflow:snapshot',
 ];
 
 // A hook's name as the module logs it, `<group>:<name>` in single quotes.
@@ -71,7 +71,7 @@ const cases = async () => {
     assertEq(moduleEvents().join(','), ten.join(','), 'the events hooks/register.js hooks');
   });
 
-  await test('the module names every hook, the twelve former shell hooks among them', () => {
+  await test('the module names every hook, the six former shell hooks it still runs among them', () => {
     const missing = MIGRATED.filter((name) => !moduleHooks().includes(name));
     assertEq(missing.join(','), '', 'the former shell hooks the module does not name');
   });

@@ -1,13 +1,11 @@
-// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
-// hooks/mods/commit-gate.js: a repo with no origin remote is a throwaway (a
-// fixture, a scratch repo), outside the pipeline, so the gate stands aside
-// there; the cd and -C blocks hold in every repo. Each case ports the HEAD
-// case its name quotes; "no cwd" is a fact with an empty cwd now.
+// Tests for safety:commit-gate's logic, preCommitVerdict(facts) in hooks/mods/commit-gate.js:
+// a repo with no origin remote is a throwaway (a fixture, a scratch repo), outside the
+// pipeline, so the gate stands aside there.
 // The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
 const { group, test, summary, selfRun } = require('../../lib/harness');
 const {
-  T, mkRepo, stage, write, staleMarker, judge, blocks, passes,
+  mkRepo, stage, staleMarker, judge, passes,
 } = require('./helpers');
 
 // A throwaway repo: the fixture repo with its origin taken away.
@@ -16,43 +14,17 @@ const mkThrowawayRepo = () => mkRepo({ origin: null });
 const cases = async () => {
   group('commit-gate: a repo with no origin');
 
-  await test('ports "no origin, staged code, no review marker: exit 0 and silent"', async () => {
+  await test('no origin, staged code, no review marker: exit 0 and silent', async () => {
     const r = mkThrowawayRepo();
     stage(r, 'app.js', 'const x = 1;\n');
-    passes(await judge(r, 'git commit -m "pub 1"'), '', 'a throwaway repo is not held to the gate');
+    passes(await judge(r, 'pub 1'), '', 'a throwaway repo is not held to the gate');
   });
 
-  await test('ports "no origin, staged code, stale review marker: exit 0 and silent"', async () => {
+  await test('no origin, staged code, stale review marker: exit 0 and silent', async () => {
     const r = mkThrowawayRepo();
     staleMarker(r);
     stage(r, 'app.js', 'const x = 1;\n');
-    passes(await judge(r, 'git commit -m "pub 1"'), '', 'a bad marker in a throwaway repo is not judged');
-  });
-
-  group('commit-gate: stage and commit in one call');
-
-  await test('ports "no origin, git add -A && git commit: exit 0 and silent"', async () => {
-    const r = mkThrowawayRepo();
-    write(r, 'app.js', 'const x = 1;\n');
-    passes(await judge(r, 'git add -A && git commit -m "pub 1"'), '', 'a throwaway repo may stage and commit at once');
-  });
-
-  group('commit-gate: cd and -C still block in a repo with no origin');
-
-  await test('ports "cd x && git commit: exit 2"', async () => {
-    blocks(await judge(mkThrowawayRepo(), 'cd pub-src && git commit -qm "pub 1"'), T.cd, 'a directory change before a commit still fails closed');
-  });
-
-  await test('ports "git -C x commit: exit 2"', async () => {
-    blocks(await judge(mkThrowawayRepo(), 'git -C pub-src commit -qm "pub 1"'), T.dashC, 'a commit aimed elsewhere still fails closed');
-  });
-
-  group('commit-gate: no cwd in the payload');
-
-  await test('ports "no cwd: exit 0, even run from a project repo with unreviewed code"', async () => {
-    const r = mkRepo();
-    stage(r, 'app.js', 'const x = 1;\n');
-    passes(await judge(r, 'git commit -m "pub 1"', { cwd: '' }), '', 'no cwd fails open');
+    passes(await judge(r, 'pub 1'), '', 'a bad marker in a throwaway repo is not judged');
   });
 };
 

@@ -1,27 +1,36 @@
-// Tests for workflow:public-mirror: after a `gh issue edit` adding a status:
-// label in a paired repo, the public issue takes that label. Each case runs the
-// hook's entry on the post-Bash chain (hooks/mods/guards.js) with a real io, so
-// the mirror it starts meets the fake GitHub of test/scripts/public/helpers.js.
+// Tests for workflow:public-mirror: after a Bash call whose gh journal lines add
+// a status: label in a paired repo, the public issue takes that label. Each case
+// runs the hook's entry on the post-Bash chain (hooks/mods/guards.js) over those
+// lines with a real io, so the mirror it starts meets the fake GitHub of
+// test/scripts/public/helpers.js.
 
 const {
   group, test: testEverywhere, testUnless, assert, assertEq, until, summary, selfRun,
 } = require('../lib/harness');
 const { IS_WINDOWS, NO_NODE_STUB } = require('../lib/platform');
-const { mods } = require('../lib/mods-inputs');
-const { ioIn } = require('../lib/real-gate');
-const { mkPublicWorld, publicLine, PUBLIC } = require('../scripts/public/helpers');
+const { mods, ghEntry } = require('../lib/mods-inputs');
+const { ioIn } = require('../../workflow/lib/io');
+const { mkPublicWorld, publicLine, PUBLIC, PRIVATE } = require('../scripts/public/helpers');
 
 const HOOK = 'workflow:public-mirror';
 
 // The mirror the hook starts runs gh by name from Node, which no stub answers on Windows.
 const test = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
-/** The post-Bash chain's public-mirror entry over a Bash call that ran `command` in the repo. */
-const posted = async (world, command) => {
+// A Bash call whose gh write no command parser sees: a script runs it.
+const SCRIPTED = 'bash scripts/park.sh 12';
+
+/** The journal line of a gh issue edit of #12 in the private repo, adding and removing those labels. */
+const edit = (world, add, remove = []) => ghEntry({
+  repo: PRIVATE, numbers: [12], add, remove, cwd: world.repo,
+});
+
+/** The post-Bash chain's public-mirror entry over a Bash call that ran `command` in the repo and journaled `lines`. */
+const posted = async (world, command, lines) => {
   const { POST_BASH_GUARDS, runChain } = mods('guards');
   const entry = POST_BASH_GUARDS.filter((g) => g.hook === HOOK);
   assertEq(entry.length, 1, `${HOOK} is on the post-Bash chain once`);
-  const chain = await runChain(ioIn(world.env), world.env, entry, { command, cwd: world.repo, failed: false });
+  const chain = await runChain(ioIn(world.env), world.env, entry, { command, lines, cwd: world.repo });
   assert(!chain.error && !chain.deny, `the hook neither crashed nor denied, got: ${chain.error || chain.deny}`);
   return chain;
 };
@@ -45,21 +54,21 @@ const QUIET_MS = 1500;
 const cases = async () => {
   group('workflow:public-mirror');
 
-  await test('the hook fires on gh issue edit <N> --add-label status:qa in a paired repo', async () => {
+  await test('case 2: a journal line adding status:qa to #12 in a paired repo runs the mirror for #12', async () => {
     const world = linkedWorld();
-    await posted(world, 'gh issue edit 12 --add-label status:qa');
+    await posted(world, SCRIPTED, [edit(world, ['status:qa'])]);
     assert(await until(() => publicLabels(world) === QA), `the public issue took status:qa, got: ${publicLabels(world)}`);
   });
 
-  await test('and not on an edit with no status: label', async () => {
+  await test('case 2: a journal line adding no status: label runs nothing', async () => {
     const world = linkedWorld();
-    await posted(world, 'gh issue edit 12 --add-label priority:high');
+    await posted(world, SCRIPTED, [edit(world, ['priority:high'])]);
     assert(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),
       `the public issue kept status:building, got: ${publicLabels(world)}`);
     assertEq(JSON.stringify(world.gh.writes()), '[]', 'nothing was written');
   });
 
-  await testEverywhere('an edit adding no status: label returns before the hook reads anything', async () => {
+  await testEverywhere('a line adding no status: label returns before the hook reads anything', async () => {
     const { publicMirrorGuard } = mods('public-mirror');
     const touched = [];
     const record = (what) => async (arg) => {
@@ -68,8 +77,8 @@ const cases = async () => {
     };
     const verdict = await publicMirrorGuard({
       command: 'gh issue edit 12 --remove-label status:inbox --add-label priority:high',
+      lines: [ghEntry({ numbers: [12], add: ['priority:high'], remove: ['status:inbox'], cwd: '/nowhere' })],
       cwd: '/nowhere',
-      failed: false,
       env: {},
       read: record('read'),
       top: record('top'),
@@ -83,7 +92,7 @@ const cases = async () => {
 
   await test('a repo with no public key: the hook does nothing', async () => {
     const world = linkedWorld({ paired: false });
-    await posted(world, 'gh issue edit 12 --add-label status:qa');
+    await posted(world, 'gh issue edit 12 --add-label status:qa', [edit(world, ['status:qa'])]);
     assert(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),
       `the public issue kept status:building, got: ${publicLabels(world)}`);
     assertEq(JSON.stringify(world.gh.writes()), '[]', 'nothing was written');

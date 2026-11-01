@@ -1,29 +1,21 @@
 /**
  * hooks/mods/optin.js: the repo a Bash command acts on and whether it opted
- * in: the command's cd steps, the repos its gh clauses name through the
- * roster, and the cwd decide, and a command the walk cannot place runs the
- * guards, so a guard fails closed (docs/hooks.md § Where every hook stands
- * down). The roster's one reader and the folder a gh clause acts on
- * (`place`) live here too.
+ * in: the command's cd steps and the cwd decide, and a command the walk
+ * cannot place runs the guards, so a guard fails closed (docs/hooks.md
+ * § Where every hook stands down). The roster's one reader, a folder's origin
+ * slug and the folder a gh journal line's call acted on live here too.
  */
 
 import {
   GIT_VALUE_FLAGS, PLACEHOLDER, cdStep, count, foldRedirectAmp, isGitWord, isInterpreter, namesDirChange, peelPrefixes,
-  stepDirs, stripHeredocs, stripQuotes,
+  slugFromRemote, stepDirs, stripHeredocs, stripQuotes,
 } from './command.js';
 import { settingsOptedIn } from './gate.js';
-import { ghClauses, ghRepo, ghRepoIsHere } from './gh-edit.js';
 import { userDirOf } from './log.js';
 import { parseJson } from './settings.js';
 
-// The guards that run in every repo, opted in or not: each speaks to the
-// machine (its secrets leaving), never to a repo.
-const EXEMPT = new Set(['safety:issue-guard']);
-
 const MAY_MOVE = /(^|[^A-Za-z0-9_.-])eval([^A-Za-z0-9_.-]|$)|[ \t\n\r\f\v]-[A-Za-z]*[cC]|--git-dir|--work-tree|GIT_DIR=|GIT_WORK_TREE=|CDPATH=/;
 const MOVES_BY_ENV = /(^|[^A-Za-z0-9_])(GIT_DIR|GIT_WORK_TREE|CDPATH)=/;
-const NAMES_GH = /(^|[^A-Za-z0-9_./-])gh[ \t\n\r\f\v]/;
-const NAMES_GH_REPO = /--repo|-R|github\.com\/[\s\S]*\/issues\/|github\.com\/[\s\S]*\/pull\//;
 
 /**
  * Whether a folder is absolute: `/`-led, or a drive letter and `/`.
@@ -31,16 +23,6 @@ const NAMES_GH_REPO = /--repo|-R|github\.com\/[\s\S]*\/issues\/|github\.com\/[\s
  * @returns {boolean}
  */
 const isAbsolute = (path) => path.startsWith('/') || /^[A-Za-z]:\//.test(path);
-const isGh = (word) => word === 'gh' || word.endsWith('/gh');
-
-/**
- * Whether a guard runs whatever the repo decided.
- * @param {string} hook the guard as settings name it (`safety:issue-guard`)
- * @returns {boolean}
- */
-export function isOptinExempt(hook) {
-  return EXEMPT.has(hook);
-}
 
 // The cheap test sparing most commands the walk: could the text move its
 // folder or repo? An empty quote pair is dropped first, as the shell drops it.
@@ -98,42 +80,24 @@ function fold(path) {
   return `${head}${out || '/'}`;
 }
 
-// Every folder a cd step lands in, and whether every step is a gh clause;
-// null when the command moves its target in a way the walk cannot follow.
+// Every folder a cd step lands in; null when the command moves its target in
+// a way the walk cannot follow.
 function walk(text, cwd) {
   let s = stripQuotes(text);
   if (mayMove(text) && (text.includes('`') || count(text, '$(') !== count(s, '$('))) return null;
   s = foldRedirectAmp(s);
   if (MOVES_BY_ENV.test(s)) return null;
   const dirs = [];
-  let ghOnly = true;
   for (const { dir, text: step } of stepDirs(s)) {
     const words = step.split(/[ \t]+/).filter(Boolean);
-    const peel = peelPrefixes(words);
-    if (moves(words, peel)) return null;
-    if (!isGh(peel.word)) ghOnly = false;
+    if (moves(words, peelPrefixes(words))) return null;
     if (!namesDirChange(step)) continue;
     const landed = cdStep(dir, step);
     if (landed === '?' || landed.includes(PLACEHOLDER)) return null;
     if (!isAbsolute(landed) && !cwd) return null;
     dirs.push(fold(isAbsolute(landed) ? landed : `${cwd}/${landed}`));
   }
-  return { dirs, ghOnly };
-}
-
-// The repos the gh clauses name, each spelling once, and whether a clause
-// names none; null when a value cannot be read.
-function ghRepos(text) {
-  const slugs = [];
-  let here = false;
-  for (const clause of ghClauses(foldRedirectAmp(text))) {
-    if (!clause || !NAMES_GH.test(stripQuotes(clause))) continue;
-    const repo = ghRepo(clause);
-    if (repo === null) return null;
-    if (repo === '') here = true;
-    else if (!slugs.includes(repo)) slugs.push(repo);
-  }
-  return { slugs, here };
+  return dirs;
 }
 
 /**
@@ -164,21 +128,53 @@ export async function rosterPath(slug, roster, slugOf) {
 }
 
 /**
- * The folder a gh clause acts on and the repo it named ('' for none), or a
- * note, worded for workflow:snapshot, naming why it cannot be placed;
- * workflow:public-mirror reads the folder alone.
- * @param {string} clause one clause
- * @param {{cwd: string, roster: object|null, slugOf: function}} facts the command's folder, the roster, `slugOf(dir)`
- * @param {boolean} sawCd whether a cd came before the clause
+ * Whether the repo value names the session tree's origin, owner/name in any
+ * letter case. No origin is never here.
+ * @param {string} repo the repo named, owner/name
+ * @param {string} here the session tree's origin slug, '' when it has none
+ * @returns {boolean}
+ */
+export function ghRepoIsHere(repo, here) {
+  return Boolean(here) && repo.toLowerCase() === here.toLowerCase();
+}
+
+/**
+ * The origin slug of the git working tree at `dir`, '' when it has none (the
+ * engine's rule: wk_repo_slug).
+ * @param {string} dir the folder
+ * @param {function} run runs `(argv, { cwd })`, resolving `{ exitCode, stdout }`
+ * @returns {Promise<string>}
+ */
+export async function repoSlug(dir, run) {
+  const remote = await run(['git', 'remote', 'get-url', 'origin'], { cwd: dir });
+  return remote.exitCode === 0 ? slugFromRemote(remote.stdout) ?? '' : '';
+}
+
+/**
+ * Whether `cwd` is inside a git work tree with no origin: a scratch or fixture
+ * repo, outside the pipeline. An empty cwd, or one in no repo, is not.
+ * @param {string} cwd the folder
+ * @param {function} run runs `(argv, { cwd })`, resolving `{ exitCode, stdout }`
+ * @returns {Promise<boolean>}
+ */
+export async function originless(cwd, run) {
+  if (!cwd) return false;
+  const inside = await run(['git', 'rev-parse', '--is-inside-work-tree'], { cwd });
+  return inside.exitCode === 0 && (await repoSlug(cwd, run)) === '';
+}
+
+/**
+ * The folder a gh journal line's call acted on and the repo it named: the
+ * call's own folder when the repo is that folder's origin (or none), else the
+ * repo's folder on this machine's roster, or a note, worded for
+ * workflow:snapshot, when the roster holds none; workflow:public-mirror reads
+ * the folder alone.
+ * @param {{dir: string, repo: string}} call the call's folder and the repo the shim resolved, '' for none
+ * @param {{roster: object|null, slugOf: function}} facts the roster (rosterOf) and `slugOf(dir)` async
  * @returns {Promise<{dir: string, repo: string}|{note: string}>}
  */
-export async function place(clause, { cwd, roster, slugOf }, sawCd) {
-  const repo = ghRepo(clause);
-  if (repo === null) return { note: 'a --repo value could not be read (a variable, a substitution or a quoted span), so no snapshot was taken or dropped for it.' };
-  if (repo === '' || ghRepoIsHere(repo, String((await slugOf(cwd)) ?? ''))) {
-    if (repo === '' && sawCd) return { note: 'the command changes directory before a flip naming no --repo, so no snapshot was taken or dropped for it.' };
-    return { dir: cwd, repo };
-  }
+export async function placeLine({ dir, repo }, { roster, slugOf }) {
+  if (!repo || ghRepoIsHere(repo, String((await slugOf(dir)) ?? ''))) return { dir, repo };
   const folder = await rosterPath(repo, roster, slugOf);
   if (!folder) return { note: `${repo} is not opted in on this machine's workkit roster (absent or declined), so no snapshot was taken or dropped for it.` };
   return { dir: folder, repo };
@@ -213,34 +209,23 @@ async function rootsOf(dirs, toplevel, exists) {
 }
 
 // The roots the command acts on, null when it cannot be placed.
-async function bashRoots({ command, cwd, roster, toplevel, slugOf, exists }) {
-  const namesRepo = NAMES_GH_REPO.test(command);
-  if (!namesRepo && !mayMove(command)) return rootsOf([cwd], toplevel, exists);
+async function bashRoots({ command, cwd, toplevel, exists }) {
+  if (!mayMove(command)) return rootsOf([cwd], toplevel, exists);
   const text = stripHeredocs(command);
-  const gh = namesRepo ? ghRepos(text) : { slugs: [], here: false };
-  if (gh === null) return null;
-  if (gh.slugs.length === 0 && !mayMove(text)) return rootsOf([cwd], toplevel, exists);
+  if (!mayMove(text)) return rootsOf([cwd], toplevel, exists);
   const walked = walk(text, cwd);
   if (walked === null) return null;
-  const rostered = [];
-  for (const slug of gh.slugs) {
-    const path = await rosterPath(slug, roster, slugOf);
-    if (path) rostered.push(path);
-  }
-  // A gh clause naming no repo acts on the cwd's, so the cwd joins then too.
-  if (gh.slugs.length > 0 && walked.ghOnly && !gh.here) return rostered;
-  return [...rostered, ...(await rootsOf([cwd, ...walked.dirs], toplevel, exists))];
+  return rootsOf([cwd, ...walked], toplevel, exists);
 }
 
 /**
- * The repo a Bash command acts on and whether it opted in: the cwd, each
- * folder a cd step lands in, and the rostered folder of each repo a gh clause
- * names. Any of them opted in is a yes; so is a command the walk cannot place.
- * @param {{command: string, cwd: string, roster: object|null, toplevel: function,
- *   settingsOf: function, slugOf: function, exists: function}} facts the command,
- *   its folder, the parsed ~/.workkit/.repos.json, and async reads: a folder's git
- *   root, a root's `.workkit/settings.json` text (null when absent), judged by
- *   settingsOptedIn, a folder's origin slug, whether a path is there
+ * The repo a Bash command acts on and whether it opted in: the cwd and each
+ * folder a cd step lands in. Any of them opted in is a yes; so is a command
+ * the walk cannot place.
+ * @param {{command: string, cwd: string, toplevel: function, settingsOf: function, exists: function}} facts
+ *   the command, its folder, and async reads: a folder's git root, a root's
+ *   `.workkit/settings.json` text (null when absent), judged by
+ *   settingsOptedIn, whether a path is there
  * @returns {Promise<{root: string|null, opted: boolean}>} the first opted-in
  *   root, else the first root (null when none or unplaced), and the answer
  */

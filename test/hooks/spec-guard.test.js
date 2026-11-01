@@ -1,10 +1,7 @@
-// Tests for safety:spec-guard's logic, specGuardVerdict({ command, cwd,
-// issueView }) in hooks/mods/spec-guard.js: a flip to status:specced needs a
-// `## Spec` that is the small-item line or carries a `### Contract`; an
-// unreadable view fails open, a flip behind a directory change bounces. Each
-// case ports the HEAD case its name quotes. Dropped with the shell spawn:
-// "missing command and malformed JSON" (the JSON half). In
-// test/mods/guards-spec-guard.test.ts: the read's folder and "gh not on PATH".
+// Tests for safety:spec-guard's specVerdict({ steps, cwd, repo, facts: { issueView } }) in hooks/mods/spec-guard.js,
+// one step per issue ({ sub, number, add, remove }, `body: true` when the call edits the body too): a flip to
+// status:specced needs a `## Spec` that is the small-item line or carries a `### Contract`, and no body edit beside it;
+// an unreadable view fails open. In test/scripts/identity/: argv spelling, gate.test.js; a real gh call, gh-shim.test.js.
 
 const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
@@ -28,23 +25,28 @@ const BODIES = {
   18: '## Spec\n\nThe page reads:\n\n```md\n## Example heading\n```\n\n### Contract\n\nFiles: `a.js`\n\n## Notes\n\nnone\n',
 };
 
-const FLIP = (n) => `gh issue edit ${n} --remove-label status:inbox --add-label status:specced`;
+const step = (number, add = ['status:specced'], remove = ['status:inbox']) => ({
+  sub: 'edit', number, add, remove,
+});
+const FLIP = (n) => [step(n)];
 
 // One verdict through a fresh view stub (gh's `--json body` answer by number,
 // null when `fails`); hands back the verdict and each read as [number, repo].
-const judged = async (command, { fails = false } = {}) => {
+const judged = async (steps, { fails = false, repo = null } = {}) => {
   const calls = [];
-  const issueView = async (n, repo) => {
-    calls.push([String(n), repo || null]);
+  const issueView = async (n, r) => {
+    calls.push([String(n), r || null]);
     if (fails) return null;
     return BODIES[String(n)] === undefined ? null : JSON.stringify({ body: BODIES[String(n)] });
   };
-  const r = await mods('spec-guard').specGuardVerdict({ command, cwd: CWD, issueView });
+  const r = await mods('spec-guard').specVerdict({
+    steps, cwd: CWD, repo, facts: { issueView },
+  });
   return { r, calls, deny: r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null };
 };
 
-const passes = async (command, what = command) => {
-  const out = await judged(command);
+const passes = async (steps, what = JSON.stringify(steps)) => {
+  const out = await judged(steps);
   assertEq(out.deny, null, `must pass: ${what}`);
   return out;
 };
@@ -52,103 +54,70 @@ const passes = async (command, what = command) => {
 const cases = async () => {
   group('spec-guard: the flip to status:specced');
 
-  await test('ports "the small-item Spec passes, silently": one body read of #12', async () => {
+  await test('the small-item Spec passes, silently: one body read of #12', async () => {
     const { r, calls } = await passes(FLIP(12));
     assertEq(textOf(r), '', 'nothing said on a pass');
     assertEq(JSON.stringify(calls), JSON.stringify([['12', null]]), 'exactly one read, of #12');
   });
 
-  await test('ports "a Spec carrying ### Contract passes"', async () => {
+  await test('a Spec carrying ### Contract passes', async () => {
     await passes(FLIP(13));
   });
 
-  await test('ports "a written Spec with no ### Contract blocks, with the exact line"', async () => {
+  await test('a written Spec with no ### Contract blocks, with the exact line', async () => {
     assertEq((await judged(FLIP(14))).deny, BLOCK(14), 'the block line');
   });
 
-  await test('ports "a body with no ## Spec section blocks"', async () => {
+  await test('a body with no ## Spec section blocks', async () => {
     assertEq((await judged(FLIP(15))).deny, BLOCK(15), 'no Spec reads as a written Spec with no Contract');
   });
 
-  await test('ports "a ### Contract outside the Spec section does not count"', async () => {
+  await test('a ### Contract outside the Spec section does not count', async () => {
     assertEq((await judged(FLIP(16))).deny, BLOCK(16), 'only the Spec section is read');
   });
 
-  await test('ports "a CRLF body reads like an LF one"', async () => {
+  await test('a CRLF body reads like an LF one', async () => {
     await passes(FLIP(17));
   });
 
-  await test('ports "a fenced ## line inside the Spec does not end it"', async () => {
+  await test('a fenced ## line inside the Spec does not end it', async () => {
     await passes(FLIP(18));
   });
 
-  await test('ports "a body edit in the flipping clause blocks, reading no issue"', async () => {
-    for (const flag of ['--body "Spec: None needed: small item."', '--body=x', '-b x', '--body-file spec.md', '-F spec.md']) {
-      const c = `gh issue edit 12 ${flag} --add-label status:specced`;
-      const { deny, calls } = await judged(c);
-      assertEq(deny, BODY_EDIT(12), `the body-edit line: ${c}`);
-      assertEq(calls.length, 0, `reads no issue: ${c}`);
-    }
+  await test('a body edit in the flipping clause blocks, reading no issue: a step carrying body: true', async () => {
+    const { deny, calls } = await judged([{ ...step(12, ['status:specced'], []), body: true }]);
+    assertEq(deny, BODY_EDIT(12), 'the body-edit line, though #12 holds a passing small-item Spec');
+    assertEq(calls.length, 0, 'reads no issue');
   });
 
-  await test('ports "the attached and listed label spellings are judged the same"', async () => {
-    for (const c of [
-      'gh issue edit 14 --add-label=status:specced',
-      'gh issue edit 14 --add-label "priority:high,status:specced"',
-      "gh issue edit 14 --add-label 'status:inbox, status:specced'",
-    ]) {
-      assertEq((await judged(c)).deny, BLOCK(14), `the uncontracted flip blocks: ${c}`);
-    }
-    for (const c of ['gh issue edit 12 --add-label=status:specced', 'gh issue edit 13 --add-label "priority:high,status:specced"']) {
-      await passes(c, `the passing bodies still pass: ${c}`);
-    }
+  await test('the listed label spellings are judged the same: status:specced among other added labels', async () => {
+    assertEq((await judged([step(14, ['priority:high', 'status:specced'], [])])).deny, BLOCK(14), 'the uncontracted flip blocks');
+    await passes([step(13, ['priority:high', 'status:specced'], [])], 'the contracted flip still passes');
   });
 
-  await test('ports "an edit that adds no status:specced passes untouched, reading nothing"', async () => {
-    for (const c of [
-      'gh issue edit 14 --add-label priority:high',
-      'gh issue edit 14 --remove-label status:specced --add-label status:building',
-      'gh issue edit 14 --body "flip it with --add-label status:specced later"',
-    ]) {
-      const { r, calls } = await passes(c);
-      assertEq(textOf(r), '', `nothing said: ${c}`);
-      assertEq(calls.length, 0, `no issue is read: ${c}`);
-    }
-  });
-
-  await test('ports "other commands pass untouched"', async () => {
-    for (const c of ['gh issue comment 14 --body "x"', 'ls', 'echo "gh issue edit 14 --add-label status:specced"', '']) {
-      const { r, calls } = await passes(c);
-      assertEq(textOf(r), '', `nothing said: ${c}`);
-      assertEq(calls.length, 0, `nothing is read: ${c}`);
+  await test('an edit that adds no status:specced passes untouched, reading nothing', async () => {
+    for (const s of [step(14, ['priority:high'], []), step(14, ['status:building'], ['status:specced'])]) {
+      const { r, calls } = await passes([s]);
+      assertEq(textOf(r), '', `nothing said: ${JSON.stringify(s)}`);
+      assertEq(calls.length, 0, `no issue is read: ${JSON.stringify(s)}`);
     }
   });
 
   group('spec-guard: repo and compound');
 
-  await test("ports \"an issue URL's repo rides the read, never the session's\"", async () => {
-    const { deny, calls } = await judged('gh issue edit https://github.com/owner/name/issues/14 --add-label status:specced');
+  await test("an issue URL's repo rides the read, never the session's", async () => {
+    const { deny, calls } = await judged(FLIP(14), { repo: 'owner/name' });
     assertEq(deny, BLOCK(14), 'the issue still has no Contract');
-    assertEq(JSON.stringify(calls), JSON.stringify([['14', 'owner/name']]), "the URL's repo is forwarded");
+    assertEq(JSON.stringify(calls), JSON.stringify([['14', 'owner/name']]), 'the repo is forwarded');
   });
 
-  await test('ports "a --repo value the guard cannot read fails open, never reads the local repo"', async () => {
-    const { r, calls } = await passes('gh issue edit 14 --repo "$TARGET" --add-label status:specced');
-    assertEq(textOf(r), SKIPPED(14, 'the --repo value could not be read'), 'one stand-down line');
-    assertEq(calls.length, 0, 'the local repo is never asked instead');
-  });
-
-  await test('ports "a directory change after the flip is not one"', async () => {
-    await passes('gh issue edit 12 --add-label status:specced && cd /some/repo');
-  });
-
-  await test('ports "every issue in a compound is judged"', async () => {
-    assertEq((await judged(`${FLIP(12)} && ${FLIP(14)}`)).deny, BLOCK(14), 'names the uncontracted one');
+  await test('every issue in a compound is judged', async () => {
+    assertEq((await judged([step(12), step(14)])).deny, BLOCK(14), 'names the uncontracted one');
   });
 
   group('spec-guard: wiring and fail-open');
 
-  await test('ports "a gh view that fails: exit 0, one line saying the gate did not run"', async () => {
+  await test('a gh view that fails: exit 0, one line saying the gate did not run', async () => {
     const { r, deny } = await judged(FLIP(14), { fails: true });
     assertEq(deny, null, 'a failing view fails open');
     assertEq(textOf(r), SKIPPED(14, 'gh could not answer'), 'the one stand-down line');

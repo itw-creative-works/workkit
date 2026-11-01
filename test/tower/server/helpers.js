@@ -46,7 +46,7 @@ const mkWorld = () => {
   git(repo, 'config', 'user.name', 'Test');
   git(repo, 'remote', 'add', 'origin', `git@github.com:${SLUG}.git`);
   fs.mkdirSync(path.join(repo, '.workkit'), { recursive: true });
-  fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), JSON.stringify({ version: 7, enabled: true }));
+  fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), JSON.stringify({ enabled: true }));
   fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n- [#1](u) - One thing.\n');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'initial');

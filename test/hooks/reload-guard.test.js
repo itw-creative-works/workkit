@@ -1,16 +1,7 @@
-// Tests for workflow:reload-guard's logic, reloadGuardContext(stamp,
-// fingerprint) in hooks/mods/reload-guard.js: the one-line notice when the
-// kit's load-time surfaces differ from what the session stamped. What counts
-// as a change, the stamp, and nagging once are test/mods/user-prompt-submit.test.ts.
-
-// HEAD cases retired with the mod: "garbage stdin: exit 0, silent" (the engine
-// parses the input), "an unexpected event name: exit 0, silent" (the module hooks only its two).
-// HEAD cases ported under new names: "the loader routes workflow:reload-guard and the notice comes through"
-// as test/mods/user-prompt-submit.test.ts "an opted-in repo: the contexts arrive in the order ...";
-
-// "hooks.json wires it on both events, through the loader" as user-prompt-submit's
-// "SessionStart writes the stamp and says nothing" with the notice cases, and
-// test/scripts/hooks-index.test.js "the module registers on the eight events and nothing else".
+// Tests for workflow:reload-guard's logic, reloadGuardContext(stamp, fingerprint) in hooks/mods/reload-guard.js:
+// the one-line notice when the kit's load-time surfaces differ from what the session stamped. What counts as a
+// change, the stamp, and nagging once are test/mods/user-prompt-submit.test.ts; the events the module registers on,
+// test/scripts/hooks-index.test.js.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
@@ -22,13 +13,13 @@ const say = (stamp, fingerprint) => textOf(mods('reload-guard').reloadGuardConte
 const cases = async () => {
   group('reload-guard: an unchanged checkout is silent');
 
-  await test('ports "prompt after a stamp with nothing touched: no output"', () => {
+  await test('prompt after a stamp with nothing touched: no output', () => {
     assertEq(say(STAMP, STAMP), '', 'nothing changed, nothing to say');
   });
 
   group('reload-guard: a change nags');
 
-  await test('ports "the notice is valid UserPromptSubmit context": one line naming /reload-plugins', () => {
+  await test('the notice is valid UserPromptSubmit context: one line naming /reload-plugins', () => {
     const out = say(STAMP, CHANGED);
     assert(out.includes('/reload-plugins'), `the change is announced, got: ${out}`);
     assert(out.includes('already live'), 'and says what does NOT need a reload');

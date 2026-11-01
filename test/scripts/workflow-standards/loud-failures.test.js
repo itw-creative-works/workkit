@@ -9,7 +9,7 @@ const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, gitPath, which, linkTool, systemPathWith,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, STANDARD_VERSION,
+  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript,
 } = require('./helpers');
 
 const cases = async () => {
@@ -99,16 +99,15 @@ const cases = async () => {
     cleanup(repo);
   });
 
-  await test('a severed tail does not cost a repo the version it recorded', () => {
-    // The version read is the same file read, one line down: jq prints the
-    // version and then fails on the tail, so a read that throws that answer
-    // away calls a current repo a legacy one and tries to stamp a version it
-    // already carries onto a file nothing can write.
-    const repo = makeRepo({ settings: `{ "version": ${STANDARD_VERSION}, "enabled": true }{\n` });
+  await test('a severed tail on a yes with no version key: the heals run and the file is never rewritten', () => {
+    // jq prints the answer it parsed and then fails on the tail, so a key
+    // check that reads the failure as a key found tries a write nothing can make.
+    const text = '{ "enabled": true }{\n';
+    const repo = makeRepo({ settings: text });
     const { output } = runScript(repo);
     assert(output.includes('issue forms'), `the mechanical heals still run, got: ${output}`);
-    assert(!/not valid JSON/.test(output),
-      `a repo already at the standard is not stamped again, got: ${output}`);
+    assert(!/not valid JSON/.test(output), `no write is tried on the file, got: ${output}`);
+    assertEq(fs.readFileSync(path.join(repo, '.workkit', 'settings.json'), 'utf8'), text, 'and it stands as it was');
     cleanup(repo);
   });
 

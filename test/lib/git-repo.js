@@ -5,20 +5,23 @@
 // every suite that needs a real repo (red-proof, review-covers, prove, slug, the
 // identity and workkit-cli suites, the snapshot and command logic suites).
 // `mkOriginRepo` is the minimal form: an init and an origin, nothing committed.
+// `commitGh` is the `gh` a commit's own hooks ask (the githooks and release-taken
+// suites): `issue view` and `release view` answered from fixtures.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { shellPath, homeEnv } = require('./platform');
+const { shellPath, homeEnv, stubTool } = require('./platform');
 const { mkTmp, WORKKIT_DIR } = require('./harness');
+const { recordArgv, readArgv } = require('./argv-log');
+const { OPT_IN_SHAPES } = require('./mod-fixtures.mjs');
 
 // The origin every fixture repo carries, never fetched: a repo without one is a
 // throwaway the commit hooks skip.
 const FIXTURE_ORIGIN = 'https://example.invalid/owner/repo.git';
 
-// A repo's opt-in, committed with the seeded files unless `files` names its own.
+// The opt-in committed with the seeded files unless `files` names its own.
 const OPT_IN_FILE = `${WORKKIT_DIR}/settings.json`;
-const OPT_IN = '{ "version": 1, "enabled": true }\n';
 
 /**
  * A scratch world whose repo holds `files` in one commit.
@@ -54,7 +57,7 @@ const mkRepo = (prefix, files, when, { optIn = true } = {}) => {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'Test');
-  const seeded = optIn ? { [OPT_IN_FILE]: OPT_IN, ...files } : files;
+  const seeded = optIn ? { [OPT_IN_FILE]: OPT_IN_SHAPES.current, ...files } : files;
   for (const [rel, body] of Object.entries(seeded)) write(rel, body, when);
   git('add', '-A');
   git('commit', '-q', '-m', 'init');
@@ -77,4 +80,41 @@ const mkOriginRepo = (dir, origin) => {
   return dir;
 };
 
-module.exports = { mkRepo, mkOriginRepo, FIXTURE_ORIGIN };
+/**
+ * A `gh` on its own bin folder, recording every call: `issue view <N>` prints
+ * `issues[N]` whole as JSON (an unknown number exits 1), `release view <tag>`
+ * prints the tag when `tags` holds it and "release not found" (exit 1) when not;
+ * with `fails` every call exits 1 the way a signed-out gh does.
+ * @param {object} [opts]
+ * @param {object} [opts.issues] - issue number to its `--json` answer
+ * @param {string[]} [opts.tags] - the release tags the repo carries
+ * @param {boolean} [opts.fails]
+ * @returns {{binDir: string, calls: Function}} `calls()` is every argv, in order
+ */
+const commitGh = ({ issues = {}, tags = [], fails = false } = {}) => {
+  const dir = mkTmp('commit-gh-');
+  const binDir = path.join(dir, 'bin');
+  const issuesDir = path.join(dir, 'issues');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(issuesDir, { recursive: true });
+  for (const [n, answer] of Object.entries(issues)) fs.writeFileSync(path.join(issuesDir, `${n}.json`), JSON.stringify(answer));
+  const log = path.join(dir, 'gh.log');
+  stubTool(binDir, 'gh', [
+    '#!/usr/bin/env bash',
+    recordArgv(log),
+    ...(fails ? ["echo 'gh: To get started with GitHub CLI, please run: gh auth login' >&2", 'exit 1'] : []),
+    'if [[ "$1 $2" == "issue view" ]]; then',
+    `  cat "${shellPath(issuesDir)}/$3.json" 2>/dev/null || exit 1`,
+    '  exit 0',
+    'fi',
+    'if [[ "$1 $2" == "release view" ]]; then',
+    `  case " ${tags.join(' ')} " in *" $3 "*) echo "$3"; exit 0 ;; esac`,
+    "  echo 'release not found' >&2",
+    '  exit 1',
+    'fi',
+    'exit 0',
+  ]);
+  return { binDir, calls: () => readArgv(log) };
+};
+
+module.exports = { mkRepo, mkOriginRepo, commitGh, FIXTURE_ORIGIN, OPT_IN_SHAPES };

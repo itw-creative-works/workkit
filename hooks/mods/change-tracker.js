@@ -3,16 +3,16 @@
  * the work item true, promotes durable findings out of `.workkit/` and checks
  * doc parity while code sits uncommitted or captures sit unfiled; once per
  * change, remembered by fingerprint in `.workkit/agents/.change-tracker`,
- * and only on the Stop of a turn that parked, blocked or closed an issue
- * (docs/hooks.md § docs:change-tracker). It reads files and git, never gh.
+ * and only on the Stop of a turn that parked, blocked or closed an issue, as
+ * the gh journal records it (docs/hooks.md § docs:change-tracker). It reads
+ * files and git, never gh.
  */
 
-import { ghClauseSub, ghFlagValues, ghNames, ghSteps, hasLabel } from './gh-edit.js';
-import { sha1Hex } from './markers.js';
+import { userDirOf } from './log.js';
+import { journalFor, journalTail, onIssue, sha1Hex } from './markers.js';
 import { rowsOf } from './session-guard.js';
 import { findingsOn, settingsLayers } from './settings.js';
 import { CODE_EXT } from './test-reminder.js';
-import { turnMessages } from './turn.js';
 
 const STATE_FILE = '.workkit/agents/.change-tracker';
 const PROMPT = 'hooks/mods/change-tracker/prompt.md';
@@ -24,26 +24,18 @@ const BOARD = "BOARD: PROGRESS.md still exists in this repo. Migrate it to issue
 // What a command substitution keeps of a text: every trailing newline dropped.
 const chomp = (text) => text.replace(/\n+$/, '');
 
-// A clause that ends work in hand: a park or a block flip, or a close.
-function endsWork(clause, detect) {
-  const sub = ghClauseSub(detect);
-  if (sub === 'close') return true;
-  if (sub !== 'edit') return false;
-  const labels = ghFlagValues(clause, '--add-label');
-  return hasLabel(labels, 'status:qa') || hasLabel(labels, 'status:blocked');
-}
+// A journal line that ends work in hand: a close, or a park or a block flip.
+const endsWork = (line) => onIssue(line)
+  && (line.sub === 'close' || (line.sub === 'edit' && (line.add.includes('status:qa') || line.add.includes('status:blocked'))));
 
 /**
- * Whether the turn reached an endpoint: a Bash tool use after the last owner
- * prompt runs `gh issue edit` adding status:qa or status:blocked, or `gh issue close`.
- * @param {object[]} messages the transcript, the session's SessionMessage rows
+ * Whether the turn reached an endpoint: one of the turn's gh journal lines is
+ * a `close`, or an `edit` adding status:qa or status:blocked, of an issue.
+ * @param {object[]} lines the journal lines past the turn's start (journalTail in markers.js)
  * @returns {boolean}
  */
-export function endpointTurn(messages) {
-  return turnMessages(messages).some((message) => (message.toolUses ?? []).some((use) => {
-    const command = use.tool === 'Bash' ? String(use.input?.command ?? '') : '';
-    return ghNames(command, 'edit|close') && [...ghSteps(command)].some(({ clause, detect }) => endsWork(clause, detect));
-  }));
+export function endpointTurn(lines) {
+  return lines.some(endsWork);
 }
 
 /**
@@ -130,19 +122,28 @@ async function keepsMemory(io, cwd) {
   return (await io.run(['git', 'check-ignore', '-q', STATE_FILE], { cwd })).exitCode === 0;
 }
 
+// The turn's gh journal lines: those of the cwd's root past the length the
+// prompt recorded; no record, no lines.
+async function turnLines(io, env, cwd, turn) {
+  if (!turn) return [];
+  return journalTail(io.run, await journalFor(io.top, cwd, userDirOf(env)), turn.bytes);
+}
+
 /**
  * The change tracker's Stop: on an endpoint turn only, gathers the tree, asks
  * the verdict, writes the new fingerprint whole where the repo keeps the
  * memory, and answers the block carrying the reason and the nag.
- * @param {object} io the engine calls register.js hands over (`ioOf`), the turn through `messages()`
+ * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {object} env the variables the module read
  * @param {object} e the Stop event's input
+ * @param {{ms: number, bytes: number}|undefined} turn the turn's start the prompt
+ *   recorded (the store's `turn-journal`), undefined before any prompt
  * @returns {Promise<{block: string}|null>}
  */
-export async function changeTrackerGather(io, env, e) {
+export async function changeTrackerGather(io, env, e, turn) {
   const { cwd } = e;
   if (String(e.stop_hook_active) === 'true' || !cwd) return null;
-  if (!endpointTurn(await io.messages())) return null;
+  if (!endpointTurn(await turnLines(io, env, cwd, turn))) return null;
   const git = (args) => io.run(['git', ...args], { cwd });
   if ((await git(['rev-parse', '--is-inside-work-tree'])).exitCode !== 0) return null;
   const [status, inboxText, captureText] = await Promise.all([

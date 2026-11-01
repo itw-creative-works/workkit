@@ -15,7 +15,7 @@ const RULE3 = (n: number) => `manager:close-guard: the frontier model made ${n} 
 const settings = (manager: unknown) => JSON.stringify({ version: 1, enabled: true, manager })
 
 describe('classic.Stop: the Contract cases', () => {
-  test('stop_hook_active: true says nothing (ports "stop_hook_active is silent (the turn was judged once)")', async ($, on) => {
+  test('stop_hook_active: true says nothing', async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable, messages: [row.user(), ...edits(6)] })
     await stop($, { stop_hook_active: true })
     expect(guardLogs(w)).toHaveLength(0)
@@ -45,7 +45,7 @@ describe('classic.Stop: the Contract cases', () => {
     expect(lines[0].endsWith('.')).toBe(true)
   })
 
-  test('manager.enabled: false in the repo settings: no line (ports "enabled: false silences the guard")', async ($, on) => {
+  test('manager.enabled: false in the repo settings: no line', async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable, repos: { [REPO]: settings({ enabled: false }) }, messages: [row.user(), ...edits(6)] })
     await stop($)
     expect(guardLogs(w)).toHaveLength(0)
@@ -53,7 +53,7 @@ describe('classic.Stop: the Contract cases', () => {
 })
 
 describe('classic.Stop: the answer and the gate', () => {
-  test('ports "the output never continues the turn": no block, no context, the event passed on once', async ($, on) => {
+  test('the output never continues the turn: no block, no context, the event passed on once', async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable })
     for (const [i, messages] of [[row.user(), ...edits(6)], [row.user(), ...spawn('worker')]].entries()) {
       w.messages = messages
@@ -66,7 +66,7 @@ describe('classic.Stop: the answer and the gate', () => {
     }
   })
 
-  test('ports "HOOK_DISABLE=1 is a silent no-op": no line, no hooks-log line, the event passed on', async ($, on) => {
+  test('HOOK_DISABLE=1 is a silent no-op: no line, no hooks-log line, the event passed on', async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable, env: { HOOK_DISABLE: '1' }, messages: [row.user(), ...edits(6)] })
     await stop($)
     expect(guardLogs(w)).toHaveLength(0)

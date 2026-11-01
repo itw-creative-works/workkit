@@ -1,8 +1,8 @@
 /**
  * hooks/mods/commit-gate/heal.js: the commit gate's heal-bookkeeping arms,
- * each proving a file is exactly the heal's output: the version stamp (which
- * the manifest classifier shares), a retired linter copy's deletion, and the
- * checks.yml rewrite. The rewrite is workflow/changelog/changelog-job.sh's,
+ * each proving a file is exactly the heal's output: the retired version key's
+ * removal from .workkit/settings.json (the version-only compare the manifest
+ * classifier shares), a retired linter copy's deletion, and the checks.yml rewrite. The rewrite is workflow/changelog/changelog-job.sh's,
  * reached through its entry, so the gate never accepts a change the heal would
  * not make; so are the copies and the still-runs question (wk_linter_copies,
  * wk_names_linter_copy), asked over the texts git answers.
@@ -23,13 +23,15 @@ export class HealHeld extends Error {}
  * The gatherer throws it too, for a git read of HEAD that fails.
  * @param {string} check the check that could not run
  * @param {string} cmd the command as run
- * @param {number|string|null} rc its exit status, or 'non-zero' for a read that answered nothing
+ * @param {number|string|null} rc its exit status, 'non-zero' for a read that
+ *   answered nothing, or 'did not start'
  * @param {string} stderr its stderr
  * @returns {HealHeld}
  */
 export function held(check, cmd, rc, stderr) {
   const err = String(stderr ?? '').replace(/\n+$/, '');
-  return new HealHeld(`the ${check} check could not run: \`${cmd}\` exited ${rc}${err ? ` (${err})` : ''}. Its answer is unknown, so the commit is held; fix what failed, then commit.`);
+  const how = rc === 'did not start' ? rc : `exited ${rc}`;
+  return new HealHeld(`the ${check} check could not run: \`${cmd}\` ${how}${err ? ` (${err})` : ''}. Its answer is unknown, so the commit is held; fix what failed, then commit.`);
 }
 
 /**
@@ -40,24 +42,31 @@ export function held(check, cmd, rc, stderr) {
 export const started = (r) => r.isStarted !== false;
 
 /**
- * The heal arms over the commit's facts; none writes a file, the rewrite
- * hashed through `hashOf`.
- * @param {object} facts commitGateVerdict's facts (`run`, `show`, `read`,
- *   `jobRewrite`, `hashOf`, `kitRoot`)
+ * A run's exit as `held` words it: its code, or 'did not start'.
+ * @param {object} r a run's result
+ * @returns {number|string|null}
+ */
+export const exitOf = (r) => (started(r) ? r.exitCode : 'did not start');
+
+/**
+ * The heal arms over the commit's facts, the index being what it carries;
+ * none writes a file, the rewrite hashed through `hashOf`.
+ * @param {object} facts preCommitVerdict's facts (`run`, `show`, `jobRewrite`,
+ *   `hashOf`, `kitRoot`)
  * @param {string} root the repo root
- * @param {boolean} all whether the commit runs under -a/--all, so the working tree is what it carries
  * @returns {{versionBumpOnly: function, isBookkeeping: function}}
  */
-export function healArms(facts, root, all) {
+export function healArms(facts, root) {
   const git = (argv, init = {}) => facts.run(['git', '-C', root, ...argv], { cwd: root, timeoutMs: LONG_RUN_MS, ...init });
   const job = (args, init = {}) => facts.run(['bash', `${facts.kitRoot}/workflow/changelog/changelog-job.sh`, ...args], { cwd: root, timeoutMs: LONG_RUN_MS, ...init });
   let copies = null;
 
-  // A run whose status up to `max` is an answer; past it, or never started, the hold.
+  // A run whose numeric status is up to `max` is an answer; past it, never
+  // started, or ended by a signal (no code), the hold.
   async function ask(check, max, cmd, result) {
     const r = await result;
-    if (started(r) && r.exitCode <= max) return r;
-    throw held(check, cmd, r.exitCode, r.stderr);
+    if (started(r) && typeof r.exitCode === 'number' && r.exitCode <= max) return r;
+    throw held(check, cmd, exitOf(r), r.stderr);
   }
   const tool = (check, cmd, result) => ask(check, 0, cmd, result);
   const gitAsk = (check, max, argv, init) => ask(check, max, `git -C ${root} ${argv.join(' ')}`, git(argv, init));
@@ -78,31 +87,22 @@ export function healArms(facts, root, all) {
     const check = 'version stamp';
     if ((await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `HEAD:${file}`])).exitCode === 1) return false;
     const head = await blob(check, 'HEAD', file);
-    let copy;
-    if (all) {
-      copy = await facts.read(`${root}/${file}`);
-      if (copy === null) return false;
-    } else {
-      if ((await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `:${file}`])).exitCode === 1) return false;
-      copy = await blob(check, '', file);
-    }
+    if ((await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `:${file}`])).exitCode === 1) return false;
+    const copy = await blob(check, '', file);
     return copy !== '' && versionOnly(head, copy);
   }
 
-  // The workflow texts of the tree the commit produces: the index's, or under -a the folder's.
+  // The workflow texts of the tree the commit produces: the index's.
   async function workflowTexts(check) {
-    const cmd = `git -C ${root} ls-files -z${all ? ' --cached --others' : ''} -- .github/workflows`;
-    const argv = ['ls-files', '-z', ...(all ? ['--cached', '--others'] : []), '--', '.github/workflows'];
-    const files = [...new Set((await tool(check, cmd, git(argv))).stdout.split('\0').filter(Boolean))];
-    if (all) return Promise.all(files.map(async (file) => (await facts.read(`${root}/${file}`)) ?? ''));
+    const argv = ['ls-files', '-z', '--', '.github/workflows'];
+    const files = [...new Set((await tool(check, `git -C ${root} ${argv.join(' ')}`, git(argv))).stdout.split('\0').filter(Boolean))];
     return Promise.all(files.map((file) => blob(check, '', file)));
   }
 
   // The copy is deleted, and no workflow in the tree the commit produces still runs it.
   async function linterCopyRetired(path) {
     const check = 'linter copy';
-    let deleted = (await gitAsk(check, 0, ['diff', '--cached', '--name-only', '--diff-filter=D'])).stdout;
-    if (all) deleted += (await gitAsk(check, 0, ['diff', '--name-only', '--diff-filter=D'])).stdout;
+    const deleted = (await gitAsk(check, 0, ['diff', '--cached', '--name-only', '--diff-filter=D'])).stdout;
     if (!lines(deleted).includes(path)) return false;
     const texts = (await workflowTexts(check)).join('');
     // No workflow text names nothing, and an empty stdin reaches the entry closed.
@@ -125,23 +125,17 @@ export function healArms(facts, root, all) {
     const rewrite = typeof answer === 'string' ? { exitCode: 0, stdout: answer, stderr: '' } : answer ?? { exitCode: 1, stdout: '', stderr: '' };
     await tool(check, `wk_checks_heal_rewrite <HEAD:${CHECKS}>`, rewrite);
     const want = await facts.hashOf(CHECKS, rewrite.stdout);
-    let have;
-    if (all) {
-      const text = await facts.read(`${root}/${CHECKS}`);
-      if (text === null) return false;
-      have = await facts.hashOf(CHECKS, text);
-    } else {
-      const staged = await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `:${CHECKS}`]);
-      if (staged.exitCode === 1) return false;
-      have = staged.stdout.trim();
-    }
+    const staged = await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `:${CHECKS}`]);
+    if (staged.exitCode === 1) return false;
+    const have = staged.stdout.trim();
     if (!want) throw held(check, `git -C ${root} hash-object --path=${CHECKS} --stdin`, 'non-zero', '');
     return have !== '' && have === want;
   }
 
   /**
    * Whether every file is the heal's output, each proved by its arm: the
-   * settings stamp, checks.yml, or a linter copy's deletion.
+   * settings file's version key removed (only `version` differs from HEAD,
+   * present or absent), checks.yml, or a linter copy's deletion.
    * @param {string[]} files the commit's paths
    * @returns {Promise<boolean>}
    */

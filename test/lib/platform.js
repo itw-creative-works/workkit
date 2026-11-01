@@ -191,6 +191,24 @@ const stubTool = (dir, name, lines) => {
 const NO_NODE_STUB = 'no stub is startable by name from Node on Windows';
 
 /**
+ * A `node` stub at `<dir>/node` answering `--version` (and `-v`) with
+ * `v<version>` and failing every other call, as a node too old to load the
+ * kit's ES modules would: the node a version pick has to pass over.
+ * @param {string} dir - the folder, made when missing
+ * @param {string} version - e.g. '20.15.1'
+ * @returns {string} the stub that was written
+ */
+const stubNode = (dir, version) => {
+  fs.mkdirSync(dir, { recursive: true });
+  return stubTool(dir, 'node', [
+    '#!/bin/bash',
+    `case "$1" in --version|-v) echo v${version}; exit 0 ;; esac`,
+    `echo "node v${version}: not this one" >&2`,
+    'exit 1',
+  ]);
+};
+
+/**
  * A `jq` on PATH that writes CRLF the way the Windows build does, handing back
  * jq's own exit status; like that build, `-b` (`--binary`, or a short cluster
  * holding `b`) makes it write LF. On Windows the real tool is the stub
@@ -351,7 +369,7 @@ const asWindows = (fn) => {
 
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, gitPath, which, digestTool, toolStem, linkTool, stubTool, crlfJq,
+  shellPath, gitPath, which, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, asWindows,
 };

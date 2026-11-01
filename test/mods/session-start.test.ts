@@ -4,7 +4,7 @@
 
 import { test, expect, describe } from 'claude-code/testing'
 import {
-  mkWorld, contextOf, hooksLog, HOME, REPO, PLAIN, SID, OPTED_OUT, SESSION_NOW as NOW, daysBefore, briefMarker,
+  mkWorld, contextOf, hooksLog, HOME, REPO, PLAIN, SID, OPTED_OUT, OPT_IN_SHAPES, SESSION_NOW as NOW, daysBefore, briefMarker,
 } from '../lib/mod-world.ts'
 
 const start = ($: any, cwd: string, extra: any = {}) => $.classic.SessionStart({ source: 'startup', session_id: SID, cwd, ...extra })
@@ -30,18 +30,18 @@ describe('classic.SessionStart: the Contract case', () => {
 })
 
 describe('classic.SessionStart: docs:state-check (state-check suite)', () => {
-  test('ports "bare directory: silent exit 0" and "non-git directory: gh is never called"', async ($, on) => {
+  test('a non-git directory: silent, gh is never called', async ($, on) => {
     const w = mkWorld(on, { gh: { issues: [{ number: 1 }] }, standards: { state: 'nogit' } })
     expect(contextOf(await start($, PLAIN))).toBe('')
     expect(w.ghCalls()).toHaveLength(0)
   })
 
-  test('ports "a repo with no inbox issues: silent"', async ($, on) => {
+  test('a repo with no inbox issues: silent', async ($, on) => {
     mkWorld(on, { gh: { issues: [] } })
     expect(contextOf(await start($, REPO))).toBe('')
   })
 
-  test('ports "the query is read-only, open, and label-scoped"', async ($, on) => {
+  test('the query is read-only, open, and label-scoped', async ($, on) => {
     const w = mkWorld(on, { gh: { issues: [{ number: 1 }] } })
     await start($, REPO)
     const calls = w.ghCalls()
@@ -53,37 +53,37 @@ describe('classic.SessionStart: docs:state-check (state-check suite)', () => {
     expect(argv.some((a: string) => /^(create|edit|close|comment|delete)$/.test(a))).toBe(false)
   })
 
-  test('ports "no gh on PATH: silent skip, everything else still checked"', async ($, on) => {
+  test('no gh on PATH: silent skip, everything else still checked', async ($, on) => {
     mkWorld(on, { gh: 'absent', files: { [`${REPO}/CLAUDE.md`]: '# Big Doc\n\nrules\nmore rules\nand more\n' } })
     const ctx = contextOf(await start($, REPO))
     expect(ctx).not.toContain('status:inbox')
     expect(ctx).toContain('git mv CLAUDE.md AGENTS.md')
   })
 
-  test('ports "gh failing (offline / unauthenticated): silent skip"', async ($, on) => {
+  test('gh failing (offline / unauthenticated): silent skip', async ($, on) => {
     mkWorld(on, { gh: 'offline' })
     expect(contextOf(await start($, REPO))).toBe('')
   })
 
-  test('ports "output is valid JSON when announcing": the count arrives as one context entry', async ($, on) => {
+  test('output is valid JSON when announcing: the count arrives as one context entry', async ($, on) => {
     mkWorld(on, { gh: { issues: [{ number: 9 }] } })
     const r = await start($, REPO)
     expect(r.additionalContext.some((c: string) => c.includes('1 open status:inbox issue.'))).toBe(true)
   })
 
-  test('ports "the user-level ~/.claude/CLAUDE.md is out of scope: silent"', async ($, on) => {
+  test('the user-level ~/.claude/CLAUDE.md is out of scope: silent', async ($, on) => {
     const claude = `${HOME}/.claude`
-    mkWorld(on, { repos: { [claude]: '{ "version": 1, "enabled": true }\n' }, files: { [`${claude}/CLAUDE.md`]: '@AGENTS.md\n' } })
+    mkWorld(on, { repos: { [claude]: OPT_IN_SHAPES.current }, files: { [`${claude}/CLAUDE.md`]: '@AGENTS.md\n' } })
     expect(contextOf(await start($, claude))).not.toContain('CLAUDE.md')
   })
 
-  test('ports "empty cwd in input: exit 0"', async ($, on) => {
+  test('empty cwd in input: exit 0', async ($, on) => {
     const w = mkWorld(on, { gh: { issues: [{ number: 1 }] }, standards: { state: 'nogit' } })
     expect(contextOf(await start($, ''))).not.toContain('status:inbox')
     expect(w.ghCalls()).toHaveLength(0)
   })
 
-  test('ports "an empty queue is cached: a second session inside 30 minutes makes no gh call"', async ($, on) => {
+  test('an empty queue is cached: a second session inside 30 minutes makes no gh call', async ($, on) => {
     const w = mkWorld(on, { gh: { issues: [] } })
     expect(contextOf(await start($, REPO))).toBe('')
     expect(w.ghCalls()).toHaveLength(1)
@@ -91,21 +91,21 @@ describe('classic.SessionStart: docs:state-check (state-check suite)', () => {
     expect(w.ghCalls()).toHaveLength(1)
   })
 
-  test('ports "a count worth announcing is never cached: the next session asks again"', async ($, on) => {
+  test('a count worth announcing is never cached: the next session asks again', async ($, on) => {
     const w = mkWorld(on, { gh: { issues: [{ number: 1 }, { number: 2 }] } })
     expect(contextOf(await start($, REPO))).toContain('2 open status:inbox')
     expect(contextOf(await start($, REPO, { session_id: 'sess-2' }))).toContain('2 open status:inbox')
     expect(w.ghCalls()).toHaveLength(2)
   })
 
-  test('ports "triage drains the inbox and the very next session goes quiet"', async ($, on) => {
+  test('triage drains the inbox and the very next session goes quiet', async ($, on) => {
     const w = mkWorld(on, { gh: { issues: [{ number: 1 }, { number: 2 }] } })
     expect(contextOf(await start($, REPO))).toContain('2 open status:inbox')
     w.gh = { issues: [] }
     expect(contextOf(await start($, REPO, { session_id: 'sess-2' }))).toBe('')
   })
 
-  test('ports "a cached silence older than 30 minutes re-queries"', async ($, on) => {
+  test('a cached silence older than 30 minutes re-queries', async ($, on) => {
     const w = mkWorld(on, { gh: { issues: [] } })
     const before = new Set(w.files.keys())
     await start($, REPO)
@@ -119,23 +119,23 @@ describe('classic.SessionStart: docs:state-check (state-check suite)', () => {
 })
 
 describe('classic.SessionStart: workflow:standards (workflow-standards suites)', () => {
-  test('ports "second session the same day: no re-run, no output"', async ($, on) => {
+  test('second session the same day: no re-run, no output', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL } })
     expect(contextOf(await start($, REPO))).toContain('issue forms')
     expect(contextOf(await start($, REPO, { session_id: 'sess-2' }))).toBe('')
     expect(heals(w)).toHaveLength(1)
   })
 
-  test('ports "the marker is dated, one file per repo"', async ($, on) => {
+  test('the marker is dated, one file per repo', async ($, on) => {
     const other = '/w/other'
-    const w = mkWorld(on, { repos: { [REPO]: '{ "enabled": true }', [other]: '{ "enabled": true }' }, standards: { heal: HEAL } })
+    const w = mkWorld(on, { repos: { [REPO]: OPT_IN_SHAPES.current, [other]: OPT_IN_SHAPES.current }, standards: { heal: HEAL } })
     await start($, REPO)
     expect(markerPath(w)).toBeDefined()
     expect(contextOf(await start($, other, { session_id: 'sess-2' }))).toContain('issue forms')
     expect(heals(w)).toHaveLength(2)
   })
 
-  test('ports "a stale marker re-arms the run"', async ($, on) => {
+  test('a stale marker re-arms the run', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL } })
     await start($, REPO)
     w.files.set(markerPath(w), '2000-01-01')
@@ -143,7 +143,7 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(heals(w)).toHaveLength(2)
   })
 
-  test('ports "no WORKFLOW_DIR: resolves the engine beside the hook and heals"', async ($, on) => {
+  test('no WORKFLOW_DIR: resolves the engine beside the hook and heals', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL } })
     await start($, REPO)
     const script = heals(w)[0].argv.find((a: string) => a.endsWith('standards.sh'))
@@ -151,7 +151,7 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(script.startsWith('/w/')).toBe(false)
   })
 
-  test('ports "a missing engine: says where it looked, exit 0"', async ($, on) => {
+  test('a missing engine: says where it looked, exit 0', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL } })
     w.touchKit('workflow/standards.sh', null)
     const ctx = contextOf(await start($, REPO))
@@ -160,7 +160,7 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(heals(w)).toHaveLength(0)
   })
 
-  test('ports "an engine without labels.json is announced for an opted-in repo"', async ($, on) => {
+  test('an engine without labels.json is announced for an opted-in repo', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL } })
     w.touchKit('workflow/labels.json', null)
     const ctx = contextOf(await start($, REPO))
@@ -174,20 +174,20 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     ['a missing engine stays silent on a repo that never opted in', null, 'workflow/standards.sh'],
     ['a missing engine stays silent on a deliberately disabled repo', OPTED_OUT, 'workflow/standards.sh'],
   ] as const) {
-    test(`ports "${name}"`, async ($, on) => {
+    test(`${name}`, async ($, on) => {
       const w = mkWorld(on, { repos: { [REPO]: settings }, standards: { state: settings ? 'disabled' : 'undecided' } })
       w.touchKit(rel, null)
       expect(contextOf(await start($, REPO))).toBe('')
     })
   }
 
-  test('ports "non-git cwd: silent exit 0, creates nothing"', async ($, on) => {
+  test('non-git cwd: silent exit 0, creates nothing', async ($, on) => {
     const w = mkWorld(on, { standards: { state: 'nogit', heal: HEAL } })
     expect(contextOf(await start($, PLAIN))).toBe('')
     expect(heals(w)).toHaveLength(0)
   })
 
-  test('ports "empty cwd in input: exit 0" (standards)', async ($, on) => {
+  test('empty cwd in input: exit 0 (standards)', async ($, on) => {
     const w = mkWorld(on, { standards: { state: 'nogit', heal: HEAL } })
     expect(contextOf(await start($, ''))).toBe('')
     expect(heals(w)).toHaveLength(0)
@@ -196,7 +196,7 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
   for (const [name, files] of [
     ['no .workkit/settings.json: offers to enable, writes nothing', {}],
   ] as const) {
-    test(`ports "${name}"`, async ($, on) => {
+    test(`${name}`, async ($, on) => {
       const w = mkWorld(on, { repos: { [REPO]: null }, files, standards: { state: 'undecided', heal: HEAL } })
       const ctx = contextOf(await start($, REPO))
       expect(ctx).toContain('not in the issue workflow')
@@ -207,28 +207,28 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
   }
 
   for (const [name, state] of [['enabled: false: silent, and no offer either', 'disabled'], ['a declined repo is never mentioned again', 'declined']]) {
-    test(`ports "${name}"`, async ($, on) => {
+    test(`${name}`, async ($, on) => {
       const w = mkWorld(on, { repos: { [REPO]: state === 'disabled' ? OPTED_OUT : null }, standards: { state, heal: HEAL } })
       expect(contextOf(await start($, REPO))).toBe('')
       expect(heals(w)).toHaveLength(0)
     })
   }
 
-  test('ports "the offer repeats every session: it is not daily-cached"', async ($, on) => {
+  test('the offer repeats every session: it is not daily-cached', async ($, on) => {
     const w = mkWorld(on, { repos: { [REPO]: null }, standards: { state: 'undecided' } })
     expect(contextOf(await start($, REPO))).toContain('not in the issue workflow')
     expect(contextOf(await start($, REPO, { session_id: 'sess-2' }))).toContain('not in the issue workflow')
     expect(markerPath(w)).toBeUndefined()
   })
 
-  test('ports "a subdirectory session resolves to the repo root"', async ($, on) => {
+  test('a subdirectory session resolves to the repo root', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL }, dirs: [`${REPO}/src/deep`] })
     await start($, `${REPO}/src/deep`)
     const heal = heals(w)[0]
     expect(heal.argv.includes(REPO) || heal.init.cwd === REPO).toBe(true)
   })
 
-  test('ports "a machine that never ran setup is told to, every session"', async ($, on) => {
+  test('a machine that never ran setup is told to, every session', async ($, on) => {
     const w = mkWorld(on, { setup: false, standards: { heal: HEAL } })
     const first = contextOf(await start($, REPO))
     expect(first).toContain('SETUP:')
@@ -240,19 +240,19 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(heals(w)).toHaveLength(1)
   })
 
-  test('ports "setup is a machine question: the pester reaches a non-git cwd too"', async ($, on) => {
+  test('setup is a machine question: the pester reaches a non-git cwd too', async ($, on) => {
     mkWorld(on, { setup: false, standards: { state: 'nogit' } })
     expect(contextOf(await start($, PLAIN))).toContain('workkit.sh setup')
   })
 
-  test('ports "a declined repo still hears the setup pester and nothing else"', async ($, on) => {
+  test('a declined repo still hears the setup pester and nothing else', async ($, on) => {
     mkWorld(on, { setup: false, repos: { [REPO]: null }, standards: { state: 'declined' } })
     const ctx = contextOf(await start($, REPO))
     expect(ctx).toContain('workkit.sh setup')
     expect(ctx).not.toContain('not in the issue workflow')
   })
 
-  test('ports "an engine anywhere else: the pester never mentions the plugin cache"', async ($, on) => {
+  test('an engine anywhere else: the pester never mentions the plugin cache', async ($, on) => {
     mkWorld(on, { setup: false })
     const line = contextOf(await start($, REPO)).split('\n').find((l: string) => l.startsWith('SETUP:')) || ''
     expect(line).toContain('workkit.sh setup')
@@ -268,7 +268,7 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(line).not.toMatch(/workkit\.sh setup`/)
   })
 
-  test('ports "a machine with no schedule installed never gets one": the daily run calls workkit update --auto', async ($, on) => {
+  test('a machine with no schedule installed never gets one: the daily run calls workkit update --auto', async ($, on) => {
     const w = mkWorld(on)
     await start($, REPO)
     const update = w.runs('workkit.sh')
@@ -277,18 +277,18 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(update[0].argv).toContain('--auto')
   })
 
-  test('ports "a machine with no sign-in hears it at session start"', async ($, on) => {
+  test('a machine with no sign-in hears it at session start', async ($, on) => {
     mkWorld(on, { standards: { update: { exitCode: 0, stdout: '', stderr: '  ⚠ identity: not signed in\n' } } })
     expect(contextOf(await start($, REPO))).toContain('identity: not signed in')
   })
 
-  test("ports \"a repo's daily run corrects a schedule left by another checkout\": the upkeep line arrives with no indent and no glyph", async ($, on) => {
+  test("a repo's daily run corrects a schedule left by another checkout: the upkeep line arrives with no indent and no glyph", async ($, on) => {
     mkWorld(on, { standards: { update: { exitCode: 0, stdout: '  ✓ schedule: re-rendered com.workkit.claude-daily\n', stderr: '' } } })
     const relayed = contextOf(await start($, REPO)).split('\n').find((l: string) => l.includes('schedule:'))
     expect(relayed).toMatch(/^schedule: /)
   })
 
-  test('ports "no gh on PATH: local heals still reported, no failure": the heal runs under QUIET=1', async ($, on) => {
+  test('no gh on PATH: local heals still reported, no failure: the heal runs under QUIET=1', async ($, on) => {
     const w = mkWorld(on, { gh: 'absent', standards: { heal: HEAL } })
     expect(contextOf(await start($, REPO))).toContain('issue forms')
     expect(heals(w)[0].init.env?.QUIET).toBe('1')
@@ -346,14 +346,14 @@ describe('classic.SessionStart: docs:session (the Contract cases)', () => {
 })
 
 describe('classic.SessionStart: docs:session (session suite)', () => {
-  test('ports "a compaction gets it too: every source, not just startup" and "hooks.json registers the hook under SessionStart, for every source"', async ($, on) => {
+  test('every source, a compaction included, gets the session state', async ($, on) => {
     mkWorld(on, { now: NOW, files: { [STATE]: filled(2) } })
     for (const source of ['startup', 'resume', 'clear', 'compact']) {
       expect(contextOf(await start($, REPO, { source }))).toContain('- #1: a queued entry.')
     }
   })
 
-  test('ports "a session opened in a subdirectory finds the repo root"', async ($, on) => {
+  test('a session opened in a subdirectory finds the repo root', async ($, on) => {
     mkWorld(on, { now: NOW, files: { [STATE]: filled(2) }, dirs: [`${REPO}/src/deep`] })
     expect(contextOf(await start($, `${REPO}/src/deep`))).toContain('- #1: a queued entry.')
   })
@@ -362,7 +362,7 @@ describe('classic.SessionStart: docs:session (session suite)', () => {
     ['a repo that never opted in: silent, even with content', null],
     ['a repo that turned the workflow off: silent', OPTED_OUT],
   ] as const) {
-    test(`ports "${name}"`, async ($, on) => {
+    test(`${name}`, async ($, on) => {
       const w = mkWorld(on, { now: NOW, repos: { [REPO]: settings }, standards: { state: settings ? 'disabled' : 'undecided' }, files: { [STATE]: filled(2) } })
       expect(contextOf(await start($, REPO))).not.toContain('SESSION STATE')
       expect(carried(w)).toHaveLength(0)
@@ -370,23 +370,23 @@ describe('classic.SessionStart: docs:session (session suite)', () => {
     })
   }
 
-  test('ports "no cwd in the payload: silent"', async ($, on) => {
+  test('no cwd in the payload: silent', async ($, on) => {
     const w = mkWorld(on, { now: NOW, cwd: PLAIN, standards: { state: 'nogit' }, files: { [STATE]: filled(2) } })
     expect(contextOf(await start($, ''))).not.toContain('SESSION STATE')
     expect(carried(w)).toHaveLength(0)
   })
 
-  test('ports "the marker is read from WORKFLOW_HOME, the folder the 9am job writes it to"', async ($, on) => {
+  test('the marker is read from WORKFLOW_HOME, the folder the 9am job writes it to', async ($, on) => {
     mkWorld(on, { now: NOW, env: { WORKFLOW_HOME: '/w/moved' }, files: { '/w/moved/brief-status.json': marker(10) } })
     expect(contextOf(await start($, REPO)).startsWith('cloud brief: last posted')).toBe(true)
   })
 
-  test('ports "a marker that does not parse: silent"', async ($, on) => {
+  test('a marker that does not parse: silent', async ($, on) => {
     mkWorld(on, { now: NOW, files: { [`${HOME}/.workkit/brief-status.json`]: '{ "version": 1, "lastBrief": ' } })
     expect(contextOf(await start($, REPO))).toBe('')
   })
 
-  test('ports "the hook reaches no network: the marker is the only source"', async ($, on) => {
+  test('the hook reaches no network: the marker is the only source', async ($, on) => {
     const w = mkWorld(on, {
       now: NOW,
       files: {

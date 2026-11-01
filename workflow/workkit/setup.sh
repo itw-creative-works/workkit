@@ -42,6 +42,27 @@ report_globals() {
 
 }
 
+# git_hooks_line <state> [heal]: the This repo line for git's commit hooks in
+# an enabled repo, `installed (<path>)` or the warning naming setup, which
+# returns 1. `heal` (setup) sets them first when they are not installed.
+git_hooks_line() {
+  local root path
+  [[ "$1" == enabled ]] || return 0
+  root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  # shellcheck source=../standards/githooks.sh
+  . "$SCRIPT_DIR/standards/githooks.sh"
+  if ! path="$(git_hooks_installed "$root")" && [[ "${2:-}" == heal ]]; then
+    ensure_git_hooks "$root"
+    path="$(git_hooks_installed "$root")" || path=""
+  fi
+  if [[ -n "$path" ]]; then
+    wk_ok "git hooks: installed ($path)"
+    return 0
+  fi
+  wk_warn "git hooks: not installed; run \`workkit setup\`"
+  return 1
+}
+
 # The home repo half of setup: the private repo, the clone at ~/.workkit/tower,
 # the tower project seeded into it, its dependencies, Discussions and Pages. A
 # machine without the libraries (an incomplete checkout) is told which command
@@ -176,6 +197,7 @@ cmd_setup() {
 
   wk_section "📁 This repo"
   offer_repo
+  git_hooks_line "$(repo_state)" heal || true
   identity_install_step
   wk_done "Setup is idempotent: re-run it any time. \`workkit doctor\` reports what is left."
 }

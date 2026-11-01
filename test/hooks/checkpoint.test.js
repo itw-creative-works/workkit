@@ -3,11 +3,6 @@
 // compaction line fires the workkit:checkpoint skill. The marker and the delta it asks for are per-session state,
 // test/mods/user-prompt-submit.test.ts.
 
-// HEAD cases retired with the mod (the engine parses the input; a module has no jq):
-// "garbage stdin exits 0 silently", "no jq on PATH exits 0 silently".
-// HEAD cases ported under new names in test/mods/user-prompt-submit.test.ts:
-// "loader routes docs:checkpoint" and "valid UserPromptSubmit JSON shape" as "an opted-in repo: the contexts arrive in the order ...".
-
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
 
@@ -50,7 +45,7 @@ const SILENT = [
 const cases = async () => {
   group('docs-checkpoint: the compaction phrases fire');
   for (const prompt of FIRING) {
-    await test(`ports "fires on "${prompt}""`, () => {
+    await test(`fires on "${prompt}"`, () => {
       const ctx = say(prompt);
       assert(ctx.includes('workkit:checkpoint'), `the injection must name the skill, got: ${ctx}`);
       assert(ctx.includes('#238'), 'the injection must cite its issue');
@@ -59,7 +54,7 @@ const cases = async () => {
 
   group('docs-checkpoint: everything else is silence');
   for (const prompt of SILENT) {
-    await test(`ports "silent on "${prompt}""`, () => {
+    await test(`silent on "${prompt}"`, () => {
       assertEq(say(prompt), '', 'an unrelated prompt produces nothing');
     });
   }
@@ -73,7 +68,7 @@ const cases = async () => {
   });
 
   group('docs-checkpoint: robustness');
-  await test('ports "empty stdin exits 0 silently": an empty prompt is silence', () => {
+  await test('empty stdin exits 0 silently: an empty prompt is silence', () => {
     assertEq(say(''), '', 'nothing to match');
   });
 };

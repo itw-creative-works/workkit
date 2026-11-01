@@ -5,14 +5,18 @@
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
 # nothing.
 
-# hook_working_paths <root>: the root-relative paths the working diff touches,
-# NUL-separated: modified, staged and deleted against HEAD (a rename as both its
-# halves), then the untracked files. Returns 2 when a read failed, git's words
-# dropped so each caller says it in its own. Changes together with touchedOf's
-# first two reads in hooks/mods/proof-guard.js.
+# hook_working_paths <root>: the working diff's root-relative paths, NUL-separated:
+# modified, staged and deleted against HEAD (a rename as both halves), then the
+# untracked files; in a repo with no commit the staged list stands in for the diff
+# against HEAD. Returns 2 when a read failed. Changes with touchedOf's first two
+# reads in hooks/mods/proof-guard.js.
 hook_working_paths() {
   local rc=0
-  git -C "$1" diff HEAD --name-only --no-renames -z 2>/dev/null || rc=2
+  if git -C "$1" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    git -C "$1" diff HEAD --name-only --no-renames -z 2>/dev/null || rc=2
+  else
+    git -C "$1" ls-files -z 2>/dev/null || rc=2
+  fi
   git -C "$1" ls-files --others --exclude-standard -z 2>/dev/null || rc=2
   return "$rc"
 }
@@ -24,9 +28,9 @@ hook_is_manifest() {
   [[ "$1" =~ (^|/)package(-lock)?\.json$ || "$1" =~ (^|/)\.claude-plugin/plugin\.json$ ]]
 }
 
-# hook_version_only_change <root> <path>: whether <path>, tracked in HEAD, differs
-# from HEAD's copy only in its top-level "version" (a lockfile's local package entries'
-# too), both JSON objects; untracked, missing or unparsable is a no. The JS twin is
+# hook_version_only_change <root> <path>: whether <path>, tracked in HEAD, differs from
+# HEAD's copy only in its top-level "version", present or absent (a lockfile's local package
+# entries' too), both JSON objects; untracked, missing or unparsable is a no. The JS twin is
 # versionOnly in hooks/mods/commit-gate/checks.js, which also lets lockstep pins move.
 hook_version_only_change() {
   [ -f "$1/$2" ] || return 1

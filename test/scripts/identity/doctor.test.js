@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  IDENTITY_NA, INSTALL_FIX, writeLogin, useTokenService, startService, attentionCount,
+  IDENTITY_NA, INSTALL_FIX, BOT_HINT, repoRoute, writeLogin, useTokenService, startServer, startService, attentionCount,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const { NODE_DIR, joinPath } = require('../../lib/platform');
@@ -32,11 +32,12 @@ const mkScene = ({ rostered = true } = {}) => {
   return { world, kit, script, repo };
 };
 
-// The doctor's node is the one running this suite, after the world's stubs.
-const doctor = ({ world, script, repo }) => runCli(world, ['doctor'], {
+// The doctor's node is the one running this suite, after the world's stubs;
+// `extra` lays over its env, as a GitHub host pointed at a stand-in.
+const doctor = ({ world, script, repo }, extra = {}) => runCli(world, ['doctor'], {
   script,
   cwd: repo,
-  env: signInEnv(world),
+  env: signInEnv(world, { extra }),
 });
 
 /** The lines under the doctor's section header naming `title`, up to the next header. */
@@ -130,7 +131,11 @@ const cases = async () => {
     const scene = mkScene();
     writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
     const installed = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
-    const missing = await startService(412, { error: 'not installed', fix: INSTALL_FIX });
+    // The 412's stand-in is GitHub's API too, naming acme/rostered's owner id.
+    const missing = await startServer([
+      { method: 'POST', url: '/token', status: 412, body: JSON.stringify({ error: 'not installed', fix: INSTALL_FIX }) },
+      repoRoute('acme/rostered', 'acme/rostered', 4242),
+    ], scene.world.root);
     try {
       useTokenService(scene.world.home, `${installed.url}/token`);
       const ok = doctor(scene);
@@ -142,10 +147,10 @@ const cases = async () => {
         `with the login's bearer, for acme/rostered, got: ${JSON.stringify(asked)}`);
 
       useTokenService(scene.world.home, `${missing.url}/token`);
-      const warn = doctor(scene);
+      const warn = doctor(scene, { GITHUB_API_URL: missing.url });
       assert(repoLines(warn.said).some((l) => l.includes('not installed')), `it says the App is not installed on acme/rostered, got: ${warn.said}`);
       assert(warn.said.includes('https://github.com/apps/workkit-agent'), `and carries the install page, got: ${warn.said}`);
-      assert(section(warn.said, 'This repo').split('\n').some((l) => /^ +⚠ identity: or run: workkit setup --bot$/.test(l)),
+      assert(section(warn.said, 'This repo').split('\n').some((l) => /^ +⚠ identity: /.test(l) && l.endsWith(`identity: ${BOT_HINT}`)),
         `the refusal's next line is a warning of its own under This repo, got: ${warn.said}`);
       assertEq(attentionCount(warn.said) - attentionCount(ok.said), 1, 'not installed is one attention item');
     } finally {

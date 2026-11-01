@@ -3,78 +3,45 @@
  * status:building takes the repo snapshot `workkit proof red` runs against,
  * or adds its number to the live one (replacing it once stale); a release (a
  * qa or complete flip, or a close) leaving no issue there at status:building
- * drops it. The copy, fill and sweep stay in hooks/lib/snapshot.sh, run
+ * drops it, each read off the gh journal lines the Bash call wrote. The
+ * copy, fill and sweep stay in hooks/lib/snapshot.sh, run
  * through its entry; a notice at most, never a block (docs/hooks.md § workflow:snapshot).
  */
 
-import { repoSlug } from './command.js';
 import { buildingList } from './gh.js';
-import { ghClauseSub, ghFlagValues, ghIssueNumbers, ghNames, ghSteps, hasLabel } from './gh-edit.js';
 import { userDirOf } from './log.js';
-import { snapshotMarkerPath } from './markers.js';
-import { place, rosterOf } from './optin.js';
+import { onIssue, snapshotMarkerPath } from './markers.js';
+import { placeLine, repoSlug, rosterOf } from './optin.js';
 import { issuesBuilding } from './proof.js';
 import { LONG_RUN_MS } from './suite.js';
 
-/**
- * Whether the command could be a claim or a release: a `gh issue edit|close`
- * spelling status:building, status:qa or status:complete, or the close.
- * @param {string} command the command text
- * @returns {boolean}
- */
-function snapshotTriggers(command) {
-  if (!command || !ghNames(command, 'edit|close')) return false;
-  return /status:(building|qa|complete)/.test(command) || ghNames(command, 'close');
-}
+// A journal line that claims its issues: an edit adding status:building.
+const claims = (line) => onIssue(line) && line.sub === 'edit' && line.add.includes('status:building');
 
-// A failed call may have failed at the claim itself, so only the numbers
-// GitHub lists as building are taken; each other one is named in a note.
-async function failedClaim({ dir, repo }, issues, facts) {
-  const list = await facts.building(dir, repo, { claim: true });
-  if (list !== null && typeof list === 'object') return [list];
-  const building = list === null ? null : issuesBuilding(list);
-  const listed = building === null ? [] : building.map(String);
-  const kept = issues.filter((n) => listed.includes(n));
-  const missed = issues.filter((n) => !kept.includes(n)).map((n) => `#${n}`).join(', ');
-  const where = repo ? ` in ${repo}` : '';
-  const steps = kept.length > 0 ? [{ take: dir, issues: kept, repo }] : [];
-  if (!missed) return steps;
-  const why = building === null
-    ? `GitHub's status:building list${where} could not be read`
-    : `GitHub does not list ${missed}${where} as status:building`;
-  return [...steps, { note: `the command failed and ${why}, so no snapshot was taken for ${missed}.` }];
-}
+// A journal line that releases: a close, or an edit adding status:qa or status:complete.
+const releases = (line) => onIssue(line)
+  && (line.sub === 'close' || (line.sub === 'edit' && (line.add.includes('status:qa') || line.add.includes('status:complete'))));
 
 /**
- * What a Bash command asks of the snapshot, one step per clause that claims
- * or releases, in order: take (the folder, the claimed numbers and the repo
- * named), drop (a release GitHub says left nothing building), or a note for
- * a flip it cannot place. A release that leaves an issue building is no step.
- * On a failed call a claim takes only the numbers GitHub lists as building.
- * @param {{command: string, cwd: string, roster: object|null, slugOf: function, building: function, failed: boolean}} facts
- *   the command, its folder, the parsed ~/.workkit/.repos.json, `slugOf(dir)` async a folder's
- *   origin slug, `building(dir, repo, { claim })` async gh's status:building list there, null when
- *   unread (`claim` set for a failed call's claim, answered `{ note }` for a folder in no git
- *   repository), and whether the Bash call failed
+ * What a Bash call's gh writes ask of the snapshot, one step per journal line
+ * that claims or releases, in order: take (the folder, the claimed numbers and
+ * the repo), drop (a release GitHub says left nothing building), or a note for
+ * a line naming a repo off the roster. A release that leaves an issue
+ * building is no step.
+ * @param {{lines: object[], cwd: string, roster: object|null, slugOf: function, building: function}} facts
+ *   the journal lines the call wrote (journalLines in markers.js), the session's folder, the parsed
+ *   ~/.workkit/.repos.json, `slugOf(dir)` async a folder's origin slug, `building(dir, repo)` async
+ *   gh's status:building list there, null when unread
  * @returns {Promise<Array<{take: string, issues: string[], repo: string}|{drop: string, repo: string}|{note: string}>>}
  */
 export async function snapshotPlan(facts) {
   const steps = [];
-  if (!snapshotTriggers(facts.command)) return steps;
-  for (const { clause, detect, sawCd } of ghSteps(facts.command)) {
-    const sub = ghClauseSub(detect);
-    if (!sub) continue;
-    let claim = false;
-    if (sub === 'edit') {
-      const adds = ghFlagValues(clause, '--add-label');
-      // A remove of status:building alone (a block, a re-spec) is neither.
-      claim = hasLabel(adds, 'status:building');
-      if (!claim && !hasLabel(adds, 'status:qa') && !hasLabel(adds, 'status:complete')) continue;
-    }
-    const placed = await place(clause, facts, sawCd);
+  for (const line of facts.lines) {
+    const claim = claims(line);
+    if (!claim && !releases(line)) continue;
+    const placed = await placeLine({ dir: line.cwd || facts.cwd, repo: line.repo }, facts);
     if (placed.note) steps.push(placed);
-    else if (claim && facts.failed) steps.push(...(await failedClaim(placed, ghIssueNumbers(detect, 'edit'), facts)));
-    else if (claim) steps.push({ take: placed.dir, issues: ghIssueNumbers(detect, 'edit'), repo: placed.repo });
+    else if (claim) steps.push({ take: placed.dir, issues: line.numbers, repo: placed.repo });
     else {
       const list = await facts.building(placed.dir, placed.repo);
       if (list !== null && issuesBuilding(list)?.length === 0) steps.push({ drop: placed.dir, repo: placed.repo });
@@ -116,30 +83,28 @@ async function runStep(step, facts, snapOf) {
 }
 
 /**
- * The hook's run over the Bash facts after the command ran: the plan, then
- * each step in order through `bash hooks/lib/snapshot.sh take|add|stale|drop
- * <root>` in the repo it names, the notes joined into one notice. A claim on
- * a live snapshot adds its numbers unless none of the recorded issues is
- * still building, which takes it afresh.
- * @param {object} facts the chain's facts (guards.js)
+ * The hook's run over the Bash facts after the command ran: the plan over the
+ * journal lines the call wrote, then each step in order through `bash
+ * hooks/lib/snapshot.sh take|add|stale|drop <root>` in the repo it names, the
+ * notes joined into one notice. A claim on a live snapshot adds its numbers
+ * unless none of the recorded issues is still building, which takes it afresh.
+ * @param {object} facts the chain's facts (guards.js), `lines` among them
  * @returns {Promise<{context: string}|null>}
  */
 export async function snapshotGuard(facts) {
-  if (!snapshotTriggers(facts.command)) return null;
+  if (!facts.lines.some((line) => claims(line) || releases(line))) return null;
   const snapOf = (root) => snapshotMarkerPath(root, userDirOf(facts.env));
   const steps = await snapshotPlan({
-    command: facts.command,
+    lines: facts.lines,
     cwd: facts.cwd,
     roster: await rosterOf(facts.env, facts.read),
     slugOf: (dir) => repoSlug(dir, facts.run),
     // A release with no snapshot there has nothing to drop, so GitHub is not asked.
-    building: async (dir, repo, { claim = false } = {}) => {
+    building: async (dir, repo) => {
       const root = await facts.top(dir);
-      if (!root && claim) return { note: noRepoNote(dir, repo, facts.cwd) };
-      if (!root || (!claim && (await facts.list(await snapOf(root))).length === 0)) return null;
+      if (!root || (await facts.list(await snapOf(root))).length === 0) return null;
       return buildingList(facts.run, { repo, cwd: root });
     },
-    failed: facts.failed,
   });
   const notes = [];
   for (const step of steps) {

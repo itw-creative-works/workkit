@@ -22,31 +22,31 @@ const reminder = (out, file) => {
 const cases = async () => {
   group('test-reminder: a test naming the file keeps it silent');
 
-  await test('ports "a test naming the file by its basename: silent"', () => {
+  await test('a test naming the file by its basename: silent', () => {
     assertEq(ask('lib/thing.js', { 'lib/thing.js': 'module.exports = 1;\n', 'tests/thing.test.js': '// covers thing.js\n' }), '', 'the test names it');
   });
 
-  await test('ports "a test naming the file only through a require path: silent"', () => {
+  await test('a test naming the file only through a require path: silent', () => {
     assertEq(ask('lib/thing.js', { 'lib/thing.js': 'module.exports = 1;\n', 'tests/unit.test.js': "const thing = require('../lib/thing');\n" }), '', 'the require path names it');
   });
 
   group('test-reminder: a file no test names gets one line, once per session');
 
-  await test('ports "a test naming only index.json does not silence index.js: the line"', () => {
+  await test('a test naming only index.json does not silence index.js: the line', () => {
     reminder(ask('lib/index.js', { 'lib/index.js': 'module.exports = 1;\n', 'tests/data.test.js': "const data = require('../lib/index.json');\n" }), 'lib/index.js');
   });
 
-  await test('ports "a test naming index.js as a whole word: silent"', () => {
+  await test('a test naming index.js as a whole word: silent', () => {
     assertEq(ask('lib/index.js', { 'lib/index.js': 'module.exports = 1;\n', 'tests/index.test.js': '// covers index.js\n' }), '', 'the whole word names it');
   });
 
-  await test('ports "a basename shared by two tracked files is named by its parent too"', () => {
+  await test('a basename shared by two tracked files is named by its parent too', () => {
     const files = { 'a/run.sh': 'echo a\n', 'b/run.sh': 'echo b\n', 'tests/run.test.js': '// covers a/run.sh\n' };
     reminder(ask('b/run.sh', files), 'b/run.sh');
     assertEq(ask('a/run.sh', files), '', 'the two-segment tail names it');
   });
 
-  await test('ports "the same file again in the same session: silent" (the seen list holds it)', () => {
+  await test('the same file again in the same session: silent (the seen list holds it)', () => {
     assertEq(ask('lib/thing.js', { 'lib/thing.js': 'module.exports = 1;\n' }, ['lib/thing.js']), '', 'asked once per session');
   });
 
@@ -59,7 +59,7 @@ const cases = async () => {
     ['a config file', 'eslint.config.js'],
     ['a file under _attic/', '_attic/old.js'],
   ]) {
-    await test(`ports "${why}: silent"`, () => {
+    await test(`${why}: silent`, () => {
       assertEq(ask(file, { [file]: 'x\n' }), '', why);
     });
   }

@@ -11,7 +11,7 @@ const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE }
 const {
   BASH, NO_RC, shellPath, which, toolStem, basePathWithout,
 } = require('../lib/platform');
-const { mkRepo } = require('../lib/git-repo');
+const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const REVIEW = path.join(__dirname, '..', '..', 'workflow', 'review');
 const SCRIPT = path.join(REVIEW, 'covers.sh');
@@ -26,19 +26,19 @@ const FUTURE = new Date(Date.now() + 3600 * 1000);
 
 const SETTINGS = '.workkit/settings.json';
 
-// The repo's settings as jq leaves them, the shape the standards heal writes.
-const settingsJson = (version, rest = { enabled: true }) => `${JSON.stringify({ version, ...rest }, null, 2)}\n`;
+// A settings text as jq leaves it.
+const settingsJson = (keys) => `${JSON.stringify(keys, null, 2)}\n`;
 
 /**
  * A scratch world: a repo holding `src/x.js`, `src/y.js`, `src/gone.js` and,
- * unless `tracked` is false, its settings at version 1, committed, with every
+ * unless `tracked` is false, its settings carrying a version key, committed, with every
  * file dated an hour back; a home and a TMPDIR beside it.
  * Its `write` dates a file an hour back unless told otherwise.
  */
 const mkWorld = ({ tracked = true } = {}) => {
   const files = {};
   for (const name of ['x', 'y', 'gone']) files[`src/${name}.js`] = `module.exports = '${name}';\n`;
-  if (tracked) files[SETTINGS] = settingsJson(1);
+  if (tracked) files[SETTINGS] = OPT_IN_SHAPES.retired;
   const w = mkRepo('review-covers-', files, PAST, { optIn: tracked });
   return { ...w, write: (rel, body, when = PAST) => w.write(rel, body, when) };
 };
@@ -151,44 +151,44 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  group('review covers: the heal\'s version stamp');
+  group('review covers: the heal\'s removal of the version key');
 
-  await test('a code edit before the marker, then only the settings version stamped: covered', () => {
+  await test('a code edit before the marker, then only the settings version key removed: covered', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
     writeMarker(w);
-    w.write(SETTINGS, settingsJson(2), FUTURE);
+    w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
     assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(out, 'review-covers: covered\n', `the stamp alone needs no review: ${out}${err}`);
+    assertEq(out, 'review-covers: covered\n', `the removal alone needs no review: ${out}${err}`);
     cleanup(w.dir);
   });
 
-  await test('the version stamp the only change: stale, no working diff', () => {
+  await test('the version key\'s removal the only change: stale, no working diff', () => {
     const w = mkWorld();
     writeMarker(w);
-    w.write(SETTINGS, settingsJson(2), FUTURE);
+    w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
     assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: no working diff\n', `the stamp is no diff to cover: ${out}${err}`);
+    assertEq(out, 'review-covers: stale: no working diff\n', `the removal is no diff to cover: ${out}${err}`);
     cleanup(w.dir);
   });
 
-  await test('the version stamped and another settings key changed: stale, naming the settings', () => {
+  await test('the version key removed and another settings key changed: stale, naming the settings', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
     writeMarker(w);
-    w.write(SETTINGS, settingsJson(2, { enabled: false }), FUTURE);
+    w.write(SETTINGS, settingsJson({ enabled: false }), FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
     assertEq(code, 1, `exit 1: ${out}${err}`);
     assertEq(out, `review-covers: stale: ${SETTINGS}\n`, `the stale line: ${out}${err}`);
     cleanup(w.dir);
   });
 
-  await test('the version stamped and a code file edited: stale, naming the code file only', () => {
+  await test('the version key removed and a code file edited: stale, naming the code file only', () => {
     const w = mkWorld();
     writeMarker(w);
-    w.write(SETTINGS, settingsJson(2), FUTURE);
+    w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     w.write('src/x.js', "module.exports = 'x2';\n", FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
     assertEq(code, 1, `exit 1: ${out}${err}`);
@@ -200,7 +200,7 @@ const cases = async () => {
     const w = mkWorld({ tracked: false });
     w.write('src/x.js', "module.exports = 'x2';\n");
     writeMarker(w);
-    w.write(SETTINGS, settingsJson(2), FUTURE);
+    w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
     assertEq(code, 1, `exit 1: ${out}${err}`);
     assertEq(out, `review-covers: stale: ${SETTINGS}\n`, `no HEAD copy to diff against: ${out}${err}`);
@@ -228,23 +228,42 @@ const cases = async () => {
     assertEq(JSON.stringify(markersAfter([])), JSON.stringify({ plain: 1, full: 0 }), 'no full-panel marker');
   });
 
-  group('review covers: usage');
+  group('review covers: a repo with no commit yet');
 
-  await test('a git read that fails (no commit yet): exit 2 with one review-covers: line', () => {
-    const w = mkWorld();
+  // A repo beside the world's with no commit, `a.js` staged and dated an hour back, the full-panel marker written.
+  const unbornMarked = (w) => {
     const fresh = path.join(w.dir, 'fresh');
     fs.mkdirSync(fresh);
     const git = (...args) => assertEq(spawnSync('git', args, { cwd: fresh, env: w.env }).status, 0, `git ${args[0]}`);
     git('init', '-q', '-b', 'main');
     fs.writeFileSync(path.join(fresh, 'a.js'), 'a\n');
+    fs.utimesSync(path.join(fresh, 'a.js'), PAST, PAST);
     git('add', 'a.js');
     writeMarker(w, fresh);
+    return fresh;
+  };
+
+  await test('a staged file older than the marker: covered', () => {
+    const w = mkWorld();
+    const fresh = unbornMarked(w);
     const { code, out, err } = spawnIn(w, SCRIPT, fresh);
-    assertEq(code, 2, `exit 2, never a verdict: ${out}${err}`);
-    assertEq(out, '', 'nothing on stdout');
-    assertEq(err, 'review-covers: could not list the working diff.\n', `the one line: ${err}`);
+    assertEq(code, 0, `exit 0, the staged file is the diff: ${out}${err}`);
+    assertEq(out, 'review-covers: covered\n', `the covered line: ${out}${err}`);
     cleanup(w.dir);
   });
+
+  await test('a staged file written after the marker: stale, naming it', () => {
+    const w = mkWorld();
+    const fresh = unbornMarked(w);
+    fs.writeFileSync(path.join(fresh, 'a.js'), 'a2\n');
+    fs.utimesSync(path.join(fresh, 'a.js'), FUTURE, FUTURE);
+    const { code, out, err } = spawnIn(w, SCRIPT, fresh);
+    assertEq(code, 1, `exit 1: ${out}${err}`);
+    assertEq(out, 'review-covers: stale: a.js\n', `the staged file is never dropped: ${out}${err}`);
+    cleanup(w.dir);
+  });
+
+  group('review covers: usage');
 
   await test('outside a git repo: exit 2 with one review-covers: line', () => {
     const w = mkWorld();

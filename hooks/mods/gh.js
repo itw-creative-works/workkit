@@ -1,7 +1,8 @@
 /**
  * hooks/mods/gh.js: the gh reads the guards make, each spelled once: an
- * issue's JSON view and the open issues at status:building. Plain functions
- * over the `run` a gatherer hands them; the answers' readers are proof.js's.
+ * issue's JSON view and the open issues at status:building, and the texts a
+ * gh guard answers with around them. Plain functions over the `run` a gatherer
+ * hands them; the answers' readers are proof.js's.
  */
 
 // gh's answer, null when it failed or printed nothing.
@@ -31,3 +32,18 @@ export async function issueView(run, n, fields, { repo = '', ...init } = {}) {
 export async function buildingList(run, { repo = '', ...init } = {}) {
   return answerOf(await run(['gh', 'issue', 'list', ...repoArgs(repo), '--state', 'open', '--label', 'status:building', '--limit', '1000', '--json', 'number,labels'], init));
 }
+
+/**
+ * A gh guard's deny, the notes gathered so far leading it.
+ * @param {string[]} notes the notes, read when the deny is made
+ * @returns {function(string): {deny: string}}
+ */
+export const denyAfter = (notes) => (text) => ({ deny: [...notes, text].join('\n') });
+
+/**
+ * A gh guard's notice for an issue it could not read.
+ * @param {string} hook the hook (`proof-guard`)
+ * @param {string} gate what did not run (`proof gate`)
+ * @returns {function(string, string): string} `(n, why)` to the line
+ */
+export const ghSkipped = (hook, gate) => (n, why) => `${hook}: could not read issue #${n} (${why}), so the ${gate} did not run on this command.`;

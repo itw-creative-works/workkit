@@ -13,7 +13,7 @@ const {
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
-const { mkOriginRepo } = require('../../lib/git-repo');
+const { mkOriginRepo, OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
@@ -265,7 +265,7 @@ const mkRepo = ({ optIn = false } = {}) => {
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (optIn) {
     fs.mkdirSync(path.join(dir, W), { recursive: true });
-    fs.writeFileSync(path.join(dir, W, 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(path.join(dir, W, 'settings.json'), OPT_IN_SHAPES.current);
   }
   return dir;
 };

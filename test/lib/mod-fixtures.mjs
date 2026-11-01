@@ -1,6 +1,15 @@
 // The fixtures both test halves share, as one ES module: the logic suites reach
-// it through test/lib/mods-inputs.js (Node requires it), the wiring suites
-// through test/lib/mod-world.ts (the engine imports it).
+// it through test/lib/mods-inputs.js and test/lib/git-repo.js (Node requires it),
+// the wiring suites through test/lib/mod-world.ts (the engine imports it).
+
+/**
+ * A repo's .workkit/settings.json text: `current` as the kit writes it, `retired`
+ * the old shape whose version key the standards heal removes.
+ */
+export const OPT_IN_SHAPES = {
+  retired: '{\n  "version": 1,\n  "enabled": true\n}\n',
+  current: '{\n  "enabled": true\n}\n',
+}
 
 /** A session model id per ladder rung, as $.session.model() answers them. */
 export const MODELS = {
@@ -35,3 +44,16 @@ export const row = {
     return { role: 'assistant', text: '', toolUses: [{ tool_use_id: `t${toolUses}`, tool, input, text: 'ok' }] }
   },
 }
+
+/**
+ * One gh journal line as the journal's readers parse it, `{ ms, verb, sub, repo,
+ * numbers, add, remove, cwd }`: an `issue edit` from the session repo by default.
+ */
+export const ghEntry = (over = {}) => ({
+  ms: SESSION_NOW, verb: 'issue', sub: 'edit', repo: 'acme/repo', numbers: [], add: [], remove: [], cwd: '/w/repo', ...over,
+})
+
+/** The journal text the shim appends for `entries`: one tab-separated line each. */
+export const journalText = (...entries) => entries
+  .map((e) => `${[e.ms, e.verb, e.sub, e.repo, e.numbers.join(','), e.add.join(','), e.remove.join(','), e.cwd].join('\t')}\n`)
+  .join('')

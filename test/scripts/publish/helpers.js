@@ -11,6 +11,7 @@ const { assert, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
+const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -84,7 +85,7 @@ const copyWorld = seeded((seed, { branch, home, roster }) => {
   for (const name of roster) {
     const dir = path.join(seed, 'repos', name);
     fs.mkdirSync(path.join(dir, '.workkit'), { recursive: true });
-    fs.writeFileSync(path.join(dir, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(path.join(dir, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
     git(dir, 'init', '-q', '-b', 'main');
     git(dir, 'remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
   }

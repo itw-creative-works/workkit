@@ -1,11 +1,7 @@
-// Tests for workflow:snapshot: snapshotPlan({ command, cwd, roster, slugOf,
-// building, failed }) in hooks/mods/snapshot.js decides a take at a claim and a drop at
-// the release of the last building issue, and the copy runs for real through
-// `bash hooks/lib/snapshot.sh take|add|stale|drop <root> ...` in a temp repo
-// with its own home. Each case ports the HEAD case its name quotes. Dropped:
-// "run.sh is executable", and "a claim from a folder inside no git repo" (the
-// gate stands it down). In test/mods/post-tool-use-bash.test.ts: the wiring,
-// the loader's take and which mode a claim runs.
+// Tests for workflow:snapshot: snapshotPlan({ lines, cwd, roster, slugOf, building }) in hooks/mods/snapshot.js decides,
+// over one Bash call's gh journal lines, a take at a claim and a drop at the last building issue's release (a real gh
+// call through the shim proves the line read); `bash hooks/lib/snapshot.sh take|add|stale|drop <root>` copies for real
+// in a temp repo with its own home. The wiring, the loader's take, a claim's mode: test/mods/post-tool-use-bash.test.ts.
 
 const fs = require('fs');
 const path = require('path');
@@ -14,19 +10,23 @@ const {
   group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, SYSTEM_PATH, shellPath, which, stubTool, joinPath,
+  IS_WINDOWS, BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
-const { mkRepo } = require('../lib/git-repo');
+const { mkRepo, mkOriginRepo } = require('../lib/git-repo');
 const { snapshotDir, treeOf } = require('../lib/red-snapshot');
-const { mods } = require('../lib/mods-inputs');
+const { scratchKit, journalFileText } = require('../lib/identity');
+const { mods, ghEntry } = require('../lib/mods-inputs');
 
 const KIT = path.join(__dirname, '..', '..');
 const SNAPSHOT = path.join(KIT, 'hooks', 'lib', 'snapshot.sh');
 
-const CLAIM = (n) => `gh issue edit ${n} --add-label status:building`;
-const QA = (n) => `gh issue edit ${n} --remove-label status:building --add-label status:qa`;
-const BLOCK = (n) => `gh issue edit ${n} --remove-label status:building --add-label status:blocked`;
+// The journal lines a successful gh write leaves, one per call.
+const CLAIM = (n, over = {}) => ghEntry({ numbers: [n], add: ['status:building'], ...over });
+const QA = (n) => ghEntry({ numbers: [n], add: ['status:qa'], remove: ['status:building'] });
+const BLOCK = (n) => ghEntry({ numbers: [n], add: ['status:blocked'], remove: ['status:building'] });
+const COMPLETE = (n) => ghEntry({ numbers: [n], add: ['status:complete'], remove: ['status:qa'] });
+const CLOSE = (n) => ghEntry({ sub: 'close', numbers: [n] });
 
 /** The `issue list` answer: each number open at status:building. */
 const building = (...numbers) => numbers.map((number) => ({ number, labels: [{ name: 'status:building' }] }));
@@ -39,31 +39,70 @@ const ROSTER = { version: 1, repos: { [HERE]: 'enabled', [OTHER]: 'enabled' } };
 const SLUGS = { [HERE]: 'acme/repo', [OTHER]: 'owner/other' };
 
 /**
- * snapshotPlan over `command` from the session repo, gh's building answer
- * `list` (null when it cannot answer), `failed` when the Bash call failed;
- * hands back the plan and how often the building list was read.
+ * snapshotPlan over the journal `lines` of one Bash call from the session repo,
+ * gh's building answer `list` (null when it cannot answer); hands back the plan
+ * and how often the building list was read.
  */
-const planOf = async (command, { list = [], roster = ROSTER, cwd = HERE, failed = false } = {}) => {
+const planOf = async (lines, {
+  list = [], roster = ROSTER, cwd = HERE, slugs = SLUGS,
+} = {}) => {
   let asked = 0;
   const plan = await mods('snapshot').snapshotPlan({
-    command,
+    lines,
     cwd,
     roster,
-    slugOf: async (dir) => SLUGS[dir] ?? '',
+    slugOf: async (dir) => slugs[dir] ?? '',
     building: async () => { asked++; return list === null ? null : json(list); },
-    failed,
   });
   return { plan, asked };
 };
-// The plan as its steps, one per clause in order (a lone answer is one step).
+// The plan as its steps, one per line in order (a lone answer is one step).
 const stepsOf = (plan) => (Array.isArray(plan) ? plan : (plan ? [plan] : []));
 const rootsOf = (plan, key) => stepsOf(plan).filter((s) => s && s[key]).map((s) => s[key]).join(',') || null;
 const takes = (plan) => rootsOf(plan, 'take');
 const drops = (plan) => rootsOf(plan, 'drop');
-// Every issue number the plan's takes record, sorted; every notice's text, joined.
+// Every issue number the plan's takes record, sorted.
 const takenIssues = (plan) => stepsOf(plan).filter((s) => s && s.take).flatMap((s) => s.issues.map(String)).sort();
-const notesOf = (plan) => stepsOf(plan).filter((s) => s && s.note).map((s) => s.note).join('\n');
-const names = (text, n) => new RegExp(`(^|\\D)${n}(\\D|$)`).test(text);
+
+// The shim's kit, copied once: a call through it writes nothing there.
+let kit = null;
+const shimDir = () => path.join(kit ??= scratchKit(), 'workflow', 'identity');
+
+/**
+ * A repo with origin acme/repo, its folder as the shim's cwd spells it, and a
+ * home of its own; `other` a folder the roster below lists as other/rostered.
+ */
+const mkShimWorld = () => {
+  const root = fs.realpathSync(mkTmp('snapshot-shim-'));
+  const [here, other] = ['repo', 'other'].map((name) => path.join(root, name));
+  for (const dir of [here, other]) fs.mkdirSync(dir);
+  mkOriginRepo(here, 'https://github.com/acme/repo.git');
+  const roster = { version: 1, repos: { [here]: 'enabled', [other]: 'enabled' } };
+  return {
+    here, other, home: mkTmp('snapshot-shim-home-'), roster, slugs: { [here]: 'acme/repo', [other]: 'other/rostered' },
+  };
+};
+
+/**
+ * `gh <args>` through the shim from the world's repo in a Claude session, the
+ * real gh a stub that exits 0, or 1 when `fails`; hands back the journal's
+ * lines for the repo afterwards, parsed by the post-Bash hook's own reader.
+ */
+const viaShim = (w, args, { fails = false } = {}) => {
+  let bin = makeGhStub().binDir;
+  if (fails) {
+    bin = mkTmp('snapshot-gh-fails-');
+    stubTool(bin, 'gh', ['#!/usr/bin/env bash', 'echo "HTTP 422: Validation Failed" >&2', 'exit 1']);
+  }
+  const env = homeEnv(w.home, { PATH: systemPathWith(shimDir(), bin, NODE_DIR), CLAUDECODE: '1' });
+  delete env.GH_TOKEN;
+  delete env.GITHUB_TOKEN;
+  const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(shimDir(), 'gh')), ...args], {
+    cwd: w.here, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  });
+  assertEq(res.status, fails ? 1 : 0, `the shim's exit is the real gh's (stderr: ${res.stderr})`);
+  return mods('markers').journalLines(journalFileText(path.join(w.home, '.workkit'), w.here));
+};
 
 /**
  * A repo with a root package.json, `src/x.js` and a test, committed; a
@@ -135,11 +174,17 @@ const stale = (w, list, fails = false) => {
 const cases = async () => {
   group('workflow:snapshot: the claim');
 
-  await test('ports "a claim with no snapshot takes one": the plan is a take of the session repo', async () => {
-    assertEq(takes((await planOf(CLAIM(5), { list: building(5) })).plan), HERE, 'the claim takes the session repo');
+  await test('a claim with no snapshot takes one: the plan is a take of the session repo', async () => {
+    assertEq(takes((await planOf([CLAIM(5)], { list: building(5) })).plan), HERE, 'the claim takes the session repo');
   });
 
-  await test('ports "a claim with no snapshot takes one: the whole tree, gitignored files in, no node_modules, no .git, head, paths and issues recorded"', () => {
+  await test('a claim takes the snapshot with no building read, though GitHub lists nothing', async () => {
+    const { plan, asked } = await planOf([CLAIM(10)], { list: [] });
+    assertEq(json(takenIssues(plan)), json(['10']), 'the take records #10');
+    assertEq(asked, 0, 'no building read');
+  });
+
+  await test('a claim with no snapshot takes one: the whole tree, gitignored files in, no node_modules, no .git, head, paths and issues recorded', () => {
     const w = mkWorld();
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('src/new.js', 'module.exports = 3;\n');
@@ -244,7 +289,7 @@ const cases = async () => {
     assertEq(tree[path.join('dotfiles', '.workkit', 'hooks.log')], 'file a hook line\n', 'a file git does not ignore is copied');
   });
 
-  await test('ports "a second claim while the snapshot is live adds its number and leaves the tree alone": stale answers live, add records the number', () => {
+  await test('a second claim while the snapshot is live adds its number and leaves the tree alone: stale answers live, add records the number', () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(w.workflowHome, w.repo);
@@ -261,7 +306,7 @@ const cases = async () => {
     assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
   });
 
-  await test('ports "a claim after every recorded issue left building replaces the snapshot": stale answers stale, the take replaces it', () => {
+  await test('a claim after every recorded issue left building replaces the snapshot: stale answers stale, the take replaces it', () => {
     const w = mkWorld();
     take(w, 5);
     w.write('src/x.js', 'module.exports = 9;\n');
@@ -274,7 +319,7 @@ const cases = async () => {
     assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
   });
 
-  await test('ports "a take on top of a live snapshot replaces it whole: nothing of the old tree left, no temporary sibling"', () => {
+  await test('a take on top of a live snapshot replaces it whole: nothing of the old tree left, no temporary sibling', () => {
     const w = mkWorld();
     w.write('src/gone.js', 'module.exports = 8;\n');
     take(w, 5);
@@ -288,7 +333,7 @@ const cases = async () => {
     assertEq(json(snapshots(w)), json([path.basename(snap)]), 'one folder under the final name, no sibling');
   });
 
-  await test('ports "a re-claim of a recorded issue after a block keeps the first tree, the number once": add records it once', () => {
+  await test('a re-claim of a recorded issue after a block keeps the first tree, the number once: add records it once', () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(w.workflowHome, w.repo);
@@ -299,14 +344,13 @@ const cases = async () => {
     assertEq(json(issuesOf(snap)), json(['5']), 'the number is recorded once');
   });
 
-  await test('ports "a failed GitHub read at a claim keeps the live snapshot and adds the number": stale answers 2', () => {
+  await test('a failed GitHub read at a claim keeps the live snapshot and adds the number: stale answers 2', () => {
     const w = mkWorld();
     take(w, 5);
     assertEq(stale(w, [], true).code, 2, 'GitHub cannot answer');
   });
 
-  await test('ports "a claim whose number cannot be read records none, and a later claim keeps that snapshot"', async () => {
-    assertEq(takes((await planOf('gh issue edit "$N" --add-label status:building')).plan), HERE, 'the claim still takes');
+  await test('a claim whose number cannot be read records none, and a later claim keeps that snapshot: a take with no number', async () => {
     const w = mkWorld();
     take(w);
     const snap = snapshotDir(w.workflowHome, w.repo);
@@ -316,43 +360,17 @@ const cases = async () => {
     assertEq(calls.length, 0, 'and asks GitHub nothing');
   });
 
-  group('workflow:snapshot: a failed call');
-
-  await test('a failed call claiming #10, GitHub listing #10 as building: the snapshot is taken for #10', async () => {
-    const { plan } = await planOf(CLAIM(10), { list: building(10), failed: true });
-    assertEq(takes(plan), HERE, 'the claim takes the session repo');
-    assertEq(json(takenIssues(plan)), json(['10']), 'the take records #10');
-  });
-
-  await test('a failed call claiming #10, GitHub not listing #10: nothing taken, a notice naming #10', async () => {
-    const { plan } = await planOf(CLAIM(10), { list: building(4), failed: true });
-    assertEq(takes(plan) || drops(plan), null, 'no snapshot taken or dropped');
-    assert(names(notesOf(plan), 10), `a notice names #10, got: ${json(plan)}`);
-  });
-
-  await test('a failed call claiming #1 and #2, only #1 listed: the snapshot is taken for #1, the notice names #2', async () => {
-    const { plan } = await planOf('gh issue edit 1 2 --add-label status:building', { list: building(1), failed: true });
-    assertEq(json(takenIssues(plan)), json(['1']), 'the take records #1 alone');
-    assert(names(notesOf(plan), 2), `a notice names #2, got: ${json(plan)}`);
-  });
-
-  await test('a successful call\'s claim takes the snapshot with no building read, though GitHub lists nothing', async () => {
-    const { plan, asked } = await planOf(CLAIM(10), { list: [], failed: false });
-    assertEq(json(takenIssues(plan)), json(['10']), 'the take records #10');
-    assertEq(asked, 0, 'no building read');
-  });
-
   group('workflow:snapshot: removal');
 
-  for (const flip of [QA(5), 'gh issue edit 5 --remove-label status:qa --add-label status:complete', 'gh issue close 5']) {
-    await test(`ports "the last building issue leaving removes the snapshot: ${flip}": the plan is a drop`, async () => {
-      const { plan, asked } = await planOf(flip, { list: [] });
+  for (const [flip, line] of [['the qa flip', QA(5)], ['the complete flip', COMPLETE(5)], ['the close', CLOSE(5)]]) {
+    await test(`the last building issue leaving removes the snapshot: ${flip}: the plan is a drop`, async () => {
+      const { plan, asked } = await planOf([line], { list: [] });
       assertEq(drops(plan), HERE, 'none left building drops the session repo\'s snapshot');
       assertEq(asked, 1, 'one building read');
     });
   }
 
-  await test('ports "the last building issue leaving removes the snapshot": drop removes it whole', () => {
+  await test('the last building issue leaving removes the snapshot: drop removes it whole', () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(w.workflowHome, w.repo);
@@ -361,71 +379,85 @@ const cases = async () => {
     assert(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`);
   });
 
-  await test('ports "the qa flip with another issue still building leaves the snapshot"', async () => {
-    const { plan } = await planOf(QA(5), { list: building(6) });
+  await test('the qa flip with another issue still building leaves the snapshot', async () => {
+    const { plan } = await planOf([QA(5)], { list: building(6) });
     assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
   });
 
-  for (const flip of [
-    BLOCK(5),
-  ]) {
-    await test(`ports "a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}"`, async () => {
-      const { plan, asked } = await planOf(flip, { list: [] });
+  for (const [flip, line] of [['the block', BLOCK(5)]]) {
+    await test(`a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}`, async () => {
+      const { plan, asked } = await planOf([line], { list: [] });
       assertEq(json(stepsOf(plan)), '[]', 'no step');
       assertEq(asked, 0, 'no building read');
     });
   }
 
-  await test('ports "a failed GitHub read at removal leaves the snapshot, exit 0"', async () => {
-    const { plan } = await planOf(QA(5), { list: null });
+  await test('a failed GitHub read at removal leaves the snapshot, exit 0', async () => {
+    const { plan } = await planOf([QA(5)], { list: null });
     assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
   });
 
   group('workflow:snapshot: which repo');
 
-  await test('ports "a claim naming another repo snapshots its roster folder, not the session repo"', async () => {
-    assertEq(takes((await planOf('gh issue edit 5 --repo owner/other --add-label status:building', { list: building(5) })).plan),
+  await test('a claim naming another repo snapshots its roster folder, not the session repo', async () => {
+    assertEq(takes((await planOf([CLAIM(5, { repo: 'owner/other' })], { list: building(5) })).plan),
       OTHER, 'the take is the roster folder of owner/other');
   });
 
-  await test('ports "a claim naming a repo off the roster: the notice names it, no snapshot"', async () => {
-    const { plan } = await planOf('gh issue edit 5 --repo owner/other --add-label status:building',
+  await test('a claim naming a repo off the roster: the notice names it, no snapshot', async () => {
+    const { plan } = await planOf([CLAIM(5, { repo: 'owner/other' })],
       { list: building(5), roster: { version: 1, repos: { [HERE]: 'enabled' } } });
     assertEq(takes(plan) || drops(plan), null, 'no snapshot taken or dropped');
   });
 
-  await test('ports "a claim after a cd clause with no --repo: a notice, no snapshot"', async () => {
-    const { plan } = await planOf(`cd "${OTHER}" && ${CLAIM(5)}`, { list: building(5) });
-    assertEq(takes(plan) || drops(plan), null, 'no snapshot taken or dropped');
-  });
+  group('workflow:snapshot: every journal line is a step, in order');
 
-  group('workflow:snapshot: every clause is a step, in order');
-
-  await test('two claims in one command are two steps on the session repo: issues [5, 6] both recorded', async () => {
-    assertEq(takes((await planOf(`${CLAIM(5)} && ${CLAIM(6)}`, { list: building(5, 6) })).plan), `${HERE},${HERE}`,
+  await test('two claim lines from one Bash call are two steps on the session repo: issues [5, 6] both recorded', async () => {
+    assertEq(takes((await planOf([CLAIM(5), CLAIM(6)], { list: building(5, 6) })).plan), `${HERE},${HERE}`,
       'one take step per claim, in order');
   });
 
-  await test('two claims in two repos, --repo owner/other on the second, take a snapshot of each repo', async () => {
-    assertEq(takes((await planOf(`${CLAIM(5)} && gh issue edit 6 --repo owner/other --add-label status:building`, { list: building(5, 6) })).plan),
+  await test('two claims in two repos, owner/other on the second line, take a snapshot of each repo', async () => {
+    assertEq(takes((await planOf([CLAIM(5), CLAIM(6, { repo: 'owner/other' })], { list: building(5, 6) })).plan),
       `${HERE},${OTHER}`, 'the session repo, then the roster folder of owner/other');
   });
 
-  await test('an unreadable --repo clause followed by a claim gives the note AND takes the snapshot', async () => {
-    const { plan } = await planOf(`gh issue edit 4 --repo "$R" --add-label status:building && ${CLAIM(5)}`, { list: building(5) });
-    assert(json(stepsOf(plan)).includes('could not be read'), `a step carries the unread-repo note, got: ${json(plan)}`);
-    assertEq(takes(plan), HERE, 'the readable claim still takes');
+  group('workflow:snapshot: a real gh call, read back from the journal');
+
+  await test('case 1: gh issue edit 7 --add-label status:building through the shim yields the claim step for 7 in the cwd\'s repo', async () => {
+    const w = mkShimWorld();
+    const lines = viaShim(w, ['issue', 'edit', '7', '--add-label', 'status:building']);
+    const { plan } = await planOf(lines, { cwd: w.here, roster: w.roster, slugs: w.slugs });
+    assertEq(takes(plan), w.here, 'the take is the cwd\'s repo');
+    assertEq(json(takenIssues(plan)), json(['7']), 'the take records #7');
+  });
+
+  await test('case 1: the same claim with --repo other/rostered places the take in that roster folder', async () => {
+    const w = mkShimWorld();
+    const lines = viaShim(w, ['issue', 'edit', '7', '--repo', 'other/rostered', '--add-label', 'status:building']);
+    const { plan } = await planOf(lines, { cwd: w.here, roster: w.roster, slugs: w.slugs });
+    assertEq(takes(plan), w.other, 'the take is the roster folder of other/rostered');
+  });
+
+  // A claim of #8 that gh answered sits in the same journal, so a reader that saw no line at all fails here too.
+  await test('case 1: the same claim the real gh fails (exit 1) yields no step: the journal holds the answered #8 alone', async () => {
+    const w = mkShimWorld();
+    viaShim(w, ['issue', 'edit', '8', '--add-label', 'status:building']);
+    const lines = viaShim(w, ['issue', 'edit', '7', '--add-label', 'status:building'], { fails: true });
+    const { plan } = await planOf(lines, { cwd: w.here, roster: w.roster, slugs: w.slugs, list: building(8) });
+    assertEq(takes(plan), w.here, 'the answered claim still takes the cwd\'s repo');
+    assertEq(json(takenIssues(plan)), json(['8']), 'the take records #8 and never the failed #7');
   });
 
   group('workflow:snapshot: anything else');
 
-  for (const command of [
-    'git status --short',
-    'gh issue edit 5 --add-label priority:high',
-    'gh issue comment 5 --body "moving to status:building next"',
+  for (const [call, lines] of [
+    ['a call that wrote nothing to gh', []],
+    ['a priority label', [ghEntry({ numbers: [5], add: ['priority:high'] })]],
+    ['a comment', [ghEntry({ sub: 'comment', numbers: [5] })]],
   ]) {
-    await test(`ports "no claim and no park does nothing and calls no gh: ${command}"`, async () => {
-      const { plan, asked } = await planOf(command, { list: building(5) });
+    await test(`no claim and no park does nothing and calls no gh: ${call}`, async () => {
+      const { plan, asked } = await planOf(lines, { list: building(5) });
       assertEq(json(stepsOf(plan)), '[]', 'no step');
       assertEq(asked, 0, 'no building read');
     });
@@ -445,7 +477,7 @@ const cases = async () => {
     return { tool, logFile, envPath: joinPath(bin, w.env.PATH) };
   };
 
-  await test('ports "a take whose copy fails leaves no snapshot folder and no temporary sibling"', () => {
+  await test('a take whose copy fails leaves no snapshot folder and no temporary sibling', () => {
     const w = mkWorld();
     const copy = failingCopy(w);
     const out = mode(w, 'take', ['5'], copy.envPath);
@@ -454,7 +486,7 @@ const cases = async () => {
     assertEq(json(snapshots(w)), json([]), 'no snapshot folder and no temporary sibling');
   });
 
-  await test('ports "a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling"', () => {
+  await test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(w.workflowHome, w.repo);
@@ -484,7 +516,7 @@ const cases = async () => {
     'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)');
   const siblingsOf = (w, snap) => snapshots(w).filter((name) => name.startsWith(`${path.basename(snap)}.`));
 
-  await lockTest('ports "a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one"', () => {
+  await lockTest('a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one', () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(w.workflowHome, w.repo);
@@ -507,7 +539,7 @@ const cases = async () => {
     }
   });
 
-  await test('ports "a take clears a sibling older than 10 minutes and keeps a fresh one"', () => {
+  await test('a take clears a sibling older than 10 minutes and keeps a fresh one', () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(w.workflowHome, w.repo);

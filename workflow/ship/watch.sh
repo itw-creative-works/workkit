@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # workkit ship watch: the ship's CI watch, a pushed sha in and one answer out.
 # Usage: workkit ship watch <sha>. Exit 0 green (or no CI for push), 1 red, 2
-# usage, 3 not queued yet, 4 gh failed or the watch did not finish, 5 a watch
-# already running, 130 interrupted; the lines and the log: `workflow/README.md`,
-# the ship/watch.sh row. The foreground runs this file as `--watch-body <sha>`,
-# detached, and tails its log. The push trigger is a top-level `on:` naming
-# `push` in any of its YAML shapes; a `push` nested deeper is not one.
+# usage or a sha this clone does not know, 3 not queued yet, 4 gh failed or the
+# watch did not finish, 5 a watch already running, 130 interrupted; the lines
+# and the log: `workflow/README.md`, the ship/watch.sh row. The foreground runs
+# this file as `--watch-body <sha>`, detached, and tails its log. The push
+# trigger is a top-level `on:` naming `push` in any of its YAML shapes; a
+# `push` nested deeper is not one.
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole, and a watch outlives many edits to the kit.
@@ -175,7 +176,7 @@ watch_body() {
 }
 
 main() {
-  local body=0
+  local body=0 sha
   set -euo pipefail
   load_libs
   TRIES="${WORKKIT_CI_WATCH_TRIES:-6}"
@@ -186,7 +187,15 @@ main() {
     shift
   fi
   [[ $# -eq 1 && "$1" =~ ^[0-9a-fA-F]{7,40}$ ]] || usage
-  SHA="$1"
+  # gh run list --commit matches the full 40-character id only.
+  sha="$1"
+  if ((${#sha} < 40)); then
+    sha="$(git -C "$(repo_root)" rev-parse --verify --quiet "$1^{commit}")" || {
+      printf 'ci-watch: %s is not a commit this clone knows; fetch it or pass the full sha\n' "$1" >&2
+      exit 2
+    }
+  fi
+  SHA="$sha"
   if ((body == 1)); then watch_body; fi
   foreground
 }

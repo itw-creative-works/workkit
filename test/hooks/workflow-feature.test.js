@@ -1,13 +1,6 @@
-// Tests for workflow:feature's logic, featureContext(prompt, marker) in
-// hooks/mods/feature.js: a line about working an issue loads the
-// workkit:feature skill. With no marker given, every match answers the line;
-// the marker, its strong-only write and the later silence are per-session
-// state, test/mods/user-prompt-submit.test.ts.
-
-// HEAD cases retired with the mod (the engine parses the input; a module has no jq):
-// "garbage stdin exits 0 silently", "no jq on PATH exits 0 silently".
-// HEAD case ported under a new name in test/mods/user-prompt-submit.test.ts:
-// "loader routes workflow:feature" as "an opted-in repo: the contexts arrive in the order ...".
+// Tests for workflow:feature's logic, featureContext(prompt, marker) in hooks/mods/feature.js: a line about working
+// an issue loads the workkit:feature skill. With no marker given, every match answers the line; the marker, its
+// strong-only write and the later silence are per-session state, test/mods/user-prompt-submit.test.ts.
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
@@ -36,7 +29,7 @@ const SILENT = [
 const cases = async () => {
   group('workflow-feature: the issue-work lines fire');
   for (const prompt of FIRING) {
-    await test(`ports "fires on "${prompt}""`, () => {
+    await test(`fires on "${prompt}"`, () => {
       const ctx = say(prompt);
       assert(ctx.includes('workkit:feature'), `the injection must name the skill, got: ${ctx}`);
       assert(ctx.includes('#374'), 'the injection must cite its issue');
@@ -45,17 +38,17 @@ const cases = async () => {
 
   group('workflow-feature: everything else is silence');
   for (const prompt of SILENT) {
-    await test(`ports "silent on "${prompt}""`, () => {
+    await test(`silent on "${prompt}"`, () => {
       assertEq(say(prompt), '', 'an unrelated prompt produces nothing');
     });
   }
 
   group('workflow-feature: the line');
-  await test('ports "valid UserPromptSubmit JSON shape": the injection is exactly the one line', () => {
+  await test('valid UserPromptSubmit JSON shape: the injection is exactly the one line', () => {
     assertEq(say('work on #12'), LINE, 'the line, whole');
   });
 
-  await test('ports "empty stdin exits 0 silently": an empty prompt is silence', () => {
+  await test('empty stdin exits 0 silently: an empty prompt is silence', () => {
     assertEq(say(''), '', 'nothing to match');
   });
 };

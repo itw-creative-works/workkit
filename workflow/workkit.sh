@@ -216,8 +216,8 @@ SECRET_HOME='WORKKIT_GITHUB_TOKEN'
 # is worth offering: early enough that a morning brief never meets the expiry.
 SECRET_MAX_AGE_DAYS=330
 
-# The bound, in seconds, on every read of the cloud secrets and on the bot's
-# installation check (`bounded_read`).
+# The bound, in seconds, on every read of the cloud secrets (`bounded_read`);
+# the bot's installation check has its own, in workkit/identity.sh.
 SECRETS_TIMEOUT="${WORKKIT_GH_TIMEOUT:-10}"
 
 # The agent's GitHub identity (workkit/identity.sh): the client and the sign-in.

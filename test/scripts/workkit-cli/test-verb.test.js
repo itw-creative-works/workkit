@@ -51,7 +51,7 @@ const cases = async () => {
     assertEq(code, 0, `exit 0, got: ${said}`);
     assert(ran(lines, 'a case') && !ran(lines, 'b case'), `only the named suite ran, got: ${said}`);
     assert(lines.some((line) => TOTALS(1, 1).test(line)), `the totals count the one suite, got: ${said}`);
-    assertEq(packaged(world, repo), JSON.stringify([tree, '.']), `the tree it ran on, then the root package, got: ${said}`);
+    assertEq(packaged(world, repo), JSON.stringify([`${tree} .`]), `the tree it ran on, then the root package, got: ${said}`);
     cleanup(world.root); cleanup(repo);
   });
 

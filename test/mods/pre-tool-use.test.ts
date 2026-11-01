@@ -10,7 +10,7 @@ const agentCall = ($: any, subagentType: string, extra: any = {}) => $.tool.call
 })
 
 describe('classic.PreToolUse: manager:spawn-guard', () => {
-  test('ports "<class> with model: haiku warns": the warning reaches the context and the log', { plugins: [SPY] }, async ($, on) => {
+  test('<class> with model: haiku warns: the warning reaches the context and the log', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on)
     await agentCall($, 'workkit:worker', { model: 'haiku' })
     const answered = spied(w)
@@ -22,14 +22,14 @@ describe('classic.PreToolUse: manager:spawn-guard', () => {
     expect(w.toolRan).toBeDefined()
   })
 
-  test('ports "the same spawn WITHOUT a model param is silent"', { plugins: [SPY] }, async ($, on) => {
+  test('the same spawn WITHOUT a model param is silent', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on)
     await agentCall($, 'workkit:worker')
     expect(spied(w)[0]?.additionalContext).toBeUndefined()
     expect(w.logs.filter((l: string) => !l.startsWith('spy:'))).toHaveLength(0)
   })
 
-  test('ports "no path ever returns a permission decision"', { plugins: [SPY] }, async ($, on) => {
+  test('no path ever returns a permission decision', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable })
     for (const [type, extra] of [
       ['workkit:worker', { model: 'haiku' }],
@@ -52,20 +52,20 @@ describe('classic.PreToolUse: manager:spawn-guard', () => {
     }
   })
 
-  test('ports "an advisor spawn from a frontier session warns": the session model comes from $.session.model()', { plugins: [SPY] }, async ($, on) => {
+  test('an advisor spawn from a frontier session warns: the session model comes from $.session.model()', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on, { model: MODELS.fable })
     await agentCall($, 'workkit:advisor')
     expect((spied(w)[0]?.additionalContext || []).join('\n')).toContain('redundant')
   })
 
-  test('ports "a non-Agent tool is silent"', { plugins: [SPY] }, async ($, on) => {
+  test('a non-Agent tool is silent', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on)
     await $.tool.call({ tool: 'Bash', command: 'echo hi', description: 'x', model: 'haiku' } as any)
     expect(w.logs.filter((l: string) => !l.startsWith('spy:') )).toHaveLength(0)
     expect(hooksLog(w).some((l: any) => l.hook === 'manager:spawn-guard')).toBe(false)
   })
 
-  test('ports "a missing ladder is silent"', { plugins: [SPY] }, async ($, on) => {
+  test('a missing ladder is silent', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on)
     w.touchKit('hooks/manager/resources/ladder.json', null)
     await agentCall($, 'workkit:worker', { model: 'haiku' })
@@ -73,19 +73,19 @@ describe('classic.PreToolUse: manager:spawn-guard', () => {
     expect(w.toolRan).toBeDefined()
   })
 
-  test('ports "an unparseable ladder is silent"', { plugins: [SPY] }, async ($, on) => {
+  test('an unparseable ladder is silent', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on, { kit: { 'hooks/manager/resources/ladder.json': 'not json {' } })
     await agentCall($, 'workkit:worker', { model: 'haiku' })
     expect(spied(w)[0]?.additionalContext).toBeUndefined()
   })
 
-  test('ports "loader routes manager:spawn-guard": the fire leaves a run line in the hooks log', { plugins: [SPY] }, async ($, on) => {
+  test('loader routes manager:spawn-guard: the fire leaves a run line in the hooks log', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on)
     await agentCall($, 'workkit:worker', { model: 'haiku' })
     expect(hooksLog(w).some((l: any) => l.hook === 'manager:spawn-guard' && l.verdict === 'run')).toBe(true)
   })
 
-  test('ports "HOOK_DISABLE=1 is a silent no-op"', { plugins: [SPY] }, async ($, on) => {
+  test('HOOK_DISABLE=1 is a silent no-op', { plugins: [SPY] }, async ($, on) => {
     const w = mkWorld(on, { env: { HOOK_DISABLE: '1' } })
     await agentCall($, 'workkit:worker', { model: 'haiku' })
     expect(spied(w)[0]?.additionalContext).toBeUndefined()

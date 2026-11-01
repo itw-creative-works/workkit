@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/lib/state.sh: the safe JSON edit, the state mutex and the one-value
 # read. Sourced by lib.sh, functions only. Reads lib.sh's WK_STATE_LOCK; calls
-# wk_jq (platform.sh) and wk_warn (lib/voice.sh).
+# wk_jq, wk_take_lock and wk_drop_lock (platform.sh) and wk_warn (lib/voice.sh).
 
 # ── JSON ──────────────────────────────────────────────────────────────────────
 # Symlinks resolve first, or the temp file would replace the link; the write
@@ -51,25 +51,10 @@ wk_json_edit_or_create() {
 }
 
 # ── The state mutex ───────────────────────────────────────────────────────────
-# Returns 0 holding the lock, 1 after a 5s wait. Callers proceed either way,
-# and only a caller that took it releases it, or a third writer races the
-# holder.
-wk_take_state_lock() {
-  local waited=0
-  mkdir -p "$(dirname "$WK_STATE_LOCK")" 2>/dev/null || return 1
-  while [ "$waited" -lt 50 ]; do
-    if mkdir "$WK_STATE_LOCK" 2>/dev/null; then return 0; fi
-    sleep 0.1
-    # Never `(( waited++ ))`: its first pass evaluates to 0, a non-zero status
-    # that errexit ends the run on under bash 4.1 and later.
-    waited=$(( waited + 1 ))
-  done
-  return 1
-}
+# The lock on $WK_STATE_LOCK, wk_take_lock's (platform.sh) contract.
+wk_take_state_lock() { wk_take_lock "$WK_STATE_LOCK"; }
 
-wk_drop_state_lock() {
-  rmdir "$WK_STATE_LOCK" 2>/dev/null || true
-}
+wk_drop_state_lock() { wk_drop_lock "$WK_STATE_LOCK"; }
 
 # One value out of a JSON file, or empty for an absent key, an unreadable file
 # or a machine without jq.

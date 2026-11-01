@@ -229,6 +229,7 @@ cmd_doctor() {
     nogit)   wk_skip "repo: $PWD is not a git repo" ;;
     *)       wk_info "repo: $PWD is '$state'; \`workkit enable\` joins it" ;;
   esac
+  git_hooks_line "$state" || attention=$((attention + 1))
   identity_attention=0
   identity_report repo || identity_attention=$?
   attention=$((attention + identity_attention))

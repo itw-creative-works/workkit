@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const { spawnSync } = require('child_process');
+const { subAt } = require('./gate');
 
 const HOST = 'https://github.com';
 const NOT_LOGGED_IN = 'You are not logged into any GitHub hosts. To log in, run: gh auth login';
@@ -587,13 +588,7 @@ const passThrough = (gh, argv) => {
 const run = (argv, { gh, repo = '' }) => {
   if (!gh) throw new Error('rest.js: no real gh to run; the shim hands its path over in WORKKIT_REAL_GH');
   const [verb, ...rest] = argv;
-  // The subcommand rule is the twin of `bot_verb` in ./gh, shape for shape:
-  // change one and change the other.
-  let at = -1;
-  for (let i = 0; i < rest.length && at < 0; i++) {
-    if (rest[i] === '-R' || rest[i] === '--repo') i++;
-    else if (!rest[i].startsWith('-')) at = i;
-  }
+  const at = subAt(rest);
   const help = rest.includes('-h') || rest.includes('--help');
   const serve = !help && at >= 0 && VERBS[`${verb} ${rest[at]}`];
   if (!serve) return passThrough(gh, argv);

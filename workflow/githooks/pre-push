@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# One of git's client-side hooks, each this same body, named by its file;
+# core.hooksPath names the folder (the heal, standards/githooks.sh). hook.sh's
+# wk_githook_run judges pre-commit and commit-msg (judge.js) and passes every
+# hook on to the repo's own.
+
+# Functions only, called on the last line: bash reads a script as it runs, but
+# parses a function whole.
+
+load_libs() {
+  KIT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+  # shellcheck source=../lib/platform.sh
+  . "$KIT_DIR/workflow/lib/platform.sh"
+  # shellcheck source=../lib/participation.sh
+  . "$KIT_DIR/workflow/lib/participation.sh"
+  # shellcheck source=./hook.sh
+  . "$KIT_DIR/workflow/githooks/hook.sh"
+}
+
+main() {
+  load_libs
+  wk_githook_run "${BASH_SOURCE[0]##*/}" "$@"
+}
+
+main "$@"

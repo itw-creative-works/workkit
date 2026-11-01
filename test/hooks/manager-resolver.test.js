@@ -1,19 +1,7 @@
-// Tests for manager:resolver's logic: resolverModel(config, subagentType,
-// parentModel, givenModel) in hooks/mods/resolver.js, over managerConfig(
-// ladder, userSettings, repoSettings) and modelTier(id) in
-// hooks/mods/manager.js. The ladder's shape, the decision table, both class
-// spellings and the layer merge. The spawn itself (a given model, advise
-// mode, the layers read off disk) is test/mods/agent-spawn.test.ts.
-
-// HEAD cases retired with the mod: "garbage stdin exits 0 silently", "empty stdin exits 0 silently" (the
-// engine parses the input); "no cache → session model from the last assistant entry" and "quoted transcript
-// content cannot poison the session model" (no transcript is read: the session model is e.parentModel);
-// "a non-Agent tool passes through" (agent.spawn fires only for a spawn).
-
-// HEAD cases ported under new names in test/mods/agent-spawn.test.ts: "an explicit model param is the manager's
-// override (rewrite mode)" as "a spawn already carrying a model passes on unchanged"; "class spawn without the
-// resolved model blocks, naming it" as "mode advise refuses a class spawn with the re-issue text ...";
-// "loader routes manager:resolver" as "workkit:worker with no model under a sonnet parent ..." (its run line).
+// Tests for manager:resolver's logic: resolverModel(config, subagentType, parentModel, givenModel) in
+// hooks/mods/resolver.js, over managerConfig(ladder, userSettings, repoSettings) and modelTier(id) in hooks/mods/manager.js.
+// The ladder's shape, the decision table, both class spellings and the layer merge. The spawn itself (a given model,
+// advise mode, the layers read off disk) is test/mods/agent-spawn.test.ts.
 
 const path = require('path');
 const fs = require('fs');
@@ -29,16 +17,16 @@ const MODELS = { fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: '
 
 const config = (user, repo) => mods('manager').managerConfig(ladder, user, repo);
 const resolve = (type, parent, cfg = config()) => mods('resolver').resolverModel(cfg, type, parent, undefined);
-const settings = (manager) => ({ version: 1, enabled: true, manager });
+const settings = (manager) => ({ enabled: true, manager });
 
 const cases = async () => {
   group('manager-resolver: ladder manifest shape');
-  await test('ports "ladder.json carries note, mode, and the three maps"', () => {
+  await test('ladder.json carries note, mode, and the three maps', () => {
     assert(typeof ladder.note === 'string' && ladder.note.length > 0, 'note missing');
     assert(['rewrite', 'advise'].includes(ladder.mode), `bad mode: ${ladder.mode}`);
     assert(ladder.ladder && ladder.classes && ladder.tiers, 'a map is missing');
   });
-  await test('ports "ladder is ordered strongest first (fable at the top)"', () => {
+  await test('ladder is ordered strongest first (fable at the top)', () => {
     assertEq(Object.keys(ladder.ladder)[0], 'fable');
   });
 
@@ -57,30 +45,30 @@ const cases = async () => {
     ['worker', 'fable', 'opus'], ['worker', 'opus', 'opus'], ['worker', 'sonnet', 'sonnet'], ['worker', 'haiku', 'haiku'],
     ['verifier', 'sonnet', 'sonnet'], ['verifier', 'fable', 'opus'],
   ]) {
-    await test(`ports "${cls} under a ${sessionRung} session → ${expected}"`, () => {
+    await test(`${cls} under a ${sessionRung} session → ${expected}`, () => {
       assertEq(resolve(`workkit:${cls}`, MODELS[sessionRung]), id(expected));
     });
   }
-  await test('ports "unknown session (no cache, no transcript) → worker gets the workhorse default"', () => {
+  await test('unknown session (no cache, no transcript) → worker gets the workhorse default', () => {
     assertEq(resolve('workkit:worker', ''), id('opus'));
   });
 
   group('manager-resolver: both class spellings');
   for (const [cls, expected] of [['advisor', 'fable'], ['scout', FAST], ['worker', 'opus']]) {
-    await test(`ports "workkit:${cls} resolves like ${cls}"`, () => {
+    await test(`workkit:${cls} resolves like ${cls}`, () => {
       assertEq(resolve(cls, MODELS.fable), id(expected), 'the bare name');
       assertEq(resolve(`workkit:${cls}`, MODELS.fable), id(expected), 'the prefixed name');
     });
   }
-  await test('ports "a workkit: prefix on a non-class type still passes through"', () => {
+  await test('a workkit: prefix on a non-class type still passes through', () => {
     assert(!resolve('workkit:reviewer', MODELS.fable), 'no model for a non-class type');
   });
 
   group('manager-resolver: layered overrides (repo > user > ladder)');
-  await test('ports "an override of one tier leaves the others alone"', () => {
+  await test('an override of one tier leaves the others alone', () => {
     assertEq(resolve('workkit:scout', MODELS.fable, config(undefined, settings({ tiers: { workhorse: 'haiku' } }))), id(FAST));
   });
-  await test('ports "a repo cannot redefine the ladder or the class map"', () => {
+  await test('a repo cannot redefine the ladder or the class map', () => {
     const cfg = config(undefined, settings({ classes: { worker: 'fast' }, ladder: { opus: 'haiku' } }));
     assertEq(resolve('workkit:worker', MODELS.fable, cfg), id('opus'));
   });

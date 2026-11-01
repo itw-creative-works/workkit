@@ -53,12 +53,12 @@ describe('classic.PostToolUse: the Contract cases', () => {
 })
 
 describe('classic.PostToolUse: board-guard (docs:board-guard suite)', () => {
-  test('ports "missing file_path in input: exit 0"', async ($, on) => {
+  test('missing file_path in input: exit 0', async ($, on) => {
     mkWorld(on)
     expect((await write($, undefined)).block).toBeUndefined()
   })
 
-  test('ports "file_path that does not exist: exit 0"', async ($, on) => {
+  test('file_path that does not exist: exit 0', async ($, on) => {
     mkWorld(on)
     expect((await write($, `${REPO}/AGENTS.md`)).block).toBeUndefined()
   })
@@ -67,7 +67,7 @@ describe('classic.PostToolUse: board-guard (docs:board-guard suite)', () => {
 describe('classic.PostToolUse: changelog-guard (docs:changelog-guard suite)', () => {
   const failing = { exitCode: 1, stdout: '', stderr: 'CHANGELOG.md:7: issue-link: the entry links no issue\n' }
 
-  test('ports "hooks.json registers the hook under PostToolUse Edit|Write": the node linter runs on the written file and its finding blocks', async ($, on) => {
+  test('hooks.json registers the hook under PostToolUse Edit|Write: the node linter runs on the written file and its finding blocks', async ($, on) => {
     const file = `${REPO}/CHANGELOG.md`
     const w = mkWorld(on, { lint: failing, files: { [file]: '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- an essay\n' } })
     const r = await write($, file)
@@ -77,13 +77,23 @@ describe('classic.PostToolUse: changelog-guard (docs:changelog-guard suite)', ()
     expect(runs[0].argv).toContain(file)
     expect(runs[0].argv).toContain('--added-only')
   })
+
+  test('node absent: the write passes and one log line names the stand-down', async ($, on) => {
+    const file = `${REPO}/CHANGELOG.md`
+    const w = mkWorld(on, { absent: ['node'], lint: failing, files: { [file]: '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- an essay\n' } })
+    const r = await write($, file)
+    expect(r.block).toBeUndefined()
+    const said = w.logs.filter((l: string) => l.startsWith('docs/changelog-guard: the linter did not start ('))
+    expect(said).toHaveLength(1)
+    expect(said[0].endsWith('); the write is not judged')).toBe(true)
+  })
 })
 
 describe('classic.PostToolUse: test-reminder (safety:test-reminder suite)', () => {
   const files = { [`${REPO}/lib/thing.js`]: 'module.exports = 1;\n', [`${REPO}/tests/other.test.js`]: "require('../lib/other');\n" }
   const line = 'lib/thing.js has no test naming it.'
 
-  test('ports "hooks.json registers the hook under PostToolUse Edit|Write": a code file no test names gets the line', async ($, on) => {
+  test('hooks.json registers the hook under PostToolUse Edit|Write: a code file no test names gets the line', async ($, on) => {
     mkWorld(on, { files })
     const r = await write($, `${REPO}/lib/thing.js`)
     expect(r.block).toBeUndefined()
@@ -91,25 +101,25 @@ describe('classic.PostToolUse: test-reminder (safety:test-reminder suite)', () =
     expect(contextOf(r)).toContain('If not, say why in the Proof: line.')
   })
 
-  test('ports "the same file again in the same session: silent"', async ($, on) => {
+  test('the same file again in the same session: silent', async ($, on) => {
     mkWorld(on, { files })
     expect(contextOf(await write($, `${REPO}/lib/thing.js`))).toContain(line)
     expect(contextOf(await write($, `${REPO}/lib/thing.js`))).toBe('')
   })
 
-  test('ports "the same file in a different session: the line again"', async ($, on) => {
+  test('the same file in a different session: the line again', async ($, on) => {
     mkWorld(on, { files })
     expect(contextOf(await write($, `${REPO}/lib/thing.js`, { session_id: 'session-1' }))).toContain(line)
     expect(contextOf(await write($, `${REPO}/lib/thing.js`, { session_id: 'session-2' }))).toContain(line)
   })
 
-  test('ports "no session id: the line every time"', async ($, on) => {
+  test('no session id: the line every time', async ($, on) => {
     mkWorld(on, { files })
     expect(contextOf(await write($, `${REPO}/lib/thing.js`, { session_id: '' }))).toContain(line)
     expect(contextOf(await write($, `${REPO}/lib/thing.js`, { session_id: '' }))).toContain(line)
   })
 
-  test('ports "a path inside no git repository: silent"', async ($, on) => {
+  test('a path inside no git repository: silent', async ($, on) => {
     mkWorld(on, { files: { [`${PLAIN}/lib/thing.js`]: 'module.exports = 1;\n' } })
     expect(contextOf(await write($, `${PLAIN}/lib/thing.js`, { cwd: PLAIN }))).toBe('')
   })

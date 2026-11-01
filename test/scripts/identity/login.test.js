@@ -13,7 +13,7 @@ const {
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
-  DEVICE_CODE, deviceFlowRoutes, readWrittenLogin, collector, json, failureOf, startServer, scratchEnv,
+  DEVICE_CODE, deviceFlowRoutes, readWrittenLogin, collector, json, failureOf, startServer, scratchEnv, hostsOf,
 } = require('../../lib/identity');
 
 const KIT = path.join(__dirname, '..', '..', '..');
@@ -127,7 +127,7 @@ const cases = async () => {
     const cmdHome = mkTmp('wk-login-cmd-home-');
     const server = await startServer(deviceFlowRoutes({ userCode: 'WDJB-MJHT', accessToken: 'ghu_fromcommand', login: 'hubot' }), cmdHome);
     try {
-      const res = command(cmdHome, [], { GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url });
+      const res = command(cmdHome, [], hostsOf(server));
       assertEq(res.status, 0, `node login.js exits 0, stderr: ${res.stderr}`);
       assert(`${res.stdout}${res.stderr}`.includes('WDJB-MJHT'), `the command prints the user code, got: ${res.stdout}${res.stderr}`);
       assertEq(JSON.stringify(readWrittenLogin(cmdHome)), JSON.stringify({ token: 'ghu_fromcommand', login: 'hubot' }), 'the command writes { token, login }');
@@ -170,7 +170,7 @@ const cases = async () => {
       stubTool(bin, 'wk-opener', ['#!/usr/bin/env bash', recordArgv(openerLog), 'exit 0']);
       const server = await startServer(OPEN_ROUTES, mkTmp('wk-login-open-server-'));
       try {
-        const env = { GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url, PATH: pathWith(bin) };
+        const env = { ...hostsOf(server), PATH: pathWith(bin) };
         // The plain run first: the opener may run detached, so its one call is awaited after both.
         const plainHome = mkTmp('wk-login-plain-home-');
         const plain = command(plainHome, [], env);
@@ -199,7 +199,7 @@ const cases = async () => {
     const cmdHome = mkTmp('wk-login-noopen-home-');
     const server = await startServer(OPEN_ROUTES, mkTmp('wk-login-noopen-server-'));
     try {
-      const res = command(cmdHome, ['--open', 'wk-no-such-opener'], { GITHUB_SERVER_URL: server.url, GITHUB_API_URL: server.url });
+      const res = command(cmdHome, ['--open', 'wk-no-such-opener'], hostsOf(server));
       assertEq(res.status, 0, `an opener that cannot start still exits 0, stderr: ${res.stderr}`);
       const lines = res.stderr.split('\n').filter((l) => l.includes('could not open the browser'));
       assertEq(lines.length, 1, `one could-not-open line on stderr, got: ${res.stderr}`);
@@ -214,7 +214,7 @@ const cases = async () => {
     const github = await startServer(OPEN_ROUTES, mkTmp('wk-login-open-usage-server-'));
     try {
       for (const args of [['--open'], ['--open', 'open', 'xdg-open'], ['--open', '--status'], ['--status']]) {
-        const out = command(usageHome, args, { GITHUB_SERVER_URL: github.url, GITHUB_API_URL: github.url });
+        const out = command(usageHome, args, hostsOf(github));
         assertEq(out.status, 1, `${args.join(' ')}: the usage error, exit 1, stderr: ${out.stderr}`);
         assert(out.stderr.includes(USAGE), `${args.join(' ')}: stderr carries the usage, got: ${out.stderr}`);
         assert(!out.stderr.includes('usage: node'), `${args.join(' ')}: the usage names no node, got: ${out.stderr}`);

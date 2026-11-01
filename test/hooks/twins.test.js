@@ -1,7 +1,8 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. Twelve rows: the test package,
-// the opt-in read, the machine folder, the CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint
-// block's sentence, the working-diff reads, the version-only change, the status:building list, the public slug.
+// function (spawned) and to the JavaScript export (required), and the two must agree. Fourteen rows: the test package,
+// the package record's read, the tree hash, the opt-in read, the machine folder, the CHANGELOG test, the hooks log, the slug, the Proof
+// pattern, the lint block's sentence, the working-diff reads, the version-only change, the status:building list, the
+// public slug.
 
 const fs = require('fs');
 const os = require('os');
@@ -13,22 +14,26 @@ const {
 const {
   IS_WINDOWS, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith,
 } = require('../lib/platform');
-const { mkRepo } = require('../lib/git-repo');
+const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods, runResult } = require('../lib/mods-inputs');
 const { recordArgv, readArgv } = require('../lib/argv-log');
 const commitGate = require('./commit-gate/helpers');
+const { runLib } = require('../lib/hook-lib');
+const { pkgMarkerPath, treeHash } = require('../lib/suite-record');
+const { scratchWorkflowHome } = require('../lib/workflow-home');
 
 const KIT = path.join(__dirname, '..', '..');
 const lib = (...parts) => shellPath(path.join(KIT, ...parts));
 
 /**
- * Each fixture through `fn` in one bash that sources `file`: '1' where the
- * function exits 0, '0' where it does not, one per fixture, in order.
+ * Each fixture through `fn` in one bash that sources `files` (one or a list, in
+ * order): '1' where the function exits 0, '0' where it does not, one per fixture, in order.
  */
-const bashAnswers = (file, fn, fixtures) => {
-  const script = `. "${file}"\nwhile IFS= read -r p; do if ${fn} "$p"; then echo 1; else echo 0; fi; done <<<"$FIXTURES"`;
+const bashAnswers = (files, fn, fixtures, env = {}) => {
+  const sources = [].concat(files).map((f) => `. "${f}"\n`).join('');
+  const script = `${sources}while IFS= read -r p; do if ${fn} "$p"; then echo 1; else echo 0; fi; done <<<"$FIXTURES"`;
   const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], {
-    env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), FIXTURES: fixtures.join('\n') },
+    env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), FIXTURES: fixtures.join('\n'), ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
@@ -72,7 +77,7 @@ const MANIFESTS = [
 
 // A repo's settings text; null writes no file.
 const SETTINGS = [
-  null, '', '{}', '{ "version": 1 }\n', '{ "version": 1, "enabled": true }\n', '{ "version": 1, "enabled": false }\n',
+  null, '', '{}', '{ "version": 1 }\n', '{ "enabled": true }\n', '{ "version": 1, "enabled": false }\n',
   '{"enabled":false}', '{ "enabled" :\tfalse }', '{ "enabled": "false" }', '{ "enabled": true, "x": { "enabled": false } }',
   '{\n  "version": 1,\n  "enabled": false\n}\n', '{ "enabled":\nfalse }',
 ];
@@ -112,12 +117,53 @@ const cases = async () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  group('twins: the package record\'s read, wk_pkg_proved in workflow/lib/suite.sh against pkgProved in hooks/mods/suite.js');
+
+  await test('wk_pkg_proved and pkgProved answer every tree and package alike on one planted record', () => {
+    const dir = mkTmp('twins-pkg-record-');
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+    const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
+    const { workflowHome, env } = scratchWorkflowHome('twins-pkg-home-');
+    const [T1, T2, T3] = ['1', '2', '3'].map((ch) => ch.repeat(40));
+    const record = `${T1} .\n${T2} packages/a\n${T3} packages/b\n`;
+    const marker = pkgMarkerPath(workflowHome, dir);
+    fs.mkdirSync(path.dirname(marker), { recursive: true });
+    fs.writeFileSync(marker, record);
+    const fixtures = [
+      [T1, '.'], [T2, 'packages/a'], [T3, 'packages/b'], [T2, '.'], [T1, 'packages/a'], [T3, 'packages/a'],
+      [T2, 'packages/c'], [T2, 'packages'], [T2, 'packages/a/x'], ['4'.repeat(40), '.'],
+    ];
+    const script = 'while read -r t p; do if wk_pkg_proved "$ROOT" "$t" "$p"; then echo 1; else echo 0; fi; done <<<"$FIXTURES"';
+    const res = runLib(script, { ...env, ROOT: root, FIXTURES: fixtures.map((f) => f.join(' ')).join('\n') });
+    const shell = res.stdout.split('\n').filter(Boolean).map((a) => a === '1');
+    assertEq(shell.length, fixtures.length, `one answer per fixture from wk_pkg_proved, stderr: ${res.stderr}`);
+    const { pkgProved } = mods('suite');
+    agree(fixtures.map((_, i) => i), shell, (i) => pkgProved(record, ...fixtures[i]), 'the (tree, package) fixtures by index');
+    assertEq(shell.slice(0, 3).join(), 'true,true,true', 'and each line proves its own package on its own tree');
+  });
+
+  group('twins: the tree hash, wk_tree_hash in workflow/lib/suite.sh against treeHash in test/lib/suite-record.js');
+
+  await test('wk_tree_hash and treeHash print one id for a repo whose .workkit/ holds a tracked settings file and an untracked log', () => {
+    const w = mkRepo('twins-tree-', { 'app.js': 'module.exports = 1;\n' });
+    w.write('app.js', 'module.exports = 2;\n');
+    w.write('.workkit/settings.json', OPT_IN_SHAPES.current);
+    w.write('.workkit/suite.log', 'script-shell: exit 0\n');
+    const res = runLib(`wk_tree_hash "${shellPath(w.repo)}"`, { TMPDIR: shellPath(w.tmp) });
+    const shell = res.stdout.trim();
+    assert(/^[0-9a-f]{40,64}$/.test(shell), `a tree id from wk_tree_hash, got: ${res.stdout}|${res.stderr}`);
+    assertEq(treeHash(w.repo), shell, 'the twin prints the kit\'s id');
+    fs.rmSync(w.dir, { recursive: true, force: true });
+  });
+
   group('twins: the opt-in read, wk_settings_declined in workflow/lib/participation.sh against settingsOptedIn in hooks/mods/gate.js');
 
-  const participation = lib('workflow', 'lib', 'participation.sh');
+  // platform.sh first, as every caller sources it, so wk_settings_declined reads through the node wk_node finds.
+  const participation = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
   const fileOf = (root) => path.join(root, '.workkit', 'settings.json');
   // A settings file opts in on the shell side when wk_settings_declined says no.
-  const shellOptedIn = (files) => bashAnswers(participation, 'wk_settings_declined', files.map(shellPath)).map((d) => !d);
+  const shellOptedIn = (files) => bashAnswers(participation, 'wk_settings_declined', files.map(shellPath),
+    { WORKKIT_NODE: shellPath(process.execPath) }).map((d) => !d);
 
   await test('wk_settings_declined and settingsOptedIn agree on every settings text', () => {
     const texts = SETTINGS.filter((t) => t !== null);
@@ -130,10 +176,20 @@ const cases = async () => {
     assertEq(js0('{ "version": 1 }\n'), true, 'and a legacy file is in');
   });
 
+  await test('settingsOptedIn reads only the top-level enabled key, and text that does not parse is out', () => {
+    const { settingsOptedIn } = mods('gate');
+    assertEq(settingsOptedIn('{"enabled": true, "manager": {"enabled": false}}'), true, 'a nested enabled: false leaves an opted-in repo in');
+    assertEq(settingsOptedIn('{"enabled": false}'), false, 'the top-level decline is out');
+    assertEq(settingsOptedIn('{"manager": {"enabled": false}}'), true, 'a nested decline alone is the legacy opt-in');
+    assertEq(settingsOptedIn('not json'), false, 'text that does not parse is out');
+    assertEq(settingsOptedIn(''), true, 'an empty file has no enabled key: the legacy opt-in');
+    assertEq(settingsOptedIn('  \n'), true, 'and so has a whitespace-only one');
+  });
+
   // A file mode is POSIX's: Windows reads a 000 file anyway, and so does root.
   const unreadable = (() => {
     if (IS_WINDOWS) return null;
-    const [root] = settingsRoots(['{ "version": 1, "enabled": true }\n']);
+    const [root] = settingsRoots([OPT_IN_SHAPES.current]);
     const file = path.join(root, '.workkit', 'settings.json');
     fs.chmodSync(file, 0o000);
     try { fs.readFileSync(file); return null; } catch { return root; }
@@ -267,12 +323,12 @@ const cases = async () => {
     assertEq(JSON.stringify(shell.slice(6)), JSON.stringify([false, false, false, false, false]), 'and nothing else does');
   });
 
-  // A PATH world whose `tool` records each argv to a log and prints `out`; the
-  // real tools stay reachable behind it.
-  const recordingTool = (tool, out = '') => {
+  // A PATH world whose `tool` records each argv to a log, runs `lines` and prints `out`;
+  // the real tools stay reachable behind it.
+  const recordingTool = (tool, out = '', lines = []) => {
     const bin = mkTmp(`twins-${tool}-`);
     const logFile = path.join(bin, 'argv.log');
-    stubTool(bin, tool, ['#!/bin/bash', recordArgv(logFile), `printf '%s' '${out}'`]);
+    stubTool(bin, tool, ['#!/bin/bash', recordArgv(logFile), ...lines, `printf '%s' '${out}'`]);
     return { path: systemPathWith(bin), calls: () => readArgv(logFile) };
   };
 
@@ -290,37 +346,42 @@ const cases = async () => {
     assertEq(res.status, 1, `the shell lint fails, stderr: ${res.stderr}`);
     const r = commitGate.mkRepo();
     commitGate.stage(r, 'CHANGELOG.md', commitGate.CHANGELOG('- An essay entry.'));
-    const facts = { ...commitGate.factsOf(r, 'git commit -m "docs: changelog"'), lint: async () => runResult({ exitCode: 1, stderr: `${SAID}\n` }) };
-    const deny = commitGate.denyOf(await mods('commit-gate').commitGateVerdict(facts));
+    const facts = { ...commitGate.factsOf(r), lint: async () => runResult({ exitCode: 1, stderr: `${SAID}\n` }) };
+    const deny = commitGate.denyOf(await mods('commit-gate').preCommitVerdict(facts));
     assert(deny !== null && deny.startsWith(commitGate.PREFIX), `the gate blocks on the lint, got: ${deny}`);
     assertEq(deny.slice(commitGate.PREFIX.length), res.stderr.replace(/\n$/, ''), 'the sentence and the findings, byte for byte');
   });
 
   group('twins: the working diff, hook_working_paths in hooks/lib/tree.sh against the touched list proof-guard reads');
 
-  await test('hook_working_paths and the qa check make the same two git reads', async () => {
-    const git = recordingTool('git');
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('hooks', 'lib', 'tree.sh')}"; hook_working_paths /w/repo`], {
-      env: { PATH: git.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  // The reads the touched list hangs on: the HEAD check, the working diff, the untracked list (never the ref reads).
+  const touchedReads = (calls) => calls.filter((a) => ['diff', 'ls-files'].includes(a[0]) || (a[0] === 'rev-parse' && a.includes('--verify')));
+  for (const headed of [true, false]) {
+    const kinds = headed ? 'rev-parse, diff, ls-files' : 'rev-parse, ls-files, ls-files';
+    await test(`hook_working_paths and the qa check make the same reads in the same order, ${headed ? 'a repo with a commit' : 'a repo with no commit'}: ${kinds}`, async () => {
+      const git = recordingTool('git', '', headed ? [] : ['[[ " $* " == *" --verify "* ]] && exit 1']);
+      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('hooks', 'lib', 'tree.sh')}"; hook_working_paths /w/repo`], {
+        env: { PATH: git.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      });
+      assertEq(res.status, 0, `the shell reads ran, stderr: ${res.stderr}`);
+      const shell = git.calls().map((argv) => (argv[0] === '-C' ? argv.slice(2) : argv));
+      assertEq(shell.map((a) => a[0]).join(', '), kinds, `the shell's reads, got: ${JSON.stringify(shell)}`);
+      const runs = [];
+      const view = JSON.stringify({ state: 'OPEN', url: 'https://github.com/o/r/issues/12', labels: [{ name: 'status:building' }], comments: [], body: '' });
+      const recordRun = async (argv, init = {}) => {
+        runs.push({ argv: [...argv], init });
+        const unborn = !headed && argv[0] === 'git' && argv[1] === 'rev-parse' && argv.includes('--verify');
+        return runResult({ exitCode: unborn ? 1 : 0, stdout: argv[0] === 'gh' ? view : '' });
+      };
+      const { proofVerdict, proofFacts } = mods('proof-guard');
+      const facts = await proofFacts({
+        cwd: '/w/repo', env: { HOME: '/w/home' }, top: async () => '/w/repo', read: async () => null, list: async () => [], run: recordRun, pluginRoot: KIT,
+      });
+      await proofVerdict({ steps: [{ sub: 'edit', number: 12, add: ['status:qa'], remove: ['status:building'] }], cwd: '/w/repo', repo: null, facts });
+      const reads = touchedReads(runs.filter((c) => c.argv[0] === 'git').map((c) => c.argv.slice(1)));
+      assertEq(JSON.stringify(reads), JSON.stringify(shell), 'the module makes the shell\'s reads, in its order');
     });
-    assertEq(res.status, 0, `the shell reads ran, stderr: ${res.stderr}`);
-    const shell = git.calls().map((argv) => (argv[0] === '-C' ? argv.slice(2) : argv));
-    assertEq(shell.length, 2, `the shell makes two reads, got: ${JSON.stringify(shell)}`);
-    const runs = [];
-    const view = JSON.stringify({ state: 'OPEN', url: 'https://github.com/o/r/issues/12', labels: [{ name: 'status:building' }], comments: [], body: '' });
-    const recordRun = async (argv, init = {}) => {
-      runs.push({ argv: [...argv], init });
-      return runResult({ stdout: argv[0] === 'gh' ? view : '' });
-    };
-    await mods('proof-guard').proofGuardGuard({
-      command: 'gh issue edit 12 --add-label status:qa --remove-label status:building', cwd: '/w/repo', env: { HOME: '/w/home' },
-      originless: async () => false, exists: async () => false, top: async () => '/w/repo', read: async () => null, list: async () => [],
-      run: recordRun, pluginRoot: KIT, stat: async () => null, real: async (p) => p, write: async () => {}, now: () => 0,
-    });
-    const reads = runs.filter((c) => c.argv[0] === 'git').map((c) => c.argv.slice(1));
-    const missing = shell.filter((argv) => !reads.some((a) => JSON.stringify(a) === JSON.stringify(argv)));
-    assertEq(missing.map((a) => a.join(' ')).join('; '), '', `the shell reads the module never made, it made: ${JSON.stringify(reads)}`);
-  });
+  }
 
   group('twins: the version file test, hook_is_manifest in hooks/lib/tree.sh against isManifest in hooks/mods/commit-gate/checks.js');
 

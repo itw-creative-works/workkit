@@ -71,6 +71,20 @@ const cases = async () => {
     assertEq(JSON.stringify(argv.slice(1)), '["--added-only"]', 'judging only the added lines');
   });
 
+  group('workflow/lib/changelog.sh: wk_changelog_lint with nothing to run');
+
+  await test('no node, or no linter: exit 0 with one line saying the linter did not run, never the format refusal', () => {
+    const noNode = lint(changelogRepo(62), { PATH: systemPathWith() });
+    const noLinter = lint(changelogRepo(62), { WORKFLOW_DIR: shellPath(mkTmp('changelog-lint-empty-')) });
+    for (const [label, out] of [['no node', noNode], ['no linter', noLinter]]) {
+      assertEq(out.code, 0, `${label}: the check stands aside, got: ${out.stdout}|${out.stderr}`);
+      const lines = out.stderr.split('\n').filter(Boolean);
+      assertEq(lines.length, 1, `${label}: one stderr line, got: ${out.stderr}`);
+      assert(lines[0].includes('did not run'), `${label}: saying the linter did not run, got: ${lines[0]}`);
+      assert(!out.stderr.includes('does not match the format'), `${label}: never the refusal, got: ${out.stderr}`);
+    }
+  });
+
   return summary();
 };
 

@@ -25,9 +25,7 @@ const textOf = (result) => {
 };
 
 /** A process.run result, the shape $.process.run resolves with. */
-const runResult = ({ exitCode = 0, stdout = '', stderr = '' } = {}) => ({
-  exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false,
-});
+const { runResult } = require('../../workflow/lib/io');
 
 /**
  * stateCheckContext's facts: `cwd` the session's directory (required),
@@ -74,7 +72,7 @@ const standardsState = ({
 });
 
 const {
-  MODELS, SESSION_NOW, daysBefore, briefMarker, row,
+  MODELS, SESSION_NOW, daysBefore, briefMarker, row, ghEntry,
 } = require('./mod-fixtures.mjs');
 
 /**
@@ -91,5 +89,5 @@ const sessionFacts = ({
 
 module.exports = {
   mods, textOf, runResult, stateFacts, reminderFacts, standardsState, REMINDER_ROOT,
-  sessionFacts, daysBefore, briefMarker, MODELS, row,
+  sessionFacts, daysBefore, briefMarker, MODELS, row, ghEntry,
 };

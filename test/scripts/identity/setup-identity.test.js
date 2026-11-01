@@ -15,14 +15,12 @@ const {
   IS_WINDOWS, NO_NODE_STUB, shellPath,
 } = require('../../lib/platform');
 const {
-  INSTALL_FIX, deviceFlowRoutes, writeLogin, readWrittenLogin, useTokenService, startServer,
+  INSTALL_FIX, PRESELECTED, UNREADABLE, hostsOf, deviceFlowRoutes, repoRoute, writeLogin, readWrittenLogin, useTokenService, startServer,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const {
   cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkSetupKit, inCli, AT_TERMINAL,
 } = require('../workkit-cli/helpers');
-
-const hostsOf = (github) => ({ GITHUB_SERVER_URL: github.url, GITHUB_API_URL: github.url });
 
 /**
  * Runs `fn({ world, kit, script, repo, server })` in a fresh scratch world (made
@@ -90,9 +88,10 @@ const setup = ({ node = true, before = () => {} } = {}) => withSetupScene(SIGN_I
 const SIGN_IN_QUESTION = 'Sign in to GitHub now, so the agent\'s issue bookkeeping posts as workkit-agent[bot]? [Y/n]';
 const INSTALL_QUESTION = 'Install workkit-agent[bot] on acme now? [Y/n]';
 // The id GitHub's stand-in answers for acme, and the install page pre-selected on it.
-const OWNER_ID = '4242';
-const INSTALL_BARE = 'https://github.com/apps/workkit-agent/installations/new';
-const INSTALL_NEW = `${INSTALL_BARE}/permissions?suggested_target_id=${OWNER_ID}`;
+const OWNER_ID = 4242;
+const INSTALL_NEW = `${PRESELECTED}${OWNER_ID}`;
+// After a rename the remote still spells Old; GitHub's canonical owner is New, id 7.
+const RENAMED = { remote: 'Old/rostered', github: ['New/rostered', 7] };
 const INSTALLED = 'identity: workkit-agent[bot] installed on acme/rostered';
 const POLL_KEYS = '(enter)=check now, (s)=skip';
 const NOT_INSTALLED = { status: 412, body: JSON.stringify({ error: 'not installed', fix: INSTALL_FIX }) };
@@ -103,25 +102,27 @@ const installWarnings = (said, page = INSTALL_NEW) => said.split('\n').filter((l
 
 /**
  * Run `workkit setup` (`setup --bot` when `bot`) in a scratch repo whose origin
- * is acme/rostered (none when `origin` is false): opted in unless `optIn` is
+ * is `remote` (none when `origin` is false): opted in unless `optIn` is
  * false, on the roster when `rostered`, signed in unless `signedIn` is false,
  * the token service a stand-in answering `POST /token` with `answers` in
  * order. At the terminal seam when
  * `input` is given, else with no terminal. The same stand-in is GitHub's API,
- * answering acme's id with `ownerId`, a 501 when empty; `idReads` are its reads
- * of that id. The install page opens in the shell, so its call is read at once.
+ * answering `GET /repos/<remote>` with `github`'s `[full name, owner id]`, a 501
+ * when null; `idReads` are its reads of that repo. The install page opens in the
+ * shell, so its call is read at once.
  */
 const installSetup = ({
-  signedIn = true, optIn = true, rostered = false, answers, input, ownerId = OWNER_ID, bot = false, origin = true,
+  signedIn = true, optIn = true, rostered = false, answers, input, bot = false, origin = true,
+  remote = 'acme/rostered', github = ['acme/rostered', OWNER_ID],
 }) => withSetupScene([
   { method: 'POST', url: '/token', answers },
-  ...(ownerId ? [{ method: 'GET', url: '/users/acme', status: 200, body: JSON.stringify({ login: 'acme', id: Number(ownerId) }) }] : []),
+  ...(github ? [repoRoute(remote, ...github)] : []),
 ], async ({
   world, script, repo, server,
 }) => {
   const env = signInEnv(world, { extra: { GITHUB_API_URL: server.url } });
-  if (rostered) rosterRepo(world, repo, 'acme/rostered', { script, env });
-  else if (origin) mkOriginRepo(repo, 'https://github.com/acme/rostered.git');
+  if (rostered) rosterRepo(world, repo, remote, { script, env });
+  else if (origin) mkOriginRepo(repo, `https://github.com/${remote}.git`);
   if (!optIn) fs.rmSync(path.join(repo, W, 'settings.json'));
   if (signedIn) writeLogin(world.home, { token: 'ghu_setupuser', login: 'octocat' });
   useTokenService(world.home, `${server.url}/token`);
@@ -131,7 +132,7 @@ const installSetup = ({
       repo, script, input, env, args: bot ? '--bot' : '',
     });
   const asked = server.requests().filter((r) => r.method === 'POST' && r.url === '/token');
-  const idReads = server.requests().filter((r) => r.method === 'GET' && r.url === '/users/acme');
+  const idReads = server.requests().filter((r) => r.method === 'GET' && r.url === `/repos/${remote}`);
   return {
     ...res, asked, idReads, opened: world.openerCalls(), claudeCalls: world.claudeCalls(),
   };
@@ -284,14 +285,16 @@ const cases = async () => {
     assertEq(res.asked.length, 3, `the step's lookup, the poll's first check, then the one Enter asked for, got: ${JSON.stringify(res.asked)}`);
     assert(res.said.includes(INSTALLED), `the third answer is the ok line, got: ${res.said}`);
     assertEq(installWarnings(res.said).length, 0, `and no not-installed warning, got: ${res.said}`);
-    assertEq(res.idReads.length, 1, `the owner's id was read once, by the step's lookup and never by the poll, got: ${JSON.stringify(res.idReads)}`);
   });
 
-  await test('case 23: a 412 at a keyboard with a GitHub that answers nothing for the owner\'s id, y opens the bare install page once', async () => {
-    const res = await installSetup({ answers: [NOT_INSTALLED, MINTED], input: 'y\n', ownerId: '' });
-    assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_BARE]]), 'the opener ran once, on the bare install page');
-    assert(res.said.includes(INSTALLED), `the poll's 200 is still the ok line, got: ${res.said}`);
-    assertEq(res.idReads.length, 1, `the owner's id was asked for once, got: ${JSON.stringify(res.idReads)}`);
+  await test('a 412 at a keyboard whose owner id GitHub cannot give, answered y, warns with the unreadable line, opens nothing and never polls', async () => {
+    const res = await installSetup({
+      answers: [NOT_INSTALLED, MINTED], input: 'y\n', remote: RENAMED.remote, github: null,
+    });
+    assert(res.said.includes(UNREADABLE), `the warning carries the line as said, got: ${res.said}`);
+    assert(!res.said.includes('installations/new'), `no install page anywhere, got: ${res.said}`);
+    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+    assert(!res.said.includes(POLL_KEYS), `no poll, got: ${res.said}`);
   });
 
   await test('case 23: a 412 throughout, after a yes the poll skips on s, on stdin closing, or on stdin closing after an Enter, and the warning carries the install page', async () => {
@@ -308,7 +311,6 @@ const cases = async () => {
       assertEq(res.asked.length, asks, `${label}: ${why}, got: ${JSON.stringify(res.asked)}`);
       assert(!res.said.includes(INSTALLED), `${label}: no ok line, got: ${res.said}`);
       assert(installWarnings(res.said).length > 0, `${label}: the warning carries the install page, got: ${res.said}`);
-      assertEq(res.idReads.length, 1, `${label}: the owner's id was read once whatever the poll asked, got: ${JSON.stringify(res.idReads)}`);
     }
   });
 
@@ -329,10 +331,6 @@ const cases = async () => {
     assertEq(away.idReads.length, 1, `no keyboard: the owner's id was read once, got: ${JSON.stringify(away.idReads)}`);
     assertEq(JSON.stringify(away.opened), '[]', 'no keyboard: nothing opened');
     assertEq(away.asked.length, 1, `no keyboard: the service was asked once, got: ${JSON.stringify(away.asked)}`);
-
-    const bare = await installSetup({ answers: [NOT_INSTALLED], ownerId: '' });
-    assert(installWarnings(bare.said, INSTALL_BARE).length > 0, `no keyboard, no id: the warning carries the bare install page, got: ${bare.said}`);
-    assertEq(installWarnings(bare.said).length, 0, `no keyboard, no id: and never the pre-selected one, got: ${bare.said}`);
   });
 
   group('workkit setup --bot');
@@ -363,6 +361,29 @@ const cases = async () => {
     assertEq(res.code, 1, `exit 1, got: ${res.said}`);
     assert(installWarnings(res.said).length > 0, `the warning names the pre-selected install page, got: ${res.said}`);
     assertEq(res.idReads.length, 1, `the owner's id was read once, got: ${JSON.stringify(res.idReads)}`);
+    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+  });
+
+  await test('case 6: setup --bot in a clone whose remote spells the old owner offers and warns on New with New\'s pre-selected page, and the opener gets that page', async () => {
+    const page = `${PRESELECTED}7`;
+    const res = await installSetup({
+      answers: [NOT_INSTALLED], input: 'y\n', bot: true, ...RENAMED,
+    });
+    assert(res.said.includes('Install workkit-agent[bot] on New now? [Y/n]'), `the offer names New, got: ${res.said}`);
+    assert(!res.said.includes('workkit-agent[bot] on Old'), `the old spelling is never the owner named, got: ${res.said}`);
+    assertEq(JSON.stringify(res.opened), JSON.stringify([[page]]), 'the opener ran once, on New\'s pre-selected page');
+    assert(res.said.split('\n').some((l) => l.includes('is not installed on') && l.includes('on New') && l.includes(page)),
+      `the not-installed warning names New and its pre-selected page, got: ${res.said}`);
+    assert(res.asked.length > 0 && res.asked.every((r) => JSON.parse(r.body).repo === 'New/rostered'),
+      `the service was asked only under the canonical name, got: ${JSON.stringify(res.asked)}`);
+  });
+
+  await test('case 6: setup --bot in a clone whose remote spells the old owner, with the repo unreadable from GitHub: the warning carries the unreadable line and nothing opens', async () => {
+    const res = await installSetup({
+      answers: [NOT_INSTALLED], bot: true, remote: RENAMED.remote, github: null,
+    });
+    assert(res.said.includes(UNREADABLE), `the warning carries the line as said, got: ${res.said}`);
+    assert(!res.said.includes('installations/new'), `no install page anywhere, got: ${res.said}`);
     assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
   });
 

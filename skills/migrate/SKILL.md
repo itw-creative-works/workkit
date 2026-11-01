@@ -7,21 +7,23 @@ argument-hint: "[repo path] [files|changelog]"
 
 # Migrate: the judgment half of a repo migration
 
-`workflow:standards` heals what is safe to heal automatically. Everything it can only REPORT lands here: each item destroys information or needs a human's call. It runs only when invoked; no hook fires it.
+`workflow:standards` heals what is safe to heal automatically and leaves the rest alone. The rest lands here: each item destroys information or needs a human's call. It runs only when invoked; no hook fires it.
 
 Spec (SSOT for every rule below): the workkit plugin's `docs/project-state.md`.
 
-## 0. Scope from the drift report, never from a fresh scan
+## 0. Scope from this skill's own scan
 
-Run the reporter and migrate exactly what it names:
+Check the repo is opted in, then, from its root, scan for exactly what this skill migrates:
 
 ```sh
-workkit state <repo>   # is the repo even opted in?
-workkit heal <repo>    # the drift report
+workkit state <repo>                # is the repo even opted in?
+ls -d PROGRESS.md INBOX.md TODO.md plans/ 2>/dev/null
+workkit changelog lint CHANGELOG.md # entries outside the entry format
 ```
 
-- Deriving the list again here would let the two disagree about what counts as drift.
-- Report silent: the repo is already at the standard. Say so and stop.
+- §1 scope: each of `PROGRESS.md`, `INBOX.md`, `TODO.md` and `plans/` that exists at the root.
+- §2 scope: a `CHANGELOG.md` the lint fails, or one whose era sections hold long old-format lines (§2 says why the lint misses those).
+- Scan silent: the repo is already at the standard. Say so and stop.
 - Not opted in: not migrated. Offer `workkit enable` and stop. Migrating a repo that never said yes writes issues into someone else's tracker.
 - An argument narrows the run: `files` does §1 only, `changelog` does §2 only. Default is both.
 
@@ -84,11 +86,10 @@ workkit changelog lint CHANGELOG.md
 ## 3. Close out
 
 - Report the before/after: section count (must be equal), entry count, file size.
-- Stamp the standard forward by re-running `workkit heal <repo>`. With the drift gone, it writes the version itself. Do not hand-edit `.workkit/settings.json`.
 - CHANGELOG entry + commit belong to the normal flow (`workkit:ship`), not to this skill. Migrating is not shipping.
 
 ## Rules
 
 - **Never invent priority or ordering.** Queue position is the owner's call; `status:specced` with no priority label is the default.
-- **Idempotent.** Re-running on a migrated repo finds nothing in the drift report and does nothing.
+- **Idempotent.** Re-running on a migrated repo finds nothing in the scan and does nothing.
 - A repo with no CHANGELOG at all is not given one here. That is a repo-setup decision, not a migration.

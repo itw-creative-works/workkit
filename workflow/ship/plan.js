@@ -4,18 +4,16 @@
 // and which are skipped and why (the rules and the lines: `skills/ship/SKILL.md`
 // Step 5). Members are read from their own package.json files, never through
 // `npm query .workspace`, which answers nothing before `npm install`. The
-// library release.js and publish.js require, with how both start npm and name
-// its end; publish.js does the publishing.
-//
-// Run from the repo root:
-//   workkit ship plan [--dir <root>]
+// library release.js, publish.js and lib/workspaces.js require, with how the
+// first two start npm and name its end; publish.js does the publishing.
+// Run from the repo root: workkit ship plan [--dir <root>]
 
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { isSemver } = require('./semver');
 
-const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'];
+const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
 const GLOB_RE = /[*?[]/;
 /**
  * Runs npm with `args`, as `spawnSync` would. On Windows npm is `npm.cmd`, which Node starts
@@ -59,18 +57,32 @@ const readJson = (file) => {
 };
 
 /**
+ * The patterns a root package.json's `workspaces` field declares.
+ * @param {*} workspaces the field's value
+ * @returns {string[]} the array, or `{ packages }`'s array; [] for any other shape
+ */
+const workspacePatterns = (workspaces) => {
+  if (Array.isArray(workspaces)) return workspaces;
+  if (workspaces && Array.isArray(workspaces.packages)) return workspaces.packages;
+  return [];
+};
+
+/**
+ * The names a parsed package.json depends on, across every DEP_FIELDS field.
+ * @param {object} pkg the parsed package.json
+ * @returns {string[]} the dependency names, a name in two fields listed twice
+ */
+const depNamesOf = (pkg) => DEP_FIELDS.flatMap((field) => Object.keys(pkg[field] || {}));
+
+/**
  * The workspace member directories a root declares, expanded for a literal
  * directory and `dir/*`, refusing every other glob shape and a literal member
  * with no package.json. A `dir/*` that matches nothing is a note, never a
  * silence: the same line the `safety:release-taken` hook prints.
  */
 const expandWorkspaces = (root, workspaces, notes) => {
-  let patterns = [];
-  if (Array.isArray(workspaces)) patterns = workspaces;
-  else if (workspaces && Array.isArray(workspaces.packages)) patterns = workspaces.packages;
-
   const dirs = new Set();
-  for (const pattern of patterns) {
+  for (const pattern of workspacePatterns(workspaces)) {
     if (pattern.endsWith('/*') && !GLOB_RE.test(pattern.slice(0, -2))) {
       const parent = path.join(root, pattern.slice(0, -2));
       const entries = fs.existsSync(parent) ? fs.readdirSync(parent, { withFileTypes: true }) : [];
@@ -109,7 +121,7 @@ const order = (candidates) => {
   const byName = new Map(candidates.map((c) => [c.name, c]));
   const needs = new Map(candidates.map((c) => [
     c.name,
-    new Set(DEP_FIELDS.flatMap((field) => Object.keys(c.pkg[field] || {})).filter((n) => byName.has(n))),
+    new Set(depNamesOf(c.pkg).filter((n) => byName.has(n))),
   ]));
 
   const done = [];
@@ -242,5 +254,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  plan, expandWorkspaces, PlanError, report, spawnNpm, npmEnd,
+  plan, expandWorkspaces, depNamesOf, readJson, PlanError, report, spawnNpm, npmEnd,
 };

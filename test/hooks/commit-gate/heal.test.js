@@ -1,10 +1,7 @@
-// Tests for safety:commit-gate's logic, commitGateVerdict(facts) in
-// hooks/mods/commit-gate.js: heal bookkeeping skips the review and new-file
-// checks, and a heal arm whose read fails is held by name; `jobRewrite` runs
-// the real wk_checks_heal_rewrite. Each case ports the HEAD case its name
-// quotes; the failing find is a failing git read now. Plus the rewrite entry,
-// `changelog-job.sh rewrite a b`, against wk_checks_heal_rewrite, run in bash.
-// The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
+// Tests for safety:commit-gate's logic, preCommitVerdict(facts) in hooks/mods/commit-gate.js: heal
+// bookkeeping skips the review and new-file checks, and a heal arm whose tool fails or never starts
+// is held by name; `jobRewrite` runs the real wk_checks_heal_rewrite. Plus the rewrite entry, `changelog-job.sh
+// rewrite a b`, against it, run in bash. The shared prologue (repo, facts, texts) is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -12,16 +9,17 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, JOB, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, write, gitRm, unlink, commit, proveTree,
+  WORKFLOW_DIR, JOB, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, gitRm, commit, proveTree,
   judge, denyOf, blocks, passes, realRewrite,
 } = require('./helpers');
 const { withCloneStep } = require('../../lib/checks-template');
+const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
-// A repo with a committed settings.json: the stamp arm only exempts an edit
-// that touches nothing but the version key.
+// A repo with a committed settings.json carrying a version key: the bookkeeping
+// arm only exempts an edit that touches nothing but that key, here its removal.
 const mkStampedRepo = () => {
   const r = mkRepo();
-  stage(r, '.workkit/settings.json', '{ "version": 6, "enabled": true }\n');
+  stage(r, '.workkit/settings.json', OPT_IN_SHAPES.retired);
   commit(r);
   return r;
 };
@@ -83,77 +81,60 @@ const HELD = '. Its answer is unknown, so the commit is held; fix what failed, t
 const cases = async () => {
   group('commit-gate: heal bookkeeping skips review + new-file checks (issue #15)');
 
-  await test('ports "version stamp alone, no marker: exit 0"', async () => {
+  await test('the version key removed alone, no marker: exit 0', async () => {
     const r = mkStampedRepo();
-    stage(r, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
-    passes(await judge(r, 'git commit -m "chore(workflow): stamp"'), '', 'a stamp commit needs no review');
+    stage(r, '.workkit/settings.json', OPT_IN_SHAPES.current);
+    passes(await judge(r, 'chore(workflow): drop the version key'), '', 'the removal needs no review');
   });
 
-  await test('ports "settings edit beyond the version, no marker: exit 2"', async () => {
+  await test('settings edit beyond the version, no marker: exit 2', async () => {
     const r = mkStampedRepo();
-    stage(r, '.workkit/settings.json', '{ "version": 7, "enabled": false }\n');
-    blocks(await judge(r, 'git commit -m "chore: flip"'), T.noReview, 'only the version key is bookkeeping');
+    stage(r, '.workkit/settings.json', '{ "enabled": false }\n');
+    blocks(await judge(r, 'chore: flip'), T.noReview, 'only the version key is bookkeeping');
   });
 
-  await test('ports "NEW settings.json (the opt-in commit), no marker: exit 2"', async () => {
+  await test('NEW settings.json (the opt-in commit), no marker: exit 2', async () => {
     const r = mkRepo({ optIn: false });
-    stage(r, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
-    blocks(await judge(r, 'git commit -m "chore: opt in"'), T.noReview, 'a first settings.json is not a stamp');
+    stage(r, '.workkit/settings.json', OPT_IN_SHAPES.current);
+    blocks(await judge(r, 'chore: opt in'), T.noReview, 'a first settings.json is not a stamp');
   });
 
-  await test('ports "stamp + a source file, no marker: exit 2 (full gate restored)"', async () => {
+  await test('the key removed + a source file, no marker: exit 2', async () => {
     const r = mkStampedRepo();
-    stage(r, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    stage(r, '.workkit/settings.json', OPT_IN_SHAPES.current);
     stage(r, 'app.js', 'const x = 1;\n');
-    blocks(await judge(r, 'git commit -m "chore: mixed"'), T.noReview, 'any non-bookkeeping file restores the review requirement');
+    blocks(await judge(r, 'chore: mixed'), T.noReview, 'any non-bookkeeping file restores the review requirement');
   });
 
-  await test('ports "the copy deleted and checks.yml rewritten by the heal, with or without the stamp, no marker: exit 0"', async () => {
+  await test('the copy deleted and checks.yml rewritten by the heal, with or without the key removed, no marker: exit 0', async () => {
     for (const name of ['changelog-lint.cjs', 'changelog-lint.js']) {
       const r = mkVendoredRepo(name);
       gitRm(r, `.github/${name}`);
       assert(PUSH.test(healedChecks()) && !PUSH.test(oldChecks(`.github/${name}`)), 'the push trigger is in the diff');
       stage(r, CHECKS, healedChecks());
       proveTree(r);
-      passes(await judge(r, 'git commit -m "chore(workflow): drop the linter copy"'), NOTICE.proved, `${name}: the heal's two changes need no review or test file`);
-      stage(r, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+      passes(await judge(r, 'chore(workflow): drop the linter copy'), NOTICE.proved, `${name}: the heal's two changes need no review or test file`);
+      stage(r, '.workkit/settings.json', OPT_IN_SHAPES.current);
       proveTree(r);
-      passes(await judge(r, 'git commit -m "chore(workflow): heal output"'), NOTICE.proved, `${name}: and with the stamp beside it`);
+      passes(await judge(r, 'chore(workflow): heal output'), NOTICE.proved, `${name}: and with the removal beside it`);
     }
   });
 
-  await test('ports "the copy deleted alone where no workflow ever ran it, no marker: exit 0"', async () => {
+  await test('the copy deleted alone where no workflow ever ran it, no marker: exit 0', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs', { withChecks: false });
     gitRm(r, '.github/changelog-lint.cjs');
     proveTree(r);
-    passes(await judge(r, 'git commit -m "chore(workflow): drop the linter copy"'), NOTICE.proved, 'nothing the commit leaves behind runs it');
+    passes(await judge(r, 'chore(workflow): drop the linter copy'), NOTICE.proved, 'nothing the commit leaves behind runs it');
   });
 
-  await test('ports "under -a, the heal\'s unstaged deletion and rewrite are bookkeeping too: exit 0"', async () => {
-    const r = mkVendoredRepo('changelog-lint.cjs');
-    unlink(r, '.github/changelog-lint.cjs');
-    write(r, CHECKS, healedChecks());
-    proveTree(r);
-    passes(await judge(r, 'git commit -a -m "chore(workflow): drop the linter copy"'), NOTICE.proved, '-a stages exactly the heal\'s output');
-  });
-
-  await test('ports "under -a with autocrlf, a CRLF working tree carrying the heal\'s rewrite is bookkeeping: exit 0"', async () => {
-    const r = mkVendoredRepo('changelog-lint.cjs');
-    r.autocrlf = true;
-    unlink(r, '.github/changelog-lint.cjs');
-    write(r, CHECKS, healedChecks().replace(/\n/g, '\r\n'));
-    proveTree(r);
-    passes(await judge(r, 'git commit -a -m "chore(workflow): drop the linter copy"'), NOTICE.proved, 'the CRLF file commits as the heal\'s exact rewrite');
-  });
-
-  await test('ports "checks.yml rewritten but for a trailing newline, no marker: exit 2"', async () => {
+  await test('checks.yml rewritten but for a trailing newline, no marker: exit 2', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
     stage(r, CHECKS, `${healedChecks()}\n\n`);
-    blocks(await judge(r, 'git commit -m "chore: heal plus blank lines"'), T.noReview, 'byte for byte means the trailing newlines too');
+    blocks(await judge(r, 'chore: heal plus blank lines'), T.noReview, 'byte for byte means the trailing newlines too');
   });
 
-  await test('ports "a header-only swap above a job already in the uses: form, no marker: exit 0"', async () => {
+  await test('a header-only swap above a job already in the uses: form, no marker: exit 0', async () => {
     const r = mkStampedRepo();
     stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
     const current = healedChecks();
@@ -162,10 +143,10 @@ const cases = async () => {
     commit(r);
     stage(r, CHECKS, current);
     proveTree(r);
-    passes(await judge(r, 'git commit -m "chore(workflow): the header comment"'), NOTICE.proved, 'the heal\'s header swap alone needs no review');
+    passes(await judge(r, 'chore(workflow): the header comment'), NOTICE.proved, 'the heal\'s header swap alone needs no review');
   });
 
-  await test('ports "the push trigger added alone to a PR-only checks.yml, no marker: exit 0"', async () => {
+  await test('the push trigger added alone to a PR-only checks.yml, no marker: exit 0', async () => {
     const r = mkStampedRepo();
     stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
     stage(r, CHECKS, PR_ONLY);
@@ -174,7 +155,7 @@ const cases = async () => {
     assert(PUSH.test(healed) && !PUSH.test(PR_ONLY), `the trigger is in the diff, got: ${healed}`);
     stage(r, CHECKS, healed);
     proveTree(r);
-    passes(await judge(r, 'git commit -m "chore(workflow): run checks on a push"'), NOTICE.proved, 'the heal\'s push trigger alone needs no review');
+    passes(await judge(r, 'chore(workflow): run checks on a push'), NOTICE.proved, 'the heal\'s push trigger alone needs no review');
   });
 
   await test('the kit clone step removed alone from checks.yml in a repo on workkit-core is bookkeeping, no marker: exit 0', async () => {
@@ -187,57 +168,57 @@ const cases = async () => {
     assert(healed !== older, 'the removal is in the diff');
     stage(r, CHECKS, healed);
     proveTree(r);
-    passes(await judge(r, 'git commit -m "chore(workflow): drop the kit clone step from CI"'), NOTICE.proved, 'the heal\'s clone step removal alone needs no review');
+    passes(await judge(r, 'chore(workflow): drop the kit clone step from CI'), NOTICE.proved, 'the heal\'s clone step removal alone needs no review');
   });
 
-  await test('ports "the copy deleted while checks.yml still runs it, no marker: exit 2"', async () => {
+  await test('the copy deleted while checks.yml still runs it, no marker: exit 2', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
-    blocks(await judge(r, 'git commit -m "chore: drop the copy"'), T.noReview, 'a commit that breaks the CI job is not bookkeeping');
+    blocks(await judge(r, 'chore: drop the copy'), T.noReview, 'a commit that breaks the CI job is not bookkeeping');
   });
 
   await test('the still-runs question hands the entry its texts on stdin as `names -`, never a /dev/stdin path', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
-    await judge(r, 'git commit -m "chore: drop the copy"');
+    await judge(r, 'chore: drop the copy');
     const asked = r.calls.run.find((c) => c.argv.some((a) => a.endsWith('changelog-job.sh')) && c.argv.includes('names'));
     assert(asked !== undefined, 'the entry was asked');
     assertEq(asked.argv.slice(asked.argv.indexOf('names')).join(' '), 'names - .github/changelog-lint.cjs', 'the stdin marker, then the copy');
     assert(asked.init.stdin.includes('.github/changelog-lint.cjs'), 'the workflow texts ride on stdin');
   });
 
-  await test('ports "checks.yml rewritten with one more changed line, no marker: exit 2"', async () => {
+  await test('checks.yml rewritten with one more changed line, no marker: exit 2', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
     stage(r, CHECKS, healedChecks().replace('runs-on: ubuntu-latest', 'runs-on: macos-14'));
-    blocks(await judge(r, 'git commit -m "chore: heal plus an edit"'), T.noReview, 'only the heal\'s exact rewrite is bookkeeping');
+    blocks(await judge(r, 'chore: heal plus an edit'), T.noReview, 'only the heal\'s exact rewrite is bookkeeping');
   });
 
-  await test('ports "the linter copy deleted beside a source file, no marker: exit 2"', async () => {
+  await test('the linter copy deleted beside a source file, no marker: exit 2', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs', { withChecks: false });
     gitRm(r, '.github/changelog-lint.cjs');
     stage(r, 'app.js', 'const x = 1;\n');
-    blocks(await judge(r, 'git commit -m "chore: mixed"'), T.newFiles('app.js'), 'any other file in the commit restores the full gate');
+    blocks(await judge(r, 'chore: mixed'), T.newFiles('app.js'), 'any other file in the commit restores the full gate');
   });
 
-  await test('ports "a linter copy MODIFIED in place is not bookkeeping, no marker: exit 2"', async () => {
+  await test('a linter copy MODIFIED in place is not bookkeeping, no marker: exit 2', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs', { withChecks: false });
     stage(r, '.github/changelog-lint.cjs', `${VENDORED}// an edit\n`);
-    blocks(await judge(r, 'git commit -m "chore: edit the copy"'), T.noReview, 'an edited copy is not the heal\'s output');
+    blocks(await judge(r, 'chore: edit the copy'), T.noReview, 'an edited copy is not the heal\'s output');
   });
 
-  await test('ports "a linter copy ADDED is not bookkeeping, no marker: exit 2"', async () => {
+  await test('a linter copy ADDED is not bookkeeping, no marker: exit 2', async () => {
     const engine = fs.readFileSync(path.join(WORKFLOW_DIR, 'changelog', 'lint.js'), 'utf8');
     const nl = engine.indexOf('\n');
     const r = mkRepo();
     stage(r, '.github/changelog-lint.cjs',
       `${engine.slice(0, nl + 1)}// Vendored from the workflow core's changelog.js by standards.sh. The kit is the SSOT; edit it there. This copy is resynced on every heal.\n${engine.slice(nl + 1)}`);
-    blocks(await judge(r, 'git commit -m "chore: a copy"'), T.noReview, 'only the deletion is the heal\'s output');
+    blocks(await judge(r, 'chore: a copy'), T.noReview, 'only the deletion is the heal\'s output');
   });
 
   group('commit-gate: a heal-output check whose tool fails is held by name');
 
-  await test('ports "a find that fails inside the linter-copy check is named with its stderr, never read as code": a git read fails there', async () => {
+  await test('a find that fails inside the linter-copy check is named with its stderr, never read as code: a git read fails there', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
     stage(r, CHECKS, healedChecks());
@@ -245,20 +226,44 @@ const cases = async () => {
     r.failOn = (argv) => (path.basename(argv[0]) === 'git'
       && (argv.includes('ls-files') || argv.includes('checkout-index') || argv.includes('--diff-filter=D'))
       ? { exitCode: 128, stderr: 'fatal: the stub cannot read this folder\n' } : null);
-    const deny = denyOf(await judge(r, 'git commit -m "chore(workflow): drop the linter copy"'));
+    const deny = denyOf(await judge(r, 'chore(workflow): drop the linter copy'));
     const shape = new RegExp(`^${PREFIX}the linter copy check could not run: \`git [^\`]+\` exited 128 \\(fatal: the stub cannot read this folder\\)`);
     assert(deny !== null && shape.test(deny) && deny.endsWith(HELD), `the check, the command and its stderr are named, got: ${deny}`);
     assert(!deny.includes('no review has run'), `never the review bounce: ${deny}`);
   });
 
-  await test('ports "a git that fails inside the version-stamp probe is named with its stderr, never read as a no"', async () => {
+  await test('a git that fails inside the version-stamp probe is named with its stderr, never read as a no', async () => {
     const r = mkStampedRepo();
-    stage(r, '.workkit/settings.json', '{ "version": 7, "enabled": true }\n');
+    stage(r, '.workkit/settings.json', OPT_IN_SHAPES.current);
     r.failOn = (argv) => (path.basename(argv[0]) === 'git' && argv.includes('rev-parse') && argv.includes('--verify')
       && argv.includes('HEAD:.workkit/settings.json') ? { exitCode: 128, stderr: 'fatal: the stub index is corrupt\n' } : null);
-    const deny = denyOf(await judge(r, 'git commit -m "chore(workflow): stamp"'));
+    const deny = denyOf(await judge(r, 'chore(workflow): drop the version key'));
     const shape = new RegExp(`^${PREFIX}the version stamp check could not run: \`git [^\`]*rev-parse [^\`]*HEAD:\\.workkit/settings\\.json\` exited 128 \\(fatal: the stub index is corrupt\\)`);
     assert(deny !== null && shape.test(deny) && deny.endsWith(HELD), `the check, the command, git's status and stderr, got: ${deny}`);
+  });
+
+  await test('a tool that did not start inside the linter-copy check holds the commit naming the check, the command and did not start', async () => {
+    const r = mkVendoredRepo('changelog-lint.cjs');
+    gitRm(r, '.github/changelog-lint.cjs');
+    stage(r, CHECKS, healedChecks());
+    proveTree(r);
+    r.failOn = (argv) => (argv.some((a) => a.endsWith('changelog-job.sh')) && argv.includes('names')
+      ? { isStarted: false, stderr: 'spawn bash ENOENT' } : null);
+    const deny = denyOf(await judge(r, 'chore(workflow): drop the linter copy'));
+    const shape = new RegExp(`^${PREFIX}the linter copy check could not run: \`[^\`]+\` did not start`);
+    assert(deny !== null && shape.test(deny) && deny.endsWith(HELD), `the check, the command and did not start, got: ${deny}`);
+  });
+
+  await test('a tool that started and ended with no exit code inside the linter-copy check holds the commit naming exited null, never a pass', async () => {
+    const r = mkVendoredRepo('changelog-lint.cjs');
+    gitRm(r, '.github/changelog-lint.cjs');
+    stage(r, CHECKS, healedChecks());
+    proveTree(r);
+    r.failOn = (argv) => (argv.some((a) => a.endsWith('changelog-job.sh')) && argv.includes('names')
+      ? { exitCode: null, isStarted: true, stdout: '', stderr: '' } : null);
+    const deny = denyOf(await judge(r, 'chore(workflow): drop the linter copy'));
+    const shape = new RegExp(`^${PREFIX}the linter copy check could not run: \`[^\`]+\` exited null`);
+    assert(deny !== null && shape.test(deny) && deny.endsWith(HELD), `the check, the command and exited null, got: ${deny}`);
   });
 
   group('changelog-job.sh rewrite: the entry over wk_checks_heal_rewrite');

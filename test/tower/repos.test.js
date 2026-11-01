@@ -8,6 +8,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 const { asWindows, gitPath: rosterKey } = require('../lib/platform');
+const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
 // The slug rule is the engine's (workflow/slug.js, cased in test/scripts/slug.test.js);
@@ -34,7 +35,7 @@ const noGetconf = () => { throw new Error('getconf: Unrecognized variable'); };
  * `settings` is written verbatim when a string, JSON-encoded otherwise; null
  * writes no settings file at all.
  */
-const mkRepo = (root, rel, { settings = { version: 7, enabled: true }, origin = null } = {}) => {
+const mkRepo = (root, rel, { settings = { enabled: true }, origin = null } = {}) => {
   const dir = path.join(root, rel);
   fs.mkdirSync(dir, { recursive: true });
   git(dir, 'init', '-q', '-b', 'main');
@@ -249,7 +250,7 @@ const cases = async () => {
     const tower = path.join(home, 'tower');
     fs.mkdirSync(path.join(tower, '.workkit'), { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
-    fs.writeFileSync(path.join(tower, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(path.join(tower, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
     fs.writeFileSync(
       path.join(home, '.repos.json'),
       `${JSON.stringify({ version: 1, repos: { [rosterKey(tower)]: 'enabled' } }, null, 2)}\n`,

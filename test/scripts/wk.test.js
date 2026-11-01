@@ -12,6 +12,7 @@ const {
   systemPathWith, joinPath,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
+const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflow');
 const SCRIPT = path.join(WORKFLOW_DIR, 'wk.sh');
@@ -28,7 +29,7 @@ const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 // whose tower clone is a real git repo (`wk_home_ready` asks, not a bare `.git`).
 // `tower`: false never ran setup, 'foreign' is someone else's repo at that path.
 // `gh`: true files, 'labels' refuses --label, 'down' refuses all, false has no gh.
-const makeTree = ({ settings = '{ "version": 1, "enabled": true }\n', tower = true, gh = true } = {}) => {
+const makeTree = ({ settings = OPT_IN_SHAPES.current, tower = true, gh = true } = {}) => {
   const dir = mkTmp('wk-');
   const repo = path.join(dir, 'repo');
   const towerDir = path.join(dir, 'home', W, 'tower');

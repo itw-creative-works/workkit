@@ -7,6 +7,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
 const { gitPath } = require('../lib/platform');
+const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const { composeSlugs, writeSlugs, machineKey } = require(path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js'));
 
@@ -26,7 +27,7 @@ const mkWorkflowHome = (root, repos = [], { homeSlug = 'owner/workkit', roster }
   for (const name of repos) {
     const repo = path.join(root, 'repos', name);
     fs.mkdirSync(path.join(repo, '.workkit'), { recursive: true });
-    fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
     git(repo, 'init', '-q', '-b', 'main');
     git(repo, 'remote', 'add', 'origin', `https://github.com/owner/${name}.git`);
     registered[gitPath(repo)] = { registered: '2026-07-30' };

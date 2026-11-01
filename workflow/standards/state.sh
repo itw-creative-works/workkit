@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/standards/state.sh: participation and the machine's own files: the
 # tower clone check, the user-level seeds, the offer line, the repo's committed
-# answer and version, the drift report, the state resolution, a recorded
+# answer, the retired version key's removal, the state resolution, a recorded
 # decline, the roster and the committed opt-in. Sourced by standards.sh,
 # functions only; the states, their files and the clone's address are the
 # entry's (§ 0. Participation).
@@ -66,53 +66,22 @@ repo_enabled_flag() {
   fi
 }
 
-# The standard version this repo was last healed to. A file predating the field
-# reads as 1: the version every repo healed before the field existed.
-repo_version() {
-  local v=""
-  [[ -f "$REPO_SETTINGS" ]] || { printf '0'; return 0; }
-  if command -v jq >/dev/null 2>&1; then
-    v="$(wk_jq_default '' -r '.version // 1' "$REPO_SETTINGS")"
-  fi
-  [[ "$v" =~ ^[0-9]+$ ]] || v=1
-  printf '%s' "$v"
-}
-
-# Report what this repo still carries from a retired convention, and fix
-# nothing: each finding is destructive to fix or needs judgment.
-report_drift() {
-  local found=0 f
-
-  for f in PROGRESS.md INBOX.md TODO.md; do
-    [[ -f "$root/$f" ]] || continue
-    wk_warn "standards: $f is retired by spec v4; its contents are work items; run the workkit:migrate skill to file them as issues, then delete it"
-    found=1
-  done
-  if [[ -d "$root/plans" ]]; then
-    wk_warn "standards: plans/ is retired by spec v4; a plan is the '## Spec' section of its issue; run the workkit:migrate skill to move each one, then delete the directory"
-    found=1
-  fi
-
-  # This judges the whole CHANGELOG, unlike the guards, which judge only added
-  # lines: it says whether the history was ever brought over.
-  if [[ -f "$root/CHANGELOG.md" ]]; then
-    if [[ -f "$CHANGELOG_LINTER" ]] && command -v node >/dev/null 2>&1; then
-      # Count entries, not violations: one entry often breaks several rules.
-      local bad
-      bad="$(node "$CHANGELOG_LINTER" "$root/CHANGELOG.md" 2>&1 | grep -oE '^  line [0-9]+' | sort -u | wc -l | tr -d ' ')"
-      if [[ "${bad:-0}" -gt 0 ]]; then
-        wk_warn "standards: CHANGELOG.md has $bad entries not in the entry format; run the workkit:migrate skill, or 'workkit changelog lint CHANGELOG.md' to see them"
-        found=1
-      fi
-    else
-      # No node (or no linter) means this check never ran. The caller must not
-      # stamp the version past it: that would end the one-time drift report
-      # for a file nobody checked.
-      drift_skipped=1
+# Nothing in a repo records which heals it has had: a `version` key an older
+# kit left in its settings file is removed, and a file without one is never written.
+remove_version_stamp() {
+  [[ -f "$REPO_SETTINGS" ]] || return 0
+  if ! command -v jq >/dev/null 2>&1; then
+    if grep -q '"version"[[:space:]]*:' "$REPO_SETTINGS" 2>/dev/null; then
+      wk_warn "settings: $REPO_SETTINGS still carries the retired \"version\" key and removing it needs jq; install jq, or delete the key by hand"
     fi
+    return 0
   fi
-
-  return "$found"
+  wk_jq -e 'type == "object" and has("version")' "$REPO_SETTINGS" >/dev/null 2>&1 || return 0
+  if wk_json_edit "$REPO_SETTINGS" 'del(.version)'; then
+    wk_ok "settings: removed the retired \"version\" key from $REPO_SETTINGS; commit it"
+  else
+    needs_attention=1
+  fi
 }
 
 resolve_state() {
@@ -235,10 +204,7 @@ register_in_roster() {
 write_repo_optin() {
   if [[ ! -f "$REPO_SETTINGS" ]]; then
     mkdir -p "$WORKKIT_DIR"
-    # Version 1 on purpose: a repo joining now is the likeliest to carry retired
-    # files, and the drift report runs only below the current standard. The
-    # heal that follows stamps it forward.
-    printf '{\n  "version": 1,\n  "enabled": true\n}\n' >"$REPO_SETTINGS"
+    printf '{\n  "enabled": true\n}\n' >"$REPO_SETTINGS"
     wk_ok "opt-in: created $REPO_SETTINGS; commit it, it is the repo's yes"
     return 0
   fi

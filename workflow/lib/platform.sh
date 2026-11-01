@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/lib/platform.sh: the spellings that differ per platform and the read
 # shapes built on them, for the engine and the hooks. Sourced: functions, plus
-# the one MSYS export and MARKER_KEEP_DAYS below. The shell twin of test/lib/platform.js; on macOS
+# the one MSYS export, WK_NODE_FLOOR and MARKER_KEEP_DAYS below. The shell twin of test/lib/platform.js; on macOS
 # and Linux every function is the plain POSIX spelling. What each answers:
 # workflow/README.md, the lib/platform.sh row.
 
@@ -101,6 +101,53 @@ wk_is_cloud() {
   [[ "${CLAUDE_CODE_REMOTE:-}" == 'true' ]]
 }
 
+# The oldest node the gh gate and the git hooks' judge run under: they require()
+# the ES modules in hooks/mods, which Node allows from 22.12.
+WK_NODE_FLOOR=22.12
+
+# _wk_node_fits <node>: whether <node> runs and its --version reaches
+# WK_NODE_FLOOR, part by part as numbers, a suffix (`-nightly`, a `\r`) dropped.
+_wk_node_fits() {
+  local version have want i a b
+  version="$("$1" --version 2>/dev/null)" || return 1
+  IFS=. read -r -a have <<<"${version#v}"
+  IFS=. read -r -a want <<<"$WK_NODE_FLOOR"
+  for i in 0 1 2; do
+    a="${have[i]:-0}"; a="${a%%[!0-9]*}"; a="${a:-0}"
+    b="${want[i]:-0}"
+    (( 10#$a > 10#$b )) && return 0
+    (( 10#$a < 10#$b )) && return 1
+  done
+  return 0
+}
+
+# _wk_nvm_newest: the node of nvm's highest installed version, nothing when none.
+_wk_nvm_newest() {
+  local node
+  for node in "${HOME:-}"/.nvm/versions/node/v*/bin/node; do
+    [ -x "$node" ] || continue
+    node="${node%/bin/node}"
+    printf '%s %s\n' "${node##*/v}" "$node/bin/node"
+  done | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1 | cut -d' ' -f2-
+}
+
+# wk_node: prints the first node that fits, of $WORKKIT_NODE, PATH's node, the
+# dotfiles pin ~/.nvm/default-bin/node and nvm's newest install; prints
+# nothing and returns 1 when none does.
+wk_node() {
+  local candidate found
+  for candidate in "${WORKKIT_NODE:-}" node "${HOME:-}/.nvm/default-bin/node" newest; do
+    [ "$candidate" != newest ] || candidate="$(_wk_nvm_newest)"
+    [ -n "$candidate" ] || continue
+    found="$(command -v "$candidate" 2>/dev/null)" || continue
+    if _wk_node_fits "$found"; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # wk_npm_script_shell: npm's script-shell value. npm on Windows ends it with a
 # CRLF a command substitution keeps half of; npm's own exit status comes back.
 wk_npm_script_shell() {
@@ -188,6 +235,26 @@ wk_pid_alive() {
     msys*|cygwin*) node -e 'process.kill(Number(process.argv[1]), 0)' "$1" 2>/dev/null ;;
     *) kill -0 "$1" 2>/dev/null ;;
   esac
+}
+
+# wk_take_lock <dir>: a mutex taken by mkdir of <dir>, its parent made first.
+# Returns 0 holding it, 1 after a 5s wait. Callers proceed either way, and only
+# a caller that took it drops it (wk_drop_lock), or a third writer races the holder.
+wk_take_lock() {
+  local waited=0
+  mkdir -p "$(dirname "$1")" 2>/dev/null || return 1
+  while [ "$waited" -lt 50 ]; do
+    if mkdir "$1" 2>/dev/null; then return 0; fi
+    sleep 0.1
+    # Never `(( waited++ ))`: its first pass evaluates to 0, a non-zero status
+    # that errexit ends the run on under bash 4.1 and later.
+    waited=$(( waited + 1 ))
+  done
+  return 1
+}
+
+wk_drop_lock() {
+  rmdir "$1" 2>/dev/null || true
 }
 
 # wk_sha1: the hex sha1 of STDIN, through shasum or sha1sum, so every key is

@@ -33,6 +33,15 @@ const seed = seeded((dir) => {
   fs.mkdirSync(path.join(dir, 'home'));
 });
 
+/** Write `files` into the world's repo and commit them, as a scratch identity. */
+const commitFiles = (world, files) => {
+  for (const [rel, body] of Object.entries(files)) fs.writeFileSync(path.join(world.repo, rel), body);
+  for (const args of [['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test'], ['add', '-A'], ['commit', '-q', '-m', 'init']]) {
+    const res = spawnSync('git', args, { cwd: world.repo, env: homeEnv(world.home, { PATH: process.env.PATH }), encoding: 'utf8' });
+    if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
+  }
+};
+
 const mkWorld = () => {
   const root = mkTmp('wk-gh-rest-');
   seed(root);
@@ -43,11 +52,13 @@ const mkWorld = () => {
 
 /**
  * Run the shim in a cloud session with `args` from the acme/rostered repo, the
- * real gh a stub answering `api` (keyed `<METHOD> <route>`); `env` adds variables.
+ * real gh a stub answering `api` (keyed `<METHOD> <route>`); `env` adds variables,
+ * and `files` (root-relative path to content), when given, is committed to the repo first.
  * Returns the exit, both streams, every call the stub saw and every `gh api` request it answered.
  */
-const runCloud = (args, { api = {}, env: extra = {} } = {}) => {
+const runCloud = (args, { api = {}, env: extra = {}, files = null } = {}) => {
   const world = mkWorld();
+  if (files) commitFiles(world, files);
   const stub = makeGhStub({ api });
   const env = homeEnv(world.home, {
     PATH: systemPathWith(path.dirname(world.shim), stub.binDir, NODE_DIR),
@@ -352,7 +363,7 @@ const cases = async () => {
     const api = { ...REPO_LABELS, [`POST ${base}/labels`]: { body: [restLabel('status:qa')] } };
     const res = runCloud(['issue', 'edit', '7', '--add-label', 'status:qa,status:qq'], { api });
     assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
-    assertEq(res.stderr, `${NO_LABEL}\n`, 'gh\'s not-found line');
+    assert(res.stderr.split('\n').includes(NO_LABEL), `stderr carries gh's not-found line, got: ${res.stderr}`);
     assertSame(writes(res), [], 'no label is added');
 
     const cased = runCloud(['issue', 'edit', '7', '--add-label', 'Status:QA'], { api });
@@ -457,6 +468,25 @@ const cases = async () => {
     assertOk(res, 'label edit --name');
     assertSame(routes(writes(res)), [['PATCH', 'repos/acme/rostered/labels/status:qa']], 'one PATCH to the old label');
     assertEq(writes(res)[0].body.new_name, 'status:check', 'carrying the new name');
+  });
+
+  group('identity/gh in a cloud session: the gate runs first');
+
+  await runTest('case 9: a planted .env value in a comment bounces before rest.js runs; a flip to status:qa the gate passes reaches rest.js as off the gate', async () => {
+    const secret = 'sup3rSecretValue_9f2a';
+    const files = { '.env': `API_SECRET=${secret}\n` };
+    const leak = runCloud(['issue', 'comment', '1', '--body', `the key is ${secret}`], { files });
+    assertEq(leak.code, 1, `exit 1, stdout: ${leak.stdout}, stderr: ${leak.stderr}`);
+    assert(leak.stderr.includes('issue-guard: BLOCKED this gh command: the outbound text carries the value of API_SECRET from a local .env file.'),
+      `stderr carries the issue-guard bounce, got: ${leak.stderr}`);
+    assertSame([leak.calls, leak.requests], [[], []], 'rest.js never ran: no gh call, no request');
+
+    const base = 'repos/acme/rostered/issues/7';
+    const api = { ...REPO_LABELS, [`POST ${base}/labels`]: { body: [restLabel('status:qa')] } };
+    const flip = runCloud(['issue', 'edit', '7', '--add-label', 'status:qa'], { api, files });
+    assertOk(flip, 'issue edit --add-label status:qa');
+    assertSame(routes(flip.requests), [['GET', 'repos/acme/rostered/labels'], ['POST', `${base}/labels`]],
+      'the repo\'s labels read, then the add');
   });
 
   group('identity/gh in a cloud session: the proxy\'s refusal');

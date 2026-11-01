@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { TOKEN_URL } = require('./app');
 const { loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX } = require('./login');
-const { installPage } = require('./install-page');
+const { repoOwner, ownerId, installPage } = require('./install-page');
 const { splitRepo } = require('../slug');
 const { userDir } = require('../user-dir');
 
@@ -23,6 +23,8 @@ const EXIT_CODES = { not_signed_in: 3, not_installed: 4 };
 const LOGIN_HINT = `run \`${LOGIN_FIX}\``;
 // The line after every not-installed refusal's page: setup's install step alone.
 const BOT_HINT = 'or run: workkit setup --bot';
+// A not-installed refusal's tail when GitHub cannot name the owner: no page.
+const OWNER_UNREADABLE = 'owner id unreadable from GitHub, retry';
 
 /**
  * A refusal with its reason, `code` one of `not_signed_in`, `not_installed`,
@@ -102,19 +104,27 @@ const freshCache = (file, now) => {
 };
 
 /**
+ * A 412's own fix: the owner and its pre-selected page, then the setup hint;
+ * with no id, the owner and the unreadable line alone.
+ * @param {string} owner
+ * @param {number|null} id
+ * @returns {string}
+ */
+const ownerLine = (owner, id) => (id === null
+  ? `install workkit-agent[bot] on ${owner}: ${OWNER_UNREADABLE}`
+  : `install workkit-agent[bot] on ${owner}: ${installPage(id)}\n${BOT_HINT}`);
+
+/**
  * What a refusing status means: its code, and the words the message must
  * carry whatever the service said, appended when its own words lack them.
  * @param {number} status
  * @param {string} repo
- * @param {string} page the install page, for a 412
+ * @param {string} fix a 412's own fix, the owner line and any hint after it
  * @returns {{code: string, mustName: string, hint: string}}
  */
-const refusalOf = (status, repo, page) => {
+const refusalOf = (status, repo, fix) => {
   if (status === 401) return { code: 'not_signed_in', mustName: LOGIN_FIX, hint: LOGIN_HINT };
-  if (status === 412) {
-    const { owner } = splitRepo(repo);
-    return { code: 'not_installed', mustName: page, hint: `install workkit-agent[bot] on ${owner}: ${page}\n${BOT_HINT}` };
-  }
+  if (status === 412) return { code: 'not_installed', mustName: fix, hint: fix };
   if (status === 403) return { code: 'no_write_access', mustName: 'no write access', hint: `no write access to ${repo}` };
   return { code: 'service_refused', mustName: '', hint: '' };
 };
@@ -125,10 +135,10 @@ const refusalOf = (status, repo, page) => {
  * @param {number} status
  * @param {string} text the response body
  * @param {string} repo
- * @param {string} page the install page, for a 412
+ * @param {string} fix a 412's own fix, the owner line and any hint after it
  * @returns {IdentityError}
  */
-const refusal = (status, text, repo, page) => {
+const refusal = (status, text, repo, fix) => {
   let body = null;
   try {
     body = JSON.parse(text);
@@ -136,7 +146,7 @@ const refusal = (status, text, repo, page) => {
     // Not JSON: the status alone names the refusal.
   }
   const said = body && typeof body === 'object' ? body : {};
-  const { code, mustName, hint } = refusalOf(status, repo, page);
+  const { code, mustName, hint } = refusalOf(status, repo, fix);
   // A sign-in's and an install's fix are the client's own hint in place of the
   // service's, so the command and the page they name are this kit's whatever the
   // service says.
@@ -161,7 +171,9 @@ const signedIn = (file) => {
 
 /**
  * One request to the token service for the repo's App token, with the user's
- * bearer. A 412 reads the install page for its message unless `page` is false.
+ * bearer, made under the canonical owner when GitHub names it, else the slug
+ * as sent. A 412 names the owner's page, its id from that read, else from the
+ * public id read, which `page` false (the probe) never makes.
  * @param {string} repo owner/name
  * @param {object} opts
  * @param {object} opts.settings
@@ -171,17 +183,19 @@ const signedIn = (file) => {
  * @returns {Promise<{token: string, expiresAt: string}>}
  */
 const requestToken = async (repo, {
-  settings, fetch, login, page: withPage = true,
+  settings, fetch, login, page = true,
 }) => {
-  const { owner } = splitRepo(repo);
+  const { owner, name } = splitRepo(repo);
   const url = tokenUrlOf(settings);
+  const canonical = await repoOwner(repo, { fetch, token: login.token });
+  const sent = canonical ? `${canonical.login}/${name}` : repo;
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
   let res;
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${login.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo }),
+      body: JSON.stringify({ repo: sent }),
       signal,
     });
   } catch (err) {
@@ -189,10 +203,11 @@ const requestToken = async (repo, {
     throw new IdentityError('service_refused', `the token service at ${url} ${why}`);
   }
   const text = await res.text();
-  if (res.status !== 200) {
-    const page = res.status === 412 && withPage ? await installPage(owner, { fetch }) : '';
-    throw refusal(res.status, text, repo, page);
+  if (res.status === 412) {
+    if (canonical) throw refusal(412, text, sent, ownerLine(canonical.login, canonical.id));
+    throw refusal(412, text, sent, ownerLine(owner, page ? await ownerId(owner, { fetch }) : null));
   }
+  if (res.status !== 200) throw refusal(res.status, text, sent, '');
 
   let body = null;
   try {
@@ -201,7 +216,7 @@ const requestToken = async (repo, {
     // Handled below with every other reply that carries no token.
   }
   if (!body || typeof body.token !== 'string' || !body.token || Number.isNaN(Date.parse(body.expires_at))) {
-    throw new IdentityError('service_refused', `the token service's reply for ${repo} carried no token and expires_at`);
+    throw new IdentityError('service_refused', `the token service's reply for ${sent} carried no token and expires_at`);
   }
   return { token: body.token, expiresAt: body.expires_at };
 };
@@ -294,7 +309,7 @@ const printToken = async (repo) => {
 /**
  * The installation form, the same request as a token: `installed`, or
  * `not installed` with the refusal (the install page) on stderr. The probe
- * form (`page` false) prints the verdict alone and reads no install page.
+ * form (`page` false) prints the verdict alone and makes no public id read.
  * @param {string} repo
  * @param {object} [opts]
  * @param {boolean} [opts.page] defaults to true

@@ -146,6 +146,20 @@ const answered = ({ code, out, err }) => {
 const readLog = (w) => (fs.existsSync(w.ciLog) ? fs.readFileSync(w.ciLog, 'utf8') : null);
 const signalTest = testUnless(IS_WINDOWS, 'Node cannot deliver TERM or INT to a Git Bash process on Windows');
 
+// One commit of an empty file in the world's repo, under the world's HOME so no
+// machine git config reaches it; answers the commit's full id.
+const commitOne = (w) => {
+  const git = (...args) => spawnSync('git', ['-C', w.repo, ...args], { encoding: 'utf8', env: homeEnv(w.home, { PATH: process.env.PATH }) });
+  git('config', 'user.name', 'wk');
+  git('config', 'user.email', 'wk@localhost');
+  fs.writeFileSync(path.join(w.repo, 'empty'), '');
+  git('add', 'empty');
+  git('commit', '-q', '-m', 'chore: seed');
+  const full = git('rev-parse', 'HEAD').stdout.trim();
+  assert(/^[0-9a-f]{40}$/.test(full), `the world's repo holds a commit, got: ${JSON.stringify(full)}`);
+  return full;
+};
+
 const listCalls = (w) => w.calls().filter((c) => isCall(c, 'run', 'list'));
 const watchCalls = (w) => w.calls().filter((c) => isCall(c, 'run', 'watch'));
 
@@ -253,6 +267,33 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
+  group('ship watch: a short sha');
+
+  await test('a seven-character sha of a commit the repo holds is watched as the full sha, in the list and the log', async () => {
+    const w = makeWorld({ runs: [runRow(91, 'Checks')] });
+    const full = commitOne(w);
+    const r = runWatch(w, [full.slice(0, 7)]);
+    assertEq(r.code, 0, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`);
+    const lists = listCalls(w);
+    assert(lists.length >= 1, `gh run list was asked: ${fmtCalls(w.calls())}`);
+    const fullArgv = ['run', 'list', '--commit', full, '--json', 'databaseId,name,status,conclusion,url'];
+    assert(lists.every((c) => eqArgv(c, fullArgv)), `every list asks for the full sha ${full}: ${fmtCalls(lists)}`);
+    assertEq((readLog(w) || '').split('\n')[0], `ci-watch: watching ${full}`, 'the log opens naming the full sha');
+    cleanup(w.dir);
+  });
+
+  await test('a short sha this clone does not know is exit 2, the fetch line on stderr, no gh call', async () => {
+    const w = makeWorld({ runs: [runRow(92, 'Checks')] });
+    const full = commitOne(w);
+    // Seven hex characters that cannot open the one commit's id.
+    const unknown = `${full[0] === 'a' ? 'b' : 'a'}${full.slice(1, 7)}`;
+    const r = runWatch(w, [unknown]);
+    assertEq(r.code, 2, `exit 2 (stdout: ${r.out}, stderr: ${r.err})`);
+    assertEq(r.err, `ci-watch: ${unknown} is not a commit this clone knows; fetch it or pass the full sha\n`, 'the one line on stderr');
+    assertEq(w.calls().length, 0, `gh never asked: ${fmtCalls(w.calls())}`);
+    cleanup(w.dir);
+  });
+
   group('ship watch: no run');
 
   const DISPATCH = 'name: Manual\non:\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n';
@@ -300,8 +341,6 @@ const cases = async () => {
       assert(/usage: .*<sha>/.test(err), `usage on stderr for [${args}], got: ${err}`);
     }
     assertEq(w.calls().length, 0, 'gh never asked');
-    const { code } = runWatch(w, ['abc1234']);
-    assertEq(code, 0, 'seven hex characters is a sha');
     cleanup(w.dir);
   });
 

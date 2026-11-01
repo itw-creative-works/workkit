@@ -12,6 +12,7 @@ const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, basePathWithout, joinPath,
 } = require('../../lib/platform');
 const { mods, textOf, runResult, standardsState } = require('../../lib/mods-inputs');
+const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 
@@ -23,7 +24,7 @@ const makeRepo = () => {
   spawnSync('git', ['init', '-q'], { cwd: dir });
   spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/alice/repo.git'], { cwd: dir });
   fs.mkdirSync(path.join(dir, W), { recursive: true });
-  fs.writeFileSync(path.join(dir, W, 'settings.json'), '{ "version": 1, "enabled": true }\n');
+  fs.writeFileSync(path.join(dir, W, 'settings.json'), OPT_IN_SHAPES.current);
   return dir;
 };
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # workflow/identity/gh: the gh shim, linked to ~/.local/bin/gh ahead of the real
-# gh. A cloud session's issue, label and auth verbs go through rest.js; elsewhere
-# in a Claude session a bookkeeping verb on a rostered repo, or on the public repo
-# a rostered one pairs with, runs as the workkit App (GH_TOKEN, one process) or
-# not at all; the rest run the real gh as the owner.
+# gh. Every call but `gh auth` passes gate.js first, which may bounce it. A cloud
+# session's issue, label and auth verbs go through rest.js; elsewhere in a Claude
+# session a bookkeeping verb on a rostered repo, or on the public repo a rostered
+# one pairs with, runs as the workkit App (GH_TOKEN, one process) or not at all;
+# the rest run the real gh as the owner. In a Claude session a write that
+# succeeded leaves the gate's line in the cwd repo's gh journal.
 
 set -uo pipefail
 
@@ -90,7 +92,7 @@ bot_verb() {
   in_list "$verb" "${BOT_VERBS[@]}" || return 1
   shift
   in_list -h "$@" || in_list --help "$@" && return 1
-  # The subcommand rule is the twin of `run` in ./rest.js, shape for shape:
+  # The subcommand rule is the twin of `subAt` in ./gate.js, shape for shape:
   # change one and change the other.
   for arg in "$@"; do
     if [[ "$skip" -eq 1 ]]; then skip=0; continue; fi
@@ -165,6 +167,90 @@ names_public() {
 
 # shellcheck source=../lib/platform.sh
 . "$KIT_DIR/workflow/lib/platform.sh"
+# shellcheck source=../lib/participation.sh
+. "$KIT_DIR/workflow/lib/participation.sh"
+# shellcheck source=../lib/slug.sh
+. "$KIT_DIR/workflow/lib/slug.sh"
+
+# One temp file holds stdin for every body the call reads from it; it is
+# removed on exit, so a call that made it never ends in exec.
+BODY_TMP=''
+stdin_file() {
+  [[ -z "$BODY_TMP" ]] || return 0
+  BODY_TMP="$(mktemp "${TMPDIR:-/tmp}/workkit-gh-body.XXXXXX")" || exit 1
+  trap 'rm -f "$BODY_TMP"' EXIT
+  cat >"$BODY_TMP"
+}
+
+# stdin_bodies <args...>: ARGS becomes the args with each body gh would read
+# from stdin (a `-` value of --body-file, -F or --input, or a field's `@-`)
+# pointed at the temp file instead, so the gate can read the same body.
+stdin_bodies() {
+  local arg prev=''
+  ARGS=()
+  for arg in "$@"; do
+    if [[ "$arg" == - ]] && in_list "$prev" --body-file -F --input; then
+      stdin_file
+      arg="$BODY_TMP"
+    elif [[ "$arg" == *=@- ]] && in_list "$prev" -F --field; then
+      stdin_file
+      arg="${arg%-}$BODY_TMP"
+    elif [[ "$arg" == --body-file=- || "$arg" == --input=- || "$arg" == --field=*=@- ]]; then
+      stdin_file
+      arg="${arg%-}$BODY_TMP"
+    fi
+    prev="$arg"
+    ARGS+=("$arg")
+  done
+}
+
+# journal_append: LINE as one more line of the gh journal of the cwd's repo
+# root, else of the cwd; a journal that cannot take it is said, never fatal.
+journal_append() {
+  local root journal
+  root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=''
+  [[ -n "$root" ]] || root="$PWD"
+  wk_sweep_markers
+  if journal="$(wk_marker_path claude-gh-journal "$root")" && mkdir -p "${journal%/*}" \
+    && printf '%s\n' "$LINE" >>"$journal"; then
+    return 0
+  fi
+  printf 'gh: the call ran, but the workkit gh journal could not take its line\n' >&2
+}
+
+# run_gh <command...>: the call's last step. In a Claude session it runs as a
+# child, and an exit 0 appends LINE to the journal when it is set; elsewhere it
+# is exec'd unless a stdin body's temp file waits to be removed.
+run_gh() {
+  local code
+  if [[ "${CLAUDECODE:-}" != 1 && -z "$BODY_TMP" ]]; then exec "$@"; fi
+  "$@"
+  code=$?
+  if [[ "$code" -eq 0 && -n "$LINE" && "${CLAUDECODE:-}" == 1 ]]; then journal_append; fi
+  exit "$code"
+}
+
+REPO=''
+LINE=''
+[[ "${1:-}" == auth ]] || REPO="$(repo_of "$@")"
+
+# The gate sees every call but `gh auth` and an identity-off one: exit 1 is a
+# bounce whose text it has already put on stderr; its stdout is the journal line.
+# Its session gates rule only where wk_session_judges holds, the git hooks' gate.
+if [[ "${WORKKIT_IDENTITY_OFF:-}" != 1 && "${1:-}" != auth ]]; then
+  if [[ $# -gt 0 ]]; then
+    stdin_bodies "$@"
+    set -- "${ARGS[@]}"
+  fi
+  GATE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || GATE_ROOT=''
+  unset WORKKIT_GATE_JUDGES
+  if [[ -n "$GATE_ROOT" ]] && wk_session_judges "$GATE_ROOT"; then export WORKKIT_GATE_JUDGES=1; fi
+  if GATE_NODE="$(wk_node)"; then
+    LINE="$(WORKKIT_REAL_GH="$GH" WORKKIT_GATE_REPO="$REPO" "$GATE_NODE" "$KIT_DIR/workflow/identity/gate.js" "$PWD" "$@")" || exit $?
+  else
+    printf 'gh: the workkit gate did not run (no node %s or newer found)\n' "$WK_NODE_FLOOR" >&2
+  fi
+fi
 
 # A cloud session's proxy serves REST alone and signs every call as the account,
 # so no bot token is fetched there: rest.js judges every issue, label and auth
@@ -173,23 +259,16 @@ names_public() {
 if wk_is_cloud; then
   case "${1:-}" in
     issue|label|auth)
-      # shellcheck source=../lib/slug.sh
-      . "$KIT_DIR/workflow/lib/slug.sh"
-      REPO=''
-      [[ "$1" == auth ]] || REPO="$(repo_of "$@")"
-      WORKKIT_REAL_GH="$GH" GH_REPO="$REPO" exec node "$KIT_DIR/workflow/identity/rest.js" "$@"
+      WORKKIT_REAL_GH="$GH" GH_REPO="$REPO" run_gh node "$KIT_DIR/workflow/identity/rest.js" "$@"
       ;;
   esac
-  exec "$GH" "$@"
+  run_gh "$GH" "$@"
 fi
 
 if [[ -z "${CLAUDECODE:-}" || "${WORKKIT_IDENTITY_OFF:-}" == 1 || "${1:-}" == auth ]] \
   || ! bot_verb "$@"; then
-  exec "$GH" "$@"
+  run_gh "$GH" "$@"
 fi
-
-# shellcheck source=../lib/slug.sh
-. "$KIT_DIR/workflow/lib/slug.sh"
 
 # Without jq the roster cannot be read, so whether the call is the bot's is unknown.
 if ! command -v jq >/dev/null 2>&1; then
@@ -198,9 +277,8 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 # A rostered repo is the bot's, and so is the public repo an enabled one pairs with.
-REPO="$(repo_of "$@")"
 if [[ -z "$REPO" ]] || { ! wk_roster_path "$REPO" >/dev/null && ! wk_roster_path "$REPO" names_public >/dev/null; }; then
-  exec "$GH" "$@"
+  run_gh "$GH" "$@"
 fi
 
 # The client's exit says what to do: 0 hands over the token, which travels in
@@ -208,4 +286,4 @@ fi
 # 1 the rest) stops here with the client's message. Such a call never runs as you.
 # Its stderr stays this terminal's, so the sign-in it starts at a keyboard reaches you.
 TOKEN="$(node "$KIT_DIR/workflow/identity/token.js" "$REPO")" || exit $?
-GH_TOKEN="$TOKEN" exec "$GH" "$@"
+GH_TOKEN="$TOKEN" run_gh "$GH" "$@"

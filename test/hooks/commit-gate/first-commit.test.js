@@ -1,7 +1,7 @@
-// Tests for safety:commit-gate's first commit, commitGateGuard over a real
+// Tests for safety:commit-gate's first commit, preCommitVerdict over a real
 // scratch repo with no HEAD (test/lib/real-gate.js): the gate stands down with
 // one line, and once that commit exists the next code commit is judged again.
-// A HEAD git cannot read is not that: the commit is held, naming the read.
+// A HEAD git cannot read, or a read that never starts, is not that: the commit is held, naming the read.
 // A repo with a HEAD is every other suite beside this one.
 
 const fs = require('fs');
@@ -19,7 +19,7 @@ const mkUnbornRepo = () => {
   return world;
 };
 
-const commitOn = (world) => gateOn(world.repo, 'git commit -m "feat: first"', world.env);
+const commitOn = (world) => gateOn(world.repo, world.env);
 
 const cases = async () => {
   group('commit-gate: a repo with no HEAD');
@@ -60,6 +60,21 @@ const cases = async () => {
     const out = await commitOn(world);
     assert(out.deny?.startsWith(PREFIX), `the commit is blocked, got: ${out.deny}`);
     assert(out.deny.includes('the staged files check could not run: `git -c core.quotePath=false diff --cached --name-only` exited 128 (error: bad tree object HEAD)'), `naming the failed read, got: ${out.deny}`);
+  });
+
+  await test('a HEAD time read or a staged list read that did not start: the commit is held naming the read and did not start', async () => {
+    const reads = [
+      ['the HEAD time check', (argv) => argv.includes('log') && argv.includes('--format=%ct')],
+      ['the staged files check', (argv) => argv.includes('diff') && argv.includes('--cached') && argv.includes('--name-only') && !argv.some((a) => a.startsWith('--diff-filter'))],
+    ];
+    for (const [check, unstarted] of reads) {
+      const world = mkGitRepo('cg-first-', { 'package.json': pkg('1.0.0'), 'app.js': 'const x = 1;\n' });
+      world.write('app.js', 'const x = 2;\n');
+      world.git('add', 'app.js');
+      const out = await gateOn(world.repo, world.env, { unstarted: (argv) => path.basename(argv[0]) === 'git' && unstarted(argv) });
+      assert(out.deny?.startsWith(PREFIX), `${check}: the commit is blocked, got: ${out.deny}`);
+      assert(new RegExp(`${check} could not run: \`git [^\`]+\` did not start`).test(out.deny), `${check}: naming the read and did not start, got: ${out.deny}`);
+    }
   });
 };
 

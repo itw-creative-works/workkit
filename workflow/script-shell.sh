@@ -4,16 +4,17 @@
 # engine-agnostic contract and this file is npm's adapter: a green bare root
 # `npm test`, run detached, writes the suite record; every other green `test`
 # event (narrowed anywhere, or a nested package's bare run) runs in the
-# foreground and writes the package record; every other script is plain sh.
-# A bare root run first asks the full-suite hold (lib/hold.sh).
+# foreground and writes the package record; an install-time script is followed
+# by the git hooks' re-point; every other script is plain sh. A bare root run
+# first asks the full-suite hold (lib/hold.sh).
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
 
 # recorded_run <root> <pkg> -c <script>: hash, run, hash, record; an empty
-# <pkg> is the whole root suite. Hashed before and after: an edit made while it
-# runs is never proved. A failed hash is its own answer, never an empty id read
-# as a changed tree.
+# <pkg> is the whole root suite. Hashed before and after, on <pkg>'s own id: an
+# edit made while it runs is never proved. A failed hash is its own answer, never
+# an empty id read as a changed tree.
 recorded_run() {
   local root="$1" pkg="$2" what=suite record=record hashed=1 before after rc=0 started ms
   local changed='the tree changed during the run, so no record was written; run npm test again'
@@ -22,12 +23,12 @@ recorded_run() {
     what=run record='package record'
     changed='the tree changed during it, so no record was written; run it again'
   fi
-  before=$(wk_tree_hash "$root") || hashed=0
+  before=$(wk_tree_hash "$root" "$pkg") || hashed=0
   started=$SECONDS
   sh "$@" || rc=$?
   ms=$(wk_elapsed_ms "$started")
   [ "$rc" -eq 0 ] || exit "$rc"
-  after=$(wk_tree_hash "$root") || hashed=0
+  after=$(wk_tree_hash "$root" "$pkg") || hashed=0
   if [ "$hashed" -eq 0 ]; then
     printf 'script-shell: the %s passed, but the tree of %s could not be hashed, so no record was written\n' "$what" "$root" >&2
     exit 1
@@ -75,13 +76,40 @@ load_libs() {
   . "$SCRIPT_DIR/lib/detach.sh"
 }
 
+# install_repoint: after an install-time script, which may set core.hooksPath
+# itself (husky's prepare), the kit's hooks are put back through the heal's own
+# step, in an opted-in repo, whoever runs npm. Its line is the only output.
+install_repoint() {
+  local root settings
+  root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null) || return 0
+  settings="$root/.workkit/settings.json"
+  [ -e "$settings" ] || return 0
+  load_libs
+  wk_settings_declined "$settings" && return 0
+  # shellcheck source=./lib.sh
+  . "$SCRIPT_DIR/lib.sh"
+  # shellcheck source=./standards/githooks.sh
+  . "$SCRIPT_DIR/standards/githooks.sh"
+  needs_attention=0 WK_LOG_STDERR=1
+  git_hooks_installed "$root" >/dev/null || ensure_git_hooks "$root"
+}
+
 main() {
   if [ "${1:-}" = --suite-body ]; then
     shift
     load_libs
     suite_body "$@"
   fi
-  [ "${npm_lifecycle_event:-}" = test ] || exec sh "$@"
+  case "${npm_lifecycle_event:-}" in
+    test) ;;
+    prepare|install|postinstall)
+      rc=0
+      sh "$@" || rc=$?
+      install_repoint
+      exit "$rc"
+      ;;
+    *) exec sh "$@" ;;
+  esac
   load_libs
 
   # The package npm is running, as a folder relative to the git root (`.` for the

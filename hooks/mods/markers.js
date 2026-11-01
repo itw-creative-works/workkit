@@ -1,7 +1,8 @@
 /**
  * hooks/mods/markers.js: the files the hooks name by content, the port of
  * hooks/lib/markers.sh and the engine's wk_marker_path: the review, full-panel
- * and triage marker paths, the suite and package record paths, the
+ * and triage marker paths, the suite and package record paths, the gh
+ * shim's journal path, its per-call mark and the read of its lines, the
  * per-session marker path, a file's age, and the folder rule for every path
  * the shell spelled (the folder Git Bash means by it, with the Windows test
  * that decides it), which the module's variables and the guard facts go
@@ -95,6 +96,72 @@ export const triageMarkerPath = (anchor, home) => markerPath('claude-triage-mark
 export const suiteMarkerPath = (root, home) => markerPath('claude-suite-marker', root, home);
 export const pkgMarkerPath = (root, home) => markerPath('claude-package-marker', root, home);
 export const snapshotMarkerPath = (root, home) => markerPath('claude-red-snapshot', root, home);
+export const journalPath = (root, home) => markerPath('claude-gh-journal', root, home);
+
+/**
+ * The gh journal a folder's calls write, as the shim keys it: the journal of
+ * the folder's git root, else of the folder itself.
+ * @param {function} gitTop async, a folder's git root or null
+ * @param {string} cwd the folder
+ * @param {string} home the machine folder (userDirOf in hooks/mods/log.js)
+ * @returns {Promise<string>}
+ */
+export async function journalFor(gitTop, cwd, home) {
+  return journalPath((await gitTop(cwd)) || cwd, home);
+}
+
+/**
+ * The gh journal's lines past an offset, parsed (journalLines): `tail -c` run
+ * through `run`, so the journal is never read whole; an absent journal, or a
+ * tail that fails, is no lines.
+ * @param {function} run the facts' run, `(argv) => Promise<{exitCode, stdout}>`
+ * @param {string} journal the journal's path (journalFor)
+ * @param {number} bytes the offset in bytes, the lines before it skipped
+ * @returns {Promise<object[]>}
+ */
+export async function journalTail(run, journal, bytes) {
+  const tail = await run(['tail', '-c', `+${(Number(bytes) || 0) + 1}`, journal]);
+  return tail.exitCode === 0 ? journalLines(tail.stdout) : [];
+}
+
+/**
+ * The mark a Bash call's tool.call leaves for its PostToolUse, keyed by the
+ * call: the cwd root's gh journal path, a line break, then its length in
+ * bytes before the call ran.
+ * @param {string} toolUseId the call's tool_use_id
+ * @param {string} home the machine folder (userDirOf in hooks/mods/log.js)
+ * @returns {Promise<string>}
+ */
+export const journalMarkPath = (toolUseId, home) => markerPath('claude-gh-journal-mark', toolUseId, home);
+
+// A comma-joined journal field as its list, empties dropped.
+const listOf = (field) => field.split(',').filter(Boolean);
+
+/**
+ * The gh journal's lines, parsed: each line the gate prints (journalLine in
+ * workflow/identity/gate.js), eight tab-separated fields, epoch ms, verb,
+ * subcommand, repo, then the numbers, the labels added and the labels removed,
+ * each comma-joined, then the cwd; a line of any other shape is left out.
+ * @param {string|null} text the journal's text, or a tail of it
+ * @returns {Array<{ms: number, verb: string, sub: string, repo: string, numbers: string[], add: string[], remove: string[], cwd: string}>}
+ */
+export function journalLines(text) {
+  return String(text ?? '').split('\n').flatMap((line) => {
+    const fields = line.split('\t');
+    if (fields.length !== 8 || !/^[0-9]+$/.test(fields[0])) return [];
+    const [ms, verb, sub, repo, numbers, add, remove, cwd] = fields;
+    return [{ ms: Number(ms), verb, sub, repo, numbers: listOf(numbers), add: listOf(add), remove: listOf(remove), cwd }];
+  });
+}
+
+/**
+ * Whether a journal line is an issue's: a `gh issue` call, or a `gh api`
+ * write, whose `sub` the gate writes as `edit` or `close` when its endpoint
+ * is an issue's.
+ * @param {{verb: string}} line one journalLines entry
+ * @returns {boolean}
+ */
+export const onIssue = (line) => line.verb === 'issue' || line.verb === 'api';
 
 /**
  * The per-session file under `${TMPDIR:-/tmp}/<name>`, the id with every

@@ -16,7 +16,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── .github/workflows/    # checks.yml (the suite, every pull request and every push to main but a release-only one) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
 ├── .github/scripts/      # release-push.sh (checks.yml's scope job: whether a push is a release stamp only)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
-│   ├── register.js       # the hooks module: the twenty-nine in-process hooks, the one file that touches `$`
+│   ├── register.js       # the hooks module: the twenty-three in-process hooks (seven guards run in the `gh` shim and git's hooks), the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
 │   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage,proof}/, prove.sh, the snapshot entry and .github/scripts/release-push.sh, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
@@ -44,9 +44,12 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 ## Hooks
 
-All twenty-nine run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session. Settings and the hooks log name a hook by `prefix:name`.
+Twenty-three of the twenty-nine run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session; seven guards run in the `gh` shim and git's hooks, below, `safety:release-taken` in both. Settings and the hooks log name a hook by `prefix:name`.
 
-A repo that has not opted in gets none of the hooks: the module's gate stands every one down there but the setup reminder, the restart notice and the secrets guard (`docs/hooks.md` § Where every hook stands down).
+A repo that has not opted in gets none of the hooks: the module's gate stands every one down there but the setup reminder and the restart notice (`docs/hooks.md` § Where every hook stands down).
+
+The commit guards judge in git's own `pre-commit` and `commit-msg` hooks and the `gh` guards in the `gh` shim, on the real tree, message and argv, both under one gate, `wk_session_judges` (`workflow/README.md`, the `lib/participation.sh` row); the shim's secrets scan runs on every `gh` call.
+Three parsers still read a command's text: `safety:tree-guard`, `safety:capture-guard` and `safety:release-taken`'s `npm publish` half.
 
 The index of all twenty-nine and what each one does: `docs/hooks.md` § The hooks module.
 
@@ -107,8 +110,8 @@ A world a case spawns comes from the same seam:
 
 - `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off), so no child of a test reads the developer's own home or reaches GitHub as them;
 - `stubTool()` is the one writer of a PATH stub, which a shell starts on either platform and Node starts on neither;
-- `test/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions (`mods(name)`, `textOf`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`, `sessionFacts`, `briefMarker`, `daysBefore`, `row` (`row.user`, `row.result`, `row.tool`), `MODELS`, `REMINDER_ROOT`), so every suite spells a shape the same way;
-- `test/lib/mod-fixtures.mjs` is the one home of the fixtures both halves share (`MODELS`, `SESSION_NOW`, `daysBefore`, `briefMarker`, `row`), which `mod-world.ts` re-exports whole and `mods-inputs.js` all but `SESSION_NOW`;
+- `test/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions (`mods(name)`, `textOf`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`, `sessionFacts`, `briefMarker`, `daysBefore`, `row` (`row.user`, `row.result`, `row.tool`), `ghEntry`, `MODELS`, `REMINDER_ROOT`), so every suite spells a shape the same way;
+- `test/lib/mod-fixtures.mjs` is the one home of the fixtures both halves share (`MODELS`, `SESSION_NOW`, `daysBefore`, `briefMarker`, `row`, `ghEntry`, `journalText`, `OPT_IN_SHAPES`), which `mod-world.ts` re-exports whole, `mods-inputs.js` all but `SESSION_NOW`, `journalText` and `OPT_IN_SHAPES`, and `git-repo.js` the opt-in shapes for the logic suites;
 - and `test/lib/mod-world.ts` is the one world beneath the hooks module for the `test/mods/*.test.ts` wiring suites (`mkWorld(on)`: files, git, gh, the engine scripts, the store and the session, answered from memory).
 
 A scratch folder has one writer as well: `mkTmp(prefix)` in the kit's `scratch.js`, reached through `test/lib/harness.js`; it resolves the path and removes every folder it made when the process exits. The kit's version stamp has one reader as well: `test/lib/version-stamp.js` holds `STAMP`, `readStamp(file)` and `kitVersion()`, so no suite spells the stamp file or its first-line read itself.

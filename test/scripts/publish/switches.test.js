@@ -7,6 +7,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { gitPath, joinPath } = require('../../lib/platform');
+const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { cleanup, git, mkWorld, binDirWithout, publish, setSite, fromPages, onMain } = require('./helpers');
 
 const cases = async () => {
@@ -76,7 +77,7 @@ const cases = async () => {
 
     const joined = path.join(world.root, 'repos', 'dotfiles');
     fs.mkdirSync(path.join(joined, '.workkit'), { recursive: true });
-    fs.writeFileSync(path.join(joined, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(path.join(joined, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
     git(joined, 'init', '-q', '-b', 'main');
     git(joined, 'remote', 'add', 'origin', 'https://github.com/owner/dotfiles.git');
     const index = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));
@@ -293,7 +294,7 @@ const cases = async () => {
     // teardown run untouched.
     const joined = path.join(world.root, 'repos', 'dotfiles');
     fs.mkdirSync(path.join(joined, '.workkit'), { recursive: true });
-    fs.writeFileSync(path.join(joined, '.workkit', 'settings.json'), '{ "version": 1, "enabled": true }\n');
+    fs.writeFileSync(path.join(joined, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
     git(joined, 'init', '-q', '-b', 'main');
     git(joined, 'remote', 'add', 'origin', 'https://github.com/owner/dotfiles.git');
     const index = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));

@@ -11,16 +11,26 @@ export const LONG_RUN_MS = 600000;
 
 /**
  * The working tree's id through `bash <kit>/workflow/lib/tree-hash.sh <root>`,
- * wk_tree_hash's one home, under the long-run ceiling.
- * @param {function} run runs `(argv, init)`, resolving `{ exitCode, stdout }`
+ * wk_tree_hash's one home, or the real index's under `-i`
+ * (wk_suite_index_tree), each less `.workkit/`, under the long-run ceiling.
+ * The child runs with the variables handed in, so wk_node finds node the way
+ * the record writer did; a package keyed to the whole tree leaves its note.
+ * @param {function} run runs `(argv, init)`, resolving `{ exitCode, stdout, stderr }`
  * @param {string} kit the plugin root
  * @param {string} root the repo root
- * @param {...string} flags `-u` for the tree `git commit -a` carries
- * @returns {Promise<string|null>} the id, null when it could not be taken
+ * @param {object} env the variables the child runs with (HOME, PATH, TMPDIR and WORKKIT_NODE among them)
+ * @param {...string} flags `-i` alone for the index's id; else a package
+ *   folder for that package's own id
+ * @returns {Promise<{id: string|null, note: string|null}>} the id, null when it
+ *   could not be taken; the child's `tree-hash:` and `workspaces:` stderr
+ *   lines in order, joined by newlines, else null
  */
-export async function treeHash(run, kit, root, ...flags) {
-  const tree = await run(['bash', `${kit}/workflow/lib/tree-hash.sh`, root, ...flags], { cwd: root, timeoutMs: LONG_RUN_MS });
-  return tree.exitCode === 0 ? tree.stdout.trim() || null : null;
+export async function treeHash(run, kit, root, env, ...flags) {
+  const tree = await run(['bash', `${kit}/workflow/lib/tree-hash.sh`, root, ...flags], { cwd: root, env, timeoutMs: LONG_RUN_MS });
+  if (tree.exitCode !== 0) return { id: null, note: null };
+  const notes = String(tree.stderr ?? '').split('\n').map((line) => line.trim())
+    .filter((line) => line.startsWith('tree-hash:') || line.startsWith('workspaces:'));
+  return { id: tree.stdout.trim() || null, note: notes.length > 0 ? notes.join('\n') : null };
 }
 
 /**
@@ -60,10 +70,9 @@ export function suiteRecordMs(record) {
 }
 
 /**
- * Whether the package record's first line is the tree and a later line the
- * package folder: wk_pkg_proved's read.
+ * Whether a line of the package record is `<tree> <pkg>`: wk_pkg_proved's read.
  * @param {string|null} record the package record's text
- * @param {string|null} tree the tree id
+ * @param {string|null} tree the package's own tree id
  * @param {string} pkg the package folder relative to the root, `.` for the root
  * @returns {boolean}
  */
@@ -72,7 +81,7 @@ export function pkgProved(record, tree, pkg) {
   const lines = record.split('\n');
   // The piece past the last newline: empty, or a line `read` would drop.
   lines.pop();
-  return lines[0] === tree && lines.slice(1).includes(pkg);
+  return lines.includes(`${tree} ${pkg}`);
 }
 
 /**

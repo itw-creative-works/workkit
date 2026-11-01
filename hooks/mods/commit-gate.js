@@ -1,19 +1,18 @@
 /**
- * hooks/mods/commit-gate.js: safety:commit-gate. Every real `git commit`
- * passes eight checks, in this order: 8 each closing trailer names one issue,
- * 1 new source files carry tests, 2 code carries a fresh review marker, 3
- * added CHANGELOG entries match the format, 4 a `Fixes #N` commit stages its
- * entry, 6 every closed issue carries a `Proof:` comment, 7 every named open
- * issue is at status:complete, 5 code carries the record a green root
- * `npm test` wrote. A commit the gate cannot place is denied; a stand-down
- * is said, all of them in one notice (docs/hooks.md § safety:commit-gate).
+ * hooks/mods/commit-gate.js: safety:commit-gate. A commit passes eight
+ * checks, split as git splits its hooks: pre-commit's 1 new source files carry
+ * tests, 2 code carries a fresh review marker, 3 added CHANGELOG entries match
+ * the format, 5 code carries the record a green root `npm test` wrote; then
+ * commit-msg's 8 each closing trailer names one issue, 4 a `Fixes #N` commit
+ * stages its entry, 6 every closed issue carries a `Proof:` comment, 7 every
+ * named open issue is at status:complete. Stand-downs are said, all of them in
+ * one notice (docs/hooks.md § safety:commit-gate).
  */
 
 import { isChangelog, linterPath } from './changelog-guard.js';
-import { findGitCommit } from './command.js';
-import { closedIssues, closesAny, commitFlags, isDocPath, isManifest, namedIssues, sharedTrailers } from './commit-gate/checks.js';
+import { closedIssues, closesAny, isDocPath, isManifest, namedIssues, sharedTrailers } from './commit-gate/checks.js';
 import { budgetLine } from './commit-gate/budget.js';
-import { HealHeld, healArms, held, started } from './commit-gate/heal.js';
+import { HealHeld, exitOf, healArms, held, started } from './commit-gate/heal.js';
 import { issueView } from './gh.js';
 import { userDirOf } from './log.js';
 import { markerPath, reviewMarkerPath, suiteMarkerPath, windowsKit } from './markers.js';
@@ -26,18 +25,13 @@ import { isCodePath, isTestPath } from './test-reminder.js';
 export const BLOCK_PREFIX = 'commit-gate: BLOCKED this commit: ';
 
 const TEXT = {
-  wrapped: "the commit is wrapped in an interpreter string (sh -c / eval); run a plain 'git commit ...' directly so the gate can read its flags and message.",
-  cd: "the command changes directory before committing; run a plain 'git commit' with the session already in the repo so the gate can see its staging.",
-  stage: "the command stages and commits in one call, so the gate cannot see what the commit will carry; stage first (its own command), then run a plain 'git commit'.",
-  noRepo: "the session's directory is not inside a git repository, so the gate cannot see what this commit would carry. cd into the repo's root as its own command first, then run a plain 'git commit' there.",
-  nothing: 'commit-gate: nothing staged and no -a/pathspec: the gate has nothing to judge, so no check ran (suite included).',
+  nothing: 'commit-gate: nothing staged: pre-commit has nothing to judge, so its checks did not run (suite included); commit-msg still judges the message.',
   noReview: 'the commit contains code and no review has run. Run the workkit:review skill on the diff first (it records a marker), then commit.',
   stale: "the review marker predates the last commit. This commit's code has not been reviewed. Run the workkit:review skill again, then commit.",
   fixes: 'the message closes an issue (Fixes/Closes/Resolves #N) but no CHANGELOG.md is staged. An issue closes against its CHANGELOG entry (docs/project-state.md): add the entry under [Unreleased], stage CHANGELOG.md, then commit.',
   proved: 'commit-gate: suite proved: a green root `npm test` recorded this tree.',
   noCode: 'commit-gate: suite not run: the commit carries no code (docs-only or version-stamp-only).',
   firstCommit: 'commit-gate: first commit of this repo, no HEAD to judge against; the gate stands down',
-  pathspec: 'a pathspec commit carries a tree the gate cannot compare with the record: stage the files and commit from the index.',
   disk: 'the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (`git add -A`), or run `workkit prove` to prove the staged tree alone (the suite runs on a copy of the index, and the folder stays as it is), then commit.',
   unwired: "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root `npm test` writes no record. Run `workkit setup` once, then `npm test` at the repo root, then commit.",
 };
@@ -65,15 +59,6 @@ async function physical(real, path) {
   return dir ? `${dir.replace(/\\/g, '/').replace(/\/$/, '')}/${spelled.slice(cut + 1)}` : null;
 }
 
-// The tree the commit carries: the real index's `git write-tree` at the root
-// (wk_suite_index_tree's one command), or under -a/--all the index plus every
-// tracked change.
-async function commitTree(facts, root, all) {
-  if (all) return facts.indexTreeId();
-  const r = await facts.run(['git', 'write-tree'], { cwd: root });
-  return r.exitCode === 0 ? r.stdout.trim() || null : null;
-}
-
 // npm's script-shell is not the kit's wrapper beside this module (on Windows
 // the built script-shell.exe in the machine folder, which must exist),
 // compared by physical path, so a root `npm test` writes no record; no answer
@@ -99,18 +84,20 @@ async function suiteLogOf(facts, root) {
   return ignored.exitCode === 0 ? `${root}/.workkit/suite.log` : markerPath('claude-suite.log', root, facts.home);
 }
 
-// The git list a read answers, one path per line; a failed read lists nothing.
-async function gitList(run, root, argv) {
-  const r = await run(['git', '-c', 'core.quotePath=false', ...argv], { cwd: root });
-  return r.exitCode === 0 ? lines(r.stdout) : [];
+// The git list a read answers, one path per line; a failed read is the hold
+// `check` names, never an empty list.
+async function gitList(run, root, check, argv) {
+  const full = ['git', '-c', 'core.quotePath=false', ...argv];
+  const r = await run(full, { cwd: root });
+  if (!started(r) || r.exitCode !== 0) throw held(check, full.join(' '), exitOf(r), r.stderr);
+  return lines(r.stdout);
 }
 
 // Check 1: a commit adding code files touches some test file.
-async function newFilesCheck(facts, root, all) {
-  const added = (await gitList(facts.run, root, ['diff', '--cached', '--name-only', '--diff-filter=A'])).filter(isCodePath);
+async function newFilesCheck(facts, root) {
+  const added = (await gitList(facts.run, root, 'new files', ['diff', '--cached', '--name-only', '--diff-filter=A'])).filter(isCodePath);
   if (added.length === 0) return null;
-  const present = await gitList(facts.run, root, ['diff', '--cached', '--name-only', '--diff-filter=d']);
-  if (all) present.push(...(await gitList(facts.run, root, ['diff', '--name-only', '--diff-filter=d'])));
+  const present = await gitList(facts.run, root, 'new files', ['diff', '--cached', '--name-only', '--diff-filter=d']);
   return present.some(isTestPath) ? null : deny(newFilesText(added.join(' ')));
 }
 
@@ -121,23 +108,27 @@ async function reviewCheck(facts) {
   return Math.floor((marker.mtimeMs ?? 0) / 1000) < ((await facts.headTime) ?? 0) ? deny(TEXT.stale) : null;
 }
 
-// Check 3: each CHANGELOG the commit carries lints clean; a pathspec commit lints the root one.
-async function lintCheck(facts, root, files, flags, hasChangelog) {
-  const paths = flags.pathspec && hasChangelog ? ['CHANGELOG.md'] : files.filter(isChangelog);
-  for (const path of paths) {
+// Check 3: each CHANGELOG the commit carries lints clean; a linter that did
+// not start stands the check down out loud.
+async function lintCheck(facts, root, files, notices) {
+  for (const path of files.filter(isChangelog)) {
     const answer = await facts.lint(`${root}/${path}`);
     if (!answer) return null;
+    if ('skipped' in answer) {
+      notices.push(`commit-gate: check 3 stood down: the CHANGELOG linter did not start (${answer.skipped})`);
+      return null;
+    }
     if (answer.exitCode !== 0) return deny(lintText(answer.stderr));
   }
   return null;
 }
 
 // Checks 6 and 7: one read per named issue answers the proof and the stage.
-async function issueChecks(facts, command, notices) {
-  const closes = new Set(closedIssues(command));
+async function issueChecks(facts, message, notices) {
+  const closes = new Set(closedIssues(message));
   const unpassed = [];
   let unproved = '';
-  for (const n of namedIssues(command)) {
+  for (const n of namedIssues(message)) {
     const view = await facts.issueView(n);
     const stage = view === null ? null : viewStage(view);
     if (stage === null) {
@@ -158,9 +149,9 @@ async function issueChecks(facts, command, notices) {
 
 // Check 5: the record a green root run wrote holds the tree the commit carries;
 // a recorded run past tests.budget says so beside the proved line, never a block.
-async function suiteCheck(facts, root, all, notices) {
+async function suiteCheck(facts, root, notices) {
   const record = await facts.suiteRecord;
-  if (suiteProved(record, await commitTree(facts, root, all))) {
+  if (suiteProved(record, await facts.treeId)) {
     notices.push(TEXT.proved);
     const ms = suiteRecordMs(record);
     if (ms !== null) {
@@ -172,52 +163,65 @@ async function suiteCheck(facts, root, all, notices) {
     }
     return null;
   }
-  if (suiteProved(record, await facts.treeId)) return deny(TEXT.disk);
+  if (suiteProved(record, await facts.diskTreeId)) return deny(TEXT.disk);
   if (await unwired(facts)) return deny(TEXT.unwired);
   return deny(noGreenText(await suiteLogOf(facts, root)));
 }
 
 // Check 8: no closing trailer names a second issue on its line.
-function sharedCheck(command) {
-  const trailers = sharedTrailers(command);
+function sharedCheck(message) {
+  const trailers = sharedTrailers(message);
   return trailers.length > 0 ? deny(sharedText(trailers)) : null;
 }
 
-// The eight checks over a commit placed in an origin repo, its files known.
-async function judge(facts, root, flags, files, notices) {
-  const heal = healArms(facts, root, flags.all);
-  let hasCode = flags.pathspec;
+// pre-commit's checks, 1, 2, 3 and 5, over the commit's files.
+async function preChecks(facts, root, files, notices) {
+  const heal = healArms(facts, root);
+  let hasCode = false;
   for (const path of files) {
     if (isDocPath(path) || (isManifest(path) && (await heal.versionBumpOnly(path)))) continue;
     hasCode = true;
     break;
   }
-  const bookkeeping = !flags.pathspec && files.length > 0 && (await heal.isBookkeeping(files));
+  const bookkeeping = files.length > 0 && (await heal.isBookkeeping(files));
   const tests = hasTestScript(parseJson(await facts.read(`${root}/package.json`)));
-  const hasChangelog = (await facts.read(`${root}/CHANGELOG.md`)) !== null;
-  const verdict = sharedCheck(facts.command)
-    ?? (!bookkeeping && !flags.pathspec && tests ? await newFilesCheck(facts, root, flags.all) : null)
+  const verdict = (!bookkeeping && tests ? await newFilesCheck(facts, root) : null)
     ?? (hasCode && !bookkeeping ? await reviewCheck(facts) : null)
-    ?? (await lintCheck(facts, root, files, flags, hasChangelog))
-    ?? (!flags.pathspec && hasChangelog && closesAny(facts.command) && !files.some(isChangelog) ? deny(TEXT.fixes) : null)
-    ?? (hasChangelog ? await issueChecks(facts, facts.command, notices) : null);
+    ?? (await lintCheck(facts, root, files, notices));
   if (verdict) return verdict;
-  if (hasCode && tests) return flags.pathspec ? deny(TEXT.pathspec) : await suiteCheck(facts, root, flags.all, notices);
+  if (hasCode && tests) return suiteCheck(facts, root, notices);
   if (tests) notices.push(TEXT.noCode);
   return null;
 }
 
-// The commit's files, the first-commit stand-down, then the eight checks; a
-// held read (a heal arm's tool, HEAD's time) is the deny it names.
-async function judged(facts, root, flags) {
+// commit-msg's checks, 8, 4, 6 and 7, over the message; 6 and 7 only where a
+// CHANGELOG.md marks the repo as in the pipeline. Check 4 alone reads the
+// files, and an amend staging nothing new hands it none, which passes.
+async function messageChecks(facts, root, files, notices, message) {
+  const hasChangelog = (await facts.read(`${root}/CHANGELOG.md`)) !== null;
+  return sharedCheck(message)
+    ?? (hasChangelog && closesAny(message) && files.length > 0 && !files.some(isChangelog) ? deny(TEXT.fixes) : null)
+    ?? (hasChangelog ? await issueChecks(facts, message, notices) : null);
+}
+
+const CHECKS = { pre: preChecks, msg: messageChecks };
+
+// The commit's files, its stand-downs (no origin, the first commit, and for
+// pre-commit alone nothing staged), then the part's checks; a held read (a heal
+// arm's tool, HEAD's time) is the deny it names. Only pre-commit says a
+// stand-down: commit-msg follows it and keeps quiet.
+async function judgeCommit(facts, part, message = '') {
+  if (await facts.originless) return null;
+  const root = await facts.root;
+  const says = part === 'pre';
   try {
-    const files = [...(await facts.staged), ...(flags.all ? await facts.changed : [])].filter(Boolean);
-    const notices = [];
-    if (files.length === 0 && !flags.pathspec) {
+    const files = (await facts.staged).filter(Boolean);
+    if (files.length === 0 && says) {
       return hasTestScript(parseJson(await facts.read(`${root}/package.json`))) ? { context: TEXT.nothing } : null;
     }
-    if ((await facts.headTime) === null) return { context: TEXT.firstCommit };
-    const verdict = await judge(facts, root, flags, files, notices);
+    if ((await facts.headTime) === null) return says ? { context: TEXT.firstCommit } : null;
+    const notices = [];
+    const verdict = await CHECKS[part](facts, root, files, notices, message);
     if (verdict) return verdict;
     return notices.length > 0 ? { context: notices.join('\n') } : null;
   } catch (error) {
@@ -227,31 +231,32 @@ async function judged(facts, root, flags) {
 }
 
 /**
- * commit-gate's verdict on a Bash command: the first check it fails as a
- * deny, else its stand-downs as one notice, else null.
- * Every fact may be a value or a promise of one, so a gatherer can leave the
- * costly ones (the tree id, the records, npm) unread until a check needs them.
- * @param {object} facts `{ command, cwd, root, originless, staged, changed,
- *   headTime, reviewMarker, suiteRecord, treeId, indexTreeId, isWindows,
- *   scriptShell, scriptShellExe, userSettings, kitRoot, real, show, run, read, issueView,
- *   lint, jobRewrite, hashOf, home }`, each named in docs/hooks.md § safety:commit-gate
+ * pre-commit's verdict: checks 1, 2, 3 and 5 over the commit git is about to
+ * make, the first it fails as a deny, else its stand-downs as one notice,
+ * else null. Every fact may be a value or a promise of one, so a gatherer can
+ * leave the costly ones (the tree ids, the records, npm) unread until a check
+ * needs them.
+ * @param {object} facts `{ root, originless, staged, headTime, reviewMarker,
+ *   suiteRecord, treeId, diskTreeId, isWindows, scriptShell, scriptShellExe,
+ *   userSettings, kitRoot, real, show, run, read, lint, jobRewrite, hashOf,
+ *   home }`, each named in docs/hooks.md § safety:commit-gate
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
-export async function commitGateVerdict(facts) {
-  const { command, cwd } = facts;
-  if (!command) return null;
-  const found = findGitCommit(command);
-  if (found.wrapped) return deny(TEXT.wrapped);
-  if (!found.clause) return null;
-  if (found.sawCd) return deny(TEXT.cd);
-  if (found.sawStage && !(await facts.originless)) return deny(TEXT.stage);
-  const flags = commitFlags(found.clause);
-  if (flags.deny) return deny(flags.deny);
-  if (!cwd) return null;
-  const root = await facts.root;
-  if (!root) return deny(TEXT.noRepo);
-  if (await facts.originless) return null;
-  return judged(facts, root, flags);
+export function preCommitVerdict(facts) {
+  return judgeCommit(facts, 'pre');
+}
+
+/**
+ * commit-msg's verdict: checks 8, 4, 6 and 7 over the commit's `message`,
+ * the first it fails as a deny, else its notices, else null; silent where
+ * pre-commit stood down on no origin or the first commit, and run on an
+ * amend that stages nothing new.
+ * @param {object} facts preCommitVerdict's facts plus `message`, the text git
+ *   commits, and `issueView(n)`
+ * @returns {Promise<{deny: string}|{context: string}|null>}
+ */
+export function commitMsgVerdict(facts) {
+  return judgeCommit(facts, 'msg', facts.message);
 }
 
 // The value `fn` resolves to, asked once and only when read.
@@ -274,40 +279,20 @@ async function rewriteOf(g, at, kit, text, template) {
   }
 }
 
-/**
- * The guard's run over the Bash facts, each read only when a check asks: `treeId` the working
- * tree's id (`tree-hash.sh <root>`), `indexTreeId()` the -a/--all tree (`tree-hash.sh <root> -u`);
- * `originless` the chain's memoized origin test; `scriptShell` npm's raw value; `scriptShellExe`
- * the Windows wrapper (`<user dir>/script-shell.exe`, wk_script_shell_exe's path); `userSettings`
- * `<user dir>/settings.json`; `lint(path)` the linter over the index unless the commit carries
- * -a/--all or a pathspec, null with no node or linter; `jobRewrite(a, b)` the rewrite entry over
- * the text `a`; `hashOf(path, text)` the blob id (docs/hooks.md § safety:commit-gate).
- * @param {object} g the chain's facts (guards.js)
- * @returns {Promise<{deny: string}|{context: string}|null>}
- */
-export async function commitGateGuard(g) {
-  const found = findGitCommit(g.command);
-  if (!found.clause && !found.wrapped) return null;
+// The facts the verdicts read, off the repo at `root`, each read only when a
+// check asks.
+function gatherFacts(g, root) {
   const kit = g.pluginRoot;
   const home = userDirOf(g.env);
-  const flags = found.clause ? commitFlags(found.clause) : {};
-  const top = once(() => (g.cwd ? g.top(g.cwd) : null));
-  const at = async (argv, init = {}) => g.run(argv, { cwd: await top(), ...init });
+  const at = async (argv, init = {}) => g.run(argv, { cwd: root, ...init });
   const text = async (argv, init) => {
     const r = await at(argv, init);
     return r.exitCode === 0 ? r.stdout : null;
   };
-  const treeId = once(async () => treeHash(g.run, kit, await top()));
   const linter = linterPath(g.env, kit);
-  // A path list the checks need; a failed read is the hold it names, never an empty list.
-  const list = (check, argv) => once(async () => {
-    const full = ['git', '-c', 'core.quotePath=false', ...argv];
-    const r = await at(full);
-    if (!started(r) || r.exitCode !== 0) throw held(check, full.join(' '), r.exitCode, r.stderr);
-    return lines(r.stdout);
-  });
+  // A path list the checks need, read once.
+  const list = (check, argv) => once(() => gitList(at, root, check, argv));
   const staged = list('staged files', ['diff', '--cached', '--name-only']);
-  const changed = list('changed files', ['diff', '--name-only']);
   // HEAD's time: null before the first commit, and a hold when git cannot
   // read the HEAD it has (never the first-commit stand-down).
   const headTime = once(async () => {
@@ -315,26 +300,26 @@ export async function commitGateGuard(g) {
     if (started(r) && r.exitCode === 0) return Number(r.stdout.trim()) || null;
     const head = await at(['git', 'rev-parse', '--verify', '--quiet', 'HEAD']);
     if (started(head) && head.exitCode === 1) return null;
-    throw held('HEAD time', 'git log -1 --format=%ct', r.exitCode, r.stderr);
+    throw held('HEAD time', 'git log -1 --format=%ct', exitOf(r), r.stderr);
   });
-  const reviewMarker = once(async () => g.stat(await reviewMarkerPath(await top(), home)));
-  const suiteRecord = once(async () => g.read(await suiteMarkerPath(await top(), home)));
+  // The commit's tree: the index's, less `.workkit/` (wk_suite_index_tree, through tree-hash.sh -i).
+  const treeId = once(async () => (await treeHash(g.run, kit, root, g.env, '-i')).id);
+  const diskTreeId = once(async () => (await treeHash(g.run, kit, root, g.env)).id);
+  const reviewMarker = once(async () => g.stat(await reviewMarkerPath(root, home)));
+  const suiteRecord = once(async () => g.read(await suiteMarkerPath(root, home)));
   const scriptShell = once(async () => {
     const npm = await g.run(['npm', 'config', 'get', 'script-shell'], { cwd: g.cwd });
-    return npm.isStarted === false || npm.exitCode !== 0 ? null : npm.stdout;
+    return !started(npm) || npm.exitCode !== 0 ? null : npm.stdout;
   });
-  return commitGateVerdict({
-    command: g.command,
-    cwd: g.cwd,
-    get root() { return top(); },
+  return {
+    root,
     get originless() { return g.originless(); },
     get staged() { return staged(); },
-    get changed() { return changed(); },
     get headTime() { return headTime(); },
     get reviewMarker() { return reviewMarker(); },
     get suiteRecord() { return suiteRecord(); },
     get treeId() { return treeId(); },
-    indexTreeId: once(async () => treeHash(g.run, kit, await top(), '-u')),
+    get diskTreeId() { return diskTreeId(); },
     get scriptShell() { return scriptShell(); },
     isWindows: windowsKit(kit),
     kitRoot: kit,
@@ -348,10 +333,26 @@ export async function commitGateGuard(g) {
     issueView: (n) => issueView(at, n, 'state,labels,comments,url'),
     lint: async (path) => {
       if (!(await g.stat(linter))) return null;
-      const r = await at(['node', linter, path, '--added-only', ...(flags.all || flags.pathspec ? [] : ['--staged'])]);
-      return r.isStarted === false ? null : r;
+      const r = await at(['node', linter, path, '--added-only', '--staged']);
+      return started(r) ? r : { skipped: r.stderr.trim() };
     },
     jobRewrite: (a, b) => rewriteOf(g, at, kit, a, b),
     hashOf: async (path, body) => (await text(['git', 'hash-object', `--path=${path}`, '--stdin'], { stdin: body, timeoutMs: LONG_RUN_MS }))?.trim() || null,
-  });
+  };
+}
+
+/**
+ * The verdicts' facts for the commit git is making in `root`, read from the
+ * hook's own environment, so `git` answers from the commit's index
+ * (`GIT_INDEX_FILE`) under -a and a pathspec alike (docs/hooks.md
+ * § safety:commit-gate). The git hooks' judge reads them.
+ * @param {object} g the chain's facts over the real machine (guards.js bashFacts)
+ * @param {string} root the repo root
+ * @param {string} [message] the commit's message, for commitMsgVerdict
+ * @returns {object}
+ */
+export function commitFacts(g, root, message = '') {
+  const facts = gatherFacts(g, root);
+  facts.message = message;
+  return facts;
 }

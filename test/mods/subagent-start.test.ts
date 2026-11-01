@@ -10,7 +10,7 @@ const start = ($: any, agentType: string) => $.classic.SubagentStart({
 })
 
 describe('classic.SubagentStart: manager:addon', () => {
-  test('ports "workkit:verifier with an add-on gets the header and the text"', async ($, on) => {
+  test('workkit:verifier with an add-on gets the header and the text', async ($, on) => {
     const file = '/w/wh/agents/verifier.md'
     mkWorld(on, { env: { WORKFLOW_HOME: '/w/wh' }, files: { [file]: 'Always check the Windows lane.\nSecond line.\n' } })
     const r = await start($, 'workkit:verifier')
@@ -19,31 +19,31 @@ describe('classic.SubagentStart: manager:addon', () => {
     expect(body.join('\n')).toBe('Always check the Windows lane.\nSecond line.')
   })
 
-  test("ports \"each agent reads its own file, not a sibling's\"", async ($, on) => {
+  test("each agent reads its own file, not a sibling's", async ($, on) => {
     mkWorld(on, { env: { WORKFLOW_HOME: '/w/wh' }, files: { '/w/wh/agents/verifier.md': 'verifier only', '/w/wh/agents/scout.md': 'scout only' } })
     const ctx = contextOf(await start($, 'workkit:scout'))
     expect(ctx).toContain('scout only')
     expect(ctx).not.toContain('verifier only')
   })
 
-  test('ports "with no WORKFLOW_HOME the add-on is read from ~/.workkit"', async ($, on) => {
+  test('with no WORKFLOW_HOME the add-on is read from ~/.workkit', async ($, on) => {
     mkWorld(on, { files: { [`${HOME}/.workkit/agents/worker.md`]: 'from the default home' } })
     expect(contextOf(await start($, 'workkit:worker'))).toContain('from the default home')
   })
 
-  test('ports "no add-on file: exit 0, no output"', async ($, on) => {
+  test('no add-on file: exit 0, no output', async ($, on) => {
     mkWorld(on, { env: { WORKFLOW_HOME: '/w/wh' }, files: { '/w/wh/agents/other.md': 'x' } })
     expect(contextOf(await start($, 'workkit:verifier'))).toBe('')
   })
 
   for (const type of ['Explore', 'verifier', 'other-plugin:verifier']) {
-    test(`ports "agent_type ${type} gets nothing, even with a matching file"`, async ($, on) => {
+    test(`agent_type ${type} gets nothing, even with a matching file`, async ($, on) => {
       mkWorld(on, { env: { WORKFLOW_HOME: '/w/wh' }, files: { '/w/wh/agents/verifier.md': 'must not leak' } })
       expect(contextOf(await start($, type))).toBe('')
     })
   }
 
-  test('ports "an unreadable add-on exits non-zero naming the file": the agent runs as shipped', async ($, on) => {
+  test('an unreadable add-on exits non-zero naming the file: the agent runs as shipped', async ($, on) => {
     const file = '/w/wh/agents/verifier.md'
     mkWorld(on, { env: { WORKFLOW_HOME: '/w/wh' }, files: { [file]: 'locked away' }, unreadable: [file] })
     const r = await start($, 'workkit:verifier')
@@ -51,7 +51,7 @@ describe('classic.SubagentStart: manager:addon', () => {
     expect(r.block).toBeUndefined()
   })
 
-  test('ports "loader routes manager:addon": the fire leaves a run line', async ($, on) => {
+  test('loader routes manager:addon: the fire leaves a run line', async ($, on) => {
     const w = mkWorld(on, { files: { [`${HOME}/.workkit/agents/scout.md`]: 'through the module' } })
     expect(contextOf(await start($, 'workkit:scout'))).toContain('through the module')
     const lines = hooksLog(w).filter((l: any) => l.hook === 'manager:addon')

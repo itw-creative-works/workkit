@@ -44,20 +44,20 @@ describe('classic.PreToolUse Edit/Write: safety:vendor-guard, then safety:captur
     expect(fired(w, 'safety:capture-guard')).toEqual([])
   })
 
-  test('ports "RELATIVE vendor paths blocked": a relative path is the session folder\'s', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('RELATIVE vendor paths blocked: a relative path is the session folder\'s', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on)
     await writeFile($, 'node_modules/foo/index.js')
     expect(denyOf(w)).toBe(VENDOR(`${REPO}/node_modules/foo/index.js`, NODE_MODULES))
   })
 
-  test('ports "gitignored file in a repo: exit 2": git check-ignore asked in the file\'s repo', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('gitignored file in a repo: exit 2: git check-ignore asked in the file\'s repo', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, { ignored: [`${REPO}/generated.json`, `${REPO}/.env`] })
     await writeFile($, `${REPO}/generated.json`)
     expect(denyOf(w)).toBe(VENDOR(`${REPO}/generated.json`, IGNORED))
     expect(w.calls.some((c: any) => c.argv[0] === 'git' && c.argv.includes('check-ignore'))).toBe(true)
   })
 
-  test('ports ".env is allowed even though gitignored" and "tracked file in a repo: exit 0"', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('.env is allowed even though gitignored, and a tracked file in a repo too', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, { ignored: [`${REPO}/generated.json`, `${REPO}/.env`] })
     await writeFile($, `${REPO}/.env`)
     await writeFile($, `${REPO}/src.js`)
@@ -66,7 +66,7 @@ describe('classic.PreToolUse Edit/Write: safety:vendor-guard, then safety:captur
     expect(w.toolRan?.file_path).toBe(`${REPO}/src.js`)
   })
 
-  test('ports "src/test/suites/build/ is committed source" and "build/ at the repo root still bounces": the kinds read off the tree', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('src/test/suites/build/ is committed source; build/ at the repo root still bounces: the kinds read off the tree', { plugins: [TOOL_SPY] }, async ($, on) => {
     const suite = `${REPO}/packages/foo/src/test/suites/build/x.test.js`
     const w = world(on, {
       files: {
@@ -118,19 +118,19 @@ describe('classic.PreToolUse Edit/Write: safety:vendor-guard, then safety:captur
 })
 
 describe('classic.PreToolUse Read/Grep: safety:capture-guard', () => {
-  test('ports "reading the user capture file with no marker: exit 2": from an opted-in session folder', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('reading the user capture file with no marker: exit 2: from an opted-in session folder', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on, { files: { [`${HOME}/.workkit/capture.md`]: '- a thought\n' } })
     await readFile($, `${HOME}/.workkit/capture.md`)
     expect(denyOf(w)).toBe(READ)
   })
 
-  test('ports "a Grep whose path is the .workkit directory: exit 2"', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('a Grep whose path is the .workkit directory: exit 2', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on)
     await call($, 'Grep', { pattern: 'salary', path: `${REPO}/.workkit` })
     expect(denyOf(w)).toBe(READ)
   })
 
-  test('ports "a .workkit Grep where no capture file exists: exit 0"', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('a .workkit Grep where no capture file exists: exit 0', { plugins: [TOOL_SPY] }, async ($, on) => {
     const bare = '/w/bare'
     const w = world(on, {
       repos: { [REPO]: OPTED_IN, [bare]: OPTED_IN },
@@ -142,7 +142,7 @@ describe('classic.PreToolUse Read/Grep: safety:capture-guard', () => {
     expect(w.toolRan?.pattern).toBe('salary')
   })
 
-  test('ports "a broad repo-wide Grep: exit 0": no path is the session folder', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('a broad repo-wide Grep: exit 0: no path is the session folder', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = world(on)
     await call($, 'Grep', { pattern: 'salary' })
     expect(denyOf(w)).toBeNull()

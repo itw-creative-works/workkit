@@ -10,9 +10,11 @@ const {
   group, test, assert, assertEq, summary, selfRun, run,
 } = require('../lib/harness');
 const { shellPath } = require('../lib/platform');
-const { mkRepo } = require('../lib/git-repo');
+const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
-const { suiteMarkerPath, reviewMarkerPath } = require('../lib/suite-record');
+const {
+  suiteMarkerPath, reviewMarkerPath, kitIndexTree, plantRecord,
+} = require('../lib/suite-record');
 const {
   skipWithoutWrapper, wiredNpmEnv, assertRecord,
 } = require('../lib/script-shell');
@@ -68,16 +70,17 @@ const recorded = (w) => {
   return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : undefined;
 };
 
-const indexTree = (w) => w.git('write-tree').trim();
+// The index's id as the kit records it, `.workkit/` left out.
+const indexTree = (w) => kitIndexTree(w.repo, w.env);
 
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex');
 
-// What a run must leave as it found it: the status, the index tree, the
+// What a run must leave as it found it: the status, the index's whole tree, the
 // worktree list, TMPDIR (the throwaway folder is gone), and a hash of every
 // path outside .git.
 const stateOf = (w) => ({
   status: w.git('status', '--porcelain'),
-  index: indexTree(w),
+  index: w.git('write-tree').trim(),
   worktrees: w.git('worktree', 'list', '--porcelain'),
   tmp: fs.readdirSync(w.tmp).join(', '),
   files: Object.fromEntries(Object.entries(treeOf(w.repo)).map(([rel, body]) => [rel, sha1(body)])),
@@ -110,9 +113,37 @@ const cases = async () => {
     const review = reviewMarkerPath(w.workflowHome, w.repo);
     fs.mkdirSync(path.dirname(review), { recursive: true });
     fs.writeFileSync(review, '');
-    const out = await gateOn(w.repo, 'git commit -m "feat: thing"', { ...wiredNpmEnv(w), TMPDIR: shellPath(w.tmp) });
+    const out = await gateOn(w.repo, { ...wiredNpmEnv(w), TMPDIR: shellPath(w.tmp) });
     assertEq(out.deny, null, 'the commit of the staged tree passes the gate');
     assert(out.context.includes('suite proved'), `check 5 stands down on the record, got: ${out.context}`);
+    cleanup(w.dir);
+  });
+
+  await test('a record on the index tree, then the settings losing its version key staged: the gate still reads the commit as proved', async () => {
+    const w = mkWorld();
+    stagePassing(w);
+    plantRecord(w.workflowHome, w.repo, indexTree(w));
+    const review = reviewMarkerPath(w.workflowHome, w.repo);
+    fs.mkdirSync(path.dirname(review), { recursive: true });
+    fs.writeFileSync(review, '');
+    w.write('.workkit/settings.json', OPT_IN_SHAPES.current);
+    w.git('add', '.workkit/settings.json');
+    const out = await gateOn(w.repo, { ...wiredNpmEnv(w), TMPDIR: shellPath(w.tmp) });
+    assertEq(out.deny, null, 'the commit passes the gate');
+    assert(out.context.includes('suite proved'), `check 5 stands down on the record, got: ${out.context}`);
+    cleanup(w.dir);
+  });
+
+  await test('another git holding the index lock: green, the index tree recorded, since the real index is never written', () => {
+    const w = mkWorld();
+    stagePassing(w);
+    const index = indexTree(w);
+    const lock = path.join(w.repo, '.git', 'index.lock');
+    fs.writeFileSync(lock, '');
+    const res = prove(w);
+    assertEq(res.code, 0, `a held index lock blocks no read, got: ${res.said}`);
+    assertRecord(recorded(w), index, 'the record holds the index tree');
+    assert(fs.existsSync(lock), 'the other git\'s lock stands');
     cleanup(w.dir);
   });
 

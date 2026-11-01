@@ -1,61 +1,31 @@
 /**
  * safety:commit-gate judged through the hooks module over a real scratch repo:
- * commitGateGuard over bashFacts (hooks/mods/guards.js) built from engine calls
- * this machine answers, git, bash, npm and node run for real with the env
- * given, files read and statted off disk. Consumers: test/scripts/prove.test.js,
- * script-shell.test.js, and test/hooks/public-mirror.test.js (`ioIn` alone).
+ * preCommitVerdict over commitFacts (hooks/mods/commit-gate.js) built on
+ * bashFacts (hooks/mods/guards.js) from the real machine's io
+ * (workflow/lib/io.js), as the pre-commit judge builds them. Consumers:
+ * test/hooks/commit-gate/{first-commit,marker}.test.js,
+ * test/scripts/prove.test.js and script-shell.test.js.
  */
 
-const fs = require('fs');
-const path = require('path');
-const { spawnSync } = require('child_process');
-const { IS_WINDOWS, BASH } = require('./platform');
-const { mods, runResult, textOf } = require('./mods-inputs');
+const { mods, textOf } = require('./mods-inputs');
+const { ioIn } = require('../../workflow/lib/io');
 
-const KIT = path.join(__dirname, '..', '..');
-
-// A program run the way $.process.run runs it: the env merged over the session's.
-const runIn = (env) => async (argv, init = {}) => {
-  const res = spawnSync(argv[0] === 'bash' ? BASH : argv[0], argv.slice(1), {
-    cwd: init.cwd, input: init.stdin, env: { ...env, ...(init.env || {}) }, encoding: 'utf8',
-    timeout: init.timeoutMs, shell: IS_WINDOWS && argv[0] === 'npm',
-  });
-  return { ...runResult({ stdout: res.stdout || '', stderr: res.stderr || '' }), exitCode: res.error ? null : res.status };
-};
-
-const statOf = (p) => {
-  try {
-    const s = fs.lstatSync(p);
-    return { kind: s.isDirectory() ? 'dir' : 'file', size: s.size, mtimeMs: s.mtimeMs, isLink: s.isSymbolicLink() };
-  } catch { return null; }
-};
-
-// The engine calls register.js hands the chain (its `ioOf`), answered by this machine.
-const ioIn = (env) => ({
-  top: async (dir) => {
-    if (!fs.existsSync(dir)) return null;
-    const res = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' });
-    return res.status === 0 ? res.stdout.trim() : null;
-  },
-  read: async (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } },
-  exists: async (p) => fs.existsSync(p),
-  list: async (dir) => { try { return fs.readdirSync(dir); } catch { return []; } },
-  run: runIn(env),
-  pluginRoot: KIT,
-  stat: async (p) => statOf(p),
-  real: async (p) => { try { return fs.realpathSync(p); } catch { return null; } },
-  write: async (p, text) => fs.writeFileSync(p, text),
-  now: () => Date.now(),
+// A run that never started, as $.process.run answers a program it could not spawn.
+const NOT_STARTED = (argv) => ({
+  exitCode: null, stdout: '', stderr: `spawn ${argv[0]} ENOENT`, isStdoutTruncated: false, isStderrTruncated: false, isStarted: false,
 });
 
 /**
- * The guard's verdict on <command> run from <repo> in a session whose
+ * The pre-commit verdict on what <repo> has staged, in a session whose
  * variables are <env> (the workflow home holds the markers and records): `deny` the block
- * or null, `context` the stand-down notice as text, '' for none.
+ * or null, `context` the stand-down notice as text, '' for none. A run whose argv
+ * `unstarted` answers true for never starts; every other run is real.
  */
-const gateOn = async (repo, command, env) => {
-  const facts = mods('guards').bashFacts(ioIn(env), env, { command, cwd: repo });
-  const v = await mods('commit-gate').commitGateGuard(facts);
+const gateOn = async (repo, env, { unstarted = () => false } = {}) => {
+  const io = ioIn(env);
+  const run = async (argv, init) => (unstarted(argv) ? NOT_STARTED(argv) : io.run(argv, init));
+  const g = mods('guards').bashFacts({ ...io, run }, env, { command: '', cwd: repo });
+  const v = await mods('commit-gate').preCommitVerdict(mods('commit-gate').commitFacts(g, repo));
   return {
     deny: v && typeof v.deny === 'string' ? v.deny : null,
     context: v && v.context !== undefined ? textOf(v.context) : '',
