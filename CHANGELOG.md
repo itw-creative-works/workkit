@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.88.2] - 2026-11-01
+
 ### Fixed
 
 - (no issue) - The script shell and the test stub launcher quote every argument they hand bash on Windows, so a newer msys runtime neither globs an argument nor dies on an unquoted `[]`.
