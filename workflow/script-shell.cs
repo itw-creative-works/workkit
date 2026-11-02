@@ -58,10 +58,10 @@ class ScriptShell {
     return null;
   }
 
-  // One argument as CreateProcess's command line carries it: quoted when it
-  // holds whitespace or a quote, backslashes doubled only before a quote.
+  // One argument as CreateProcess's command line carries it: always quoted,
+  // backslashes doubled only before a quote, since the msys runtime globs an
+  // unquoted argument a native parent hands it.
   static string Quote(string arg) {
-    if (arg.Length > 0 && arg.IndexOfAny(new char[] { ' ', '\t', '\n', '\v', '"' }) < 0) return arg;
     StringBuilder sb = new StringBuilder("\"");
     int slashes = 0;
     foreach (char c in arg) {
