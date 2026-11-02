@@ -7,17 +7,19 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-11-02
+
 ### Added
 
-- [#504](../../issues/504) - Ship hooks: `workkit ship cut` makes the GitHub release and `workkit ship deploy` runs the deploy, which prompts outside a ship: setup drops `Bash(workkit ship:*)`. With `publish`, each runs the repo's `afterRelease`, `afterPublish` or `afterDeploy` commands once its step succeeds, in repos whose `.workkit/settings.json` says `"enabled": true`.
+- [#504](../../issues/504) [`b9a150b`](../../commit/b9a150b) Thanks [@ianwieds]! - Ship hooks: `workkit ship cut` makes the GitHub release and `workkit ship deploy` runs the deploy, which prompts outside a ship: setup drops `Bash(workkit ship:*)`. With `publish`, each runs the repo's `afterRelease`, `afterPublish` or `afterDeploy` commands once its step succeeds, in repos whose `.workkit/settings.json` says `"enabled": true`.
 
 ### Changed
 
-- [#506](../../issues/506) - Every setting has its default in the kit's `defaults/settings.json`, merged under `~/.workkit/settings.json` and the repo's `.workkit/settings.json`. A repo is on only when its own file says `"enabled": true`: a missing, empty or keyless file is off.
+- [#506](../../issues/506) [`b9a150b`](../../commit/b9a150b) Thanks [@ianwieds]! - Every setting has its default in the kit's `defaults/settings.json`, merged under `~/.workkit/settings.json` and the repo's `.workkit/settings.json`. A repo is on only when its own file says `"enabled": true`: a missing, empty or keyless file is off.
 
 ### Fixed
 
-- [#502](../../issues/502) - `workkit proof red` reads node's whole test summary block: a run with no test, or a failing exit with no failed or cancelled test, is a stop, never red. In workkit-core, the runner and harness indent quoted messages, skip reasons, stacks, child output and a case's own prints.
+- [#502](../../issues/502) [`b9a150b`](../../commit/b9a150b) Thanks [@ianwieds]! - `workkit proof red` reads node's whole test summary block: a run with no test, or a failing exit with no failed or cancelled test, is a stop, never red. In workkit-core, the runner and harness indent quoted messages, skip reasons, stacks, child output and a case's own prints.
 
 ## [0.88.2] - 2026-11-01
 
