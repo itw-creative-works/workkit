@@ -6,6 +6,7 @@
 # the snapshot holds them; --live swaps the named paths in the live tree
 # instead, restored on exit. Red exits 0, green 1, any other stop 2 with a
 # `red-proof:` line on stderr. The verdict is stdout's last line.
+# A node test summary with no test, or a failing run with none failed, is a stop.
 
 set -euo pipefail
 
@@ -302,6 +303,33 @@ fi
 # Each stream prints live and is kept, so a failure can be read for a load error.
 rc=0
 { { "${cmd[@]}" 2>&1 1>&3 3>&- | tee "$tmp/err" >&2 3>&-; } 3>&1 | tee "$tmp/out"; } || rc=$?
+# test_summary: `<tests> <failed>` summed over every whole block node prints,
+# its eight lines at column zero under one prefix (`# ` tap, `ℹ ` spec) in
+# node's order, failed being `fail` and `cancelled` summed; `at` is the next
+# name expected, a line breaking the order resets it. Nothing without a block.
+test_summary() {
+  awk '
+    BEGIN { split("tests suites pass fail cancelled skipped todo duration_ms", names, " ") }
+    FNR == 1 { at = 1 }
+    {
+      sub(/\r$/, "")
+      ok = match($0, /^(# |ℹ )/)
+      if (ok) { p = substr($0, 1, RLENGTH); rest = substr($0, RLENGTH + 1) }
+      ok = ok && rest ~ /^[a-z_]+ [0-9]+(\.[0-9]+)?$/
+      if (ok) split(rest, f, " ")
+      if (at > 1 && (!ok || p != pre || f[1] != names[at])) at = 1
+      if (!ok || f[1] != names[at]) next
+      if (at == 1) { pre = p; t = f[2] }
+      if (at == 4) fl = f[2]
+      if (at == 5) fl += f[2]
+      if (at < 8) { at++; next }
+      tests += t; failed += fl; seen = 1; at = 1
+    }
+    END { if (seen) print tests + 0, failed + 0 }
+  ' "$tmp/out" "$tmp/err"
+}
+summary=$(test_summary)
+[ "${summary%% *}" != 0 ] || fail "not runnable: no test ran"
 case "$rc" in
   0)
     echo "red-proof: green: the tests pass without ${paths[*]}"
@@ -381,4 +409,5 @@ while IFS=$'\t' read -r spec from; do
   in_copy "$spec" "$from" || continue
   held_module "$spec" "$from" || fail "not runnable: a module failed to load: $spec"
 done < <(load_failures)
+[ "${summary#* }" != 0 ] || fail "not runnable: no test failed; the command stopped another way"
 echo "red-proof: red"

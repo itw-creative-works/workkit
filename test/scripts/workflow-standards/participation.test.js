@@ -14,6 +14,7 @@ const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const {
   WORKFLOW_DIR, cleanup, rosterOf, makeRepo, binDirWithout, runScript,
 } = require('./helpers');
+const { settingsAt } = require('../../../workflow/lib/settings');
 
 const cases = async () => {
   group('standards.sh: participation');
@@ -41,12 +42,33 @@ const cases = async () => {
     cleanup(repo);
   });
 
-  await test('legacy { version: 1 } with no enabled key still heals', () => {
+  await test('a file with no enabled answer offers to enable and heals nothing', () => {
+    for (const [what, settings] of [['an empty file', ''], ['an empty object', '{}\n'], ['a version alone', '{ "version": 1 }\n']]) {
+      const repo = makeRepo({ settings });
+      const { code, output } = runScript(repo);
+      assertEq(code, 0, `${what}: exit 0`);
+      assertEq(stateOf(repo), 'undecided', `${what}: state`);
+      assert(output.includes('not in the issue workflow'), `${what}: offers, got: ${output}`);
+      assert(output.includes('--enable'), `${what}: and says how to opt in`);
+      assert(!output.includes('issue forms'), `${what}: heals nothing, got: ${output}`);
+      assert(!fs.existsSync(path.join(repo, '.github')), `${what}: no issue templates written`);
+      cleanup(repo);
+    }
+  });
+
+  await test('a file with no enabled answer, declined on this machine: silent, untouched', () => {
     const repo = makeRepo({ settings: '{ "version": 1 }\n' });
-    const { output: stdout } = runScript(repo);
-    assertEq(stateOf(repo), 'enabled', 'an opt-in file that predates the key is a yes');
-    assert(stdout.includes('issue forms'), `heals, got: ${stdout}`);
-    cleanup(repo);
+    const home = mkTmp('wf-std-');
+    fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
+      version: 1,
+      repos: { [gitPath(fs.realpathSync(repo))]: 'declined' },
+    }, null, 2));
+    assertEq(stateOf(repo, { workflowHome: home }), 'declined', 'state');
+    const { code, output: stdout } = runScript(repo, { workflowHome: home });
+    assertEq(code, 0, 'exit 0');
+    assertEq(stdout, '', `never asks, got: ${stdout}`);
+    assert(!fs.existsSync(path.join(repo, '.github')), 'no issue templates written');
+    cleanup(repo); cleanup(home);
   });
 
   await test('enabled: false heals nothing and says nothing', () => {
@@ -128,25 +150,20 @@ const cases = async () => {
     cleanup(home);
   });
 
-  await test('the user settings file exists from the first run, before any decision', () => {
-    // A missing ~/.workkit reads as broken. The site options spelled out are the
-    // honest starting state: it is the hand-edited file, and an empty one would
-    // show nobody what there is to set.
+  await test('the user settings file exists from the first run, before any decision, the site options left to the defaults', () => {
+    // A missing ~/.workkit reads as broken, so the file is seeded; every option
+    // it does not set reads the kit default, the switch unanswered (null, never a
+    // false nobody gave), which is what setup reads to know there is a question.
     const repo = makeRepo({ settings: null });
     const home = path.join(mkTmp('wf-std-'), 'never-touched');
     runScript(repo, { args: ['--state'], workflowHome: home });
     const file = path.join(home, 'settings.json');
     assert(fs.existsSync(file), 'created without any decline');
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    assertEq(parsed.version, 1, 'seeded with a version');
-    assertEq(parsed.repos, undefined, 'the roster is not in the hand-edited file');
-    assertEq(parsed.site.repo, null, 'the home repo is unset');
-    // Null, not false: the switch has three states, and a seeded
-    // false is an answer nobody gave: it is what setup reads to know there is
-    // still a question to put.
-    assert('publish' in parsed.site, 'the switch is spelled out');
-    assertEq(parsed.site.publish, null, 'and it is unanswered: nobody has been asked yet');
-    assertEq(parsed.site.url, null, 'and there is no custom domain');
+    assertEq(JSON.parse(fs.readFileSync(file, 'utf8')).repos, undefined, 'the roster is not in the hand-edited file');
+    const { site } = settingsAt(null, file);
+    assertEq(site.repo, null, 'the home repo is unset');
+    assertEq(site.publish, null, 'the switch is unanswered: nobody has been asked yet');
+    assertEq(site.url, null, 'and there is no custom domain');
     cleanup(repo);
   });
 
@@ -159,6 +176,26 @@ const cases = async () => {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
     assertEq(parsed.site.publish, true, 'what the owner typed survives');
     assertEq(parsed.site.repo, 'owner/workkit', 'home slug and all');
+    cleanup(repo); cleanup(home);
+  });
+
+  await test('a heal warns while the machine settings file is no JSON object, and is silent once it is one', () => {
+    const repo = makeRepo();
+    const home = mkTmp('wf-std-');
+    const file = path.join(home, 'settings.json');
+    const warning = `settings: ${file} is not a JSON object`;
+    for (const broken of ['{ not json', '[]']) {
+      fs.writeFileSync(file, broken);
+      const { code, output } = runScript(repo, { workflowHome: home });
+      assertEq(code, 0, `${broken}: a broken machine file never fails a heal`);
+      assert(output.includes(warning), `${broken}: it names the file, got: ${output}`);
+      assertEq(fs.readFileSync(file, 'utf8'), broken, `${broken}: the file is left as typed`);
+    }
+    for (const fine of ['', '{"version": 1}']) {
+      fs.writeFileSync(file, fine);
+      const { output } = runScript(repo, { workflowHome: home });
+      assert(!output.includes(warning), `${JSON.stringify(fine)}: no warning, got: ${output}`);
+    }
     cleanup(repo); cleanup(home);
   });
 
@@ -214,6 +251,14 @@ const cases = async () => {
     cleanup(repo);
   });
 
+  await test('--enable on an empty settings file writes the yes', () => {
+    const repo = makeRepo({ settings: '' });
+    const { code, output } = runScript(repo, { args: ['--enable'] });
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assertEq(JSON.parse(fs.readFileSync(path.join(repo, W, 'settings.json'), 'utf8')).enabled, true, 'the file holds "enabled": true');
+    cleanup(repo);
+  });
+
   await test('--enable flips an existing enabled: false back on', () => {
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false, "keep": "me" }\n' });
     runScript(repo, { args: ['--enable'] });
@@ -240,7 +285,7 @@ const cases = async () => {
       shellPath(path.join(WORKFLOW_DIR, 'standards', 'state.sh')),
       shellPath(file),
     ], { env: { PATH: binDir }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    assertEq(res.stdout, 'unreadable', `never a decline or the legacy yes, stderr: ${res.stderr}`);
+    assertEq(res.stdout, 'unreadable', `never a decline or a yes, stderr: ${res.stderr}`);
     fs.chmodSync(file, 0o600);
     cleanup(dir); cleanup(binDir);
   });

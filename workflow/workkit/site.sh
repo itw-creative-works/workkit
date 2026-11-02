@@ -30,13 +30,14 @@ offer_site_publish() {
     return 0
   fi
 
-  # Read raw, not through wk_json_get: `//` treats false as absent. An absent
-  # key and a null both render "null", the same state.
-  current="$(wk_jq -r '.site.publish | tostring' "$WK_HOME_SETTINGS" 2>/dev/null || printf '')"
-  if [[ -z "$current" ]]; then
+  # The file is asked to hold an object first, since the merged read takes a
+  # broken layer as adding nothing, which would read as unanswered. Through
+  # wk_setting an absent key and a null both print nothing, the same state.
+  if ! wk_jq -e 'type == "object"' "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
     wk_warn "site: $WK_HOME_SETTINGS does not parse as JSON; the publish question was not asked; fix the file, then re-run \`workkit setup\`"
     return 0
   fi
+  current="$(wk_setting '' site.publish)"
 
   # No home repo, nothing to publish from: the question would be about a site
   # that has nowhere to go.
@@ -62,7 +63,7 @@ offer_site_publish() {
 
   # The domain rides the fresh yes alone, the one moment no address is in use;
   # an answered machine changes it by hand edit.
-  if [[ "$value" == 'true' ]] && [[ "$(wk_jq_default 'null' -r '.site.url | tostring' "$WK_HOME_SETTINGS")" == 'null' ]]; then
+  if [[ "$value" == 'true' ]] && [[ -z "$(wk_setting '' site.url)" ]]; then
     ask_site_url
   fi
 }

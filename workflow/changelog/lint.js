@@ -127,6 +127,22 @@ const parseEntries = (text) => {
 };
 
 /**
+ * The index in `lines` of the `## [...]` heading an entry sits under: the
+ * nearest one above it naming the entry's section.
+ * @param {string[]} lines the file parseEntries read, one element per line
+ * @param {object} entry from parseEntries on those lines
+ * @returns {number} the heading's 0-based line index
+ */
+const sectionHeadingAt = (lines, entry) => {
+  for (let i = entry.line - 1; i >= 0; i--) {
+    if (SECTION_RE.exec(lines[i])?.[1] === entry.section) return i;
+  }
+  // parseEntries named the entry's section from such a heading above it, so a
+  // miss means `lines` is not the text the entry came from.
+  throw new Error(`no ## [${entry.section}] heading above line ${entry.line}`);
+};
+
+/**
  * Judge one entry against every rule.
  * @param {object} entry from parseEntries
  * @returns {Array<{line: number, rule: string, message: string}>}
@@ -301,8 +317,8 @@ if (require.main === module) {
 
 // Exported for the guards (RULES, parseEntries, lintText), for
 // changelog-links.js, which must agree with this file about what an entry looks
-// like and what "already has its links" means, and for release.js, which finds
-// the `[Unreleased]` heading by the same section rule: one home, no second copy.
+// like and what "already has its links" means, and for release.js and cut.js,
+// which find a section's heading by the same rule: one home, no second copy.
 module.exports = {
-  RULES, COMMIT_RE, ISSUE_LINK_RE, META_RE, SECTION_RE, sectionKind, parseEntries, lintText,
+  RULES, COMMIT_RE, ISSUE_LINK_RE, META_RE, SECTION_RE, sectionKind, parseEntries, sectionHeadingAt, lintText,
 };

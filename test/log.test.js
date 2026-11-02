@@ -1,13 +1,15 @@
 // Tests for the per-case log through the harness: a case's log lines print
 // under it when it fails and stay quiet when it passes, TEST_LOG=1 prints them
-// under both, a line logged outside any case prints at once, and a failure
-// names the test file's own frame, not the harness's.
+// under both, a line logged outside any case prints at once, a failure
+// names the test file's own frame, not the harness's, and the two indenters
+// keep a quoted text off column zero.
 
 const fs = require('fs');
 const path = require('path');
+const { Writable } = require('stream');
 const { stripVTControlCharacters } = require('util');
 const {
-  group, test, assert, summary, selfRun, mkTmp, run,
+  group, test, assert, assertEq, summary, selfRun, mkTmp, run, indentRest, indentWriter,
 } = require('./lib/harness');
 
 const HARNESS = path.join(__dirname, '..', 'packages', 'core', 'test', 'lib', 'harness.js');
@@ -34,6 +36,19 @@ const cases = async () => {
   await test('the first case', () => { log('in-first', 'note'); assert(false, 'first broke'); });
   log('between', 'note');
   await test('the second case', () => { assert(false, 'second broke'); });
+  await test('the closing case', () => {});
+};
+module.exports = async () => { await cases(); return summary(); };
+if (require.main === module) selfRun(module.exports);
+`;
+
+// A suite that logs a two-line line before any case, in a passing case and in a failing case.
+const TWO_LINES = `
+const { test, assert, log, summary, selfRun } = require(${JSON.stringify(HARNESS)});
+const cases = async () => {
+  log('outside one\\noutside two');
+  await test('the passing case', () => { log('passing one\\npassing two'); });
+  await test('the failing case', () => { log('inside one\\ninside two'); assert(false, 'it broke'); });
   await test('the closing case', () => {});
 };
 module.exports = async () => { await cases(); return summary(); };
@@ -85,6 +100,21 @@ const cases = async () => {
       `nothing logged before the second case prints under it, got:\n${second.join('\n')}`);
   });
 
+  await test('a logged line holding a newline prints its second line at the case indent, outside a case and under a failing one', () => {
+    const { lines } = runSuite({}, TWO_LINES);
+    assert(lines.includes('    outside two'), `the outside line's second line at the case indent, got:\n${lines.join('\n')}`);
+    assert(under(lines, 'the failing case', 'the closing case').includes('    inside two'),
+      `the failing case's second line under it at the case indent, got:\n${lines.join('\n')}`);
+    assert(!lines.some((l) => l.startsWith('outside two') || l.startsWith('inside two')), `no second line at column zero, got:\n${lines.join('\n')}`);
+  });
+
+  await test('with TEST_LOG=1 a passing case\'s logged line holding a newline prints its second line at the case indent', () => {
+    const { lines } = runSuite({ TEST_LOG: '1' }, TWO_LINES);
+    assert(under(lines, 'the passing case', 'the failing case').includes('    passing two'),
+      `the passing case's second line under it at the case indent, got:\n${lines.join('\n')}`);
+    assert(!lines.some((l) => l.startsWith('passing two')), `no second line at column zero, got:\n${lines.join('\n')}`);
+  });
+
   group('log: the failure names the test file');
 
   await test('a failing case carries the first stack frame from the test file, none from the harness', () => {
@@ -93,6 +123,41 @@ const cases = async () => {
     assert(block.some((l) => l.includes(`${file}:`)), `a frame naming ${file}, got:\n${block.join('\n')}`);
     const harnessFrame = `${path.join('packages', 'core', 'test', 'lib', 'harness.js')}:`;
     assert(!block.some((l) => l.includes(harnessFrame)), `no frame from the harness, got:\n${block.join('\n')}`);
+  });
+
+  group('log: the indenters');
+
+  await test('indentRest leaves a one-line text as it is and prefixes every later line of a three-line text', () => {
+    assertEq(indentRest('only line'), 'only line', 'a one-line text is unchanged');
+    assertEq(indentRest('first\nsecond\nthird'), 'first\n    second\n    third', 'every line after the first at the case indent');
+  });
+
+  await test('indentWriter carries a line across chunks and indents each line once', () => {
+    const written = [];
+    const write = indentWriter((chunk) => written.push(chunk));
+    for (const chunk of ['ab', 'c\nd', '\n']) write(chunk);
+    assertEq(written.join(''), '    abc\n    d\n', 'every line at the case indent, a split line once');
+  });
+
+  // A real stream calls a write's callback on a later tick, so one turn of the loop has run it.
+  await test('indentWriter writes a Buffer chunk indented and calls the callback passed with a chunk', async () => {
+    const written = [];
+    const sink = new Writable({ write(chunk, encoding, done) { written.push(String(chunk)); done(); } });
+    const write = indentWriter(sink.write.bind(sink));
+    let called = false;
+    write(Buffer.from('one\ntwo\n'), () => { called = true; });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    assertEq(written.join(''), '    one\n    two\n', 'the Buffer\'s lines at the case indent');
+    assert(called, 'the callback passed with the chunk was called');
+  });
+
+  await test('indentWriter over a character split across two Buffer chunks writes it whole', () => {
+    const written = [];
+    const sink = new Writable({ write(chunk, encoding, done) { written.push(chunk); done(); } });
+    const write = indentWriter(sink.write.bind(sink));
+    write(Buffer.from([0xe2, 0x9c]));
+    write(Buffer.from([0x93]));
+    assertEq(Buffer.concat(written).toString(), '    ✓', 'the check mark at the case indent, its bytes whole');
   });
 };
 

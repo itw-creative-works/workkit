@@ -17,7 +17,7 @@ import { issueView } from './gh.js';
 import { userDirOf } from './log.js';
 import { markerPath, reviewMarkerPath, suiteMarkerPath, windowsKit } from './markers.js';
 import { viewHasProof, viewStage } from './proof.js';
-import { parseJson, settingGet } from './settings.js';
+import { loadSettings, parseJson } from './settings.js';
 import { LONG_RUN_MS, hasTestScript, suiteProved, suiteRecordMs, treeHash } from './suite.js';
 import { isCodePath, isTestPath } from './test-reminder.js';
 
@@ -155,10 +155,8 @@ async function suiteCheck(facts, root, notices) {
     notices.push(TEXT.proved);
     const ms = suiteRecordMs(record);
     if (ms !== null) {
-      const [repoSettings, userSettings] = await Promise.all([
-        facts.read(`${root}/.workkit/settings.json`), facts.read(facts.userSettings),
-      ]);
-      const over = budgetLine(ms, settingGet('tests.budget', parseJson(repoSettings), parseJson(userSettings)));
+      const settings = await loadSettings(facts.read, { kit: facts.kitRoot, root, user: facts.userSettings });
+      const over = budgetLine(ms, settings.tests?.budget);
       if (over) notices.push(over);
     }
     return null;

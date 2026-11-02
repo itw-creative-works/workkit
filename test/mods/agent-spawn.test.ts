@@ -3,9 +3,9 @@
 // e.parentModel, passes everything else on, and refuses in advise mode.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, LADDER, HOME, REPO, PLAIN, MODELS, OPTED_IN } from '../lib/mod-world.ts'
+import { mkWorld, hooksLog, LADDER, DEFAULTS, HOME, REPO, PLAIN, MODELS, OPTED_IN } from '../lib/mod-world.ts'
 
-const FAST = LADDER.ladder[LADDER.tiers.fast as keyof typeof LADDER.ladder]
+const FAST = LADDER.ladder[DEFAULTS.manager.tiers.fast as keyof typeof LADDER.ladder]
 const settings = (manager: unknown) => JSON.stringify({ version: 1, enabled: true, manager })
 
 const spawn = ($: any, subagentType: string, extra: any = {}) => $.agent.spawn({

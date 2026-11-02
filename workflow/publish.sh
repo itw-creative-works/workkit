@@ -88,7 +88,7 @@ fi
 
 # Default off: only `true` publishes. Read here and acted on below the roster,
 # which is not part of the site.
-PUBLISH_SITE="$(wk_json_get "$WK_HOME_SETTINGS" '.site.publish')"
+PUBLISH_SITE="$(wk_setting '' site.publish)"
 
 if ! wk_home_ready; then
   case "$(wk_home_state)" in

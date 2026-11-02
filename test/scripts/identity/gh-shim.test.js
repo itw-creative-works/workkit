@@ -13,7 +13,7 @@ const {
   group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, gitPath, spawnBash, systemPathWith, homeEnv, basePathWithout, stubNode,
+  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, gitPath, spawnBash, systemPathWith, homeEnv, basePathWithout, stubNode, stubTool,
 } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -700,9 +700,53 @@ const gateCases = async () => {
   });
 };
 
+/**
+ * `gh <args>` through the shim from the rostered repo, a `gh` ahead of the stub
+ * on PATH that the shim takes for the real one: it prints `real-gh: <argv>` and
+ * `real-gh-parent: <its parent pid>`, and the calling shell prints `caller: <pid>`
+ * after it: `lines` are that output in write order, `execd` whether the real
+ * gh's parent is the caller (the shim exec'd it), `ran` the hook's mark, null
+ * when no hook ran.
+ */
+const runRealGh = (world, args, opts = {}) => {
+  const realGh = path.join(world.root, 'real-gh');
+  fs.mkdirSync(realGh, { recursive: true });
+  stubTool(realGh, 'gh', ['#!/usr/bin/env bash', 'echo "real-gh: $*"', 'echo "real-gh-parent: $PPID"', 'exit 0']);
+  const out = shellPath(path.join(world.root, 'real-gh.log'));
+  const call = args.map((a) => `'${a}'`).join(' ');
+  const res = runShim(world, [], { ...opts, extraDirs: [realGh], script: `gh ${call} > '${out}' 2>&1; echo "code: $?" >> '${out}'; echo "caller: $$" >> '${out}'` });
+  const marks = path.join(world.rostered, 'ran.txt');
+  const lines = fs.readFileSync(path.join(world.root, 'real-gh.log'), 'utf8').split('\n').filter(Boolean);
+  const caller = (lines.find((l) => l.startsWith('caller: ')) || '').slice('caller: '.length);
+  assert(res.code === 0, `the calling shell finished, got: ${res.stderr}`);
+  return { lines, execd: lines.includes(`real-gh-parent: ${caller}`), ran: fs.existsSync(marks) ? fs.readFileSync(marks, 'utf8') : null };
+};
+
+const releaseCases = async () => {
+  group('identity/gh: a release call');
+
+  await test('ship hooks case 9: gh release create in an enabled repo declaring afterRelease runs no hook, and the shim execs the real gh', async () => {
+    const world = mkWorld();
+    const settings = path.join(world.rostered, '.workkit', 'settings.json');
+    fs.mkdirSync(path.dirname(settings), { recursive: true });
+    fs.writeFileSync(settings, `${JSON.stringify({ enabled: true, hooks: { afterRelease: [{ command: 'echo ran >> ran.txt' }] } })}\n`);
+    const release = ['release', 'create', 'v1.2.3', '--notes', 'x'];
+    for (const [what, opts] of Object.entries({ 'in a Claude session': {}, 'outside a Claude session': { claude: false } })) {
+      const res = runRealGh(world, release, opts);
+      const said = res.lines.join(' | ');
+      assert(res.lines.includes(`real-gh: ${release.join(' ')}`), `${what}: the real gh ran the release, got: ${said}`);
+      assert(res.lines.includes('code: 0'), `${what}: the call exits the real gh's 0, got: ${said}`);
+      assertEq(res.ran, null, `${what}: no hook ran`);
+      assertEq(res.execd, runRealGh(world, ['issue', 'list'], opts).execd, `${what}: the real gh is reached as for gh issue list, got: ${said}`);
+      if (opts.claude === false) assert(res.execd, `${what}: the shim exec'd the real gh, so its parent is the caller, got: ${said}`);
+    }
+  });
+};
+
 module.exports = async () => {
   await cases();
   await gateCases();
+  await releaseCases();
   return summary();
 };
 

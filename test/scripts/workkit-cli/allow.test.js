@@ -13,8 +13,13 @@ const {
   cleanup, mkWorld, runCli, mkSetupKit, mkPartialKit,
 } = require('./helpers');
 
-// The kit's rules, by the names the issue's Contract gives them.
-const RULES = ['Bash(workkit ship:*)', 'Bash(workkit review:*)', 'Bash(npm publish:*)'];
+// The kit's rules, by the names the issue's Contract gives them: every ship
+// verb but deploy, so a deploy outside a ship still prompts.
+const SHIP_RULES = ['items', 'release', 'watch', 'cut', 'plan', 'publish'].map((verb) => `Bash(workkit ship ${verb}:*)`);
+const RULES = [...SHIP_RULES, 'Bash(workkit review:*)', 'Bash(npm publish:*)'];
+// The whole ship verb's rule, which let a deploy through with no prompt.
+const RETIRED = 'Bash(workkit ship:*)';
+const without = (rule) => RULES.filter((r) => r !== rule);
 
 const settingsFile = (world) => path.join(world.claudeHome, 'settings.json');
 
@@ -56,8 +61,21 @@ const cases = async () => {
     assertEq(code, 0, `exit 0, got: ${said}`);
     const { allow } = readJson(settingsFile(world)).permissions;
     assertEq(JSON.stringify(allow.slice(0, before.length)), JSON.stringify(before), 'the owner’s rules stay first, as they were');
-    assertEq(sorted(allow.slice(before.length)), sorted(['Bash(workkit ship:*)', 'Bash(workkit review:*)']),
-      'and exactly the two missing kit rules follow them');
+    assertEq(sorted(allow.slice(before.length)), sorted(without('Bash(npm publish:*)')),
+      'and exactly the missing kit rules follow them');
+    cleanup(world.root);
+  });
+
+  await test('the retired whole-verb ship rule is taken out, the owner\'s rules kept in order', () => {
+    const world = mkWorld();
+    seedClaude(world, `${JSON.stringify({ permissions: { allow: ['Bash(git status:*)', RETIRED, 'Bash(npm publish:*)'] } }, null, 2)}\n`);
+    const { code, said } = runCli(world, ['update']);
+    assertEq(code, 0, `exit 0, got: ${said}`);
+    const { allow } = readJson(settingsFile(world)).permissions;
+    assertEq(JSON.stringify(allow.slice(0, 2)), JSON.stringify(['Bash(git status:*)', 'Bash(npm publish:*)']), 'the rules kept stay first, in order');
+    assertEq(sorted(allow.slice(2)), sorted(without('Bash(npm publish:*)')), 'the missing kit rules follow them');
+    assert(!allow.includes(RETIRED), `and the retired rule is gone, got: ${JSON.stringify(allow)}`);
+    assert(!allow.includes('Bash(workkit ship deploy:*)'), 'no rule lets a deploy through');
     cleanup(world.root);
   });
 
@@ -212,7 +230,7 @@ const cases = async () => {
 
   await test('a missing rule is named with workkit setup as its fix, and counted', () => {
     const all = doctorOn(RULES);
-    const short = doctorOn(['Bash(workkit ship:*)', 'Bash(npm publish:*)']);
+    const short = doctorOn(without('Bash(workkit review:*)'));
     assertEq(short.code, 0, `a report is a report: exit 0, got: ${short.said}`);
     const line = short.said.split('\n').find((l) => l.includes('Bash(workkit review:*)'));
     assert(line, `the missing rule is named, got: ${short.said}`);
@@ -221,9 +239,18 @@ const cases = async () => {
   });
 
   await test('in a cloud session the fix a missing rule names is workkit setup --cloud', () => {
-    const { said } = doctorOn(['Bash(workkit ship:*)', 'Bash(npm publish:*)'], { CLAUDE_CODE_REMOTE: 'true' });
+    const { said } = doctorOn(without('Bash(workkit review:*)'), { CLAUDE_CODE_REMOTE: 'true' });
     const line = said.split('\n').find((l) => l.includes('Bash(workkit review:*)'));
     assert(line && line.includes('`workkit setup --cloud`'), `the cloud fix on its line, got: ${said}`);
+  });
+
+  await test('a retired rule still held is named with workkit setup as its fix, and counted', () => {
+    const all = doctorOn(RULES);
+    const stale = doctorOn([...RULES, RETIRED]);
+    assertEq(stale.code, 0, `a report is a report: exit 0, got: ${stale.said}`);
+    const line = stale.said.split('\n').find((l) => l.includes(RETIRED));
+    assert(line && line.includes('workkit setup'), `the retired rule is named with its fix, got: ${stale.said}`);
+    assertEq(attention(stale.said), attention(all.said) + 1, 'and it is one more item needing attention');
   });
 
   await test('with every rule present doctor names none of them', () => {

@@ -29,6 +29,20 @@ const TEST_OF = (value) => [
   '',
 ].join('\n');
 
+// The same check as one node:test case, so `node --test` prints its summary.
+const NODE_TEST_OF = (value) => [
+  "const test = require('node:test');",
+  "const x = require('../src/x');",
+  `test('x', () => { if (x !== ${value}) throw new Error('x is ' + x); });`,
+  '',
+].join('\n');
+
+// node's whole tap summary block for one passing test, in node's order.
+const TAP_BLOCK = ['# tests 1', '# suites 0', '# pass 1', '# fail 0', '# cancelled 0', '# skipped 0', '# todo 0', '# duration_ms 1'];
+
+// A test file's opening lines printing each of `texts` to stdout as it stands.
+const PRINTS = (texts) => texts.map((t) => `console.log(${JSON.stringify(t)});\n`).join('');
+
 /**
  * A scratch world: a repo holding `src/x.js` (exports 1), `src/y.js` (exports
  * 10), `src/w.js` (exports 100), `src/helper.js`, a `.gitignore` for
@@ -743,6 +757,88 @@ const cases = async () => {
     const last = lines(err).pop();
     assert(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith('gone.mjs'),
       `the last stderr line names the module: ${err}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  group('proof red: the test summary');
+
+  await test('a node --test glob matching nothing: exit 2, no test ran, never a verdict', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '--test', '--test-reporter=spec', 'tests/none/*.test.js']);
+    assertEq(code, 2, `exit 2: ${out}${err}`);
+    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+    assertEq(lines(err).pop(), 'red-proof: not runnable: no test ran', `the last stderr line: ${err}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a wrapper that runs a green node --test, then exits 3: exit 2, no test failed, never red', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('tests/x.test.js', NODE_TEST_OF(1));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', 'node --test tests/x.test.js; exit 3']);
+    assertEq(code, 2, `exit 2: ${out}${err}`);
+    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+    assertEq(lines(err).pop(), 'red-proof: not runnable: no test failed; the command stopped another way', `the last stderr line: ${err}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('an edited source the new node --test case needs, its summary failing one: red, exit 0', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', NODE_TEST_OF(2));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '--test', 'tests/x.test.js']);
+    assert(/^# fail 1$|^\u2139 fail 1$/m.test(out), `the summary counted one failed test: ${out}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a real red whose test first prints # tests 1 and # fail 0 at column zero, no whole block: red, exit 0', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', `${PRINTS(['# tests 1', '# fail 0'])}${TEST_OF(2)}`);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
+    assert(/^# tests 1$/m.test(out) && /^# fail 0$/m.test(out), `the fragment printed at column zero: ${out}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test("a real red whose test first prints node's whole tap block indented by two spaces: red, exit 0", () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', `${PRINTS(TAP_BLOCK.map((l) => `  ${l}`))}${TEST_OF(2)}`);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
+    assert(/^  # fail 0$/m.test(out), `the indented block printed: ${out}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a node --test case whose promise never settles, its summary failing none and cancelling one: red, exit 0', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('tests/x.test.js', [
+      "const test = require('node:test');",
+      "require('../src/x');",
+      "test('slow', { timeout: 50 }, () => new Promise(() => {}));",
+      '',
+    ].join('\n'));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '--test', 'tests/x.test.js']);
+    assert(/^# fail 0$|^\u2139 fail 0$/m.test(out), `the summary counted no failed test: ${out}`);
+    assert(/^# cancelled 1$|^\u2139 cancelled 1$/m.test(out), `the summary counted one cancelled test: ${out}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
     assertNoWorktree(w);
     cleanup(w.dir);
   });

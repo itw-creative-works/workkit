@@ -5,7 +5,7 @@
 
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  TREE, OTHER_TREE, packagesOf, pkgRecord, judge, QA, QA_BLOCK, SHAPE_NOTE, ROOT_ONLY, assertBlocks, passText,
+  TREE, OTHER_TREE, packagesOf, pkgRecord, judge, denyOf, QA, QA_BLOCK, ROOT_ONLY, assertBlocks, passText,
 } = require('./helpers');
 
 const CLIENT = 'packages/client';
@@ -109,11 +109,12 @@ const cases = async () => {
   for (const rootOnly of [BACKEND, [BACKEND, 7]]) {
     await test(`a rootOnly that is not an array of strings (${JSON.stringify(rootOnly)}): one notice naming the key, checked as if nothing were declared`, async () => {
       const touched = [`${BACKEND}/test/a.test.js`];
-      assertBlocks(await flip(touched, [BACKEND], { rootOnly }), QA_BLOCK(1, `${BACKEND}: test/a.test.js`, SHAPE_NOTE),
-        'the package is not declared, the note under the block');
+      const block = denyOf(await flip(touched, [BACKEND], { rootOnly })) || '';
+      const [blocked, note, ...rest] = block.split(`${QA_BLOCK(1, `${BACKEND}: test/a.test.js`)}\n`);
+      assert(blocked === '' && note && !rest.length && note.includes('proof.rootOnly') && !note.includes('\n'),
+        `the package is not declared, one note naming the key under the block, got: ${block}`);
       const msg = passText(await flip(touched, [BACKEND], { rootOnly, packageRecord: pkgRecord([BACKEND]) }), 'its own line');
       assertEq(msg.split('proof.rootOnly').length - 1, 1, `one mention of the key, got: ${msg}`);
-      assert(msg.includes(SHAPE_NOTE), `the note itself, got: ${msg}`);
       assert(!msg.includes(ROOT_ONLY), `nothing is named as proved by the root run, got: ${msg}`);
     });
   }

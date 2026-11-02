@@ -17,6 +17,8 @@ const { execFileSync } = require('child_process');
 const { slugFromRemote } = require('../../../workflow/slug');
 const { homeUserDir } = require('../../../workflow/user-dir');
 const { tempDirOf } = require('../../../hooks/mods/markers.js');
+const { settingsOptedIn } = require('../../../hooks/mods/gate.js');
+const { homeSlug, readOrNull } = require('../../../workflow/lib/settings');
 
 const WORKKIT_DIR = '.workkit';
 
@@ -101,13 +103,10 @@ const originSlug = (repoPath, exec) => {
 };
 
 /**
- * Does this directory carry a committed opt-in? Read as the engine's
- * `resolve_state` reads it: a file saying anything but `enabled: false` is a yes.
+ * Does this directory carry a committed opt-in? The hooks' one opt-in reader
+ * (settingsOptedIn): only its own file's `"enabled": true` is a yes.
  */
-const isEnabled = (dir) => {
-  const settings = readJson(path.join(dir, WORKKIT_DIR, 'settings.json'));
-  return !!settings && settings.enabled !== false;
-};
+const isEnabled = (dir) => settingsOptedIn(readOrNull(path.join(dir, WORKKIT_DIR, 'settings.json')));
 
 /**
  * Every registered repo that still carries its committed opt-in. A path whose
@@ -141,11 +140,9 @@ const discoverRepos = (opts = {}) => {
   const tower = gitPath(path.join(workflowHome, 'tower'));
   const towerDeclined = !!registered && typeof registered === 'object' && registered[tower] === 'declined';
   if (!towerDeclined && !found.some((r) => r.path === tower) && fs.existsSync(path.join(tower, '.git'))) {
-    const settings = readJson(path.join(workflowHome, 'settings.json'));
-    const site = (settings && settings.site) || null;
-    const homeSlug = site && typeof site.repo === 'string' ? site.repo : null;
+    const homeRepo = homeSlug(workflowHome);
     const slug = originSlug(tower, exec);
-    if (homeSlug && slug === homeSlug) {
+    if (homeRepo && slug === homeRepo) {
       found.push({ name: path.basename(tower), path: tower, slug });
     }
   }

@@ -11,7 +11,7 @@
 import { userDirOf } from './log.js';
 import { journalFor, journalTail, onIssue, sha1Hex } from './markers.js';
 import { rowsOf } from './session-guard.js';
-import { findingsOn, settingsLayers } from './settings.js';
+import { findingsOn, settingsOf } from './settings.js';
 import { CODE_EXT } from './test-reminder.js';
 
 const STATE_FILE = '.workkit/agents/.change-tracker';
@@ -161,16 +161,16 @@ export async function changeTrackerGather(io, env, e, turn) {
   }
   const head = await git(['diff', 'HEAD']);
   const memory = await keepsMemory(io, cwd);
-  const [diff, untracked, previous, board, layers] = await Promise.all([
+  const [diff, untracked, previous, board, settings] = await Promise.all([
     head.exitCode === 0 ? head.stdout : git(['diff']).then((r) => (r.exitCode === 0 ? r.stdout : '')),
     untrackedOf(io, cwd),
     memory ? io.read(`${cwd}/${STATE_FILE}`).then((text) => (text === null ? null : chomp(text))) : null,
     io.exists(`${cwd}/PROGRESS.md`),
-    settingsLayers(cwd, env, io),
+    settingsOf(cwd, env, io),
   ]);
   const verdict = await changeTrackerVerdict({
     stopHookActive: false, porcelain, diff, untracked, inbox, capture, previous, prompt,
-    cwd, findings: findingsOn(...layers), board, surfaces: `${inboxText ?? ''}${captureText ?? ''}`,
+    cwd, findings: findingsOn(settings), board, surfaces: `${inboxText ?? ''}${captureText ?? ''}`,
   });
   if (!verdict) return null;
   if (memory) {

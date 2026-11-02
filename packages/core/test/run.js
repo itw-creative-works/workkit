@@ -15,6 +15,7 @@ import { fork, spawnSync } from 'node:child_process';
 import { findSuites, findModSuites, POOL } from './lib/suites.js';
 import { isNodeTestSuite, runNodeTest } from './lib/node-test.js';
 import { PIPE_GRACE_MS } from './lib/process.js';
+import { indentRest, indentWriter } from './lib/log.js';
 
 // Suites and a repo's serial list are CommonJS, loaded by absolute path.
 const require = createRequire(import.meta.url);
@@ -84,7 +85,7 @@ const runModHalf = (root) => {
     return { skip: res.error.code === 'ENOENT' ? 'no claude binary on PATH' : `claude did not start: ${res.error.message}` };
   }
   const out = `${res.stdout || ''}${res.stderr || ''}`;
-  process.stdout.write(out);
+  indentWriter(process.stdout.write.bind(process.stdout))(out);
   const count = (word) => Number((out.match(new RegExp(`^\\s*(\\d+) ${word}$`, 'm')) || [])[1] || 0);
   const failures = [...out.matchAll(/^\(fail\) (.+?)(?: \[[\d.]+ms\])?$/gm)]
     .map((m) => ({ name: m[1], message: 'failed under claude plugin test' }));
@@ -121,7 +122,7 @@ const runOne = async (suite, testDir) => {
     mod = require(suite);
     loaded = true;
   } catch (err) {
-    console.error(`\x1b[31mfailed to load ${rel}:\x1b[0m ${err.stack || err}`);
+    console.error(`\x1b[31mfailed to load ${rel}:\x1b[0m ${indentRest(err.stack || err)}`);
     wholeFailure(`load ${rel}`, err.message);
   }
   if (loaded && typeof mod !== 'function') {
@@ -137,10 +138,10 @@ const runOne = async (suite, testDir) => {
     } catch (err) {
       // skipSuite() reports a missing precondition, not a defect.
       if (err.suiteSkipped) {
-        console.log(`\x1b[33m⊘ skipped:\x1b[0m ${err.message}`);
+        console.log(`\x1b[33m⊘ skipped:\x1b[0m ${indentRest(err.message)}`);
         result.skipped = err.message;
       } else {
-        console.error(`\x1b[31m${rel} threw:\x1b[0m ${err.stack || err}`);
+        console.error(`\x1b[31m${rel} threw:\x1b[0m ${indentRest(err.stack || err)}`);
         wholeFailure(`run ${rel}`, err.message);
       }
     }
@@ -263,7 +264,7 @@ export const main = async (argv) => {
     console.log(`\n\x1b[1m\x1b[36m▶ mod half: claude plugin test\x1b[0m`);
     const mod = runModHalf(root);
     if (mod.skip) {
-      console.log(`\x1b[33m⊘ skipped:\x1b[0m ${mod.skip}`);
+      console.log(`\x1b[33m⊘ skipped:\x1b[0m ${indentRest(mod.skip)}`);
       skippedSuites.push({ name: 'mod half (claude plugin test)', reason: mod.skip });
     } else {
       passed += mod.passed;
@@ -285,13 +286,13 @@ export const main = async (argv) => {
   // Name every skip, file and case alike: a run must never quietly cover less
   // than the reader assumes.
   for (const s of [...skippedSuites, ...skippedCases]) {
-    console.log(`  \x1b[33m⊘ ${s.name}: ${s.reason}\x1b[0m`);
+    console.log(`  \x1b[33m⊘ ${s.name}: ${indentRest(s.reason)}\x1b[0m`);
   }
 
   if (failed > 0) {
     console.log('\n\x1b[1mFailures:\x1b[0m');
     for (const f of allFailures) {
-      console.log(`  - ${f.name}: ${f.message}`);
+      console.log(`  - ${f.name}: ${indentRest(f.message)}`);
     }
   }
   // exitCode, not exit(): a block may still be draining into a slow pipe.

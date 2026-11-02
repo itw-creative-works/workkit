@@ -176,10 +176,14 @@ usage: workkit <command> [args]
                        entry backfill, every check before any write
   ship watch <sha>     watch every CI run for a pushed sha and answer green or
                        red by exit code
+  ship cut <x.y.z>     the GitHub release at HEAD, its notes that version's
+                       CHANGELOG section, then the repo's afterRelease hooks
   ship plan            print which packages publish to npm, in which order,
                        and which are skipped and why; publishes nothing
   ship publish         publish that plan in order, asking npm first, stopping
-                       at the first failure
+                       at the first failure, then the repo's afterPublish hooks
+  ship deploy          run the deploy script (else the release script), then
+                       the repo's afterDeploy hooks; never asks
   review covers        whether the full-panel review marker covers the
                        working diff: exit 0 covered, 1 stale
   review mark [full]   record that the review ran on this repo; full records

@@ -7,6 +7,7 @@ const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harn
 const REPO = path.join(__dirname, '..', '..');
 const AGENTS_DIR = path.join(REPO, 'agents');
 const LADDER = path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json');
+const DEFAULTS = path.join(REPO, 'defaults', 'settings.json');
 
 const CLASSES = ['scout', 'worker', 'verifier', 'advisor'];
 
@@ -25,6 +26,7 @@ const frontmatter = (file) => {
 
 const cases = async () => {
   const ladder = JSON.parse(fs.readFileSync(LADDER, 'utf8'));
+  const { tiers } = JSON.parse(fs.readFileSync(DEFAULTS, 'utf8')).manager;
 
   group('agents: the four class files');
   for (const cls of CLASSES) {
@@ -37,7 +39,7 @@ const cases = async () => {
   await test('frontmatter fallback models agree with the ladder (family match)', () => {
     for (const cls of CLASSES) {
       const fm = frontmatter(path.join(AGENTS_DIR, `${cls}.md`));
-      const rung = ladder.tiers[ladder.classes[cls]];
+      const rung = tiers[ladder.classes[cls]];
       assert(fm.model, `${cls} has no fallback model`);
       // Family-level agreement: "haiku" or "claude-haiku-4-5" both match rung
       // "haiku". Drift between the fallback and the ladder fails here.

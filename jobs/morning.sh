@@ -328,7 +328,7 @@ cloud_machine() {
     exit 1
   fi
 
-  home_slug="$(wk_jq -r '.site.repo // empty' "$settings" 2>/dev/null || true)"
+  home_slug="$(wk_setting '' site.repo || true)"
   if [[ -z "$home_slug" ]]; then
     wk_error "$settings names no home repo (.site.repo), so there is no board to sweep or publish to"
     exit 1
@@ -574,7 +574,7 @@ record_brief_status() {
     return 0
   fi
 
-  slug="$(wk_jq -r '.site.repo // empty' "$wk_dir/settings.json" 2>/dev/null || true)"
+  slug="$(wk_setting '' site.repo || true)"
   if [[ -z "$slug" ]]; then
     note_skip 'marker: no home repo configured; there is no board to read the newest brief from'
     return 0

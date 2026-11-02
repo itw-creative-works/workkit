@@ -2,12 +2,15 @@
 /* eslint-disable no-console */
 // The ship's publish: the plan plan.js prints, then each `publish` line in plan
 // order, asking npm first and stopping at the first failure (the rules and the
-// lines: `skills/ship/SKILL.md` Step 5).
+// lines: `skills/ship/SKILL.md` Step 5); a run that published runs the repo's
+// afterPublish hooks (hooks.js).
 //
 // Run from the repo root:
 //   workkit ship publish [--dir <root>]
 
 const { report, spawnNpm, npmEnd } = require('./plan');
+const { runHooks } = require('./hooks');
+const { repoRoot } = require('../lib/git');
 
 /**
  * Is `name@version` already on the registry? The `safety:release-taken` hook's
@@ -27,7 +30,10 @@ const onRegistry = (root, { name, version }) => {
   return false;
 };
 
-/** Publish the plan's `publish` lines in order; the first failure stops the run. */
+/**
+ * Publish the plan's `publish` lines in order; the first failure stops the run,
+ * and a run that published at least one package ends on the afterPublish hooks.
+ */
 const publishAll = (root, result) => {
   let published = 0;
   for (const [i, p] of result.publish.entries()) {
@@ -41,17 +47,21 @@ const publishAll = (root, result) => {
     const res = spawnNpm(args, { cwd: root, stdio: 'inherit' });
     if (res.status !== 0) {
       const left = result.publish.slice(i + 1).map((l) => l.name);
-      const end = res.error || res.status === null ? npmEnd(res) : `exit ${res.status}`;
-      console.error(`publish-plan: npm publish failed for ${p.name}@${p.version} (${end}); ${published} published, ${left.length} not attempted: ${left.join(', ') || 'none'}.`);
+      console.error(`publish-plan: npm publish failed for ${p.name}@${p.version} (${npmEnd(res)}); ${published} published, ${left.length} not attempted: ${left.join(', ') || 'none'}.`);
       return 1;
     }
     published += 1;
     console.log(`published ${p.name} ${p.version}`);
   }
-  if (result.publish.length > 0 && published === 0) {
-    console.log('nothing to publish: every package is already on npm at its version');
+  if (published === 0) {
+    if (result.publish.length > 0) console.log('nothing to publish: every package is already on npm at its version');
+    return 0;
   }
-  return 0;
+  // The hooks live in the repo's settings, above a member's --dir; a folder
+  // outside any repo reads its own.
+  if (runHooks(repoRoot(root) ?? root, 'afterPublish') === 0) return 0;
+  console.error(`publish-plan: ${published} published; an afterPublish hook failed.`);
+  return 1;
 };
 
 if (require.main === module) {

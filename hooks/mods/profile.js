@@ -4,7 +4,7 @@
  * (a fresh session, where the default is frontier).
  */
 
-import { DEFAULT_TIERS, modelTier } from './manager.js';
+import { modelTier } from './manager.js';
 
 /**
  * The manager standing instruction for a session, or null in a cheaper session
@@ -15,8 +15,8 @@ import { DEFAULT_TIERS, modelTier } from './manager.js';
  */
 export function profileContext(config, model) {
   if (config.enabled === false) return null;
-  const frontier = config.tiers?.frontier || DEFAULT_TIERS.frontier;
-  const workhorse = config.tiers?.workhorse || DEFAULT_TIERS.workhorse;
+  const frontier = config.tiers?.frontier;
+  const workhorse = config.tiers?.workhorse;
   const tier = modelTier(model);
   if (tier && tier !== frontier && tier !== workhorse) return null;
   // A frontier session IS the advisor; the consult line is offered only when

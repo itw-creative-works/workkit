@@ -8,10 +8,13 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, SPAWN_DEADLINE,
+  group, test, testUnless, assert, assertEq, summary, selfRun, SPAWN_DEADLINE, WORKKIT_DIR,
 } = require('../lib/harness');
-const { IS_WINDOWS, NO_NODE_STUB, pathWith } = require('../lib/platform');
+const {
+  IS_WINDOWS, NO_NODE_STUB, pathWith, shellPath,
+} = require('../lib/platform');
 const { fmtCalls } = require('../lib/argv-log');
+const { enabledWith } = require('../lib/ship-world');
 const {
   mkPackages, makeNpmStub, view, pub, SPEC_FIXTURE,
 } = require('../lib/publish-world');
@@ -22,6 +25,21 @@ const PUBLISH = path.join(SHIP, 'publish.js');
 const { plan } = require(PLAN);
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+
+/**
+ * Make `dir` an enabled git repo declaring one afterPublish hook, by default one
+ * that marks ran.txt there; returns the reader of that mark, null when it never ran.
+ */
+const withAfterPublish = (dir, command) => {
+  const res = spawnSync('git', ['init', '-q'], { cwd: dir, encoding: 'utf8' });
+  if (res.status !== 0) throw new Error(`git init: ${res.stderr}`);
+  const mark = path.join(dir, 'ran.txt');
+  fs.mkdirSync(path.join(dir, WORKKIT_DIR), { recursive: true });
+  fs.writeFileSync(path.join(dir, WORKKIT_DIR, 'settings.json'), enabledWith({
+    afterPublish: [command ?? `echo hook >> "${shellPath(mark)}"`],
+  }));
+  return () => (fs.existsSync(mark) ? fs.readFileSync(mark, 'utf8') : null);
+};
 
 const runPlan = (dir, ...extra) => {
   const res = spawnSync('node', [PLAN, '--dir', dir, ...extra], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
@@ -341,7 +359,7 @@ const cases = async () => {
     assertEq(code, 1, 'a failed publish is exit 1');
     assert(stdout.endsWith('published @s/a 0.5.0\n'), `only a published, got: ${stdout}`);
     assert(stderr.includes('npm error code E403\n'), `npm's own output reaches the terminal, got: ${stderr}`);
-    assert(stderr.endsWith('publish-plan: npm publish failed for @s/b@0.5.0 (exit 1); 1 published, 1 not attempted: @s/c.\n'),
+    assert(stderr.endsWith('publish-plan: npm publish failed for @s/b@0.5.0 (npm exited 1); 1 published, 1 not attempted: @s/c.\n'),
       `the stop line, got: ${stderr}`);
     assert(!stub.calls().some((c) => c.some((arg) => arg.includes('@s/c'))), `c is never asked about, got: ${fmtCalls(stub.calls())}`);
     cleanup(dir);
@@ -371,6 +389,64 @@ const cases = async () => {
     assertEq(stub.calls().length, 0, 'npm never spawned');
     cleanup(dir);
     cleanup(stub.dir);
+  });
+
+  group('ship publish: the afterPublish hooks');
+
+  await runTest('a run that publishes a package runs the afterPublish hooks, exit 0', () => {
+    const dir = mkPackages({ root: pub('widget', '2.1.0') });
+    const ran = withAfterPublish(dir);
+    const stub = makeNpmStub();
+    const { code, stdout, stderr } = runPublish(dir, stub);
+    assertEq(code, 0, `exit 0, stderr: ${stderr}`);
+    assert(stdout.includes('published widget 2.1.0\n'), `the publish ran, got: ${stdout}`);
+    assertEq(ran(), 'hook\n', 'the hook ran once');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a run from a workspace member folder runs the afterPublish hooks the repo root declares', () => {
+    const dir = mkPackages({
+      root: { name: 'family', version: '2.1.0', private: true, workspaces: ['packages/*'] },
+      members: { 'packages/widget': pub('widget', '2.1.0') },
+    });
+    const ran = withAfterPublish(dir);
+    const stub = makeNpmStub();
+    const { code, stdout, stderr } = runPublish(path.join(dir, 'packages', 'widget'), stub);
+    assertEq(code, 0, `exit 0, stderr: ${stderr}`);
+    assert(stdout.includes('published widget 2.1.0\n'), `the member published, got: ${stdout}`);
+    assertEq(ran(), 'hook\n', 'the root hook ran once');
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a run that publishes a package and then fails an afterPublish hook names the count and exits 1', () => {
+    const dir = mkPackages({ root: pub('widget', '2.1.0') });
+    withAfterPublish(dir, 'exit 4');
+    const stub = makeNpmStub();
+    const { code, stdout, stderr } = runPublish(dir, stub);
+    assertEq(code, 1, `exit 1, stderr: ${stderr}`);
+    assert(stdout.includes('published widget 2.1.0\n'), `the publish ran, got: ${stdout}`);
+    assert(stderr.endsWith('publish-plan: 1 published; an afterPublish hook failed.\n'), `the published-but line, got: ${stderr}`);
+    cleanup(dir);
+    cleanup(stub.dir);
+  });
+
+  await runTest('a run that publishes nothing, or fails, runs no afterPublish hook', () => {
+    const runs = {
+      'every package already on npm': [0, { taken: ['@s/a@0.5.0', '@s/b@0.5.0', '@s/c@0.5.0'] }],
+      'a publish failing after one published': [1, { failPublish: '@s/b' }],
+    };
+    for (const [name, [exit, opts]] of Object.entries(runs)) {
+      const dir = SPEC_FIXTURE();
+      const ran = withAfterPublish(dir);
+      const stub = makeNpmStub(opts);
+      const { code, stderr } = runPublish(dir, stub);
+      assertEq(code, exit, `${name}: the run's own exit, stderr: ${stderr}`);
+      assertEq(ran(), null, `${name}: no hook ran, stderr: ${stderr}`);
+      cleanup(dir);
+      cleanup(stub.dir);
+    }
   });
 };
 

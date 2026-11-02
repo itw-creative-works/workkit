@@ -134,18 +134,20 @@ sync_label_set() {
 # test/hooks/twins.test.js: change one and change the other.
 PUBLIC_SLUG_RE='^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$'
 
-# The committed `public` key into PUBLIC_REPO, empty when there is none; a value
-# that is no slug is a warning naming the key, and the pairing stays off.
+# The `public` setting into PUBLIC_REPO, the merged view's (wk_setting), empty
+# when there is none; a value that is no slug is a warning naming the key, and
+# the pairing stays off.
 read_public_repo() {
   local value
   PUBLIC_REPO=''
-  value="$(wk_json_get "$REPO_SETTINGS" '.public')"
+  # A broken kit has said so on stderr; the heal goes on and ends unfinished.
+  value="$(wk_setting "$root" public)" || { needs_attention=1; return 0; }
   [[ -n "$value" ]] || return 0
   if [[ "$value" =~ $PUBLIC_SLUG_RE ]]; then
     PUBLIC_REPO="$value"
     return 0
   fi
-  wk_warn "public: the public key in $REPO_SETTINGS is '$value', not an owner/name slug; the public pairing is off until it is one"
+  wk_warn "public: the public key in the settings is '$value', not an owner/name slug; the public pairing is off until it is one"
   needs_attention=1
 }
 

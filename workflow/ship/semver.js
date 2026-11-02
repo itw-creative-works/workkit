@@ -1,7 +1,7 @@
 // workflow/ship/semver.js: the kit's one version comparison, in semver's order,
-// and the shape check beside it, for the publish plan, the release commit and
-// the morning brief's upstream news. A missing part reads as 0, a prerelease
-// sorts below its release, and build metadata carries no order.
+// and the shape check beside it, for the publish plan, the release commit, the
+// release cut (cut.js) and the morning brief's upstream news. A missing part
+// reads as 0, a prerelease sorts below its release, build metadata no order.
 //
 // Usage: const { compareVersions, isSemver } = require('./semver');
 

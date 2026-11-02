@@ -4,9 +4,9 @@
 // public/ row; docs/project-state.md § Capture, the public pairing).
 // Usage: const { pairing, publicLink, gh } = require('./lib');
 
-const fs = require('fs');
-const path = require('path');
 const { spawnSync } = require('child_process');
+const git = require('../lib/git');
+const { settingsAt } = require('../lib/settings');
 
 // An owner/name slug. The twin of PUBLIC_SLUG_RE in standards/labels.sh,
 // pinned by test/hooks/twins.test.js: change one and change the other.
@@ -78,26 +78,20 @@ const warnLine = (line) => process.stderr.write(`${line}\n`);
  * @returns {string}
  */
 const repoRoot = (cwd) => {
-  const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
-  if (r.error || r.status !== 0) throw new PublicError(`${cwd} is not inside a git repo`);
-  return r.stdout.trim();
+  const root = git.repoRoot(cwd);
+  if (root === null) throw new PublicError(`${cwd} is not inside a git repo`);
+  return root;
 };
 
 /**
- * The `public` key of the repo's committed `.workkit/settings.json`: `{ repo }`
- * for a slug, `{ invalid }` for any other value, null when there is none.
+ * The `public` setting of the repo's merged settings: `{ repo }` for a slug,
+ * `{ invalid }` for any other value, null when there is none.
  * @param {string} root the repo root
  * @returns {{repo: string}|{invalid: string}|null}
  */
 const publicKey = (root) => {
-  let settings;
-  try {
-    settings = JSON.parse(fs.readFileSync(path.join(root, '.workkit', 'settings.json'), 'utf8'));
-  } catch {
-    return null;
-  }
-  const value = settings && typeof settings === 'object' ? settings.public : undefined;
-  if (value === undefined || value === null || value === '') return null;
+  const value = settingsAt(root).public;
+  if (value === null || value === '') return null;
   return typeof value === 'string' && SLUG_RE.test(value) ? { repo: value } : { invalid: JSON.stringify(value) };
 };
 
@@ -111,7 +105,7 @@ const pairing = (cwd) => {
   const root = repoRoot(cwd);
   const key = publicKey(root);
   if (key && key.invalid) {
-    process.stderr.write(`public: the public key in .workkit/settings.json is ${key.invalid}, not an owner/name slug, so the pairing is off\n`);
+    process.stderr.write(`public: the public key in the settings is ${key.invalid}, not an owner/name slug, so the pairing is off\n`);
     return null;
   }
   return key ? { root, repo: key.repo } : null;

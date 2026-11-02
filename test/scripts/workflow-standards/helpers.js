@@ -225,8 +225,12 @@ const linkedClaudeHome = () => {
   return { ...made, link };
 };
 
+// The kit defaults a copied engine at <root>/workflow reads its settings through,
+// two folders above workflow/lib/.
+const copyDefaults = (root) => fs.cpSync(path.join(WORKFLOW_DIR, '..', 'defaults'), path.join(root, 'defaults'), { recursive: true });
+
 module.exports = {
-  WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
+  copyDefaults, WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
   desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
   binDirWithout, runScript, claudeHomeWith, linkedClaudeHome,
 };

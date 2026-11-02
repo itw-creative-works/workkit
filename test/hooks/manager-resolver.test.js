@@ -1,30 +1,31 @@
 // Tests for manager:resolver's logic: resolverModel(config, subagentType, parentModel, givenModel) in
-// hooks/mods/resolver.js, over managerConfig(ladder, userSettings, repoSettings) and modelTier(id) in hooks/mods/manager.js.
+// hooks/mods/resolver.js, over managerConfig(ladder, settings) and modelTier(id) in hooks/mods/manager.js.
 // The ladder's shape, the decision table, both class spellings and the layer merge. The spawn itself (a given model,
 // advise mode, the layers read off disk) is test/mods/agent-spawn.test.ts.
 
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { mods } = require('../lib/mods-inputs');
+const { mods, mergedSettings } = require('../lib/mods-inputs');
+
+const DEFAULTS_PATH = path.join(__dirname, '..', '..', 'defaults', 'settings.json');
 
 const LADDER_PATH = path.join(__dirname, '..', '..', 'hooks', 'manager', 'resources', 'ladder.json');
 const ladder = JSON.parse(fs.readFileSync(LADDER_PATH, 'utf8'));
 const id = (rung) => ladder.ladder[rung];
-// The fast tier's rung comes from the ladder, so a tier retune needs no edit here.
-const FAST = ladder.tiers.fast;
+// The fast tier's rung is the kit defaults file's, read as data, so a tier retune needs no edit here.
+const FAST = JSON.parse(fs.readFileSync(DEFAULTS_PATH, 'utf8')).manager.tiers.fast;
 const MODELS = { fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: 'claude-sonnet-4-5', haiku: 'claude-haiku-4-5' };
 
-const config = (user, repo) => mods('manager').managerConfig(ladder, user, repo);
+const config = (user, repo) => mods('manager').managerConfig(ladder, mergedSettings({ user, repo }));
 const resolve = (type, parent, cfg = config()) => mods('resolver').resolverModel(cfg, type, parent, undefined);
 const settings = (manager) => ({ enabled: true, manager });
 
 const cases = async () => {
   group('manager-resolver: ladder manifest shape');
-  await test('ladder.json carries note, mode, and the three maps', () => {
+  await test('ladder.json carries note and the two maps', () => {
     assert(typeof ladder.note === 'string' && ladder.note.length > 0, 'note missing');
-    assert(['rewrite', 'advise'].includes(ladder.mode), `bad mode: ${ladder.mode}`);
-    assert(ladder.ladder && ladder.classes && ladder.tiers, 'a map is missing');
+    assert(ladder.ladder && ladder.classes, 'a map is missing');
   });
   await test('ladder is ordered strongest first (fable at the top)', () => {
     assertEq(Object.keys(ladder.ladder)[0], 'fable');

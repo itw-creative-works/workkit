@@ -16,15 +16,24 @@ is_home_clone() {
   [[ -n "$here" && "$here" == "$there" ]]
 }
 
-# The user's folder exists from the first run. `set -C` makes the create
-# O_EXCL, so a racing --decline is never truncated, and the stderr redirect
-# comes first so it silences the target's own message. `publish` seeds null,
-# the unanswered state (`workflow/README.md` § The two settings files).
+# The user's folder exists from the first run, its settings file holding no
+# setting: every default is the kit's (defaults/settings.json), never copied in.
+# `set -C` makes the create O_EXCL, so a racing --decline is never truncated, and
+# the stderr redirect comes first so it silences the target's own message.
 seed_user_settings() {
   local dir="${USER_SETTINGS%/*}"
   [[ -e "$USER_SETTINGS" ]] && return 0
   mkdir -p "$dir" 2>/dev/null || return 0
-  ( set -C; printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": null,\n    "url": null\n  }\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
+  ( set -C; printf '{\n  "version": 1\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
+}
+
+# Every reader skips a machine file that is no JSON object, so the heal is where
+# that gets said. Empty text is no layer at all, not a broken one.
+report_user_settings() {
+  command -v jq >/dev/null 2>&1 || return 0
+  [[ -f "$USER_SETTINGS" ]] || return 0
+  wk_jq -e -s 'length == 0 or (length == 1 and (.[0] | type) == "object")' "$USER_SETTINGS" >/dev/null 2>&1 && return 0
+  wk_warn "settings: $USER_SETTINGS is not a JSON object (unreadable or not valid JSON); fix or remove it; until then every settings reader skips it"
 }
 
 # The machine's own file, seeded the same way and for the opposite reason: it is
@@ -43,18 +52,22 @@ offer_line() {
   printf 'this repo is not in the issue workflow; say the word to enable it (bash %q/standards.sh --enable %q), or decline and it will not ask again (--decline).' "$SCRIPT_DIR" "$root"
 }
 
-# true | false | absent | unreadable: the `enabled` key of a settings file,
-# this repo's by default. jq when present, the no-jq readers otherwise, so a
-# machine without jq still honors a deliberate `enabled: false`; a file there
-# but unreadable is `unreadable` on both paths, so the prune leaves it
-# alone; the opt-in read (participation.sh) counts the same file a decline.
+# true | false | absent | unreadable: a settings file's `enabled` (this repo's by
+# default); only a boolean answers, so empty text, no key or another value is
+# `absent`. jq, else the no-jq readers, so a deliberate `enabled: false` holds
+# anywhere; an unreadable file is `unreadable` both ways, which the prune keeps.
 repo_enabled_flag() {
-  local settings="${1:-$REPO_SETTINGS}"
+  local settings="${1:-$REPO_SETTINGS}" out rc
   if command -v jq >/dev/null 2>&1; then
-    # `has`, not `//`, since `//` treats `false` as absent. An unparseable file
-    # reads `unreadable`, never the legacy opt-in, unless jq already read a no.
-    wk_jq_default 'unreadable' \
-      -r 'if has("enabled") then (.enabled | tostring) else "absent" end' "$settings"
+    # The type, not `//`, since `//` treats `false` as absent. Text holding no JSON
+    # value at all (empty) prints nothing and exits 0; text that does not parse
+    # reads `unreadable` unless jq already read a value before the break.
+    out="$(wk_jq -r 'if (.enabled | type) == "boolean" then (.enabled | tostring) else "absent" end' "$settings" 2>/dev/null)"
+    rc=$?
+    if [[ -n "$out" ]]; then printf '%s' "$out"
+    elif [[ "$rc" -eq 0 ]]; then printf 'absent'
+    else printf 'unreadable'
+    fi
   elif [[ -e "$settings" && ! -r "$settings" ]]; then
     printf 'unreadable'
   elif wk_settings_declined "$settings"; then
@@ -91,13 +104,14 @@ resolve_state() {
     printf 'home'
     return 0
   fi
+  # Only the file's own `"enabled": true` is a yes; a file with no answer either
+  # way falls through to the machine's decline record and the offer.
   if [[ -f "$REPO_SETTINGS" ]]; then
     case "$(repo_enabled_flag)" in
-      false)      printf 'disabled' ;;
-      unreadable) printf 'unreadable' ;;
-      *)          printf 'enabled' ;;
+      true)       printf 'enabled'; return 0 ;;
+      false)      printf 'disabled'; return 0 ;;
+      unreadable) printf 'unreadable'; return 0 ;;
     esac
-    return 0
   fi
   # The machine file is read-only here and the decline is the one decision in it,
   # so no jq means no record: an undecided repo simply gets offered again.
@@ -132,8 +146,8 @@ record_decline() {
     '.repos = ((.repos // {}) + { ($r): "declined" })' || exit 1
 
   # A committed answer wins at resolve time, so saying "it will not be offered
-  # again" would be a lie while that file says yes.
-  if [[ -f "$REPO_SETTINGS" ]]; then
+  # again" would be a lie while that file gives one; a file with none does not.
+  if [[ -f "$REPO_SETTINGS" ]] && [[ "$(repo_enabled_flag)" =~ ^(true|false|unreadable)$ ]]; then
     wk_ok "decline: recorded $roster_key in $USER_REPOS"
     wk_warn "decline: $REPO_SETTINGS still carries the repo's committed answer, which wins; this takes effect only if that file goes away"
   else
@@ -171,12 +185,13 @@ register_in_roster() {
       continue
     fi
     # The same reading the heal makes of this repo's own file, asked of a
-    # registered one: `false` is the deliberate no, and every other answer
-    # (including a file jq cannot read) leaves the entry alone.
+    # registered one: only `true` is on, so every other answer leaves the
+    # roster, but a file jq cannot read, which leaves the entry alone.
     flag="$(repo_enabled_flag "$key/$REPO_SETTINGS")"
-    if [[ "$flag" == "false" ]]; then
-      stale="$stale$key"$'\n'
-    fi
+    case "$flag" in
+      true|unreadable) ;;
+      *) stale="$stale$key"$'\n' ;;
+    esac
   done <<<"$keys"
 
   # Nothing to add and nothing to remove: leave the file untouched, so a session
@@ -206,6 +221,12 @@ write_repo_optin() {
     mkdir -p "$WORKKIT_DIR"
     printf '{\n  "enabled": true\n}\n' >"$REPO_SETTINGS"
     wk_ok "opt-in: created $REPO_SETTINGS; commit it, it is the repo's yes"
+    return 0
+  fi
+  # A file holding no JSON value gives jq nothing to edit, so it is written whole.
+  if [[ -z "$(tr -d '[:space:]' <"$REPO_SETTINGS" 2>/dev/null)" ]]; then
+    printf '{\n  "enabled": true\n}\n' >"$REPO_SETTINGS"
+    wk_ok "opt-in: wrote the yes into the empty $REPO_SETTINGS; commit it"
     return 0
   fi
   if ! command -v jq >/dev/null 2>&1; then

@@ -1,7 +1,7 @@
-// Tests for the one entry, packages/core/test/lib/harness.js: it carries every
-// export of the concern files behind it, a suite written on that one require
-// alone runs the same by file and under the kit's runner, and a failure prints
-// the first stack frame outside the library, whatever shape the frame takes.
+// Tests for the one entry, packages/core/test/lib/harness.js: every export behind it, a
+// suite on that one require run by file and under the runner, a failure's first frame
+// outside the library, and every later line of a message, skip reason or case body's
+// own print kept off column zero, with the real writers back after the case.
 
 const fs = require('fs');
 const path = require('path');
@@ -52,11 +52,11 @@ const node = (root, args) => {
   return { code: res.status, output: stripVTControlCharacters(res.output) };
 };
 
-// A suite on the library whose one case throws an error carrying `stack`.
-const THROWS = (stack) => `
+// A suite on the library whose one case throws an error carrying `stack` and `message`.
+const THROWS = (stack, message = 'boom') => `
 const { test, summary, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
 module.exports = async () => {
-  await test('throws', () => { const err = new Error('boom'); err.stack = ${JSON.stringify(stack)}; throw err; });
+  await test('throws', () => { const err = new Error(${JSON.stringify(message)}); err.stack = ${JSON.stringify(stack)}; throw err; });
   return summary();
 };
 if (require.main === module) selfRun(module.exports);
@@ -67,13 +67,35 @@ const RESET = '\x1b[0m';
 
 // `stack` thrown by a one-case suite run by file: the suite's exit, its output,
 // and the dimmed frame lines under the failure message.
-const framesOf = (dir, stack) => {
+const framesOf = (dir, stack, message) => {
   const file = path.join(dir, 'throws.test.js');
-  fs.writeFileSync(file, THROWS(stack));
+  fs.writeFileSync(file, THROWS(stack, message));
   const res = run(process.execPath, [file]);
   const frames = res.output.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith(DIM))
     .map((l) => l.slice(DIM.length, l.lastIndexOf(RESET)));
   return { status: res.status, output: res.output, frames };
+};
+
+// A one-case suite on the library whose case runs `body`, then a group header and `after`.
+const BODY = (body, after = '') => `
+const { group, test, summary, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
+module.exports = async () => {
+  await test('the case', ${body});
+  group('after');
+  ${after}
+  return summary();
+};
+if (require.main === module) selfRun(module.exports);
+`;
+
+// The BODY suite over `body`, run by file: its exit, its whole output and each stream, colours stripped.
+const bodyRun = (body, after) => {
+  const dir = mkTmp('body-');
+  const file = path.join(dir, 'body.test.js');
+  fs.writeFileSync(file, BODY(body, after));
+  const res = run(process.execPath, [file], { cwd: dir });
+  const [output, stdout, stderr] = [res.output, res.stdout, res.stderr].map((text) => stripVTControlCharacters(text));
+  return { code: res.status, output, stdout, stderr };
 };
 
 // How many case lines in `output` carry the pass mark, and the fail mark.
@@ -137,6 +159,85 @@ const cases = async () => {
     assertEq(status, 1, `the case failed, got:\n${output}`);
     assertEq(frames.length, 1, `one frame line, got:\n${output}`);
     assert(frames[0].includes(`${outside}:7:9`), `the outside frame prints, not the library's, got: ${frames[0]}`);
+  });
+
+  group('harness: the failure message');
+
+  await test('a failing message of two lines prints both at the case indent', () => {
+    const dir = mkTmp('message-');
+    const outside = path.join(dir, 'x.js');
+    const { status, output } = framesOf(dir, `Error: first\nsecond\n    at ${outside}:3:5`, 'first\nsecond');
+    assertEq(status, 1, `the case failed, got:\n${output}`);
+    const printed = stripVTControlCharacters(output).split(/\r?\n/);
+    const frame = printed.find((l) => l.trim().startsWith(`at ${outside}`));
+    assert(frame, `the frame line printed, got:\n${output}`);
+    const indent = frame.slice(0, frame.indexOf('at '));
+    assert(indent.length > 0, `the case indent is not column zero, got:\n${output}`);
+    assert(printed.includes(`${indent}first`), `the first line at the case indent, got:\n${output}`);
+    assert(printed.includes(`${indent}second`), `the second line at the case indent, got:\n${output}`);
+  });
+
+  group('harness: selfRun');
+
+  await test('selfRun over a suite skipped with a two-line reason prints the second line at the case indent', () => {
+    const dir = mkTmp('skip-');
+    const file = path.join(dir, 'skipped.test.js');
+    fs.writeFileSync(file, `
+const { skipSuite, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
+module.exports = async () => skipSuite('skip first\\nskip second');
+if (require.main === module) selfRun(module.exports);
+`);
+    const { code, output } = node(dir, [file]);
+    assertEq(code, 0, `a skipped suite exits 0, got:\n${output}`);
+    const printed = output.split(/\r?\n/);
+    assert(printed.some((l) => l.includes('skip first')), `the reason's first line printed, got:\n${output}`);
+    assert(printed.includes('    skip second'), `the second line at the case indent, got:\n${output}`);
+    assert(!printed.some((l) => l.startsWith('skip second')), `the second line never at column zero, got:\n${output}`);
+  });
+
+  group('harness: a skipped case');
+
+  await test('a skipped case whose reason holds two lines prints the second line indented, never at column zero', () => {
+    const dir = mkTmp('skip-case-');
+    const file = path.join(dir, 'gated.test.js');
+    fs.writeFileSync(file, `
+const { skip, summary, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
+module.exports = async () => { skip('the gated case', 'reason first\\nreason second'); return summary(); };
+if (require.main === module) selfRun(module.exports);
+`);
+    const { code, output } = node(dir, [file]);
+    assertEq(code, 0, `a skipped case keeps the suite green, got:\n${output}`);
+    const printed = output.split(/\r?\n/);
+    assert(printed.some((l) => l.includes('the gated case') && l.includes('reason first')), `the skip line names the case and the first line, got:\n${output}`);
+    assert(printed.some((l) => /^\s+reason second/.test(l)), `the second line indented, got:\n${output}`);
+    assert(!printed.some((l) => l.startsWith('reason second')), `the second line never at column zero, got:\n${output}`);
+  });
+
+  group('harness: a case body\'s own prints');
+
+  await test('a passing case whose body writes two lines with console.log prints both at the case indent, the next header at column zero', () => {
+    const { code, output } = bodyRun("() => { console.log('one\\ntwo'); }");
+    assertEq(code, 0, `the case passed, got:\n${output}`);
+    assertEq(output, '    one\n    two\n  ✓ the case\n\n[after]\n', 'the body lines indented, the mark and the header on the real writer');
+  });
+
+  await test('a passing case whose body writes two lines with process.stdout.write prints both at the case indent, the next header at column zero', () => {
+    const { code, output } = bodyRun("() => { process.stdout.write('one\\ntwo\\n'); }");
+    assertEq(code, 0, `the case passed, got:\n${output}`);
+    assertEq(output, '    one\n    two\n  ✓ the case\n\n[after]\n', 'the body lines indented, the mark and the header on the real writer');
+  });
+
+  await test('a passing case whose body writes two lines with console.error prints both at the case indent on stderr, a print after the case at column zero', () => {
+    const { code, stdout, stderr } = bodyRun("() => { console.error('one\\ntwo'); }", "console.error('after on stderr');");
+    assertEq(code, 0, `the case passed, got:\n${stdout}${stderr}`);
+    assertEq(stderr, '    one\n    two\nafter on stderr\n', 'the body lines on stderr at the case indent, the real writer back after the case');
+    assertEq(stdout, '  ✓ the case\n\n[after]\n', 'the mark and the header on stdout, untouched');
+  });
+
+  await test('a failing case\'s body print is indented the same, and the body that threw gets its writer put back', () => {
+    const { code, output } = bodyRun("() => { console.log('one\\ntwo'); const err = new Error('boom'); err.stack = 'Error: boom'; throw err; }");
+    assertEq(code, 1, `the case failed, got:\n${output}`);
+    assertEq(output, '    one\n    two\n  ✗ the case\n    boom\n\n[after]\n', 'the body lines indented, the mark, the message and the header on the real writer');
   });
 };
 

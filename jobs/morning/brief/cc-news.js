@@ -7,16 +7,12 @@
 //   collectCcNews()              // { version, since, matches }
 //   renderVersionMark(version)   // the line the published brief carries
 
-const fs = require('fs');
-const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { BRIEF_TITLE_PREFIX } = require('../../../tower/api/lib/history');
 const { compareVersions } = require('../../../workflow/ship/semver');
 const { userDir } = require('../../../workflow/user-dir');
-
-// The hand-edited file that names the home repo: the board the cursor lives on.
-const SETTINGS_FILE = 'settings.json';
+const { homeSlug } = require('../../../workflow/lib/settings');
 
 // The briefs' title prefix comes from the module that owns it; this module owns
 // the mark line's shape. The runner appends the file `renderVersionMark` was
@@ -100,17 +96,6 @@ const parseSections = (text) => {
 
 /** The topic an entry files under: the first TOPICS match, or 'other'. */
 const topicOf = (entry) => (TOPICS.find(({ re }) => re.test(entry)) || { name: 'other' }).name;
-
-/** The home repo's slug, or null when this machine has no home repo. */
-const homeSlug = (workflowHome) => {
-  try {
-    const settings = JSON.parse(fs.readFileSync(path.join(workflowHome, SETTINGS_FILE), 'utf8'));
-    const repo = settings && settings.site && settings.site.repo;
-    return typeof repo === 'string' && repo.includes('/') ? repo : null;
-  } catch {
-    return null;
-  }
-};
 
 /**
  * The board, read tri-state. A version is a cursor; `ok` with no version is a

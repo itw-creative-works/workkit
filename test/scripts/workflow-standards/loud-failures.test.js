@@ -9,15 +9,18 @@ const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, gitPath, which, linkTool, systemPathWith,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript,
+  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, copyDefaults,
 } = require('./helpers');
 
 const cases = async () => {
   group('standards.sh: it fails loudly, never silently');
 
   await test('a missing template warns, keeps healing, and exits non-zero', () => {
-    const engine = mkTmp('wf-std-');
+    const kit = mkTmp('wf-std-');
+    const engine = path.join(kit, 'workflow');
+    fs.mkdirSync(engine);
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
+    copyDefaults(kit);
     fs.rmSync(path.join(engine, 'templates', 'session.md'));
     const repo = makeRepo();
     const stub = makeGhStub();
@@ -32,14 +35,17 @@ const cases = async () => {
     assert(out.includes('template missing'), `names the missing template, got: ${out}`);
     assertEq(res.status, 1, 'a partial heal exits non-zero so the caller can tell');
     assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'and the rest of the heal still ran');
-    cleanup(repo); cleanup(stub.dir); cleanup(engine);
+    cleanup(repo); cleanup(stub.dir); cleanup(kit);
   });
 
   await test('a missing labels.json still answers --state and --announce, and the heal says what broke', () => {
     // A manifest check ahead of mode dispatch would answer --state with exit 1,
     // which the hook reads as nogit and goes silent forever.
-    const engine = mkTmp('wf-std-');
+    const kit = mkTmp('wf-std-');
+    const engine = path.join(kit, 'workflow');
+    fs.mkdirSync(engine);
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
+    copyDefaults(kit);
     fs.rmSync(path.join(engine, 'labels.json'));
     const repo = makeRepo();
     const env = {
@@ -57,7 +63,7 @@ const cases = async () => {
     assert(out.includes('labels.json missing'), `the heal names the broken install, got: ${out}`);
     assertEq(heal.status, 1, 'and exits non-zero so the caller retries');
     assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the local heals still ran');
-    cleanup(repo); cleanup(engine);
+    cleanup(repo); cleanup(kit);
   });
 
   await test('a timed-out decline leaves the other run\'s lock in place', () => {
@@ -79,7 +85,7 @@ const cases = async () => {
 
   await test('a repo settings.json that is not valid JSON never resolves to enabled', () => {
     const repo = makeRepo({ settings: 'garbage{\n' });
-    assertEq(runScript(repo, { args: ['--state'] }).stdout.trim(), 'unreadable', 'an unparseable answer is not a legacy yes');
+    assertEq(runScript(repo, { args: ['--state'] }).stdout.trim(), 'unreadable', 'an unparseable answer is not a yes');
     const { output } = runScript(repo);
     assert(output.includes('not valid JSON'), `and it says so, got: ${output}`);
     assert(!fs.existsSync(path.join(repo, '.github')), 'healing nothing until it is fixed');
@@ -147,9 +153,8 @@ const cases = async () => {
     cleanup(repo); cleanup(home);
   });
 
-  await test('no jq: a committed enabled:false is still honored, not healed over', () => {
-    // The grep fallback exists for exactly this: a committed no, read without jq.
-    const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }\n' });
+  await test('no jq: a committed enabled:false is still a no, and a file with no enabled key no yes', () => {
+    // The grep fallback exists for exactly this: a committed answer, read without jq.
     const binDir = mkTmp('wf-std-');
     // cygpath is the engine's path spelling on Windows (wk_git_path), as much a
     // need there as git; `which` answers nothing for it on macOS and Linux.
@@ -157,11 +162,15 @@ const cases = async () => {
       const real = which(tool);
       if (real) linkTool(binDir, real);
     }
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
-      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    assertEq((res.stdout || '').trim(), 'disabled', 'a deliberate no survives a jq-less machine');
-    cleanup(repo); cleanup(binDir);
+    for (const [settings, want] of [['{ "version": 1, "enabled": false }\n', 'disabled'], ['{ "version": 1 }\n', 'undecided']]) {
+      const repo = makeRepo({ settings });
+      const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
+        env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      });
+      assertEq((res.stdout || '').trim(), want, `${settings.trim()} on a jq-less machine, stderr: ${res.stderr}`);
+      cleanup(repo);
+    }
+    cleanup(binDir);
   });
 
   await test('the offer line survives a repo path containing a space', () => {

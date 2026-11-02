@@ -193,11 +193,13 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(heals(w)).toHaveLength(0)
   })
 
-  for (const [name, files] of [
-    ['no .workkit/settings.json: offers to enable, writes nothing', {}],
+  for (const [name, settings] of [
+    ['no .workkit/settings.json: offers to enable, writes nothing', null],
+    ['a .workkit/settings.json with no enabled key: offers to enable, writes nothing', '{ "version": 1 }\n'],
+    ['an empty .workkit/settings.json: offers to enable, writes nothing', ''],
   ] as const) {
     test(`${name}`, async ($, on) => {
-      const w = mkWorld(on, { repos: { [REPO]: null }, files, standards: { state: 'undecided', heal: HEAL } })
+      const w = mkWorld(on, { repos: { [REPO]: settings }, standards: { state: 'undecided', heal: HEAL } })
       const ctx = contextOf(await start($, REPO))
       expect(ctx).toContain('not in the issue workflow')
       expect(ctx).toContain('--enable')

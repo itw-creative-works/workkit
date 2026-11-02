@@ -24,7 +24,7 @@ const { cleanup, mkWorld, runCli, mkRepo } = require('./helpers');
 
 // Each verb and every subcommand it runs.
 const VERBS = {
-  ship: ['items', 'release', 'watch', 'plan', 'publish'],
+  ship: ['items', 'release', 'watch', 'plan', 'publish', 'cut', 'deploy'],
   review: ['covers', 'mark'],
   triage: ['mark'],
   proof: ['red'],
@@ -116,6 +116,27 @@ const cases = async () => {
     assert(out.endsWith('published @s/a 1.0.0\n'), `the published line, got: ${out}`);
     cleanup(npm.dir);
     cleanup(dir);
+    cleanup(world.root);
+  });
+
+  await test('ship cut hands its version to the script: a version that is no x.y.z is usage, exit 2, gh never asked', () => {
+    const world = mkWorld();
+    const g = mkGitRepo('wk-cut-', { 'CHANGELOG.md': '# Changelog\n\n## [1.2.3] - 2026-11-01\n\n### Added\n\n- A thing.\n' });
+    const { code, out, err } = runCli(world, ['ship', 'cut', '1.2'], { cwd: g.repo, env: withNode(world) });
+    assertEq(code, 2, `exit 2, got: ${out}${err}`);
+    assert(/usage/i.test(err), `the script's usage, got: ${err}`);
+    assertEq(world.ghCalls().length, 0, `gh never asked, got: ${fmtCalls(world.ghCalls())}`);
+    cleanup(g.dir);
+    cleanup(world.root);
+  });
+
+  await test('ship deploy hands its run to the script: a repo with no deploy or release script is its line, exit 0', () => {
+    const world = mkWorld();
+    const g = mkGitRepo('wk-deploy-', { 'package.json': '{ "name": "scratch", "scripts": { "test": "true" } }\n' });
+    const { code, out, err } = runCli(world, ['ship', 'deploy'], { cwd: g.repo, env: withNode(world) });
+    assertEq(code, 0, `exit 0, got: ${out}${err}`);
+    assert(lines(err).includes('ship-deploy: no deploy or release script'), `the script's own line, got: ${err}`);
+    cleanup(g.dir);
     cleanup(world.root);
   });
 

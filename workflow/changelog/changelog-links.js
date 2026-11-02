@@ -20,6 +20,7 @@ const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./lint');
 // What a repo is called comes from ../slug.js, the twin of lib/slug.sh, for the
 // same reason.
 const { slugFromRemote } = require('../slug');
+const { repoRoot } = require('../lib/git');
 
 const TRAILER_RE = /\b(?:fixes|closes|resolves)\s+#(\d+)\b/gi;
 
@@ -260,11 +261,8 @@ const main = (argv) => {
     return value;
   };
 
-  const cwd = process.cwd();
-  let root;
-  try {
-    root = run('git', ['rev-parse', '--show-toplevel'], cwd);
-  } catch {
+  const root = repoRoot(process.cwd());
+  if (root === null) {
     console.error('changelog-links: not a git repository.');
     return 1;
   }

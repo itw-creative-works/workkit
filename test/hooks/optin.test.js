@@ -1,5 +1,5 @@
 // Tests for the Bash gate's logic, optinRepo({ command, cwd, toplevel,
-// settingsOf }) in hooks/mods/optin.js: which repo a Bash command acts on and
+// settingsText }) in hooks/mods/optin.js: which repo a Bash command acts on and
 // whether it opted in, the port of hook_optin_repo. Each case ports the
 // loader.test.js case its name quotes. Not here: the Edit and link cases (no
 // command, the classic.PreToolUse gate) and the hooks-log and HOOK_DISABLE
@@ -18,7 +18,7 @@ const NOT = { dir: '/w/n', repo: '/w/n/repo' };
 const SETTINGS = {
   enabled: OPT_IN_SHAPES.current,
   declined: '{ "version": 1, "enabled": false }\n',
-  legacy: '{ "version": 1 }\n',
+  unanswered: '{ "version": 1 }\n',
 };
 const REPOS = { [OPTED.repo]: SETTINGS.enabled, [NOT.repo]: null };
 
@@ -26,9 +26,9 @@ const toplevelIn = (repos) => async (dir) => Object.keys(repos)
   .filter((root) => dir === root || dir.startsWith(`${root}/`))
   .sort((a, b) => b.length - a.length)[0] ?? null;
 
-// settingsOf answers a root's settings text, null for no file.
+// settingsText answers a root's settings text, null for no file.
 const ask = (command, cwd, { repos = REPOS } = {}) => mods('optin').optinRepo({
-  command, cwd, toplevel: toplevelIn(repos), settingsOf: async (root) => repos[root] ?? null,
+  command, cwd, toplevel: toplevelIn(repos), settingsText: async (root) => repos[root] ?? null,
 });
 
 const runs = async (command, cwd, opts) => {
@@ -50,8 +50,8 @@ const cases = async () => {
     }
   });
 
-  await test('"enabled": false steps aside; a file with no enabled key runs', async () => {
-    for (const [answer, settings, opted] of [['declined', SETTINGS.declined, false], ['legacy', SETTINGS.legacy, true]]) {
+  await test('"enabled": false and a file with no enabled key both step aside', async () => {
+    for (const [answer, settings, opted] of [['declined', SETTINGS.declined, false], ['no enabled key', SETTINGS.unanswered, false]]) {
       const r = await ask('git status', '/w/r', { repos: { '/w/r': settings } });
       assertEq(r.opted, opted, `a repo answering ${answer}`);
       assertEq(r.root, '/w/r', `the root it judged, answering ${answer}`);

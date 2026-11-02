@@ -113,7 +113,6 @@ const WHOLE_TREE = (note) => `${note}; put the node it names on the gate's PATH,
 // <why> is `exited <rc>`, or `did not start`.
 const DIFF_BLOCK = (root, args, why) => `proof-guard: BLOCKED this flip to status:qa: the working diff of ${root} could not be read (git ${args} ${why}), so the touched test files are unknown. Fix git, then flip again.`;
 const HASH_BLOCK = (root) => `proof-guard: BLOCKED this flip to status:qa: the working tree of ${root} could not be hashed, so the park's test record cannot be read. Fix what stops git hashing the tree (git add -A into a throwaway index, then git write-tree), then flip again.`;
-const SHAPE_NOTE = 'The settings key proof.rootOnly in .workkit/settings.json is not an array of folder strings, so no package was taken as proved by the root run alone.';
 const ROOT_ONLY = 'proved by the root run alone (settings proof.rootOnly)';
 
 /** The verdict blocked with exactly `text`. */
@@ -127,5 +126,5 @@ const passText = (r, what) => {
 
 module.exports = {
   ROOT, TREE, OTHER_TREE, WORLD, comments, viewer, packagesOf, pkgRecord, suiteRecord, step, judge, denyOf, textOf,
-  QA, VIEW, flip, BLOCK, SKIPPED, QA_BLOCK, WHOLE_TREE, DIFF_BLOCK, HASH_BLOCK, SHAPE_NOTE, ROOT_ONLY, assertBlocks, passText,
+  QA, VIEW, flip, BLOCK, SKIPPED, QA_BLOCK, WHOLE_TREE, DIFF_BLOCK, HASH_BLOCK, ROOT_ONLY, assertBlocks, passText,
 };

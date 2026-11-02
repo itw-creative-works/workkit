@@ -1,28 +1,26 @@
 /**
  * hooks/mods/gate.js: the opt-in rule the module's gate applies: a repo opted
- * in when its .workkit/settings.json exists, parses (an empty file is the
- * legacy yes) and its top-level `enabled` is not false: the engine's
- * wk_settings_declined, turned round.
+ * in when its own .workkit/settings.json parses and its top-level `enabled` is
+ * true, the default being false: the engine's wk_opted_in.
  */
 
-import { parseJson } from './settings.js';
+import { isPlain, parseJson } from './settings.js';
 
 // The hooks that run in every repo, opted in or not: each speaks to the
 // machine (the setup reminder, the restart notice), never to a repo.
 const EXEMPT = new Set(['workflow:standards', 'workflow:reload-guard']);
 
 /**
- * Whether a repo's settings text opts it in: false when it is absent, does not
- * parse, or its top-level `enabled` is false; a nested `enabled` is never read,
- * and a file with no top-level key, empty text included, is the legacy yes.
- * The module's one opt-in reader, the engine's node read (wk_settings_declined).
+ * Whether a repo's settings text opts it in: true only when it parses and its
+ * top-level `enabled` is true; absent, empty, unparsable or keyless text is
+ * off, and a nested `enabled` is never read. Only the repo's own file says,
+ * never the machine's. The module's one opt-in reader, the engine's wk_opted_in.
  * @param {string|null|undefined} text the settings file's text, null when absent
  * @returns {boolean}
  */
 export function settingsOptedIn(text) {
-  if (typeof text === 'string' && text.trim() === '') return true;
   const settings = parseJson(text);
-  return settings !== null && settings.enabled !== false;
+  return isPlain(settings) && settings.enabled === true;
 }
 
 /**

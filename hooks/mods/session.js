@@ -6,7 +6,7 @@
 
 import { userDirOf } from './log.js';
 import { MAX_CONTENT_LINES, contentLineCount } from './session-guard.js';
-import { isPlain, parseJson } from './settings.js';
+import { homeSlugOf, isPlain, parseJson, rootSettings } from './settings.js';
 
 // How old the newest brief may be, in whole UTC calendar days, before it is
 // judged stopped: one day is the ordinary morning. FRESH_DAYS in
@@ -92,7 +92,8 @@ export function sessionContext({ state, path, brief, repoSlug, now }) {
  * The hook: the facts gathered from git's toplevel and the machine folder,
  * the context returned, and the owner told when state carried over.
  * @param {object} io the engine calls as plain functions: `top(cwd)` (the git
- *   toplevel, null outside a repo), `read(path)` (text, null when absent), `now()`, `log(text)`
+ *   toplevel, null outside a repo), `read(path)` (text, null when absent), `now()`, `log(text)`,
+ *   and `pluginRoot`, the kit whose defaults the machine settings merge over
  * @param {object} env the variables the module read, for the machine folder
  * @param {object} e the SessionStart input, for its `cwd`
  * @returns {Promise<string|null>} the context
@@ -103,11 +104,9 @@ export async function sessionGather(io, env, e) {
   const path = `${root}/.workkit/agents/session.md`;
   const machine = userDirOf(env);
   const [state, brief, settings, now] = await Promise.all([
-    io.read(path), io.read(`${machine}/brief-status.json`), io.read(`${machine}/settings.json`), io.now(),
+    io.read(path), io.read(`${machine}/brief-status.json`), rootSettings(null, env, io), io.now(),
   ]);
-  const slug = parseJson(settings)?.site?.repo;
-  const repoSlug = typeof slug === 'string' ? slug : null;
-  const { context, carried } = sessionContext({ state, path, brief: parseJson(brief), repoSlug, now });
+  const { context, carried } = sessionContext({ state, path, brief: parseJson(brief), repoSlug: homeSlugOf(settings), now });
   if (carried) io.log('workkit: state carried over. Say "continue" to resume the session queue');
   return context;
 }

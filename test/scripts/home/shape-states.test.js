@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { WORKFLOW_DIR, KIT_DIR, cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
+const { settingsAt } = require('../../../workflow/lib/settings');
 
 const cases = async () => {
   group('workflow/home: shape');
@@ -97,17 +98,15 @@ const cases = async () => {
 
   await test('the slug write seeds the settings file when nothing has yet, with the switch unanswered', () => {
     // The one order where setup runs before any heal: this function creates the
-    // hand-edited file itself. `publish` seeds null: the same
-    // unanswered state the heal's seed writes, so whichever wrote it first,
-    // setup still has a question to put.
+    // hand-edited file itself. The switch is left to the kit defaults, so it reads
+    // unanswered and setup still has a question to put.
     const world = mkWorld({ settings: null });
     const { code } = inHome(world, 'wk_home_set_slug owner/workkit');
     assertEq(code, 0, 'exit 0');
-    const parsed = JSON.parse(fs.readFileSync(path.join(world.workflowHome, 'settings.json'), 'utf8'));
-    assertEq(parsed.site.repo, 'owner/workkit', 'the slug it was asked to record');
-    assert('publish' in parsed.site, 'the switch is spelled out');
-    assertEq(parsed.site.publish, null, 'and nobody has answered it');
-    assertEq(parsed.site.url, null, 'no custom domain');
+    const { site } = settingsAt(null, path.join(world.workflowHome, 'settings.json'));
+    assertEq(site.repo, 'owner/workkit', 'the slug it was asked to record');
+    assertEq(site.publish, null, 'and nobody has answered the switch');
+    assertEq(site.url, null, 'no custom domain');
     cleanup(world.root);
   });
 

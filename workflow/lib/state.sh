@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# workflow/lib/state.sh: the safe JSON edit, the state mutex and the one-value
-# read. Sourced by lib.sh, functions only. Reads lib.sh's WK_STATE_LOCK; calls
+# workflow/lib/state.sh: the safe JSON edit and the state mutex. Sourced by
+# lib.sh, functions only. Reads lib.sh's WK_STATE_LOCK; calls
 # wk_jq, wk_take_lock and wk_drop_lock (platform.sh) and wk_warn (lib/voice.sh).
 
 # ── JSON ──────────────────────────────────────────────────────────────────────
@@ -55,12 +55,3 @@ wk_json_edit_or_create() {
 wk_take_state_lock() { wk_take_lock "$WK_STATE_LOCK"; }
 
 wk_drop_state_lock() { wk_drop_lock "$WK_STATE_LOCK"; }
-
-# One value out of a JSON file, or empty for an absent key, an unreadable file
-# or a machine without jq.
-wk_json_get() {
-  local file="$1" filter="$2"
-  [[ -f "$file" ]] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  wk_jq -r "$filter // empty" "$file" 2>/dev/null || true
-}

@@ -202,21 +202,21 @@ const cases = async () => {
     cleanup(repo); cleanup(left); cleanup(home); cleanup(stub.dir);
   });
 
-  await test('a legacy opt-in with no enabled key is kept: it is still a yes', () => {
-    // resolve_state reads a file that predates the key as opted in, and the
-    // prune has to read it the same way or it would evict a member.
+  await test('an entry whose committed file has no enabled key is pruned: only true is a yes', () => {
+    // The prune reads the file as resolve_state does, so a file with no answer
+    // is no member, whatever the roster says.
     const repo = makeRepo();
-    const legacy = makeRepo({ settings: '{ "version": 1 }\n' });
+    const unanswered = makeRepo({ settings: '{ "version": 1 }\n' });
     const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), JSON.stringify({
       version: 1,
-      repos: { [gitPath(fs.realpathSync(legacy))]: 'enabled' },
+      repos: { [gitPath(fs.realpathSync(unanswered))]: 'enabled' },
     }, null, 2));
 
     const stub = makeGhStub({ authed: false });
     runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
-    assertEq(rosterOf(home)[gitPath(fs.realpathSync(legacy))], 'enabled', 'the legacy shape stays on the roster');
-    cleanup(repo); cleanup(legacy); cleanup(home); cleanup(stub.dir);
+    assertEq(rosterOf(home)[gitPath(fs.realpathSync(unanswered))], undefined, 'no enabled answer, no membership');
+    cleanup(repo); cleanup(unanswered); cleanup(home); cleanup(stub.dir);
   });
 
   await test('a decline is a decision, not an observation: it is never pruned', () => {

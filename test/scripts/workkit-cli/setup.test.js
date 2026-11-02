@@ -289,15 +289,17 @@ const cases = async () => {
     cleanup(world.root);
   });
 
-  await test('a fresh yes on a file with a severed tail is still asked about the domain', () => {
-    // jq prints the value it parsed and then fails on the tail, so a default
-    // appended to that answer reads as neither `null` nor a domain, and the
-    // one run that puts the domain question skips it without a word.
+  await test('a file with a severed tail is named and left alone, never asked over', () => {
+    // A tail that does not parse makes the whole file unreadable, so the run
+    // says so, asks nothing and writes nothing over the owner's file.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     fs.appendFileSync(file, '{\n');
-    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\ntower.example.com\n' });
-    assert(/Custom domain for the site\? \[enter for none\]/.test(out), `the follow-up is still put, got: ${out}`);
+    const before = fs.readFileSync(file, 'utf8');
+    const { said } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\ntower.example.com\n' });
+    assert(!/Publish the dashboard|Custom domain/.test(said), `no question is put, got: ${said}`);
+    assert(said.split('\n').some((l) => l.includes('settings.json') && l.includes('does not parse')), `a warning names the file, got: ${said}`);
+    assertEq(fs.readFileSync(file, 'utf8'), before, 'the file is untouched');
     cleanup(world.root);
   });
 

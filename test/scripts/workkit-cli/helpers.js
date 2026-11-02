@@ -14,6 +14,7 @@ const {
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo, OPT_IN_SHAPES } = require('../../lib/git-repo');
+const { copySettingsKit } = require('../../lib/settings-kit');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
@@ -355,6 +356,7 @@ const mkPartialKit = ({ installer } = {}) => {
   fs.mkdirSync(path.join(kit, 'workflow'), { recursive: true });
   fs.copyFileSync(CLI, path.join(kit, 'workflow', 'workkit.sh'));
   fs.cpSync(path.join(WORKFLOW_DIR, 'workkit'), path.join(kit, 'workflow', 'workkit'), { recursive: true });
+  copySettingsKit(kit);
   if (installer) {
     fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
     writeStub(path.join(kit, 'jobs', 'install.sh'), installer);
@@ -366,6 +368,7 @@ const mkPartialKit = ({ installer } = {}) => {
 // git init and origin are the cost a case would repeat.
 const copyKit = seeded((seed, { slug, jobs }) => {
   fs.cpSync(WORKFLOW_DIR, path.join(seed, 'workflow'), { recursive: true });
+  copySettingsKit(seed);
   if (jobs) fs.cpSync(path.join(path.dirname(WORKFLOW_DIR), 'jobs'), path.join(seed, 'jobs'), { recursive: true });
   mkOriginRepo(seed, `https://github.com/${slug}.git`);
 });

@@ -12,6 +12,7 @@ const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
+const { copySettingsKit } = require('../../lib/settings-kit');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -32,8 +33,7 @@ const copyEngine = (kit) => {
   fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
-  fs.mkdirSync(path.join(kit, 'hooks', 'mods'), { recursive: true });
-  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'package.json'), path.join(kit, 'hooks', 'package.json'));
+  copySettingsKit(kit);
   fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'mods', 'markers.js'), path.join(kit, 'hooks', 'mods', 'markers.js'));
 };
 

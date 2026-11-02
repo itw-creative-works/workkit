@@ -45,7 +45,7 @@ What a repo's root runner does, whichever runner it is. The kit ships one that k
 - A suite or a case that cannot run here skips by name with its reason, and the run lists every skip after the totals.
 - The run ends with one totals line, `N passed, M failed (Ns, K suites)`, with `, S suites skipped` and `, C cases skipped` after the failed count when there are any.
 - The kit's runner then prints one more line, `slowest: <suite> <s>s, ...`, naming the five slowest suites of the run by wall time, slowest first.
-- Under a failing case's message the kit's harness prints the first stack frame outside the harness (the suite's line, or the seam's when the assert sits in one) and the lines the case wrote through `log()`; with `TEST_LOG=1` a passing case's `log()` lines print too, and a `log()` line written with no case running prints at once.
+- Under a failing case's message the kit's harness prints the first stack frame outside the harness (the suite's line, or the seam's when the assert sits in one) and the lines the case wrote through `log()`; with `TEST_LOG=1` a passing case's `log()` lines print too, and a `log()` line written with no case running prints at once. A case's own prints (`console.log`, `console.error`, `process.stdout.write`, `process.stderr.write`) sit at the case indent.
 - Any failure exits 1. A suite that fails to load, exports no runner (and is no `node:test` file), or dies without a result is one failure, named `load <suite>`, `export <suite>` or `run <suite>`.
 
 ### The kit's runner

@@ -11,6 +11,22 @@ export const OPT_IN_SHAPES = {
   current: '{\n  "enabled": true\n}\n',
 }
 
+/**
+ * A copy of the kit's defaults/settings.json, for the wiring suites, whose
+ * environment can neither read nor import it; test/hooks/settings.test.js holds it to the file.
+ */
+export const DEFAULTS = {
+  enabled: false,
+  public: null,
+  proof: { rootOnly: null },
+  tests: { budget: null },
+  findings: { file: false },
+  hooks: { afterRelease: [], afterPublish: [], afterDeploy: [] },
+  manager: { mode: 'rewrite', enabled: true, tiers: { frontier: 'fable', workhorse: 'opus', fast: 'sonnet' } },
+  site: { repo: null, publish: null, url: null, sidebar: null },
+  identity: { tokenUrl: 'https://workkit.itwcreativeworks.com/token' },
+}
+
 /** A session model id per ladder rung, as $.session.model() answers them. */
 export const MODELS = {
   fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: 'claude-sonnet-4-5', haiku: 'claude-haiku-4-5',

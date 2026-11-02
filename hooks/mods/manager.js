@@ -1,48 +1,16 @@
 /**
  * hooks/mods/manager.js: the manager system's reads: the family a model id
- * belongs to, a crew class by either spelling, and the effective config, three
- * layers deep-merged (docs/hooks.md § manager:resolver).
+ * belongs to, a crew class by either spelling, and the effective config, the
+ * ladder under the merged settings' `manager` block (docs/hooks.md § manager:resolver).
  */
 
 import { isPlain, parseJson } from './settings.js';
 
 const CLASSES = new Set(['scout', 'worker', 'verifier', 'advisor']);
 
-// The rungs a ladder with no tiers falls back to, as the shell reads default.
-export const DEFAULT_TIERS = { frontier: 'fable', workhorse: 'opus' };
-
-// A layer as the hook reads it: the parsed file, or its text; anything else,
+// A ladder as the hook reads it: the parsed file, or its text; anything else,
 // or text that does not parse, adds nothing.
 const parsed = (layer) => (typeof layer === 'string' ? parseJson(layer) : layer);
-
-// jq's `*`: objects merge key by key, recursively; any other value replaces.
-const deepMerge = (base, over) => {
-  const out = { ...base };
-  for (const [key, value] of Object.entries(over)) {
-    out[key] = isPlain(out[key]) && isPlain(value) ? deepMerge(out[key], value) : value;
-  }
-  return out;
-};
-
-// The overridable slice of a settings file's `manager` block: `mode`,
-// `enabled` and the three tiers; `classes` and `ladder` stay global.
-const managerLayer = (settings) => {
-  const file = parsed(settings);
-  if (!isPlain(file)) return {};
-  const block = file.manager ?? {};
-  if (!isPlain(block)) return {};
-  const given = block.tiers ?? {};
-  if (!isPlain(given)) return {};
-  const tiers = {};
-  for (const name of ['frontier', 'workhorse', 'fast']) {
-    if (given[name] !== undefined && given[name] !== null) tiers[name] = given[name];
-  }
-  const layer = {};
-  if (block.mode !== undefined && block.mode !== null) layer.mode = block.mode;
-  if (block.enabled !== undefined && block.enabled !== null) layer.enabled = block.enabled;
-  if (Object.keys(tiers).length > 0) layer.tiers = tiers;
-  return layer;
-};
 
 /**
  * The family of a model id (`fable`, `opus`, `sonnet`, `haiku`), a context
@@ -66,18 +34,19 @@ export function crewClass(subagentType) {
 }
 
 /**
- * The effective config: the ladder, then the user's `manager` block, then the
- * repo's, each beating the one before. A layer that cannot be read adds
- * nothing; `enabled: false` stays in the result for the readers to honour.
+ * The effective config: the ladder's `classes` and `ladder`, then `mode`,
+ * `enabled` and `tiers` from the merged settings' `manager` block (the kit
+ * defaults, the machine's file, the repo's: loadSettings in settings.js). A
+ * ladder that cannot be read adds nothing; `enabled: false` stays in the
+ * result for the readers to honour.
  * @param {object|string|null} ladder the ladder file, parsed or as text
- * @param {object|string|null} userSettings the user settings file, parsed or as text
- * @param {object|string|null} repoSettings the repo settings file, parsed or as text
+ * @param {object} settings the merged settings (loadSettings)
  * @returns {object}
  */
-export function managerConfig(ladder, userSettings, repoSettings) {
+export function managerConfig(ladder, settings) {
   const global = parsed(ladder);
-  const base = isPlain(global) ? global : {};
-  return deepMerge(deepMerge(base, managerLayer(userSettings)), managerLayer(repoSettings));
+  const block = isPlain(settings.manager) ? settings.manager : {};
+  return { ...(isPlain(global) ? global : {}), mode: block.mode, enabled: block.enabled, tiers: block.tiers };
 }
 
 /**

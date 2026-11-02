@@ -4,18 +4,17 @@
 // under /w/; any other path is the kit's own folder, answered from KIT.
 
 import { mock } from 'claude-code/testing'
-import { MODELS, OPT_IN_SHAPES } from './mod-fixtures.mjs'
+import { MODELS, OPT_IN_SHAPES, DEFAULTS } from './mod-fixtures.mjs'
 
-export { MODELS, OPT_IN_SHAPES, row, SESSION_NOW, daysBefore, briefMarker, ghEntry, journalText } from './mod-fixtures.mjs'
+export { MODELS, OPT_IN_SHAPES, DEFAULTS, row, SESSION_NOW, daysBefore, briefMarker, ghEntry, journalText } from './mod-fixtures.mjs'
 
 // hooks/manager/resources/ladder.json, the fields the module reads; the test
-// environment has no fs, so the fixture carries its own copy.
+// environment has no fs and imports no JSON, so the fixture carries its own copy,
+// and the kit defaults' copy is mod-fixtures.mjs's DEFAULTS.
 export const LADDER = {
   note: 'fixture copy of hooks/manager/resources/ladder.json',
-  mode: 'rewrite',
   ladder: { fable: 'fable', opus: 'opus', sonnet: 'sonnet', haiku: 'haiku' },
   classes: { scout: 'fast', worker: 'workhorse', verifier: 'workhorse', advisor: 'frontier' },
-  tiers: { frontier: 'fable', workhorse: 'opus', fast: 'sonnet' },
 }
 
 export const HOME = '/w/home'
@@ -29,6 +28,7 @@ export const OPTED_OUT = '{ "version": 1, "enabled": false }\n'
 const KIT_DEFAULT: Record<string, string> = {
   'hooks/hooks.json': '{ "hooks": {} }\n',
   'hooks/manager/resources/ladder.json': JSON.stringify(LADDER),
+  'defaults/settings.json': JSON.stringify(DEFAULTS),
   'agents/worker.md': '# worker\n',
   'skills/ship/SKILL.md': '# ship\n',
   'workflow/standards.sh': '#!/usr/bin/env bash\n',

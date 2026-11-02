@@ -10,15 +10,18 @@ wk_home_remote_url() {
   printf 'https://github.com/%s.git' "$1"
 }
 
+# The site options are the machine's: each is read through wk_setting with no
+# repo layer (lib/participation.sh), the kit's defaults under the machine file.
+
 # The home slug this machine is configured for, or empty.
-wk_home_slug() { wk_json_get "$WK_HOME_SETTINGS" '.site.repo'; }
+wk_home_slug() { wk_setting '' site.repo; }
 
 # The site's host, or empty with no custom domain: `site.url` with any scheme
 # and trailing slash taken off here, since a CNAME carries a host and never a
 # path, and `ask_site_url` takes what was typed at its word.
 wk_site_host() {
   local url
-  url="$(wk_json_get "$WK_HOME_SETTINGS" '.site.url')"
+  url="$(wk_setting '' site.url)"
   [[ -n "$url" ]] || return 0
   url="${url#*://}"
   printf '%s' "${url%/}"
@@ -26,7 +29,7 @@ wk_site_host() {
 
 # The extra sidebar groups the publish build merges after the built-in ones, as
 # the JSON the settings hold, or empty.
-wk_site_sidebar() { wk_json_get "$WK_HOME_SETTINGS" '.site.sidebar'; }
+wk_site_sidebar() { wk_setting '' site.sidebar; }
 
 # The branch the clone is on, `main` with no clone to ask. symbolic-ref, not
 # rev-parse: on an unborn HEAD rev-parse prints `HEAD` and fails, so the
@@ -38,11 +41,11 @@ wk_home_branch() {
 # The one key a machine writes in the hand-edited settings.
 wk_home_set_slug() {
   local locked=0 rc=0
-  # Absent only when `setup` runs before any heal has seeded the user folder.
+  # Absent only when `setup` runs before any heal has seeded the user folder;
+  # seeded empty, as the heal seeds it, the defaults being the kit's.
   if [[ ! -f "$WK_HOME_SETTINGS" ]]; then
     mkdir -p "$WK_USER_DIR" 2>/dev/null || return 1
-    printf '{\n  "version": 1,\n  "site": {\n    "repo": null,\n    "publish": null,\n    "url": null\n  }\n}\n' \
-      >"$WK_HOME_SETTINGS" 2>/dev/null || return 1
+    printf '{\n  "version": 1\n}\n' >"$WK_HOME_SETTINGS" 2>/dev/null || return 1
   fi
   # The shared mutex, like every writer of the machine's state files.
   if wk_take_state_lock; then locked=1; fi

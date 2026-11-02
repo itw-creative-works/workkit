@@ -12,6 +12,7 @@ const path = require('path');
 
 const { discoverRepos, readRoster } = require('../../tower/api/lib/repos');
 const { userDir, homeUserDir } = require('../user-dir');
+const { homeSlug } = require('../lib/settings');
 
 /** Parse JSON from a file, or null when it is absent or unparseable. */
 const readJson = (file) => {
@@ -75,12 +76,10 @@ const composeSlugs = (opts = {}) => {
   // Code units, never the machine's ICU build, so two machines write the same bytes.
   const repos = [...union.keys()].sort().map((key) => union.get(key));
 
-  const settings = readJson(path.join(workflowHome, 'settings.json'));
-  const site = (settings && settings.site) || {};
-  const homeSlug = typeof site.repo === 'string' && site.repo.includes('/') ? site.repo : null;
-  if (homeSlug && !union.has(homeSlug.toLowerCase())) repos.push(homeSlug);
+  const homeRepo = homeSlug(workflowHome);
+  if (homeRepo && !union.has(homeRepo.toLowerCase())) repos.push(homeRepo);
 
-  return { repos, home: homeSlug, machines };
+  return { repos, home: homeRepo, machines };
 };
 
 /**

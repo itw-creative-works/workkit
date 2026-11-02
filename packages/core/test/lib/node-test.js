@@ -3,6 +3,7 @@
 // through Node's own `run()` into the result object a kit-harness suite sends.
 
 import { run } from 'node:test';
+import { indentWriter } from './log.js';
 
 // Met outside any quote: a `require('node:test')` call, or the specifier of an
 // `import ... from` or bare `import` naming it.
@@ -44,8 +45,8 @@ export const isNodeTestSuite = (text) => {
 
 /**
  * Runs one `node:test` suite and resolves the kit harness's result object.
- * Its stdout and stderr are written through as they arrive; a load failure is
- * the whole-suite failure `load <rel>`.
+ * Its stdout and stderr are written through as they arrive, every line at
+ * CASE_INDENT; a load failure is the whole-suite failure `load <rel>`.
  * @param {string} suite the suite's absolute path
  * @param {string} rel the suite's path relative to test/, its name in a failure
  * @returns {Promise<{passed: number, failed: number, failures: object[], skips: object[]}>}
@@ -53,12 +54,14 @@ export const isNodeTestSuite = (text) => {
 export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
   const result = { passed: 0, failed: 0, failures: [], skips: [] };
   const stderrLines = [];
+  const writeOut = indentWriter(process.stdout.write.bind(process.stdout));
+  const writeErr = indentWriter(process.stderr.write.bind(process.stderr));
   const stream = run({ files: [suite], concurrency: 1 });
   stream.on('data', ({ type, data }) => {
     if (type === 'test:stdout') {
-      process.stdout.write(data.message);
+      writeOut(data.message);
     } else if (type === 'test:stderr') {
-      process.stderr.write(data.message);
+      writeErr(data.message);
       stderrLines.push(data.message.trimEnd());
     } else if (type === 'test:fail' && data.name === suite) {
       // A load failure's event says only `test failed`; the thrown error's

@@ -30,9 +30,7 @@ usage() {
 # `.workkit/` on the way up reads as an opt-in, the machine's own state
 # directory among them (every Windows temp directory sits under a profile).
 participating() {
-  local settings="$1/$WORKKIT_DIR/settings.json"
   wk_is_repo_root "$1" || return 1
-  [[ -f "$settings" ]] || return 1
   # The configured state dir is refused even at a repo root (a home directory
   # tracked in git): it is the machine's file wherever it is found.
   local state_dir user_dir
@@ -41,8 +39,7 @@ participating() {
   if [[ -n "$state_dir" && "$state_dir" == "$user_dir" ]]; then
     return 1
   fi
-  wk_settings_declined "$settings" && return 1
-  return 0
+  wk_opted_in "$1"
 }
 
 # A directory walk rather than `git rev-parse`: a nested checkout or a worktree

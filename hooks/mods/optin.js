@@ -222,7 +222,7 @@ async function bashRoots({ command, cwd, toplevel, exists }) {
  * The repo a Bash command acts on and whether it opted in: the cwd and each
  * folder a cd step lands in. Any of them opted in is a yes; so is a command
  * the walk cannot place.
- * @param {{command: string, cwd: string, toplevel: function, settingsOf: function, exists: function}} facts
+ * @param {{command: string, cwd: string, toplevel: function, settingsText: function, exists: function}} facts
  *   the command, its folder, and async reads: a folder's git root, a root's
  *   `.workkit/settings.json` text (null when absent), judged by
  *   settingsOptedIn, whether a path is there
@@ -233,7 +233,7 @@ export async function optinRepo(facts) {
   const roots = await bashRoots(facts);
   if (roots === null) return { root: null, opted: true };
   for (const root of roots) {
-    if (settingsOptedIn(await facts.settingsOf(root))) return { root, opted: true };
+    if (settingsOptedIn(await facts.settingsText(root))) return { root, opted: true };
   }
   return { root: roots[0] ?? null, opted: false };
 }

@@ -158,8 +158,7 @@ const cases = async () => {
 
   await test('a cwd under $HOME still files the issue: the machine settings are not a repo opt-in', async () => {
     // The walk up passes through $HOME, where `.workkit/settings.json` is the
-    // machine settings file (roster, site options, home slug). With no
-    // `enabled` key it must not read as a legacy yes.
+    // machine settings file (roster, site options, home slug), never a repo's yes.
     const t = makeTree();
     const scratch = path.join(t.home, 'Documents', 'scratch');
     fs.mkdirSync(scratch, { recursive: true });
@@ -281,12 +280,12 @@ const cases = async () => {
     cleanup(t.dir);
   });
 
-  await test('a settings file with no enabled key is the legacy opt-in', async () => {
-    // Same reading as the hooks and the engine: the committed file existing at
-    // all is the repo's yes.
+  await test('a settings file with no enabled key is not a participating repo', async () => {
+    // Only "enabled": true is the repo's yes; the note goes to the home repo.
     const t = makeTree({ settings: '{ "version": 1 }\n' });
-    assertEq(runScript(t.repo, ['note', 'legacy yes'], t).code, 0, 'exit 0');
-    assert(read(t.repoCapture).includes('- legacy yes\n'), 'filed in the repo');
+    assertEq(runScript(t.deep, ['note', 'unanswered repo'], t).code, 0, 'exit 0');
+    assert(t.ghCalls()[0].includes('unanswered repo'), 'filed on the home repo');
+    assert(!fs.existsSync(t.repoCapture), 'and never into the repo that gave no answer');
     cleanup(t.dir);
   });
 

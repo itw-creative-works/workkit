@@ -1,7 +1,7 @@
 /**
  * hooks/mods/public-mirror.js: workflow:public-mirror. After a `gh issue edit`
  * that adds a status label in a repo paired with a public one (the `public`
- * key of its .workkit/settings.json), read off the gh journal lines the Bash
+ * setting, its merged settings' key), read off the gh journal lines the Bash
  * call wrote, it runs the engine's `public/mirror.js` for the issues that
  * edit named, so the public issue carries the same status. A failed mirror is
  * a notice, never a block (docs/hooks.md § workflow:public-mirror).
@@ -9,7 +9,7 @@
 
 import { onIssue } from './markers.js';
 import { placeLine, repoSlug, rosterOf } from './optin.js';
-import { parseJson, settingGet } from './settings.js';
+import { rootSettings } from './settings.js';
 import { LONG_RUN_MS } from './suite.js';
 
 // A journal line whose edit adds a status label to the issues it names.
@@ -35,7 +35,7 @@ async function pairedRoot(step, facts, roster) {
   const placed = await placeLine(step, { roster, slugOf: (dir) => repoSlug(dir, facts.run) });
   const root = placed.dir ? await facts.top(placed.dir) : null;
   if (!root) return null;
-  const repo = settingGet('public', parseJson(await facts.read(`${root}/.workkit/settings.json`)), null);
+  const repo = (await rootSettings(root, facts.env, facts)).public;
   return typeof repo === 'string' ? root : null;
 }
 

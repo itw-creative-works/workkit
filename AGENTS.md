@@ -20,11 +20,12 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
 │   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage,proof}/, prove.sh, the snapshot entry and .github/scripts/release-push.sh, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
-│   └── manager/          # resources/ladder.json (the tier SSOT)
+│   └── manager/          # resources/ladder.json (the rungs and the classes; the tiers' defaults are defaults/settings.json's)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, templates)
+├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
 ├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`), a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
@@ -46,7 +47,7 @@ The engine's stable filesystem address is `~/.claude/workkit` → this repo's `w
 
 Twenty-three of the twenty-nine run in process, in the hooks module the `modules` list of `hooks/hooks.json` names (`hooks/register.js`, each hook's logic in `hooks/mods/`), loaded once per session; seven guards run in the `gh` shim and git's hooks, below, `safety:release-taken` in both. Settings and the hooks log name a hook by `prefix:name`.
 
-A repo that has not opted in gets none of the hooks: the module's gate stands every one down there but the setup reminder and the restart notice (`docs/hooks.md` § Where every hook stands down).
+A repo that has not opted in, its own `.workkit/settings.json` saying `"enabled": true` and nothing else counting, gets none of the hooks: the module's gate stands every one down there but the setup reminder and the restart notice (`docs/hooks.md` § Where every hook stands down).
 
 The commit guards judge in git's own `pre-commit` and `commit-msg` hooks and the `gh` guards in the `gh` shim, on the real tree, message and argv, both under one gate, `wk_session_judges` (`workflow/README.md`, the `lib/participation.sh` row); the shim's secrets scan runs on every `gh` call.
 Three parsers still read a command's text: `safety:tree-guard`, `safety:capture-guard` and `safety:release-taken`'s `npm publish` half.
@@ -68,12 +69,12 @@ Agent-agnostic: shell + Node, which is why the hooks call it rather than contain
 `workkit.sh` is the one command and the from-zero entry point:
 
 - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `prove`;
-- the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|plan|publish` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
+- the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
 
 Beside it live:
 
 - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
-- the ship's steps in `ship/` (`items.sh`, `release.js`, `watch.sh`, `plan.js`, `publish.js`), the review and triage markers and the review tier in `review/` and `triage/`, the verifier's red run in `proof/`;
+- the ship's steps in `ship/` (`items.sh`, `release.js`, `watch.sh`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, and `hooks.js`, the hooks a repo declares for the release, the publish and the deploy, which those steps run), the review and triage markers and the review tier in `review/` and `triage/`, the verifier's red run in `proof/`;
 - the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle.
 
 Every file and every step: `workflow/README.md`.

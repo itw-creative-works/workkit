@@ -133,16 +133,18 @@ const cases = async () => {
     cleanup(tmp);
   });
 
-  await test('the opt-in is anything but `enabled: false` - the engine reads it that way', () => {
+  await test('the opt-in is "enabled": true alone, and a machine file saying true turns no repo on', () => {
     // The engine's resolve_state is the SSOT of what enabled means: a committed
-    // file that does not say false is a yes, so a bare `{ "version": 1 }` stays a
-    // member. Reading it more strictly would drop repos the heal keeps registering.
+    // file with no answer is no member, whatever the roster or the machine file says.
     const tmp = mkTmp('tower-repos-');
     const yes = mkRepo(tmp, 'Owner/yes');
-    const legacy = mkRepo(tmp, 'Owner/legacy', { settings: { version: 1 } });
-    const off = mkRepo(tmp, 'Owner/off', { settings: { version: 1, enabled: false } });
-    assertEq(names(discoverRepos({ workflowHome: mkWorkflowHome(tmp, [yes, legacy, off]) })), 'legacy,yes',
-      'only the repo that said no is out');
+    const shapes = {
+      none: null, empty: '', object: {}, version: { version: 1 }, off: { version: 1, enabled: false },
+    };
+    const others = Object.entries(shapes).map(([name, settings]) => mkRepo(tmp, `Owner/${name}`, { settings }));
+    const workflowHome = mkWorkflowHome(tmp, [yes, ...others]);
+    fs.writeFileSync(path.join(workflowHome, 'settings.json'), '{ "enabled": true }\n');
+    assertEq(names(discoverRepos({ workflowHome })), 'yes', 'only the repo whose own file says true');
     cleanup(tmp);
   });
 

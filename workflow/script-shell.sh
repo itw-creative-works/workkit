@@ -80,12 +80,11 @@ load_libs() {
 # itself (husky's prepare), the kit's hooks are put back through the heal's own
 # step, in an opted-in repo, whoever runs npm. Its line is the only output.
 install_repoint() {
-  local root settings
+  local root
   root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null) || return 0
-  settings="$root/.workkit/settings.json"
-  [ -e "$settings" ] || return 0
+  [ -e "$root/.workkit/settings.json" ] || return 0
   load_libs
-  wk_settings_declined "$settings" && return 0
+  wk_opted_in "$root" || return 0
   # shellcheck source=./lib.sh
   . "$SCRIPT_DIR/lib.sh"
   # shellcheck source=./standards/githooks.sh

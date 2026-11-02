@@ -6,8 +6,6 @@
 // Usage:
 //   Object.assign(payload, briefSummaries({ generatedAt, workflowHome, exec }));
 
-const fs = require('fs');
-const path = require('path');
 const { execFileSync } = require('child_process');
 
 // The sweep's round trip, and with it the reading of a refusal: one `gh api
@@ -15,9 +13,8 @@ const { execFileSync } = require('child_process');
 const { ask } = require('./board');
 // The machine folder has one home, the engine's workflow/user-dir.js.
 const { userDir } = require('../../../workflow/user-dir');
-
-// The hand-edited file that names the home repo: the board the summaries live on.
-const SETTINGS_FILE = 'settings.json';
+// The home repo, the board the summaries live on, has one reader.
+const { homeSlug } = require('../../../workflow/lib/settings');
 
 // The title prefix each cadence publishes under, from the job that writes them
 // (`jobs/claude-nightly.sh`: `<cadence>: <date>`).
@@ -45,17 +42,6 @@ const defaultExec = (cmd, args) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
 });
-
-/** The home repo's slug, or null when this machine has no home repo. */
-const homeSlug = (workflowHome) => {
-  try {
-    const settings = JSON.parse(fs.readFileSync(path.join(workflowHome, SETTINGS_FILE), 'utf8'));
-    const repo = settings && settings.site && settings.site.repo;
-    return typeof repo === 'string' && repo.includes('/') ? repo : null;
-  } catch {
-    return null;
-  }
-};
 
 /** Where ~/.workkit is for this call: the same resolution cc-news.js makes. */
 const workflowHomeOf = (opts) => opts.workflowHome || userDir(opts.home);

@@ -41,7 +41,7 @@ module.exports = run;
 if (require.main === module) selfRun(run);
 ```
 
-- The cases: `group`, `test`, `assert`, `assertEq`, `skip`, `testUnless`, `skipSuite`, `summary`, `selfRun`, `log` (lines printed under a failing case, and under every case with `TEST_LOG=1`), `stripAnsi`, `hasLaunchd`.
+- The cases: `group`, `test`, `assert`, `assertEq`, `skip`, `testUnless`, `skipSuite`, `summary`, `selfRun`, `log` (lines printed under a failing case, and under every case with `TEST_LOG=1`), `indentRest` and `indentWriter` (a quoted text or a child's output kept off column zero), `stripAnsi`, `hasLaunchd`.
 - Scratch and worlds: `mkTmp(prefix)`, a temp folder removed at exit; `seeded(build)`, a folder built once per process and copied per case.
 - Processes on one deadline (`SPAWN_DEADLINE`): `run`, `start` (with `end()` climbing SIGINT, SIGTERM, SIGKILL), `endTree`, `until`, `elapsedUntil`, `alive`, `readPid`.
 - Suite discovery: `findSuites`, `findModSuites`, `POOL`.

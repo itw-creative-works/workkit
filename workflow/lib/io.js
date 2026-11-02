@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { spawnNpm } = require('../ship/plan');
+const { repoRoot } = require('./git');
 
 const KIT = path.join(__dirname, '..', '..');
 
@@ -41,11 +42,7 @@ const statOf = (p) => {
 
 /** The io chain for a process whose variables are `env`, `pluginRoot` this kit. */
 const ioIn = (env) => ({
-  top: async (dir) => {
-    if (!fs.existsSync(dir)) return null;
-    const res = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' });
-    return res.status === 0 ? res.stdout.trim() : null;
-  },
+  top: async (dir) => repoRoot(dir),
   read: async (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } },
   exists: async (p) => fs.existsSync(p),
   list: async (dir) => { try { return fs.readdirSync(dir); } catch { return []; } },

@@ -14,11 +14,11 @@ import { userDirOf } from './log.js';
 import { pkgMarkerPath, suiteMarkerPath } from './markers.js';
 import { ghRepoIsHere, repoSlug, rosterOf, rosterPath } from './optin.js';
 import { viewHasProof } from './proof.js';
-import { isPlain, parseJson } from './settings.js';
+import { parseJson, rootSettings } from './settings.js';
 import { LONG_RUN_MS, factOf, hasTestScript, pkgProved, suiteProved, testPackageDir, treeHash } from './suite.js';
 import { isTestName, isTestPath } from './test-reminder.js';
 
-const SHAPE = 'The settings key proof.rootOnly in .workkit/settings.json is not an array of folder strings, so no package was taken as proved by the root run alone.';
+const SHAPE = 'The key proof.rootOnly in the settings is not an array of folder strings, so no package was taken as proved by the root run alone.';
 const WORKING_READS = [['diff', 'HEAD', '--name-only', '--no-renames', '-z'], ['ls-files', '--others', '--exclude-standard', '-z']];
 // With no commit yet the staged list stands in for the diff against HEAD.
 const UNBORN_READS = [['ls-files', '-z'], WORKING_READS[1]];
@@ -150,7 +150,7 @@ async function qaOn(repo, cwd, facts) {
  *   async gh's `--json comments` view or null; `touched` (lazy) the working paths, null when unread; `packages(path,
  *   root)` async the owning package, `.` the root, null with no root test script; `suiteRecord`,
  *   `packageRecord`, `treeId` (lazy) text or null; `pkgTree(root, pkg)` async a package's own `{ id, note }` (treeHash); `roster` the parsed .repos.json; `rootOnly`
- *   (lazy) proof.rootOnly, undefined none, null unreadable; `slugOf`, `toplevel` async; `baseless`;
+ *   (lazy) proof.rootOnly from the merged settings, undefined none; `slugOf`, `toplevel` async; `baseless`;
  *   `unread` (lazy) the working-diff read that failed when `touched` is null
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
@@ -167,15 +167,9 @@ export async function proofVerdict({ steps, cwd, repo, facts }) {
   return notes.length > 0 ? { context: notes.join('\n') } : null;
 }
 
-// proof.rootOnly as the settings text declares it: undefined for no file, no
-// proof key or a proof object without it; null for a shape that cannot hold it.
-function rootOnlyDeclared(raw) {
-  if (raw === null) return undefined;
-  const settings = parseJson(raw);
-  if (!isPlain(settings)) return null;
-  if (!('proof' in settings)) return undefined;
-  if (!isPlain(settings.proof)) return null;
-  return 'rootOnly' in settings.proof ? settings.proof.rootOnly : undefined;
+// proof.rootOnly as the merged settings hold it, undefined for the default null.
+function rootOnlyDeclared(settings) {
+  return settings.proof.rootOnly ?? undefined;
 }
 
 // The working paths under the root that still exist, as the qa check reads
@@ -238,6 +232,6 @@ export async function proofFacts(facts) {
     pkgTree: (root, pkg) => treeHash(run, facts.pluginRoot, root, env, pkg),
     suiteRecord: async (root) => read(await suiteMarkerPath(root, userDirOf(env))),
     packageRecord: async (root) => read(await pkgMarkerPath(root, userDirOf(env))),
-    rootOnly: async (root) => rootOnlyDeclared(await read(`${root}/.workkit/settings.json`)),
+    rootOnly: async (root) => rootOnlyDeclared(await rootSettings(root, env, facts)),
   };
 }

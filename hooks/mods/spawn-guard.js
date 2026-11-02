@@ -4,7 +4,7 @@
  * for one), or a frontier session spawning the advisor.
  */
 
-import { DEFAULT_TIERS, crewClass, isAdvise, modelTier } from './manager.js';
+import { crewClass, isAdvise, modelTier } from './manager.js';
 
 /**
  * The warning for a spawn, or null when there is nothing to say.
@@ -22,7 +22,7 @@ export function spawnGuardWarning(config, subagentType, givenModel, parentModel)
   if (givenModel && !isAdvise(config)) {
     warnings.push(`the ${cls} spawn passed model: ${givenModel}. The manager:resolver hook owns crew models; drop the param and let the ladder resolve it.`);
   }
-  const frontier = config.tiers?.frontier || DEFAULT_TIERS.frontier;
+  const frontier = config.tiers?.frontier;
   const tier = modelTier(parentModel);
   if (cls === 'advisor' && tier && tier === frontier) {
     warnings.push('this session already runs the frontier model: the advisor is redundant here.');

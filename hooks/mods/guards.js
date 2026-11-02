@@ -50,7 +50,7 @@ async function bashOpted(io, { command, cwd }) {
     command,
     cwd,
     toplevel: io.top,
-    settingsOf: (root) => io.read(`${root}/.workkit/settings.json`),
+    settingsText: (root) => io.read(`${root}/.workkit/settings.json`),
     exists: io.exists,
   });
   return opted;
@@ -125,7 +125,7 @@ export async function runChain(io, env, guards, facts) {
   const isBash = typeof facts.command === 'string';
   const opted = isBash ? await bashOpted(io, facts) : await folderOpted(io, facts.gateDir);
   const gathered = isBash ? bashFacts(io, env, facts) : {
-    ...facts, env: guardEnv(io, env), read: io.read, run: io.run, top: io.top, stat: io.stat, now: io.now,
+    ...facts, env: guardEnv(io, env), read: io.read, run: io.run, top: io.top, stat: io.stat, now: io.now, pluginRoot: io.pluginRoot,
   };
   const notices = [];
   for (const { hook, run } of guards) {

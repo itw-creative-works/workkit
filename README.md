@@ -24,7 +24,7 @@ When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the P
 Setup also links a `gh` shim there: inside a Claude session on your machine it posts the agent's issue bookkeeping as `workkit-agent[bot]`, in a cloud session it runs the kit's verbs through REST as the signed-in account, and everywhere else `gh` is yours as before. For that you sign in once per machine (setup asks, opens GitHub in your browser and finishes the sign-in itself; `workkit setup --login` does it again, and a bookkeeping call at a terminal signs you in itself), and the App must be installed once per account or org on the repos workkit works in, from <https://github.com/apps/workkit-agent> (setup offers that page for the repo you are standing in, with its owner already selected, even after the owner was renamed, and `workkit setup --bot` offers it alone); without either, the agent's bookkeeping stops and tells you which ([docs/setup.md § The bot identity](docs/setup.md#the-bot-identity)).
 `workkit doctor` shows what is set up, and `workkit help` lists every command.
 Start a new Claude Code session so the plugin loads.
-Setup adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in your `~/.claude/settings.json`, so auto mode does not block the commands a ship or a review runs, `workkit review mark` among them; it adds only the missing ones and leaves the rest of the file as it is, and `workkit doctor` names any that goes missing. The skills also run `gh issue ...` often; to skip most of those prompts, add `Bash(gh issue *)` there yourself.
+Setup adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in your `~/.claude/settings.json`, so auto mode does not block the commands a ship or a review runs, `workkit review mark` among them. Every ship command is listed but `workkit ship deploy`, which prompts outside a ship, and setup takes out the retired `Bash(workkit ship:*)`, which let it through. Beyond that it adds only the missing ones and leaves the rest of the file as it is, and `workkit doctor` names any that goes missing or a retired one still there. The skills also run `gh issue ...` often; to skip most of those prompts, add `Bash(gh issue *)` there yourself.
 
 To work on workkit itself, install from a clone instead; the clone then outranks the plugin copy:
 
@@ -45,6 +45,8 @@ cd <your-project> && workkit enable
 claude
 ```
 
+`workkit enable` commits `{ "enabled": true }` to the project's `.workkit/settings.json`, and that line is the only thing that turns workkit on. Every other setting has its default in the kit's [`defaults/settings.json`](defaults/settings.json), which your `~/.workkit/settings.json` and then the project's own file override, key by key.
+
 Type `/workkit:status` for a plain-language list of the open issues and what each one is waiting on.
 No issues yet? Tell Claude what you want built, and it files the first one.
 
@@ -63,7 +65,7 @@ Every piece of work travels one road, and each stop is a label on its GitHub iss
 3. **Spec.** You and Claude write down what done looks like. Accepting the spec is the go-ahead to build.
 4. **Build.** Your chat acts as a manager. It hands the work to helper agents: one writes the code, one writes the tests, and a third checks both without seeing how they were made.
 5. **Check.** The finished work waits, uncommitted, until you have tried it and said it is good.
-6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue.
+6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue. A repo can list commands to run after the release, the npm publish or the deploy under `hooks` in its `.workkit/settings.json` (`afterRelease`, `afterPublish`, `afterDeploy`); the ship runs them once that step succeeds, if the file says `"enabled": true`.
 
 Hooks guard each step on their own. For example, no code commits until the full test suite has passed on exactly what is being committed.
 A repo that has not turned workkit on gets none of its hooks.

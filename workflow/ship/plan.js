@@ -4,14 +4,16 @@
 // and which are skipped and why (the rules and the lines: `skills/ship/SKILL.md`
 // Step 5). Members are read from their own package.json files, never through
 // `npm query .workspace`, which answers nothing before `npm install`. The
-// library release.js, publish.js and lib/workspaces.js require, with how the
-// first two start npm and name its end; publish.js does the publishing.
+// library release.js, publish.js, deploy.js, lib/io.js and lib/workspaces.js
+// require, with how the first four start npm and the first two name its end;
+// publish.js does the publishing.
 // Run from the repo root: workkit ship plan [--dir <root>]
 
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { isSemver } = require('./semver');
+const { endOf } = require('../lib/say');
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
 const GLOB_RE = /[*?[]/;
@@ -24,12 +26,8 @@ const spawnNpm = (args, opts) => (process.platform === 'win32'
   ? spawnSync(['npm', ...args].join(' '), { ...opts, shell: true })
   : spawnSync('npm', args, opts));
 
-/** How an npm call ended, for a line that names it: its exit code, or why it never had one. */
-const npmEnd = (res) => {
-  if (res.error) return `npm could not be run, ${res.error.code || res.error.message}`;
-  if (res.status === null) return `npm was killed by ${res.signal}`;
-  return `npm exited ${res.status}`;
-};
+/** How an npm call ended, for a line that names it (`endOf` in lib/say.js). */
+const npmEnd = (res) => `npm ${endOf(res)}`;
 
 /** A refusal: the plan cannot be made, and the message says why. */
 class PlanError extends Error {

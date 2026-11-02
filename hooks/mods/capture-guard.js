@@ -8,7 +8,7 @@
 import { BLANK, anyLine } from './command.js';
 import { homeOf, userDirOf } from './log.js';
 import { fileAge, triageMarkerPath } from './markers.js';
-import { findingsRoute, settingsLayers } from './settings.js';
+import { findingsRoute, settingsOf } from './settings.js';
 
 const SUFFIX = '.workkit/capture.md';
 const MARKER_MAX_AGE_S = 1800;
@@ -118,7 +118,7 @@ function absolute(path, cwd, home) {
  * The guard's run over a chain's facts, Bash (`command`) or file (`tool`,
  * `input`): the marker is the one `workkit triage mark` writes for the
  * capture file's anchor.
- * @param {object} facts the chain's facts, with `top`, `read`, `stat`, `now` and `env`
+ * @param {object} facts the chain's facts, with `top`, `read`, `stat`, `now`, `env` and `pluginRoot`
  * @returns {Promise<{deny: string}|null>}
  */
 export async function captureGuardGuard(facts) {
@@ -127,7 +127,7 @@ export async function captureGuardGuard(facts) {
   const call = { tool: isBash ? 'Bash' : facts.tool, input: isBash ? { command: facts.command } : facts.input, cwd };
   const target = captureTarget(call);
   if (!target) return null;
-  const route = target.mode === 'read' ? '' : findingsRoute(...(await settingsLayers(cwd, env, facts)));
+  const route = target.mode === 'read' ? '' : findingsRoute(await settingsOf(cwd, env, facts));
   if (target.mode === 'append') return captureGuardVerdict({ ...call, root: null, markerAgeS: null, route });
   const path = absolute(target.path, cwd, homeOf(env));
   // An absent capture file has no contents a folder-pointed Grep could reach.

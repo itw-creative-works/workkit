@@ -1,18 +1,18 @@
 // Tests for manager:profile's logic, profileContext(config, model) in hooks/mods/profile.js over
-// managerConfig(ladder, userSettings, repoSettings) in hooks/mods/manager.js: the manager standing instruction,
+// managerConfig(ladder, settings) in hooks/mods/manager.js: the manager standing instruction,
 // injected only in manager-capable sessions (frontier or workhorse tier, or unknown). The session model's source
 // ($.session.model()), the gate and HOOK_DISABLE are test/mods/user-prompt-submit.test.ts.
 
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { mods, textOf } = require('../lib/mods-inputs');
+const { mods, textOf, mergedSettings } = require('../lib/mods-inputs');
 
 const REPO = path.join(__dirname, '..', '..');
 const LADDER = JSON.parse(fs.readFileSync(path.join(REPO, 'hooks', 'manager', 'resources', 'ladder.json'), 'utf8'));
 const MODELS = { fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: 'claude-sonnet-4-5', haiku: 'claude-haiku-4-5' };
 
-const config = (user, repo, ladder = LADDER) => mods('manager').managerConfig(ladder, user, repo);
+const config = (user, repo, ladder = LADDER) => mods('manager').managerConfig(ladder, mergedSettings({ user, repo }));
 const ctxFor = (model, cfg = config()) => textOf(mods('profile').profileContext(cfg, model));
 const settings = (manager) => ({ enabled: true, manager });
 
@@ -67,13 +67,10 @@ const cases = async () => {
   await test('a repo without a manager block changes nothing', () => {
     assert(ctxFor(MODELS.fable, config(undefined, { version: 1, enabled: false })).includes('MANAGER'), 'the workflow key is not the manager key');
   });
-  await test('unparseable repo settings fall back to the ladder: a layer that could not be read is null', () => {
-    assert(ctxFor(MODELS.fable, config(undefined, null)).includes('MANAGER'), 'garbage settings fail open');
-  });
 
   group('manager-profile: robustness');
-  await test('missing ladder still injects with built-in tier names', () => {
-    assert(ctxFor(MODELS.fable, config(undefined, undefined, null)).includes('MANAGER'), 'falls back to the built-in tier names');
+  await test('missing ladder still injects, the tiers coming from the kit defaults', () => {
+    assert(ctxFor(MODELS.fable, config(undefined, undefined, null)).includes('MANAGER'), 'the defaults\' tier names');
   });
 };
 

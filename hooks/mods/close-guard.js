@@ -6,7 +6,7 @@
  */
 
 import { isSystemPrompt } from './frame.js';
-import { DEFAULT_TIERS, modelTier } from './manager.js';
+import { modelTier } from './manager.js';
 import { turnMessages } from './turn.js';
 
 const DEFAULT_CLOSE_EDITS = 5;
@@ -38,14 +38,14 @@ export function turnFacts(messages, isSystemPrompt) {
  * @param {{edits: number, workers: number, verifiers: number}} facts the turn's counts (turnFacts)
  * @param {object} options the session's reading
  * @param {string|null} options.tier the session model's family (modelTier)
- * @param {string} [options.frontier] the frontier rung, `fable` when unset
+ * @param {string} options.frontier the frontier rung (the config's `tiers.frontier`)
  * @param {number|string} [options.closeEdits] MANAGER_CLOSE_EDITS; anything but digits reads 5
  * @returns {string|null}
  */
 export function closeGuardWarning(facts, { tier, frontier, closeEdits }) {
   const bar = /^\d+$/.test(String(closeEdits ?? '')) ? Number(closeEdits) : DEFAULT_CLOSE_EDITS;
   const warnings = [];
-  if (tier && tier === (frontier || DEFAULT_TIERS.frontier) && facts.edits >= bar && facts.workers === 0) {
+  if (tier && tier === frontier && facts.edits >= bar && facts.workers === 0) {
     warnings.push(`the frontier model made ${facts.edits} edits itself this turn with no worker spawn: implementation belongs with workkit:worker`);
   }
   if (facts.workers >= 1 && facts.verifiers === 0) {

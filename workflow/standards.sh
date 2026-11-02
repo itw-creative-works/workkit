@@ -200,6 +200,7 @@ wk_info "standards: $root"
 # Written by a real heal only: the probes and an unconsented repo exit above.
 ensure_engine_link
 register_in_roster
+report_user_settings
 remove_version_stamp
 ensure_workflow_ignored
 ensure_gitignore_basics

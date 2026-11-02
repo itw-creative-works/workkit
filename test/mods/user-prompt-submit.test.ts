@@ -3,7 +3,7 @@
 // gate and its log verdicts, and the per-session markers kept in $.store.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, contextOf, REPO, SID, MODELS, OPTED_OUT } from '../lib/mod-world.ts'
+import { mkWorld, hooksLog, contextOf, HOME, REPO, SID, MODELS, OPTED_OUT } from '../lib/mod-world.ts'
 
 const prompt = ($: any, text: string | undefined, extra: any = {}) => $.classic.UserPromptSubmit({
   ...(text === undefined ? {} : { prompt: text }), session_id: SID, cwd: REPO, ...extra,
@@ -15,9 +15,12 @@ const LINE = '[Issue work detected (#374): load the workkit:feature skill before
 const noticed = (r: any) => contextOf(r).includes('/reload-plugins')
 
 describe('classic.UserPromptSubmit: the Contract cases', () => {
-  for (const [name, settings] of [['"enabled": false', OPTED_OUT]] as const) {
+  for (const [name, settings, files] of [
+    ['"enabled": false', OPTED_OUT, {}],
+    ['no enabled key, under a machine file saying "enabled": true', '{ "version": 1 }\n', { [`${HOME}/.workkit/settings.json`]: '{ "enabled": true }\n' }],
+  ] as const) {
     test(`a repo with ${name}: no handler adds context and the gated lines read stood-down`, async ($, on) => {
-      const w = mkWorld(on, { model: MODELS.fable, repos: { [REPO]: settings } })
+      const w = mkWorld(on, { model: MODELS.fable, repos: { [REPO]: settings }, files })
       const r = await prompt($, BOTH)
       expect(contextOf(r)).toBe('')
       for (const hook of GATED) {

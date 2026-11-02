@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  ISSUE_LINK_RE, SECTION_RE, sectionKind, parseEntries,
+  ISSUE_LINK_RE, SECTION_RE, sectionKind, parseEntries, sectionHeadingAt,
 } = require('../changelog/lint');
 const {
   repoSlug, commitsByIssue, authorHandle, fill, defaultRange,
@@ -173,10 +173,7 @@ const moveUnreleased = (lines, { version, date, keep }) => {
     throw new ReleaseError(`release: nothing under [Unreleased] would move to ${version}; nothing was written.`);
   }
 
-  // The heading is the nearest one above the first entry: parseEntries named
-  // that entry's section from exactly that line.
-  let headingAt = entries[0].line - 1;
-  while (!isUnreleasedHeading(lines[headingAt])) headingAt--;
+  const headingAt = sectionHeadingAt(lines, entries[0]);
   const lastEnd = entries[entries.length - 1].endLine - 1;
 
   // Walk the body, heading to last entry, into category blocks. A block keeps

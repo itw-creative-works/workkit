@@ -6,12 +6,12 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
-const { mods, textOf } = require('../lib/mods-inputs');
+const { mods, textOf, mergedSettings } = require('../lib/mods-inputs');
 
 const ladder = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'manager', 'resources', 'ladder.json'), 'utf8'));
 const MODELS = { fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: 'claude-sonnet-4-5' };
 
-const config = (user) => mods('manager').managerConfig(ladder, user, undefined);
+const config = (user) => mods('manager').managerConfig(ladder, mergedSettings({ user }));
 const warn = (type, given, parent = MODELS.opus, cfg = config()) => textOf(mods('spawn-guard').spawnGuardWarning(cfg, type, given, parent));
 
 const cases = async () => {

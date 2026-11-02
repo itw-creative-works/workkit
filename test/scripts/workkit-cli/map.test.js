@@ -25,7 +25,7 @@ const cases = async () => {
     const world = mkWorld();
     const entries = runCli(world, []).out.split('\n').map((l) => l.trim());
     const verbs = [
-      'ship items', 'ship release', 'ship watch', 'ship plan', 'ship publish', 'review covers', 'review mark',
+      'ship items', 'ship release', 'ship watch', 'ship plan', 'ship publish', 'ship cut', 'ship deploy', 'review covers', 'review mark',
       'triage mark', 'proof red', 'changelog lint', 'state [repo]',
     ];
     const missing = verbs.filter((v) => !entries.some((l) => l.startsWith(v)));

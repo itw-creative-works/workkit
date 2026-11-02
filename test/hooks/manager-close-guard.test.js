@@ -11,8 +11,8 @@ const {
 } = require('../lib/mods-inputs');
 
 const KIT = path.join(__dirname, '..', '..');
-const ladder = JSON.parse(fs.readFileSync(path.join(KIT, 'hooks', 'manager', 'resources', 'ladder.json'), 'utf8'));
-const FRONTIER = ladder.tiers.frontier;
+const { tiers } = JSON.parse(fs.readFileSync(path.join(KIT, 'defaults', 'settings.json'), 'utf8')).manager;
+const FRONTIER = tiers.frontier;
 const FRONTIER_MODEL = MODELS[FRONTIER];
 
 const edit = () => row.tool('Edit', { file_path: '/x', old_string: 'a', new_string: 'b' });

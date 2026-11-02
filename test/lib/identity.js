@@ -175,7 +175,7 @@ const startService = (status, body) => startServer(
  */
 const scratchKit = () => {
   const kit = mkTmp('wk-identity-kit-');
-  for (const dir of ['workflow', 'hooks']) fs.cpSync(path.join(KIT, dir), path.join(kit, dir), { recursive: true });
+  for (const dir of ['workflow', 'hooks', 'defaults']) fs.cpSync(path.join(KIT, dir), path.join(kit, dir), { recursive: true });
   return kit;
 };
 

@@ -18,6 +18,7 @@ const {
 } = require('../../lib/identity');
 
 const MODULE = path.join(__dirname, '..', '..', '..', 'workflow', 'identity', 'token.js');
+const SETTINGS_LIB = path.join(__dirname, '..', '..', '..', 'workflow', 'lib', 'settings.js');
 const INSTALL_PAGE_JS = path.join(__dirname, '..', '..', '..', 'workflow', 'identity', 'install-page.js');
 
 // Required per case, so a module not yet built fails each case by name.
@@ -584,9 +585,11 @@ const cases = async () => {
 
   group('identity/token: the command form');
 
-  await test('case 14: --status prints the four fields, --installation and --probe answer installed or not installed, only --installation naming the install page, and tokenUrlOf({}) is the Worker\'s URL', async () => {
+  await test('case 14: --status prints the four fields, --installation and --probe answer installed or not installed, only --installation naming the install page, and the kit defaults name the Worker\'s URL', async () => {
     const { tokenUrlOf } = load();
-    assertEq(tokenUrlOf({}), 'https://workkit.itwcreativeworks.com/token', 'the default token URL');
+    const { settingsAt } = require(SETTINGS_LIB);
+    const bare = settingsAt(null, path.join(mkTmp('token-defaults-'), 'settings.json'));
+    assertEq(tokenUrlOf(bare), 'https://workkit.itwcreativeworks.com/token', 'the default token URL');
     assertEq(tokenUrlOf(SETTINGS), TOKEN_URL, 'identity.tokenUrl wins');
 
     const { home, command } = tokenKit();

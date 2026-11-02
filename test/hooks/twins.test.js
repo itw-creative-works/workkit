@@ -1,8 +1,8 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. Fourteen rows: the test package,
-// the package record's read, the tree hash, the opt-in read, the machine folder, the CHANGELOG test, the hooks log, the slug, the Proof
-// pattern, the lint block's sentence, the working-diff reads, the version-only change, the status:building list, the
-// public slug.
+// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the test package, the
+// package record's read, the tree hash, the opt-in read (the gate's and the heal's), one setting, the machine folder, the
+// CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
+// version-only change, the status:building list, the public slug.
 
 const fs = require('fs');
 const os = require('os');
@@ -21,6 +21,7 @@ const commitGate = require('./commit-gate/helpers');
 const { runLib } = require('../lib/hook-lib');
 const { pkgMarkerPath, treeHash } = require('../lib/suite-record');
 const { scratchWorkflowHome } = require('../lib/workflow-home');
+const { makeRepo: healRepo, runScript: healRun, cleanup: healCleanup } = require('../scripts/workflow-standards/helpers');
 
 const KIT = path.join(__dirname, '..', '..');
 const lib = (...parts) => shellPath(path.join(KIT, ...parts));
@@ -79,7 +80,7 @@ const MANIFESTS = [
 const SETTINGS = [
   null, '', '{}', '{ "version": 1 }\n', '{ "enabled": true }\n', '{ "version": 1, "enabled": false }\n',
   '{"enabled":false}', '{ "enabled" :\tfalse }', '{ "enabled": "false" }', '{ "enabled": true, "x": { "enabled": false } }',
-  '{\n  "version": 1,\n  "enabled": false\n}\n', '{ "enabled":\nfalse }',
+  '{\n  "version": 1,\n  "enabled": false\n}\n', '{ "enabled":\nfalse }', '{ "enabled": "true" }',
 ];
 
 /** One scratch repo root per settings text, the shell side's input. */
@@ -156,34 +157,31 @@ const cases = async () => {
     fs.rmSync(w.dir, { recursive: true, force: true });
   });
 
-  group('twins: the opt-in read, wk_settings_declined in workflow/lib/participation.sh against settingsOptedIn in hooks/mods/gate.js');
+  group('twins: the opt-in read, wk_opted_in in workflow/lib/participation.sh against settingsOptedIn in hooks/mods/gate.js');
 
-  // platform.sh first, as every caller sources it, so wk_settings_declined reads through the node wk_node finds.
+  // platform.sh first, as every caller sources it, so wk_opted_in reads through the node wk_node finds.
   const participation = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
   const fileOf = (root) => path.join(root, '.workkit', 'settings.json');
-  // A settings file opts in on the shell side when wk_settings_declined says no.
-  const shellOptedIn = (files) => bashAnswers(participation, 'wk_settings_declined', files.map(shellPath),
-    { WORKKIT_NODE: shellPath(process.execPath) }).map((d) => !d);
+  const shellOptedIn = (roots) => bashAnswers(participation, 'wk_opted_in', roots.map(shellPath),
+    { WORKKIT_NODE: shellPath(process.execPath) });
 
-  await test('wk_settings_declined and settingsOptedIn agree on every settings text', () => {
-    const texts = SETTINGS.filter((t) => t !== null);
-    const files = settingsRoots(texts).map(fileOf);
-    const js = (i) => mods('gate').settingsOptedIn(readOrNull(files[i]));
-    agree(texts.map((_, i) => i), shellOptedIn(files), js, 'the settings texts (by index into the non-null SETTINGS)');
-    assertEq(mods('gate').settingsOptedIn(null), false, 'and no file at all is out');
-    const js0 = (text) => mods('gate').settingsOptedIn(text);
-    assertEq(js0('{ "version": 1, "enabled": false }\n'), false, 'and a declined file is out');
-    assertEq(js0('{ "version": 1 }\n'), true, 'and a legacy file is in');
+  await test('wk_opted_in and settingsOptedIn agree on every settings text, and only a top-level "enabled": true is in', () => {
+    const roots = settingsRoots(SETTINGS);
+    const shell = shellOptedIn(roots);
+    const js = (i) => mods('gate').settingsOptedIn(readOrNull(fileOf(roots[i])));
+    agree(SETTINGS.map((_, i) => i), shell, js, 'the settings texts (by index into SETTINGS)');
+    assertEq(JSON.stringify(shell), JSON.stringify([false, false, false, false, true, false, false, false, false, true, false, false, false]),
+      'no file, an empty file, {}, a version alone and every false or non-true value are out');
   });
 
   await test('settingsOptedIn reads only the top-level enabled key, and text that does not parse is out', () => {
     const { settingsOptedIn } = mods('gate');
     assertEq(settingsOptedIn('{"enabled": true, "manager": {"enabled": false}}'), true, 'a nested enabled: false leaves an opted-in repo in');
     assertEq(settingsOptedIn('{"enabled": false}'), false, 'the top-level decline is out');
-    assertEq(settingsOptedIn('{"manager": {"enabled": false}}'), true, 'a nested decline alone is the legacy opt-in');
+    assertEq(settingsOptedIn('{"manager": {"enabled": true}}'), false, 'a nested enabled: true alone is out');
     assertEq(settingsOptedIn('not json'), false, 'text that does not parse is out');
-    assertEq(settingsOptedIn(''), true, 'an empty file has no enabled key: the legacy opt-in');
-    assertEq(settingsOptedIn('  \n'), true, 'and so has a whitespace-only one');
+    assertEq(settingsOptedIn('  \n'), false, 'a whitespace-only file has no enabled key: out');
+    assertEq(settingsOptedIn(null), false, 'and no file at all is out');
   });
 
   // A file mode is POSIX's: Windows reads a 000 file anyway, and so does root.
@@ -196,11 +194,73 @@ const cases = async () => {
   })();
   await testUnless(!unreadable, 'this machine reads a mode-000 file (Windows, or root)')(
     'an unreadable settings file reads opted out on both sides', () => {
-      const [shell] = shellOptedIn([fileOf(unreadable)]);
+      const [shell] = shellOptedIn([unreadable]);
       assertEq(shell, false, 'the shell reads an unreadable file as opted out');
       assertEq(mods('gate').settingsOptedIn(readOrNull(fileOf(unreadable))), false,
         'and so does the module');
     });
+
+  group('twins: the opt-in read, the heal\'s --state (resolve_state in workflow/standards/state.sh) against settingsOptedIn');
+
+  await test('the heal reads a repo enabled exactly where settingsOptedIn reads it in, and a string enabled is no answer it offers on', () => {
+    const states = SETTINGS.map((text) => {
+      const repo = healRepo({ settings: text });
+      const state = healRun(repo, { args: ['--state'] }).stdout.trim();
+      healCleanup(repo);
+      return state;
+    });
+    const js = (i) => mods('gate').settingsOptedIn(SETTINGS[i]);
+    agree(SETTINGS.map((_, i) => i), states.map((s) => s === 'enabled'), js, 'the settings texts (by index into SETTINGS)');
+    for (const text of ['{ "enabled": "false" }', '{ "enabled": "true" }']) {
+      assertEq(states[SETTINGS.indexOf(text)], 'undecided', `${text}: no answer, so the heal offers`);
+    }
+  });
+
+  group('twins: one setting, wk_setting in workflow/lib/participation.sh against loadSettings in hooks/mods/settings.js');
+
+  // [dotted key, machine file body, repo file body]; undefined writes no file.
+  const LAYERS = [
+    ['findings.file', undefined, undefined],
+    ['findings.file', { findings: { file: true } }, { enabled: true }],
+    ['findings.file', { findings: { file: true } }, { enabled: true, findings: { file: false } }],
+    ['tests.budget', { tests: { budget: 5 } }, { enabled: true, tests: { budget: null } }],
+    ['proof.rootOnly', { proof: { rootOnly: ['a', 'b'] } }, { enabled: true, proof: { rootOnly: ['c'] } }],
+    ['hooks.afterRelease', { hooks: { afterRelease: null } }, { enabled: true }],
+    ['public', { public: 'acme/public' }, { enabled: true }],
+    ['site.repo', { site: { repo: 'acme/home' } }, { enabled: true, site: null }],
+    ['manager.tiers', { manager: { tiers: { workhorse: 'haiku' } } }, undefined],
+    ['enabled', { enabled: true }, {}],
+    ['enabled', { enabled: false }, { enabled: true }],
+    ['manager', { manager: 'off' }, undefined],
+    ['identity.tokenUrl', undefined, { enabled: true, identity: 'x' }],
+  ];
+
+  await test('wk_setting and loadSettings give every key over every pair of layers the same value', () => {
+    const differ = [];
+    for (const [key, user, repo] of LAYERS) {
+      const dir = mkTmp('twins-setting-');
+      const files = { user: path.join(dir, 'home', '.workkit', 'settings.json'), repo: path.join(dir, 'repo', '.workkit', 'settings.json') };
+      for (const [layer, body] of [['user', user], ['repo', repo]]) {
+        fs.mkdirSync(path.dirname(files[layer]), { recursive: true });
+        if (body !== undefined) fs.writeFileSync(files[layer], `${JSON.stringify(body)}\n`);
+      }
+      const root = path.join(dir, 'repo');
+      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"\n. "${lib('workflow', 'lib', 'participation.sh')}"\nwk_setting "$1" "$2"`, 'bash', shellPath(root), key], {
+        env: { PATH: SYSTEM_PATH, HOME: shellPath(path.join(dir, 'home')), WORKFLOW_HOME: shellPath(path.dirname(files.user)) },
+        encoding: 'utf8',
+        timeout: SPAWN_DEADLINE,
+      });
+      // A string prints raw, null as nothing, anything else as JSON.
+      const printed = (res.stdout || '').replace(/\r/g, '').replace(/\n$/, '');
+      let shell = null;
+      if (printed !== '') { try { shell = JSON.parse(printed); } catch { shell = printed; } }
+      const merged = mods('settings').loadSettings(readOrNull, { kit: KIT, root, user: files.user });
+      const node = key.split('.').reduce((v, k) => (v === null || v === undefined ? v : v[k]), merged) ?? null;
+      if (JSON.stringify(shell) !== JSON.stringify(node)) differ.push(`${key} over ${JSON.stringify([user, repo])}: bash ${printed}, node ${JSON.stringify(node)}`);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    assertEq(differ.join('; '), '', 'the layers bash and JavaScript read differently');
+  });
 
   group('twins: the machine folder, wk_user_dir against userDir in hooks/mods/log.js and workflow/user-dir.js');
 

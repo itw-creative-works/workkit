@@ -218,6 +218,20 @@ const cases = async () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
+  await test('a public key in the machine settings file pairs a repo whose own file names none', () => {
+    const repo = makeRepo({ settings: '{ "enabled": true }\n' });
+    const home = mkTmp('wf-std-');
+    fs.writeFileSync(path.join(home, 'settings.json'), '{ "public": "acme/public" }\n');
+    const stub = makeGhStub({ labels: [] });
+    runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
+    const calls = ghCalls(stub);
+    const onPublic = calls.filter((c) => isCall(c, 'label', 'create') && target(c) === 'acme/public').map((c) => c[2]);
+    const statuses = desiredLabels().filter((l) => l.name.startsWith('status:')).map((l) => l.name);
+    assertEq(JSON.stringify([...onPublic].sort()), JSON.stringify([...statuses].sort()),
+      `the status: labels on the machine's acme/public; calls: ${fmtCalls(calls)}`);
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
+  });
+
   await test('a public key that is not a slug is a heal warning naming the key, with no public calls', () => {
     const repo = makeRepo({ settings: '{ "enabled": true, "public": "acme public" }\n' });
     const stub = makeGhStub({ labels: desiredLabels() });

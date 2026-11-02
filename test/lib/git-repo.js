@@ -6,7 +6,8 @@
 // identity and workkit-cli suites, the snapshot and command logic suites).
 // `mkOriginRepo` is the minimal form: an init and an origin, nothing committed.
 // `commitGh` is the `gh` a commit's own hooks ask (the githooks and release-taken
-// suites): `issue view` and `release view` answered from fixtures.
+// suites) and `workkit ship cut` asks (ship-cut): `issue view`, `release view`
+// and `release create` answered from fixtures.
 
 const fs = require('fs');
 const path = require('path');
@@ -83,15 +84,20 @@ const mkOriginRepo = (dir, origin) => {
 /**
  * A `gh` on its own bin folder, recording every call: `issue view <N>` prints
  * `issues[N]` whole as JSON (an unknown number exits 1), `release view <tag>`
- * prints the tag when `tags` holds it and "release not found" (exit 1) when not;
- * with `fails` every call exits 1 the way a signed-out gh does.
+ * prints the tag when `tags` holds it and "release not found" (exit 1) when not,
+ * `release create` runs `onCreate` and exits `createExit`; with `fails` every
+ * call exits 1 the way a signed-out gh does.
  * @param {object} [opts]
  * @param {object} [opts.issues] - issue number to its `--json` answer
  * @param {string[]} [opts.tags] - the release tags the repo carries
  * @param {boolean} [opts.fails]
+ * @param {number} [opts.createExit=0] - `release create`'s exit code
+ * @param {string} [opts.onCreate=':'] - a bash line `release create` runs first
  * @returns {{binDir: string, calls: Function}} `calls()` is every argv, in order
  */
-const commitGh = ({ issues = {}, tags = [], fails = false } = {}) => {
+const commitGh = ({
+  issues = {}, tags = [], fails = false, createExit = 0, onCreate = ':',
+} = {}) => {
   const dir = mkTmp('commit-gh-');
   const binDir = path.join(dir, 'bin');
   const issuesDir = path.join(dir, 'issues');
@@ -111,6 +117,10 @@ const commitGh = ({ issues = {}, tags = [], fails = false } = {}) => {
     `  case " ${tags.join(' ')} " in *" $3 "*) echo "$3"; exit 0 ;; esac`,
     "  echo 'release not found' >&2",
     '  exit 1',
+    'fi',
+    'if [[ "$1 $2" == "release create" ]]; then',
+    `  ${onCreate}`,
+    `  exit ${createExit}`,
     'fi',
     'exit 0',
   ]);

@@ -11,7 +11,7 @@ const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, stubTool, joinPath,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith,
+  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith, copyDefaults,
 } = require('./helpers');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
@@ -180,8 +180,11 @@ const cases = async () => {
     const { claude } = claudeHomeWith();
     // A copy in a temp directory: no git repo above it, which is what a
     // fixture, an archive, or a partial checkout looks like.
-    const copy = mkTmp('wf-std-');
+    const copyRoot = mkTmp('wf-std-');
+    const copy = path.join(copyRoot, 'workflow');
+    fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    copyDefaults(copyRoot);
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
@@ -195,7 +198,7 @@ const cases = async () => {
     assertEq(res.status, 0, `the heal itself still runs: ${res.stderr}`);
     assert(!fs.existsSync(path.join(claude, 'workkit')), 'a copy is not the machine engine and takes no address');
     assert(!(res.stdout + res.stderr).includes('engine:'), `and says nothing: it is a skip, not a fault, got: ${res.stderr}`);
-    cleanup(repo); cleanup(claude); cleanup(copy);
+    cleanup(repo); cleanup(claude); cleanup(copyRoot);
   });
 
   await test('a copy whose origin is some OTHER repo leaves it alone too', () => {
@@ -206,6 +209,7 @@ const cases = async () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    copyDefaults(copyRoot);
     mkOriginRepo(copyRoot, 'https://github.com/someone/not-the-kit.git');
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
@@ -229,6 +233,7 @@ const cases = async () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    copyDefaults(copyRoot);
     mkOriginRepo(copyRoot, 'git@github.com:ITW-Creative-Works/workkit.git');
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {

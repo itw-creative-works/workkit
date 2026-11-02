@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # workflow/lib/participation.sh: what the kit means by a repo root, by a repo's
-# answer and by its own hooks folder, for the engine and the hooks. Sourced,
-# functions only; the hooks source it directly so they never load the engine's addresses.
+# answer, by a setting and by its own hooks folder, for the engine and the
+# hooks. Sourced, functions only; the hooks source it directly so they never
+# load the engine's addresses.
 
 # wk_is_repo_root <dir>: `-e`, never `-d`, since `.git` is a file in a worktree
 # and in a submodule. Asked of the directory, so a walk needs no git call apiece.
@@ -24,9 +25,9 @@ process.exit((s === null ? false : s.enabled) === (process.argv[2] === "true") ?
 }
 
 # wk_settings_declined <file> / wk_settings_enabled <file>: the top-level
-# `enabled` key through _wk_settings_key, as the hooks module's gate reads it:
-# unreadable or unparsable is declined, empty is neither. With no node, a text match,
-# nested keys too. Not each other's negation: no key is the legacy opt-in.
+# `enabled` key through _wk_settings_key: unreadable or unparsable is declined,
+# empty is neither. With no node, a text match, nested keys too. Not each
+# other's negation: a file with no key is off, yet not declined (the heal offers it).
 wk_settings_declined() {
   local rc
   [ -e "$1" ] || return 1
@@ -46,15 +47,51 @@ wk_settings_enabled() {
   grep -qE '"enabled"[[:space:]]*:[[:space:]]*true' "$1" 2>/dev/null
 }
 
+# wk_opted_in <root>: 0 when the repo at <root> turned workkit on: its own
+# .workkit/settings.json says `"enabled": true`. No file, an empty one, one with
+# no key or any other value is off, the default; the machine's file has no say.
+# The shell side's one opt-in test, the twin of settingsOptedIn (hooks/mods/gate.js).
+wk_opted_in() {
+  [ -f "$1/.workkit/settings.json" ] || return 1
+  wk_settings_enabled "$1/.workkit/settings.json"
+}
+
+# wk_setting <root> <dotted.key>: the merged view's key: the kit's defaults (two
+# folders above this file) under the machine's settings.json under <root>'s, none
+# with an empty <root>; `enabled` is <root>'s own. A string prints raw, null as
+# nothing, else JSON. Defaults missing or broken: an error naming the file, 1.
+wk_setting() {
+  local defaults="${BASH_SOURCE[0]%/*}/../../defaults/settings.json" user repo=''
+  user="$(wk_user_dir)/settings.json"
+  [ -z "$1" ] || repo="$1/.workkit/settings.json"
+  command -v jq >/dev/null 2>&1 || return 0
+  if [ ! -f "$defaults" ] || ! wk_jq -e 'type == "object"' "$defaults" >/dev/null 2>&1; then
+    printf 'workkit: the kit'"'"'s settings defaults %s are missing or not a JSON object; reinstall the kit\n' "$defaults" >&2
+    return 1
+  fi
+  wk_jq -r -n --slurpfile d "$defaults" \
+    --arg u "$([ -f "$user" ] && cat "$user" 2>/dev/null)" \
+    --arg r "$([ -n "$repo" ] && [ -f "$repo" ] && cat "$repo" 2>/dev/null)" --arg k "$2" '
+    def layer: try fromjson catch null;
+    def merge($b; $o): if ($o | type) != "object" then $b
+      else reduce ($o | keys_unsorted[]) as $key ($b;
+        $o[$key] as $v | if $v == null then .
+          elif (.[$key] | type) == "object" then
+            (if ($v | type) == "object" then .[$key] = merge(.[$key]; $v) else . end)
+          else .[$key] = $v end) end;
+    $d[0] as $D | ($r | layer) as $R
+    | merge(merge($D; $u | layer); $R)
+    | .enabled = (if ($R | type) == "object" and $R.enabled != null then $R.enabled else $D.enabled end)
+    | (try getpath($k | split(".")) catch null) | if . == null then empty elif type == "string" then . else tojson end'
+}
+
 # wk_session_judges <root>: 0 when a Claude session's checks rule in <root>:
-# CLAUDECODE=1, HOOK_DISABLE not 1, and a settings file there that does not
-# decline. The `-e` is needed, since wk_settings_declined says no for an
-# absent file. The gate of the full-suite hold and of the git hooks alike.
+# CLAUDECODE=1, HOOK_DISABLE not 1, and the repo opted in. The gate of the
+# full-suite hold and of the git hooks alike.
 wk_session_judges() {
   [ "${CLAUDECODE:-}" = 1 ] || return 1
   [ "${HOOK_DISABLE:-}" != 1 ] || return 1
-  [ -e "$1/.workkit/settings.json" ] || return 1
-  ! wk_settings_declined "$1/.workkit/settings.json"
+  wk_opted_in "$1"
 }
 
 # wk_githooks_kit <root> <folder>: 0 and prints the kit root when <folder>, a

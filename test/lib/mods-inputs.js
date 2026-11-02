@@ -3,9 +3,11 @@
 // function and the shape of every argument; the arguments are built here,
 // once, so every suite spells them the same way.
 
+const fs = require('fs');
 const path = require('path');
 
-const MODS = path.join(__dirname, '..', '..', 'hooks', 'mods');
+const KIT = path.join(__dirname, '..', '..');
+const MODS = path.join(KIT, 'hooks', 'mods');
 
 /** One hooks/mods/<name>.js module, an ES module Node 22 requires directly. */
 const mods = (name) => require(path.join(MODS, `${name}.js`));
@@ -87,7 +89,22 @@ const sessionFacts = ({
   state, brief, repoSlug, now,
 });
 
+/**
+ * The merged settings view (loadSettings in hooks/mods/settings.js) over the kit's real
+ * defaults, `user` the machine file and `repo` the repo file: an object as JSON, a
+ * string as written, null or undefined for no file.
+ */
+const mergedSettings = ({ user, repo } = {}) => {
+  const text = (body) => {
+    if (body === undefined || body === null) return null;
+    return typeof body === 'string' ? body : JSON.stringify(body);
+  };
+  const files = { '/w/home/.workkit/settings.json': text(user), '/w/repo/.workkit/settings.json': text(repo) };
+  const read = (p) => (p in files ? files[p] : fs.readFileSync(p, 'utf8'));
+  return mods('settings').loadSettings(read, { kit: KIT, root: '/w/repo', user: '/w/home/.workkit/settings.json' });
+};
+
 module.exports = {
-  mods, textOf, runResult, stateFacts, reminderFacts, standardsState, REMINDER_ROOT,
+  mods, textOf, mergedSettings, runResult, stateFacts, reminderFacts, standardsState, REMINDER_ROOT,
   sessionFacts, daysBefore, briefMarker, MODELS, row, ghEntry,
 };

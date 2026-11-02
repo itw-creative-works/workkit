@@ -5,7 +5,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openCase, drain, CASE_INDENT } from './log.js';
+import { openCase, drain, indentRest, indentWriter, CASE_INDENT } from './log.js';
 
 export * from './process.js';
 export * from './scratch.js';
@@ -44,20 +44,38 @@ export const group = (name) => {
   console.log(`\n\x1b[1m[${name}]\x1b[0m`);
 };
 
+// Route a case body's own writes to stdout and stderr through a fresh
+// indentWriter each; the returned function puts the real writers back.
+const indentCaseWrites = () => {
+  const { stdout, stderr } = process;
+  const real = { out: stdout.write, err: stderr.write };
+  stdout.write = indentWriter(real.out.bind(stdout));
+  stderr.write = indentWriter(real.err.bind(stderr));
+  return () => {
+    stdout.write = real.out;
+    stderr.write = real.err;
+  };
+};
+
 export const test = async (name, fn) => {
   openCase();
+  const restoreWrites = indentCaseWrites();
   try {
-    await fn();
+    try {
+      await fn();
+    } finally {
+      restoreWrites();
+    }
     passed++;
     console.log(`  \x1b[32m✓\x1b[0m ${name}`);
     const lines = drain();
-    if (process.env.TEST_LOG === '1') for (const line of lines) console.log(`${CASE_INDENT}${line}`);
+    if (process.env.TEST_LOG === '1') for (const line of lines) console.log(`${CASE_INDENT}${indentRest(line)}`);
   } catch (err) {
     failed++;
     failures.push({ name, err });
     console.log(`  \x1b[31m✗\x1b[0m ${name}`);
-    console.log(`${CASE_INDENT}\x1b[31m${err.message}\x1b[0m`);
-    for (const line of drain()) console.log(`${CASE_INDENT}${line}`);
+    console.log(`${CASE_INDENT}\x1b[31m${indentRest(err.message)}\x1b[0m`);
+    for (const line of drain()) console.log(`${CASE_INDENT}${indentRest(line)}`);
     const frame = caseFrame(err);
     if (frame) console.log(`${CASE_INDENT}\x1b[2m${frame}\x1b[0m`);
   }
@@ -83,7 +101,7 @@ export const assertEq = (actual, expected, msg) => {
 // could run included.
 export const skip = (name, reason) => {
   skips.push({ name, reason });
-  console.log(`  \x1b[33m⊘\x1b[0m ${name} \x1b[33m(skipped: ${reason})\x1b[0m`);
+  console.log(`  \x1b[33m⊘\x1b[0m ${name} \x1b[33m(skipped: ${indentRest(reason)})\x1b[0m`);
 };
 
 // `test` where the case is answerable, a named skip where it is not. Asking the
@@ -124,7 +142,7 @@ export const selfRun = (runner) => {
     .then(({ failed }) => process.exit(failed > 0 ? 1 : 0))
     .catch((err) => {
       if (!err.suiteSkipped) throw err;
-      console.log(`\x1b[33m⊘ skipped:\x1b[0m ${err.message}`);
+      console.log(`\x1b[33m⊘ skipped:\x1b[0m ${indentRest(err.message)}`);
       process.exit(0);
     });
 };

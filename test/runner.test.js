@@ -236,8 +236,8 @@ const cases = async () => {
     assertEq(code, 0, `exit 0, got: ${output}`);
     const lines = linesOf(output);
     const blocks = {
-      left: ['▶ left.test.js', 'left 1', 'left 2', 'left 3', '  ✓ left meets right'],
-      right: ['▶ right.test.js', 'right 1', 'right 2', 'right 3', '  ✓ right meets left'],
+      left: ['▶ left.test.js', '    left 1', '    left 2', '    left 3', '  ✓ left meets right'],
+      right: ['▶ right.test.js', '    right 1', '    right 2', '    right 3', '  ✓ right meets left'],
     };
     for (const block of Object.values(blocks)) {
       const at = lines.indexOf(block[0]);
@@ -264,7 +264,7 @@ const cases = async () => {
     });
     assertEq(code, 0, `exit 0, got: ${output}`);
     const lines = linesOf(output);
-    const order = ['▶ a-slow.test.js', 'slow finished', '▶ b-fast.test.js', 'fast finished'].map((line) => lines.indexOf(line));
+    const order = ['▶ a-slow.test.js', '    slow finished', '▶ b-fast.test.js', '    fast finished'].map((line) => lines.indexOf(line));
     assert(order.every((at) => at >= 0), `prints both blocks, got: ${output}`);
     assert(order.every((at, i) => i === 0 || at > order[i - 1]), `the slow block prints whole before the fast one, got: ${output}`);
   });
@@ -338,6 +338,70 @@ const cases = async () => {
     }
     const thrown = failures.split('\n').find((line) => line.includes('run throws.test.js'));
     assert(thrown && thrown.includes('runner blew up'), `names "run throws.test.js" with the thrown message, got: ${failures}`);
+  });
+
+  await test('a failure whose message holds two lines lists the first on its line and the rest indented under it', () => {
+    const { code, output } = runSuites({
+      'two.test.js': SUITE("  await test('two lines', () => { throw new Error('first line\\nsecond line'); });"),
+    });
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    const failures = stripVTControlCharacters(output).split('Failures:')[1];
+    assert(failures, `a Failures: list, got: ${output}`);
+    const lines = failures.split('\n');
+    const at = lines.findIndex((line) => line.includes('two.test.js › two lines: first line'));
+    assert(at >= 0, `names the failure with its first line, got: ${failures}`);
+    assertEq(lines[at + 1], '    second line', `the second line is indented under it, got: ${failures}`);
+  });
+
+  // The totals line splits the run: a suite's own block prints above it, the
+  // end-of-run skip and Failures lists below it.
+  await test('a two-line load error and a two-line skip reason print their second line indented, inline and in the end-of-run list', () => {
+    const { code, output } = runSuites({
+      'broken.test.js': "throw new Error('load first line\\nload second line');\n",
+      'parked.test.js': SUITE("  skipSuite('skip first line\\nskip second line');"),
+    });
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    const lines = linesOf(output);
+    const totals = lines.findIndex((line) => /^\d+ passed, \d+ failed/.test(line));
+    assert(totals >= 0, `a totals line, got: ${output}`);
+    for (const second of ['load second line', 'skip second line']) {
+      const indented = (line) => new RegExp(`^\\s+${second}$`).test(line);
+      assert(lines.slice(0, totals).some(indented), `"${second}" indented in the suite's block, got: ${output}`);
+      assert(lines.slice(totals).some(indented), `"${second}" indented in the end-of-run list, got: ${output}`);
+      assert(!lines.some((line) => line.startsWith(second)), `"${second}" never at column zero, got: ${output}`);
+    }
+  });
+
+  await test('a suite whose runner throws a two-line message prints the second line indented, inline and in the Failures list', () => {
+    const { code, output } = runSuites({
+      'threw.test.js': SUITE("  throw new Error('threw first line\\nthrew second line');"),
+    });
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    const lines = linesOf(output);
+    const totals = lines.findIndex((line) => /^\d+ passed, \d+ failed/.test(line));
+    assert(totals >= 0, `a totals line, got: ${output}`);
+    const indented = (line) => /^\s+threw second line$/.test(line);
+    assert(lines.slice(0, totals).some(indented), `the second line indented in the suite's block, got: ${output}`);
+    assert(lines.slice(totals).some(indented), `the second line indented in the Failures list, got: ${output}`);
+    assert(!lines.some((line) => line.startsWith('threw second line')), `the second line never at column zero, got: ${output}`);
+  });
+
+  // Node's own summary block, printed by a test, read as the suite's own text.
+  await test('a node:test suite whose test prints node\'s whole tap block prints every line of it at the case indent', () => {
+    const block = ['# tests 1', '# suites 0', '# pass 1', '# fail 0', '# cancelled 0', '# skipped 0', '# todo 0', '# duration_ms 1'];
+    const { code, output } = runSuites({
+      'a.test.js': `const { test } = require('node:test');
+test('prints a block', () => {
+  console.log(${JSON.stringify(block.join('\n'))});
+});
+`,
+    });
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    const lines = linesOf(output);
+    for (const line of block) {
+      assert(lines.includes(`    ${line}`), `"${line}" at the case indent, got: ${output}`);
+    }
+    assert(!lines.some((line) => line.startsWith('# tests')), `no line starts with "# tests", got: ${output}`);
   });
 
   await test('a SERIAL entry naming no suite exits 1 naming it before any suite runs', () => {
@@ -465,7 +529,7 @@ describe('the widget', () => {
     assert(!plain.includes('must not run'), 'the skipped case never ran');
   });
 
-  await test('a node:test suite\'s stdout and stderr print under its header', () => {
+  await test('a node:test suite\'s stdout and stderr print under its header at the case indent', () => {
     const { code, output } = runSuites({
       'a.test.js': NODE_TEST(`
 test('talks', () => {
@@ -478,7 +542,7 @@ test('talks', () => {
     const header = lines.indexOf('▶ a.test.js');
     assert(header >= 0, `prints the header, got: ${output}`);
     for (const said of ['said on stdout', 'said on stderr']) {
-      assert(lines.indexOf(said) > header, `"${said}" prints under the header, got: ${output}`);
+      assert(lines.indexOf(`    ${said}`) > header, `"${said}" prints under the header at the case indent, got: ${output}`);
     }
   });
 
@@ -704,6 +768,12 @@ describe.skip('the parked group', () => {
     assert(output.includes('the node case'), `the Node half ran, got: ${output}`);
     assert(/mod half/.test(output), `the mod half is named, got: ${output}`);
     assert(output.includes('the mod case'), `the mod suite ran, got: ${output}`);
+    const lines = linesOf(output);
+    for (const said of ['    (pass) the mod case', '    Ran 1 test across 1 file.']) {
+      assert(lines.some((line) => line.startsWith(said)), `"${said.trim()}" at the case indent, got: ${output}`);
+    }
+    const half = lines.slice(lines.findIndex((line) => line.includes('▶ mod half')) + 1, lines.findIndex((line) => /^\d+ passed, \d+ failed/.test(line)));
+    assert(half.length && half.every((line) => line === '' || /^\s/.test(line)), `no mod half line at column zero, got: ${output}`);
   });
 
   await test('with no claude binary the mod half reads skipped with its reason and the Node half still runs', () => {

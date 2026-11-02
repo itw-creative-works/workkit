@@ -4,7 +4,7 @@
 // a real gh call through the shim, is test/scripts/identity/gh-shim.test.js.
 
 const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
-const { mods, textOf } = require('../lib/mods-inputs');
+const { mods, textOf, mergedSettings } = require('../lib/mods-inputs');
 
 const CWD = '/w/repo';
 const create = (title) => [{
@@ -13,9 +13,9 @@ const create = (title) => [{
 const CREATE = create('review notes from the 0.19.0 ship');
 const BLOCK = "findings-guard: BLOCKED this gh issue create: a review notes issue files findings, and findings.file is not on for this repo.\nSay findings in chat under 🧭 Findings instead, one bullet each, for the owner to answer file or drop; file nothing on your own. findings.file: true in the settings file (the repo's .workkit/settings.json, or ~/.workkit/settings.json) turns filing on.";
 
-// The verdict with the route the two settings files give (each parsed, null when absent).
+// The verdict with the route the merged view of the two settings files gives (null for no file).
 const judge = (steps, { repo = null, user = null } = {}) => mods('findings-guard').findingsVerdict({
-  steps, cwd: CWD, repo: null, facts: { route: mods('settings').findingsRoute(repo, user) },
+  steps, cwd: CWD, repo: null, facts: { route: mods('settings').findingsRoute(mergedSettings({ repo, user })) },
 });
 const denyOf = (r) => (r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null);
 

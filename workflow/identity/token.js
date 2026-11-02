@@ -6,11 +6,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { TOKEN_URL } = require('./app');
 const { loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX } = require('./login');
 const { repoOwner, ownerId, installPage } = require('./install-page');
 const { splitRepo } = require('../slug');
 const { userDir } = require('../user-dir');
+const { settingsAt } = require('../lib/settings');
 
 const RENEW_MARGIN_MS = 5 * 60 * 1000;
 // A hung service fails loudly at this bound instead of stalling every gh call.
@@ -50,25 +50,18 @@ class IdentityError extends Error {
 const nowMs = (now) => (now === undefined ? Date.now() : Number(now));
 
 /**
- * The machine's settings.json, an empty object when there is none.
+ * The machine's merged settings: the kit's defaults under its settings.json.
  * @returns {object}
  */
-const readSettings = () => {
-  const file = path.join(userDir(), 'settings.json');
-  if (!fs.existsSync(file)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (err) {
-    throw new Error(`${file} cannot be parsed: ${err.message}`);
-  }
-};
+const readSettings = () => settingsAt(null);
 
 /**
- * The token service's URL: `identity.tokenUrl` from settings, else TOKEN_URL.
- * @param {object} settings
+ * The token service's URL: `identity.tokenUrl` of the merged settings, the
+ * kit's defaults holding the hosted one.
+ * @param {object} settings the merged settings (readSettings)
  * @returns {string}
  */
-const tokenUrlOf = (settings) => settings?.identity?.tokenUrl || TOKEN_URL;
+const tokenUrlOf = (settings) => settings.identity.tokenUrl;
 
 /**
  * The cache file for a repo: `<cacheDir>/<owner>--<repo>.json`.
@@ -226,7 +219,7 @@ const requestToken = async (repo, {
  * IdentityError with its reason; there is no fall back to the owner's token.
  * @param {string} repo owner/repo
  * @param {object} [opts]
- * @param {object} [opts.settings] defaults to the machine's settings.json
+ * @param {object} [opts.settings] the merged settings, the machine's by default (readSettings)
  * @param {Function} [opts.fetch] defaults to the global fetch
  * @param {number|Date} [opts.now] defaults to the clock
  * @param {string} [opts.cacheDir] defaults to the machine folder's identity/

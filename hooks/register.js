@@ -25,6 +25,7 @@ import { reloadFingerprint, reloadGuardContext, surfacePaths } from './mods/relo
 import { resolverAdvice, resolverModel } from './mods/resolver.js';
 import { sessionGather } from './mods/session.js';
 import { sessionGuardVerdict } from './mods/session-guard.js';
+import { loadSettings } from './mods/settings.js';
 import { spawnGuardWarning } from './mods/spawn-guard.js';
 import { standardsGather } from './mods/standards.js';
 import { inboxCount, stateCheckContext } from './mods/state-check.js';
@@ -258,10 +259,10 @@ async function configOf($, env, cwd) {
   const ladder = env.MANAGER_LADDER || `${$.plugin.root}/hooks/manager/resources/ladder.json`;
   const user = env.MANAGER_USER_SETTINGS || `${userDirOf(env)}/settings.json`;
   const root = await gitTop($, cwd);
-  const [ladderText, userText, repoText] = await Promise.all([
-    readText($, ladder), readText($, user), root ? readText($, `${root}/.workkit/settings.json`) : null,
+  const [ladderText, settings] = await Promise.all([
+    readText($, ladder), loadSettings((path) => readText($, path), { kit: $.plugin.root, root, user }),
   ]);
-  return managerConfig(ladderText, userText, repoText);
+  return managerConfig(ladderText, settings);
 }
 
 // The engine calls a mods gatherer makes, as plain functions: `$` stays here.
