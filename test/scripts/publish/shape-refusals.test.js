@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { gitPath } = require('../../lib/platform');
 const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
 const cases = async () => {
@@ -42,7 +42,7 @@ const cases = async () => {
     assertEq(code, 0, 'exit 0');
     assert(/node_modules\/\.bin\/omega/.test(out), `it names what is missing, got: ${out}`);
     const line = out.split('\n').find((l) => /npm install/.test(l)) || '';
-    assert(line.includes(shellPath(world.tower)) && /omega/.test(line),
+    assert(line.includes(gitPath(world.tower)) && /omega/.test(line),
       `it says \`npm install\` at the clone did not produce the omega binary, got: ${out}`);
     assert(!/file:/.test(line), `and talks no file: specs, which the pins no longer are, got: ${line}`);
     assertEq(fromPages(world), null, 'nothing is published');

@@ -8,7 +8,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout,
+  BASH, NO_RC, shellPath, gitPath, homeEnv, stubTool, basePathWithout,
   systemPathWith, joinPath,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
@@ -118,7 +118,7 @@ const cases = async () => {
     const t = makeTree();
     const { code, out } = runScript(t.repo, ['note', 'a repo thought'], t);
     assertEq(code, 0, 'exit 0');
-    assert(out.includes(shellPath(t.repoCapture)), `names where it filed, got: ${out}`);
+    assert(out.includes(gitPath(t.repoCapture)), `names where it filed, got: ${out}`);
     assert(read(t.repoCapture).endsWith('- a repo thought\n'), 'the bullet is there');
     assertEq(t.ghCalls().length, 0, 'and nothing was filed on the home repo');
     cleanup(t.dir);

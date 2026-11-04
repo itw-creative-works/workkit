@@ -66,8 +66,9 @@ wk_mv_link() {
 
 # wk_native_path <path>: the native spelling (`D:/a/x`, never `/d/a/x`), git's
 # own: `cygpath -m` on Windows, keeping the letter case it is handed, the path
-# unchanged elsewhere. Every printed path the shell spelled and every roster key
-# goes through it. A failure is passed on: an empty key is worse than none.
+# unchanged elsewhere. Every path a kit shell line prints for a person, hands to
+# a native program, or keys the roster by goes through it. A failure is passed
+# on: an empty key is worse than none.
 wk_native_path() {
   local p="$1"
   case "${OSTYPE:-}" in

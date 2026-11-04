@@ -108,8 +108,9 @@ const tmpMountRoot = () => {
  * under Git Bash, unchanged on macOS. A path under the folder Git Bash mounts at
  * `/tmp` reads as `/tmp/...`, compared without case as Git Bash does. Use it for
  * anything a shell script receives (argv, a JSON payload it reads, an env var it
- * manipulates) and for anything compared against what a shell printed. A path
- * already in that spelling comes back as it came, so asking twice costs nothing.
+ * manipulates) and for a raw value a shell function returns. A path a shell line
+ * prints for a person is `wk_native_path`'s spelling: compare it through gitPath.
+ * A path already in that spelling comes back as it came, so asking twice costs nothing.
  * @param {string} p
  * @returns {string}
  */
@@ -125,10 +126,11 @@ const shellPath = (p) => {
 };
 
 /**
- * A path as git prints it: under Git for Windows a drive letter with forward
- * slashes (`C:/Users/x`), which is neither the native spelling nor the POSIX
- * one. Anything keyed off `git rev-parse --show-toplevel` wears this form, so
- * an assertion about such a key compares against it. Unchanged on macOS.
+ * A path as git prints it, and as `wk_native_path` prints one for a person:
+ * under Git for Windows a drive letter with forward slashes (`C:/Users/x`).
+ * Anything keyed off `git rev-parse --show-toplevel`, and any path a kit shell
+ * line prints, wears this form, so an assertion about it compares against it.
+ * Unchanged on macOS.
  * @param {string} p
  * @returns {string}
  */

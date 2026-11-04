@@ -8,7 +8,7 @@ const {
   group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE, start,
 } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, stubTool, joinPath,
+  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, joinPath,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith, copyDefaults,
@@ -101,7 +101,7 @@ const cases = async () => {
     const link = path.join(claude, 'workkit');
     const { output } = runScript(repo, { claudeHome: claude, pathPrefix: bin });
     assert(!fs.existsSync(link), `the copy is removed, not left at the address, got: ${output}`);
-    assert(output.includes('engine:') && output.includes(shellPath(link)),
+    assert(output.includes('engine:') && output.includes(gitPath(link)),
       `and the human is told, naming the address, got: ${output}`);
     assert(/symlink/.test(output), `and what is wrong with it, got: ${output}`);
     assert(!output.includes('engine: linked'), `never reported as linked, got: ${output}`);
