@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-11-03
+
 ### Added
 
 - (no issue) - workkit-core ships the kit's program starter as `workkit-core/run`: `spawnSync`, `spawn`, `execFileSync`, `launchOf` and `windowsQuoted`, so a repo on the package starts programs on Windows the way the kit does, without a copy of its own.
 
 ### Fixed
 
-- [#507](../../issues/507) - On Windows every program the kit's Node code starts goes through `workflow/lib/run.js`: a bare `gh` reaches the gh shim, bash starts through Git Bash and npm through its shim or `cmd.exe`, never WSL, arguments are never globbed, and a child keeps the variables Windows needs. Heal lines print Windows paths.
+- [#507](../../issues/507) [`244a27c`](../../commit/244a27c) Thanks [@ianwieds]! - On Windows every program the kit's Node code starts goes through `workflow/lib/run.js`: a bare `gh` reaches the gh shim, bash starts through Git Bash and npm through its shim or `cmd.exe`, never WSL, arguments are never globbed, and a child keeps the variables Windows needs. Heal lines print Windows paths.
 - (no issue) - A settings value the merge sets aside is said: the qa flip names a misshapen `proof` block or a broken repo settings file, and token requests refuse a broken `~/.workkit/settings.json` instead of falling back to the hosted service.
 - (no issue) - On Windows the CLI prints every path it names as `D:/...`, a partial kit no longer prints "command not found", and an argument passed to an npm `.cmd` shim is escaped for its second parse, so it cannot start another command.
 - (no issue) - `workkit ship release` moves a lockstep workspace member whose folder has a space, such as `packages/my pkg`, instead of refusing it.
