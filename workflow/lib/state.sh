@@ -13,7 +13,7 @@ wk_json_edit() {
   command -v jq >/dev/null 2>&1 || return 1
   target=$(readlink -f "$file" 2>/dev/null || printf '%s' "$file")
   if ! wk_jq empty "$target" 2>/dev/null; then
-    wk_warn "settings: $target cannot be read as JSON (unreadable or not valid JSON); fix or remove it, then try again"
+    wk_warn "settings: $(wk_native_path "$target") cannot be read as JSON (unreadable or not valid JSON); fix or remove it, then try again"
     return 1
   fi
   tmp="$target.tmp.$$"
@@ -27,11 +27,11 @@ wk_json_edit() {
   done
   ( umask 077; wk_jq "$@" "$target" >"$tmp" ) || rc=$?
   if [[ "$rc" -ne 0 ]] || [[ ! -s "$tmp" ]]; then
-    wk_warn "settings: could not write $target (left unchanged)"
+    wk_warn "settings: could not write $(wk_native_path "$target") (left unchanged)"
     return 1
   fi
   [[ -z "$mode" ]] || chmod "$mode" "$tmp" 2>/dev/null || true
-  mv "$tmp" "$target" || { wk_warn "settings: could not replace $target"; return 1; }
+  mv "$tmp" "$target" || { wk_warn "settings: could not replace $(wk_native_path "$target")"; return 1; }
   return 0
 }
 
@@ -43,7 +43,7 @@ wk_json_edit_or_create() {
   local file="$1" target
   [[ -e "$file" ]] && { wk_json_edit "$@"; return; }
   command -v jq >/dev/null 2>&1 || return 1
-  { printf '{}\n' >"$file"; } 2>/dev/null || { wk_warn "settings: could not create $file"; return 1; }
+  { printf '{}\n' >"$file"; } 2>/dev/null || { wk_warn "settings: could not create $(wk_native_path "$file")"; return 1; }
   wk_json_edit "$@" && return 0
   target=$(readlink -f "$file" 2>/dev/null) || target="$file"
   rm -f "$target"

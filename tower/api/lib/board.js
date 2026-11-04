@@ -7,9 +7,9 @@
 //   fetchBoard(discoverRepos());          // live, the whole board in one call
 //   const s = startSweep(repos);          // page by page: s.board(), s.paging(), s.step()
 
-const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../../workflow/lib/run');
+const { readJsonOrNull } = require('../../../workflow/lib/read');
 
 // The sweep's pure half, shared with the published dashboard. An ES module,
 // reached by the relative path the cloud brief's runner preserves.
@@ -30,14 +30,7 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
 });
 
 /** The label group names, from the vocabulary SSOT. */
-const labelGroups = (file = LABELS_FILE) => {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return new Set(Object.keys(parsed.groups || {}));
-  } catch {
-    return new Set();
-  }
-};
+const labelGroups = (file = LABELS_FILE) => new Set(Object.keys(readJsonOrNull(file)?.groups || {}));
 
 /** JSON, or null when the text is not JSON (or is not there at all). */
 const tryParse = (text) => {

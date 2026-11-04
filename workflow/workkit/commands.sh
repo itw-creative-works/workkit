@@ -11,7 +11,7 @@ cmd_update() {
     *) wk_error "update: unknown option $1"; return 1 ;;
   esac
 
-  wk_title "🔄 workkit update in $KIT_DIR"
+  wk_title "🔄 workkit update in $(wk_native_path "$KIT_DIR")"
   machine_links
   update_cron
   # Reported, never wired: the daily --auto run is the one path that must not
@@ -44,11 +44,11 @@ cmd_update() {
 cmd_publish() {
   PUBLISH_FAILED=0
   if [[ ! -f "$PUBLISH" ]]; then
-    wk_warn "site: publish.sh is missing at $PUBLISH; the kit is incomplete"
+    wk_warn "site: publish.sh is missing at $(wk_native_path "$PUBLISH"); the kit is incomplete"
     PUBLISH_FAILED=1
     return 0
   fi
-  bash "$PUBLISH" "$@" || { wk_warn "site: the publish did not finish; run \`bash $PUBLISH\` to see why"; PUBLISH_FAILED=1; }
+  bash "$PUBLISH" "$@" || { wk_warn "site: the publish did not finish; run \`bash $(wk_native_path "$PUBLISH")\` to see why"; PUBLISH_FAILED=1; }
   return 0
 }
 
@@ -57,7 +57,7 @@ cmd_publish() {
 cmd_brief() {
   if [[ "${1:-}" == '--local' ]]; then
     if [[ ! -f "$MORNING" ]]; then
-      wk_error "no morning job beside this engine ($MORNING), and this command needs the whole kit"
+      wk_error "no morning job beside this engine ($(wk_native_path "$MORNING")), and this command needs the whole kit"
       exit 1
     fi
     exec bash "$MORNING" --now
@@ -67,7 +67,7 @@ cmd_brief() {
     exit 1
   fi
   if [[ ! -f "$BRIEF_DISPATCH" ]]; then
-    wk_error "no brief dispatch beside this engine ($BRIEF_DISPATCH), and this command needs the whole kit"
+    wk_error "no brief dispatch beside this engine ($(wk_native_path "$BRIEF_DISPATCH")), and this command needs the whole kit"
     exit 1
   fi
   # shellcheck source=../../jobs/brief-dispatch.sh
@@ -98,7 +98,7 @@ cmd_test() {
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
   cd "$root" || exit 1
   if ! wk_has_test_script "$root"; then
-    wk_error "test: $root/package.json has no test script"
+    wk_error "test: $(wk_native_path "$root")/package.json has no test script"
     exit 1
   fi
   exec npm test -- "$@"
@@ -106,7 +106,7 @@ cmd_test() {
 
 cmd_doctor() {
   local attention=0
-  wk_title "🩺 workkit doctor in $KIT_DIR"
+  wk_title "🩺 workkit doctor in $(wk_native_path "$KIT_DIR")"
 
   wk_section "💻 This machine"
   if command -v claude >/dev/null 2>&1; then
@@ -127,18 +127,18 @@ cmd_doctor() {
   local linked
   linked="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
   if [[ -L "$ENGINE_LINK" && "$linked" == "$SCRIPT_DIR" ]]; then
-    wk_ok "engine: $ENGINE_LINK → $SCRIPT_DIR"
+    wk_ok "engine: $(wk_native_path "$ENGINE_LINK") → $(wk_native_path "$SCRIPT_DIR")"
   elif [[ -L "$ENGINE_LINK" && -n "$linked" ]] && wk_clone_outranks "$KIT_DIR" "$linked"; then
-    wk_ok "engine: $ENGINE_LINK → $linked, the workkit clone, which outranks the plugin cache"
+    wk_ok "engine: $(wk_native_path "$ENGINE_LINK") → $(wk_native_path "$linked"), the workkit clone, which outranks the plugin cache"
   else
-    wk_warn "engine: $ENGINE_LINK does not point at this engine; run \`workkit update\`"
+    wk_warn "engine: $(wk_native_path "$ENGINE_LINK") does not point at this engine; run \`workkit update\`"
     attention=$((attention + 1))
   fi
 
   if report_bin_link "$SCRIPT_DIR/workkit.sh" "$BIN_LINK" command; then
     case ":${PATH:-}:" in
       *":$BIN_DIR:"*) ;;
-      *) wk_warn "command: $BIN_DIR is not on your PATH; add \`export PATH=\"\$HOME/.local/bin:\$PATH\"\` to your shell rc"
+      *) wk_warn "command: $(wk_native_path "$BIN_DIR") is not on your PATH; add \`export PATH=\"\$HOME/.local/bin:\$PATH\"\` to your shell rc"
          attention=$((attention + 1)) ;;
     esac
   else
@@ -149,7 +149,7 @@ cmd_doctor() {
     local first_gh
     first_gh="$(command -v gh 2>/dev/null || true)"
     if [[ -n "$first_gh" && "$(wk_physical_path "$first_gh")" != "$(wk_physical_path "$GH_SHIM_LINK")" ]]; then
-      wk_warn "gh shim: $first_gh comes first on PATH, so the shim never runs; put ~/.local/bin ahead of it"
+      wk_warn "gh shim: $(wk_native_path "$first_gh") comes first on PATH, so the shim never runs; put ~/.local/bin ahead of it"
       attention=$((attention + 1))
     fi
   else
@@ -199,7 +199,7 @@ cmd_doctor() {
     cloud_na home
     cloud_na runner
   elif [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
+    wk_warn "home: the home-repo library is missing beside $(wk_native_path "$SCRIPT_DIR"); the kit is incomplete"
     attention=$((attention + 1))
   else
     local home_attention=0
@@ -225,9 +225,9 @@ cmd_doctor() {
   local state
   state="$(repo_state)"
   case "$state" in
-    enabled) wk_ok "repo: $PWD is in the workflow" ;;
-    nogit)   wk_skip "repo: $PWD is not a git repo" ;;
-    *)       wk_info "repo: $PWD is '$state'; \`workkit enable\` joins it" ;;
+    enabled) wk_ok "repo: $(wk_native_path "$PWD") is in the workflow" ;;
+    nogit)   wk_skip "repo: $(wk_native_path "$PWD") is not a git repo" ;;
+    *)       wk_info "repo: $(wk_native_path "$PWD") is '$state'; \`workkit enable\` joins it" ;;
   esac
   git_hooks_line "$state" || attention=$((attention + 1))
   identity_attention=0

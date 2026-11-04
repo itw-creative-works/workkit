@@ -36,7 +36,7 @@ check_hook_layer() {
     [[ -f "$piece" ]] || continue
     pieces_checked=$((pieces_checked + 1))
     if ! bash -n "$piece" 2>/dev/null; then
-      wk_warn "hooks: ${piece#"$HOOKS_DIR"/} has a syntax error; every script that sources it exits non-zero before doing anything (bash -n $piece)"
+      wk_warn "hooks: ${piece#"$HOOKS_DIR"/} has a syntax error; every script that sources it exits non-zero before doing anything (bash -n $(wk_native_path "$piece"))"
       needs_attention=1
     fi
   done

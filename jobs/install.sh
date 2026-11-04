@@ -71,9 +71,9 @@ check_engine_link() {
   [[ "$linked" == "$WORKKIT_DIR/workflow" ]] && return 0
   wk_clone_outranks "$WORKKIT_DIR" "$linked" && return 0
   if [[ -z "$linked" ]]; then
-    wk_warn "$1 → the job runs through $link, which does not resolve, so it cannot reach this kit; run \`workkit update\`"
+    wk_warn "$1 → the job runs through $(wk_native_path "$link"), which does not resolve, so it cannot reach this kit; run \`workkit update\`"
   else
-    wk_warn "$1 → the job runs through $link, which resolves to $linked, not this kit's $WORKKIT_DIR/workflow; run \`workkit update\`"
+    wk_warn "$1 → the job runs through $(wk_native_path "$link"), which resolves to $(wk_native_path "$linked"), not this kit's $(wk_native_path "$WORKKIT_DIR")/workflow; run \`workkit update\`"
   fi
 }
 
@@ -85,7 +85,7 @@ install_agent() {
   local TARGET="$HOME/Library/LaunchAgents/$LABEL.plist"
 
   if [[ ! -f "$TEMPLATE" ]]; then
-    wk_error "template missing: $TEMPLATE"
+    wk_error "template missing: $(wk_native_path "$TEMPLATE")"
     exit 1
   fi
 

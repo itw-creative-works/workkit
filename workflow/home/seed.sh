@@ -57,7 +57,7 @@ wk_home_source() {
     printf '%s\n' "$scratch/src"
     return 0
   fi
-  wk_warn "home: could not export the committed files from $folder (HEAD holds none of it, or the extract failed); nothing was copied from it"
+  wk_warn "home: could not export the committed files from $(wk_native_path "$folder") (HEAD holds none of it, or the extract failed); nothing was copied from it"
   return 1
 }
 
@@ -86,7 +86,7 @@ wk_home_seed() {
     return 1
   }
   scratch="$(mktemp -d)" || {
-    wk_warn "home: could not make a scratch directory; nothing was seeded into $WK_HOME_DIR"
+    wk_warn "home: could not make a scratch directory; nothing was seeded into $(wk_native_path "$WK_HOME_DIR")"
     return 1
   }
   app="$(wk_home_source "$scratch" "$WK_TOWER_APP")" || {
@@ -101,14 +101,14 @@ wk_home_seed() {
   done
   (cd "$app" && tar -cf - "${excludes[@]}" .) \
     | (cd "$WK_HOME_DIR" && tar -xf -) || {
-    wk_warn "home: could not copy the tower app into $WK_HOME_DIR"
+    wk_warn "home: could not copy the tower app into $(wk_native_path "$WK_HOME_DIR")"
     rm -rf "$scratch"
     return 1
   }
   for name in "${WK_TOWER_APP_KEEP[@]}"; do
     [[ -f "$app/$name" ]] || continue
     cp -p "$app/$name" "$WK_HOME_DIR/$name" || {
-      wk_warn "home: could not copy $name into $WK_HOME_DIR"
+      wk_warn "home: could not copy $name into $(wk_native_path "$WK_HOME_DIR")"
       rm -rf "$scratch"
       return 1
     }
@@ -131,7 +131,7 @@ wk_home_seed() {
   # folders, so the first sync agrees.
   wk_home_stamp_write ${folders[@]+"${folders[@]}"} || true
 
-  wk_ok "home: seeded the tower project in $WK_HOME_DIR from $WK_TOWER_APP"
+  wk_ok "home: seeded the tower project in $(wk_native_path "$WK_HOME_DIR") from $(wk_native_path "$WK_TOWER_APP")"
   return 0
 }
 
@@ -144,11 +144,11 @@ wk_home_sync() {
   WK_HOME_SYNC_MANIFESTS=0
 
   wk_home_ready || {
-    wk_skip "sync: nothing is cloned at $WK_HOME_DIR; the tower project was not refreshed"
+    wk_skip "sync: nothing is cloned at $(wk_native_path "$WK_HOME_DIR"); the tower project was not refreshed"
     return 1
   }
   [[ -n "$WK_TOWER_APP" && -d "$WK_TOWER_APP" ]] || {
-    wk_skip "sync: the tower app is not beside this engine (${WK_TOWER_APP:-no tower/app was found}); $WK_HOME_DIR is left exactly as it is"
+    wk_skip "sync: the tower app is not beside this engine (${WK_TOWER_APP:-no tower/app was found}); $(wk_native_path "$WK_HOME_DIR") is left exactly as it is"
     return 1
   }
   # Never over a newer kit's work; rc=1, since nothing was written.
@@ -162,7 +162,7 @@ wk_home_sync() {
   done
 
   tmp="$(mktemp -d)" || {
-    wk_warn "sync: could not make a scratch directory; the tower project in $WK_HOME_DIR was not refreshed"
+    wk_warn "sync: could not make a scratch directory; the tower project in $(wk_native_path "$WK_HOME_DIR") was not refreshed"
     return 1
   }
   app="$(wk_home_source "$tmp" "$WK_TOWER_APP")" || {
@@ -182,7 +182,7 @@ wk_home_sync() {
       manifest=1
       want="$tmp/package.json"
       cp -p "$src" "$want" 2>/dev/null || {
-        wk_warn "sync: could not stage $rel for comparison; the tower project in $WK_HOME_DIR is part-refreshed"
+        wk_warn "sync: could not stage $rel for comparison; the tower project in $(wk_native_path "$WK_HOME_DIR") is part-refreshed"
         rc=3
         break
       }
@@ -192,7 +192,7 @@ wk_home_sync() {
     mkdir -p "$(dirname "$dest")" 2>/dev/null || true
     # -p keeps an executable's mode rather than this shell's umask.
     cp -p "$want" "$dest" 2>/dev/null || {
-      wk_warn "sync: could not write $rel into $WK_HOME_DIR"
+      wk_warn "sync: could not write $rel into $(wk_native_path "$WK_HOME_DIR")"
       rc=3
       break
     }
@@ -223,7 +223,7 @@ wk_home_sync() {
       rel="${found#"$WK_HOME_DIR"/}"
       [[ -f "$app/$rel" ]] && continue
       rm -f "$found" 2>/dev/null || {
-        wk_warn "sync: could not remove the retired $rel from $WK_HOME_DIR"
+        wk_warn "sync: could not remove the retired $rel from $(wk_native_path "$WK_HOME_DIR")"
         rm -rf "$tmp"
         return 3
       }
@@ -239,7 +239,7 @@ wk_home_sync() {
     wk_home_excluded "$name" && continue
     [[ -d "$app/$name" || ! -d "$WK_HOME_DIR/$name" ]] && continue
     rm -rf "${WK_HOME_DIR:?}/$name" 2>/dev/null || {
-      wk_warn "sync: could not remove the retired folder $name from $WK_HOME_DIR"
+      wk_warn "sync: could not remove the retired folder $name from $(wk_native_path "$WK_HOME_DIR")"
       rm -rf "$tmp"
       return 3
     }
@@ -253,9 +253,9 @@ wk_home_sync() {
   wk_home_stamp_write ${synced[@]+"${synced[@]}"} && copied=$((copied + 1))
 
   if [[ $((copied + removed)) -eq 0 ]]; then
-    wk_skip "sync: the tower project in $WK_HOME_DIR is already current with $WK_TOWER_APP"
+    wk_skip "sync: the tower project in $(wk_native_path "$WK_HOME_DIR") is already current with $(wk_native_path "$WK_TOWER_APP")"
     return 2
   fi
-  wk_ok "sync: refreshed the tower project in $WK_HOME_DIR ($copied file(s) from $WK_TOWER_APP, $removed retired)"
+  wk_ok "sync: refreshed the tower project in $(wk_native_path "$WK_HOME_DIR") ($copied file(s) from $(wk_native_path "$WK_TOWER_APP"), $removed retired)"
   return 0
 }

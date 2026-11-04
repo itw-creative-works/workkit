@@ -15,7 +15,7 @@ handover_token() {
   rm -f "${TMPDIR:-/tmp}"/workkit-handover.*
 
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_skip "site: the token handover needs the home-repo library beside $SCRIPT_DIR"
+    wk_skip "site: the token handover needs the home-repo library beside $(wk_native_path "$SCRIPT_DIR")"
     return 0
   fi
   slug="$(wk_home_slug 2>/dev/null || true)"
@@ -40,7 +40,7 @@ handover_token() {
   # `site.url` is taken at its word, so an address that would break the page's
   # string literal or open its own fragment is refused rather than escaped.
   if [[ "$url" == *'"'* || "$url" == *'\'* || "$url" == *'<'* || "$url" == *'>'* || "$url" == *'#'* || "$url" =~ [[:space:]] ]]; then
-    wk_skip "site: the recorded \`site.url\` cannot be put in a URL as it stands, so the token was not handed over; fix it in $WK_HOME_SETTINGS, then re-run \`workkit setup\`"
+    wk_skip "site: the recorded \`site.url\` cannot be put in a URL as it stands, so the token was not handed over; fix it in $(wk_native_path "$WK_HOME_SETTINGS"), then re-run \`workkit setup\`"
     return 0
   fi
 

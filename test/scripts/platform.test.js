@@ -11,7 +11,7 @@ const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, until, alive, start, endTree, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
-  stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC,
+  stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 
@@ -102,11 +102,11 @@ const ended = (child, ms = SPAWN_DEADLINE) => new Promise((resolve) => {
 });
 
 const cases = async () => {
-  group('platform.sh: wk_git_path');
+  group('platform.sh: wk_native_path');
 
   await test('on the Windows branch a path is spelled the way git spells it', () => {
     const dir = cygpathWorld();
-    const { out } = inPlatform('wk_git_path /c/Users/x', {
+    const { out } = inPlatform('wk_native_path /c/Users/x', {
       OSTYPE: 'msys', PATH: pathWith(dir),
     });
     assertEq(out, 'C:/Users/x', `the mixed form, got: ${JSON.stringify(out)}`);
@@ -115,7 +115,7 @@ const cases = async () => {
 
   await test('cygwin takes the same branch as msys', () => {
     const dir = cygpathWorld();
-    const { out } = inPlatform('wk_git_path /c/Users/x', {
+    const { out } = inPlatform('wk_native_path /c/Users/x', {
       OSTYPE: 'cygwin', PATH: pathWith(dir),
     });
     assertEq(out, 'C:/Users/x', `one branch for both runtimes, got: ${JSON.stringify(out)}`);
@@ -124,7 +124,7 @@ const cases = async () => {
 
   await test('the answer carries no trailing newline, so a key is the path alone', () => {
     const dir = cygpathWorld();
-    const { out } = inPlatform('wk_git_path /c/Users/x; printf "|"', {
+    const { out } = inPlatform('wk_native_path /c/Users/x; printf "|"', {
       OSTYPE: 'msys', PATH: pathWith(dir),
     });
     assertEq(out, 'C:/Users/x|', `nothing after the path, got: ${JSON.stringify(out)}`);
@@ -136,13 +136,13 @@ const cases = async () => {
     // every real run of the engine gets. The drive-mount spelling is the input
     // because it is the one that differs: off Windows it comes back byte for
     // byte, which is the identity this seam promises there.
-    const { out } = inPlatform('wk_git_path /c/Users/x/repo; printf "|"');
+    const { out } = inPlatform('wk_native_path /c/Users/x/repo; printf "|"');
     const expected = IS_WINDOWS ? 'C:/Users/x/repo|' : '/c/Users/x/repo|';
     assertEq(out, expected, `the platform's own spelling, got: ${JSON.stringify(out)}`);
   });
 
   await test('a linux OSTYPE is the identity too, with no cygpath anywhere near it', () => {
-    const { out } = inPlatform('wk_git_path /home/x/repo; printf "|"', { OSTYPE: 'linux-gnu' });
+    const { out } = inPlatform('wk_native_path /home/x/repo; printf "|"', { OSTYPE: 'linux-gnu' });
     assertEq(out, '/home/x/repo|', `untouched, got: ${JSON.stringify(out)}`);
   });
 
@@ -150,6 +150,20 @@ const cases = async () => {
     const { out } = inPlatform('printf "sourced"');
     assertEq(out, 'sourced', `only what the caller asked for, got: ${JSON.stringify(out)}`);
   });
+
+  await testUnless(IS_WINDOWS, 'off-Windows identity; the Windows spelling is the case below')(
+    'wk_native_path off Windows prints its input, a drive-mount spelling included', () => {
+      const { code, out } = inPlatform('wk_native_path /d/a/x');
+      assertEq(code, 0, 'answered');
+      assertEq(out.replace(/\n$/, ''), '/d/a/x', `unchanged, got: ${JSON.stringify(out)}`);
+    });
+
+  await testUnless(!IS_WINDOWS, 'the native spelling exists only under Git Bash on Windows')(
+    'wk_native_path on Windows prints the drive form a person reads', () => {
+      const { code, out } = inPlatform('wk_native_path /d/a/x');
+      assertEq(code, 0, 'answered');
+      assertEq(out.replace(/\n$/, ''), 'D:/a/x', `the native spelling, got: ${JSON.stringify(out)}`);
+    });
 
   group('platform.sh: wk_user_dir');
 
@@ -449,6 +463,14 @@ const cases = async () => {
     assert(fs.readFileSync(path.join(dir, 'two.exe')).equals(first), 'the second stub got the same launcher');
     assertEq(fs.statSync(cached[0]).mtimeMs, built, 'csc did not run again: the cached build is untouched');
     cleanup(dir);
+  });
+
+  group('test/lib/platform.js: samePath');
+
+  await test('samePath reads a Windows path in any spelling as one path, and nothing else as one', () => {
+    assertEq(samePath('/d/a/x', 'D:\\a\\X', 'win32'), true, 'a drive mount, backslashes and case are one path on win32');
+    assertEq(samePath('/d/a/x', '/d/a/y', 'win32'), false, 'two files stay two');
+    assertEq(samePath('/a', '/A', 'darwin'), false, 'off win32 the case is part of the name');
   });
 
   return summary();

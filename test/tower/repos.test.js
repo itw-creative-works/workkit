@@ -195,7 +195,7 @@ const cases = async () => {
     git(tower, 'init', '-q', '-b', 'main');
     git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
     // The key is written the way the engine writes one, through the same fold
-    // (`wk_git_path`): git's spelling, which is the joined path on this machine
+    // (`wk_native_path`): git's spelling, which is the joined path on this machine
     // and the slashed one on Windows. A `path.join` key would be a file no real
     // machine holds, and the lookup would miss.
     fs.writeFileSync(

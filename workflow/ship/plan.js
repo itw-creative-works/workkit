@@ -4,28 +4,17 @@
 // and which are skipped and why (the rules and the lines: `skills/ship/SKILL.md`
 // Step 5). Members are read from their own package.json files, never through
 // `npm query .workspace`, which answers nothing before `npm install`. The
-// library release.js, publish.js, deploy.js, lib/io.js and lib/workspaces.js
-// require, with how the first four start npm and the first two name its end;
-// publish.js does the publishing.
+// library release.js, publish.js and lib/workspaces.js require, with how the
+// first two name npm's end; publish.js does the publishing.
 // Run from the repo root: workkit ship plan [--dir <root>]
 
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 const path = require('path');
 const { isSemver } = require('./semver');
 const { endOf } = require('../lib/say');
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
 const GLOB_RE = /[*?[]/;
-/**
- * Runs npm with `args`, as `spawnSync` would. On Windows npm is `npm.cmd`, which Node starts
- * only through a shell, and Node warns on stderr when a shell start gets an argument list;
- * no argument has whitespace (the release step refuses a folder with it), so it goes as one line.
- */
-const spawnNpm = (args, opts) => (process.platform === 'win32'
-  ? spawnSync(['npm', ...args].join(' '), { ...opts, shell: true })
-  : spawnSync('npm', args, opts));
-
 /** How an npm call ended, for a line that names it (`endOf` in lib/say.js). */
 const npmEnd = (res) => `npm ${endOf(res)}`;
 
@@ -252,5 +241,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  plan, expandWorkspaces, depNamesOf, readJson, PlanError, report, spawnNpm, npmEnd,
+  plan, expandWorkspaces, depNamesOf, readJson, PlanError, report, npmEnd,
 };

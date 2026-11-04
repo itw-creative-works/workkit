@@ -78,6 +78,8 @@ WK_HOME_RUNNER_FILES=(
   'hooks/mods/settings.js:brief/hooks/mods/settings.js'
   'hooks/mods/log.js:brief/hooks/mods/log.js'
   'workflow/lib/settings.js:brief/workflow/lib/settings.js'
+  'workflow/lib/read.js:brief/workflow/lib/read.js'
+  'workflow/lib/run.js:brief/workflow/lib/run.js'
   'defaults/settings.json:brief/defaults/settings.json'
   'hooks/package.json:brief/hooks/package.json'
   'tower/api/lib/board.js:brief/tower/api/lib/board.js'

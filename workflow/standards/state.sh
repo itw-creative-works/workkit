@@ -27,13 +27,14 @@ seed_user_settings() {
   ( set -C; printf '{\n  "version": 1\n}\n' 2>/dev/null >"$USER_SETTINGS" ) || return 0
 }
 
-# Every reader skips a machine file that is no JSON object, so the heal is where
-# that gets said. Empty text is no layer at all, not a broken one.
+# Most readers skip a machine file that is no JSON object and the token client
+# refuses it, so the heal is where that gets said. Empty text is no layer at
+# all, not a broken one.
 report_user_settings() {
   command -v jq >/dev/null 2>&1 || return 0
   [[ -f "$USER_SETTINGS" ]] || return 0
   wk_jq -e -s 'length == 0 or (length == 1 and (.[0] | type) == "object")' "$USER_SETTINGS" >/dev/null 2>&1 && return 0
-  wk_warn "settings: $USER_SETTINGS is not a JSON object (unreadable or not valid JSON); fix or remove it; until then every settings reader skips it"
+  wk_warn "settings: $(wk_native_path "$USER_SETTINGS") is not a JSON object (unreadable or not valid JSON); fix or remove it; until then most settings readers skip it and the token client refuses it"
 }
 
 # The machine's own file, seeded the same way and for the opposite reason: it is
@@ -49,7 +50,7 @@ seed_user_repos() {
 offer_line() {
   # %q on the path: a repo directory containing a space would otherwise print a
   # suggested command that breaks when pasted.
-  printf 'this repo is not in the issue workflow; say the word to enable it (bash %q/standards.sh --enable %q), or decline and it will not ask again (--decline).' "$SCRIPT_DIR" "$root"
+  printf 'this repo is not in the issue workflow; say the word to enable it (bash %q/standards.sh --enable %q), or decline and it will not ask again (--decline).' "$(wk_native_path "$SCRIPT_DIR")" "$root"
 }
 
 # true | false | absent | unreadable: a settings file's `enabled` (this repo's by
@@ -126,13 +127,13 @@ resolve_state() {
 # The state mutex is lib/state.sh's, shared with the home repo's writers.
 record_decline() {
   if ! command -v jq >/dev/null 2>&1; then
-    wk_warn "decline: jq is required to edit $USER_REPOS"
+    wk_warn "decline: jq is required to edit $(wk_native_path "$USER_REPOS")"
     exit 1
   fi
   mkdir -p "$(dirname "$USER_REPOS")" 2>/dev/null \
-    || { wk_warn "decline: cannot create $(dirname "$USER_REPOS")"; exit 1; }
+    || { wk_warn "decline: cannot create $(wk_native_path "$(dirname "$USER_REPOS")")"; exit 1; }
   seed_user_repos
-  [[ -f "$USER_REPOS" ]] || { wk_warn "decline: cannot write $USER_REPOS"; exit 1; }
+  [[ -f "$USER_REPOS" ]] || { wk_warn "decline: cannot write $(wk_native_path "$USER_REPOS")"; exit 1; }
 
   # The decline is written under the shared mutex; the trap releases it however
   # this run ends, since a decline is the last thing it does.
@@ -148,10 +149,10 @@ record_decline() {
   # A committed answer wins at resolve time, so saying "it will not be offered
   # again" would be a lie while that file gives one; a file with none does not.
   if [[ -f "$REPO_SETTINGS" ]] && [[ "$(repo_enabled_flag)" =~ ^(true|false|unreadable)$ ]]; then
-    wk_ok "decline: recorded $roster_key in $USER_REPOS"
+    wk_ok "decline: recorded $roster_key in $(wk_native_path "$USER_REPOS")"
     wk_warn "decline: $REPO_SETTINGS still carries the repo's committed answer, which wins; this takes effect only if that file goes away"
   else
-    wk_ok "decline: recorded $roster_key in $USER_REPOS; it will not be offered again"
+    wk_ok "decline: recorded $roster_key in $(wk_native_path "$USER_REPOS"); it will not be offered again"
   fi
 }
 
@@ -167,7 +168,7 @@ register_in_roster() {
 
   # A file jq cannot read is reported, or the roster would go stale unseen.
   if ! keys="$(wk_jq -r '(.repos // {}) | to_entries[] | select(.value != "declined") | .key' "$USER_REPOS" 2>/dev/null)"; then
-    wk_warn "roster: $USER_REPOS cannot be read as JSON (unreadable or not valid JSON); fix or remove it; until then this machine's roster is not maintained"
+    wk_warn "roster: $(wk_native_path "$USER_REPOS") cannot be read as JSON (unreadable or not valid JSON); fix or remove it; until then this machine's roster is not maintained"
     return 0
   fi
 

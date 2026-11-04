@@ -11,7 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../lib/run');
 
 const RULES = {
   maxWords: 50,

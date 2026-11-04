@@ -21,6 +21,7 @@ const commitGate = require('./commit-gate/helpers');
 const { runLib } = require('../lib/hook-lib');
 const { pkgMarkerPath, treeHash } = require('../lib/suite-record');
 const { scratchWorkflowHome } = require('../lib/workflow-home');
+const { readOrNull } = require('../../workflow/lib/read');
 const { makeRepo: healRepo, runScript: healRun, cleanup: healCleanup } = require('../scripts/workflow-standards/helpers');
 
 const KIT = path.join(__dirname, '..', '..');
@@ -92,9 +93,6 @@ const settingsRoots = (texts) => texts.map((text) => {
   }
   return root;
 });
-
-/** The settings text register.js hands settingsOptedIn: the file's text, null when absent or unreadable. */
-const readOrNull = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch { return null; } };
 
 const cases = async () => {
   group('twins: the test package, hook_test_package_dir in hooks/lib/paths.sh against testPackageDir in hooks/mods/suite.js');

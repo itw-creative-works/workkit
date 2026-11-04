@@ -29,16 +29,21 @@ export function parseJson(text) {
  */
 export const isPlain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+// The fault of a value set aside at the dotted `key` of `file`.
+const keyFault = (file, key) => ({ file, key, line: `${file}: ${key} is not an object, so the value below it stands` });
+
 // Objects merge key by key; a null, absent or non-object value over an object
 // leaves the lower one's, so no layer blanks a block of defaults; any other
-// value, an array included, replaces it.
-const mergeLayer = (base, over) => {
+// value, an array included, replaces it. Each non-null value so set aside is
+// pushed on `faults` as `{ file, key, line }`, key the dotted path.
+const mergeLayer = (base, over, faults, file, prefix = '') => {
   if (!isPlain(over)) return base;
   const out = { ...base };
   for (const [key, value] of Object.entries(over)) {
     if (value === null || value === undefined) continue;
     if (isPlain(out[key])) {
-      if (isPlain(value)) out[key] = mergeLayer(out[key], value);
+      if (isPlain(value)) out[key] = mergeLayer(out[key], value, faults, file, `${prefix}${key}.`);
+      else faults.push(keyFault(file, `${prefix}${key}`));
     } else {
       out[key] = value;
     }
@@ -46,36 +51,95 @@ const mergeLayer = (base, over) => {
   return out;
 };
 
+// A layer file's parse, its fault pushed on `faults`, key null, when its text
+// is neither empty nor a JSON object: such a file adds nothing.
+const layerOf = (text, file, faults) => {
+  const value = parseJson(text);
+  if (typeof text === 'string' && text.trim() !== '' && !isPlain(value)) {
+    faults.push({ file, key: null, line: `${file} is not a JSON object, so it adds nothing` });
+  }
+  return value;
+};
+
 // The three texts as one view: the kit defaults, the machine file, the repo
-// file, each beating the one before; `enabled` is the repo file's alone.
-const mergedView = (file, [defaultsText, userText, repoText]) => {
+// file, each beating the one before; `enabled` is the repo file's alone. The
+// faults are every layer and value the merge set aside, in walk order.
+const mergedView = ([file, userFile, repoFile], [defaultsText, userText, repoText]) => {
   const defaults = parseJson(defaultsText);
   if (!isPlain(defaults)) {
     throw new Error(`workkit: the kit's settings defaults ${file} ${defaultsText === null ? 'is missing' : 'is not a JSON object'}; reinstall the kit`);
   }
-  const repo = parseJson(repoText);
-  const view = mergeLayer(mergeLayer(defaults, parseJson(userText)), repo);
+  const faults = [];
+  const user = layerOf(userText, userFile, faults);
+  const below = mergeLayer(defaults, user, faults, userFile);
+  const repo = layerOf(repoText, repoFile, faults);
+  const view = mergeLayer(below, repo, faults, repoFile);
   const own = isPlain(repo) ? repo.enabled : undefined;
-  return { ...view, enabled: own ?? defaults.enabled };
+  return { view: { ...view, enabled: own ?? defaults.enabled }, faults };
 };
+
+/**
+ * The repo's own settings file at a root, the one spelling the loader reads
+ * and its fault lines name.
+ * @param {string} root the repo root
+ * @returns {string}
+ */
+export const repoSettingsFile = (root) => `${root}/.workkit/settings.json`;
+
+// The three files read and walked once: mergedView's answer, a promise of it
+// when `read` is async.
+const walk = (read, { kit, root, user }) => {
+  const files = [`${kit}/defaults/settings.json`, user, root ? repoSettingsFile(root) : null];
+  const texts = [read(files[0]), read(user), root ? read(files[2]) : null];
+  return texts.some((t) => typeof t?.then === 'function')
+    ? Promise.all(texts).then((done) => mergedView(files, done))
+    : mergedView(files, texts);
+};
+
+// `fn` of a walk's answer, a promise of it when the walk is one.
+const after = (walked, fn) => (typeof walked?.then === 'function' ? walked.then(fn) : fn(walked));
 
 /**
  * The settings every reader sees: `<kit>/defaults/settings.json`, then the
  * machine's file, then the `.workkit/settings.json` at `root`, merged key by
  * key (docs/project-state.md § The model). A layer that is absent or does not
- * parse adds nothing; missing or broken defaults throw, naming the file.
+ * parse adds nothing, the second named by settingsFaults; missing or broken
+ * defaults throw, naming the file.
  * @param {function} read a file's text or null, sync (fs) or async (io.read)
  * @param {{kit: string, root: string|null, user: string}} where the kit root,
  *   the repo root (null outside a repo), the machine file's path
  * @returns {object|Promise<object>} the merged view, a promise when `read` is async
  */
-export function loadSettings(read, { kit, root, user }) {
-  const file = `${kit}/defaults/settings.json`;
-  const texts = [read(file), read(user), root ? read(`${root}/.workkit/settings.json`) : null];
-  return texts.some((t) => typeof t?.then === 'function')
-    ? Promise.all(texts).then((done) => mergedView(file, done))
-    : mergedView(file, texts);
+export function loadSettings(read, where) {
+  return after(walk(read, where), ({ view }) => view);
 }
+
+/**
+ * What the merge loadSettings makes set aside, one `{ file, key, line }` each:
+ * a layer file whose text is neither empty nor a JSON object (key null), and a
+ * non-null value that is no object where the layers below hold one (key its
+ * dotted path). `line` is the sentence naming it. Missing or broken defaults throw.
+ * @param {function} read a file's text or null, sync (fs) or async (io.read)
+ * @param {{kit: string, root: string|null, user: string}} where as loadSettings takes it
+ * @returns {object[]|Promise<object[]>} the faults, a promise when `read` is async
+ */
+export function settingsFaults(read, where) {
+  return after(walk(read, where), ({ faults }) => faults);
+}
+
+/**
+ * The settingsFaults faults whose key is `prefix` or under `prefix.`, in order;
+ * a whole-file fault has no key, so none of them.
+ * @param {object[]} faults settingsFaults' answer
+ * @param {string} prefix a dotted key
+ * @returns {object[]}
+ */
+export function faultsUnder(faults, prefix) {
+  return faults.filter(({ key }) => key !== null && (key === prefix || key.startsWith(`${prefix}.`)));
+}
+
+// The files a mod's io reads its settings from: the machine file the one under the user dir.
+const whereOf = (root, env, pluginRoot) => ({ kit: pluginRoot, root, user: `${userDirOf(env)}/settings.json` });
 
 /**
  * The merged settings of a repo root through the hooks' io, the machine file
@@ -86,7 +150,18 @@ export function loadSettings(read, { kit, root, user }) {
  * @returns {Promise<object>}
  */
 export async function rootSettings(root, env, { read, pluginRoot }) {
-  return loadSettings(read, { kit: pluginRoot, root, user: `${userDirOf(env)}/settings.json` });
+  return loadSettings(read, whereOf(root, env, pluginRoot));
+}
+
+/**
+ * settingsFaults of a repo root through the hooks' io, as rootSettings reads it.
+ * @param {string|null} root the repo root, null for none
+ * @param {object} env the variables the module read
+ * @param {{read: function, pluginRoot: string}} io a file's text, the kit root
+ * @returns {Promise<object[]>}
+ */
+export async function rootFaults(root, env, { read, pluginRoot }) {
+  return settingsFaults(read, whereOf(root, env, pluginRoot));
 }
 
 /**

@@ -57,7 +57,7 @@ wk_home_seed_runner() {
   # A read loop rather than mapfile, which the Mac's bash 3.2 lacks.
   while IFS= read -r pair; do pairs+=("$pair"); done < <(wk_home_runner_list "$kit")
   [[ "${#pairs[@]}" -gt 0 ]] || {
-    wk_warn "home: the committed kit at $WK_KIT_DIR carries no runner list; the cloud brief's runner was not seeded"
+    wk_warn "home: the committed kit at $(wk_native_path "$WK_KIT_DIR") carries no runner list; the cloud brief's runner was not seeded"
     rm -rf "$scratch"
     return 1
   }
@@ -70,7 +70,7 @@ wk_home_seed_runner() {
     mkdir -p "$(dirname "$dest")" 2>/dev/null || true
     # -p keeps a script's mode rather than this shell's umask.
     cp -p "$src" "$dest" 2>/dev/null || {
-      wk_warn "home: could not write ${pair#*:} into $WK_HOME_DIR"
+      wk_warn "home: could not write ${pair#*:} into $(wk_native_path "$WK_HOME_DIR")"
       rm -rf "$scratch"
       return 1
     }
@@ -85,7 +85,7 @@ wk_home_seed_runner() {
     while IFS= read -r found; do
       rel="${found#"$WK_HOME_DIR"/}"
       rm -f "$found" 2>/dev/null || {
-        wk_warn "home: could not remove the retired $rel from $WK_HOME_DIR"
+        wk_warn "home: could not remove the retired $rel from $(wk_native_path "$WK_HOME_DIR")"
         rm -rf "$scratch"
         return 1
       }
@@ -99,16 +99,16 @@ wk_home_seed_runner() {
   rm -rf "$scratch"
 
   if [[ -n "$missing" ]]; then
-    wk_warn "home: this kit is missing$missing; the cloud brief's runner is incomplete in $WK_HOME_DIR, and the files its list no longer names were left in place until it is whole"
+    wk_warn "home: this kit is missing$missing; the cloud brief's runner is incomplete in $(wk_native_path "$WK_HOME_DIR"), and the files its list no longer names were left in place until it is whole"
   fi
   # The stamp counts as a write of its own, so a bare version bump still
   # reaches the remote.
   wk_home_stamp_write && changed=$((changed + 1))
 
   if [[ "$changed" -eq 0 ]]; then
-    wk_skip "home: the cloud brief's runner in $WK_HOME_DIR is current"
+    wk_skip "home: the cloud brief's runner in $(wk_native_path "$WK_HOME_DIR") is current"
     return 2
   fi
-  wk_ok "home: seeded the cloud brief's runner in $WK_HOME_DIR ($((changed - removed)) file(s) from $WK_KIT_DIR, $removed retired)"
+  wk_ok "home: seeded the cloud brief's runner in $(wk_native_path "$WK_HOME_DIR") ($((changed - removed)) file(s) from $(wk_native_path "$WK_KIT_DIR"), $removed retired)"
   return 0
 }

@@ -116,7 +116,7 @@ const cases = async () => {
     fs.rmSync(path.join(kit, 'workflow', 'lib.sh'));
     const repo = mkRepo();
     const { said } = inCli(world, `${AT_TERMINAL}\ncd ${JSON.stringify(shellPath(repo))}\noffer_repo`, { entry: script, input: 'y\n' });
-    const line = `repo: the home-repo library is missing beside ${shellPath(path.join(kit, 'workflow'))}; the kit is incomplete`;
+    const line = `repo: the home-repo library is missing beside ${gitPath(path.join(kit, 'workflow'))}; the kit is incomplete`;
     assert(said.split('\n').includes(line), `the skip line is the home wizard's, got: ${said}`);
     assert(!said.includes('to the issue workflow?'), `nothing is asked, got: ${said}`);
     assert(!/command not found/.test(said), `and nothing is called that is not there, got: ${said}`);

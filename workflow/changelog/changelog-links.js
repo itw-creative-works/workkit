@@ -10,7 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../lib/run');
 
 // What an entry is, and what "already linked" means, come from lint.js,
 // the same shapes the guards enforce. A second copy here would drift, and the

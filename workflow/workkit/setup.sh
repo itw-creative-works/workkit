@@ -14,30 +14,30 @@ report_globals() {
   # The roster's address is the engine's (WK_HOME_REPOS in lib.sh), so a
   # checkout without the library cannot name it.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_skip "roster: the engine library is missing beside $SCRIPT_DIR; this engine cannot name the roster"
+    wk_skip "roster: the engine library is missing beside $(wk_native_path "$SCRIPT_DIR"); this engine cannot name the roster"
     return 0
   fi
   if [[ ! -f "$WK_HOME_REPOS" ]]; then
-    wk_info "roster: $WK_HOME_REPOS does not exist yet; the first heal writes it"
+    wk_info "roster: $(wk_native_path "$WK_HOME_REPOS") does not exist yet; the first heal writes it"
     return 0
   fi
   # A count it cannot take (no jq) is a count it says nothing about.
   if ! command -v jq >/dev/null 2>&1; then
-    wk_skip "roster: reading $WK_HOME_REPOS needs jq"
+    wk_skip "roster: reading $(wk_native_path "$WK_HOME_REPOS") needs jq"
     return 0
   fi
 
   count="$(wk_jq -r '[(.repos // {}) | to_entries[] | select(.value != "declined")] | length' "$WK_HOME_REPOS" 2>/dev/null || printf '')"
   if [[ -z "$count" ]]; then
-    wk_warn "roster: $WK_HOME_REPOS cannot be read as JSON (unreadable or not valid JSON); fix or remove it, then re-run a session in any repo"
+    wk_warn "roster: $(wk_native_path "$WK_HOME_REPOS") cannot be read as JSON (unreadable or not valid JSON); fix or remove it, then re-run a session in any repo"
     return 0
   fi
   # Zero is the one count worth a different voice: an empty roster means the
   # tower, the board and the brief have nothing to read.
   if [[ "$count" == "0" ]]; then
-    wk_info "roster: no repos registered in $WK_HOME_REPOS yet; it fills as a session opens in each enabled repo"
+    wk_info "roster: no repos registered in $(wk_native_path "$WK_HOME_REPOS") yet; it fills as a session opens in each enabled repo"
   else
-    wk_ok "roster: $count repo(s) registered in $WK_HOME_REPOS"
+    wk_ok "roster: $count repo(s) registered in $(wk_native_path "$WK_HOME_REPOS")"
   fi
 
 }
@@ -70,7 +70,7 @@ git_hooks_line() {
 # is a failure, as every stop of `setup --home` is.
 home_steps() {
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_warn "home: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
+    wk_warn "home: the home-repo library is missing beside $(wk_native_path "$SCRIPT_DIR"); the kit is incomplete"
     [[ -z "${1:-}" ]]
     return
   fi
@@ -158,7 +158,7 @@ cmd_setup() {
     *) wk_error "setup: unknown option $1"; return 1 ;;
   esac
 
-  wk_title "🧰 workkit setup in $KIT_DIR"
+  wk_title "🧰 workkit setup in $(wk_native_path "$KIT_DIR")"
 
   wk_section "💻 This machine"
   install_plugin

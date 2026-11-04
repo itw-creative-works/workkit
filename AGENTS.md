@@ -26,7 +26,7 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, templates)
 ├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
-├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`), a workspace member at the kit's version
+├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run`, a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · tests.md (the test bar and runner) · setup.md (the install walkthrough) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
@@ -110,7 +110,8 @@ Every suite runs on macOS and on Windows under Git Bash, or skips whole by name 
 A world a case spawns comes from the same seam:
 
 - `homeEnv()` is the scratch home in every spelling a tool reads one by (HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off), so no child of a test reads the developer's own home or reaches GitHub as them;
-- `spawnBash()` is the one way a case starts the test bash from Node: on Windows every argument goes double-quoted, verbatim, since the msys runtime globs a command line a native parent hands it;
+- a child a case starts goes through `workflow/lib/run.js` too: `test/lib/platform.js` re-exports its `spawnSync`, `spawn` and `execFileSync`, and `spawnBash()`, the one way a case starts the test bash, launches through it; a test file still importing `child_process` sits on `test/scripts/run-home.test.js`'s list, which only shrinks;
+- `samePath(a, b, platform)` is the one compare of two spellings of a path: on `win32` a Git Bash `/d/x` reads as `D:/x`, `\` folds to `/` and case is ignored; elsewhere the strings compare as they are;
 - `stubTool()` is the one writer of a PATH stub, which a shell starts by its bare name on either platform; its `<name>.exe` launcher (`test/lib/stub-launcher.cs`, built once per machine) makes the stub startable from Node on Windows where the C# compiler exists, and the cases written before it keep their `NO_NODE_STUB` skip until each is run there once;
 - `test/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions (`mods(name)`, `textOf`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`, `sessionFacts`, `briefMarker`, `daysBefore`, `row` (`row.user`, `row.result`, `row.tool`), `ghEntry`, `MODELS`, `REMINDER_ROOT`), so every suite spells a shape the same way;
 - `test/lib/mod-fixtures.mjs` is the one home of the fixtures both halves share (`MODELS`, `SESSION_NOW`, `daysBefore`, `briefMarker`, `row`, `ghEntry`, `journalText`, `OPT_IN_SHAPES`), which `mod-world.ts` re-exports whole, `mods-inputs.js` all but `SESSION_NOW`, `journalText` and `OPT_IN_SHAPES`, and `git-repo.js` the opt-in shapes for the logic suites;
@@ -134,6 +135,8 @@ A missing `Proof:` line is a hard gate: `safety:proof-guard` holds the flip to c
 ## Conventions
 
 - **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit; a spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms). The hooks module resolves the kit through `$.plugin.root`; the engine's stable address is `~/.claude/workkit`.
+  - Every program the shipped Node code starts goes through `workflow/lib/run.js`, the Node twin of `platform.sh`; `test/scripts/run-home.test.js` fails any other shipped `child_process` import but the published workkit-core runner's two files. The rules: `workflow/README.md`, the `lib/run.js` row.
+  - A path a shell line prints for a person, and every roster key, goes through `wk_native_path` in `platform.sh`, so Windows output never mixes `/d/a` and `D:/a`.
   - No shipped text (skills, agents, briefs, docs, the hook, workflow, jobs and tower READMEs) may carry a machine-specific absolute path or name the owner's own repo.
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.

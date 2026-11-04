@@ -19,10 +19,10 @@ wk_home_setup() {
   # Unforced, a non-interactive run prints what it would do and moves on.
   if [[ -z "$force" && "$(wk_home_slug)" != "$slug" ]]; then
     if declare -f interactive >/dev/null 2>&1 && ! interactive; then
-      wk_info "home: no home repo is configured; \`workkit setup --home\` creates the private $slug and makes $WK_HOME_DIR its clone"
+      wk_info "home: no home repo is configured; \`workkit setup --home\` creates the private $slug and makes $(wk_native_path "$WK_HOME_DIR") its clone"
       return 0
     fi
-    if ! wk_ask_yes "Create the private home repo $slug and make $WK_HOME_DIR its clone?" n; then
+    if ! wk_ask_yes "Create the private home repo $slug and make $(wk_native_path "$WK_HOME_DIR") its clone?" n; then
       wk_skip "home: left as it is; \`workkit setup\` offers again"
       return 0
     fi
@@ -54,13 +54,13 @@ wk_home_setup() {
     return 0
   fi
 
-  wk_skip "home: the tower project is already in $WK_HOME_DIR"
+  wk_skip "home: the tower project is already in $(wk_native_path "$WK_HOME_DIR")"
   # The second machine's path: caught up first, so the runner refresh and the
   # heal push onto origin's tip. A clone that cannot catch up is left unwritten
   # (a stale base would commit what it can never push); only the GitHub-side
   # steps run, and the next setup finishes the job.
   if ! wk_home_catch_up home; then
-    wk_skip "home: the clone in $WK_HOME_DIR was not written to; settle it and run \`workkit setup\` again for the runner refresh, the install and the heal"
+    wk_skip "home: the clone in $(wk_native_path "$WK_HOME_DIR") was not written to; settle it and run \`workkit setup\` again for the runner refresh, the install and the heal"
     wk_home_discussions "$slug"
     wk_home_pages "$slug"
     return 0

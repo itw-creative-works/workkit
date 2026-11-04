@@ -67,7 +67,7 @@ build_sidebar_merge() {
     return 0
   }
   if [[ -z "$WK_TOWER_APP" ]] || ! app="$(wk_home_file "$WK_TOWER_APP" "$SIDEBAR_REL")"; then
-    wk_warn "sidebar: the app's $SIDEBAR_REL could not be read; $clone keeps its own sidebar"
+    wk_warn "sidebar: the app's $SIDEBAR_REL could not be read; $(wk_native_path "$clone") keeps its own sidebar"
     return 0
   fi
   if ! out="$(SIDEBAR_ITEMS="$items" build_sidebar_splice "$app")"; then

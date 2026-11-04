@@ -46,6 +46,8 @@ if (require.main === module) selfRun(run);
 - Processes on one deadline (`SPAWN_DEADLINE`): `run`, `start` (with `end()` climbing SIGINT, SIGTERM, SIGKILL), `endTree`, `until`, `elapsedUntil`, `alive`, `readPid`.
 - Suite discovery: `findSuites`, `findModSuites`, `POOL`.
 
+`workkit-core/run` is the kit's program starter (`spawnSync`, `spawn`, `execFileSync`, `launchOf`, `windowsQuoted`), CommonJS: `child_process`'s calls, with the real Windows launch of a bare name, a `#!` script or a `.cmd`.
+
 What a test must be worth and may cost, and the shape every runner keeps: [docs/tests.md](https://github.com/itw-creative-works/workkit/blob/main/docs/tests.md).
 
 ## License

@@ -20,11 +20,11 @@ identity_precheck() {
     return 1
   fi
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_skip "identity: the engine library is missing beside $SCRIPT_DIR; the kit is incomplete"
+    wk_skip "identity: the engine library is missing beside $(wk_native_path "$SCRIPT_DIR"); the kit is incomplete"
     return 1
   fi
   if [[ ! -f "$IDENTITY_CLIENT" ]]; then
-    wk_skip "identity: the client is missing beside $SCRIPT_DIR ($IDENTITY_CLIENT); the kit is incomplete"
+    wk_skip "identity: the client is missing beside $(wk_native_path "$SCRIPT_DIR") ($(wk_native_path "$IDENTITY_CLIENT")); the kit is incomplete"
     return 1
   fi
   return 0
@@ -181,7 +181,7 @@ identity_bot_slug() {
   fi
   slug="$(wk_repo_slug "$PWD")"
   if [[ -z "$slug" ]]; then
-    wk_warn "identity: $PWD has no GitHub origin to install workkit-agent[bot] for"
+    wk_warn "identity: $(wk_native_path "$PWD") has no GitHub origin to install workkit-agent[bot] for"
     return 1
   fi
   printf '%s' "$slug"

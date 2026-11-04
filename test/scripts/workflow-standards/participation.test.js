@@ -8,7 +8,7 @@ const {
   group, test, assert, assertEq, testUnless, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_BASH, NO_RC, gitPath, shellPath,
+  IS_WINDOWS, SYSTEM_BASH, NO_RC, gitPath, shellPath, samePath,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const {
@@ -183,18 +183,23 @@ const cases = async () => {
     const repo = makeRepo();
     const home = mkTmp('wf-std-');
     const file = path.join(home, 'settings.json');
-    const warning = `settings: ${file} is not a JSON object`;
+    const warning = /settings: (.+) is not a JSON object/;
     for (const broken of ['{ not json', '[]']) {
       fs.writeFileSync(file, broken);
       const { code, output } = runScript(repo, { workflowHome: home });
       assertEq(code, 0, `${broken}: a broken machine file never fails a heal`);
-      assert(output.includes(warning), `${broken}: it names the file, got: ${output}`);
+      const named = (output.match(warning) || [])[1];
+      assert(named !== undefined, `${broken}: it warns, got: ${output}`);
+      assert(samePath(named, file, process.platform), `${broken}: it names ${file}, got: ${named}`);
+      // samePath reads a drive mount as its drive, so the spelling is its own check:
+      // a person on Windows reads `D:/...`, never Git Bash's `/d/...`.
+      assertEq(/^[A-Za-z]:/.test(named), IS_WINDOWS, `${broken}: the native spelling, got: ${named}`);
       assertEq(fs.readFileSync(file, 'utf8'), broken, `${broken}: the file is left as typed`);
     }
     for (const fine of ['', '{"version": 1}']) {
       fs.writeFileSync(file, fine);
       const { output } = runScript(repo, { workflowHome: home });
-      assert(!output.includes(warning), `${JSON.stringify(fine)}: no warning, got: ${output}`);
+      assert(!warning.test(output), `${JSON.stringify(fine)}: no warning, got: ${output}`);
     }
     cleanup(repo); cleanup(home);
   });

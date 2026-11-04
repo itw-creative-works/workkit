@@ -10,7 +10,8 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../../workflow/lib/run');
+const { readJsonOrNull, readOrNull } = require('../../../workflow/lib/read');
 const { gitPath, tempRoot } = require('./repos');
 
 const DEFAULT_IDLE_MINUTES = 45;
@@ -70,12 +71,8 @@ const idleWindowMs = (opts) => {
  * @returns {{caffeinate: string, cwd: string, session: string, beat: string, transcript: string}|null}
  */
 const readMarker = (file, windows = false) => {
-  let text;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
+  const text = readOrNull(file);
+  if (text === null) return null;
   const out = {
     caffeinate: '', cwd: '', session: '', beat: '', transcript: '',
   };
@@ -163,12 +160,8 @@ const chatNameFrom = (file, budget = NAME_READ_BYTES) => {
 /** Model and effort from the statusline cache, or nulls (a VS Code session writes none). */
 const sessionState = (stateDir, session) => {
   const safe = session.replace(/[^a-zA-Z0-9]/g, '_');
-  let parsed;
-  try {
-    parsed = JSON.parse(fs.readFileSync(path.join(stateDir, `${safe}.json`), 'utf8'));
-  } catch {
-    return { model: null, effort: null };
-  }
+  const parsed = readJsonOrNull(path.join(stateDir, `${safe}.json`));
+  if (parsed === null) return { model: null, effort: null };
   const model = parsed.model || null;
   const effort = parsed.effort;
   return {

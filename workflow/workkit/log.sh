@@ -21,12 +21,12 @@ cmd_log() {
 
   # The log's address is the engine's folder (wk_user_dir in lib/platform.sh).
   if ! declare -F wk_hooks_log >/dev/null; then
-    wk_error "log: the engine library is missing beside $SCRIPT_DIR; this engine cannot name the hooks log"
+    wk_error "log: the engine library is missing beside $(wk_native_path "$SCRIPT_DIR"); this engine cannot name the hooks log"
     return 1
   fi
   wk_hooks_log
   if [[ ! -f "$WK_HOOKS_LOG" ]]; then
-    wk_skip "log: no hooks log at $WK_HOOKS_LOG yet; the first hook fire writes it"
+    wk_skip "log: no hooks log at $(wk_native_path "$WK_HOOKS_LOG") yet; the first hook fire writes it"
     return 0
   fi
   if [[ "$follow" -eq 1 ]]; then

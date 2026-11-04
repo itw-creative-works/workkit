@@ -4,7 +4,7 @@
  * true, the default being false: the engine's wk_opted_in.
  */
 
-import { isPlain, parseJson } from './settings.js';
+import { isPlain, parseJson, repoSettingsFile } from './settings.js';
 
 // The hooks that run in every repo, opted in or not: each speaks to the
 // machine (the setup reminder, the restart notice), never to a repo.
@@ -31,7 +31,7 @@ export function settingsOptedIn(text) {
  * @returns {Promise<boolean>}
  */
 export async function rootOptedIn(root, read) {
-  return settingsOptedIn(await read(`${root}/.workkit/settings.json`));
+  return settingsOptedIn(await read(repoSettingsFile(root)));
 }
 
 /**

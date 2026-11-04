@@ -1,18 +1,56 @@
 // Tests for the workkit-core package as a repo installs it: `npm test` of
 // `workkit test` reaches the runner through the package's bin, whole or narrowed
-// to one file, the bin refuses every other verb, and `workkit-core/test` gives
-// the harness to `require()` and `import` alike. The repo is test/lib/core-repo.js.
+// to one file, the bin refuses every other verb, `workkit-core/test` gives
+// the harness to `require()` and `import` alike, and a packed package carries the
+// kit's run.js as `workkit-core/run`. The repo is test/lib/core-repo.js.
 
 const fs = require('fs');
 const path = require('path');
 const { stripVTControlCharacters } = require('util');
 const {
-  group, test, assert, assertEq, summary, selfRun, run,
+  group, test, assert, assertEq, summary, selfRun, run, mkTmp,
 } = require('../lib/harness');
 const { BASH, NO_RC, NODE_DIR, SYSTEM_PATH, joinPath } = require('../lib/platform');
 const {
-  TOTALS, skipWithoutNpm, npmIn, mkCoreRepo,
+  CORE, TOTALS, skipWithoutNpm, npmIn, mkCoreRepo,
 } = require('../lib/core-repo');
+
+const KIT = path.join(CORE, '..', '..');
+// What the kit's workflow/lib/run.js exports, sorted: the one source `workkit-core/run` must match.
+const RUN_EXPORTS = Object.keys(require(path.join(KIT, 'workflow', 'lib', 'run.js'))).sort();
+// One win32 launch no file is read for: a .cmd by path through the parent's ComSpec.
+const WIN32_CMD = [
+  'C:\\tools\\x.cmd', ['a b'], {}, { platform: 'win32', parentEnv: { ComSpec: 'C:\\Windows\\system32\\cmd.exe' } },
+];
+const WIN32_LAUNCH = {
+  file: 'C:\\Windows\\system32\\cmd.exe',
+  args: ['/d', '/s', '/c', '"C:\\tools\\x.cmd ^"a b^""'],
+  options: { argv0: '"C:\\Windows\\system32\\cmd.exe"', windowsVerbatimArguments: true },
+};
+
+/**
+ * The package as npm packs it, installed into a scratch repo: packages/core, the
+ * kit's LICENSE.md and workflow/lib/run.js copied at their real depths, so the
+ * prepack copies run.
+ * @returns {string} the scratch repo the tarball is installed in
+ */
+const packedRepo = () => {
+  const kit = mkTmp('core-pack-');
+  const core = path.join(kit, 'packages', 'core');
+  fs.cpSync(CORE, core, { recursive: true, filter: (src) => path.basename(src) !== 'node_modules' });
+  fs.copyFileSync(path.join(KIT, 'LICENSE.md'), path.join(kit, 'LICENSE.md'));
+  fs.mkdirSync(path.join(kit, 'workflow', 'lib'), { recursive: true });
+  fs.copyFileSync(path.join(KIT, 'workflow', 'lib', 'run.js'), path.join(kit, 'workflow', 'lib', 'run.js'));
+  const packs = mkTmp('core-tgz-');
+  const packed = npmIn(core, ['pack', '--offline', '--pack-destination', packs]);
+  assertEq(packed.code, 0, `npm pack, got: ${packed.output}`);
+  const [tgz] = fs.readdirSync(packs).filter((f) => f.endsWith('.tgz'));
+  const repo = mkTmp('core-packed-');
+  fs.writeFileSync(path.join(repo, 'package.json'), `${JSON.stringify({ name: 'fixture', private: true })}\n`);
+  const installed = npmIn(repo, ['install', '--offline', '--no-audit', '--no-fund', '--no-package-lock', path.join(packs, tgz)]);
+  assertEq(installed.code, 0, `npm install of the tarball, got: ${installed.output}`);
+  return repo;
+};
 
 // What the harness entry exports, every one of which `workkit-core/test` carries.
 const HARNESS_EXPORTS = [
@@ -88,6 +126,23 @@ const cases = async () => {
       const missing = HARNESS_EXPORTS.filter((name) => !keys.includes(name));
       assertEq(missing.join(', '), '', `${file}: every harness export, got: ${keys.join(', ')}`);
     }
+  });
+
+  group('workkit-core/run: the kit\'s run.js, packed');
+
+  await test('require(\'workkit-core/run\') from the packed package carries run.js\'s exports and its win32 launch', () => {
+    const repo = packedRepo();
+    const script = [
+      "const r = require('workkit-core/run');",
+      `const launch = r.launchOf(...${JSON.stringify(WIN32_CMD)});`,
+      'console.log(JSON.stringify({ keys: Object.keys(r).sort(), launch }));',
+    ].join('\n');
+    fs.writeFileSync(path.join(repo, 'check.cjs'), `${script}\n`);
+    const res = run(process.execPath, ['check.cjs'], { cwd: repo });
+    assertEq(res.status, 0, `check.cjs loads workkit-core/run, got: ${res.output}`);
+    const { keys, launch } = JSON.parse(res.stdout.trim().split('\n').pop());
+    assertEq(keys.join(', '), RUN_EXPORTS.join(', '), 'the same exports as run.js');
+    assertEq(JSON.stringify(launch), JSON.stringify(WIN32_LAUNCH), 'the same win32 launch');
   });
 };
 

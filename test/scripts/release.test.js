@@ -6,10 +6,10 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync, execFileSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
+const { spawnSync, execFileSync } = require('../lib/platform');
 const { mods } = require('../lib/mods-inputs');
 const { skipWithoutNpm, npmEnv } = require('../lib/core-repo');
 
@@ -287,6 +287,22 @@ const cases = async () => {
     cleanup(dir);
   });
 
+  await test('a lockstep member whose folder has a space moves, with its lockfile entry', () => {
+    const lock = lockfile('1.2.3', {
+      '': { name: 'scratch', version: '1.2.3', workspaces: ['packages/*'] },
+      'node_modules/scratch-spaced': { resolved: 'packages/my pkg', link: true },
+      'packages/my pkg': { name: 'scratch-spaced', version: '1.2.3' },
+    });
+    const files = { 'packages/my pkg/package.json': member('scratch-spaced', '1.2.3'), 'package-lock.json': lock };
+    const { dir } = mkRepo({ pkg: VERSIONED_ROOT, files });
+    const res = release(dir, ['1.3.0']);
+    assertEq(res.code, 0, `exit 0 (stderr: ${res.stderr})`);
+    assertEq(parsed(dir, 'package.json').version, '1.3.0', 'the root bumped');
+    assertEq(parsed(dir, 'packages/my pkg/package.json').version, '1.3.0', 'the spaced member bumped');
+    assertEq(parsed(dir, 'package-lock.json').packages['packages/my pkg'].version, '1.3.0', 'its lockfile entry bumped');
+    cleanup(dir);
+  });
+
   await test('the release step makes no commit and no tag', () => {
     const { dir } = mkRepo({ files: { 'package-lock.json': LOCK } });
     const head = git(dir, 'rev-parse', 'HEAD');
@@ -494,10 +510,6 @@ const cases = async () => {
     assertEq(rerun.code, 0, `the rerun exits 0 (stderr: ${rerun.stderr})`);
     assertEq(parsed(dir, 'package-lock.json').packages['packages/core'].version, '1.3.0', 'the rerun moved the lockfile');
     cleanup(dir);
-  });
-  await refuses('a lockstep member whose folder has whitespace', ['1.3.0'], "workspace folder 'packages/my core' has whitespace", {
-    pkg: VERSIONED_ROOT,
-    files: { 'packages/my core/package.json': member('scratch-core', '1.2.3') },
   });
   await refuses('a CHANGELOG with no [Unreleased] heading', ['1.3.0'], 'no [Unreleased] heading', {
     changelog: ['# Changelog', '', ...RELEASED].join('\n'),

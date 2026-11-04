@@ -4,7 +4,7 @@
 // public/ row; docs/project-state.md § Capture, the public pairing).
 // Usage: const { pairing, publicLink, gh } = require('./lib');
 
-const { spawnSync } = require('child_process');
+const { spawnSync } = require('../lib/run');
 const git = require('../lib/git');
 const { settingsAt } = require('../lib/settings');
 

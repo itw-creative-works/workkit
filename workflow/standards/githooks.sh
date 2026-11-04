@@ -34,7 +34,7 @@ git_hooks_installed() {
 # workkit clone, which outranks the plugin cache.
 ensure_git_hooks() {
   local root="$1" ours current kit saved verb=set kept=""
-  ours="$(wk_git_path "$(wk_githooks_address)")"
+  ours="$(wk_native_path "$(wk_githooks_address)")"
   current="$(git -C "$root" config --local --path core.hooksPath 2>/dev/null)" || current=""
   if [[ "$current" == "$ours" ]]; then
     wk_skip "git hooks: installed ($ours)"
@@ -51,14 +51,14 @@ ensure_git_hooks() {
   elif [[ -n "$current" ]]; then
     saved="$(git -C "$root" config --local workkit.hooksPath 2>/dev/null)" || saved=""
     if [[ -z "$saved" ]] && ! git -C "$root" config --local workkit.hooksPath "$current"; then
-      wk_warn "git hooks: could not save core.hooksPath ($current) to workkit.hooksPath in $root, so ours were not set; run \`workkit heal\` again"
+      wk_warn "git hooks: could not save core.hooksPath ($current) to workkit.hooksPath in $(wk_native_path "$root"), so ours were not set; run \`workkit heal\` again"
       needs_attention=1
       return 0
     fi
     kept="; the repo's own hooks in ${saved:-$current} run after ours"
   fi
   if ! git -C "$root" config --local core.hooksPath "$ours"; then
-    wk_warn "git hooks: could not set core.hooksPath in $root; run \`git -C $root config core.hooksPath $ours\`"
+    wk_warn "git hooks: could not set core.hooksPath in $(wk_native_path "$root"); run \`git -C $(wk_native_path "$root") config core.hooksPath $ours\`"
     needs_attention=1
     return 0
   fi

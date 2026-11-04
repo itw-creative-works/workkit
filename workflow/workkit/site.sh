@@ -18,15 +18,15 @@ offer_site_publish() {
   # other writer of that file takes. Without it there is no safe write to make,
   # and home_steps has already named the incomplete checkout.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_skip "site: the publish question needs the home-repo library beside $SCRIPT_DIR"
+    wk_skip "site: the publish question needs the home-repo library beside $(wk_native_path "$SCRIPT_DIR")"
     return 0
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    wk_skip "site: reading the publish switch in $WK_HOME_SETTINGS needs jq"
+    wk_skip "site: reading the publish switch in $(wk_native_path "$WK_HOME_SETTINGS") needs jq"
     return 0
   fi
   if [[ ! -f "$WK_HOME_SETTINGS" ]]; then
-    wk_skip "site: $WK_HOME_SETTINGS does not exist yet; the first heal seeds it, and the next setup asks"
+    wk_skip "site: $(wk_native_path "$WK_HOME_SETTINGS") does not exist yet; the first heal seeds it, and the next setup asks"
     return 0
   fi
 
@@ -34,7 +34,7 @@ offer_site_publish() {
   # broken layer as adding nothing, which would read as unanswered. Through
   # wk_setting an absent key and a null both print nothing, the same state.
   if ! wk_jq -e 'type == "object"' "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
-    wk_warn "site: $WK_HOME_SETTINGS does not parse as JSON; the publish question was not asked; fix the file, then re-run \`workkit setup\`"
+    wk_warn "site: $(wk_native_path "$WK_HOME_SETTINGS") does not parse as JSON; the publish question was not asked; fix the file, then re-run \`workkit setup\`"
     return 0
   fi
   current="$(wk_setting '' site.publish)"
@@ -47,12 +47,12 @@ offer_site_publish() {
   fi
 
   case "$current" in
-    true)  SITE_PUBLISH=true; wk_skip "site: publishing is on; edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
-    false) wk_skip "site: publishing is off; edit \`site.publish\` in $WK_HOME_SETTINGS to change it"; return 0 ;;
+    true)  SITE_PUBLISH=true; wk_skip "site: publishing is on; edit \`site.publish\` in $(wk_native_path "$WK_HOME_SETTINGS") to change it"; return 0 ;;
+    false) wk_skip "site: publishing is off; edit \`site.publish\` in $(wk_native_path "$WK_HOME_SETTINGS") to change it"; return 0 ;;
   esac
 
   if ! interactive; then
-    wk_info "site: nobody has been asked whether to publish the dashboard; without a terminal, set \`site.publish\` to true or false in $WK_HOME_SETTINGS to answer; until then nothing is published"
+    wk_info "site: nobody has been asked whether to publish the dashboard; without a terminal, set \`site.publish\` to true or false in $(wk_native_path "$WK_HOME_SETTINGS") to answer; until then nothing is published"
     return 0
   fi
 
@@ -88,13 +88,13 @@ set_site_publish() {
   write_site_option publish "$value" || rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
-    wk_warn "site: the answer could not be written to $WK_HOME_SETTINGS; set \`site.publish\` there by hand"
+    wk_warn "site: the answer could not be written to $(wk_native_path "$WK_HOME_SETTINGS"); set \`site.publish\` there by hand"
     return 0
   fi
   if [[ "$value" == 'true' ]]; then
     wk_ok "site: publishing is on; \`workkit publish\` builds it now, and the daily job publishes after the morning brief (what Pages serves is public, even from a private repo)"
   else
-    wk_ok "site: publishing stays off; set \`site.publish\` to true in $WK_HOME_SETTINGS whenever you want the dashboard live"
+    wk_ok "site: publishing stays off; set \`site.publish\` to true in $(wk_native_path "$WK_HOME_SETTINGS") whenever you want the dashboard live"
   fi
   return 0
 }
@@ -106,7 +106,7 @@ set_site_url() {
   write_site_option url "$(printf '%s' "$url" | wk_jq -R .)" || rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
-    wk_warn "site: the domain could not be written to $WK_HOME_SETTINGS; set \`site.url\` there by hand"
+    wk_warn "site: the domain could not be written to $(wk_native_path "$WK_HOME_SETTINGS"); set \`site.url\` there by hand"
     return 0
   fi
   wk_ok "site: the site answers at $url; the publish writes the CNAME, and the DNS record is yours to point at GitHub Pages"

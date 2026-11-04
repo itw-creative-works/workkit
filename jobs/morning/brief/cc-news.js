@@ -7,7 +7,7 @@
 //   collectCcNews()              // { version, since, matches }
 //   renderVersionMark(version)   // the line the published brief carries
 
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../../workflow/lib/run');
 
 const { BRIEF_TITLE_PREFIX } = require('../../../tower/api/lib/history');
 const { compareVersions } = require('../../../workflow/ship/semver');

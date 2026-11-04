@@ -19,10 +19,10 @@ install_plugin() {
     return 0
   fi
   wk_spin 'adding the marketplace' claude plugin marketplace add "$KIT_DIR" >/dev/null 2>&1 \
-    || { wk_warn "plugin: \`claude plugin marketplace add $KIT_DIR\` did not finish; run it by hand"; return 0; }
+    || { wk_warn "plugin: \`claude plugin marketplace add $(wk_native_path "$KIT_DIR")\` did not finish; run it by hand"; return 0; }
   wk_spin "installing $PLUGIN_ID" claude plugin install "$PLUGIN_ID" >/dev/null 2>&1 \
     || { wk_warn "plugin: \`claude plugin install $PLUGIN_ID\` did not finish; run it by hand"; return 0; }
-  wk_ok "plugin: installed $PLUGIN_ID from $KIT_DIR; it loads in a new session"
+  wk_ok "plugin: installed $PLUGIN_ID from $(wk_native_path "$KIT_DIR"); it loads in a new session"
 }
 
 # gh is how the whole standard reaches its issues; an unauthenticated one turns
@@ -68,25 +68,25 @@ offer_repo() {
   local state
   # The question is the engine library's wk_ask_yes; without it there is none to ask.
   if [[ "$HOME_LIBS" -ne 1 ]]; then
-    wk_skip "repo: the home-repo library is missing beside $SCRIPT_DIR; the kit is incomplete"
+    wk_skip "repo: the home-repo library is missing beside $(wk_native_path "$SCRIPT_DIR"); the kit is incomplete"
     return 0
   fi
   state="$(repo_state)"
   case "$state" in
-    enabled)  wk_skip "repo: $PWD is in the workflow" ;;
-    disabled) wk_skip "repo: $PWD has a committed no; leaving it alone" ;;
-    nogit)    wk_skip "repo: $PWD is not a git repo; nothing to enable" ;;
+    enabled)  wk_skip "repo: $(wk_native_path "$PWD") is in the workflow" ;;
+    disabled) wk_skip "repo: $(wk_native_path "$PWD") has a committed no; leaving it alone" ;;
+    nogit)    wk_skip "repo: $(wk_native_path "$PWD") is not a git repo; nothing to enable" ;;
     declined|undecided)
       if ! interactive; then
-        wk_info "repo: $PWD is not in the workflow; \`workkit enable\` joins it"
+        wk_info "repo: $(wk_native_path "$PWD") is not in the workflow; \`workkit enable\` joins it"
         return 0
       fi
-      if wk_ask_yes "Add $PWD to the issue workflow?" n; then
+      if wk_ask_yes "Add $(wk_native_path "$PWD") to the issue workflow?" n; then
         bash "$STANDARDS" --enable "$PWD"
       else
         wk_skip "repo: left as it is; \`workkit enable\` joins it later"
       fi
       ;;
-    *) wk_skip "repo: $PWD reports state '$state'; nothing to do" ;;
+    *) wk_skip "repo: $(wk_native_path "$PWD") reports state '$state'; nothing to do" ;;
   esac
 }

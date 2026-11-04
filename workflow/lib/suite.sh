@@ -5,7 +5,7 @@
 # kept, and the tree ids they are compared with, plus the paths of the detached
 # runs' logs and locks. Sourced, functions only, by script-shell.sh (the records'
 # writer), ship/watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
-# wk_marker_path, wk_sweep_markers, wk_git_path, wk_node, WK_NODE_FLOOR, wk_take_lock
+# wk_marker_path, wk_sweep_markers, wk_native_path, wk_node, WK_NODE_FLOOR, wk_take_lock
 # and wk_drop_lock from platform.sh, and runs workspaces.js beside it.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
@@ -58,7 +58,7 @@ wk_index_write_tree() {
 wk_tree_hash() {
   local root="$1" dir index tree="" rc=0 git_dir pkg="${2:-}" excluded="" node member members=()
   dir=$(mktemp -d "${TMPDIR:-/tmp}/suite-index.XXXXXX" 2>/dev/null) || return 1
-  index="$(wk_git_path "$dir")/index" || { rm -rf "$dir"; return 1; }
+  index="$(wk_native_path "$dir")/index" || { rm -rf "$dir"; return 1; }
   git_dir=$(git -C "$root" rev-parse --absolute-git-dir 2>/dev/null) || { rm -rf "$dir"; return 1; }
   [ -f "$git_dir/index" ] && cp -p "$git_dir/index" "$index" 2>/dev/null
   # A package's id leaves out the workspace members it cannot see
@@ -157,7 +157,7 @@ wk_index_copy() {
   elif [ "${real#/}" = "$real" ] && [ "${real#?:}" = "$real" ]; then
     real="$root/$real"
   fi
-  index="$(wk_git_path "$2")/index" || return 1
+  index="$(wk_native_path "$2")/index" || return 1
   if [ -f "$real" ] && ! cp -p "$real" "$index" 2>/dev/null; then return 1; fi
   printf '%s\n' "$index"
 }

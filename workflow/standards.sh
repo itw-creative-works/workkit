@@ -118,7 +118,7 @@ if ! root="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)"; then
   if [[ "$mode" == "state" ]]; then
     printf 'nogit\n'
   else
-    wk_skip "standards: $repo_dir is not a git repo; nothing to standardize"
+    wk_skip "standards: $(wk_native_path "$repo_dir") is not a git repo; nothing to standardize"
   fi
   exit 0
 fi
@@ -128,7 +128,7 @@ cd "$root"
 # The roster key, settled once from git's own answer: `cygpath` keeps the
 # letter case it is handed, so a `$PWD` would mint a second key. Every write
 # and lookup below reads this variable.
-roster_key="$(wk_git_path "$root")"
+roster_key="$(wk_native_path "$root")"
 
 # ── 0. Participation ──────────────────────────────────────────────────────────
 # The states: README § Participation: the tri-state. The heal reads and writes

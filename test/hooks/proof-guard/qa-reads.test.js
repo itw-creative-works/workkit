@@ -8,25 +8,15 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { group, test, assert, mkTmp, summary, selfRun } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
 const { mkRepo } = require('../../lib/script-shell');
-const { scratchWorkflowHome } = require('../../lib/workflow-home');
 const { runResult } = require('../../lib/mods-inputs');
 const {
-  flip, QA_BLOCK, DIFF_BLOCK, assertBlocks, passText,
+  flip, sessionOf, QA_BLOCK, DIFF_BLOCK, assertBlocks, passText,
 } = require('./helpers');
 
 const PKG = { name: 'fixture', scripts: { test: 'node test/a.test.js' } };
 const TEST_FILE = path.join('test', 'a.test.js');
 const ON_ROOT = QA_BLOCK(1, 'the repo root: test/a.test.js');
-
-// The session over a scratch workflow home, and the repo's root as git names it.
-const sessionOf = (dir, prefix) => {
-  const { env: homeEnv } = scratchWorkflowHome(prefix);
-  const env = { ...process.env, ...homeEnv, WORKKIT_NODE: shellPath(process.execPath) };
-  const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
-  return { dir, env, root };
-};
 
 // A committed repo, no record planted, whose test file only `tracked` (committed, then edited:
 // git diff HEAD alone reports it) or untracked (git ls-files --others alone reports it) is touched.

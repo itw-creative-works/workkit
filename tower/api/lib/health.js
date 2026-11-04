@@ -6,9 +6,9 @@
 // Usage:
 //   repoHealth('/path/to/repo');
 
-const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../../workflow/lib/run');
+const { readOrNull } = require('../../../workflow/lib/read');
 
 const UNRELEASED_RE = /^##\s+\[Unreleased\]/i;
 const SECTION_RE = /^##\s+\[/;
@@ -30,12 +30,8 @@ const countLines = (text) => text.split('\n').filter((l) => l.trim() !== '').len
  * @returns {number}
  */
 const unreleasedCount = (file) => {
-  let text;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch {
-    return 0;
-  }
+  const text = readOrNull(file);
+  if (text === null) return 0;
   let inSection = false;
   let count = 0;
   for (const line of text.split('\n')) {

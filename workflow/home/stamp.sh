@@ -79,7 +79,7 @@ wk_home_stamp_write() {
   # Compared as read, so a checkout's CRLF or spacing is never a change.
   [[ "$(printf '%s\n' "$(wk_home_stamp_read)"; wk_home_stamp_folders)" != "$body" ]] || return 2
   printf '%s\n' "$body" >"$WK_HOME_DIR/$WK_HOME_STAMP" 2>/dev/null || {
-    wk_warn "home: could not write $WK_HOME_STAMP into $WK_HOME_DIR; the next machine to seed this clone cannot tell which kit wrote what is in it"
+    wk_warn "home: could not write $WK_HOME_STAMP into $(wk_native_path "$WK_HOME_DIR"); the next machine to seed this clone cannot tell which kit wrote what is in it"
     return 2
   }
   return 0

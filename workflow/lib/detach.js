@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn } = require('./run');
 
 const SUPERVISE = '--supervise';
 const USAGE = 'usage: detach.js <log> <done> -- <cmd> [args...]';

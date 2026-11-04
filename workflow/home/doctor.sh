@@ -15,18 +15,18 @@ wk_home_doctor() {
   state="$(wk_home_state)"
   case "$state" in
     unset)
-      wk_info "home: not set; \`workkit setup\` creates the private home repo and clones it into $WK_HOME_DIR"
+      wk_info "home: not set; \`workkit setup\` creates the private home repo and clones it into $(wk_native_path "$WK_HOME_DIR")"
       return 0 ;;
     absent)
-      wk_warn "home: $slug is configured but nothing is cloned at $WK_HOME_DIR; run \`workkit setup\` to clone and seed it"
+      wk_warn "home: $slug is configured but nothing is cloned at $(wk_native_path "$WK_HOME_DIR"); run \`workkit setup\` to clone and seed it"
       return 1 ;;
     other)
       local sitting
       sitting="$(wk_home_clone_slug)"
       if [[ -n "$sitting" ]]; then
-        wk_warn "home: $WK_HOME_DIR is a git repo pointing at $sitting, not $slug; move it aside, then run \`workkit setup\`"
+        wk_warn "home: $(wk_native_path "$WK_HOME_DIR") is a git repo pointing at $sitting, not $slug; move it aside, then run \`workkit setup\`"
       else
-        wk_warn "home: $WK_HOME_DIR exists and is not a clone of $slug; move it aside, then run \`workkit setup\`"
+        wk_warn "home: $(wk_native_path "$WK_HOME_DIR") exists and is not a clone of $slug; move it aside, then run \`workkit setup\`"
       fi
       return 1 ;;
   esac
@@ -38,7 +38,7 @@ wk_home_doctor() {
   # `git status -sb` answers ahead, behind and diverged without a network call.
   track="$(git -C "$WK_HOME_DIR" status -sb 2>/dev/null | head -1 || true)"
   if [[ "$track" == *'[ahead '*'behind '* ]]; then
-    wk_warn "home: $slug has diverged from its upstream; \`git -C $WK_HOME_DIR pull --rebase\` on a clean tree reconciles it; the engine never force-pushes"
+    wk_warn "home: $slug has diverged from its upstream; \`git -C $(wk_native_path "$WK_HOME_DIR") pull --rebase\` on a clean tree reconciles it; the engine never force-pushes"
     return 1
   fi
   if [[ "$track" == *'[ahead '* ]]; then
@@ -46,10 +46,10 @@ wk_home_doctor() {
     return 0
   fi
   if [[ "$track" == *'[behind '* ]]; then
-    wk_warn "home: $slug is behind its upstream; \`git -C $WK_HOME_DIR pull --rebase\` catches it up"
+    wk_warn "home: $slug is behind its upstream; \`git -C $(wk_native_path "$WK_HOME_DIR") pull --rebase\` catches it up"
     return 1
   fi
-  wk_ok "home: $slug; $WK_HOME_DIR is its clone"
+  wk_ok "home: $slug; $(wk_native_path "$WK_HOME_DIR") is its clone"
   return 0
 }
 
@@ -60,7 +60,7 @@ wk_home_runner_doctor() {
   local pair src dest scratch kit behind=0 compared=0 retired=0 missing='' pairs=()
 
   wk_home_ready || {
-    wk_skip "runner: no home clone at $WK_HOME_DIR; nothing to compare the cloud brief's runner against"
+    wk_skip "runner: no home clone at $(wk_native_path "$WK_HOME_DIR"); nothing to compare the cloud brief's runner against"
     return 0
   }
   [[ -n "$WK_KIT_DIR" && -d "$WK_KIT_DIR" ]] || {
@@ -74,13 +74,13 @@ wk_home_runner_doctor() {
   # The export's own warning is the seed's voice; here a failure is a skip.
   kit="$(wk_home_source "$scratch" "$WK_KIT_DIR" 2>/dev/null)" || {
     rm -rf "$scratch"
-    wk_skip "runner: could not export the committed kit from $WK_KIT_DIR; the cloud brief's runner cannot be compared"
+    wk_skip "runner: could not export the committed kit from $(wk_native_path "$WK_KIT_DIR"); the cloud brief's runner cannot be compared"
     return 0
   }
   while IFS= read -r pair; do pairs+=("$pair"); done < <(wk_home_runner_list "$kit")
   [[ "${#pairs[@]}" -gt 0 ]] || {
     rm -rf "$scratch"
-    wk_skip "runner: the committed kit at $WK_KIT_DIR carries no runner list; the cloud brief's runner cannot be compared"
+    wk_skip "runner: the committed kit at $(wk_native_path "$WK_KIT_DIR") carries no runner list; the cloud brief's runner cannot be compared"
     return 0
   }
 
@@ -96,7 +96,7 @@ wk_home_runner_doctor() {
   # The seed's prune waits on a missing file, so setup cannot clear the retired
   # files; the missing ones are what to fix.
   if [[ -n "$missing" ]]; then
-    wk_warn "runner: the committed kit at $WK_KIT_DIR is missing${missing}; the cloud brief's runner is incomplete in $WK_HOME_DIR and its retired files wait until the kit is whole"
+    wk_warn "runner: the committed kit at $(wk_native_path "$WK_KIT_DIR") is missing${missing}; the cloud brief's runner is incomplete in $(wk_native_path "$WK_HOME_DIR") and its retired files wait until the kit is whole"
     return 1
   fi
 
@@ -110,6 +110,6 @@ wk_home_runner_doctor() {
     wk_warn "runner: the home repo's brief runner is behind this kit ($detail); run \`workkit setup\`"
     return 1
   fi
-  wk_ok "runner: the cloud brief's runner in $WK_HOME_DIR is current with this kit"
+  wk_ok "runner: the cloud brief's runner in $(wk_native_path "$WK_HOME_DIR") is current with this kit"
   return 0
 }

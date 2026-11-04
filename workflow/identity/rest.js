@@ -4,7 +4,7 @@
 // Usage: WORKKIT_REAL_GH=<gh> GH_REPO=<owner/name> node rest.js <gh argv>
 
 const fs = require('fs');
-const { spawnSync } = require('child_process');
+const { spawnSync } = require('../lib/run');
 const { subAt } = require('./gate');
 
 const HOST = 'https://github.com';

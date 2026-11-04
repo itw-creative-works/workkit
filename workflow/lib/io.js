@@ -8,9 +8,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-const { spawnNpm } = require('../ship/plan');
+const { spawnSync } = require('./run');
 const { repoRoot } = require('./git');
+const { readOrNull } = require('./read');
 
 const KIT = path.join(__dirname, '..', '..');
 
@@ -24,9 +24,7 @@ const runIn = (env) => async (argv, init = {}) => {
   const opts = {
     cwd: init.cwd, input: init.stdin, env: { ...env, ...(init.env || {}) }, encoding: 'utf8', timeout: init.timeoutMs,
   };
-  const res = argv[0] === 'npm'
-    ? spawnNpm(argv.slice(1), opts)
-    : spawnSync(argv[0], argv.slice(1), opts);
+  const res = spawnSync(argv[0], argv.slice(1), opts);
   // A run that did not start (isStarted false) carries its error as stderr, as the
   // engine's does; a null exitCode means that, or a child ended by a signal.
   const stderr = res.stderr || (res.error ? res.error.message : '');
@@ -43,7 +41,7 @@ const statOf = (p) => {
 /** The io chain for a process whose variables are `env`, `pluginRoot` this kit. */
 const ioIn = (env) => ({
   top: async (dir) => repoRoot(dir),
-  read: async (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } },
+  read: async (p) => readOrNull(p),
   exists: async (p) => fs.existsSync(p),
   list: async (dir) => { try { return fs.readdirSync(dir); } catch { return []; } },
   run: runIn(env),

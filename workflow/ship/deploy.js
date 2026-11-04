@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { repoRoot } = require('../lib/git');
-const { spawnNpm } = require('./plan');
+const { spawnSync } = require('../lib/run');
 const { runHooks } = require('./hooks');
 const { sayAs, endOf } = require('../lib/say');
 
@@ -53,7 +53,7 @@ const main = (argv) => {
     return 0;
   }
 
-  const res = spawnNpm(['run', name], { cwd: root, stdio: 'inherit' });
+  const res = spawnSync('npm', ['run', name], { cwd: root, stdio: 'inherit' });
   if (res.status !== 0) {
     say(`npm run ${name} ${endOf(res)}`);
     return 1;

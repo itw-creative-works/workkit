@@ -8,7 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync } = require('../lib/run');
 const { parseEntries, sectionHeadingAt } = require('../changelog/lint');
 const { repoRoot, headSha } = require('../lib/git');
 const { isSemver } = require('./semver');

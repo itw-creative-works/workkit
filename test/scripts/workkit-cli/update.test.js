@@ -9,7 +9,7 @@ const {
   group, test, skip, assert, assertEq, summary, selfRun, hasLaunchd, mkTmp,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which,
+  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, gitPath, which,
 } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -36,7 +36,7 @@ const cases = async () => {
     fs.mkdirSync(world.claudeHome, { recursive: true });
     runCli(world, ['update']);
     const { out } = runCli(world, ['update']);
-    assert(out.includes(`engine: ${shellPath(world.engineLink)} is current`), `an address that resolves here IS current, got: ${out}`);
+    assert(out.includes(`engine: ${gitPath(world.engineLink)} is current`), `an address that resolves here IS current, got: ${out}`);
     cleanup(world.root);
   });
 
@@ -97,7 +97,7 @@ const cases = async () => {
 
     const viaLink = runCli(world, ['update'], { cwd: repo, script: world.link });
     assertEq(viaLink.code, 0, `exit 0: stderr: ${viaLink.err}`);
-    assert(viaLink.out.includes(shellPath(kit)), `it names the real checkout, got: ${viaLink.out}`);
+    assert(viaLink.out.includes(gitPath(kit)), `it names the real checkout, got: ${viaLink.out}`);
     assertEq(fs.readlinkSync(world.link), script, 'and its own address still points at the real CLI');
 
     // The world has no node, so the identity check is a skip and counts nothing.

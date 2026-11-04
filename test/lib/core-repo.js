@@ -7,10 +7,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { assert, skipSuite, mkTmp, seeded, SPAWN_DEADLINE } = require('./harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, SYSTEM_PATH, which, joinPath, homeEnv,
+  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, which, joinPath, homeEnv, spawnSync,
 } = require('./platform');
 
 const CORE = path.join(__dirname, '..', '..', 'packages', 'core');
@@ -43,8 +42,6 @@ const npmEnv = (home, extra = {}) => {
   return homeEnv(home, {
     PATH: joinPath(NODE_DIR, SYSTEM_PATH),
     NPM_CONFIG_USERCONFIG: npmrc,
-    // npm runs a script through ComSpec on Windows, and cmd.exe reads SystemRoot.
-    ...(IS_WINDOWS ? { ComSpec: process.env.ComSpec, SystemRoot: process.env.SystemRoot } : {}),
     ...extra,
   });
 };

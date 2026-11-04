@@ -156,7 +156,7 @@ const cases = async () => {
   await test('no jq: a committed enabled:false is still a no, and a file with no enabled key no yes', () => {
     // The grep fallback exists for exactly this: a committed answer, read without jq.
     const binDir = mkTmp('wf-std-');
-    // cygpath is the engine's path spelling on Windows (wk_git_path), as much a
+    // cygpath is the engine's path spelling on Windows (wk_native_path), as much a
     // need there as git; `which` answers nothing for it on macOS and Linux.
     for (const tool of ['git', 'grep', 'tail', 'head', 'cp', 'mkdir', 'tr', 'cat', 'dirname', 'basename', 'cygpath']) {
       const real = which(tool);

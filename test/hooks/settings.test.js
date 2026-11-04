@@ -42,6 +42,14 @@ const world = ({
 /** The merged view a world gives the repo at ROOT, or no repo at all when `root` is null. */
 const view = (w, root = ROOT) => mods('settings').loadSettings(w.read, { kit: KIT, root, user: USER });
 
+/** The faults the same world's merge set aside, over `read` in place of the world's own when given. */
+const faults = (w, read = w.read) => mods('settings').settingsFaults(read, { kit: KIT, root: ROOT, user: USER });
+
+// A fault's line names its file as the loader spells it, so a Windows separator is read as `/`.
+const slashed = (found) => found.map(({ line }) => line.replace(/\\/g, '/'));
+
+const REPO_FILE = `${ROOT}/.workkit/settings.json`;
+
 // The harness compares with `===`, so a value is compared in its JSON form.
 const same = (actual, expected, msg) => assert(isDeepStrictEqual(actual, expected), `${msg}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 
@@ -161,6 +169,66 @@ const cases = async () => {
       const err = await failure(() => view(world({ defaults, user: { findings: { file: true } }, repo: { enabled: true } })));
       assert(err instanceof Error, `${what}: the read throws`);
       assert(/defaults[\\/]settings\.json/.test(err.message), `${what}: the error names the file, got: ${err.message}`);
+    }
+  });
+
+  group('settings: settingsFaults names each value the merge set aside');
+
+  await test('case 1: a clean machine file and repo file: no fault', () => {
+    same(faults(world({ repo: { enabled: true, site: { url: 'acme.dev' } }, user: { findings: { file: true } } })), [], 'no line');
+  });
+
+  await test('case 2: a repo proof that is an array: one line naming the repo file and proof', () => {
+    same(slashed(faults(world({ repo: { enabled: true, proof: ['backend'] } }))),
+      [`${REPO_FILE}: proof is not an object, so the value below it stands`], 'the proof line');
+  });
+
+  await test('case 3: a repo file that does not parse: one line, the file adds nothing', () => {
+    same(slashed(faults(world({ repo: '{ not json' }))), [`${REPO_FILE} is not a JSON object, so it adds nothing`], 'the parse line');
+  });
+
+  await test('case 4: a machine file that parses to an array is a fault; an empty or blank one is none', () => {
+    same(slashed(faults(world({ repo: { enabled: true }, user: '[]' }))),
+      [`${USER} is not a JSON object, so it adds nothing`], 'an array');
+    for (const user of ['', '  \n']) {
+      same(faults(world({ repo: { enabled: true }, user })), [], `the text ${JSON.stringify(user)}`);
+    }
+  });
+
+  await test('case 5: a machine manager that is a string, or a tiers that is, is a fault naming the dotted key; an object or a null is none', () => {
+    const line = (key) => `${USER}: ${key} is not an object, so the value below it stands`;
+    same(slashed(faults(world({ repo: { enabled: true }, user: { manager: 'off' } }))), [line('manager')], 'a string manager');
+    same(slashed(faults(world({ repo: { enabled: true }, user: { manager: { tiers: 'x' } } }))), [line('manager.tiers')], 'a string tiers');
+    same(faults(world({ repo: { enabled: true }, user: { manager: { enabled: true }, site: null } })), [], 'an object manager and a null site');
+  });
+
+  await test('case 6: an async read answers a promise of the same lines', async () => {
+    const w = world({ repo: { enabled: true, proof: ['backend'] } });
+    const answer = faults(w, async (p) => w.read(p));
+    assert(typeof answer.then === 'function', `a promise, got: ${answer}`);
+    same(slashed(await answer), [`${REPO_FILE}: proof is not an object, so the value below it stands`], 'the proof line');
+  });
+
+  await test('case 7: each fault is its file, its dotted key (null for a whole file) and its line', () => {
+    same(faults(world({ repo: '{ not json', user: { manager: { tiers: 'x' } } })), [
+      { file: USER, key: 'manager.tiers', line: `${USER}: manager.tiers is not an object, so the value below it stands` },
+      { file: REPO_FILE, key: null, line: `${REPO_FILE} is not a JSON object, so it adds nothing` },
+    ], 'the two faults in walk order');
+  });
+
+  await test('case 8: faultsUnder answers the faults whose key is the prefix or under it, in order', () => {
+    const at = (key) => ({ file: USER, key, line: `${key}` });
+    const found = [at('proof'), at(null), at('proofing'), at('hooks.afterRelease'), at('proof.rootOnly')];
+    same(mods('settings').faultsUnder(found, 'proof'), [at('proof'), at('proof.rootOnly')], 'proof and proof.rootOnly alone');
+    same(mods('settings').faultsUnder(found, 'identity'), [], 'none under identity');
+  });
+
+  await test('case 9: a missing or unparsable defaults file throws the error loadSettings throws', async () => {
+    for (const [what, defaults] of [['missing', null], ['unparsable', '{ "enabled": ']]) {
+      const w = world({ defaults, repo: { enabled: true } });
+      const err = await failure(() => faults(w));
+      assert(err instanceof Error, `${what}: settingsFaults throws`);
+      assertEq(err.message, (await failure(() => view(w))).message, `${what}: the same error`);
     }
   });
 

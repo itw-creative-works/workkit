@@ -8,7 +8,8 @@
 // Run from the repo root:
 //   workkit ship publish [--dir <root>]
 
-const { report, spawnNpm, npmEnd } = require('./plan');
+const { report, npmEnd } = require('./plan');
+const { spawnSync } = require('../lib/run');
 const { runHooks } = require('./hooks');
 const { repoRoot } = require('../lib/git');
 
@@ -19,7 +20,7 @@ const { repoRoot } = require('../lib/git');
  * on stderr and answers free, so npm itself refuses a taken version.
  */
 const onRegistry = (root, { name, version }) => {
-  const res = spawnNpm(['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {
+  const res = spawnSync('npm', ['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {
     cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (res.status === 0) return res.stdout.trim() === version;
@@ -44,7 +45,7 @@ const publishAll = (root, result) => {
     const args = ['publish'];
     if (result.workspaces) args.push(`--workspace=${p.name}`);
     if (p.scoped) args.push('--access', 'public');
-    const res = spawnNpm(args, { cwd: root, stdio: 'inherit' });
+    const res = spawnSync('npm', args, { cwd: root, stdio: 'inherit' });
     if (res.status !== 0) {
       const left = result.publish.slice(i + 1).map((l) => l.name);
       console.error(`publish-plan: npm publish failed for ${p.name}@${p.version} (${npmEnd(res)}); ${published} published, ${left.length} not attempted: ${left.join(', ') || 'none'}.`);

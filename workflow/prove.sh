@@ -28,7 +28,7 @@ prove_cleanup() {
   cd "$PROVE_ROOT" 2>/dev/null || cd /
   if [ "$PROVE_ADDED" -eq 1 ]; then
     hook_snapshot_worktree_remove "$PROVE_ROOT" "$PROVE_COPY" \
-      || printf 'prove: git still lists the removed worktree %s (run git -C %s worktree prune)\n' "$PROVE_COPY" "$PROVE_ROOT"
+      || printf 'prove: git still lists the removed worktree %s (run git -C %s worktree prune)\n' "$(wk_native_path "$PROVE_COPY")" "$PROVE_ROOT"
   fi
   [ -z "$PROVE_TMP" ] || rm -rf "$PROVE_TMP"
 }
@@ -43,7 +43,7 @@ prove_body() {
   PROVE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/prove.XXXXXX") || fail "could not make a temp folder"
   # One scratch copy of the index (the real one is never written): the copy's
   # whole tree first, then the record's id, the same copy less .workkit/.
-  index=$(wk_index_copy "$root" "$PROVE_TMP") || fail "could not copy the index of $root into $PROVE_TMP"
+  index=$(wk_index_copy "$root" "$PROVE_TMP") || fail "could not copy the index of $root into $(wk_native_path "$PROVE_TMP")"
   staged=$(GIT_INDEX_FILE="$index" git -C "$root" write-tree 2>/dev/null) && [ -n "$staged" ] \
     || fail "could not write the whole index's tree for the copy (an unmerged path blocks it); resolve it and stage again"
   tree=$(wk_index_write_tree "$root" "$index") && [ -n "$tree" ] \
@@ -53,7 +53,7 @@ prove_body() {
   PROVE_COPY="$copy"
 
   add_err=$(hook_snapshot_worktree_add "$root" "$copy" 2>&1) \
-    || fail "could not add a worktree at $copy: $add_err"
+    || fail "could not add a worktree at $(wk_native_path "$copy"): $add_err"
   PROVE_ADDED=1
   git -C "$copy" read-tree "$staged" && git -C "$copy" checkout-index -a \
     || fail "could not check the index's tree $staged out into the copy"
@@ -80,7 +80,7 @@ prove_body() {
   # npm runs the script with plain sh, as the root run's wrapper does: the
   # copy's own record is never the one wanted. A Windows sh is spelled for node.
   sh_path=$(command -v sh) || fail "no sh on PATH for npm to run the suite with"
-  sh_path=$(wk_git_path "$sh_path") || fail "could not spell $sh_path for npm"
+  sh_path=$(wk_native_path "$sh_path") || fail "could not spell $sh_path for npm"
   started=$SECONDS
   (cd "$copy" && npm test --script-shell="$sh_path") || rc=$?
   ms=$(wk_elapsed_ms "$started")
@@ -115,7 +115,7 @@ main() {
   lock=$(wk_suite_lock_path "$root") || exit 1
   wk_run_detached "$log" "$lock" -- "$BASH" "$SCRIPT_DIR/prove.sh" --body "$root" || rc=$?
   if [ -n "$WK_HELD_PID" ]; then
-    printf 'prove: a root suite run is already running (pid %s); its output is in %s\n' "$WK_HELD_PID" "$log" >&2
+    printf 'prove: a root suite run is already running (pid %s); its output is in %s\n' "$WK_HELD_PID" "$(wk_native_path "$log")" >&2
     exit 1
   fi
   exit "$rc"

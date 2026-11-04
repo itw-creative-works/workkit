@@ -2,7 +2,7 @@
 // the cache slot, the Host and Origin allowlist, the JSON answer and the capped
 // body. server.js requires it; no piece requires server.js.
 
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../../workflow/lib/run');
 
 // An intake payload is a title and a paragraph. Anything larger is not one, and
 // reading it would let a single request hold memory the tower has no use for.

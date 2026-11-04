@@ -55,7 +55,7 @@ sync_labels() {
   # Only this step and the issue check read it, so --state, --announce and
   # --decline still answer on a broken install.
   if [[ ! -f "$LABELS_JSON" ]]; then
-    wk_warn "labels: labels.json missing at $LABELS_JSON; reinstall the workflow core"
+    wk_warn "labels: labels.json missing at $(wk_native_path "$LABELS_JSON"); reinstall the workflow core"
     needs_attention=1
     return 0
   fi

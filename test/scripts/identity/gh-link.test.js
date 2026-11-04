@@ -7,7 +7,7 @@ const path = require('path');
 const {
   group, test, assert, assertEq, summary, selfRun,
 } = require('../../lib/harness');
-const { shellPath, joinPath, stubTool } = require('../../lib/platform');
+const { gitPath, joinPath, stubTool } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, cleanup, mkWorld, runCli, mkRepo, mkKit, mkSetupKit,
 } = require('../workkit-cli/helpers');
@@ -62,7 +62,7 @@ const cases = async () => {
     fs.symlinkSync(foreign, ghLink(world));
     const { said } = runCli(world, ['setup'], { cwd: repo, script });
     assertEq(fs.readlinkSync(ghLink(world)), foreign, 'the link still points where it did');
-    assert(said.includes(shellPath(foreign)), `the run names the foreign target, got: ${said}`);
+    assert(said.includes(gitPath(foreign)), `the run names the foreign target, got: ${said}`);
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
@@ -73,7 +73,7 @@ const cases = async () => {
     fs.mkdirSync(world.claudeHome, { recursive: true });
     runCli(world, ['update']);
     const linked = runCli(world, ['doctor']);
-    const okLine = linked.out.split('\n').find((l) => /^ *✓ /.test(l) && l.includes(shellPath(ghLink(world))));
+    const okLine = linked.out.split('\n').find((l) => /^ *✓ /.test(l) && l.includes(gitPath(ghLink(world))));
     assert(okLine, `an ok line names the link, got: ${linked.out}`);
 
     fs.unlinkSync(ghLink(world));
@@ -92,8 +92,8 @@ const cases = async () => {
     fs.mkdirSync(world.localBin, { recursive: true });
     fs.symlinkSync(foreign, ghLink(world));
     const { said } = runCli(world, ['doctor']);
-    assert(said.includes(`${shellPath(ghLink(world))} is someone else's link to ${shellPath(foreign)}`), `it names the foreign target, got: ${said}`);
-    assert(!said.includes(`${shellPath(ghLink(world))} is missing or points elsewhere`), `and never sends it to update, got: ${said}`);
+    assert(said.includes(`${gitPath(ghLink(world))} is someone else's link to ${gitPath(foreign)}`), `it names the foreign target, got: ${said}`);
+    assert(!said.includes(`${gitPath(ghLink(world))} is missing or points elsewhere`), `and never sends it to update, got: ${said}`);
     cleanup(world.root);
   });
 

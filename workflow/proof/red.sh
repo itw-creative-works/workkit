@@ -102,7 +102,7 @@ live_restore() {
     rel="${swap[$i]}"
     if [ -e "$tmp/live/$rel" ] || [ -L "$tmp/live/$rel" ]; then
       { rm -rf "${root:?}/$rel" && mv "$tmp/live/$rel" "$root/$rel"; } \
-        || { echo "red-proof: could not put $rel back; its live version is at $tmp/live/$rel" >&2; rc=1; }
+        || { echo "red-proof: could not put $rel back; its live version is at $(wk_native_path "$tmp")/live/$rel" >&2; rc=1; }
     elif case "$absent" in *$'\n'"$rel"$'\n'*) true ;; *) false ;; esac; then
       rm -rf "${root:?}/$rel" ${made[$i]:+"${made[$i]}"} \
         || { echo "red-proof: could not remove $rel, which the live tree lacks" >&2; rc=1; }
@@ -118,10 +118,10 @@ cleanup() {
   [ "$live" -eq 0 ] || live_restore || kept=1
   if [ "$added" -eq 1 ]; then
     hook_snapshot_worktree_remove "$root" "$copy" \
-      || echo "red-proof: git still lists the removed worktree $copy (run git -C $root worktree prune)" >&2
+      || echo "red-proof: git still lists the removed worktree $(wk_native_path "$copy") (run git -C $(wk_native_path "$root") worktree prune)" >&2
   fi
   if [ "$kept" -eq 1 ]; then
-    echo "red-proof: the live tree is not restored; $tmp is kept" >&2
+    echo "red-proof: the live tree is not restored; $(wk_native_path "$tmp") is kept" >&2
     exit 2
   fi
   rm -rf "$tmp"
@@ -169,7 +169,7 @@ is_named() {
 # recorded absent), and the snapshot's version put in its place when it has one.
 live_swap_in() {
   local rel n i=0 top held
-  held=$(_hook_snapshot_modules_list "$root") || fail "could not list the package node_modules folders of $root"
+  held=$(_hook_snapshot_modules_list "$root") || fail "could not list the package node_modules folders of $(wk_native_path "$root")"
   for rel in "${named[@]}"; do
     [ -n "$rel" ] && [ -d "$root/$rel" ] && [ ! -L "$root/$rel" ] || continue
     ! _hook_snapshot_is_held "$held" "$rel" && ! _hook_snapshot_held_under "$held" "$rel" \
@@ -203,18 +203,18 @@ live_swap_in() {
 
 if [ "$live" -eq 1 ]; then
   live_swap_in
-  cd "$here" 2>/dev/null || fail "could not enter $here with the snapshot's paths in place"
+  cd "$here" 2>/dev/null || fail "could not enter $(wk_native_path "$here") with the snapshot's paths in place"
   place="the repo"
 else
   add_err=$(hook_snapshot_worktree_add "$root" "$copy" 2>&1) \
-    || fail "could not add a worktree of HEAD at $copy: $add_err"
+    || fail "could not add a worktree of HEAD at $(wk_native_path "$copy"): $add_err"
   added=1
   # HEAD checked out as the floor, so a tracked file the snapshot lacks is HEAD's,
   # and the index as HEAD has it, so git in the copy reads its files against HEAD.
   git -C "$copy" read-tree HEAD && git -C "$copy" checkout-index -a -f \
     || fail "could not check HEAD out into the copy"
   snap_head=$(cat "$snap/head" 2>/dev/null) && [ -n "$snap_head" ] && [ -f "$snap/paths" ] \
-    || fail "the snapshot at $snap records no head or no paths"
+    || fail "the snapshot at $(wk_native_path "$snap") records no head or no paths"
   git -C "$root" diff --name-only --no-renames -z "$snap_head" HEAD >"$tmp/since" \
     || fail "could not list the files changed since the snapshot's commit $snap_head"
   # The paths the claim's working diff and the commits since name are cleared
@@ -225,11 +225,11 @@ else
   done < <(cat "$snap/paths" "$tmp/since")
 
   fill_err=$(hook_snapshot_fill "$snap/tree" "$root" "$copy" 2>&1) \
-    || fail "could not fill the copy from the snapshot at $snap: $fill_err"
+    || fail "could not fill the copy from the snapshot at $(wk_native_path "$snap"): $fill_err"
   # A named path is exactly the snapshot's, whatever HEAD holds there: absent
   # when the snapshot lacks it, and a named folder loses each entry the snapshot
   # lacks (the package node_modules the fill linked stay).
-  held=$(_hook_snapshot_modules_list "$root") || fail "could not list the package node_modules folders of $root"
+  held=$(_hook_snapshot_modules_list "$root") || fail "could not list the package node_modules folders of $(wk_native_path "$root")"
   for rel in "${named[@]}"; do
     [ -n "$rel" ] || continue
     if [ ! -e "$snap/tree/$rel" ] && [ ! -L "$snap/tree/$rel" ]; then
@@ -373,7 +373,7 @@ module_path() {
 # The copy's own folder, unique to this run, so another run's copy never matches;
 # in the live mode the repo root, in node's spelling.
 if [ "$live" -eq 1 ]; then
-  marker="$(wk_git_path "$root")/"
+  marker="$(wk_native_path "$root")/"
 else
   marker="/${tmp##*/}/copy/"
 fi

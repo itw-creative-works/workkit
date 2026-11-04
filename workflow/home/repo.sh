@@ -31,26 +31,26 @@ wk_home_clone() {
 
   if [[ -e "$WK_HOME_DIR" ]]; then
     if wk_home_matches "$slug"; then
-      wk_skip "home: $WK_HOME_DIR is the clone of $slug"
+      wk_skip "home: $(wk_native_path "$WK_HOME_DIR") is the clone of $slug"
       return 0
     fi
     existing="$(wk_home_clone_slug)"
     if [[ -n "$existing" ]]; then
-      wk_warn "home: $WK_HOME_DIR is a git repo pointing at $existing; leaving it alone; move it aside if $slug should live there"
+      wk_warn "home: $(wk_native_path "$WK_HOME_DIR") is a git repo pointing at $existing; leaving it alone; move it aside if $slug should live there"
     else
-      wk_warn "home: $WK_HOME_DIR already exists and is not a clone of $slug; leaving it alone; move it aside, then run \`workkit setup\` again"
+      wk_warn "home: $(wk_native_path "$WK_HOME_DIR") already exists and is not a clone of $slug; leaving it alone; move it aside, then run \`workkit setup\` again"
     fi
     return 3
   fi
 
-  mkdir -p "$WK_USER_DIR" 2>/dev/null || { wk_warn "home: could not create $WK_USER_DIR"; return 1; }
+  mkdir -p "$WK_USER_DIR" 2>/dev/null || { wk_warn "home: could not create $(wk_native_path "$WK_USER_DIR")"; return 1; }
   # A fresh repo is empty and git warns about it: the expected first-setup case,
   # so only the exit status is read.
   out="$(wk_spin "cloning $slug" git clone -q "$url" "$WK_HOME_DIR" 2>&1)" || {
-    wk_warn "home: could not clone $slug into $WK_HOME_DIR; \`git clone $url $WK_HOME_DIR\` reports why"
+    wk_warn "home: could not clone $slug into $(wk_native_path "$WK_HOME_DIR"); \`git clone $url $(wk_native_path "$WK_HOME_DIR")\` reports why"
     return 1
   }
-  wk_ok "home: cloned $slug into $WK_HOME_DIR"
+  wk_ok "home: cloned $slug into $(wk_native_path "$WK_HOME_DIR")"
   return 0
 }
 
@@ -84,7 +84,7 @@ wk_home_repoint_file_specs() {
     # `cd`, since only the filesystem can resolve `../..` through symlinks.
     abs="$(cd "$srcdir/$rel" 2>/dev/null && pwd -P || printf '')"
     if [[ -z "$abs" ]]; then
-      wk_warn "home: the seeded $name still points at $spec; nothing resolves it from $srcdir, so the tower project cannot build until it does"
+      wk_warn "home: the seeded $name still points at $spec; nothing resolves it from $(wk_native_path "$srcdir"), so the tower project cannot build until it does"
       continue
     fi
     wk_json_edit "$pkg" --arg n "$name" --arg v "file:$abs" '

@@ -7,6 +7,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+// The kit's one Node home for starting a program, which this seam re-exports.
+const run = require('../../workflow/lib/run');
 const { SPAWN_DEADLINE } = require('./harness');
 
 const IS_WINDOWS = process.platform === 'win32';
@@ -346,20 +348,30 @@ const systemPathWith = (...dirs) => [...dirs, SYSTEM_PATH].join(path.delimiter);
 /** One PATH out of entries already in this platform's spelling. */
 const joinPath = (...entries) => entries.filter(Boolean).join(path.delimiter);
 
-// Windows quoting: a backslash run before a quote or the end is doubled, the quote escaped.
-const windowsQuoted = (value) => `"${String(value).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
-
 /**
- * Spawn the test bash with `args` from Node. On Windows every argument goes
- * double-quoted, verbatim: the msys runtime parses and globs a command line a
- * native parent hands it, and a newer runtime dies on an unquoted `labels[]=`.
+ * Spawn the test bash with `args` from Node, through run.js: on Windows it
+ * quotes every argument and the program name and hands them over verbatim,
+ * since the msys runtime parses and globs a command line a native parent hands it.
  * @param {string[]} args
  * @param {object} [options] - spawnSync's
  * @returns {object} spawnSync's result
  */
-const spawnBash = (args, options = {}) => (IS_WINDOWS
-  ? spawnSync(BASH, args.map(windowsQuoted), { ...options, argv0: windowsQuoted(BASH), windowsVerbatimArguments: true })
-  : spawnSync(BASH, args, options));
+const spawnBash = (args, options = {}) => run.spawnSync(BASH, args, options);
+
+/**
+ * Whether two spellings name one path. On `win32` a Git Bash drive mount
+ * (`/d/x`) reads as `D:/x`, `\` folds to `/` and case is ignored; elsewhere the
+ * strings are compared as they are.
+ * @param {string} a
+ * @param {string} b
+ * @param {string} platform - a `process.platform` value
+ * @returns {boolean}
+ */
+const samePath = (a, b, platform) => {
+  if (platform !== 'win32') return a === b;
+  const folded = (p) => p.replace(/\\/g, '/').replace(/^\/([A-Za-z])(?=\/|$)/, '$1:').toLowerCase();
+  return folded(a) === folded(b);
+};
 
 /**
  * A spawn env whose world is the scratch home `home`, in every spelling a tool
@@ -443,5 +455,9 @@ module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, gitPath, which, spawnBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
-  NO_EXEC_BIT, NO_NODE_STUB, asWindows,
+  NO_EXEC_BIT, NO_NODE_STUB, asWindows, samePath,
+  // run.js's own three, so a suite starts its children where the kit does.
+  spawnSync: run.spawnSync,
+  spawn: run.spawn,
+  execFileSync: run.execFileSync,
 };

@@ -11,7 +11,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../workflow/lib/run');
 
 const { discoverRepos } = require('../../tower/api/lib/repos');
 

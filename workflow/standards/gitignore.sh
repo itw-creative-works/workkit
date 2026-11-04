@@ -108,7 +108,7 @@ ensure_local_file() {
 
   # A missing template warns, and the heal goes on to the forms and labels.
   if [[ ! -f "$TEMPLATES_DIR/$name" ]]; then
-    wk_warn "$label: template missing at $TEMPLATES_DIR/$name; reinstall the workflow core"
+    wk_warn "$label: template missing at $(wk_native_path "$TEMPLATES_DIR/$name"); reinstall the workflow core"
     needs_attention=1
     return 0
   fi

@@ -80,7 +80,7 @@ ensure_changelog_job() {
 
   block="$(wk_changelog_job_block "$src")"
   if [[ -z "$block" ]]; then
-    wk_warn "checks: the template at $src defines no changelog job; reinstall the workflow core"
+    wk_warn "checks: the template at $(wk_native_path "$src") defines no changelog job; reinstall the workflow core"
     needs_attention=1
     return 0
   fi

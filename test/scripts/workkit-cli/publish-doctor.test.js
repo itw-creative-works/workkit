@@ -88,6 +88,34 @@ const cases = async () => {
     cleanup(world.root); cleanup(kit);
   });
 
+  await test('a checkout without the platform library still answers the cloud read', () => {
+    // doctor asks wk_is_cloud in several sections; a kit missing platform.sh
+    // gets the entry's own fallback, never a shell error in the report.
+    const world = mkWorld();
+    const { kit, script } = mkPartialKit();
+    const { code, said } = runCli(world, ['doctor'], { script });
+    assertEq(code, 0, `doctor still finishes, got: ${said}`);
+    assert(!said.includes('command not found'), `no function is missing, got: ${said}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
+  await test('a checkout without the platform library reads links that already exist', () => {
+    // An existing engine address and command link are each asked whether a
+    // clone outranks this kit, a question platform.sh alone answers.
+    const world = mkWorld();
+    const { kit, script } = mkPartialKit();
+    const elsewhere = path.join(world.root, 'elsewhere', 'workflow');
+    fs.mkdirSync(elsewhere, { recursive: true });
+    fs.mkdirSync(world.localBin, { recursive: true });
+    fs.mkdirSync(world.claudeHome, { recursive: true });
+    fs.symlinkSync(elsewhere, world.engineLink);
+    fs.symlinkSync(path.join(elsewhere, 'workkit.sh'), world.link);
+    const { code, said } = runCli(world, ['doctor'], { script });
+    assertEq(code, 0, `doctor still finishes, got: ${said}`);
+    assert(!said.includes('command not found'), `no function is missing, got: ${said}`);
+    cleanup(world.root); cleanup(kit);
+  });
+
   await test('an empty roster reports as a notice, not as a green check', () => {
     // Zero registered means the tower, the board and the brief have nothing to
     // read: the one count that must not read as everything being fine.

@@ -75,6 +75,21 @@ if ! declare -f wk_ok >/dev/null 2>&1; then
   wk_spin()  { shift; "$@"; }
   wk_plain() { cat; }
 fi
+# A checkout with no lib/platform.sh still answers these: its paths as the shell
+# spells them, the rest with platform.sh's own bodies.
+declare -f wk_native_path >/dev/null 2>&1 || wk_native_path() { printf '%s' "$1"; }
+declare -f wk_is_cloud >/dev/null 2>&1 || wk_is_cloud() { [[ "${CLAUDE_CODE_REMOTE:-}" == 'true' ]]; }
+declare -f wk_npm_script_shell >/dev/null 2>&1 \
+  || wk_npm_script_shell() { npm config get script-shell 2>/dev/null | tr -d '\r'; return "${PIPESTATUS[0]}"; }
+# A partial kit has no clone test (lib/platform.sh), so no link outranks it.
+declare -f wk_clone_outranks >/dev/null 2>&1 || wk_clone_outranks() { return 1; }
+declare -f wk_user_dir >/dev/null 2>&1 || wk_user_dir() { printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}"; }
+declare -f wk_script_shell_exe >/dev/null 2>&1 || wk_script_shell_exe() { printf '%s\n' "$(wk_user_dir)/script-shell.exe"; }
+declare -f wk_physical_path >/dev/null 2>&1 || wk_physical_path() {
+  local dir
+  dir="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/%s' "$dir" "$(basename "$1")"
+}
 
 # --auto sets it: only actions and warnings speak.
 QUIET=0
@@ -303,7 +318,7 @@ case "${1:-help}" in
     # The tower lives in the kit, not the engine: a partial copy that holds
     # only workflow/ has nothing to run.
     if [[ ! -f "$TOWER_START" ]]; then
-      wk_error "tower: no tower beside this engine ($TOWER_START), and this command needs the whole kit"
+      wk_error "tower: no tower beside this engine ($(wk_native_path "$TOWER_START")), and this command needs the whole kit"
       exit 1
     fi
     exec bash "$TOWER_START" "$@"

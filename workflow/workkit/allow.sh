@@ -53,11 +53,11 @@ allow_retired() {
 allow_readable() {
   local settings="$CLAUDE_HOME/settings.json"
   if ! declare -f wk_jq wk_json_edit_or_create >/dev/null 2>&1; then
-    wk_warn "allow: the JSON helpers in $SCRIPT_DIR/lib are missing, so the kit's allow rules in $settings cannot be $1; the kit is incomplete"
+    wk_warn "allow: the JSON helpers in $(wk_native_path "$SCRIPT_DIR/lib") are missing, so the kit's allow rules in $(wk_native_path "$settings") cannot be $1; the kit is incomplete"
     return 2
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    wk_skip "allow: no jq on this machine, so the kit's allow rules in $settings cannot be $1"
+    wk_skip "allow: no jq on this machine, so the kit's allow rules in $(wk_native_path "$settings") cannot be $1"
     return 1
   fi
 }
@@ -80,11 +80,11 @@ keep_allow_rules() {
   # Quiet under --auto, as script_shell's foreign value is: the daily run
   # would repeat it every morning; a human's run and doctor still say it.
   if ! missing="$(allow_missing)" || ! retired="$(allow_retired)"; then
-    [[ "$QUIET" -eq 1 ]] || wk_warn "allow: $settings is not JSON with a list at permissions.allow, so it was left as it is; fix it, then re-run \`$(allow_fix)\`"
+    [[ "$QUIET" -eq 1 ]] || wk_warn "allow: $(wk_native_path "$settings") is not JSON with a list at permissions.allow, so it was left as it is; fix it, then re-run \`$(allow_fix)\`"
     return 0
   fi
   if [[ -z "$missing" && -z "$retired" ]]; then
-    wk_skip "allow: $settings holds the kit's allow rules"
+    wk_skip "allow: $(wk_native_path "$settings") holds the kit's allow rules"
     return 0
   fi
 
@@ -93,8 +93,8 @@ keep_allow_rules() {
   mkdir -p "$CLAUDE_HOME" 2>/dev/null || true
   if wk_json_edit_or_create "$settings" --argjson add "$add" --argjson drop "$drop" \
     '.permissions.allow = ((.permissions.allow // []) - $drop + $add)'; then
-    [[ -z "$missing" ]] || wk_ok "allow: added ${missing//$'\n'/, } to $settings"
-    [[ -z "$retired" ]] || wk_ok "allow: took the retired ${retired//$'\n'/, } out of $settings"
+    [[ -z "$missing" ]] || wk_ok "allow: added ${missing//$'\n'/, } to $(wk_native_path "$settings")"
+    [[ -z "$retired" ]] || wk_ok "allow: took the retired ${retired//$'\n'/, } out of $(wk_native_path "$settings")"
   fi
 }
 
@@ -108,17 +108,17 @@ report_allow_rules() {
   local fix
   fix="$(allow_fix)"
   if ! missing="$(allow_missing)" || ! retired="$(allow_retired)"; then
-    wk_warn "allow: $settings is not JSON with a list at permissions.allow, so the kit's allow rules cannot be read; fix it, then run \`$fix\`"
+    wk_warn "allow: $(wk_native_path "$settings") is not JSON with a list at permissions.allow, so the kit's allow rules cannot be read; fix it, then run \`$fix\`"
     return 1
   fi
   while IFS= read -r rule; do
     [[ -n "$rule" ]] || continue
-    wk_warn "allow: $rule is missing from $settings; run \`$fix\`"
+    wk_warn "allow: $rule is missing from $(wk_native_path "$settings"); run \`$fix\`"
     count=$((count + 1))
   done <<<"$missing"
   while IFS= read -r rule; do
     [[ -n "$rule" ]] || continue
-    wk_warn "allow: $rule is a retired kit rule in $settings; run \`$fix\` to take it out"
+    wk_warn "allow: $rule is a retired kit rule in $(wk_native_path "$settings"); run \`$fix\` to take it out"
     count=$((count + 1))
   done <<<"$retired"
   return "$count"

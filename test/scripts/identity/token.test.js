@@ -396,6 +396,57 @@ const cases = async () => {
     }
   });
 
+  group('identity/token: a machine settings file the merge sets aside');
+
+  /**
+   * tokenFor with no injected settings, signed in, the cache empty, and the machine
+   * file under a scratch WORKFLOW_HOME holding `text`: `{ file, service, token, err }`.
+   */
+  const withMachineFile = async (text) => {
+    const before = process.env.WORKFLOW_HOME;
+    process.env.WORKFLOW_HOME = mkTmp('wk-identity-workflow-home-');
+    const file = path.join(process.env.WORKFLOW_HOME, 'settings.json');
+    fs.writeFileSync(file, text);
+    const service = fakeService([['ghs_minted', '2099-01-01T00:00:00Z']]);
+    try {
+      const token = await load().tokenFor(REPO, {
+        fetch: service.fetch, now: NOW, cacheDir: mkTmp('wk-identity-cache-'), loginFile: signedIn(),
+      });
+      return { file, service, token, err: null };
+    } catch (err) {
+      return { file, service, token: null, err };
+    } finally {
+      if (before === undefined) delete process.env.WORKFLOW_HOME;
+      else process.env.WORKFLOW_HOME = before;
+    }
+  };
+
+  /** The run refused as `settings` with exactly `message`, and fetched nothing. */
+  const assertSettingsRefusal = ({ service, err }, message) => {
+    const { IdentityError } = load();
+    assert(err instanceof IdentityError, `an IdentityError, got: ${err && `${err.name}: ${err.message}`}`);
+    assertEq(err.code, 'settings', 'the code');
+    assertEq(err.message, message, 'the fault line and the fix');
+    assertEq(service.posts.length + service.reads.length + service.others.length, 0, `nothing fetched, got: ${service.others.join(', ')}`);
+  };
+
+  await test('fault case 11: a machine file that does not parse: refused as settings, naming the file, with nothing fetched', async () => {
+    const run = await withMachineFile('{ not json');
+    assertSettingsRefusal(run, `${run.file} is not a JSON object, so it adds nothing; fix or remove it`);
+  });
+
+  await test('fault case 12: a machine identity that is a string: refused as settings, naming identity, with nothing fetched', async () => {
+    const run = await withMachineFile('{"identity": "x"}');
+    assertSettingsRefusal(run, `${run.file}: identity is not an object, so the value below it stands; fix or remove it`);
+  });
+
+  await test('fault case 13: a machine manager that is a string is not identity\'s fault: the token is minted through the file\'s tokenUrl', async () => {
+    const run = await withMachineFile(JSON.stringify({ manager: 'off', identity: { tokenUrl: TOKEN_URL } }));
+    assertEq(run.err, null, `no refusal, got: ${run.err && run.err.message}`);
+    assertEq(run.token, 'ghs_minted', 'the minted token');
+    assertEq(run.service.posts.length, 1, `one mint through the machine file's tokenUrl, other calls: ${run.service.others.join(', ')}`);
+  });
+
   group('identity/token: the owner read before the ask');
 
   await test('case 1: GitHub names Old/widgets New/widgets and the service 200s New/widgets: the token prints, exit 0, nothing on stderr, one POST, for New/widgets', async () => {

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # workflow/lib/platform.sh: the spellings that differ per platform and the read
-# shapes built on them, for the engine and the hooks. Sourced: functions, plus
-# the one MSYS export, WK_NODE_FLOOR and MARKER_KEEP_DAYS below. The shell twin of test/lib/platform.js; on macOS
-# and Linux every function is the plain POSIX spelling. What each answers:
-# workflow/README.md, the lib/platform.sh row.
+# shapes built on them, for the engine and the hooks. Sourced: functions, plus the
+# one MSYS export, WK_NODE_FLOOR and MARKER_KEEP_DAYS below. The shell twin of
+# test/lib/platform.js, with lib/run.js as its Node twin; on macOS and Linux every
+# function is the plain POSIX spelling. What each answers: workflow/README.md, the lib/platform.sh row.
 
 # Git Bash makes `ln -s` a copy unless MSYS says otherwise (docs/hooks.md
 # § Platforms). Appended once to MSYS's space-separated list, however many
@@ -64,11 +64,11 @@ wk_mv_link() {
   mv -f "$flag" "$1" "$2"
 }
 
-# wk_git_path: git's spelling of a path (`C:/Users/x`, never `/c/Users/x`), the
-# one a roster key is written and looked up under. Feed it a path git printed:
-# `cygpath -m` keeps the letter case it is handed. A failure is passed on, since
-# an empty key is worse than none.
-wk_git_path() {
+# wk_native_path <path>: the native spelling (`D:/a/x`, never `/d/a/x`), git's
+# own: `cygpath -m` on Windows, keeping the letter case it is handed, the path
+# unchanged elsewhere. Every printed path the shell spelled and every roster key
+# goes through it. A failure is passed on: an empty key is worse than none.
+wk_native_path() {
   local p="$1"
   case "${OSTYPE:-}" in
     msys*|cygwin*) p="$(cygpath -m "$p")" || return 1 ;;

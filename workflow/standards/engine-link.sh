@@ -21,7 +21,7 @@ clear_engine_copy() {
   [[ -L "$ENGINE_LINK" ]] && return 0
   [[ -d "$ENGINE_LINK" ]] || return 0
   rm -rf "$ENGINE_LINK"
-  wk_warn "engine: $ENGINE_LINK came back a copy instead of a symlink, so it was removed; this shell cannot make symlinks (on Windows, turn on Developer Mode or run as administrator), then re-run \`workkit update\`"
+  wk_warn "engine: $(wk_native_path "$ENGINE_LINK") came back a copy instead of a symlink, so it was removed; this shell cannot make symlinks (on Windows, turn on Developer Mode or run as administrator), then re-run \`workkit update\`"
   return 0
 }
 
@@ -38,14 +38,14 @@ ensure_engine_link() {
     wk_clone_outranks "$SCRIPT_DIR/.." "$current" && return 0
     verb=repointed
   elif [[ -e "$ENGINE_LINK" ]]; then
-    wk_warn "engine: $ENGINE_LINK is a real file or directory; move it aside so the engine's address can be linked"
+    wk_warn "engine: $(wk_native_path "$ENGINE_LINK") is a real file or directory; move it aside so the engine's address can be linked"
     return 0
   fi
 
   # `wk_link` answers for the address, not the command: losing the race to a
   # session writing the same link is not a failure.
   if wk_link "$SCRIPT_DIR" "$ENGINE_LINK"; then
-    wk_ok "engine: $verb $ENGINE_LINK → $SCRIPT_DIR"
+    wk_ok "engine: $verb $(wk_native_path "$ENGINE_LINK") → $(wk_native_path "$SCRIPT_DIR")"
     return 0
   fi
   clear_engine_copy

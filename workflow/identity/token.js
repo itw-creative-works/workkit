@@ -4,13 +4,14 @@
 // --installation <owner/repo> | --probe <owner/repo> | --status (the token form
 // exits 0, 3, 4 or 1).
 
-const fs = require('fs');
 const path = require('path');
 const { loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX } = require('./login');
 const { repoOwner, ownerId, installPage } = require('./install-page');
 const { splitRepo } = require('../slug');
 const { userDir } = require('../user-dir');
-const { settingsAt } = require('../lib/settings');
+const { faultsUnder } = require('../../hooks/mods/settings.js');
+const { settingsAt, faultsAt } = require('../lib/settings');
+const { readJsonOrNull } = require('../lib/read');
 
 const RENEW_MARGIN_MS = 5 * 60 * 1000;
 // A hung service fails loudly at this bound instead of stalling every gh call.
@@ -28,7 +29,7 @@ const OWNER_UNREADABLE = 'owner id unreadable from GitHub, retry';
 
 /**
  * A refusal with its reason, `code` one of `not_signed_in`, `not_installed`,
- * `no_write_access` or `service_refused`.
+ * `no_write_access`, `service_refused` or `settings`.
  */
 class IdentityError extends Error {
   /**
@@ -51,9 +52,17 @@ const nowMs = (now) => (now === undefined ? Date.now() : Number(now));
 
 /**
  * The machine's merged settings: the kit's defaults under its settings.json.
+ * A machine file that adds nothing, or an identity value the merge set aside,
+ * is refused rather than read as the kit's default service.
  * @returns {object}
+ * @throws {IdentityError} `settings`, the fault line and its fix
  */
-const readSettings = () => settingsAt(null);
+const readSettings = () => {
+  const faults = faultsAt(null);
+  const fault = faults.find(({ key }) => key === null) ?? faultsUnder(faults, 'identity')[0];
+  if (fault) throw new IdentityError('settings', `${fault.line}; fix or remove it`);
+  return settingsAt(null);
+};
 
 /**
  * The token service's URL: `identity.tokenUrl` of the merged settings, the
@@ -82,14 +91,8 @@ const cacheFile = (cacheDir, repo) => {
  * @returns {{token: string, expiresAt: string}|null}
  */
 const freshCache = (file, now) => {
-  if (!fs.existsSync(file)) return null;
-  let entry;
-  try {
-    entry = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    // A torn or hand-mangled entry is a miss: the request below overwrites it.
-    return null;
-  }
+  // A torn or hand-mangled entry is a miss: the request below overwrites it.
+  const entry = readJsonOrNull(file);
   if (!entry || typeof entry.token !== 'string' || !entry.token) return null;
   const expires = Date.parse(entry.expiresAt);
   if (Number.isNaN(expires) || expires - now <= RENEW_MARGIN_MS) return null;

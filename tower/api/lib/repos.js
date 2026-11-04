@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../../workflow/lib/run');
 
 // What a repo is called has one home, the engine's workflow/slug.js. The home
 // runner seed keeps both trees at the same relative depth, so this resolves there too.
@@ -18,7 +18,8 @@ const { slugFromRemote } = require('../../../workflow/slug');
 const { homeUserDir } = require('../../../workflow/user-dir');
 const { tempDirOf } = require('../../../hooks/mods/markers.js');
 const { settingsOptedIn } = require('../../../hooks/mods/gate.js');
-const { homeSlug, readOrNull } = require('../../../workflow/lib/settings');
+const { homeSlug } = require('../../../workflow/lib/settings');
+const { readJsonOrNull, readOrNull } = require('../../../workflow/lib/read');
 
 const WORKKIT_DIR = '.workkit';
 
@@ -31,7 +32,7 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
 /**
  * A path in git's spelling, the one every roster key is written under: on
  * Windows backslashes fold to `/`, elsewhere the path is the answer. Unlike
- * `wk_git_path` (workflow/lib/platform.sh) it leaves the MSYS `/c/` form alone.
+ * `wk_native_path` (workflow/lib/platform.sh) it leaves the MSYS `/c/` form alone.
  * `process.platform` is read at call time, the one seam a test off Windows has.
  * @param {string} p
  * @returns {string}
@@ -63,15 +64,6 @@ const tempRoot = (exec = defaultExec) => {
   return base;
 };
 
-/** Parse JSON from a file, or null when it is absent or unparseable. */
-const readJson = (file) => {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
-};
-
 /**
  * The roster file as three answers: `ok`, `missing` (nothing registered), or
  * `unreadable`. A reader treats the last two alike; a writer must not, or it
@@ -82,7 +74,7 @@ const readJson = (file) => {
 const readRoster = (workflowHome) => {
   const file = path.join(workflowHome, '.repos.json');
   if (!fs.existsSync(file)) return { status: 'missing', roster: null };
-  const roster = readJson(file);
+  const roster = readJsonOrNull(file);
   return roster ? { status: 'ok', roster } : { status: 'unreadable', roster: null };
 };
 

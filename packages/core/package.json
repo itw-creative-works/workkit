@@ -15,15 +15,17 @@
   },
   "files": [
     "bin",
-    "test"
+    "test",
+    "run.cjs"
   ],
   "bin": {
     "workkit": "bin/workkit.js"
   },
   "exports": {
-    "./test": "./test/index.js"
+    "./test": "./test/index.js",
+    "./run": "./run.cjs"
   },
   "scripts": {
-    "prepack": "node -e \"require('node:fs').copyFileSync('../../LICENSE.md','LICENSE.md')\""
+    "prepack": "node -e \"const fs=require('node:fs');fs.copyFileSync('../../LICENSE.md','LICENSE.md');fs.copyFileSync('../../workflow/lib/run.js','run.cjs')\""
   }
 }

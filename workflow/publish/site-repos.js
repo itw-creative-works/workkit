@@ -13,15 +13,7 @@ const path = require('path');
 const { discoverRepos, readRoster } = require('../../tower/api/lib/repos');
 const { userDir, homeUserDir } = require('../user-dir');
 const { homeSlug } = require('../lib/settings');
-
-/** Parse JSON from a file, or null when it is absent or unparseable. */
-const readJson = (file) => {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
-};
+const { readJsonOrNull } = require('../lib/read');
 
 /**
  * The key a machine's entry is filed under: its hostname's first label,
@@ -94,7 +86,7 @@ const composeSlugs = (opts = {}) => {
  * @throws whatever composeSlugs raises: the outfile is untouched
  */
 const writeSlugs = (outfile, opts = {}) => {
-  const previous = readJson(outfile);
+  const previous = readJsonOrNull(outfile);
   const next = composeSlugs({ ...opts, previous });
   if (previous && JSON.stringify(previous) === JSON.stringify(next)) return false;
   fs.mkdirSync(path.dirname(outfile), { recursive: true });

@@ -14,7 +14,7 @@ ensure_issue_forms() {
       continue
     fi
     if [[ ! -f "$FORMS_DIR/$form.md" ]]; then
-      wk_warn "issue forms: template missing at $FORMS_DIR/$form.md; reinstall the workflow core"
+      wk_warn "issue forms: template missing at $(wk_native_path "$FORMS_DIR/$form.md"); reinstall the workflow core"
       needs_attention=1
       continue
     fi
@@ -52,7 +52,7 @@ ensure_ci_workflow() {
     return 0
   fi
   if [[ ! -f "$src" ]]; then
-    wk_warn "checks: template missing at $src; reinstall the workflow core"
+    wk_warn "checks: template missing at $(wk_native_path "$src"); reinstall the workflow core"
     needs_attention=1
     return 0
   fi

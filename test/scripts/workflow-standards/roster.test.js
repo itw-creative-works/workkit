@@ -277,7 +277,7 @@ const cases = async () => {
   });
 
   // On Windows one repo has two spellings (git's `C:/Users/x`, Git Bash's
-  // `/c/Users/x`), so the key is git's, asked of `wk_git_path` on every write
+  // `/c/Users/x`), so the key is git's, asked of `wk_native_path` on every write
   // and lookup. An inherited OSTYPE drives the branch from here, so the rule
   // holds at every commit and not only on Windows.
   const msysWorld = () => {

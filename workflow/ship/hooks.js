@@ -5,10 +5,10 @@
 // (afterRelease), publish.js, deploy.js.
 // Usage: const { EVENTS, runHooks } = require('./hooks');
 
-const { spawnSync } = require('child_process');
-const { isPlain, parseJson } = require('../../hooks/mods/settings.js');
+const { spawnSync } = require('../lib/run');
+const { faultsUnder, isPlain, repoSettingsFile } = require('../../hooks/mods/settings.js');
 const { sayAs, endOf } = require('../lib/say');
-const { settingsAt, readOrNull } = require('../lib/settings');
+const { settingsAt, faultsAt } = require('../lib/settings');
 
 const EVENTS = ['afterRelease', 'afterPublish', 'afterDeploy'];
 const SETTINGS = '.workkit/settings.json';
@@ -24,27 +24,22 @@ class HooksError extends Error {
 }
 
 /**
- * The repo's merged settings, each file read once; a missing or empty file of
- * its own declares nothing. Each layer is checked as it is read, since the
- * loader takes text that does not parse, or a hooks block that is no object,
- * as adding nothing: `misshapen` names the first file whose hooks is no object.
+ * The repo's merged settings; a missing or empty file of its own declares
+ * nothing. The loader takes a repo file that is no JSON object, or a hooks
+ * value that is no object, as adding nothing, so its faults say them:
+ * `misshapen` names the first such hooks key and its file.
  * @returns {{settings: object, misshapen: string|null}}
- * @throws {HooksError} when the repo's own text does not parse
+ * @throws {HooksError} when the repo's own file is no JSON object
  */
 const readSettings = (root, event) => {
-  const file = `${root}/${SETTINGS}`;
-  let misshapen = null;
-  const settings = settingsAt(root, undefined, (at) => {
-    const text = readOrNull(at);
-    const name = at === file ? SETTINGS : at;
-    if (at === file && text !== null && text.trim() !== '' && parseJson(text) === null) {
-      throw new HooksError(`${name} does not parse as JSON, so no ${event} hook ran`);
-    }
-    const hooks = parseJson(text)?.hooks;
-    if (misshapen === null && hooks != null && !isPlain(hooks)) misshapen = name;
-    return text;
-  });
-  return { settings, misshapen };
+  const file = repoSettingsFile(root);
+  const faults = faultsAt(root);
+  if (faults.some((fault) => fault.key === null && fault.file === file)) {
+    throw new HooksError(`${SETTINGS} is not a JSON object, so no ${event} hook ran`);
+  }
+  const [hooks] = faultsUnder(faults, 'hooks');
+  const misshapen = hooks ? `${hooks.key} in ${hooks.file === file ? SETTINGS : hooks.file}` : null;
+  return { settings: settingsAt(root), misshapen };
 };
 
 /**
@@ -97,7 +92,7 @@ const runHooks = (root, event) => {
       }
       return 0;
     }
-    if (misshapen) throw new HooksError(`hooks in ${misshapen} is not an object, so no ${event} hook ran`);
+    if (misshapen) throw new HooksError(`${misshapen} is not an object, so no ${event} hook ran`);
     const commands = commandsOf(settings, event);
     if (commands.length === 0) {
       say(`no ${event} hooks`);

@@ -14,13 +14,13 @@ refresh_engine_link() {
   # A missing engine is a broken checkout, never a machine that is up to date:
   # the two must not read the same, or a half-installed kit reports all-clear.
   if [[ ! -f "$STANDARDS" ]]; then
-    wk_warn "engine: standards.sh is missing at $STANDARDS; the kit is incomplete, so the engine address cannot be maintained"
+    wk_warn "engine: standards.sh is missing at $(wk_native_path "$STANDARDS"); the kit is incomplete, so the engine address cannot be maintained"
     return 0
   fi
 
   out="$(bash "$STANDARDS" --engine-link "$KIT_DIR" 2>&1 >/dev/null)" || rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    wk_warn "engine: the address step could not run (exit $rc); run \`bash $STANDARDS --engine-link $KIT_DIR\` to see why"
+    wk_warn "engine: the address step could not run (exit $rc); run \`bash $(wk_native_path "$STANDARDS") --engine-link $(wk_native_path "$KIT_DIR")\` to see why"
     return 0
   fi
 
@@ -37,11 +37,11 @@ refresh_engine_link() {
     local linked
     linked="$(cd "$ENGINE_LINK" 2>/dev/null && pwd -P || true)"
     if [[ -L "$ENGINE_LINK" && "$linked" == "$SCRIPT_DIR" ]]; then
-      wk_skip "engine: $ENGINE_LINK is current"
+      wk_skip "engine: $(wk_native_path "$ENGINE_LINK") is current"
     elif [[ -L "$ENGINE_LINK" && -n "$linked" ]] && wk_clone_outranks "$KIT_DIR" "$linked"; then
-      wk_skip "engine: $ENGINE_LINK is current: it names the workkit clone at $linked, which outranks the plugin cache"
+      wk_skip "engine: $(wk_native_path "$ENGINE_LINK") is current: it names the workkit clone at $(wk_native_path "$linked"), which outranks the plugin cache"
     else
-      wk_skip "engine: $ENGINE_LINK was left as it is; this engine does not take the address"
+      wk_skip "engine: $(wk_native_path "$ENGINE_LINK") was left as it is; this engine does not take the address"
     fi
   fi
 }
@@ -67,7 +67,7 @@ bin_link_foreign() {
   current="$(readlink "$1" 2>/dev/null || true)"
   # shellcheck disable=SC2053
   [[ "$current" != $3 ]] || return 1
-  wk_warn "$2: $1 is someone else's link to $current; move it aside, then re-run \`workkit update\`"
+  wk_warn "$2: $(wk_native_path "$1") is someone else's link to $(wk_native_path "$current"); move it aside, then re-run \`workkit update\`"
 }
 
 # keep_bin_link <target> <link> <label> [ours]: a ~/.local/bin link kept at
@@ -85,16 +85,16 @@ keep_bin_link() {
   if [[ -L "$link" ]]; then
     current="$(readlink "$link" || true)"
     if [[ "$current" == "$target" ]]; then
-      wk_skip "$label: $link is current"
+      wk_skip "$label: $(wk_native_path "$link") is current"
       return 0
     elif bin_link_current "$target" "$link"; then
-      wk_skip "$label: $link is current: it names the workkit clone's $current, which outranks the plugin cache"
+      wk_skip "$label: $(wk_native_path "$link") is current: it names the workkit clone's $(wk_native_path "$current"), which outranks the plugin cache"
       return 0
     fi
     bin_link_foreign "$link" "$label" "$ours" && return 1
     verb=repointed
   elif [[ -e "$link" ]]; then
-    wk_warn "$label: $link is a real file; move it aside, then re-run \`workkit update\`"
+    wk_warn "$label: $(wk_native_path "$link") is a real file; move it aside, then re-run \`workkit update\`"
     return 1
   else
     mkdir -p "$BIN_DIR"
@@ -102,8 +102,12 @@ keep_bin_link() {
 
   # One atomic maker in lib/flows.sh for every machine-wide link, judged by
   # what the address is afterwards, never by the command's status.
+  if ! declare -f wk_link >/dev/null 2>&1; then
+    wk_warn "$label: the link maker in $(wk_native_path "$SCRIPT_DIR/lib") is missing, so $(wk_native_path "$link") was not made; the kit is incomplete"
+    return 1
+  fi
   if wk_link "$target" "$link"; then
-    wk_ok "$label: $verb $link → $target"
+    wk_ok "$label: $verb $(wk_native_path "$link") → $(wk_native_path "$target")"
   fi
 }
 
@@ -111,11 +115,11 @@ keep_bin_link() {
 # ~/.local/bin link, [ours] as keep_bin_link takes it; 1 when it needs attention.
 report_bin_link() {
   if bin_link_current "$1" "$2"; then
-    wk_ok "$3: $2 → $(readlink "$2")"
+    wk_ok "$3: $(wk_native_path "$2") → $(wk_native_path "$(readlink "$2")")"
     return 0
   fi
   bin_link_foreign "$2" "$3" "${4:-}" \
-    || wk_warn "$3: $2 is missing or points elsewhere; run \`workkit update\`"
+    || wk_warn "$3: $(wk_native_path "$2") is missing or points elsewhere; run \`workkit update\`"
   return 1
 }
 
@@ -125,7 +129,7 @@ link_command() {
   keep_bin_link "$SCRIPT_DIR/workkit.sh" "$BIN_LINK" command || return 0
   case ":${PATH:-}:" in
     *":$BIN_DIR:"*) ;;
-    *) wk_info "command: $BIN_DIR is not on your PATH; add it to your shell rc:
+    *) wk_info "command: $(wk_native_path "$BIN_DIR") is not on your PATH; add it to your shell rc:
     export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
   esac
 }
@@ -152,15 +156,15 @@ script_shell_exe() {
   out="$(wk_script_shell_exe)" || return 1
   script_shell_exe_current && return 0
   if [[ ! -f "$csc" ]]; then
-    wk_skip "npm: no C# compiler at $csc, so the Windows script shell cannot be built and script-shell stays unset"
+    wk_skip "npm: no C# compiler at $(wk_native_path "$csc"), so the Windows script shell cannot be built and script-shell stays unset"
     return 1
   fi
   local -a build=("$csc" -nologo -optimize -target:exe "-out:$(cygpath -w "$out")" "$(cygpath -w "$src")")
   mkdir -p "${out%/*}"
   if MSYS_NO_PATHCONV=1 "${build[@]}" >/dev/null 2>&1; then
-    wk_ok "npm: built $out from script-shell.cs"
+    wk_ok "npm: built $(wk_native_path "$out") from script-shell.cs"
   else
-    wk_warn "npm: could not build $out; run \`${build[*]}\` to see why"
+    wk_warn "npm: could not build $(wk_native_path "$out"); run \`${build[*]}\` to see why"
     return 1
   fi
 }
@@ -174,10 +178,10 @@ script_shell() {
   case "${OSTYPE:-}" in
     msys*|cygwin*)
       exe="$(wk_script_shell_exe)" || return 0
-      want="$(wk_git_path "$exe")" || return 0
+      want="$(wk_native_path "$exe")" || return 0
       if [[ "${1:-}" == doctor ]]; then
         if ! script_shell_exe_current; then
-          wk_warn "npm: $exe is missing or older than script-shell.cs; run \`workkit update\`"
+          wk_warn "npm: $(wk_native_path "$exe") is missing or older than script-shell.cs; run \`workkit update\`"
           return 1
         fi
       elif [[ "$QUIET" -ne 1 ]]; then
@@ -216,7 +220,7 @@ script_shell() {
       # the engine link, which a machine with no ~/.claude never gets; on
       # Windows the exe hands every script to that same wrapper.
       if [[ ! -f "$ENGINE_LINK/script-shell.sh" ]]; then
-        wk_skip "npm: the engine link $ENGINE_LINK is missing or points elsewhere, so the wrapper $ENGINE_LINK/script-shell.sh is not there to point npm at; script-shell stays unset"
+        wk_skip "npm: the engine link $(wk_native_path "$ENGINE_LINK") is missing or points elsewhere, so the wrapper $(wk_native_path "$ENGINE_LINK/script-shell.sh") is not there to point npm at; script-shell stays unset"
         return 0
       fi
       if npm config set script-shell "$want" >/dev/null 2>&1; then

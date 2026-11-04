@@ -13,6 +13,7 @@ import { shellEnvOf, windowsKit } from './markers.js';
 import { optinRepo, originless, rootOf } from './optin.js';
 import { publicMirrorGuard } from './public-mirror.js';
 import { releaseTakenGuard } from './release-taken.js';
+import { repoSettingsFile } from './settings.js';
 import { snapshotGuard } from './snapshot.js';
 import { treeGuardGuard } from './tree-guard.js';
 import { vendorGuardGuard } from './vendor-guard.js';
@@ -50,7 +51,7 @@ async function bashOpted(io, { command, cwd }) {
     command,
     cwd,
     toplevel: io.top,
-    settingsText: (root) => io.read(`${root}/.workkit/settings.json`),
+    settingsText: (root) => io.read(repoSettingsFile(root)),
     exists: io.exists,
   });
   return opted;

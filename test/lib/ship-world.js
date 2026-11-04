@@ -7,9 +7,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { assert, SPAWN_DEADLINE } = require('./harness');
-const { NODE_DIR, SYSTEM_PATH, joinPath, shellPath } = require('./platform');
+const {
+  NODE_DIR, SYSTEM_PATH, joinPath, shellPath, spawnSync,
+} = require('./platform');
 const { mkRepo } = require('./git-repo');
 
 const SHIP = path.join(__dirname, '..', '..', 'workflow', 'ship');

@@ -2,7 +2,7 @@
 // has one spelling and every caller keeps its own reaction to a miss.
 // Usage: const { repoRoot, headSha } = require('../lib/git');
 
-const { spawnSync } = require('child_process');
+const { spawnSync } = require('./run');
 
 /**
  * The git top level of `cwd`, or null outside a repo or for a folder that is

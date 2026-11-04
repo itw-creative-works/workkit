@@ -3,11 +3,12 @@
 // token service trades it for the bot's per-repo token.
 // Usage: node login.js [--open <opener>]
 
-const { spawn } = require('child_process');
+const { spawn } = require('../lib/run');
 const fs = require('fs');
 const path = require('path');
 const { CLIENT_ID } = require('./app');
 const { userDir } = require('../user-dir');
+const { readJsonOrNull } = require('../lib/read');
 
 const DEFAULT_SERVER = 'https://github.com';
 const DEFAULT_API = 'https://api.github.com';
@@ -32,13 +33,7 @@ const loginFile = () => path.join(userDir(), 'identity', 'login.json');
  * @returns {{token: string, login: string}|null}
  */
 const readLogin = (file) => {
-  if (!fs.existsSync(file)) return null;
-  let entry;
-  try {
-    entry = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+  const entry = readJsonOrNull(file);
   if (!entry || typeof entry.token !== 'string' || !entry.token) return null;
   return { token: entry.token, login: entry.login };
 };

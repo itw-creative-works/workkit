@@ -2,11 +2,13 @@
 // which call proofVerdict({ steps, cwd, repo, facts }) in hooks/mods/proof-guard.js,
 // one step per issue ({ sub, number, add, remove }) and `facts` the plain facts
 // { root, issueView, touched, packages, suiteRecord, packageRecord, treeId, pkgTree,
-// roster, rootOnly }: the steps, the issue-view stub, the facts' defaults, the
-// package lookup and the hook's exact texts.
+// roster, rootOnly, settingsFaults }: the steps, the issue-view stub, the facts' defaults, the
+// package lookup, the real-facts flip and its session, and the hook's exact texts.
 
 const { assertEq } = require('../../lib/harness');
 const { mods, textOf } = require('../../lib/mods-inputs');
+const { shellPath, spawnSync } = require('../../lib/platform');
+const { scratchWorkflowHome } = require('../../lib/workflow-home');
 const { ioIn, runResult } = require('../../../workflow/lib/io');
 
 const ROOT = '/w/repo';
@@ -79,6 +81,7 @@ const judge = (steps, { cwd = ROOT, repo = null, ...over } = {}) => mods('proof-
     pkgTree: async () => ({ id: 'treeId' in over ? over.treeId : TREE, note: null }),
     roster: null,
     rootOnly: undefined,
+    settingsFaults: [],
     ...over,
   },
 });
@@ -106,6 +109,14 @@ const flip = async (dir, env, answer = () => undefined) => {
   return proofVerdict({ steps: QA, cwd: dir, repo: null, facts });
 };
 
+/** The session flip reads <dir> in, over a scratch workflow home, and the repo's root as git names it. */
+const sessionOf = (dir, prefix) => {
+  const { env: homeEnv } = scratchWorkflowHome(prefix);
+  const env = { ...process.env, ...homeEnv, WORKKIT_NODE: shellPath(process.execPath) };
+  const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
+  return { dir, env, root };
+};
+
 const BLOCK = (n, what) => `proof-guard: BLOCKED this command. Issue #${n} carries no comment whose line starts with "Proof:", so it cannot ${what} (docs/project-state.md, "The proof": the proof is a hard gate).\nThe proof is written at the PARK by the agent that built the item, from the layers it actually ran (skills/feature/SKILL.md section 6): comment the Proof: line on the issue first, one entry per layer with the command or the reason that layer was skipped, then run this again. It is never invented at ship time and never written on the owner's behalf.`;
 const SKIPPED = (n) => `proof-guard: could not read issue #${n} (gh could not answer), so the proof gate did not run on this command.`;
 const QA_BLOCK = (count, ...lines) => `proof-guard: BLOCKED this flip to status:qa: the ${count} touched test file(s) below have no green test run recorded on this tree. In each package named, run its own tests narrowed to those files (\`npm test -- <files>\` from that folder, with the paths in the form its runner takes), then flip again.\n${lines.join('\n')}`;
@@ -126,5 +137,5 @@ const passText = (r, what) => {
 
 module.exports = {
   ROOT, TREE, OTHER_TREE, WORLD, comments, viewer, packagesOf, pkgRecord, suiteRecord, step, judge, denyOf, textOf,
-  QA, VIEW, flip, BLOCK, SKIPPED, QA_BLOCK, WHOLE_TREE, DIFF_BLOCK, HASH_BLOCK, ROOT_ONLY, assertBlocks, passText,
+  QA, VIEW, flip, sessionOf, BLOCK, SKIPPED, QA_BLOCK, WHOLE_TREE, DIFF_BLOCK, HASH_BLOCK, ROOT_ONLY, assertBlocks, passText,
 };

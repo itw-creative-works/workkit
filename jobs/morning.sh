@@ -30,6 +30,7 @@ if ! declare -f wk_ok >/dev/null 2>&1; then
   wk_error() { printf '%s\n' "$1" >&2; }
   wk_spin()  { shift; "$@"; }
 fi
+declare -f wk_native_path >/dev/null 2>&1 || wk_native_path() { printf '%s' "$1"; }
 
 # ── Where this run woke up ────────────────────────────────────────────────────
 
@@ -138,7 +139,7 @@ else
   notify() {
     local app
     if ! app="$(notify_app_path)"; then
-      note_skip "notify: Notifly is in neither $HOME/Applications nor /Applications; the notification was skipped"
+      note_skip "notify: Notifly is in neither $(wk_native_path "$HOME")/Applications nor /Applications; the notification was skipped"
       return 0
     fi
     unset ELECTRON_RUN_AS_NODE
@@ -212,7 +213,7 @@ reconcile_runner() {
     return 0
   fi
   if [[ ! -f "$ENGINE/lib.sh" || ! -f "$ENGINE/home.sh" ]]; then
-    note_warn "runner: the engine libraries are missing at $ENGINE; the cloud brief's runner was not reconciled; the kit is incomplete"
+    note_warn "runner: the engine libraries are missing at $(wk_native_path "$ENGINE"); the cloud brief's runner was not reconciled; the kit is incomplete"
     return 0
   fi
 
@@ -231,8 +232,8 @@ reconcile_runner() {
     if ! wk_home_ready; then
       case "$(wk_home_state)" in
         (unset)  wk_skip "runner: no home repo; \`workkit setup\` creates one; nothing to reconcile" ;;
-        (absent) wk_skip "runner: nothing is cloned at $WK_HOME_DIR yet; the cloud brief runner was not reconciled; \`workkit setup\` clones it" ;;
-        (other)  wk_warn "runner: $WK_HOME_DIR is not the home repo's clone; nothing is reconciled in somebody else's folder" ;;
+        (absent) wk_skip "runner: nothing is cloned at $(wk_native_path "$WK_HOME_DIR") yet; the cloud brief runner was not reconciled; \`workkit setup\` clones it" ;;
+        (other)  wk_warn "runner: $(wk_native_path "$WK_HOME_DIR") is not the home repo's clone; nothing is reconciled in somebody else's folder" ;;
       esac
       exit 0
     fi
@@ -304,7 +305,7 @@ cloud_machine() {
   # predicates, and without them every directory reads as no repo at all. A red
   # run is how a runner missing it is heard.
   if ! declare -f wk_is_repo_root >/dev/null 2>&1; then
-    wk_error "the engine seeded beside this job is missing at $ENGINE, so the roster this brief sweeps cannot be built"
+    wk_error "the engine seeded beside this job is missing at $(wk_native_path "$ENGINE"), so the roster this brief sweeps cannot be built"
     exit 1
   fi
 
@@ -312,12 +313,12 @@ cloud_machine() {
   # existing settings file wins; with neither there is nothing to sweep or post.
   if [[ ! -f "$settings" ]]; then
     if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
-      wk_error "GITHUB_REPOSITORY is unset and $settings does not exist, so there is no home repo to sweep or publish to"
+      wk_error "GITHUB_REPOSITORY is unset and $(wk_native_path "$settings") does not exist, so there is no home repo to sweep or publish to"
       exit 1
     fi
     mkdir -p "$WK_DIR"
     printf '{\n  "version": 1,\n  "site": {\n    "repo": "%s"\n  }\n}\n' "$GITHUB_REPOSITORY" >"$settings"
-    note "settings: wrote $settings for $GITHUB_REPOSITORY"
+    note "settings: wrote $(wk_native_path "$settings") for $GITHUB_REPOSITORY"
   fi
 
   # jq is asked first, on its own. It reads the home slug on the next line and
@@ -330,7 +331,7 @@ cloud_machine() {
 
   home_slug="$(wk_setting '' site.repo || true)"
   if [[ -z "$home_slug" ]]; then
-    wk_error "$settings names no home repo (.site.repo), so there is no board to sweep or publish to"
+    wk_error "$(wk_native_path "$settings") names no home repo (.site.repo), so there is no board to sweep or publish to"
     exit 1
   fi
 
@@ -374,7 +375,7 @@ cloud_machine() {
   printf '%s' "$entries" | wk_jq -R -s '
     split("\n") | map(select(length > 0))
     | { version: 1, repos: (map({ (.): "enabled" }) | add // {}) }' >"$roster"
-  note "roster: $(printf '%s' "$entries" | grep -c . || true) repos in $roster"
+  note "roster: $(printf '%s' "$entries" | grep -c . || true) repos in $(wk_native_path "$roster")"
 }
 
 # The brief on a runner: compose, send, post. And every failure is a red run,
@@ -561,7 +562,7 @@ record_brief_status() {
   # The folder and the board reads are the engine's (lib.sh), which a partial
   # checkout lacks.
   if ! declare -f wk_user_dir >/dev/null 2>&1; then
-    note_skip "marker: the engine library is missing beside $SCRIPT_DIR; the brief marker was left as it was"
+    note_skip "marker: the engine library is missing beside $(wk_native_path "$SCRIPT_DIR"); the brief marker was left as it was"
     return 0
   fi
 
@@ -635,14 +636,14 @@ record_brief_status() {
   if ! printf '{\n  "version": 1,\n  "lastBrief": "%s",\n  "checkedAt": "%s"\n}\n' \
     "$last" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >"$marker.tmp" 2>/dev/null; then
     rm -f "$marker.tmp" 2>/dev/null || true
-    note_warn "marker: the marker could not be written in $wk_dir; $marker was left as it was (the board says the newest brief is $last)"
+    note_warn "marker: the marker could not be written in $(wk_native_path "$wk_dir"); $(wk_native_path "$marker") was left as it was (the board says the newest brief is $last)"
     return 0
   fi
   if mv "$marker.tmp" "$marker" 2>/dev/null; then
-    note "marker: the newest brief on $slug is $last; recorded in $marker"
+    note "marker: the newest brief on $slug is $last; recorded in $(wk_native_path "$marker")"
   else
     rm -f "$marker.tmp" 2>/dev/null || true
-    note_warn "marker: $marker could not be written; the board says the newest brief is $last"
+    note_warn "marker: $(wk_native_path "$marker") could not be written; the board says the newest brief is $last"
   fi
   return 0
 }
@@ -665,7 +666,7 @@ run_morning_d() {
     return 0
   fi
   if ! declare -f wk_user_dir >/dev/null 2>&1; then
-    note_skip "morning.d: the engine library is missing beside $SCRIPT_DIR; skipped"
+    note_skip "morning.d: the engine library is missing beside $(wk_native_path "$SCRIPT_DIR"); skipped"
     return 0
   fi
   dir="$(wk_user_dir)/morning.d"

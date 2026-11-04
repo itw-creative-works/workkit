@@ -6,7 +6,7 @@
 // Usage:
 //   briefHistory({ workflowHome, exec });   // ascending by date, oldest first
 
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('../../../workflow/lib/run');
 
 // The sweep's round trip, and with it the reading of a refusal: one `gh api
 // graphql` and one answer to "why did that come back empty" for the whole tower.

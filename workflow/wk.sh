@@ -71,7 +71,7 @@ append_note() {
     if [[ -f "$TEMPLATES_DIR/$CAPTURE_NAME" ]]; then
       cp "$TEMPLATES_DIR/$CAPTURE_NAME" "$file"
     else
-      wk_error "template missing at $TEMPLATES_DIR/$CAPTURE_NAME; reinstall the workflow core"
+      wk_error "template missing at $(wk_native_path "$TEMPLATES_DIR")/$CAPTURE_NAME; reinstall the workflow core"
       return 1
     fi
   fi
@@ -141,7 +141,7 @@ cmd_note() {
   if [[ -n "$root" ]]; then
     file="$root/$WORKKIT_DIR/$CAPTURE_NAME"
     append_note "$file" "$note"
-    wk_ok "noted → $file"
+    wk_ok "noted → $(wk_native_path "$file")"
     return 0
   fi
 
@@ -153,7 +153,7 @@ cmd_note() {
 
   if [[ "$(wk_home_state)" == 'other' ]]; then
     # The engine never adopts what it finds at the clone's path.
-    wk_error "$WK_HOME_DIR is not the home repo's clone; move it aside, then \`workkit setup\`; captures outside a project become issues on the home repo"
+    wk_error "$(wk_native_path "$WK_HOME_DIR") is not the home repo's clone; move it aside, then \`workkit setup\`; captures outside a project become issues on the home repo"
     exit 1
   fi
 

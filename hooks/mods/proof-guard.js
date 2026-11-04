@@ -14,7 +14,7 @@ import { userDirOf } from './log.js';
 import { pkgMarkerPath, suiteMarkerPath } from './markers.js';
 import { ghRepoIsHere, repoSlug, rosterOf, rosterPath } from './optin.js';
 import { viewHasProof } from './proof.js';
-import { parseJson, rootSettings } from './settings.js';
+import { faultsUnder, parseJson, repoSettingsFile, rootFaults, rootSettings } from './settings.js';
 import { LONG_RUN_MS, factOf, hasTestScript, pkgProved, suiteProved, testPackageDir, treeHash } from './suite.js';
 import { isTestName, isTestPath } from './test-reminder.js';
 
@@ -39,6 +39,15 @@ function rootOnlyOf(value) {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) return null;
   return value.map((v) => v.replace(/\/+$/, ''));
+}
+
+// The settings faults the qa flip says, each a sentence: every one in the
+// repo's own file, and every one under the proof key, whichever file it is in.
+function proofFaults(found, root) {
+  const faults = found ?? [];
+  const own = repoSettingsFile(root);
+  const underProof = new Set(faultsUnder(faults, 'proof'));
+  return faults.filter((fault) => fault.file === own || underProof.has(fault)).map(({ line }) => `${line}.`);
 }
 
 // The record check at the flip to status:qa, in the repo whose root is
@@ -78,6 +87,8 @@ async function checkQa(root, facts) {
   if (unprovable.length > 0) notes = ` Cannot be proved by npm test, since the repo root has no test script, so not required: ${unprovable.join(' ')}.${notes}`;
   const rootOnly = rootOnlyOf(await factOf(facts.rootOnly, root));
   if (rootOnly === null) notes += ` ${SHAPE}`;
+  const faults = proofFaults(await factOf(facts.settingsFaults, root), root);
+  for (const line of faults) notes += ` ${line}`;
   const record = await factOf(facts.packageRecord, root);
   let rooted = '';
   const proved = [];
@@ -103,7 +114,7 @@ async function checkQa(root, facts) {
   }
   if (missing.length > 0) {
     const head = `proof-guard: BLOCKED this flip to status:qa: the ${missingCount} touched test file(s) below have no green test run recorded on this tree. In each package named, run its own tests narrowed to those files (\`npm test -- <files>\` from that folder, with the paths in the form its runner takes), then flip again.`;
-    return { deny: [[head, ...keyed].join(' '), ...missing, ...(rootOnly === null ? [SHAPE] : [])].join('\n') };
+    return { deny: [[head, ...keyed].join(' '), ...missing, ...(rootOnly === null ? [SHAPE] : []), ...faults].join('\n') };
   }
   if (rooted) notes = ` The root npm test before the commit is the proof of the package(s) the settings declare:${rooted}${notes}`;
   if (proved.length === 0 && !rooted) return { context: `proof-guard: no touched test file can be proved by npm test here, so the qa flip needs no test record.${notes}` };
@@ -150,7 +161,8 @@ async function qaOn(repo, cwd, facts) {
  *   async gh's `--json comments` view or null; `touched` (lazy) the working paths, null when unread; `packages(path,
  *   root)` async the owning package, `.` the root, null with no root test script; `suiteRecord`,
  *   `packageRecord`, `treeId` (lazy) text or null; `pkgTree(root, pkg)` async a package's own `{ id, note }` (treeHash); `roster` the parsed .repos.json; `rootOnly`
- *   (lazy) proof.rootOnly from the merged settings, undefined none; `slugOf`, `toplevel` async; `baseless`;
+ *   (lazy) proof.rootOnly from the merged settings, undefined none; `settingsFaults` (lazy) the settingsFaults faults,
+ *   `[]` none; `slugOf`, `toplevel` async; `baseless`;
  *   `unread` (lazy) the working-diff read that failed when `touched` is null
  * @returns {Promise<{deny: string}|{context: string}|null>}
  */
@@ -233,5 +245,6 @@ export async function proofFacts(facts) {
     suiteRecord: async (root) => read(await suiteMarkerPath(root, userDirOf(env))),
     packageRecord: async (root) => read(await pkgMarkerPath(root, userDirOf(env))),
     rootOnly: async (root) => rootOnlyDeclared(await rootSettings(root, env, facts)),
+    settingsFaults: (root) => rootFaults(root, env, facts),
   };
 }

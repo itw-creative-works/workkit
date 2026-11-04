@@ -247,7 +247,7 @@ if [[ "${WORKKIT_IDENTITY_OFF:-}" != 1 && "${1:-}" != auth ]]; then
   unset WORKKIT_GATE_JUDGES
   if [[ -n "$GATE_ROOT" ]] && wk_session_judges "$GATE_ROOT"; then export WORKKIT_GATE_JUDGES=1; fi
   if GATE_NODE="$(wk_node)"; then
-    LINE="$(WORKKIT_REAL_GH="$(wk_git_path "$GH")" WORKKIT_GATE_REPO="$REPO" "$GATE_NODE" "$KIT_DIR/workflow/identity/gate.js" "$PWD" "$@")" || exit $?
+    LINE="$(WORKKIT_REAL_GH="$(wk_native_path "$GH")" WORKKIT_GATE_REPO="$REPO" "$GATE_NODE" "$KIT_DIR/workflow/identity/gate.js" "$PWD" "$@")" || exit $?
   else
     printf 'gh: the workkit gate did not run (no node %s or newer found)\n' "$WK_NODE_FLOOR" >&2
   fi
@@ -260,7 +260,7 @@ fi
 if wk_is_cloud; then
   case "${1:-}" in
     issue|label|auth)
-      WORKKIT_REAL_GH="$(wk_git_path "$GH")" GH_REPO="$REPO" run_gh node "$KIT_DIR/workflow/identity/rest.js" "$@"
+      WORKKIT_REAL_GH="$(wk_native_path "$GH")" GH_REPO="$REPO" run_gh node "$KIT_DIR/workflow/identity/rest.js" "$@"
       ;;
   esac
   run_gh "$GH" "$@"

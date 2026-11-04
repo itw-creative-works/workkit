@@ -18,8 +18,9 @@ const {
 } = require('../changelog/changelog-links');
 const { isSemver } = require('./semver');
 const {
-  expandWorkspaces, PlanError, spawnNpm, npmEnd,
+  expandWorkspaces, PlanError, npmEnd,
 } = require('./plan');
+const { spawnSync } = require('../lib/run');
 
 const USAGE = 'usage: workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
 // The files a repo keeps its version in, by path from the root: every one is in
@@ -108,11 +109,7 @@ const lockstepMembers = (root, old) => {
     const name = path.relative(root, file).split(path.sep).join('/');
     const text = fs.readFileSync(file, 'utf8');
     if (versionOf(text, name) !== old) continue;
-    const folder = path.posix.dirname(name);
-    if (/\s/.test(folder)) {
-      throw new ReleaseError(`release: workspace folder '${folder}' has whitespace, which npm's Windows shell start would split; nothing was written.`);
-    }
-    members.push({ name, dir: folder });
+    members.push({ name, dir: path.posix.dirname(name) });
   }
   return members;
 };
@@ -138,7 +135,7 @@ const npmVersion = (root, version, { withRoot, members }) => {
     const file = path.join(root, name);
     return { file, bytes: fs.existsSync(file) ? fs.readFileSync(file) : null };
   });
-  const res = spawnNpm(args, {
+  const res = spawnSync('npm', args, {
     cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (res.status === 0) return;

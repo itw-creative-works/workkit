@@ -41,7 +41,7 @@ site_teardown() {
   local slug out rc=0
   slug="$(wk_home_slug)"
   if ! wk_spin "deleting $WK_HOME_PAGES_BRANCH on origin" git -C "$WK_HOME_DIR" push -q origin --delete "$WK_HOME_PAGES_BRANCH" 2>/dev/null; then
-    wk_warn "publish: could not delete $WK_HOME_PAGES_BRANCH on $slug; the site it serves is still up; \`git -C $WK_HOME_DIR push origin --delete $WK_HOME_PAGES_BRANCH\` reports why"
+    wk_warn "publish: could not delete $WK_HOME_PAGES_BRANCH on $slug; the site it serves is still up; \`git -C $(wk_native_path "$WK_HOME_DIR") push origin --delete $WK_HOME_PAGES_BRANCH\` reports why"
     return 0
   fi
   wk_ok "publish: the site is taken down; $slug's $WK_HOME_PAGES_BRANCH branch is deleted"
@@ -75,7 +75,7 @@ cleanup_worktree() {
 # off, no CNAME). Asked first, since the same file names the home repo.
 if [[ -f "$WK_HOME_SETTINGS" ]] && command -v jq >/dev/null 2>&1 \
   && ! wk_jq . "$WK_HOME_SETTINGS" >/dev/null 2>&1; then
-  wk_warn "publish: $WK_HOME_SETTINGS does not parse as JSON; the site options (\`site.publish\`, \`site.url\`) cannot be read, so nothing was published; fix the file and run it again"
+  wk_warn "publish: $(wk_native_path "$WK_HOME_SETTINGS") does not parse as JSON; the site options (\`site.publish\`, \`site.url\`) cannot be read, so nothing was published; fix the file and run it again"
   exit 0
 fi
 
@@ -93,8 +93,8 @@ PUBLISH_SITE="$(wk_setting '' site.publish)"
 if ! wk_home_ready; then
   case "$(wk_home_state)" in
     unset)  wk_skip "publish: no home repo; \`workkit setup\` creates one, and the site publishes from it" ;;
-    absent) wk_skip "publish: nothing is cloned at $WK_HOME_DIR yet; \`workkit setup\` clones and seeds the tower project" ;;
-    other)  wk_warn "publish: $WK_HOME_DIR is not the home repo's clone; nothing is published out of somebody else's folder" ;;
+    absent) wk_skip "publish: nothing is cloned at $(wk_native_path "$WK_HOME_DIR") yet; \`workkit setup\` clones and seeds the tower project" ;;
+    other)  wk_warn "publish: $(wk_native_path "$WK_HOME_DIR") is not the home repo's clone; nothing is published out of somebody else's folder" ;;
   esac
   exit 0
 fi
@@ -126,7 +126,7 @@ publish_sync() {
   # refresh is the broken site the mint's abort prevents. rc=1 (a named skip)
   # and rc=2 (already current) leave the clone whole, so they continue.
   if [[ "$SYNC_RC" -eq 3 ]]; then
-    wk_warn "publish: the tower project in $WK_HOME_DIR is part-refreshed; nothing was committed, built or published; fix the write failure above and publish again"
+    wk_warn "publish: the tower project in $(wk_native_path "$WK_HOME_DIR") is part-refreshed; nothing was committed, built or published; fix the write failure above and publish again"
     exit 1
   fi
 }
@@ -168,7 +168,7 @@ publish_source_side() {
 # an unreachable remote is never torn down on a guess.
 publish_switch() {
   if [[ "$PUBLISH_SITE" != 'true' ]]; then
-    wk_skip "publish: \`site.publish\` is off in $WK_HOME_SETTINGS; nothing is built or pushed; set it to true to publish the site (what Pages serves is public, even from a private repo)"
+    wk_skip "publish: \`site.publish\` is off in $(wk_native_path "$WK_HOME_SETTINGS"); nothing is built or pushed; set it to true to publish the site (what Pages serves is public, even from a private repo)"
     case "$(pages_remote_state)" in
       present)     site_teardown ;;
       unreachable) wk_warn "publish: the home remote could not be reached, so whether it still serves a site is unknown; nothing was taken down; run it again when the network is back" ;;
@@ -181,7 +181,7 @@ publish_switch() {
     exit "$SOURCE_RC"
   fi
   if [[ ! -x "$OMEGA_BIN" ]]; then
-    wk_skip "publish: there is no omega binary at $WK_HOME_DIR/node_modules/.bin/omega, so nothing is built here; run \`(cd -P $WK_HOME_DIR && npm install)\` and read its output"
+    wk_skip "publish: there is no omega binary at $(wk_native_path "$WK_HOME_DIR")/node_modules/.bin/omega, so nothing is built here; run \`(cd -P $(wk_native_path "$WK_HOME_DIR") && npm install)\` and read its output"
     exit "$SOURCE_RC"
   fi
 }
@@ -203,10 +203,10 @@ publish_dependencies() {
     done
   fi
   if [[ "$INSTALL_NEEDED" -eq 1 ]]; then
-    wk_info "publish: installing the tower project's dependencies in $WK_HOME_DIR"
+    wk_info "publish: installing the tower project's dependencies in $(wk_native_path "$WK_HOME_DIR")"
     INSTALL_LOG="$(mktemp)"
     if ! wk_spin "installing the tower project's dependencies" bash "$BUILD_SH" install "$WK_HOME_DIR" >"$INSTALL_LOG" 2>&1; then
-      wk_warn "publish: the tower project's dependencies could not be installed in $WK_HOME_DIR; nothing was built or published, because a build over a half-installed tree is a broken site; \`npm install\` inside $WK_HOME_DIR reports it in full, and the last lines follow"
+      wk_warn "publish: the tower project's dependencies could not be installed in $(wk_native_path "$WK_HOME_DIR"); nothing was built or published, because a build over a half-installed tree is a broken site; \`npm install\` inside $(wk_native_path "$WK_HOME_DIR") reports it in full, and the last lines follow"
       tail -20 "$INSTALL_LOG" >&2
       rm -f "$INSTALL_LOG"
       exit 1
@@ -221,11 +221,11 @@ publish_dependencies() {
 publish_mint() {
   MINT_FAILED_MARK="$WK_HOME_DIR/.omega/.mint-failed"
   if [[ "$SYNC_CHANGED" -eq 1 || ! -d "$WK_HOME_DIR/.omega/assets/logo" || -f "$MINT_FAILED_MARK" ]]; then
-    wk_info "publish: minting the brand assets in $WK_HOME_DIR"
+    wk_info "publish: minting the brand assets in $(wk_native_path "$WK_HOME_DIR")"
     MINT_LOG="$(mktemp)"
     if ! wk_spin 'minting the brand assets' bash "$BUILD_SH" mint "$WK_HOME_DIR" >"$MINT_LOG" 2>&1; then
       mkdir -p "$WK_HOME_DIR/.omega" && : >"$MINT_FAILED_MARK"
-      wk_warn "publish: the brand assets could not be minted in $WK_HOME_DIR; nothing was built or published, because the sidebar and the social tags reference the minted paths unconditionally and a stale site beats one with a broken logo; the failure is remembered and every publish aborts here until a mint succeeds; the last lines follow"
+      wk_warn "publish: the brand assets could not be minted in $(wk_native_path "$WK_HOME_DIR"); nothing was built or published, because the sidebar and the social tags reference the minted paths unconditionally and a stale site beats one with a broken logo; the failure is remembered and every publish aborts here until a mint succeeds; the last lines follow"
       tail -20 "$MINT_LOG" >&2
       rm -f "$MINT_LOG"
       exit 1
@@ -246,7 +246,7 @@ publish_build() {
     PATH_PREFIX="/${HOME_SLUG##*/}/"
   fi
 
-  wk_info "publish: building the dashboard from $WK_HOME_TARGET"
+  wk_info "publish: building the dashboard from $(wk_native_path "$WK_HOME_TARGET")"
   wk_info "publish: the site serves at $PATH_PREFIX; the build is told so"
   BUILD_LOG="$(mktemp)"
   trap 'rm -f "$BUILD_LOG"' EXIT
@@ -277,13 +277,13 @@ publish_branch() {
     wk_spin "fetching $WK_HOME_PAGES_BRANCH" git -C "$WK_HOME_DIR" fetch -q origin "$WK_HOME_PAGES_BRANCH" 2>/dev/null || true
     git -C "$WK_HOME_DIR" worktree add -q -B "$WK_HOME_PAGES_BRANCH" "$WORKTREE" \
       "origin/$WK_HOME_PAGES_BRANCH" 2>/dev/null \
-      || { wk_warn "publish: could not check $WK_HOME_PAGES_BRANCH out beside $WK_HOME_DIR"; exit 1; }
+      || { wk_warn "publish: could not check $WK_HOME_PAGES_BRANCH out beside $(wk_native_path "$WK_HOME_DIR")"; exit 1; }
   else
     # An orphan keeps main's history out of a generated branch. A stale local
     # branch would make the orphan checkout refuse, so it is dropped first.
     git -C "$WK_HOME_DIR" branch -qD "$WK_HOME_PAGES_BRANCH" 2>/dev/null || true
     git -C "$WK_HOME_DIR" worktree add -q --detach "$WORKTREE" 2>/dev/null \
-      || { wk_warn "publish: could not make a worktree beside $WK_HOME_DIR"; exit 1; }
+      || { wk_warn "publish: could not make a worktree beside $(wk_native_path "$WK_HOME_DIR")"; exit 1; }
     git -C "$WORKTREE" checkout -q --orphan "$WK_HOME_PAGES_BRANCH" 2>/dev/null \
       || { wk_warn "publish: could not start the $WK_HOME_PAGES_BRANCH branch"; exit 1; }
     git -C "$WORKTREE" rm -rq --cached . >/dev/null 2>&1 || true
@@ -338,10 +338,10 @@ publish_push() {
 
     if [[ "$BRANCH_EXISTED" -eq 1 ]]; then
       wk_spin "publishing $WK_HOME_PAGES_BRANCH" git -C "$WORKTREE" push -q --force-with-lease origin "$WK_HOME_PAGES_BRANCH" 2>/dev/null \
-        || { wk_warn "publish: could not push $WK_HOME_PAGES_BRANCH; someone else published since this run started; \`git -C $WK_HOME_DIR fetch\` and run it again"; exit 1; }
+        || { wk_warn "publish: could not push $WK_HOME_PAGES_BRANCH; someone else published since this run started; \`git -C $(wk_native_path "$WK_HOME_DIR") fetch\` and run it again"; exit 1; }
     else
       wk_spin "publishing $WK_HOME_PAGES_BRANCH" git -C "$WORKTREE" push -q -u origin "$WK_HOME_PAGES_BRANCH" 2>/dev/null \
-        || { wk_warn "publish: could not push $WK_HOME_PAGES_BRANCH to origin; \`git -C $WK_HOME_DIR push origin $WK_HOME_PAGES_BRANCH\` reports why"; exit 1; }
+        || { wk_warn "publish: could not push $WK_HOME_PAGES_BRANCH to origin; \`git -C $(wk_native_path "$WK_HOME_DIR") push origin $WK_HOME_PAGES_BRANCH\` reports why"; exit 1; }
     fi
     PUBLISHED=1
   fi
