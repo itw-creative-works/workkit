@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- (no issue) - The ship skill cuts every release through `workkit ship cut`, never a hand-typed `gh release create`. An earlier version left without a release stays unreleased, said in one line.
+- [#508](../../issues/508) - A test keeps `workkit.sh`'s five platform fallbacks answering as `lib/platform.sh` does: each runs on its own beside its original, and any change in output or exit code fails the suite.
+
 ## [0.90.0] - 2026-11-03
 
 ### Added
