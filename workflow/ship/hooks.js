@@ -9,6 +9,7 @@ const { spawnSync } = require('../lib/run');
 const { faultsUnder, isPlain, repoSettingsFile } = require('../../hooks/mods/settings.js');
 const { sayAs, endOf } = require('../lib/say');
 const { settingsAt, faultsAt } = require('../lib/settings');
+const { isCloud } = require('../lib/cloud');
 
 const EVENTS = ['afterRelease', 'afterPublish', 'afterDeploy'];
 const SETTINGS = '.workkit/settings.json';
@@ -43,10 +44,10 @@ const readSettings = (root, event) => {
 };
 
 /**
- * The commands an enabled repo declares for an event, validated whole before any runs.
+ * The entries an enabled repo declares for an event, validated whole before any runs.
  * @param {object} settings - the merged settings, `enabled` true
  * @param {string} event - the event name
- * @returns {string[]} the commands in order; [] when none is declared, the default
+ * @returns {{command: string, local: boolean}[]} the entries in order; [] when none is declared, the default
  * @throws {HooksError} when the declaration has the wrong shape
  */
 const commandsOf = (settings, event) => {
@@ -56,14 +57,26 @@ const commandsOf = (settings, event) => {
     if (!isPlain(entry) || typeof entry.command !== 'string' || entry.command.trim() === '') {
       throw new HooksError(`hooks.${event}[${i}] in the settings has no non-empty string command, so no ${event} hook ran`);
     }
-    return entry.command;
+    if ('local' in entry && entry.local !== true && entry.local !== false) {
+      throw new HooksError(`hooks.${event}[${i}] in the settings has a local that is not true or false, so no ${event} hook ran`);
+    }
+    return { command: entry.command, local: entry.local === true };
   });
 };
 
-/** Run the commands in order from the root; the first failure stops them. */
-const runCommands = (root, event, commands) => {
-  for (const [i, command] of commands.entries()) {
-    say(`${event} [${i + 1}/${commands.length}] ${command}`);
+/**
+ * Run the entries in order from the root; the first failure stops them.
+ * A cloud session skips a `local` entry with its line and runs the rest.
+ */
+const runCommands = (root, event, entries) => {
+  const cloud = isCloud();
+  for (const [i, { command, local }] of entries.entries()) {
+    const step = `${event} [${i + 1}/${entries.length}] ${command}`;
+    if (local && cloud) {
+      say(`${step} skipped: local only, this is a cloud session`);
+      continue;
+    }
+    say(step);
     const res = spawnSync('bash', ['-c', command], { cwd: root, stdio: 'inherit' });
     if (res.status !== 0) {
       say(`${event} ${command} ${endOf(res)}`);
@@ -93,12 +106,12 @@ const runHooks = (root, event) => {
       return 0;
     }
     if (misshapen) throw new HooksError(`${misshapen} is not an object, so no ${event} hook ran`);
-    const commands = commandsOf(settings, event);
-    if (commands.length === 0) {
+    const entries = commandsOf(settings, event);
+    if (entries.length === 0) {
       say(`no ${event} hooks`);
       return 0;
     }
-    return runCommands(root, event, commands);
+    return runCommands(root, event, entries);
   } catch (err) {
     if (!(err instanceof HooksError)) throw err;
     say(err.message);

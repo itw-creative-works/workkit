@@ -13,8 +13,8 @@ ensure_branch_protection() {
   command -v gh >/dev/null 2>&1 || return 0
   wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1 || return 0
   git remote get-url origin >/dev/null 2>&1 || return 0
-  repo="$(wk_spin 'reading the repo' gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || return 0
-  branch="$(wk_spin 'reading the default branch' gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)" || return 0
+  repo="$(wk_spin 'reading the repo' gh api 'repos/{owner}/{repo}' -q .full_name 2>/dev/null)" || return 0
+  branch="$(wk_spin 'reading the default branch' gh api "repos/$repo" -q .default_branch 2>/dev/null)" || return 0
   [[ -n "$repo" && -n "$branch" ]] || return 0
 
   # Only an explicit "not protected" answer may lead to a PUT. Any other

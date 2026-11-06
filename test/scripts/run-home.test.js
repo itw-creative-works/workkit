@@ -76,7 +76,6 @@ const STILL_IMPORTING = [
   'test/scripts/home/wizard-setup.test.js',
   'test/scripts/identity/gh-shim.test.js',
   'test/scripts/identity/login.test.js',
-  'test/scripts/identity/rest.test.js',
   'test/scripts/identity/token.test.js',
   'test/scripts/lib-log.test.js',
   'test/scripts/mint-pty.test.js',

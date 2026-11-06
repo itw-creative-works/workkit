@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # workflow/identity/gh: the gh shim, linked to ~/.local/bin/gh ahead of the real
 # gh. Every call but `gh auth` passes gate.js first, which may bounce it. A cloud
-# session's issue, label and auth verbs go through rest.js; elsewhere in a Claude
-# session a bookkeeping verb on a rostered repo, or on the public repo a rostered
-# one pairs with, runs as the workkit App (GH_TOKEN, one process) or not at all;
-# the rest run the real gh as the owner. In a Claude session a write that
+# session's issue, label, auth, pr and release verbs go through rest.js; elsewhere
+# in a Claude session a bookkeeping verb on a rostered repo, or on the public repo
+# a rostered one pairs with, runs as the workkit App (GH_TOKEN, one process) or not
+# at all; the rest run the real gh as the owner. In a Claude session a write that
 # succeeded leaves the gate's line in the cwd repo's gh journal.
 
 set -uo pipefail
@@ -254,15 +254,17 @@ if [[ "${WORKKIT_IDENTITY_OFF:-}" != 1 && "${1:-}" != auth ]]; then
 fi
 
 # A cloud session's proxy serves REST alone and signs every call as the account,
-# so no bot token is fetched there: rest.js judges every issue, label and auth
-# call, with the real gh and the repo handed over in the environment, and every
-# other verb runs the real gh untouched.
+# so no bot token is fetched there: rest.js judges every issue, label, auth, pr
+# and release call, with the real gh and the repo handed over in the environment.
+# Every other verb runs the real gh given that repo, so `gh api repos/{owner}/{repo}`
+# and `gh run list` name the clone's repo whatever host its proxy origin names.
 if wk_is_cloud; then
   case "${1:-}" in
-    issue|label|auth)
+    issue|label|auth|pr|release)
       WORKKIT_REAL_GH="$(wk_native_path "$GH")" GH_REPO="$REPO" run_gh node "$KIT_DIR/workflow/identity/rest.js" "$@"
       ;;
   esac
+  if [[ -n "$REPO" ]]; then export GH_REPO="$REPO"; fi
   run_gh "$GH" "$@"
 fi
 

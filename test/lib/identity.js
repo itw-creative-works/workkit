@@ -1,17 +1,22 @@
 // The shared fixtures of the identity suites: the user's sign-in as the login
 // store holds and writes it, the token service's address in the settings, a local
 // HTTP stand-in for GitHub or the token service, a scratch kit and its scrubbed env,
-// doctor's attention count, the response and failure helpers, a keyboard run, and
-// the gh journal the shim appends to, as text and split into its fields.
+// doctor's attention count, the response and failure helpers, a keyboard run, the
+// gh journal the shim appends to, and the REST suites' cloud-shim world and reads.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { isDeepStrictEqual } = require('util');
 const {
-  assert, mkTmp, until, start, SPAWN_DEADLINE,
+  assert, assertEq, mkTmp, seeded, until, start, SPAWN_DEADLINE,
 } = require('./harness');
-const { IS_WINDOWS, SYSTEM_PATH, which, homeEnv } = require('./platform');
+const {
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, which, homeEnv, shellPath, systemPathWith, spawnBash,
+} = require('./platform');
 const { suiteMarkerPath } = require('./suite-record');
+const { makeGhStub, ghCalls, ghRequests } = require('./gh-stub');
+const { mkOriginRepo } = require('./git-repo');
 
 /** The identity line a cloud session prints, in doctor and in setup --cloud. */
 const IDENTITY_NA = 'identity: not applicable in a cloud session; the session\'s GitHub proxy signs every call as the account';
@@ -179,6 +184,105 @@ const scratchKit = () => {
   return kit;
 };
 
+/** Run git in `dir` as a scratch identity under `home`; a failure throws with its stderr. */
+const git = (dir, home, ...args) => {
+  const res = spawnSync('git', args, { cwd: dir, env: homeEnv(home, { PATH: process.env.PATH }), encoding: 'utf8' });
+  if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
+};
+
+/** Write `files` (root-relative path to content) into the world's repo and commit them. */
+const commitFiles = (world, files) => {
+  for (const [rel, body] of Object.entries(files)) fs.writeFileSync(path.join(world.repo, rel), body);
+  for (const args of [['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test'], ['add', '-A'], ['commit', '-q', '-m', 'init']]) {
+    git(world.repo, world.home, ...args);
+  }
+};
+
+// A kit, a repo whose origin is acme/rostered, and an empty home; a `{ branch }`
+// shape also gives the repo one commit, checked out on that branch.
+const cloudSeed = seeded((dir, shape) => {
+  fs.cpSync(scratchKit(), path.join(dir, 'kit'), { recursive: true });
+  const world = { repo: path.join(dir, 'repo'), home: path.join(dir, 'home') };
+  fs.mkdirSync(world.repo);
+  fs.mkdirSync(world.home);
+  mkOriginRepo(world.repo, 'https://github.com/acme/rostered.git');
+  if (!shape) return;
+  commitFiles(world, { 'README.md': 'x\n' });
+  git(world.repo, world.home, 'checkout', '-q', '-b', shape.branch);
+});
+
+/** The cloud session's env for `world`, the stub's gh behind the shim and `extra` added, minus any GitHub token. */
+const cloudEnv = (world, stub, extra = {}) => {
+  const env = homeEnv(world.home, {
+    PATH: systemPathWith(path.dirname(world.shim), stub.binDir, NODE_DIR), CLAUDECODE: '1', CLAUDE_CODE_REMOTE: 'true', ...extra,
+  });
+  delete env.GH_TOKEN;
+  delete env.GITHUB_TOKEN;
+  return env;
+};
+
+/**
+ * The cloud-shim world a REST suite's cases run in, its repo on `branch` when given:
+ * `{ mkWorld, runCloud }`, each case getting a fresh copy of the one seed.
+ */
+const cloudWorld = ({ branch = null } = {}) => {
+  /** A fresh world: `{ root, shim, repo, home }`, the shim the scratch kit's gh. */
+  const mkWorld = () => {
+    const root = mkTmp('wk-gh-rest-');
+    cloudSeed(root, branch ? { branch } : null);
+    return {
+      root, shim: path.join(root, 'kit', 'workflow', 'identity', 'gh'), repo: path.join(root, 'repo'), home: path.join(root, 'home'),
+    };
+  };
+
+  /**
+   * Run the shim in a cloud session with `args` from a fresh world's repo, the real gh
+   * a stub answering `api` (keyed `<METHOD> <route>`); `env` adds variables, `files`
+   * (root-relative path to content) is committed first, then `prep(world)` runs, each when given.
+   * Returns the exit, both streams, every call the stub saw and every `gh api` request it answered.
+   */
+  const runCloud = (args, {
+    api = {}, env = {}, files = null, prep = null,
+  } = {}) => {
+    const world = mkWorld();
+    if (files) commitFiles(world, files);
+    if (prep) prep(world);
+    const stub = makeGhStub({ api });
+    const res = spawnBash([...NO_RC, shellPath(world.shim), ...args],
+      { cwd: world.repo, env: cloudEnv(world, stub, env), encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    return {
+      code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', calls: ghCalls(stub), requests: ghRequests(stub),
+    };
+  };
+
+  return { mkWorld, runCloud };
+};
+
+/** A failure naming `msg` and both values as JSON, unless `actual` deep-equals `expected`. */
+const assertSame = (actual, expected, msg) => {
+  assert(isDeepStrictEqual(actual, expected), `${msg}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+};
+
+/** Exit 0, or a failure naming what the shim said and asked. */
+const assertOk = (res, what) => {
+  assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()}, requests: ${JSON.stringify(res.requests)})`);
+};
+
+/** What the shim printed, parsed as the JSON gh prints; a failure naming the text when it is not. */
+const printedJson = (res, what) => {
+  try {
+    return JSON.parse(res.stdout);
+  } catch {
+    throw new Error(`${what}: stdout is not JSON, got: ${res.stdout}`);
+  }
+};
+
+/** The requests a run made that change something, every method but GET. */
+const writes = (res) => res.requests.filter((r) => r.method !== 'GET');
+
+/** Each of `reqs` as its `[method, path]` pair. */
+const routes = (reqs) => reqs.map((r) => [r.method, r.path]);
+
 /**
  * The gh journal's text for <dir>'s repo under the workflow <home>, '' when the
  * file is absent. The file sits beside the suite record, keyed the same way:
@@ -253,4 +357,5 @@ const atTerminal = (argv, { env, cwd, dir }) => {
 module.exports = {
   IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf,
   startServer, startService, scratchKit, scratchEnv, hostsOf, attentionCount, PTY, atTerminal, journalFileText, journalLines,
+  git, cloudEnv, cloudWorld, assertSame, assertOk, printedJson, writes, routes,
 };

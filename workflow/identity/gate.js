@@ -13,6 +13,7 @@
 const path = require('path');
 const { ioIn } = require('../lib/io');
 const { slugFromRemote } = require('../slug');
+const { isCloud } = require('../lib/cloud');
 
 const MODS = path.join(__dirname, '..', '..', 'hooks', 'mods');
 const REST = path.join(__dirname, 'rest.js');
@@ -23,7 +24,7 @@ const REST = path.join(__dirname, 'rest.js');
 const READS = new Set(['list', 'view', 'status', 'checks', 'diff', 'checkout']);
 const JOURNALED = new Set(['issue', 'pr', 'label']);
 // The verbs a cloud session's shim hands to rest.js, so the gate's reads go there too.
-const CLOUD_VERBS = new Set(['issue', 'label']);
+const CLOUD_VERBS = new Set(['issue', 'label', 'pr', 'release']);
 
 // The flags that take no value, by `<verb> <subcommand>` (the endpoint's call
 // for api); `-h`/`--help` takes none on every call.
@@ -239,7 +240,7 @@ function factsIn(cwd, env) {
     if (argv[0] !== 'gh') return io.run(argv, init);
     const gh = env.WORKKIT_REAL_GH;
     if (!gh) throw new Error('gate.js: no real gh to run; the shim hands its path over in WORKKIT_REAL_GH');
-    if (env.CLAUDE_CODE_REMOTE !== 'true' || !CLOUD_VERBS.has(argv[1])) return io.run([gh, ...argv.slice(1)], init);
+    if (!isCloud(env) || !CLOUD_VERBS.has(argv[1])) return io.run([gh, ...argv.slice(1)], init);
     const flag = argv.indexOf('--repo');
     const handed = { WORKKIT_REAL_GH: gh, GH_REPO: (flag >= 0 && argv[flag + 1]) || env.WORKKIT_GATE_REPO || '' };
     return io.run([process.execPath, REST, ...argv.slice(1)], { ...init, env: { ...init.env, ...handed } });

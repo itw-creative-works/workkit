@@ -91,7 +91,7 @@ const runShim = (world, args, {
 } = {}) => {
   // The stub holds one issue fixture by default, so a view of it answers the way gh does.
   const stub = makeGhStub({
-    env: ['GH_TOKEN'], field, issues, api,
+    env: ['GH_TOKEN', 'GH_REPO'], field, issues, api,
   });
   const dirs = [path.dirname(world.shim), ...extraDirs, stub.binDir];
   const env = homeEnv(world.home, {
@@ -104,6 +104,7 @@ const runShim = (world, args, {
   });
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
+  if (!('GH_REPO' in extra)) delete env.GH_REPO;
   if (keyboard) {
     const res = atTerminal([BASH, ...NO_RC, shellPath(world.shim), ...args], { env, cwd, dir: world.root });
     return {
@@ -477,6 +478,44 @@ const cases = async () => {
       assertRan(res, comment, null, `CLAUDE_CODE_REMOTE=${remote}`);
       assertEq(res.requests.length, 0, `CLAUDE_CODE_REMOTE=${remote}: no gh api call`);
     }
+  });
+
+  await test('off the cloud a pr or release verb the cloud serves runs the real gh once, whole, with no gh api call', async () => {
+    const world = mkWorld();
+    for (const argv of [['pr', 'view', '12', '--json', 'number'], ['release', 'view', 'v1.0.0', '--json', 'tagName']]) {
+      const res = runShim(world, argv, { cwd: world.unrostered, api: {} });
+      assertRan(res, argv, null, argv.slice(0, 2).join(' '));
+      assertEq(res.requests.length, 0, `${argv.slice(0, 2).join(' ')}: no gh api call`);
+    }
+  });
+
+  await testUnless(IS_WINDOWS, NO_NODE_STUB)('in the cloud gh pr and gh release reach GitHub as gh api calls alone, never the real gh\'s own pr or release, with no bot token', async () => {
+    const pull = {
+      number: 12, state: 'open', merged_at: null, html_url: 'https://github.com/acme/rostered/pull/12', head: { ref: 'claude/work', sha: 'a'.repeat(40) }, base: { ref: 'main' },
+    };
+    const api = {
+      'GET repos/acme/rostered/pulls/12': { body: pull },
+      'PUT repos/acme/rostered/pulls/12/merge': { body: { sha: 'c'.repeat(40), merged: true, message: 'Pull Request successfully merged' } },
+      'GET repos/acme/rostered/releases/tags/v1.0.0': { body: { tag_name: 'v1.0.0', html_url: 'https://github.com/acme/rostered/releases/tag/v1.0.0' } },
+    };
+    for (const argv of [['pr', 'merge', '12', '--merge'], ['release', 'view', 'v1.0.0', '--json', 'tagName']]) {
+      const what = argv.slice(0, 2).join(' ');
+      const res = runShim(mkWorld(), argv, { remote: 'true', api });
+      assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()})`);
+      assert(res.calls.length > 0 && res.calls.every((c) => c[0] === 'api'), `${what}: only gh api runs, got ${fmtCalls(res.calls)}`);
+      assert(res.envs.every((e) => e.GH_TOKEN === null), `${what}: no GH_TOKEN reaches gh, got: ${JSON.stringify(res.envs)}`);
+    }
+  });
+
+  await test('in the cloud a verb the shim does not serve runs the real gh with the clone\'s repo as GH_REPO, so gh api placeholders resolve; off it GH_REPO stays unset', async () => {
+    const world = mkWorld();
+    const read = ['api', 'repos/{owner}/{repo}', '-q', '.default_branch'];
+    const cloud = runShim(world, read, { cwd: world.unrostered, remote: 'true' });
+    assertRan(cloud, read, null, 'gh api in the cloud');
+    assertEq(cloud.envs[0].GH_REPO, 'acme/unrostered', 'the clone\'s origin, handed over');
+    const local = runShim(world, read, { cwd: world.unrostered });
+    assertRan(local, read, null, 'gh api off the cloud');
+    assertEq(local.envs[0].GH_REPO, null, 'off the cloud gh reads the remote itself');
   });
 
   await testUnless(IS_WINDOWS, NO_NODE_STUB)('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', async () => {

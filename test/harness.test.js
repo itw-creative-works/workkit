@@ -1,19 +1,21 @@
 // Tests for the one entry, packages/core/test/lib/harness.js: every export behind it, a
 // suite on that one require run by file and under the runner, a failure's first frame
-// outside the library, and every later line of a message, skip reason or case body's
-// own print kept off column zero, with the real writers back after the case.
+// outside the library, every later line of a message, skip reason or case body's own print
+// off column zero with the real writers back after, and needs() skipping only in the cloud.
 
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { stripVTControlCharacters } = require('util');
 const {
-  group, test, assert, assertEq, summary, selfRun, mkTmp, run,
+  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, run,
 } = require('./lib/harness');
+const { IS_WINDOWS, NO_EXEC_BIT, stubTool } = require('./lib/platform');
 
 const KIT_LIB = path.join(__dirname, '..', 'packages', 'core', 'test', 'lib');
 const RUNNER = path.join(__dirname, '..', 'packages', 'core', 'test', 'run.js');
 const CONCERNS = ['process', 'scratch', 'seed', 'suites', 'log', 'spawn'];
+const ENTRY = path.join(KIT_LIB, '..', 'index.js');
 
 // A suite on the one require alone, reaching a scratch folder, a wait, a child
 // run and the log through it: three cases that pass.
@@ -103,6 +105,43 @@ const marks = (output) => {
   const lines = output.split(/\r?\n/).map((l) => l.trim());
   return { passed: lines.filter((l) => l.startsWith('✓')).length, failed: lines.filter((l) => l.startsWith('✗')).length };
 };
+
+// A suite on the package entry whose top runs `call`, then one case.
+const NEEDS = (call) => `
+const { needs, test, summary, selfRun } = require(${JSON.stringify(ENTRY)});
+module.exports = async () => {
+  ${call};
+  await test('the needing case', () => {});
+  return summary();
+};
+if (require.main === module) selfRun(module.exports);
+`;
+
+// A scratch PATH folder holding one runnable stub per name in `tools`.
+const toolBin = (tools = []) => {
+  const bin = mkTmp('needs-bin-');
+  for (const name of tools) stubTool(bin, name, ['#!/bin/sh', 'exit 0']);
+  return bin;
+};
+
+// The env a needs() suite runs under: PATH the one folder `bin`, CLAUDE_CODE_REMOTE `remote`, unset when undefined.
+const needsEnv = (bin, remote) => {
+  const env = { ...process.env, PATH: bin };
+  delete env.CLAUDE_CODE_REMOTE;
+  return remote === undefined ? env : { ...env, CLAUDE_CODE_REMOTE: remote };
+};
+
+// The NEEDS suite over `call`, run by file under needsEnv(bin, remote): its exit and output, colours stripped.
+const needsRun = (call, bin, remote) => {
+  const dir = mkTmp('needs-');
+  const file = path.join(dir, 'needs.test.js');
+  fs.writeFileSync(file, NEEDS(call));
+  const res = run(process.execPath, [file], { cwd: dir, env: needsEnv(bin, remote) });
+  return { code: res.status, output: stripVTControlCharacters(res.output) };
+};
+
+const SKIP_LINE = (tools) => `⊘ skipped: needs ${tools}, not installed in this cloud session`;
+const trimmed = (output) => output.split(/\r?\n/).map((l) => l.trim());
 
 const cases = async () => {
   group('harness: the one entry');
@@ -238,6 +277,68 @@ if (require.main === module) selfRun(module.exports);
     const { code, output } = bodyRun("() => { console.log('one\\ntwo'); const err = new Error('boom'); err.stack = 'Error: boom'; throw err; }");
     assertEq(code, 1, `the case failed, got:\n${output}`);
     assertEq(output, '    one\n    two\n  ✗ the case\n    boom\n\n[after]\n', 'the body lines indented, the mark, the message and the header on the real writer');
+  });
+
+  group('harness: needs');
+
+  await test('needs() with every tool on PATH returns and prints nothing, locally and in a cloud session', () => {
+    const bin = toolBin(['wk-tool-a', 'wk-tool-b']);
+    for (const remote of [undefined, 'true']) {
+      const { code, output } = needsRun("needs('wk-tool-a', 'wk-tool-b')", bin, remote);
+      assertEq(code, 0, `CLAUDE_CODE_REMOTE=${remote}: the suite passes, got:\n${output}`);
+      assertEq(output, '  ✓ the needing case\n', `CLAUDE_CODE_REMOTE=${remote}: the case ran and needs() printed nothing`);
+    }
+  });
+
+  await test('in a cloud session the run prints the skip line under the suite missing hugo, and its sibling still runs', () => {
+    const root = mkTmp('needs-run-');
+    run('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.join(root, 'test'));
+    fs.writeFileSync(path.join(root, 'test', 'needy.test.js'), NEEDS("needs('hugo')"));
+    fs.writeFileSync(path.join(root, 'test', 'plain.test.js'), NEEDS('void 0'));
+    const res = run(process.execPath, [RUNNER], { cwd: root, env: needsEnv(toolBin(), 'true') });
+    const output = stripVTControlCharacters(res.output);
+    assertEq(res.status, 0, `a skipped suite keeps the run green, got:\n${output}`);
+    const lines = trimmed(output);
+    const header = lines.indexOf('▶ needy.test.js');
+    assert(header >= 0, `the suite's header printed, got:\n${output}`);
+    assertEq(lines.slice(header + 1).find(Boolean), SKIP_LINE('hugo'), `the skip line under the suite's header, got:\n${output}`);
+    assertEq(marks(output).passed, 1, `only the sibling's case ran, got:\n${output}`);
+    assert(output.includes('1 passed, 0 failed, 1 suite skipped'), `the totals count the skipped suite, got:\n${output}`);
+  });
+
+  await test('in a cloud session the skip names every missing tool in argument order, and no tool that is there', () => {
+    const { code, output } = needsRun("needs('wk-tool-a', 'hugo', 'ffmpeg')", toolBin(['wk-tool-a']), 'true');
+    assertEq(code, 0, `a skipped suite exits 0, got:\n${output}`);
+    assert(trimmed(output).includes(SKIP_LINE('hugo, ffmpeg')), `the one skip line naming both, got:\n${output}`);
+    assertEq(marks(output).passed, 0, `the suite's case never ran, got:\n${output}`);
+  });
+
+  await test('off a cloud session (CLAUDE_CODE_REMOTE unset or false) a missing tool fails the suite, naming it', () => {
+    for (const remote of [undefined, 'false']) {
+      const { code, output } = needsRun("needs('hugo')", toolBin(), remote);
+      assertEq(code, 1, `CLAUDE_CODE_REMOTE=${remote}: the suite fails, got:\n${output}`);
+      assert(output.includes('needs hugo, not installed'), `CLAUDE_CODE_REMOTE=${remote}: the failure names the tool, got:\n${output}`);
+      assert(!output.includes('cloud session') && !output.includes('⊘'), `CLAUDE_CODE_REMOTE=${remote}: never the cloud skip, got:\n${output}`);
+      assertEq(marks(output).passed, 0, `CLAUDE_CODE_REMOTE=${remote}: the suite's case never ran, got:\n${output}`);
+    }
+  });
+
+  await testUnless(IS_WINDOWS, NO_EXEC_BIT)('a file of the tool\'s name on PATH without the executable bit is not the command', () => {
+    const bin = toolBin();
+    fs.writeFileSync(path.join(bin, 'hugo'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
+    const { code, output } = needsRun("needs('hugo')", bin, undefined);
+    assertEq(code, 1, `the suite fails as with no hugo at all, got:\n${output}`);
+    assert(output.includes('needs hugo, not installed'), `the failure names the tool, got:\n${output}`);
+  });
+
+  await test('needs() with no argument or a non-string one fails the suite even in a cloud session, never a skip', () => {
+    for (const call of ['needs()', 'needs(42)', "needs('hugo', 42)"]) {
+      const { code, output } = needsRun(call, toolBin(), 'true');
+      assertEq(code, 1, `${call}: a programmer error fails the suite, got:\n${output}`);
+      assert(!output.includes('⊘'), `${call}: never the skip path, got:\n${output}`);
+      assertEq(marks(output).passed, 0, `${call}: the suite's case never ran, got:\n${output}`);
+    }
   });
 };
 

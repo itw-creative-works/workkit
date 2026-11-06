@@ -16,7 +16,8 @@ Then set the repo's test script to the package's bin:
 
 `npm test` runs every `test/**/*.test.js` suite; `npm test -- test/x.test.js` runs only that file.
 With the workkit plugin installed, `workkit test` and `workkit test test/x.test.js` in a terminal do the same: the global command hands its arguments to `npm test`, and inside `npm test` npm puts this package's bin first on PATH.
-The bin runs only `test`; any other verb exits 2 and names the global `workkit` command it belongs to.
+`workkit tools` prints every command the suites name through `needs()`, one per line, sorted and unique, so a cloud setup can install them; it reads the suites without loading one, and a `needs()` argument that is not a string literal is one `✖ tools: <file>:<line>: needs() takes string literals only` line, exit 1.
+The bin runs only `test` and `tools`; any other verb exits 2 and names the global `workkit` command it belongs to.
 
 ## The run
 
@@ -41,10 +42,10 @@ module.exports = run;
 if (require.main === module) selfRun(run);
 ```
 
-- The cases: `group`, `test`, `assert`, `assertEq`, `skip`, `testUnless`, `skipSuite`, `summary`, `selfRun`, `log` (lines printed under a failing case, and under every case with `TEST_LOG=1`), `indentRest` and `indentWriter` (a quoted text or a child's output kept off column zero), `stripAnsi`, `hasLaunchd`.
+- The cases: `group`, `test`, `assert`, `assertEq`, `skip`, `testUnless`, `skipSuite`, `needs(...tools)` (the commands a suite runs, called at its top: a missing one skips the suite in a cloud session, `⊘ skipped: needs hugo, not installed in this cloud session`, and fails it anywhere else), `summary`, `selfRun`, `log` (lines printed under a failing case, and under every case with `TEST_LOG=1`), `indentRest` and `indentWriter` (a quoted text or a child's output kept off column zero), `stripAnsi`, `hasLaunchd`.
 - Scratch and worlds: `mkTmp(prefix)`, a temp folder removed at exit; `seeded(build)`, a folder built once per process and copied per case.
 - Processes on one deadline (`SPAWN_DEADLINE`): `run`, `start` (with `end()` climbing SIGINT, SIGTERM, SIGKILL), `endTree`, `until`, `elapsedUntil`, `alive`, `readPid`.
-- Suite discovery: `findSuites`, `findModSuites`, `POOL`.
+- Suite discovery: `suiteDir(root)` (the repo's `test/`, or `tests/` when it has no `test/`), `findSuites`, `findModSuites`, `POOL`.
 
 `workkit-core/run` is the kit's program starter (`spawnSync`, `spawn`, `execFileSync`, `launchOf`, `windowsQuoted`), CommonJS: `child_process`'s calls, with the real Windows launch of a bare name, a `#!` script or a `.cmd`.
 

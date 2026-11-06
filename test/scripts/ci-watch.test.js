@@ -34,7 +34,8 @@ const runRow = (id, name) => ({
  * `logs` a run id's `--json conclusion,jobs` answer and `--log-failed` text;
  * `down` the run ids whose watch AND view fail the way an unreachable GitHub
  * does; `listFails` a `gh run list` that fails, and `listRaw` one that answers
- * that text instead of a list. `watchSleep` seconds hang every `gh run watch`
+ * that text instead of a list. `prs` is what `gh pr list` answers, and
+ * `prFails` a `gh pr list` that fails, and `prRaw` one that answers that text instead. `watchSleep` seconds hang every `gh run watch`
  * before it answers, and each watch writes its pid to `watch-<id>.pid` first.
  * A case that writes a path into the `rewrite` fixture has every watch rewrite
  * that file in place, one line added on top, before it answers. The repo
@@ -42,7 +43,7 @@ const runRow = (id, name) => ({
  */
 const makeWorld = ({
   runs = [], empty = 0, red = [], views = {}, logs = {}, down = [], listFails = false, listRaw = null, workflows = null,
-  watchSleep = null,
+  watchSleep = null, prs = [], prFails = false, prRaw = null,
 } = {}) => {
   const dir = mkTmp('ci-watch-');
   const repo = path.join(dir, 'repo');
@@ -61,6 +62,8 @@ const makeWorld = ({
   fs.writeFileSync(path.join(fx, 'list.json'), listRaw === null ? JSON.stringify(runs) : listRaw);
   fs.writeFileSync(path.join(fx, 'list.empty'), String(empty));
   if (listFails) fs.writeFileSync(path.join(fx, 'list.fail'), '');
+  fs.writeFileSync(path.join(fx, 'pr.json'), prRaw === null ? JSON.stringify(prs) : prRaw);
+  if (prFails) fs.writeFileSync(path.join(fx, 'pr.fail'), '');
   if (watchSleep !== null) fs.writeFileSync(path.join(fx, 'watch-sleep'), String(watchSleep));
   for (const r of runs) {
     fs.writeFileSync(path.join(fx, `watch-${r.databaseId}.exit`), red.includes(r.databaseId) || down.includes(r.databaseId) ? '1' : '0');
@@ -88,6 +91,9 @@ const makeWorld = ({
     '    printf "watching %s\\n" "$3"',
     '    if [[ -f "$F/down-$3" ]]; then printf "error connecting to api.github.com\\n" >&2; fi',
     '    exit "$(cat "$F/watch-$3.exit")" ;;',
+    '  "pr list")',
+    '    if [[ -f "$F/pr.fail" ]]; then printf "HTTP 403: Resource not accessible by integration\\nsecond line\\n" >&2; exit 1; fi',
+    '    cat "$F/pr.json" ;;',
     '  "run view")',
     '    cat >/dev/null',
     '    if [[ -f "$F/down-$3" ]]; then printf "error connecting to api.github.com\\n" >&2; exit 1; fi',
@@ -134,9 +140,9 @@ const startWatch = (w, args = [SHA], { bashArgs = [...NO_RC, shellPath(SCRIPT), 
 
 // The body's answer as the terminal shows it: stdout must open with the
 // watching line and end with the exit line naming the run's own code, and what
-// comes between, from either stream, is the answer.
-const answered = ({ code, out, err }) => {
-  const firstLine = `ci-watch: watching ${SHA}\n`;
+// comes between, from either stream, is the answer. `sha` is the one watched.
+const answered = ({ code, out, err }, sha = SHA) => {
+  const firstLine = `ci-watch: watching ${sha}\n`;
   const exitLine = `ci-watch: exit ${code}\n`;
   assert(out.startsWith(firstLine), `stdout opens with ${JSON.stringify(firstLine)}, got: ${JSON.stringify(out)} (stderr: ${err})`);
   assert(out.endsWith(exitLine), `stdout ends with ${JSON.stringify(exitLine)}, got: ${JSON.stringify(out)} (stderr: ${err})`);
@@ -146,10 +152,12 @@ const answered = ({ code, out, err }) => {
 const readLog = (w) => (fs.existsSync(w.ciLog) ? fs.readFileSync(w.ciLog, 'utf8') : null);
 const signalTest = testUnless(IS_WINDOWS, 'Node cannot deliver TERM or INT to a Git Bash process on Windows');
 
-// One commit of an empty file in the world's repo, under the world's HOME so no
-// machine git config reaches it; answers the commit's full id.
+// Git in the world's repo, under the world's HOME so no machine git config reaches it.
+const gitIn = (w, ...args) => spawnSync('git', ['-C', w.repo, ...args], { encoding: 'utf8', env: homeEnv(w.home, { PATH: process.env.PATH }) });
+
+// One commit of an empty file in the world's repo; answers the commit's full id.
 const commitOne = (w) => {
-  const git = (...args) => spawnSync('git', ['-C', w.repo, ...args], { encoding: 'utf8', env: homeEnv(w.home, { PATH: process.env.PATH }) });
+  const git = (...args) => gitIn(w, ...args);
   git('config', 'user.name', 'wk');
   git('config', 'user.email', 'wk@localhost');
   fs.writeFileSync(path.join(w.repo, 'empty'), '');
@@ -162,6 +170,21 @@ const commitOne = (w) => {
 
 const listCalls = (w) => w.calls().filter((c) => isCall(c, 'run', 'list'));
 const watchCalls = (w) => w.calls().filter((c) => isCall(c, 'run', 'watch'));
+const prCalls = (w) => w.calls().filter((c) => isCall(c, 'pr', 'list'));
+
+const PR_BRANCH = 'claude/session-1';
+const OPEN_PR = { number: 7, url: 'https://github.com/o/r/pull/7' };
+const PR_ONLY = { 'checks.yml': 'name: Checks\non:\n  pull_request:\njobs: {}\n' };
+const PUSH_TOO = { 'checks.yml': 'name: Checks\non:\n  pull_request:\n  push:\n    branches: [main]\njobs: {}\n' };
+
+// The world's repo with one commit, checked out on PR_BRANCH: the sha a ship
+// just pushed to a session branch. Answers the commit's full id.
+const onPrBranch = (w) => {
+  const full = commitOne(w);
+  const r = gitIn(w, 'checkout', '-q', '-b', PR_BRANCH);
+  assertEq(r.status, 0, `the branch is made: ${r.stderr}`);
+  return full;
+};
 
 const cases = async () => {
   group('ship watch: green');
@@ -327,6 +350,127 @@ const cases = async () => {
       const r = runWatch(w, [SHA], { cwd: w.sub });
       assertEq(r.code, 3, `exit 3 (stdout: ${r.out})`);
       assertEq(answered(r), `ci-watch: run not queued yet for ${SHA}\n`, 'the line names the sha');
+      cleanup(w.dir);
+    });
+  }
+
+  group('ship watch: a branch with an open PR');
+
+  await test('an open PR for the branch whose tip is the sha: the waiting line, the list asked again, and the run it finds watched', async () => {
+    // Two tries come back empty, so only the second round can find the run.
+    const w = makeWorld({ runs: [runRow(61, 'Checks')], empty: 2, prs: [OPEN_PR], workflows: PR_ONLY });
+    const full = onPrBranch(w);
+    const r = runWatch(w, [full]);
+    assertEq(r.code, 0, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`);
+    assertEq(answered(r, full), [
+      `ci-watch: waiting for PR #7's run for ${full}`,
+      'ci-watch: green: Checks https://github.com/o/r/actions/runs/61',
+      '',
+    ].join('\n'), 'the waiting line, then the run watched as any other');
+    const prs = prCalls(w);
+    assertEq(prs.length, 1, `one PR lookup: ${fmtCalls(prs)}`);
+    assert(eqArgv(prs[0], ['pr', 'list', '--head', PR_BRANCH, '--state', 'open', '--json', 'number,url', '--limit', '1']), `the lookup argv: ${fmtCalls(prs)}`);
+    assertEq(listCalls(w).length, 3, `the list asked past the first round's two tries: ${fmtCalls(listCalls(w))}`);
+    cleanup(w.dir);
+  });
+
+  await test('an open PR whose run never comes: one more round of tries, then exit 3 naming the PR', async () => {
+    const w = makeWorld({ empty: 99, prs: [OPEN_PR], workflows: PR_ONLY });
+    const full = onPrBranch(w);
+    const r = runWatch(w, [full]);
+    assertEq(r.code, 3, `exit 3 (stdout: ${r.out}, stderr: ${r.err})`);
+    assertEq(answered(r, full), [
+      `ci-watch: waiting for PR #7's run for ${full}`,
+      `ci-watch: run not queued yet for ${full} (PR #7)`,
+      '',
+    ].join('\n'), 'the waiting line, then the not-queued line naming the PR');
+    assertEq(listCalls(w).length, 4, `two rounds of two tries: ${fmtCalls(listCalls(w))}`);
+    assertEq(watchCalls(w).length, 0, 'nothing watched');
+    cleanup(w.dir);
+  });
+
+  await test('a short sha of the branch tip is compared in full: the PR is still waited on', async () => {
+    const w = makeWorld({ empty: 99, prs: [OPEN_PR], workflows: PR_ONLY });
+    const full = onPrBranch(w);
+    const r = runWatch(w, [full.slice(0, 7)]);
+    assertEq(r.code, 3, `exit 3 (stdout: ${r.out}, stderr: ${r.err})`);
+    assertEq(prCalls(w).length, 1, `the PR looked up: ${fmtCalls(w.calls())}`);
+    assert(`${r.out}${r.err}`.includes(`ci-watch: run not queued yet for ${full} (PR #7)`), `the PR's not-queued line, got: ${r.out} ${r.err}`);
+    cleanup(w.dir);
+  });
+
+  // Each world holds an open PR the lookup would find, save the first, so a
+  // lookup run where it must not shows as the waiting line.
+  const offPrPath = [
+    ['no open PR for the branch', { prs: [] }, (w) => onPrBranch(w), 1],
+    ['a detached HEAD at the sha', { prs: [OPEN_PR] }, (w) => {
+      const full = onPrBranch(w);
+      assertEq(gitIn(w, 'checkout', '-q', '--detach').status, 0, 'HEAD detached');
+      return full;
+    }, 0],
+    ['a branch whose tip is not the sha', { prs: [OPEN_PR] }, (w) => { onPrBranch(w); return SHA; }, 0],
+  ];
+  for (const [label, world, setup, lookups] of offPrPath) {
+    await test(`${label}, a push workflow and no run: exit 3, the plain not-queued line`, async () => {
+      const w = makeWorld({ empty: 99, workflows: PUSH_TOO, ...world });
+      const sha = setup(w);
+      const r = runWatch(w, [sha]);
+      assertEq(r.code, 3, `exit 3 (stdout: ${r.out}, stderr: ${r.err})`);
+      assertEq(answered(r, sha), `ci-watch: run not queued yet for ${sha}\n`, 'the one line, no PR named');
+      assertEq(prCalls(w).length, lookups, `PR lookups: ${fmtCalls(prCalls(w))}`);
+      assertEq(listCalls(w).length, 2, `one round of tries: ${fmtCalls(listCalls(w))}`);
+      cleanup(w.dir);
+    });
+  }
+
+  await test('no open PR for the branch and no push workflow: no CI configured for push, exit 0', async () => {
+    const w = makeWorld({ empty: 99, workflows: PR_ONLY });
+    const full = onPrBranch(w);
+    const r = runWatch(w, [full]);
+    assertEq(r.code, 0, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`);
+    assertEq(answered(r, full), 'ci-watch: no CI configured for push\n', 'the one quiet line');
+    assertEq(prCalls(w).length, 1, `the PR looked up: ${fmtCalls(prCalls(w))}`);
+    cleanup(w.dir);
+  });
+
+  // An open PR the lookup would find, but no workflow runs on a PR, so no
+  // run can come from it and the watch answers as a branch with no PR does.
+  const noPrTrigger = [
+    ['no workflow at all', null, 0, 'ci-watch: no CI configured for push\n'],
+    ['a push-only workflow', { 'ci.yml': 'name: CI\non: push\njobs: {}\n' }, 3, null],
+  ];
+  for (const [label, workflows, code, line] of noPrTrigger) {
+    await test(`an open PR and ${label}: no PR wait, exit ${code} as off the PR path`, async () => {
+      const w = makeWorld({ empty: 99, prs: [OPEN_PR], workflows });
+      const full = onPrBranch(w);
+      const r = runWatch(w, [full]);
+      assertEq(r.code, code, `exit ${code} (stdout: ${r.out}, stderr: ${r.err})`);
+      assertEq(answered(r, full), line || `ci-watch: run not queued yet for ${full}\n`, 'the one line, no PR wait');
+      assertEq(prCalls(w).length, 0, `no PR lookup: ${fmtCalls(prCalls(w))}`);
+      assertEq(listCalls(w).length, 2, `one round of tries: ${fmtCalls(listCalls(w))}`);
+      cleanup(w.dir);
+    });
+  }
+
+  await test('a failing `gh pr list` is one ci-watch: gh line naming the branch and its first stderr line, exit 4', async () => {
+    const w = makeWorld({ empty: 99, prFails: true, workflows: PUSH_TOO });
+    const full = onPrBranch(w);
+    const r = runWatch(w, [full]);
+    assertEq(r.code, 4, `exit 4 (stdout: ${r.out}, stderr: ${r.err})`);
+    assertEq(answered(r, full),
+      `ci-watch: gh pr list --head ${PR_BRANCH} failed: HTTP 403: Resource not accessible by integration\n`, 'the one gh line');
+    assertEq(watchCalls(w).length, 0, 'nothing watched');
+    cleanup(w.dir);
+  });
+
+  for (const raw of ['not json', '{}', 'null']) {
+    await test(`a \`gh pr list\` answer of ${raw} is no PR list: one ci-watch: gh line, exit 4`, async () => {
+      const w = makeWorld({ empty: 99, prRaw: `${raw}\n`, workflows: PUSH_TOO });
+      const full = onPrBranch(w);
+      const r = runWatch(w, [full]);
+      assertEq(r.code, 4, `exit 4 (stdout: ${r.out}, stderr: ${r.err})`);
+      assertEq(answered(r, full), `ci-watch: gh pr list --head ${PR_BRANCH} answered no PR list: ${raw}\n`, 'the one gh line');
+      assertEq(watchCalls(w).length, 0, 'nothing watched');
       cleanup(w.dir);
     });
   }

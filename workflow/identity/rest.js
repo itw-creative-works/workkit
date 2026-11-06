@@ -1,6 +1,7 @@
 // workflow/identity/rest.js: the gh shim's cloud half. The cloud proxy serves REST
-// alone, as the account, so the kit's issue, label and auth verbs become `gh api`
-// calls in gh's own shape; any other call runs the real gh as it came.
+// alone, as the account, so the kit's issue, label, auth, pr and release verbs
+// become `gh api` calls in gh's own shape (pr in ./rest-pr.js, release in
+// ./rest-release.js); any other call runs the real gh as it came.
 // Usage: WORKKIT_REAL_GH=<gh> GH_REPO=<owner/name> node rest.js <gh argv>
 
 const fs = require('fs');
@@ -136,14 +137,25 @@ const repoOf = (ctx) => {
 };
 
 /**
+ * The number `N`, `#N` or a URL on one of `routes` names; null for anything else.
+ * @param {string} arg
+ * @param {string[]} [routes] the URL path segments a number may follow
+ * @returns {string|null}
+ */
+const matchNumber = (arg, routes = ['issues', 'pull']) => {
+  const m = String(arg).match(/^#?(\d+)$/) || String(arg).match(new RegExp(`/(?:${routes.join('|')})/(\\d+)(?:[/?#].*)?$`));
+  return m ? m[1] : null;
+};
+
+/**
  * An issue number from `N`, `#N` or an issue or pull request URL.
  * @param {string} arg
  * @returns {string}
  */
 const numberOf = (arg) => {
-  const m = String(arg).match(/^#?(\d+)$/) || String(arg).match(/\/(?:issues|pull)\/(\d+)(?:[/?#].*)?$/);
-  if (!m) throw new UsageError(`gh: not an issue number or URL: ${arg}`);
-  return m[1];
+  const n = matchNumber(arg);
+  if (n === null) throw new UsageError(`gh: not an issue number or URL: ${arg}`);
+  return n;
 };
 
 /**
@@ -551,7 +563,7 @@ const labelEdit = (ctx, argv) => {
   return 0;
 };
 
-// The verbs served, as "<verb> <subcommand>".
+// The verbs served here, as "<verb> <subcommand>"; `verbs()` adds pr's and release's.
 const VERBS = {
   'auth status': authStatus,
   'issue list': issueList,
@@ -564,6 +576,13 @@ const VERBS = {
   'label create': labelCreate,
   'label edit': labelEdit,
 };
+
+/**
+ * Every verb served: this file's, then ./rest-pr.js's and ./rest-release.js's,
+ * required at the call, since both require this file's helpers.
+ * @returns {object}
+ */
+const verbs = () => ({ ...VERBS, ...require('./rest-pr'), ...require('./rest-release') });
 
 /**
  * Runs the real gh on the call as it came, its stdio this process's.
@@ -580,7 +599,7 @@ const passThrough = (gh, argv) => {
 /**
  * Serves one gh call: its verb, its subcommand (the first word after the verb
  * that is no flag and no `--repo` value) and the rest as that verb's arguments.
- * A call VERBS does not name, or one asking `-h`/`--help`, goes to the real gh.
+ * A call `verbs()` does not name, or one asking `-h`/`--help`, goes to the real gh.
  * @param {string[]} argv gh's argv, the verb first
  * @param {{gh: string, repo?: string}} opts the real gh's path and the repo the shim resolved
  * @returns {number} the exit code; a failed `gh api` call's own, its output relayed
@@ -590,7 +609,7 @@ const run = (argv, { gh, repo = '' }) => {
   const [verb, ...rest] = argv;
   const at = subAt(rest);
   const help = rest.includes('-h') || rest.includes('--help');
-  const serve = !help && at >= 0 && VERBS[`${verb} ${rest[at]}`];
+  const serve = !help && at >= 0 && verbs()[`${verb} ${rest[at]}`];
   if (!serve) return passThrough(gh, argv);
   try {
     return serve({ gh, repo }, rest.filter((_, i) => i !== at));
@@ -606,6 +625,12 @@ const run = (argv, { gh, repo = '' }) => {
   }
 };
 
+// Set before the main run below, so the helpers are whole when the verb files require them.
+module.exports = {
+  run, api, getJson, send, parse, repoOf, matchNumber, numberOf, limitOf, bodyOf, fieldsOf, pick, printJson, field, enc,
+  GhFailure, UsageError,
+};
+
 if (require.main === module) {
   try {
     process.exitCode = run(process.argv.slice(2), { gh: process.env.WORKKIT_REAL_GH, repo: process.env.GH_REPO || '' });
@@ -614,5 +639,3 @@ if (require.main === module) {
     process.exitCode = 1;
   }
 }
-
-module.exports = { run };

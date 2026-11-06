@@ -49,21 +49,21 @@ const mkWorld = (settings) => {
   return { dir, home, repo, sub: path.join(repo, 'sub'), mark };
 };
 
-const spawnDriver = (w, event, stdio, PATH) => spawnSync(process.execPath, ['-e', DRIVER, LIB, w.repo, event], {
+const spawnDriver = (w, event, stdio, PATH, env = {}) => spawnSync(process.execPath, ['-e', DRIVER, LIB, w.repo, event], {
   cwd: w.sub,
-  env: homeEnv(w.home, { PATH }),
+  env: homeEnv(w.home, { ...env, PATH }),
   stdio,
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,
 });
 
 /** runHooks with stdout and stderr in one file: `all` is that file, in write order. */
-const run = (w, event = 'afterPublish', PATH = SYSTEM_PATH) => {
+const run = (w, event = 'afterPublish', PATH = SYSTEM_PATH, env = {}) => {
   const outFile = path.join(w.dir, 'output.log');
   const fd = fs.openSync(outFile, 'w');
   let res;
   try {
-    res = spawnDriver(w, event, ['ignore', fd, fd], PATH);
+    res = spawnDriver(w, event, ['ignore', fd, fd], PATH, env);
   } finally {
     fs.closeSync(fd);
   }
@@ -82,6 +82,13 @@ const runPiped = (w, event = 'afterPublish') => {
 const assertList = (actual, expected, msg) => assertEq(JSON.stringify(actual), JSON.stringify(expected), msg);
 
 const NOT_ENABLED = (event) => `ship-hooks: ${event}: hooks run only where .workkit/settings.json says "enabled": true`;
+
+// A cloud session as the kit tells one; homeEnv starts from an empty env, so a machine run carries none.
+const CLOUD = { CLAUDE_CODE_REMOTE: 'true' };
+const SKIPPED = 'skipped: local only, this is a cloud session';
+
+/** Settings turning workkit on with `entries` (whole entry objects) under `event`. */
+const enabledEntries = (event, entries) => ({ enabled: true, hooks: { [event]: entries } });
 
 const cases = async () => {
   group('ship hooks: a repo not enabled');
@@ -251,6 +258,84 @@ const cases = async () => {
     const { code, all } = run(w);
     assertEq(code, 0, `0, got: ${all}`);
     assertEq(all, '', 'nothing printed');
+  });
+
+  group('ship hooks: a local-only entry');
+
+  await test('on a machine a local entry runs like any other, local false or absent alike', () => {
+    const entries = [
+      { command: 'echo one >> order.txt' },
+      { command: 'echo local >> order.txt', local: true },
+      { command: 'echo three >> order.txt', local: false },
+    ];
+    for (const [name, env] of Object.entries({ 'no CLAUDE_CODE_REMOTE': {}, 'CLAUDE_CODE_REMOTE=false': { CLAUDE_CODE_REMOTE: 'false' } })) {
+      const w = mkWorld(enabledEntries('afterRelease', entries));
+      const { code, all } = run(w, 'afterRelease', SYSTEM_PATH, env);
+      assertEq(code, 0, `${name}: 0, got: ${all}`);
+      assertList(lines(all), [
+        'ship-hooks: afterRelease [1/3] echo one >> order.txt',
+        'ship-hooks: afterRelease [2/3] echo local >> order.txt',
+        'ship-hooks: afterRelease [3/3] echo three >> order.txt',
+      ], `${name}: every entry announced and run`);
+      assertEq(w.mark('order.txt'), 'one\nlocal\nthree\n', `${name}: all three ran, in order`);
+    }
+  });
+
+  await test('in a cloud session a local entry is skipped with its line, and the entries after it still run, for every event', () => {
+    for (const event of ['afterRelease', 'afterPublish', 'afterDeploy']) {
+      const w = mkWorld(enabledEntries(event, [
+        { command: 'echo one >> order.txt' },
+        { command: 'echo local >> order.txt', local: true },
+        { command: 'echo three >> order.txt', local: false },
+      ]));
+      const { code, all } = run(w, event, SYSTEM_PATH, CLOUD);
+      assertEq(code, 0, `${event}: 0, got: ${all}`);
+      assertList(lines(all), [
+        `ship-hooks: ${event} [1/3] echo one >> order.txt`,
+        `ship-hooks: ${event} [2/3] echo local >> order.txt ${SKIPPED}`,
+        `ship-hooks: ${event} [3/3] echo three >> order.txt`,
+      ], `${event}: the skip line in the local entry's place, its index and the total`);
+      assertEq(w.mark('order.txt'), 'one\nthree\n', `${event}: the local entry alone did not run`);
+    }
+  });
+
+  await test('a failing entry stays loud beside a local one: 1, its line, the later entries never run', () => {
+    const cloud = mkWorld(enabledEntries('afterRelease', [
+      { command: 'echo local >> order.txt', local: true },
+      { command: 'exit 3' },
+      { command: 'echo three >> order.txt' },
+    ]));
+    const inCloud = run(cloud, 'afterRelease', SYSTEM_PATH, CLOUD);
+    assertEq(inCloud.code, 1, `cloud: 1, got: ${inCloud.all}`);
+    assert(lines(inCloud.all).includes(`ship-hooks: afterRelease [1/3] echo local >> order.txt ${SKIPPED}`), `cloud: the skip line, got: ${inCloud.all}`);
+    assert(lines(inCloud.all).includes('ship-hooks: afterRelease exit 3 exited 3'), `cloud: the failure line, got: ${inCloud.all}`);
+    assertEq(cloud.mark('order.txt'), null, 'cloud: neither the skipped entry nor the one after the failure ran');
+
+    const machine = mkWorld(enabledEntries('afterRelease', [
+      { command: 'exit 4', local: true },
+      { command: 'echo two >> order.txt' },
+    ]));
+    const onMachine = run(machine, 'afterRelease');
+    assertEq(onMachine.code, 1, `machine: 1, got: ${onMachine.all}`);
+    assert(lines(onMachine.all).includes('ship-hooks: afterRelease exit 4 exited 4'), `machine: the local entry's failure line, got: ${onMachine.all}`);
+    assertEq(machine.mark('order.txt'), null, 'machine: the entry after the failing local one never ran');
+  });
+
+  await test('a local that is neither true nor false is a shape error on a machine and in the cloud: one line, nothing run, 1', () => {
+    const marker = 'echo ran >> ran.txt';
+    const values = { 'the string "true"': 'true', 'the number 1': 1, 'a word': 'yes', 'an object': {} };
+    for (const [name, local] of Object.entries(values)) {
+      for (const [where, env] of Object.entries({ machine: {}, cloud: CLOUD })) {
+        const w = mkWorld(enabledEntries('afterPublish', [{ command: marker }, { command: marker, local }]));
+        const { code, all } = run(w, 'afterPublish', SYSTEM_PATH, env);
+        assertEq(code, 1, `${name}, ${where}: 1, got: ${all}`);
+        const got = lines(all);
+        assertEq(got.length, 1, `${name}, ${where}: one line, got: ${all}`);
+        assert(got[0].startsWith('ship-hooks: hooks.afterPublish['), `${name}, ${where}: the line names the entry, got: ${got[0]}`);
+        assert(got[0].endsWith('in the settings has a local that is not true or false, so no afterPublish hook ran'), `${name}, ${where}: the line says what is wrong, got: ${got[0]}`);
+        assertEq(w.mark('ran.txt'), null, `${name}, ${where}: the valid entry before it did not run either`);
+      }
+    }
   });
 
   return summary();

@@ -68,7 +68,7 @@ Agent-agnostic: shell + Node, which is why the hooks call it rather than contain
 
 `workkit.sh` is the one command and the from-zero entry point:
 
-- `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `prove`;
+- `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `tools` · `prove`;
 - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
 
 Beside it live:
@@ -97,7 +97,9 @@ What a test must be worth and may cost (the bar), and the shape every repo's run
 
 `npm test` is `workkit test`, the bin of the runner the kit ships as the npm package `workkit-core` (`packages/core/`, its library in `test/lib/` there; the global `workkit test` hands its arguments to this `npm test`); `test/lib/harness.js` is a one-line re-export of `workkit-core/test`, which carries the whole library, and `test/lib/serial.js` is this repo's serial list.
 
-A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip. Suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`, plus the library's own suites at the `test/` root (`runner`, `node-test`, `harness`, `log`, `spawn`).
+A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip; one that runs a command a cloud session may lack calls `needs()` with its name instead, a skip there and a failure anywhere else (`docs/tests.md` § The kit's runner).
+
+Suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`, plus the library's own suites at the `test/` root (`runner`, `node-test`, `harness`, `log`, `spawn`).
 
 A suite keeps to its own temp folder through `mkTmp` and touches no fixed shared path; one that must is added to `SERIAL`, with the path named in a one-line comment beside its entry.
 

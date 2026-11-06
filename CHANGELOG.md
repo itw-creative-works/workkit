@@ -7,6 +7,18 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#509](../../issues/509) - A suite names the commands it runs with `needs()`: a cloud session missing one skips the suite by name, elsewhere it fails. `workkit tools` lists them for a cloud setup. A cloud session skips a `"local": true` ship hook, and the CI watch waits on an open PR's run.
+
+### Changed
+
+- [#509](../../issues/509) - A cloud session, or a `pr` ship, delivers the work and release commits through one pull request merged with a merge commit, the shim serving `gh pr` and `gh release view` over REST. A cloud cut leaves the release waiting; the next machine ship cuts every version missing one.
+
+### Fixed
+
+- [#509](../../issues/509) - In a cloud session the branch protection heal reads the repo over REST instead of GraphQL, and every gh call the shim passes on gets the clone's repo, so `gh api repos/{owner}/{repo}` and the CI watch's `gh run list` resolve there.
+
 ## [0.90.1] - 2026-11-04
 
 ### Changed

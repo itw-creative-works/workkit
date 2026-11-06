@@ -13,7 +13,11 @@ import {
 import { VERSION_RE } from './commit-language.js';
 import { isPlain, parseJson } from './settings.js';
 
-const RELEASE_SUBJECT = new RegExp(`^chore\\(release\\): (${VERSION_RE})$`);
+/**
+ * A release commit's subject, `chore(release): <x.y.z>`, its version the first
+ * group (a leading `v` included): the one rule this hook and the ship's cut read.
+ */
+export const RELEASE_SUBJECT = new RegExp(`^chore\\(release\\): (${VERSION_RE})$`);
 const GLOB = /[*?[]/;
 const LOOKUP_TIMEOUT_MS = 15000;
 

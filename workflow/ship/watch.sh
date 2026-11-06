@@ -4,9 +4,9 @@
 # usage or a sha this clone does not know, 3 not queued yet, 4 gh failed or the
 # watch did not finish, 5 a watch already running, 130 interrupted; the lines
 # and the log: `workflow/README.md`, the ship/watch.sh row. The foreground runs
-# this file as `--watch-body <sha>`, detached, and tails its log. The push
-# trigger is a top-level `on:` naming `push` in any of its YAML shapes; a
-# `push` nested deeper is not one.
+# this file as `--watch-body <sha>`, detached, and tails its log. A trigger
+# (`push`, `pull_request`) is a top-level `on:` naming it in any of its YAML
+# shapes; one nested deeper is not one.
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole, and a watch outlives many edits to the kit.
@@ -49,15 +49,46 @@ list_runs() {
   printf '%s' "$rows"
 }
 
-# Does any workflow at the repo's toplevel run on a push? Read in awk, one file
-# at a time, carriage returns off and single quotes read as double, so a quoted
-# `"on":` key and a CRLF file answer the same as the plain one.
-push_configured() {
+# The sha's runs as list_runs prints them, asked TRIES times WAIT seconds
+# apart while the list stays empty.
+await_runs() {
+  local rows='' try
+  for ((try = 1; try <= TRIES; try++)); do
+    rows="$(list_runs)" || exit $?
+    [[ -z "$rows" ]] || break
+    if ((try < TRIES)); then sleep "$WAIT"; fi
+  done
+  printf '%s' "$rows"
+}
+
+# The open PR's number for the branch whose tip is the sha (nothing when there
+# is none, the HEAD is detached or the tip is another commit), since CI that
+# never runs on the branch's push may run on its PR; exit 4 when gh fails.
+open_pr() {
+  local root branch out number
+  root="$(repo_root)"
+  branch="$(git -C "$root" symbolic-ref --quiet --short HEAD 2>/dev/null)" || return 0
+  [[ "$(git -C "$root" rev-parse HEAD 2>/dev/null)" == "$SHA" ]] || return 0
+  if ! out="$(gh pr list --head "$branch" --state open --json number,url --limit 1 2>"$ERR_FILE")"; then
+    printf 'ci-watch: gh pr list --head %s failed: %s\n' "$branch" "$(head -n 1 "$ERR_FILE")" >&2
+    exit 4
+  fi
+  if ! number="$(printf '%s' "$out" | wk_jq -r 'if type == "array" then .[0].number // empty else error end' 2>/dev/null)"; then
+    printf 'ci-watch: gh pr list --head %s answered no PR list: %s\n' "$branch" "$(printf '%s' "$out" | head -n 1)" >&2
+    exit 4
+  fi
+  printf '%s' "$number"
+}
+
+# Does any workflow at the repo's toplevel run on the event $1? Read in awk, one
+# file at a time, carriage returns off and single quotes read as double, so a
+# quoted `"on":` key and a CRLF file answer the same as the plain one.
+triggered_on() {
   local root file
   root="$(repo_root)"
   shopt -s nullglob
   for file in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
-    if tr -d '\r' <"$file" | tr "'" '"' | awk '
+    if tr -d '\r' <"$file" | tr "'" '"' | awk -v ev="$1" '
       /^[[:space:]]*(#|$)/ { next }
       inblock && /^[^[:space:]]/ { inblock = 0 }
       inblock {
@@ -66,7 +97,7 @@ push_configured() {
         if (RLENGTH == want) {
           line = substr($0, RLENGTH + 1)
           sub(/^-[[:space:]]*/, "", line)
-          if (line ~ /^"?push"?[[:space:]]*(:|#|$)/) found = 1
+          if (line ~ ("^\"?" ev "\"?[[:space:]]*(:|#|$)")) found = 1
         }
         next
       }
@@ -75,7 +106,7 @@ push_configured() {
         sub(/^[^:]*:/, "", rest)
         sub(/#.*/, "", rest)
         if (rest ~ /[^[:space:]]/) {
-          if (rest ~ /(^|[^A-Za-z0-9_-])push([^A-Za-z0-9_-]|$)/) found = 1
+          if (rest ~ ("(^|[^A-Za-z0-9_-])" ev "([^A-Za-z0-9_-]|$)")) found = 1
         } else {
           inblock = 1
           want = -1
@@ -88,6 +119,9 @@ push_configured() {
   done
   return 1
 }
+
+push_configured() { triggered_on push; }
+pr_configured() { triggered_on pull_request; }
 
 # Watch one run to its end. A non-zero watch is red only when the run says it
 # finished; otherwise the watch failed, which is exit 4. Every gh call reads
@@ -149,16 +183,21 @@ foreground() {
 
 # The body: its first line names the sha, its last is always its exit code.
 watch_body() {
-  local rows='' try status=0 id name url
+  local rows='' pr='' status=0 id name url
   wk_body_traps ci-watch 'rm -f "${ERR_FILE:-}"'
   printf 'ci-watch: watching %s\n' "$SHA"
   ERR_FILE="$(mktemp)"
 
-  for ((try = 1; try <= TRIES; try++)); do
-    rows="$(list_runs)" || exit $?
-    [[ -z "$rows" ]] || break
-    if ((try < TRIES)); then sleep "$WAIT"; fi
-  done
+  rows="$(await_runs)" || exit $?
+  if [[ -z "$rows" ]] && pr_configured; then pr="$(open_pr)" || exit $?; fi
+  if [[ -n "$pr" ]]; then
+    printf "ci-watch: waiting for PR #%s's run for %s\n" "$pr" "$SHA"
+    rows="$(await_runs)" || exit $?
+    if [[ -z "$rows" ]]; then
+      printf 'ci-watch: run not queued yet for %s (PR #%s)\n' "$SHA" "$pr" >&2
+      exit 3
+    fi
+  fi
 
   if [[ -z "$rows" ]]; then
     if push_configured; then

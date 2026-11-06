@@ -3,6 +3,7 @@
 // a mark per case and each suite reports via `summary()`. AGENTS.md § Tests.
 // It is the library's one entry: every concern file's exports ride on its own.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openCase, drain, indentRest, indentWriter, CASE_INDENT } from './log.js';
@@ -116,6 +117,38 @@ export const skipSuite = (reason) => {
   const err = new Error(reason);
   err.suiteSkipped = true;
   throw err;
+};
+
+// A file PATH's search would run as `name`: on Windows the name plus each
+// PATHEXT extension (the name alone only when it carries one), elsewhere an
+// executable file of that name.
+const onPath = (name) => {
+  const windows = process.platform === 'win32';
+  const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  const names = windows ? [...(path.extname(name) ? [name] : []), ...exts.map((ext) => `${name}${ext}`)] : [name];
+  return (process.env.PATH || '').split(path.delimiter).filter(Boolean).some((dir) => names.some((candidate) => {
+    const file = path.join(dir, candidate);
+    try {
+      fs.accessSync(file, windows ? fs.constants.F_OK : fs.constants.X_OK);
+      return fs.statSync(file).isFile();
+    } catch {
+      return false;
+    }
+  }));
+};
+
+// The commands a suite needs, called at its runner's top: a missing one skips
+// the suite in a cloud session, which may lack it, and fails it anywhere else.
+//   needs('hugo', 'ffmpeg');
+export const needs = (...tools) => {
+  if (tools.length === 0 || tools.some((tool) => typeof tool !== 'string' || tool === '')) {
+    throw new TypeError('needs() takes one or more command names');
+  }
+  const missing = [...new Set(tools)].filter((tool) => !onPath(tool));
+  if (missing.length === 0) return;
+  const reason = `needs ${missing.join(', ')}, not installed`;
+  if (process.env.CLAUDE_CODE_REMOTE === 'true') skipSuite(`${reason} in this cloud session`);
+  throw new Error(reason);
 };
 
 // Mirrors the engine's `uname -s` question rather than probing PATH for

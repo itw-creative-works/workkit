@@ -84,9 +84,10 @@ const makeGhStub = ({
   labeled = {}, labelQueryFails = false,
   // Branch-protection knobs. `protection`: 'absent' (404s, PUT accepted),
   // 'present' (GET succeeds), or 'denied' (404s, PUT rejected: the free-plan
-  // private repo). `repoView`: answer `gh repo view` with a real owner/branch;
-  // off by default, so a case meets the "cannot resolve" bail-out unless it opts in.
-  protection = 'absent', repoView = false,
+  // private repo). `repoRead`: answer the repo's REST read with a real
+  // owner/branch; off by default, so a case meets the "cannot resolve" bail-out
+  // unless it opts in.
+  protection = 'absent', repoRead = false,
 } = {}) => {
   const dir = mkTmp('wf-std-');
   const logFile = path.join(dir, 'gh.log');
@@ -143,12 +144,12 @@ const makeGhStub = ({
     'if [[ "$1 $2" == "label edit" ]]; then',
     `  exit ${editFails ? 1 : 0}`,
     'fi',
-    'if [[ "$1" == "repo" && "$2" == "view" ]]; then',
-    ...(repoView ? [
-      '  if [[ "$*" == *nameWithOwner* ]]; then echo "stub/repo"; fi',
-      '  if [[ "$*" == *defaultBranchRef* ]]; then echo "main"; fi',
-      '  exit 0',
-    ] : ['  exit 0']),
+    'if [[ "$1" == "api" && ( "$2" == "repos/{owner}/{repo}" || "$2" == "repos/stub/repo" ) ]]; then',
+    ...(repoRead ? [
+      '  if [[ "$*" == *.full_name* ]]; then echo "stub/repo"; fi',
+      '  if [[ "$*" == *.default_branch* ]]; then echo "main"; fi',
+    ] : []),
+    '  exit 0',
     'fi',
     'if [[ "$1" == "api" ]]; then',
     '  if [[ "$*" == *"-X PUT"* ]]; then',

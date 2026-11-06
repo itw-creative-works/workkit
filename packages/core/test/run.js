@@ -12,7 +12,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { stripVTControlCharacters } from 'node:util';
 import { fork, spawnSync } from 'node:child_process';
-import { findSuites, findModSuites, POOL } from './lib/suites.js';
+import { suiteDir, findSuites, findModSuites, POOL } from './lib/suites.js';
 import { isNodeTestSuite, runNodeTest } from './lib/node-test.js';
 import { PIPE_GRACE_MS } from './lib/process.js';
 import { indentRest, indentWriter } from './lib/log.js';
@@ -22,15 +22,6 @@ const require = createRequire(import.meta.url);
 
 const TAIL_LINES = 3;
 const SLOWEST = 5;
-
-// The repo's suite folder: `test/`, Node's convention; `tests/` only when the
-// repo has that folder and no `test/`.
-const suiteDir = (root) => {
-  const isDir = (dir) => fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory() === true;
-  const dir = path.join(root, 'test');
-  const legacy = path.join(root, 'tests');
-  return !isDir(dir) && isDir(legacy) ? legacy : dir;
-};
 
 // The repo the run covers, the cwd, and the suite paths it was handed: `--`
 // dropped, every other argument a suite path.

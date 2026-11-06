@@ -6,18 +6,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-const { isDeepStrictEqual } = require('util');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, seeded, SPAWN_DEADLINE,
+  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp,
 } = require('../../lib/harness');
-const {
-  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, systemPathWith, homeEnv,
-} = require('../../lib/platform');
-const { makeGhStub, ghCalls, ghRequests } = require('../../lib/gh-stub');
+const { IS_WINDOWS, NO_NODE_STUB } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
-const { mkOriginRepo } = require('../../lib/git-repo');
-const { scratchKit } = require('../../lib/identity');
+const {
+  cloudWorld, assertSame, assertOk, printedJson, writes, routes,
+} = require('../../lib/identity');
 
 const CREATED = '2026-10-20T08:00:00Z';
 const UPDATED = '2026-10-28T21:38:46Z';
@@ -25,77 +21,7 @@ const UPDATED = '2026-10-28T21:38:46Z';
 // The proxy's answer for a repo the session has not attached.
 const NOT_ATTACHED = 'GitHub access to this repository is not enabled for this session. Use add_repo to request access';
 
-// A kit, a repo whose origin is acme/rostered, and an empty home, copied per case.
-const seed = seeded((dir) => {
-  fs.cpSync(scratchKit(), path.join(dir, 'kit'), { recursive: true });
-  fs.mkdirSync(path.join(dir, 'repo'));
-  mkOriginRepo(path.join(dir, 'repo'), 'https://github.com/acme/rostered.git');
-  fs.mkdirSync(path.join(dir, 'home'));
-});
-
-/** Write `files` into the world's repo and commit them, as a scratch identity. */
-const commitFiles = (world, files) => {
-  for (const [rel, body] of Object.entries(files)) fs.writeFileSync(path.join(world.repo, rel), body);
-  for (const args of [['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test'], ['add', '-A'], ['commit', '-q', '-m', 'init']]) {
-    const res = spawnSync('git', args, { cwd: world.repo, env: homeEnv(world.home, { PATH: process.env.PATH }), encoding: 'utf8' });
-    if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
-  }
-};
-
-const mkWorld = () => {
-  const root = mkTmp('wk-gh-rest-');
-  seed(root);
-  return {
-    root, shim: path.join(root, 'kit', 'workflow', 'identity', 'gh'), repo: path.join(root, 'repo'), home: path.join(root, 'home'),
-  };
-};
-
-/**
- * Run the shim in a cloud session with `args` from the acme/rostered repo, the
- * real gh a stub answering `api` (keyed `<METHOD> <route>`); `env` adds variables,
- * and `files` (root-relative path to content), when given, is committed to the repo first.
- * Returns the exit, both streams, every call the stub saw and every `gh api` request it answered.
- */
-const runCloud = (args, { api = {}, env: extra = {}, files = null } = {}) => {
-  const world = mkWorld();
-  if (files) commitFiles(world, files);
-  const stub = makeGhStub({ api });
-  const env = homeEnv(world.home, {
-    PATH: systemPathWith(path.dirname(world.shim), stub.binDir, NODE_DIR),
-    CLAUDECODE: '1',
-    CLAUDE_CODE_REMOTE: 'true',
-    ...extra,
-  });
-  delete env.GH_TOKEN;
-  delete env.GITHUB_TOKEN;
-  const res = spawnSync(BASH, [...NO_RC, shellPath(world.shim), ...args],
-    { cwd: world.repo, env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-  return {
-    code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', calls: ghCalls(stub), requests: ghRequests(stub), root: world.root,
-  };
-};
-
-const assertSame = (actual, expected, msg) => {
-  assert(isDeepStrictEqual(actual, expected), `${msg}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
-};
-
-/** Exit 0, or a failure naming what the shim said and asked. */
-const assertOk = (res, what) => {
-  assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()}, requests: ${JSON.stringify(res.requests)})`);
-};
-
-/** What the shim printed, parsed as the JSON gh prints; a failure naming the text when it is not. */
-const printedJson = (res, what) => {
-  try {
-    return JSON.parse(res.stdout);
-  } catch {
-    throw new Error(`${what}: stdout is not JSON, got: ${res.stdout}`);
-  }
-};
-
-/** The requests that change something, as `[method, path]` pairs. */
-const writes = (res) => res.requests.filter((r) => r.method !== 'GET');
-const routes = (reqs) => reqs.map((r) => [r.method, r.path]);
+const { runCloud } = cloudWorld();
 
 /** A label as GitHub's REST API answers one. */
 const restLabel = (name) => ({

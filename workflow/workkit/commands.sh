@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# workflow/workkit/commands.sh: the other five commands the dispatch names,
-# `update`, `publish`, `brief`, `test` and `doctor`. Sourced by workkit.sh, functions
-# only; every name it reads, and the QUIET and PUBLISH_FAILED it sets, are the
-# entry's.
+# workflow/workkit/commands.sh: the other six commands the dispatch names,
+# `update`, `publish`, `brief`, `test`, `tools` and `doctor`. Sourced by
+# workkit.sh, functions only; every name it reads, and the QUIET and
+# PUBLISH_FAILED it sets, are the entry's.
 
 cmd_update() {
   case "${1:-}" in
@@ -102,6 +102,24 @@ cmd_test() {
     exit 1
   fi
   exec npm test -- "$@"
+}
+
+# The tools the repo's suites name through needs(), from the kit's own copy of
+# workkit-core's bin, so a cloud setup can read the list before npm install.
+cmd_tools() {
+  local bin="$KIT_DIR/packages/core/bin/workkit.js"
+  if [[ ! -f "$bin" ]]; then
+    wk_error "tools: no workkit-core beside this engine ($(wk_native_path "$bin")), and this command needs the whole kit"
+    exit 1
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    wk_error "tools: the verb runs node, and there is no node on PATH"
+    exit 1
+  fi
+  local root
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
+  cd "$root" || exit 1
+  exec node "$bin" tools "$@"
 }
 
 cmd_doctor() {

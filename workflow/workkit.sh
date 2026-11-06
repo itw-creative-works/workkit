@@ -173,6 +173,8 @@ usage: workkit <command> [args]
                        as an issue on the home repo outside every project
   test [paths]         hand the paths to this repo's npm test, run at its root,
                        so the script shell records the run
+  tools                print each command this repo's suites name through
+                       needs(), one per line, sorted, for a setup to install
   prove                run the root suite on exactly the staged tree, in a copy
                        outside the repo, and record it on green, so a commit
                        of it passes the gate while other work stays unstaged
@@ -191,8 +193,11 @@ usage: workkit <command> [args]
                        entry backfill, every check before any write
   ship watch <sha>     watch every CI run for a pushed sha and answer green or
                        red by exit code
-  ship cut <x.y.z>     the GitHub release at HEAD, its notes that version's
-                       CHANGELOG section, then the repo's afterRelease hooks
+  ship cut <x.y.z>     the GitHub release at that version's own release commit
+                       (HEAD when none), after any earlier unreleased ones, its
+                       notes that version's CHANGELOG section, then the repo's
+                       afterRelease hooks; in a cloud session it names the
+                       version that waits
   ship plan            print which packages publish to npm, in which order,
                        and which are skipped and why; publishes nothing
   ship publish         publish that plan in order, asking npm first, stopping
@@ -307,6 +312,7 @@ case "${1:-help}" in
   brief)   shift; cmd_brief "$@" ;;
   log)     shift; cmd_log "$@" ;;
   test)    shift; cmd_test "$@" ;;
+  tools)   shift; cmd_tools "$@" ;;
   public)  shift; cmd_public "$@" ;;
   ship)    shift; cmd_ship "$@" ;;
   review)  shift; cmd_review "$@" ;;

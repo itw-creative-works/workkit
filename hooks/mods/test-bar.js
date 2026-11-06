@@ -6,6 +6,7 @@
  */
 
 import { escaped, isTestName, isTestPath } from './test-reminder.js';
+import { lexLine } from '../../packages/core/test/lib/lexer.js';
 
 // The scratch writer's homes: a consumer repo's (`test/` or `tests/`) and the kit's own.
 const SCRATCH = new Set(['test/lib/scratch.js', 'tests/lib/scratch.js', 'packages/core/test/lib/scratch.js']);
@@ -33,74 +34,29 @@ const SOURCE_ANCHOR = /__dirname|process\.cwd\(\)|\b[A-Z_]*(ROOT|KIT|REPO)[A-Z_]
 const NAMED = /\b(?:const|let|var)\s+(\w+)\s*=/;
 const WEAK = [/\bexistsSync\s*\(/, /\bl?stat(Sync)?\s*\(.*\.mode\b|\b0o[0-7]{3,4}\b|\bX_OK\b|\baccessSync\s*\(/, /\bassert(\.ok)?\s*\(\s*true\s*[,)]/];
 
-// A `/` opens a regex literal at the line's start, after an operator or an
-// opener (an arrow's `>` included) or after `return`; anywhere else it divides.
-const REGEX_AFTER = /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn)\s*$/;
-
-/**
- * Whether the `/` at `i`, met outside any span, opens a regex literal rather
- * than dividing: the text before it decides.
- * @param {string} line the line
- * @param {number} i the index of the `/`
- * @returns {boolean}
- */
-function opensRegex(line, i) {
-  return REGEX_AFTER.test(line.slice(0, i));
-}
-
-/**
- * The index of the unescaped `/` closing the regex literal opened at `i`, a
- * `/` inside a `[...]` class left alone; the line's length when it never
- * closes, since a regex never runs past its line.
- * @param {string} line the line
- * @param {number} i the index of the opening `/`
- * @returns {number}
- */
-function regexEnd(line, i) {
-  let inClass = false;
-  for (let j = i + 1; j < line.length; j += 1) {
-    if (line[j] === '\\') j += 1;
-    else if (line[j] === '[') inClass = true;
-    else if (line[j] === ']') inClass = false;
-    else if (line[j] === '/' && !inClass) return j;
-  }
-  return line.length;
-}
-
 /**
  * The file's lines with every quoted span removed: a `'...'`, `"..."` or
  * backtick span on one line, and every line inside a template literal left
  * open at a line's end, up to the text after its closing backtick. A regex
- * literal and a trailing `//` comment are dropped too and open no span. A
- * comment line outside a template passes through whole and opens no span.
+ * literal and a `//` or one-line `/* *\/` comment are dropped too and open no
+ * span. A comment line outside a template passes through whole and opens no span.
  * @param {string[]} lines the file's lines
  * @returns {string[]}
  */
 export function quoteFree(lines) {
-  let quote = '';
+  let open = '';
   return lines.map((line) => {
-    if (!quote && COMMENT.test(line)) return line;
+    if (!open && COMMENT.test(line)) return line;
+    const lexed = lexLine(line, open);
+    // Only a template literal runs past its line here.
+    open = lexed.open === '`' ? '`' : '';
     let out = '';
-    for (let i = 0; i < line.length; i += 1) {
-      const c = line[i];
-      if (c === '\\') {
-        if (!quote) out += line.slice(i, i + 2);
-        i += 1;
-      } else if (quote) {
-        if (c === quote) quote = '';
-      } else if (c === '/' && line[i + 1] === '/') {
-        break;
-      } else if (c === '/' && opensRegex(line, i)) {
-        i = regexEnd(line, i);
-      } else if (c === "'" || c === '"' || c === '`') {
-        quote = c;
-      } else {
-        out += c;
-      }
+    let at = 0;
+    for (const span of lexed.spans) {
+      out += line.slice(at, span.start);
+      at = span.end;
     }
-    // Only a template literal runs past its line; a stray quote ends with it.
-    if (quote !== '`') quote = '';
-    return out;
+    return out + line.slice(at);
   });
 }
 
