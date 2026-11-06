@@ -56,6 +56,13 @@ const cases = async () => {
       'actions pinned the way the checks template pins them');
   });
 
+  await test('a pull request judges the entries it adds against its merge commit\'s first parent', () => {
+    const text = read(REUSABLE);
+    assert(/BASE_REF: \$\{\{ github\.base_ref \}\}/.test(text), `the base branch reaches the step, got:\n${text}`);
+    assert(/fetch-depth: 2/.test(text), `the caller's checkout keeps the merge commit's parents, got:\n${text}`);
+    assert(/lint\.js CHANGELOG\.md --added-only --base=HEAD\^1/.test(text), `and the linter compares against the first, got:\n${text}`);
+  });
+
   group('checks.yml: callers use the published path');
 
   await test('the template\'s changelog job is the one uses: line, aimed at this repo\'s workflow', () => {

@@ -22,19 +22,23 @@ wk_job_boundary() {
   printf '%s\n' '^(  )?[^ #]'
 }
 
-# The header paragraphs a checks.yml carried before the reusable workflow, one
-# per linter copy with a blank line between: the rewrite swaps an exact match
-# for the template's paragraph, which opens with the same first line.
+# The header paragraphs a checks.yml carried before, a blank line between: one
+# per linter copy, then the reusable workflow's push-only wording. The rewrite
+# swaps an exact match for the template's paragraph, which opens with the same first line.
 wk_retired_checks_headers() {
-  local copy sep=""
+  local copy
   while IFS= read -r copy; do
-    printf '%s' "$sep"
     printf '%s\n' \
       '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,' \
       "# appended once at the end of \`jobs:\`. Its linter is the copy of the kit's" \
-      "# changelog.js the heal vendors to $copy on every run."
-    sep=$'\n'
+      "# changelog.js the heal vendors to $copy on every run." \
+      ''
   done < <(wk_linter_copies)
+  printf '%s\n' \
+    '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,' \
+    "# appended once at the end of \`jobs:\`. It calls the kit's reusable workflow," \
+    "# which runs the kit's own changelog/lint.js over this repo's [Unreleased] section," \
+    '# so the linter lives in the kit and nowhere else.'
 }
 
 # The first lines a checks.yml carried before its push trigger, one per line:

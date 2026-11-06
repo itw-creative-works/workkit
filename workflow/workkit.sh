@@ -213,7 +213,7 @@ usage: workkit <command> [args]
   proof red [--live] <path>... -- <command>...
                        run the command against the paths as the claim found
                        them, so the tests must fail: exit 0 red, 1 green
-  changelog lint <file> [--added-only] [--staged] [--unreleased-only]
+  changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]
                        check the CHANGELOG entries against the entry format
 
 The engine it drives lives beside this script; the spec both implement is

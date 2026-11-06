@@ -50,16 +50,17 @@ const sectionOf = (version) => `### Fixed\n\n- [#9](https://github.com/o/r/issue
 
 /**
  * Commit `chore(release): <version>`, its `## [version]` section added under
- * [Unreleased] unless `section` is false; returns the commit's full sha.
+ * [Unreleased] unless `section` is false, `body` its message body when given;
+ * returns the commit's full sha.
  */
-const releaseCommit = (g, version, { section = true, subject = `chore(release): ${version}` } = {}) => {
+const releaseCommit = (g, version, { section = true, subject = `chore(release): ${version}`, body = null } = {}) => {
   if (section) {
     const file = path.join(g.repo, 'CHANGELOG.md');
     const text = fs.readFileSync(file, 'utf8');
     g.write('CHANGELOG.md', text.replace('## [Unreleased]\n\n', `## [Unreleased]\n\n## [${version}] - 2026-11-01\n\n${sectionOf(version)}\n\n`));
     g.git('add', '-A');
   }
-  g.git('commit', '-q', '--allow-empty', '-m', subject);
+  g.git('commit', '-q', '--allow-empty', '-m', subject, ...(body === null ? [] : ['-m', body]));
   return g.git('rev-parse', 'HEAD').trim();
 };
 
@@ -213,6 +214,19 @@ const cases = async () => {
     const { code, err } = runShip(g, 'cut', ['0.92.0'], { binDirs: [gh.binDir] });
     assertEq(code, 0, `exit 0, got: ${err}`);
     assertEq(JSON.stringify(cutTargets(gh)), JSON.stringify([['v0.91.0', sha091], ['v0.91.1', sha0911], ['v0.92.0', sha092]]), `0.89.0 below the released 0.90.1 is left, the rest oldest first, got: ${fmtCalls(creates(gh))}`);
+  });
+
+  await test('a release commit with a `Release: none` trailer is never backfilled, and the walk goes on past it', () => {
+    const g = mkCutRepo(undefined, EMPTY_CHANGELOG);
+    releaseCommit(g, '0.90.1');
+    const sha091 = releaseCommit(g, '0.91.0');
+    releaseCommit(g, '0.91.1', { body: 'Release: none' });
+    const sha092 = releaseCommit(g, '0.92.0');
+    const gh = commitGh({ tags: ['v0.90.1'], onCreate: g.note('release-$3') });
+    const { code, err } = runShip(g, 'cut', ['0.92.0'], { binDirs: [gh.binDir] });
+    assertEq(code, 0, `exit 0, got: ${err}`);
+    assertEq(JSON.stringify(cutTargets(gh)), JSON.stringify([['v0.91.0', sha091], ['v0.92.0', sha092]]), `0.91.1 shipped with no release is left, got: ${fmtCalls(creates(gh))}`);
+    assert(!err.includes('v0.91.1'), `no line for the skipped version, got: ${err}`);
   });
 
   await test('a history with no release at all backfills nothing', () => {

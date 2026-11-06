@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#511](../../issues/511) - A pull request's changelog check judges every entry it adds against its base, so one carrying its own release commit is still checked. A cloud session stays on its own branch after a ship's merge, and the backfill passes over a version shipped with `no release`.
+
 ## [0.91.0] - 2026-11-05
 
 ### Added

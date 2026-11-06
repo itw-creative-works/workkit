@@ -46,6 +46,11 @@ const rewrite = (body, template) => overFile(body, 'wk_changelog_job_rewrite "$1
 const OLD_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
   + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
   + '# changelog.js the heal vendors to .github/changelog-lint.cjs on every run.\n';
+// The header the template carried while the reusable workflow judged [Unreleased] alone.
+const PUSH_ONLY_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
+  + '# appended once at the end of `jobs:`. It calls the kit\'s reusable workflow,\n'
+  + '# which runs the kit\'s own changelog/lint.js over this repo\'s [Unreleased] section,\n'
+  + '# so the linter lives in the kit and nowhere else.\n';
 const templateHeader = () => {
   const lines = fs.readFileSync(TEMPLATE, 'utf8').split('\n');
   const from = lines.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
@@ -150,6 +155,20 @@ const cases = async () => {
     const older = OLD_HEADER.replace('changelog-lint.cjs', 'changelog-lint.js');
     const { out } = rewrite(`${older}${JOBS}${NODE_JOB}`);
     assertEq(out, `${templateHeader()}${JOBS}  changelog:\n${USES}\n`, 'either wording is the retired header');
+  });
+
+  await test('the push-only wording of the reusable workflow\'s header is swapped for the template\'s', () => {
+    const current = `${JOBS}  changelog:\n${USES}\n`;
+    const { code, out } = rewrite(`# intro\n${PUSH_ONLY_HEADER}${current}`);
+    assertEq(code, 0, 'it answers');
+    assertEq(out, `# intro\n${templateHeader()}${current}`, 'the template\'s paragraph in its place');
+  });
+
+  await test('a file already carrying the template\'s header is left byte for byte', () => {
+    const current = `# intro\n${templateHeader()}${JOBS}  changelog:\n${USES}\n`;
+    const { code, out } = rewrite(current);
+    assertEq(code, 0, 'it answers');
+    assertEq(out, current, 'nothing swapped, nothing doubled');
   });
 
   await test('a retired header is swapped even where the job already calls the kit\'s workflow', () => {

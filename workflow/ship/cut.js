@@ -43,23 +43,26 @@ const noSection = (version) => `CHANGELOG.md has no [${version}] section with en
 /**
  * The release commits HEAD descends from, newest first, one per version (its
  * newest): each a commit whose subject is exactly `chore(release): <x.y.z>`.
+ * `noRelease` marks one whose message carries the `Release: none` trailer, the
+ * mark a ship run with `no release` leaves.
  * @param {string} root - the repo root
- * @returns {{sha: string, version: string}[]}
+ * @returns {{sha: string, version: string, noRelease: boolean}[]}
  * @throws {Error} when git log fails, which a repo with a HEAD never should
  */
 const releaseCommits = (root) => {
-  const res = spawnSync('git', ['log', '--fixed-strings', '--grep=chore(release): ', '--format=%H %s', 'HEAD'], {
+  const format = '--format=%H%x1f%s%x1f%(trailers:key=Release,valueonly,separator=%x2C)%x1e';
+  const res = spawnSync('git', ['log', '--fixed-strings', '--grep=chore(release): ', format, 'HEAD'], {
     cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
   });
   if (res.status !== 0) throw new Error(`ship-cut: git log ${endOf(res)}: ${(res.stderr || '').trim()}`);
   const seen = new Set();
   const commits = [];
-  for (const line of res.stdout.split('\n')) {
-    const sha = line.slice(0, line.indexOf(' '));
-    const version = RELEASE_SUBJECT.exec(line.slice(sha.length + 1))?.[1].replace(/^v/, '');
+  for (const record of res.stdout.split('\x1e')) {
+    const [sha, subject = '', release = ''] = record.trim().split('\x1f');
+    const version = RELEASE_SUBJECT.exec(subject)?.[1].replace(/^v/, '');
     if (!version || seen.has(version)) continue;
     seen.add(version);
-    commits.push({ sha, version });
+    commits.push({ sha, version, noRelease: release.split(',').some((v) => v.trim().toLowerCase() === 'none') });
   }
   return commits;
 };
@@ -69,15 +72,17 @@ const isReleased = (root, tag) => spawnSync('gh', ['release', 'view', tag], { cw
 
 /**
  * The earlier versions with a release commit but no release, oldest first: the
- * walk down from the newest stops at the first version released.
+ * walk down from the newest stops at the first version released, and passes
+ * over one shipped with no release.
  * @param {string} root - the repo root
- * @param {{sha: string, version: string}[]} commits - releaseCommits' answer
+ * @param {{sha: string, version: string, noRelease: boolean}[]} commits - releaseCommits' answer
  * @param {string} version - the version asked for
- * @returns {{sha: string, version: string}[]}
+ * @returns {{sha: string, version: string, noRelease: boolean}[]}
  */
 const missingBefore = (root, commits, version) => {
   const missing = [];
   for (const commit of commits.filter((c) => compareVersions(c.version, version) < 0)) {
+    if (commit.noRelease) continue;
     if (isReleased(root, `v${commit.version}`)) return missing.reverse();
     missing.push(commit);
   }

@@ -4,9 +4,11 @@
 # The linter runs from a checkout of the kit itself, so no repo carries a copy
 # of it and a change to the linter reaches every caller on its next run.
 #
-# Only the caller's [Unreleased] section is judged: released history is already
-# published, and a maintainer editing it is not what this gate is for. A caller
-# with no CHANGELOG.md passes.
+# A push judges only the caller's [Unreleased] section: released history is
+# already published, and a maintainer editing it is not what this gate is for.
+# A pull request judges every entry it adds against its base, so one carrying
+# its own release commit, its [Unreleased] empty again, is still judged. A
+# caller with no CHANGELOG.md passes.
 name: changelog
 
 on:
@@ -16,7 +18,11 @@ jobs:
   changelog:
     runs-on: ubuntu-latest
     steps:
+      # Depth 2 keeps a pull request's merge commit with its first parent, the
+      # base it was built on.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
       - uses: actions/checkout@v5
         with:
           repository: itw-creative-works/workkit
@@ -25,9 +31,13 @@ jobs:
         with:
           node-version: lts/*
       - name: CHANGELOG entry format
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ -f CHANGELOG.md ]; then
-            node .workkit-kit/workflow/changelog/lint.js CHANGELOG.md --unreleased-only
-          else
+          if [ ! -f CHANGELOG.md ]; then
             echo "no CHANGELOG.md, nothing to check"
+          elif [ -n "$BASE_REF" ]; then
+            node .workkit-kit/workflow/changelog/lint.js CHANGELOG.md --added-only --base=HEAD^1
+          else
+            node .workkit-kit/workflow/changelog/lint.js CHANGELOG.md --unreleased-only
           fi

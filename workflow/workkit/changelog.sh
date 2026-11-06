@@ -4,7 +4,7 @@
 # functions only; the subcommand is its script in changelog/, which speaks for
 # itself.
 
-# workkit changelog lint <file> [--added-only] [--staged] [--unreleased-only]
+# workkit changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]
 cmd_changelog() {
   local sub="${1:-}"
   case "$sub" in

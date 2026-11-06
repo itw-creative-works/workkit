@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 // CHANGELOG entry format: the one home of the rules, executable
-// (`docs/project-state.md` § CHANGELOG entries). The guards call it at write
-// and commit time, and CI runs it `--unreleased-only`.
+// (`docs/project-state.md` § CHANGELOG entries), called by the guards at write
+// and commit time and by CI (`.github/workflows/changelog.yml` picks the mode).
 //
-// CLI: workkit changelog lint <file> [--added-only] [--staged] [--unreleased-only]
-//   --added-only judges only the entries this change added (vs HEAD); --staged
-//   reads the index; --unreleased-only judges only [Unreleased], the CI mode.
-//   Exits 1 with the violations on stderr, 0 when clean.
+// CLI: workkit changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]
+//   --added-only judges only the entries this change added (vs HEAD, or vs
+//   <ref> with --base); --staged reads the index; --unreleased-only judges only
+//   [Unreleased]. Exits 1 with the violations on stderr, 0 when clean.
 
 const fs = require('fs');
 const path = require('path');
@@ -218,19 +218,20 @@ const lintText = (text, onlyLines = null, unreleasedOnly = false) => parseEntrie
 const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
 /**
- * The 1-based line numbers this change adds to a file, relative to HEAD.
+ * The 1-based line numbers this change adds to a file, relative to `base`.
  * A file git does not know about yet counts as entirely added.
  * @param {string} file absolute path
- * @param {boolean} staged compare the index (rather than the working tree) to HEAD
+ * @param {boolean} staged compare the index (rather than the working tree) to `base`
+ * @param {string} base the ref compared against
  * @returns {Set<number>|null} null when git cannot answer. The caller then judges everything
  */
-const addedLines = (file, staged) => {
+const addedLines = (file, staged, base) => {
   const cwd = path.dirname(file);
   let diff;
   try {
     const args = ['diff', '--unified=0'];
     if (staged) args.push('--cached');
-    diff = git([...args, 'HEAD', '--', file], cwd);
+    diff = git([...args, base, '--', file], cwd);
   } catch {
     return null;
   }
@@ -266,6 +267,16 @@ const addedLines = (file, staged) => {
   return lines;
 };
 
+/** Whether `ref` names a commit git can read from `cwd`. */
+const resolves = (ref, cwd) => {
+  try {
+    git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], cwd);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Read the content to judge: the index's copy when gating a commit, the file
  * on disk otherwise.
@@ -289,7 +300,7 @@ const main = (argv) => {
   const flags = new Set(argv.filter((a) => a.startsWith('--')));
   const file = argv.find((a) => !a.startsWith('--'));
   if (!file) {
-    console.error('usage: workkit changelog lint <file> [--added-only] [--staged] [--unreleased-only]');
+    console.error('usage: workkit changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]');
     return 2;
   }
 
@@ -298,7 +309,12 @@ const main = (argv) => {
   const text = readSource(abs, staged);
   if (text === null) return 0;
 
-  const onlyLines = flags.has('--added-only') ? addedLines(abs, staged) : null;
+  const base = argv.find((a) => a.startsWith('--base='))?.slice('--base='.length) ?? 'HEAD';
+  if (base !== 'HEAD' && !resolves(base, path.dirname(abs))) {
+    console.error(`changelog lint: --base=${base} names no commit`);
+    return 2;
+  }
+  const onlyLines = flags.has('--added-only') ? addedLines(abs, staged, base) : null;
   const violations = lintText(text, onlyLines, flags.has('--unreleased-only'));
   if (violations.length === 0) return 0;
 

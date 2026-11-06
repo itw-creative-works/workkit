@@ -427,6 +427,47 @@ const cases = async () => {
     cleanup(dir);
   });
 
+  group('changelog: --added-only --base=<ref> (the pull request mode)');
+
+  // A pull request that carries its own release commit: the base has published
+  // history out of format, and the head moves the new entries into [1.1.0], so
+  // its [Unreleased] is empty again.
+  const released = (entry) => mixed('').replace('## [1.0.0]', `## [1.1.0] - 2020-02-01\n\n### Fixed\n\n${entry}\n\n## [1.0.0]`);
+
+  await test('an entry the pull request released out of format fails against the base, the legacy one never named', () => {
+    const dir = mkRepo(mixed(''));
+    const base = git(dir, 'rev-parse', 'HEAD').trim();
+    const file = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(file, released(`- ${ISSUE} ${COMMIT} An entry with no separator.`));
+    git(dir, 'commit', '-qam', 'chore(release): 1.1.0');
+    assertEq(runCli(file, ['--unreleased-only'], dir).code, 0, 'the CI mode sees an empty [Unreleased]');
+    const { code, out } = runCli(file, ['--added-only', `--base=${base}`], dir);
+    assertEq(code, 1, `the released entry is judged, got: ${out}`);
+    assert(/line \d+ \[separator\]/.test(out), `names line + rule, got: ${out}`);
+    assert(!/great many words/.test(out), `and never the base's history, got: ${out}`);
+    cleanup(dir);
+  });
+
+  await test('an entry the pull request released in format passes against the base', () => {
+    const dir = mkRepo(mixed(''));
+    const base = git(dir, 'rev-parse', 'HEAD').trim();
+    const file = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(file, released(`- ${ISSUE} ${COMMIT} - A released entry.`));
+    git(dir, 'commit', '-qam', 'chore(release): 1.1.0');
+    const { code, out } = runCli(file, ['--added-only', `--base=${base}`], dir);
+    assertEq(code, 0, `clean, got: ${out}`);
+    cleanup(dir);
+  });
+
+  await test('a --base naming no commit is one line, exit 2, never the whole file judged', () => {
+    const dir = mkRepo(mixed(''));
+    const { code, out } = runCli(path.join(dir, 'CHANGELOG.md'), ['--added-only', '--base=nope'], dir);
+    assertEq(code, 2, `exit 2, got: ${out}`);
+    assert(/--base=nope names no commit/.test(out), `names the ref, got: ${out}`);
+    assert(!/great many words/.test(out), `and judges nothing, got: ${out}`);
+    cleanup(dir);
+  });
+
   return summary();
 };
 
