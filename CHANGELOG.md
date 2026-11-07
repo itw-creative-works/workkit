@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.91.2] - 2026-11-06
+
 ### Fixed
 
 - (no issue) - The release backfill reads closing keywords through the commit gate's own parser, so a `Fixed #N` or `Closes: #N` trailer now links its entry. The rule for what a push and a pull request judge lives only in the reusable changelog workflow's header.
