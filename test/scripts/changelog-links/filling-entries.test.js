@@ -258,6 +258,23 @@ const cases = async () => {
     cleanup(dir); cleanup(stub.dir);
   });
 
+  await test('`Fixed #N` and `Closes: #N`, which the commit gate accepts, link their entries too', () => {
+    const { dir, shas } = mkRepo(
+      CHANGELOG(
+        '- [#4](https://github.com/o/r/issues/4) - First.',
+        '- [#5](https://github.com/o/r/issues/5) - Second.',
+      ),
+      ['feat: a\n\nFixed #4', 'feat: b\n\nCloses: #5'],
+    );
+    const stub = makeGhStub();
+    runScript(dir, stub);
+    const lines = readLog(dir).split('\n');
+    const entry = (n) => lines.find((l) => l.startsWith(`- [#${n}]`));
+    assert(entry(4).includes(`(../../commit/${shas[0]})`), `#4 linked to its Fixed commit, got: ${entry(4)}`);
+    assert(entry(5).includes(`(../../commit/${shas[1]})`), `#5 linked to its Closes: commit, got: ${entry(5)}`);
+    cleanup(dir); cleanup(stub.dir);
+  });
+
   return summary();
 };
 

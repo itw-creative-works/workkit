@@ -51,6 +51,12 @@ const PUSH_ONLY_HEADER = '# The `changelog` job is the only job the heal adds to
   + '# appended once at the end of `jobs:`. It calls the kit\'s reusable workflow,\n'
   + '# which runs the kit\'s own changelog/lint.js over this repo\'s [Unreleased] section,\n'
   + '# so the linter lives in the kit and nowhere else.\n';
+// The header the template carried while it restated what a push and a pull request judge.
+const TWO_MODE_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
+  + '# appended once at the end of `jobs:`. It calls the kit\'s reusable workflow,\n'
+  + '# which runs the kit\'s own changelog/lint.js, so the linter lives in the kit\n'
+  + '# and nowhere else. A push judges this repo\'s [Unreleased] section; a pull\n'
+  + '# request judges every entry it adds against its base.\n';
 const templateHeader = () => {
   const lines = fs.readFileSync(TEMPLATE, 'utf8').split('\n');
   const from = lines.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
@@ -162,6 +168,20 @@ const cases = async () => {
     const { code, out } = rewrite(`# intro\n${PUSH_ONLY_HEADER}${current}`);
     assertEq(code, 0, 'it answers');
     assertEq(out, `# intro\n${templateHeader()}${current}`, 'the template\'s paragraph in its place');
+  });
+
+  await test('the two-mode wording of the reusable workflow\'s header is swapped for the template\'s', () => {
+    const current = `${JOBS}  changelog:\n${USES}\n`;
+    const { code, out } = rewrite(`# intro\n${TWO_MODE_HEADER}${current}`);
+    assertEq(code, 0, 'it answers');
+    assertEq(out, `# intro\n${templateHeader()}${current}`, 'the template\'s paragraph in its place');
+  });
+
+  await test('a file whose two-mode header was swapped is left byte for byte by a second rewrite', () => {
+    const once = rewrite(`# intro\n${TWO_MODE_HEADER}${JOBS}  changelog:\n${USES}\n`).out;
+    const again = overFile(once, 'wk_changelog_job_rewrite "$1" "$2"');
+    assertEq(again.code, 0, 'it answers');
+    assertEq(again.out, once, 'nothing swapped twice, nothing doubled');
   });
 
   await test('a file already carrying the template\'s header is left byte for byte', () => {

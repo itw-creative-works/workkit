@@ -22,7 +22,9 @@ const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./lint');
 const { slugFromRemote } = require('../slug');
 const { repoRoot } = require('../lib/git');
 
-const TRAILER_RE = /\b(?:fixes|closes|resolves)\s+#(\d+)\b/gi;
+// Which issues a commit closes is the commit gate's read, so a trailer the gate
+// accepts is one this backfill links.
+const { closedIssues } = require('../../hooks/mods/commit-gate/checks.js');
 
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 
@@ -80,11 +82,11 @@ const commitsByIssue = (range, cwd) => {
     const [sha, body] = record.split('\x1f');
     if (!sha || !body) continue;
     const seen = new Set();
-    for (const hit of body.matchAll(TRAILER_RE)) {
-      if (seen.has(hit[1])) continue;
-      seen.add(hit[1]);
-      if (!byIssue.has(hit[1])) byIssue.set(hit[1], []);
-      byIssue.get(hit[1]).unshift(sha.trim());
+    for (const n of closedIssues(body).map(String)) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      if (!byIssue.has(n)) byIssue.set(n, []);
+      byIssue.get(n).unshift(sha.trim());
     }
   }
   return byIssue;

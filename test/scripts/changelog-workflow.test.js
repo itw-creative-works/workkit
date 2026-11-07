@@ -6,6 +6,7 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { indentOf, isContent, childrenOf } = require('../lib/workflow-yaml');
 
 const ROOT = path.join(__dirname, '..', '..');
 const REUSABLE_REL = '.github/workflows/changelog.yml';
@@ -22,6 +23,41 @@ const jobBlock = (text, name) => {
   if (start === -1) return null;
   const end = lines.findIndex((l, i) => i > start && /^ {0,2}[A-Za-z_-]+:/.test(l));
   return lines.slice(start, end === -1 ? undefined : end).join('\n').trimEnd();
+};
+
+// Each step's lines, from its `- ` to the next line at its indent or less;
+// blank and comment lines are skipped, and a deeper `- ` stays inside the step.
+const steps = (text) => {
+  const out = [];
+  let step = null;
+  for (const line of text.split('\n')) {
+    if (!isContent(line)) continue;
+    const dash = /^ *- /.test(line);
+    if (step && indentOf(line) > step.indent) step.lines.push(line);
+    else if (dash) out.push(step = { indent: indentOf(line), lines: [line] });
+    else step = null;
+  }
+  return out.map((s) => s.lines);
+};
+
+// A step's `with:` keys and their values, the lines indented under `with:`.
+const withOf = (lines) => {
+  const at = lines.findIndex((l) => /^ *with:\s*$/.test(l));
+  if (at === -1) return {};
+  const keys = {};
+  for (const line of childrenOf(lines, at)) {
+    const m = line.match(/^ *([\w-]+):\s*(.*)$/);
+    if (m) keys[m[1]] = m[2];
+  }
+  return keys;
+};
+
+// The fetch-depth in the `with:` of the caller's own checkout (the
+// actions/checkout step naming no other repository), or null.
+const checkoutDepth = (text) => {
+  const own = steps(text).find((lines) => lines.some((l) => /^ *(- )?uses: actions\/checkout@/.test(l))
+    && !('repository' in withOf(lines)));
+  return (own && withOf(own)['fetch-depth']) ?? null;
 };
 
 // The one `uses:` line a caller's changelog job is made of.
@@ -59,7 +95,7 @@ const cases = async () => {
   await test('a pull request judges the entries it adds against its merge commit\'s first parent', () => {
     const text = read(REUSABLE);
     assert(/BASE_REF: \$\{\{ github\.base_ref \}\}/.test(text), `the base branch reaches the step, got:\n${text}`);
-    assert(/fetch-depth: 2/.test(text), `the caller's checkout keeps the merge commit's parents, got:\n${text}`);
+    assertEq(checkoutDepth(text), '2', `the caller's checkout keeps the merge commit's parents, got:\n${text}`);
     assert(/lint\.js CHANGELOG\.md --added-only --base=HEAD\^1/.test(text), `and the linter compares against the first, got:\n${text}`);
   });
 
