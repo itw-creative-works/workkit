@@ -160,7 +160,7 @@ const lintEntry = (entry) => {
   const meta = META_RE.exec(entry.prose);
 
   // Only an entry naming its issue can be linked: the generator finds commits
-  // through their `Fixes #N` trailers. `(no issue)` therefore means no links,
+  // through their closing trailers. `(no issue)` therefore means no links,
   // a nudge toward filing one, never a demand for a hand-typed sha.
   if (entry.kind === 'released' && /^\[#\d+\]/.test(entry.prose) && !(meta && COMMIT_RE.test(meta[0]))) {
     fail('commit-link', 'a released entry must carry its commit link (`[`1de1308`](…/commit/1de1308)`). Run changelog-links.js. The links are generated at release time, never typed.');

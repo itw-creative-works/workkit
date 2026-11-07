@@ -11,7 +11,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ### Fixed
 
-- (no issue) - The release backfill reads closing keywords through the commit gate's own parser, so a `Fixed #N` or `Closes: #N` trailer now links its entry. The rule for what a push and a pull request judge lives only in the reusable changelog workflow's header.
+- (no issue) - The release backfill reads closing keywords through the commit gate's parser, so a `Fixed #N` or `Closes: #N` trailer links its entry. What a push and a pull request judge lives only in the reusable workflow's header; the next heal swaps a participating repo's old `checks.yml` header, unstaged.
 
 ## [0.91.1] - 2026-11-06
 

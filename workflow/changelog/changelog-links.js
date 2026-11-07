@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 // Fill in a CHANGELOG entry's generated metadata, the commit link and the
-// contributor handle, matched through each commit's `Fixes #N` trailer. The
+// contributor handle, matched through each commit's closing trailer (`Fixes`,
+// `Closes` or `Resolves #N`, read by the commit gate's parser). The
 // link shapes: `docs/project-state.md` § CHANGELOG entries. A `../..` link
 // assumes a root CHANGELOG on a branch with no slash in its name.
 //
@@ -150,7 +151,7 @@ const fill = (text, { byIssue, resolve }) => {
     const shas = byIssue.get(issue[1]);
     if (!shas || shas.length === 0) {
       // No commit in this range closed it. The entry names an issue whose
-      // commit carries no `Fixes #N` trailer. Reported, never silently passed.
+      // commit carries no closing trailer. Reported, never silently passed.
       unmatched.push(issue[1]);
       continue;
     }
