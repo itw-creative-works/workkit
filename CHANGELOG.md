@@ -7,14 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-11-10
+
 ### Changed
 
-- [#513](../../issues/513) - A participating repo's `checks.yml` is a short caller the kit owns and the heal rewrites, running the kit's `ci.yml`: Node from the root `.nvmrc`, the repo's `hooks.ciSetup` commands, then `npm test` under `xvfb-run`. Each customization a replaced copy held is named; branch protection's `test` becomes `checks / test`.
-- [#514](../../issues/514) - CI makes the GitHub release: the caller's new `release` job creates `v<x.y.z>` when a `chore(release)` commit reaches the default branch, notes from the CHANGELOG, and starts the workflows that run on a release. `workkit ship cut` only waits for it, so a cloud session releases like a machine.
+- [#513](../../issues/513) [`6ea990c`](../../commit/6ea990c) Thanks [@ianwieds]! - A participating repo's `checks.yml` is a short caller the kit owns and the heal rewrites, running the kit's `ci.yml`: Node from the root `.nvmrc`, the repo's `hooks.ciSetup` commands, then `npm test` under `xvfb-run`. Each customization a replaced copy held is named; branch protection's `test` becomes `checks / test`.
+- [#514](../../issues/514) [`6ea990c`](../../commit/6ea990c) Thanks [@ianwieds]! - CI makes the GitHub release: the caller's new `release` job creates `v<x.y.z>` when a `chore(release)` commit reaches the default branch, notes from the CHANGELOG, and starts the workflows that run on a release. `workkit ship cut` only waits for it, so a cloud session releases like a machine.
 
 ### Fixed
 
-- [#512](../../issues/512) - The red-proof snapshot stays through `status:qa`, so a fix round at qa proves red against it. A complete flip or a close removes it once no issue in that repo is left at `status:building` or `status:qa`.
+- [#512](../../issues/512) [`6ea990c`](../../commit/6ea990c) Thanks [@ianwieds]! - The red-proof snapshot stays through `status:qa`, so a fix round at qa proves red against it. A complete flip or a close removes it once no issue in that repo is left at `status:building` or `status:qa`.
 
 ## [0.91.2] - 2026-11-06
 
