@@ -65,6 +65,8 @@ const makeRepo = ({ remote = true, settings = OPT_IN_SHAPES.current } = {}) => {
   spawnSync('git', ['init', '-q'], { cwd: dir });
   if (remote) {
     spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/alice/repo.git'], { cwd: dir });
+    // As a clone has it, so the default branch reads without GitHub.
+    spawnSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], { cwd: dir });
   }
   if (settings !== null) {
     fs.mkdirSync(path.join(dir, W), { recursive: true });
@@ -82,12 +84,14 @@ const makeGhStub = ({
   // `gh issue list --label <name>` answers per label instead of handing back
   // the whole fixture. `labelQueryFails` makes that query fail.
   labeled = {}, labelQueryFails = false,
-  // Branch-protection knobs. `protection`: 'absent' (404s, PUT accepted),
-  // 'present' (GET succeeds), or 'denied' (404s, PUT rejected: the free-plan
-  // private repo). `repoRead`: answer the repo's REST read with a real
-  // owner/branch; off by default, so a case meets the "cannot resolve" bail-out
-  // unless it opts in.
-  protection = 'absent', repoRead = false,
+  // Branch protection: 'absent' (404s, PUT accepted), 'present' (GET answers
+  // `protectionBody`, empty by default), 'denied' (404s, PUT rejected: the
+  // free-plan private repo); `patchFails` refuses the required-checks PATCH;
+  // `remoteChecks`: the default branch's checks.yml, a 404 when null.
+  protection = 'absent', protectionBody = '', patchFails = false, remoteChecks = null,
+  // `repoRead`: answer the repo's REST read, `defaultBranch` its branch; off by
+  // default, so a case meets the "cannot resolve" bail-out unless it opts in.
+  repoRead = false, defaultBranch = 'main',
 } = {}) => {
   const dir = mkTmp('wf-std-');
   const logFile = path.join(dir, 'gh.log');
@@ -95,6 +99,8 @@ const makeGhStub = ({
   const issuesFile = path.join(dir, 'issues.json');
   fs.writeFileSync(labelsFile, JSON.stringify(labels));
   fs.writeFileSync(issuesFile, JSON.stringify(issues));
+  fs.writeFileSync(path.join(dir, 'protection.json'), protectionBody);
+  if (remoteChecks !== null) fs.writeFileSync(path.join(dir, 'remote-checks.yml'), remoteChecks);
   // An entry is a bare number, or a whole object when the fields matter (the
   // stale-claim sweep reads updatedAt and assignees). Fixtures are numbered and
   // the stub looks its label up: a label's colon would open an NTFS alternate
@@ -147,18 +153,29 @@ const makeGhStub = ({
     'if [[ "$1" == "api" && ( "$2" == "repos/{owner}/{repo}" || "$2" == "repos/stub/repo" ) ]]; then',
     ...(repoRead ? [
       '  if [[ "$*" == *.full_name* ]]; then echo "stub/repo"; fi',
-      '  if [[ "$*" == *.default_branch* ]]; then echo "main"; fi',
+      `  if [[ "$*" == *.default_branch* ]]; then echo "${defaultBranch}"; fi`,
     ] : []),
     '  exit 0',
+    'fi',
+    'if [[ "$1" == "api" && "$2" == *"/contents/.github/workflows/checks.yml"* ]]; then',
+    ...(remoteChecks === null
+      ? ['  echo "gh: Not Found (HTTP 404)" >&2', '  exit 1']
+      : [`  cat "${shellPath(path.join(dir, 'remote-checks.yml'))}"`, '  exit 0']),
     'fi',
     'if [[ "$1" == "api" ]]; then',
     '  if [[ "$*" == *"-X PUT"* ]]; then',
     `    cat > "${path.join(dir, 'put-body.json')}"`,
     `    exit ${protection === 'denied' ? 1 : 0}`,
     '  fi',
+    '  if [[ "$*" == *"-X PATCH"* ]]; then',
+    `    cat > "${path.join(dir, 'patch-body.json')}"`,
+    `    exit ${patchFails ? 1 : 0}`,
+    '  fi',
     // A real 404 answers with this text; the heal must see it to distinguish
     // "unprotected" from a transient failure it must not write over.
-    ...(protection === 'present' ? ['  exit 0'] : ['  echo "gh: Branch not protected (HTTP 404)" >&2', '  exit 1']),
+    ...(protection === 'present'
+      ? [`  cat "${shellPath(path.join(dir, 'protection.json'))}"`, '  exit 0']
+      : ['  echo "gh: Branch not protected (HTTP 404)" >&2', '  exit 1']),
     'fi',
     'exit 0',
   ]);

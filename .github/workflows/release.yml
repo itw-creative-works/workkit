@@ -1,0 +1,37 @@
+# The GitHub release every participating repo gets from CI: its checks.yml, the
+# caller the kit owns, calls this file from its `release` job on a push to the
+# default branch, the job granting contents and actions write,
+#   uses: itw-creative-works/workkit/.github/workflows/release.yml@main
+# The logic is the kit's .github/scripts/ci-release.js, run from a clone of the kit:
+# a release per release commit the push brought, then a dispatch of every workflow
+# on `release`, since a release this job's token makes starts none.
+name: release
+
+on:
+  workflow_call:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # One release run per repo at a time, each finishing, so two pushes never race
+    # to create the same release.
+    concurrency:
+      group: release-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      # Whole history, so the push's before..after range and a merged branch's
+      # release commit are both readable.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # Outside the workspace, as ci.yml clones it.
+      - name: Fetch the workkit kit
+        run: git clone --depth 1 https://github.com/itw-creative-works/workkit.git "$RUNNER_TEMP/workkit-kit"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-release.js"

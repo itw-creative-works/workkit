@@ -57,11 +57,17 @@ const run = (w, args) => {
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
-/** The script's answer for `before` is exactly `line`, exit 0. */
+/**
+ * The script's answer for `before` is exactly `line`, exit 0, and the checkout
+ * ends as it began: HEAD at the pushed commit and nothing staged or changed.
+ */
 const answers = (w, before, line, what) => {
+  const pushed = w.git('rev-parse', 'HEAD').trim();
   const out = run(w, [before]);
   assertEq(out.code, 0, `${what}: exit code (stderr: ${out.stderr})`);
   assertEq(out.stdout, `${line}\n`, `${what}: the printed line`);
+  assertEq(w.git('rev-parse', 'HEAD').trim(), pushed, `${what}: HEAD is back at the pushed commit`);
+  assertEq(w.git('status', '--porcelain'), '', `${what}: the tree is clean`);
 };
 
 // The release stamp a ship commits beside its CHANGELOG move.

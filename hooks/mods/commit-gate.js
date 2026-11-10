@@ -263,20 +263,6 @@ const once = (fn) => {
   return () => (value ??= fn());
 };
 
-// The rewrite entry over a checks.yml text: the text in a scratch file the entry reads, removed after.
-async function rewriteOf(g, at, kit, text, template) {
-  const made = await g.run(['mktemp', '-d'], { timeoutMs: LONG_RUN_MS });
-  if (made.exitCode !== 0) return made;
-  let dir = made.stdout.trim();
-  if (windowsKit(kit)) dir = (await g.run(['cygpath', '-m', dir])).stdout.trim() || dir;
-  try {
-    await g.write(`${dir}/checks-head`, text);
-    return await at(['bash', `${kit}/workflow/changelog/changelog-job.sh`, 'rewrite', `${dir}/checks-head`, ...(template ? [template] : [])], { timeoutMs: LONG_RUN_MS });
-  } finally {
-    await g.run(['rm', '-rf', dir]);
-  }
-}
-
 // The facts the verdicts read, off the repo at `root`, each read only when a
 // check asks.
 function gatherFacts(g, root) {
@@ -334,7 +320,8 @@ function gatherFacts(g, root) {
       const r = await at(['node', linter, path, '--added-only', '--staged']);
       return started(r) ? r : { skipped: r.stderr.trim() };
     },
-    jobRewrite: (a, b) => rewriteOf(g, at, kit, a, b),
+    // checks.yml as the heal writes it, read at the root, whose default branch it names.
+    jobRewrite: () => at(['bash', `${kit}/workflow/changelog/changelog-job.sh`, 'rewrite'], { timeoutMs: LONG_RUN_MS }),
     hashOf: async (path, body) => (await text(['git', 'hash-object', `--path=${path}`, '--stdin'], { stdin: body, timeoutMs: LONG_RUN_MS }))?.trim() || null,
   };
 }

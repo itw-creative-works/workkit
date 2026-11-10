@@ -47,6 +47,8 @@ claude
 
 `workkit enable` commits `{ "enabled": true }` to the project's `.workkit/settings.json`, and that line is the only thing that turns workkit on. Every other setting has its default in the kit's [`defaults/settings.json`](defaults/settings.json), which your `~/.workkit/settings.json` and then the project's own file override, key by key.
 
+workkit also keeps the project's `.github/workflows/checks.yml`: a few lines the kit owns and rewrites on every heal, so any edit there is lost. They call the kit's CI, which runs `npm test` on every pull request and every push to the default branch, plus the changelog check. The project's own CI needs (a tool to install, a variable to set) go under `hooks.ciSetup` in its `.workkit/settings.json`, entries shaped like the ship's (`{ "command": "<shell command>" }`), run in order before the dependency install; a variable reaches the later steps by appending `NAME=value` to `$GITHUB_ENV`, and an entry marked `"local": true` is skipped there.
+
 Type `/workkit:status` for a plain-language list of the open issues and what each one is waiting on.
 No issues yet? Tell Claude what you want built, and it files the first one.
 
@@ -65,7 +67,7 @@ Every piece of work travels one road, and each stop is a label on its GitHub iss
 3. **Spec.** You and Claude write down what done looks like. Accepting the spec is the go-ahead to build.
 4. **Build.** Your chat acts as a manager. It hands the work to helper agents: one writes the code, one writes the tests, and a third checks both without seeing how they were made.
 5. **Check.** The finished work waits, uncommitted, until you have tried it and said it is good.
-6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue. In a cloud session, or when you say `pr`, the work and release commits go through one pull request that merges once its checks pass; a cloud session cannot create the release, so the next ship on your machine does. A repo can list commands to run after the release, the npm publish or the deploy under `hooks` in its `.workkit/settings.json` (`afterRelease`, `afterPublish`, `afterDeploy`); the ship runs them once that step succeeds, if the file says `"enabled": true`. An entry marked `"local": true` needs your machine, so a cloud session skips it and says so.
+6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue. In a cloud session, or when you say `pr`, the work and release commits go through one pull request that merges once its checks pass. CI makes the GitHub release once the release commit reaches the default branch, the same from a cloud session as from your machine, and the ship waits for it. A repo can list commands to run after the release, the npm publish or the deploy under `hooks` in its `.workkit/settings.json` (`afterRelease`, `afterPublish`, `afterDeploy`); the ship runs them once that step succeeds, if the file says `"enabled": true`. An entry marked `"local": true` needs your machine, so a cloud session skips it and says so.
 
 Hooks guard each step on their own. For example, no code commits until the full test suite has passed on exactly what is being committed.
 A repo that has not turned workkit on gets none of its hooks.

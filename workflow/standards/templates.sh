@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# workflow/standards/templates.sh: the two installs a repo receives from the
-# kit's templates, once each and never overwritten: the issue forms and the
-# required-checks CI workflow. Sourced by standards.sh, functions only.
+# workflow/standards/templates.sh: the issue forms a repo receives from the
+# kit's templates, each installed once and never overwritten. Sourced by
+# standards.sh, functions only.
 
 # ── 2. Issue forms ──
 ensure_issue_forms() {
@@ -28,35 +28,4 @@ ensure_issue_forms() {
   if [[ "$existing" -gt 0 ]]; then
     wk_skip "issue forms: $existing already present"
   fi
-}
-
-# ── 2b. Required-checks CI workflow ──
-# Installed once and never overwritten: the copy is the repo's to extend, and
-# only loses the retired kit clone step, once the repo's devDependencies name
-# workkit-core. Presence is the check, so a repo that wants no Actions run
-# empties the file rather than deleting it, which the next heal would re-install.
-ensure_ci_workflow() {
-  local dest=".github/workflows/checks.yml" src out rc=0
-  src="$(wk_checks_template)"
-
-  if [[ -f "$dest" ]]; then
-    wk_skip "checks: $dest already present"
-    [[ -s "$dest" ]] && wk_has_core_package || return 0
-    out="$(wk_checks_drop_clone_step "$dest" 2>&1)" || rc=$?
-    if [[ "$rc" -eq 0 ]]; then
-      [[ -z "$out" ]] || wk_ok "$out"
-    else
-      wk_warn_lines checks "checks: could not remove the kit clone step from $dest${out:+: $out}"
-      needs_attention=1
-    fi
-    return 0
-  fi
-  if [[ ! -f "$src" ]]; then
-    wk_warn "checks: template missing at $(wk_native_path "$src"); reinstall the workflow core"
-    needs_attention=1
-    return 0
-  fi
-  mkdir -p .github/workflows
-  cp "$src" "$dest"
-  wk_ok "checks: created $dest; commit it so it runs on every pull request and push to main"
 }

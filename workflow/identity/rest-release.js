@@ -7,7 +7,7 @@ const {
   getJson, parse, repoOf, fieldsOf, pick, printJson, enc, GhFailure, UsageError,
 } = require('./rest');
 
-const NO_CREATE = 'gh: a cloud session cannot create a release (the proxy refuses release writes); the next ship on a machine cuts it';
+const NO_CREATE = 'gh: a cloud session cannot create a release (the proxy refuses release writes); CI\'s release job makes it when the release commit reaches the default branch';
 
 // gh's release `--json` fields the shim serves, each from REST's release.
 const RELEASE_FIELDS = {

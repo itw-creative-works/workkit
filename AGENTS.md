@@ -13,8 +13,8 @@ workkit is the issue-pipeline workflow system packaged as a Claude Code plugin: 
 ```
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
-├── .github/workflows/    # checks.yml (the suite, every pull request and every push to main but a release-only one) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
-├── .github/scripts/      # release-push.sh (checks.yml's scope job: whether a push is a release stamp only)
+├── .github/workflows/    # checks.yml (the suite on every pull request and push to main but a release-only one; the release job on a push) · ci.yml, release.yml (the reusable CI and release job every kit-owned checks.yml calls) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
+├── .github/scripts/      # release-push.sh (checks.yml's scope job and ci-test.sh: whether a push is a release stamp only) · ci-node-version.sh, ci-setup.sh, ci-test.sh (ci.yml's steps: the Node version, a repo's hooks.ciSetup, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── register.js       # the hooks module: the twenty-three in-process hooks (seven guards run in the `gh` shim and git's hooks), the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
@@ -126,6 +126,8 @@ A world built the same way for every case has one home too: `seeded(build)` in t
 A case only one platform can answer names its skip through the harness's `skip()`. On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it, so a root `npm test` there records its tree.
 
 The Windows lane runs in CI: `checks.yml` runs the suite on Linux and Windows for every pull request and every push to `main`, except a release push, whose every change is the CHANGELOG or a version stamp by the commit gate's version-only rule (`.github/scripts/release-push.sh` decides it, so a dependency change in the lockfile still runs); a tag push runs nothing.
+
+Every participating repo's caller skips a release push's suite by the same script. A push to `main` also runs the `release` job (`release.yml`, as every caller does): the GitHub release of each `chore(release): <x.y.z>` commit the push brought, which `workkit ship cut` waits for.
 
 Lanes per layer (`docs/project-state.md` § The proof):
 - Unit: a module called directly.

@@ -19,7 +19,6 @@ const IMPORTS = /(?:require\s*\(\s*|from\s+|import\s*\(\s*)['"](?:node:)?child_p
 const STILL_IMPORTING = [
   'test/hooks/capture-guard/user-level.test.js',
   'test/hooks/changelog-guard.test.js',
-  'test/hooks/commit-gate/heal.test.js',
   'test/hooks/commit-gate/helpers.js',
   'test/hooks/commit-gate/marker.test.js',
   'test/hooks/lib-record.test.js',

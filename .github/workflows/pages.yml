@@ -1,5 +1,6 @@
 # Pages: builds the central dashboard from tower/app with workflow/publish/build.sh
-# and deploys it to this repo's GitHub Pages, on a published release or by hand.
+# and deploys it to this repo's GitHub Pages, on a published release or a dispatch:
+# checks.yml's release job dispatches it, since a release CI makes starts no workflow.
 # It writes no data/home.json, no data/repos.json and no CNAME on purpose: with
 # no pointer the page resolves the home repo from the viewer's token, so one
 # copy serves every viewer. The prefix /workkit/ is this repo's name on

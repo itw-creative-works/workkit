@@ -80,40 +80,14 @@ open_pr() {
   printf '%s' "$number"
 }
 
-# Does any workflow at the repo's toplevel run on the event $1? Read in awk, one
-# file at a time, carriage returns off and single quotes read as double, so a
-# quoted `"on":` key and a CRLF file answer the same as the plain one.
+# Does any workflow at the repo's toplevel run on the event $1? One file at a
+# time, by triggers.awk, the rule the release job's dispatch reads too.
 triggered_on() {
   local root file
   root="$(repo_root)"
   shopt -s nullglob
   for file in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
-    if tr -d '\r' <"$file" | tr "'" '"' | awk -v ev="$1" '
-      /^[[:space:]]*(#|$)/ { next }
-      inblock && /^[^[:space:]]/ { inblock = 0 }
-      inblock {
-        match($0, /^[[:space:]]*/)
-        if (want < 0) want = RLENGTH
-        if (RLENGTH == want) {
-          line = substr($0, RLENGTH + 1)
-          sub(/^-[[:space:]]*/, "", line)
-          if (line ~ ("^\"?" ev "\"?[[:space:]]*(:|#|$)")) found = 1
-        }
-        next
-      }
-      /^"?on"?[[:space:]]*:/ {
-        rest = $0
-        sub(/^[^:]*:/, "", rest)
-        sub(/#.*/, "", rest)
-        if (rest ~ /[^[:space:]]/) {
-          if (rest ~ ("(^|[^A-Za-z0-9_-])" ev "([^A-Za-z0-9_-]|$)")) found = 1
-        } else {
-          inblock = 1
-          want = -1
-        }
-      }
-      END { exit found ? 0 : 1 }
-    '; then
+    if awk -v ev="$1" -f "$SCRIPT_DIR/triggers.awk" "$file"; then
       return 0
     fi
   done

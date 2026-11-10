@@ -42,6 +42,8 @@ FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 . "$SCRIPT_DIR/standards/githooks.sh"
 # shellcheck source=./standards/templates.sh
 . "$SCRIPT_DIR/standards/templates.sh"
+# shellcheck source=./standards/checks.sh
+. "$SCRIPT_DIR/standards/checks.sh"
 # shellcheck source=./standards/changelog.sh
 . "$SCRIPT_DIR/standards/changelog.sh"
 # shellcheck source=./standards/labels.sh
@@ -210,7 +212,6 @@ ensure_local_file session.md agents/session.md
 ensure_issue_forms
 ensure_ci_workflow
 ensure_changelog_separator
-ensure_changelog_job
 remove_changelog_linter_copies
 ensure_branch_protection
 read_public_repo

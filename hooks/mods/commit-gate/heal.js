@@ -116,14 +116,13 @@ export function healArms(facts, root) {
     return copies;
   }
 
-  // checks.yml's blob is byte for byte the heal's rewrite of HEAD's file.
+  // checks.yml's blob is byte for byte the caller the heal writes, whatever HEAD
+  // held, a first caller included.
   async function checksIsJobRewrite() {
     const check = 'checks.yml rewrite';
-    if ((await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `HEAD:${CHECKS}`])).exitCode === 1) return false;
-    const head = await blob(check, 'HEAD', CHECKS);
-    const answer = await facts.jobRewrite(head);
+    const answer = await facts.jobRewrite();
     const rewrite = typeof answer === 'string' ? { exitCode: 0, stdout: answer, stderr: '' } : answer ?? { exitCode: 1, stdout: '', stderr: '' };
-    await tool(check, `wk_checks_heal_rewrite <HEAD:${CHECKS}>`, rewrite);
+    await tool(check, 'changelog-job.sh rewrite', rewrite);
     const want = await facts.hashOf(CHECKS, rewrite.stdout);
     const staged = await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `:${CHECKS}`]);
     if (staged.exitCode === 1) return false;

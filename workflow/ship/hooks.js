@@ -6,23 +6,18 @@
 // Usage: const { EVENTS, runHooks } = require('./hooks');
 
 const { spawnSync } = require('../lib/run');
-const { faultsUnder, isPlain, repoSettingsFile } = require('../../hooks/mods/settings.js');
+const { faultsUnder, repoSettingsFile } = require('../../hooks/mods/settings.js');
 const { sayAs, endOf } = require('../lib/say');
 const { settingsAt, faultsAt } = require('../lib/settings');
 const { isCloud } = require('../lib/cloud');
+const { HooksError, commandsOf } = require('./entries');
 
+// The events the ship runs; every known event, ciSetup (CI's) included, has its
+// default in defaults/settings.json.
 const EVENTS = ['afterRelease', 'afterPublish', 'afterDeploy'];
 const SETTINGS = '.workkit/settings.json';
 
 const say = sayAs('ship-hooks');
-
-/** A settings shape the hooks cannot run from; its message is the line to print. */
-class HooksError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'HooksError';
-  }
-}
 
 /**
  * The repo's merged settings; a missing or empty file of its own declares
@@ -41,27 +36,6 @@ const readSettings = (root, event) => {
   const [hooks] = faultsUnder(faults, 'hooks');
   const misshapen = hooks ? `${hooks.key} in ${hooks.file === file ? SETTINGS : hooks.file}` : null;
   return { settings: settingsAt(root), misshapen };
-};
-
-/**
- * The entries an enabled repo declares for an event, validated whole before any runs.
- * @param {object} settings - the merged settings, `enabled` true
- * @param {string} event - the event name
- * @returns {{command: string, local: boolean}[]} the entries in order; [] when none is declared, the default
- * @throws {HooksError} when the declaration has the wrong shape
- */
-const commandsOf = (settings, event) => {
-  const entries = settings.hooks[event];
-  if (!Array.isArray(entries)) throw new HooksError(`hooks.${event} in the settings is not an array, so no ${event} hook ran`);
-  return entries.map((entry, i) => {
-    if (!isPlain(entry) || typeof entry.command !== 'string' || entry.command.trim() === '') {
-      throw new HooksError(`hooks.${event}[${i}] in the settings has no non-empty string command, so no ${event} hook ran`);
-    }
-    if ('local' in entry && entry.local !== true && entry.local !== false) {
-      throw new HooksError(`hooks.${event}[${i}] in the settings has a local that is not true or false, so no ${event} hook ran`);
-    }
-    return { command: entry.command, local: entry.local === true };
-  });
 };
 
 /**

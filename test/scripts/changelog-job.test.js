@@ -1,18 +1,16 @@
-// Tests for workflow/changelog/changelog-job.sh, the `changelog` job in a repo's
-// checks.yml, read and rewritten. Sourced directly: the heal writes the job, the
-// commit gate checks it, and neither consumer's suite owns it.
+// Tests for workflow/changelog/changelog-job.sh's reads of the retired CHANGELOG
+// linter copy: which copies there are and which workflow still runs one. Sourced
+// directly: the heal and the commit gate both ask, and neither one's suite owns it.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
-const { openingLines, TOP_THREE } = require('../lib/checks-template');
+const { BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, joinPath } = require('../lib/platform');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog', 'changelog-job.sh'));
-const TEMPLATE = path.join(ROOT, 'workflow', 'templates', 'github-workflows', 'checks.yml');
 const USES = '    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main';
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
@@ -28,59 +26,19 @@ const inSeam = (script, args = []) => {
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-/** Write `body` to a scratch file, run `fn` in the seam over it and `template`, clean up. */
-const overFile = (body, script, template = TEMPLATE) => {
+/** Write `body` to a scratch file, run `script` in the seam over it, clean up. */
+const overFile = (body, script) => {
   const dir = mkTmp('cl-job-');
   const file = path.join(dir, 'checks.yml');
   fs.writeFileSync(file, body);
   try {
-    return inSeam(script, [shellPath(file), shellPath(template)]);
+    return inSeam(script, [shellPath(file)]);
   } finally {
     cleanup(dir);
   }
 };
 
-const block = (body) => overFile(body, 'wk_changelog_job_block "$1"');
-const rewrite = (body, template) => overFile(body, 'wk_changelog_job_rewrite "$1" "$2"', template);
-
-const OLD_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
-  + '# appended once at the end of `jobs:`. Its linter is the copy of the kit\'s\n'
-  + '# changelog.js the heal vendors to .github/changelog-lint.cjs on every run.\n';
-// The header the template carried while the reusable workflow judged [Unreleased] alone.
-const PUSH_ONLY_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
-  + '# appended once at the end of `jobs:`. It calls the kit\'s reusable workflow,\n'
-  + '# which runs the kit\'s own changelog/lint.js over this repo\'s [Unreleased] section,\n'
-  + '# so the linter lives in the kit and nowhere else.\n';
-// The header the template carried while it restated what a push and a pull request judge.
-const TWO_MODE_HEADER = '# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,\n'
-  + '# appended once at the end of `jobs:`. It calls the kit\'s reusable workflow,\n'
-  + '# which runs the kit\'s own changelog/lint.js, so the linter lives in the kit\n'
-  + '# and nowhere else. A push judges this repo\'s [Unreleased] section; a pull\n'
-  + '# request judges every entry it adds against its base.\n';
-const templateHeader = () => {
-  const lines = fs.readFileSync(TEMPLATE, 'utf8').split('\n');
-  const from = lines.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
-  const to = lines.findIndex((l, i) => i > from && !l.startsWith('#'));
-  return `${lines.slice(from, to).join('\n')}\n`;
-};
-const templateFirstLines = () => openingLines(fs.readFileSync(TEMPLATE, 'utf8'));
-// The shipped template with its opening sentence rewrapped to `top`, in a scratch folder.
-const rewrappedTemplate = (top) => {
-  const dir = mkTmp('cl-job-');
-  const file = path.join(dir, 'checks.yml');
-  fs.writeFileSync(file, `${top}${fs.readFileSync(TEMPLATE, 'utf8').slice(templateFirstLines().length)}`);
-  return { dir, file };
-};
-const TOP_ONE = '# Checks (workflow spec): the test gate that runs on every pull request and every push to the default branch.\n';
-const RETIRED_FIRST_LINES = [
-  '# Checks (workflow spec): the test gate that runs on every pull request.',
-  '# Checks (workflow spec) \u2014 the test gate that runs on every pull request.',
-  '# Checks (workflow spec) - the test gate that runs on every pull request.',
-];
-const SECOND_LINE = '# Making it a REQUIRED check is a repo setting (branch protection / ruleset)\n';
-const NODE_JOB = '  changelog:\n    runs-on: ubuntu-latest\n    steps:\n      # the vendored copy\n'
-  + '      - run: node .github/changelog-lint.cjs CHANGELOG.md --unreleased-only\n';
-// The push trigger is already here, so these cases see only the changelog job.
+// A workflow's opening, its jobs: block last, for the folder cases to put a job under.
 const JOBS = 'name: checks\n\non:\n  pull_request:\n  push:\n\njobs:\n';
 
 const cases = async () => {
@@ -89,10 +47,8 @@ const cases = async () => {
   await test('sourcing defines the functions and sets no variable', () => {
     const fns = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     assertEq(fns.code, 0, `it sources clean, stderr: ${fns.err}`);
-    assertEq(fns.out, 'wk_changelog_job_block wk_changelog_job_rewrite wk_changelog_job_runs_copy '
-      + 'wk_checks_clone_line wk_checks_drop_clone_step '
-      + 'wk_checks_header wk_checks_heal_rewrite wk_checks_push_trigger wk_checks_template wk_checks_top wk_checks_top_count wk_has_core_package wk_job_boundary wk_linter_copies wk_names_linter_copy wk_retired_checks_first_lines wk_retired_checks_headers '
-      + 'wk_workflows_run_copy ', `the functions, got: ${fns.out}`);
+    assertEq(fns.out, 'wk_checks_heal_rewrite wk_checks_template wk_default_branch wk_has_core_package wk_linter_copies '
+      + 'wk_names_linter_copy wk_workflows_run_copy ', `the functions, got: ${fns.out}`);
     const vars = (first) => spawnSync(BASH, [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE }).stdout;
     assertEq(vars(`. ${JSON.stringify(SEAM)}`), vars(':'), 'the same variables as a shell that sourced nothing');
@@ -104,184 +60,7 @@ const cases = async () => {
     assertEq(out, '.github/changelog-lint.cjs\n.github/changelog-lint.js\n', 'the two names, one per line');
   });
 
-  group('changelog-job.sh: where a job ends');
-
-  for (const next of ['  9job:', '  lint.v2:', 'concurrency:']) {
-    await test(`a job ends at \`${next.trim()}\`, and blank lines and comments inside it do not end it`, () => {
-      const job = '  changelog:\n    runs-on: ubuntu-latest\n\n  # a column-2 comment\n# a column-0 comment\n    steps:\n      - run: x';
-      const { code, out } = block(`${JOBS}${job}\n${next}\n    runs-on: ubuntu-latest\n`);
-      assertEq(code, 0, 'it answers');
-      assertEq(out, `${job}\n`, `every line up to ${next.trim()} and none after`);
-    });
-  }
-
-  group('changelog-job.sh: the template\'s opening sentence');
-
-  await test('wk_checks_top prints the shipped template\'s first two lines, and the count is 2', () => {
-    const top = inSeam('wk_checks_top "$1"', [shellPath(TEMPLATE)]);
-    assertEq(top.code, 0, `it answers, stderr: ${top.err}`);
-    assertEq(top.out, templateFirstLines(), 'the opening sentence, byte for byte');
-    assertEq(top.out.split('\n').length - 1, 2, `the shipped sentence wraps to two lines, got: ${top.out}`);
-    const count = inSeam('wk_checks_top_count "$1"', [shellPath(TEMPLATE)]);
-    assertEq(count.code, 0, `the count answers, stderr: ${count.err}`);
-    assertEq(count.out.trim(), '2', 'how many lines it is');
-  });
-
-  for (const [n, top] of [[3, TOP_THREE], [1, TOP_ONE]]) {
-    await test(`a template whose opening sentence wraps to ${n} line${n === 1 ? '' : 's'} gets ${n}, and nothing past it`, () => {
-      const { dir, file } = rewrappedTemplate(top);
-      try {
-        const got = inSeam('wk_checks_top "$1"', [shellPath(file)]);
-        assertEq(got.code, 0, `it answers, stderr: ${got.err}`);
-        assertEq(got.out, top, 'the rewrapped sentence, not the comment line after it');
-        assertEq(openingLines(fs.readFileSync(file, 'utf8')), top, 'and the rule this suite counts by agrees');
-        const count = inSeam('wk_checks_top_count "$1"', [shellPath(file)]);
-        assertEq(count.out.trim(), String(n), 'the count follows the wrap');
-      } finally {
-        cleanup(dir);
-      }
-    });
-  }
-
-  group('changelog-job.sh: the rewrite');
-
-  await test('lines closing the job at the end of the file are kept', () => {
-    const tail = '\n  # the last word\n\n';
-    const { code, out } = rewrite(`${JOBS}${NODE_JOB}${tail}`);
-    assertEq(code, 0, 'it answers');
-    assertEq(out, `${JOBS}  changelog:\n${USES}\n${tail}`, 'the blank lines and the comment after the job survive');
-  });
-
-  await test('the retired header is swapped on an exact match', () => {
-    const { out } = rewrite(`# intro\n${OLD_HEADER}${JOBS}${NODE_JOB}`);
-    assertEq(out, `# intro\n${templateHeader()}${JOBS}  changelog:\n${USES}\n`, 'the template\'s paragraph in its place');
-  });
-
-  await test('the older retired header, naming the .js copy, is swapped too', () => {
-    const older = OLD_HEADER.replace('changelog-lint.cjs', 'changelog-lint.js');
-    const { out } = rewrite(`${older}${JOBS}${NODE_JOB}`);
-    assertEq(out, `${templateHeader()}${JOBS}  changelog:\n${USES}\n`, 'either wording is the retired header');
-  });
-
-  await test('the push-only wording of the reusable workflow\'s header is swapped for the template\'s', () => {
-    const current = `${JOBS}  changelog:\n${USES}\n`;
-    const { code, out } = rewrite(`# intro\n${PUSH_ONLY_HEADER}${current}`);
-    assertEq(code, 0, 'it answers');
-    assertEq(out, `# intro\n${templateHeader()}${current}`, 'the template\'s paragraph in its place');
-  });
-
-  await test('the two-mode wording of the reusable workflow\'s header is swapped for the template\'s', () => {
-    const current = `${JOBS}  changelog:\n${USES}\n`;
-    const { code, out } = rewrite(`# intro\n${TWO_MODE_HEADER}${current}`);
-    assertEq(code, 0, 'it answers');
-    assertEq(out, `# intro\n${templateHeader()}${current}`, 'the template\'s paragraph in its place');
-  });
-
-  await test('a file whose two-mode header was swapped is left byte for byte by a second rewrite', () => {
-    const once = rewrite(`# intro\n${TWO_MODE_HEADER}${JOBS}  changelog:\n${USES}\n`).out;
-    const again = overFile(once, 'wk_changelog_job_rewrite "$1" "$2"');
-    assertEq(again.code, 0, 'it answers');
-    assertEq(again.out, once, 'nothing swapped twice, nothing doubled');
-  });
-
-  await test('a file already carrying the template\'s header is left byte for byte', () => {
-    const current = `# intro\n${templateHeader()}${JOBS}  changelog:\n${USES}\n`;
-    const { code, out } = rewrite(current);
-    assertEq(code, 0, 'it answers');
-    assertEq(out, current, 'nothing swapped, nothing doubled');
-  });
-
-  await test('a retired header is swapped even where the job already calls the kit\'s workflow', () => {
-    const current = `${JOBS}  changelog:\n${USES}\n`;
-    const { code, out } = rewrite(`${OLD_HEADER}${current}`);
-    assertEq(code, 0, 'it answers');
-    assertEq(out, `${templateHeader()}${current}`, 'the header swapped, the job untouched');
-    const again = overFile(out, 'wk_changelog_job_rewrite "$1" "$2"').out;
-    assertEq(again, out, 'and a second rewrite changes nothing');
-  });
-
-  await test('a changelog job of the repo\'s own is never replaced', () => {
-    const own = `${JOBS}  changelog:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npx my-own-lint\n`;
-    const { code, out } = rewrite(own);
-    assertEq(code, 0, 'it answers');
-    assertEq(out, own, 'a job that runs no copy is not the heal\'s to rewrite');
-  });
-
-  await test('a near miss of the retired header is left alone', () => {
-    const near = OLD_HEADER.replace('on every run.', 'on each run.');
-    const { out } = rewrite(`${near}${JOBS}${NODE_JOB}`);
-    assertEq(out, `${near}${JOBS}  changelog:\n${USES}\n`, 'the paragraph is not the retired one, so it stays');
-  });
-
-  await test('a CRLF file is rewritten and keeps its CRLF line endings', () => {
-    const crlf = (s) => s.replace(/\n/g, '\r\n');
-    const next = '\n  e2e:\n    runs-on: ubuntu-latest\n';
-    const { code, out } = rewrite(crlf(`${OLD_HEADER}${JOBS}${NODE_JOB}${next}`));
-    assertEq(code, 0, 'it answers');
-    assertEq(out, crlf(`${templateHeader()}${JOBS}  changelog:\n${USES}\n${next}`),
-      'header swapped, job rewritten, the next job intact, every line ending CRLF');
-  });
-
-  await test('a retired first line, in any of its three spellings, becomes the template\'s opening sentence', () => {
-    for (const retired of RETIRED_FIRST_LINES) {
-      const { code, out } = rewrite(`${retired}\n${SECOND_LINE}${OLD_HEADER}${JOBS}${NODE_JOB}`);
-      assertEq(code, 0, `it answers for: ${retired}`);
-      assertEq(out, `${templateFirstLines()}${SECOND_LINE}${templateHeader()}${JOBS}  changelog:\n${USES}\n`,
-        `the template's opening sentence in place of: ${retired}`);
-    }
-  });
-
-  await test('a file already starting with the template\'s opening sentence keeps it byte for byte', () => {
-    const current = `${templateFirstLines()}${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`;
-    const { code, out } = rewrite(current);
-    assertEq(code, 0, 'it answers');
-    assertEq(out, current, 'nothing doubled, nothing changed');
-  });
-
-  await test('a near miss of a retired first line is left alone', () => {
-    const near = RETIRED_FIRST_LINES[0].replace('every pull request', 'each pull request');
-    const { out } = rewrite(`${near}\n${SECOND_LINE}${JOBS}${NODE_JOB}`);
-    assertEq(out, `${near}\n${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`, 'the line is not a retired one, so it stays');
-  });
-
-  await test('a CRLF file gets the template\'s opening sentence with CRLF endings', () => {
-    const crlf = (s) => s.replace(/\n/g, '\r\n');
-    const { code, out } = rewrite(crlf(`${RETIRED_FIRST_LINES[0]}\n${SECOND_LINE}${JOBS}${NODE_JOB}`));
-    assertEq(code, 0, 'it answers');
-    assertEq(out, crlf(`${templateFirstLines()}${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`),
-      'both new lines end CRLF, as does every other line');
-  });
-
-  await test('a template rewrapped to three lines: the retired first line becomes those three, once', () => {
-    const { dir, file } = rewrappedTemplate(TOP_THREE);
-    try {
-      const rest = `${SECOND_LINE}${JOBS}  changelog:\n${USES}\n`;
-      const { code, out } = rewrite(`${RETIRED_FIRST_LINES[0]}\n${rest}`, file);
-      assertEq(code, 0, 'it answers');
-      assertEq(out, `${openingLines(fs.readFileSync(file, 'utf8'))}${rest}`, 'the three lines in place of the retired one, the rest byte for byte');
-      assertEq(rewrite(out, file).out, out, 'and a second rewrite changes nothing');
-    } finally {
-      cleanup(dir);
-    }
-  });
-
-  await test('an unreadable file is a non-zero status, not an empty answer', () => {
-    const { code } = inSeam('wk_changelog_job_rewrite /nonexistent/checks.yml "$1"', [shellPath(TEMPLATE)]);
-    assert(code !== 0, `the read failure is the function's status, got ${code}`);
-  });
-
   group('changelog-job.sh: what runs the copy');
-
-  for (const [cmd, want] of [
-    ['node .github/changelog-lint.cjs CHANGELOG.md', 0],
-    ['node ./.github/changelog-lint.js CHANGELOG.md', 0],
-    ['node .workkit-kit/workflow/changelog/lint.js CHANGELOG.md', 1],
-  ]) {
-    await test(`a job running \`${cmd}\` ${want === 0 ? 'runs' : 'does not run'} the copy`, () => {
-      const { code } = overFile(`${JOBS}  changelog:\n    steps:\n      - run: ${cmd}\n`, 'wk_changelog_job_runs_copy "$1"');
-      assertEq(code, want, 'the answer is the status');
-    });
-  }
 
   await test('a comment naming the copy is not a run of it; a run: line is', () => {
     const names = (text) => spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\nwk_names_linter_copy`],
@@ -329,9 +108,54 @@ const cases = async () => {
     assertEq(unread.code, 2, 'a folder find could not read');
     assert(unread.err.includes('find: stub'), `find's stderr is left for the caller: ${unread.err}`);
     assertEq(inSeam('grep() { return 2; }\nwk_names_linter_copy <<<"jobs:"').code, 2, 'a grep that failed');
-    assertEq(overFile(`${JOBS}  changelog:\n${USES}\n`, 'grep() { return 2; }\nwk_changelog_job_runs_copy "$1"').code, 2,
-      'a job the grep could not read');
     cleanup(dir);
+  });
+
+  group('changelog-job.sh: the default branch the caller and branch protection share');
+
+  // A repo whose origin/HEAD names trunk unless `originHead` is false, and a gh
+  // on PATH answering `answer` to the REST read (no gh when it is null).
+  const branchOf = ({ answer, originHead = true }) => {
+    const dir = mkTmp('cl-job-branch-');
+    const repo = path.join(dir, 'repo');
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(repo);
+    fs.mkdirSync(bin);
+    const git = (...args) => assertEq(spawnSync('git', args, { cwd: repo, encoding: 'utf8' }).status, 0, `git ${args.join(' ')}`);
+    git('init', '-q');
+    git('remote', 'add', 'origin', 'https://example.invalid/acme/repo.git');
+    if (originHead) git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk');
+    const log = path.join(dir, 'gh.log');
+    if (answer !== null) {
+      stubTool(bin, 'gh', ['#!/usr/bin/env bash', `printf '%s\\n' "$*" >> ${JSON.stringify(shellPath(log))}`,
+        ...(answer === 'fail' ? ['exit 1'] : [`echo ${JSON.stringify(answer)}`])]);
+    }
+    const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\nwk_default_branch`], {
+      cwd: repo, env: { PATH: joinPath(bin, SYSTEM_PATH), HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    const asked = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
+    cleanup(dir);
+    return { code: res.status, branch: res.stdout, asked };
+  };
+
+  await test('GitHub\'s answer wins over origin/HEAD, read as branch protection reads it', () => {
+    const { branch, asked } = branchOf({ answer: 'develop' });
+    assertEq(branch, 'develop\n', 'GitHub\'s default branch');
+    assertEq(asked, 'api repos/{owner}/{repo} --jq .default_branch\n', 'one REST read of the repo');
+  });
+
+  await test('no answer from GitHub (gh failing, empty, or absent): origin/HEAD\'s branch', () => {
+    for (const answer of ['fail', '', null]) {
+      assertEq(branchOf({ answer }).branch, 'trunk\n', `gh ${answer === null ? 'absent' : JSON.stringify(answer)}: origin/HEAD`);
+    }
+  });
+
+  await test('neither GitHub nor origin/HEAD: a failure printing nothing, never a guessed main', () => {
+    for (const answer of ['fail', '', null]) {
+      const { code, branch } = branchOf({ answer, originHead: false });
+      assertEq(code, 1, `gh ${answer === null ? 'absent' : JSON.stringify(answer)}: exit 1`);
+      assertEq(branch, '', 'and no branch');
+    }
   });
 
   return summary();

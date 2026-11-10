@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { test, assert, skip, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath,
+  BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath, spawnSync: runSync,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
@@ -272,11 +272,14 @@ const mkRepo = ({ optIn = false } = {}) => {
 };
 
 /**
- * Give `repo` the origin github.com/`slug` and enable it on the roster through
- * the CLI at `script`, with `env` naming the user's dir the roster lives in.
+ * Give `repo` the origin github.com/`slug`, its HEAD on main as a clone's is, and
+ * enable it on the roster through the CLI at `script`, with `env` naming the
+ * user's dir the roster lives in.
  */
 const rosterRepo = (world, repo, slug, { script, env } = {}) => {
   mkOriginRepo(repo, `https://github.com/${slug}.git`);
+  const head = runSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], { cwd: repo, encoding: 'utf8' });
+  assert(head.status === 0, `origin/HEAD points at main, got: ${head.stderr}`);
   const enabled = runCli(world, ['enable', repo], { script, env });
   assert(enabled.code === 0, `${slug} joins the roster, got: ${enabled.said}`);
 };

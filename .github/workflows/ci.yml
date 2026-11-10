@@ -1,0 +1,53 @@
+# The CI every participating repo runs: its checks.yml, the caller the kit owns,
+# calls this file with one job,
+#   uses: itw-creative-works/workkit/.github/workflows/ci.yml@main
+# The logic sits in the kit's .github/scripts/ci-*.sh, run from a clone of the kit.
+
+# A repo's own setup is its hooks.ciSetup commands, run before the dependency
+# install; one sets a variable for the later steps by appending it to $GITHUB_ENV.
+name: ci
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # A newer push to the same pull request ends the older run; a push to a
+    # branch gets a group of its own commit, so every commit keeps its result.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v5
+      # Outside the workspace, so no glob of the repo's own tests reaches the kit's.
+      - name: Fetch the workkit kit
+        run: git clone --depth 1 https://github.com/itw-creative-works/workkit.git "$RUNNER_TEMP/workkit-kit"
+      - name: Node version
+        id: node
+        run: echo "version=$(bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-node-version.sh")" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+      # A runner has no global git identity, so any test that builds a scratch
+      # repo and commits into it fails at "Author identity unknown".
+      - name: Configure git identity
+        run: |
+          git config --global user.name "checks"
+          git config --global user.email "checks@ci.local"
+      # Before the install, so a tool or a $GITHUB_ENV value it needs is in place.
+      - name: Setup (hooks.ciSetup)
+        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-setup.sh"
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          elif [ -f package.json ]; then
+            npm install --no-audit --no-fund
+          fi
+      # A release push, every change the CHANGELOG or a version stamp, runs no suite:
+      # its work commit's run proved that code (the kit's release-push.sh decides).
+      - name: Test
+        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-test.sh"
+  changelog:
+    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main

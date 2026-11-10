@@ -7,15 +7,21 @@
 
 # ── 2c. Branch protection (best effort, never a failure) ──
 # Advisory: it needs admin, and free plans protect only public repos, so every
-# miss is a quiet skip. An existing protection is left exactly as found.
+# miss is a quiet skip. An existing protection is left as found, but for the
+# one check the caller renamed (swap_required_test_check).
 ensure_branch_protection() {
   local repo branch
   command -v gh >/dev/null 2>&1 || return 0
   wk_spin 'checking the gh login' gh auth status >/dev/null 2>&1 || return 0
   git remote get-url origin >/dev/null 2>&1 || return 0
   repo="$(wk_spin 'reading the repo' gh api 'repos/{owner}/{repo}' -q .full_name 2>/dev/null)" || return 0
-  branch="$(wk_spin 'reading the default branch' gh api "repos/$repo" -q .default_branch 2>/dev/null)" || return 0
+  branch="$(wk_spin 'reading the default branch' wk_default_branch)" || return 0
   [[ -n "$repo" && -n "$branch" ]] || return 0
+
+  # The caller's job `checks` runs ci.yml's `test`, which GitHub reports as
+  # `checks / test`; the kit's own checks.yml defines `test` itself.
+  local check="checks / test"
+  wk_is_kit_checkout "$PWD" && check="test"
 
   # Only an explicit "not protected" answer may lead to a PUT. Any other
   # failure (rate limit, network) is indistinguishable from "protected but
@@ -23,16 +29,47 @@ ensure_branch_protection() {
   # configuration would break the promise above, so bail without touching it.
   local probe
   if probe="$(wk_spin "reading the protection on $branch" gh api "repos/$repo/branches/$branch/protection" 2>&1)"; then
-    wk_skip "protection: $branch already protected"
+    swap_required_test_check "$repo" "$branch" "$check" "$probe" || wk_skip "protection: $branch already protected"
     return 0
   elif [[ "$probe" != *"Branch not protected"* && "$probe" != *"HTTP 404"* ]]; then
     return 0
   fi
-  if printf '%s' '{"required_status_checks":{"strict":false,"contexts":["test"]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null}' \
+  if printf '{"required_status_checks":{"strict":false,"contexts":["%s"]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null}' "$check" \
     | wk_spin "protecting $branch" gh api -X PUT "repos/$repo/branches/$branch/protection" --input - >/dev/null 2>&1; then
-    wk_ok "protection: $branch now requires the test check before merge"
+    wk_ok "protection: $branch now requires the $check check before merge"
   else
     wk_skip "protection: not applied to $branch (needs admin, and GitHub enforces it on private repos only on paid plans)"
+  fi
+}
+
+# swap_required_test_check <repo> <branch> <check> <protection json>: a required
+# `test` becomes <check> once <branch> carries the caller, all else kept; the JSON
+# read from its first `{` line, past the spinner's. 0 swapped or tried (one line
+# says which), 1 nothing to swap yet.
+swap_required_test_check() {
+  local checks
+  [[ "$3" != "test" ]] || return 1
+  checks="$(wk_jq -c --arg new "$3" '
+    .required_status_checks // empty
+    | (.checks // ((.contexts // []) | map({context: .})))
+    | select(any(.[]; .context == "test"))
+    | map(if .context == "test" then .context = $new else . end)
+    | map(if .app_id == null then del(.app_id) else . end)
+    | reduce .[] as $c ([]; if any(.[]; .context == $c.context) then . else . + [$c] end)
+  ' < <(sed -n '/^{/,$p' <<<"$4") 2>/dev/null)" || return 1
+  [[ -n "$checks" ]] || return 1
+  # Until the caller is on the default branch, its pushes still report `test`.
+  local remote caller
+  remote="$(wk_spin "reading $2's checks.yml" gh api "repos/$1/contents/.github/workflows/checks.yml?ref=$2" \
+    -H 'Accept: application/vnd.github.raw+json' 2>/dev/null)" || return 1
+  caller="$(wk_checks_heal_rewrite "$(wk_checks_template)" 2>/dev/null)" || return 1
+  [[ "$remote" == "$caller" ]] || return 1
+  if printf '{"checks":%s}' "$checks" \
+    | wk_spin "requiring $3 on $2" gh api -X PATCH "repos/$1/branches/$2/protection/required_status_checks" --input - >/dev/null 2>&1; then
+    wk_ok "protection: $2 now requires $3 in place of test, the check the kit's caller reports"
+  else
+    wk_warn "protection: $2 still requires test, which the kit's caller reports as $3, so merges wait on it; swap it in the branch protection settings"
+    needs_attention=1
   fi
 }
 

@@ -1,64 +1,23 @@
-# Checks (workflow spec): the test gate that runs on every pull request and
-# every push to the default branch.
-# Making it a REQUIRED check is a repo setting (branch protection / ruleset)
-# a human turns on; until then it runs and reports, and the ship skill treats
-# a red run as unmergeable.
-# Installed once by workflow/standards.sh; after that this copy is the repo's
-# own, so repo-specific steps (extra tools, matrix builds) belong here, not in
-# the workflow core's template.
-#
-# The jobs mirror what the local hooks run: the npm test suite
-# (safety:commit-gate) and the CHANGELOG entry format (docs:changelog-guard).
-# A repo without a test script or without a CHANGELOG passes trivially. The
-# checks exist so a pull request from ANY author (cloud agent, collaborator,
-# laptop without the hooks) meets the same bar before merge.
-#
-# A push to the default branch (main in the template) runs them too, so work a
-# local session commits direct gets the clean-runner suite; a push changing only
-# the CHANGELOG runs nothing. The heal adds this push trigger once to a
-# checks.yml that runs on pull requests only. A repo whose default branch is not
-# main edits its own copy.
-#
-# The `changelog` job is the only job the heal adds to an EXISTING checks.yml,
-# appended once at the end of `jobs:`. It calls the kit's reusable workflow,
-# which runs the kit's own changelog/lint.js, so the linter lives in the kit
-# and nowhere else. That workflow (.github/workflows/changelog.yml in the kit)
-# decides what a push and a pull request judge.
+# Checks: the test gate on every pull request and every push to the default
+# branch, run by the workkit kit's reusable workflow (.github/workflows/ci.yml),
+# and on a push the GitHub release of each release commit it brings (release.yml).
+# The kit owns this file and its standards step rewrites it, so no edit here
+# survives: a repo's own setup commands go in .workkit/settings.json hooks.ciSetup.
 name: checks
 
 on:
   pull_request:
   push:
-    branches: [main]
-    paths-ignore: [CHANGELOG.md]
+    branches: [__DEFAULT_BRANCH__]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: lts/*
-      # A runner has no global git identity, so any test that builds a scratch
-      # repo and commits into it fails at "Author identity unknown".
-      - name: Configure git identity
-        run: |
-          git config --global user.name "checks"
-          git config --global user.email "checks@ci.local"
-      - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          elif [ -f package.json ]; then
-            npm install --no-audit --no-fund
-          fi
-      - name: Test
-        run: |
-          if [ -f package.json ] && node -e "process.exit((require('./package.json').scripts || {}).test ? 0 : 1)"; then
-            npm test
-          else
-            echo "no test script, nothing to check"
-          fi
-  changelog:
-    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main
+  checks:
+    uses: itw-creative-works/workkit/.github/workflows/ci.yml@main
+    secrets: inherit
+  # A pull request never reaches it, so its token stays read-only.
+  release:
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      actions: write
+    uses: itw-creative-works/workkit/.github/workflows/release.yml@main

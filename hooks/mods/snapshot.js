@@ -2,36 +2,39 @@
  * hooks/mods/snapshot.js: workflow:snapshot. The claim of an issue to
  * status:building takes the repo snapshot `workkit proof red` runs against,
  * or adds its number to the live one (replacing it once stale); a release (a
- * qa or complete flip, or a close) leaving no issue there at status:building
- * drops it, each read off the gh journal lines the Bash call wrote. The
+ * complete flip, or a close) leaving no issue there at status:building or
+ * status:qa drops it, each read off the gh journal lines the Bash call wrote. The
  * copy, fill and sweep stay in hooks/lib/snapshot.sh, run
  * through its entry; a notice at most, never a block (docs/hooks.md § workflow:snapshot).
  */
 
-import { buildingList } from './gh.js';
+import { stageList } from './gh.js';
 import { userDirOf } from './log.js';
 import { onIssue, snapshotMarkerPath } from './markers.js';
 import { placeLine, repoSlug, rosterOf } from './optin.js';
-import { issuesBuilding } from './proof.js';
+import { issuesAt } from './proof.js';
 import { LONG_RUN_MS } from './suite.js';
+
+// The stages that hold the snapshot: a release leaving an issue at either keeps it.
+const HOLDING = ['status:building', 'status:qa'];
 
 // A journal line that claims its issues: an edit adding status:building.
 const claims = (line) => onIssue(line) && line.sub === 'edit' && line.add.includes('status:building');
 
-// A journal line that releases: a close, or an edit adding status:qa or status:complete.
+// A journal line that releases: a close, or an edit adding status:complete.
 const releases = (line) => onIssue(line)
-  && (line.sub === 'close' || (line.sub === 'edit' && (line.add.includes('status:qa') || line.add.includes('status:complete'))));
+  && (line.sub === 'close' || (line.sub === 'edit' && line.add.includes('status:complete')));
 
 /**
  * What a Bash call's gh writes ask of the snapshot, one step per journal line
  * that claims or releases, in order: take (the folder, the claimed numbers and
- * the repo), drop (a release GitHub says left nothing building), or a note for
- * a line naming a repo off the roster. A release that leaves an issue
- * building is no step.
+ * the repo), drop (a release GitHub says left nothing building or at qa), or
+ * a note for a line naming a repo off the roster. A release that leaves an
+ * issue building or at qa is no step.
  * @param {{lines: object[], cwd: string, roster: object|null, slugOf: function, building: function}} facts
  *   the journal lines the call wrote (journalLines in markers.js), the session's folder, the parsed
  *   ~/.workkit/.repos.json, `slugOf(dir)` async a folder's origin slug, `building(dir, repo)` async
- *   gh's status:building list there, null when unread
+ *   gh's status:building list there, its status:qa list when none is building, null when unread
  * @returns {Promise<Array<{take: string, issues: string[], repo: string}|{drop: string, repo: string}|{note: string}>>}
  */
 export async function snapshotPlan(facts) {
@@ -44,10 +47,20 @@ export async function snapshotPlan(facts) {
     else if (claim) steps.push({ take: placed.dir, issues: line.numbers, repo: placed.repo });
     else {
       const list = await facts.building(placed.dir, placed.repo);
-      if (list !== null && issuesBuilding(list)?.length === 0) steps.push({ drop: placed.dir, repo: placed.repo });
+      if (HOLDING.every((stage) => issuesAt(list, stage)?.length === 0)) steps.push({ drop: placed.dir, repo: placed.repo });
     }
   }
   return steps;
+}
+
+// gh's list at the first HOLDING stage holding an issue, else the last stage's; null when unread.
+async function holdingList(run, init) {
+  let list = null;
+  for (const stage of HOLDING) {
+    list = await stageList(run, stage, init);
+    if (issuesAt(list, stage)?.length !== 0) return list;
+  }
+  return list;
 }
 
 // The note for a step whose folder lies in no git repository.
@@ -103,7 +116,7 @@ export async function snapshotGuard(facts) {
     building: async (dir, repo) => {
       const root = await facts.top(dir);
       if (!root || (await facts.list(await snapOf(root))).length === 0) return null;
-      return buildingList(facts.run, { repo, cwd: root });
+      return holdingList(facts.run, { repo, cwd: root });
     },
   });
   const notes = [];

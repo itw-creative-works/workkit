@@ -13,7 +13,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { assert, assertEq, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { BASH, NO_RC, shellPath, stubTool, joinPath } = require('../../lib/platform');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo, FIXTURE_ORIGIN, OPT_IN_SHAPES } = require('../../lib/git-repo');
 
@@ -81,6 +81,8 @@ const mkRepo = ({ optIn = true, origin = FIXTURE_ORIGIN } = {}) => {
     isWindows: false,
     autocrlf: false,
     failOn: null,
+    // The default branch the checks.yml rewrite reads at the root; null for none.
+    defaultBranch: 'main',
     calls: { run: [], show: [], issueView: [], lint: [], jobRewrite: [] },
   };
 };
@@ -195,35 +197,44 @@ function git(r, args, dir, init) {
   return runResult({ exitCode: 1 });
 }
 
-// A text to hand the rewrite as a file: a path on disk as it is, a repo path as
-// HEAD holds it, anything else written to a scratch file.
-const asFile = (r, x, name) => {
-  if (onDisk(x)) return x;
-  const text = typeof x === 'string' && !x.includes('\n') && relOf(x) in r.head ? r.head[relOf(x)] : x;
+// A template text to hand the rewrite as a file, written to a scratch folder.
+const asFile = (text, name) => {
   const file = path.join(mkTmp('cg-rewrite-'), name);
   fs.writeFileSync(file, text);
   return file;
 };
 
 /**
- * wk_checks_heal_rewrite <a> <b> run for real from `cwd`, the folder whose
- * package.json it reads, its stdout, or null when it fails.
+ * A scratch root the rewrite reads its default branch from: a git repo whose
+ * origin/HEAD names `branch` (unset when null), and a PATH whose gh answers
+ * nothing, so GitHub is never asked.
  */
-const realRewrite = (a, b, cwd) => {
-  // After lib/platform.sh, as standards.sh sources it: the rewrite asks wk_jq.
-  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"; . "$2"; wk_checks_heal_rewrite "$3" "$4"', 'bash',
-    shellPath(path.join(WORKFLOW_DIR, 'lib', 'platform.sh')), shellPath(JOB), shellPath(a), shellPath(b)],
-    { cwd, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-  return res.status === 0 ? res.stdout : null;
+const rewriteRoot = (branch) => {
+  const root = mkTmp('cg-rewrite-root-');
+  const bin = path.join(root, '.bin');
+  fs.mkdirSync(bin);
+  stubTool(bin, 'gh', ['#!/usr/bin/env bash', 'exit 1']);
+  const git = (...args) => assertEq(spawnSync('git', args, { cwd: root, encoding: 'utf8' }).status, 0, `git ${args.join(' ')}`);
+  git('init', '-q');
+  if (branch !== null) git('symbolic-ref', 'refs/remotes/origin/HEAD', `refs/remotes/origin/${branch}`);
+  return { root, PATH: joinPath(bin, process.env.PATH) };
 };
 
-// The rewrite as the gate runs it, at the repo root: a scratch folder holding the
-// working tree's package.json, the one file of the repo the rewrite reads.
-const rewriteOf = (r, a, b) => {
-  const template = onDisk(b) ? b : (typeof b === 'string' && b.includes('\n') ? asFile(r, b, 'template.yml') : TEMPLATE);
-  const root = mkTmp('cg-rewrite-root-');
-  if ('package.json' in r.work) fs.writeFileSync(path.join(root, 'package.json'), r.work['package.json']);
-  return realRewrite(asFile(r, a, 'checks.yml'), template, root);
+/**
+ * `changelog-job.sh rewrite [template]` run for real at a root whose default
+ * branch is `branch` (none when null): its exit code, stdout and stderr.
+ */
+const realRewrite = (template, branch = 'main') => {
+  const { root, PATH } = rewriteRoot(branch);
+  const res = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', ...(template ? [shellPath(template)] : [])],
+    { cwd: root, env: { ...process.env, PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+  return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
+};
+
+// The rewrite as the gate runs it, at the repo root, the template a text or a file.
+const rewriteOf = (r, b) => {
+  const template = b === undefined || onDisk(b) ? b : asFile(b, 'template.yml');
+  return realRewrite(template, r.defaultBranch);
 };
 
 // A working tree file's text by repo path, else a file on disk; null for none.
@@ -249,9 +260,7 @@ function runStub(r, cwd) {
     const tool = path.basename(argv[0]);
     if (tool === 'git') return git(r, argv.slice(1), init.cwd || cwd, init);
     if (argv.some((a) => a.endsWith('changelog-job.sh')) && argv.includes('rewrite')) {
-      const at = argv.indexOf('rewrite');
-      const out = rewriteOf(r, argv[at + 1], argv[at + 2]);
-      return out === null ? runResult({ exitCode: 1 }) : runResult({ stdout: out });
+      return rewriteOf(r, argv[argv.indexOf('rewrite') + 1]);
     }
     if (tool === 'npm' && argv.slice(1, 4).join(' ') === 'config get script-shell') {
       return r.scriptShell === null ? runResult({ exitCode: 127, stderr: 'npm: command not found\n' }) : runResult({ stdout: `${r.scriptShell}\n` });
@@ -345,9 +354,9 @@ const factsOf = (r) => {
         { cwd: scratch, encoding: 'utf8', timeout: SPAWN_DEADLINE });
       return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
     },
-    jobRewrite: async (a, b) => {
-      r.calls.jobRewrite.push([a, b]);
-      return rewriteOf(r, a, b);
+    jobRewrite: async (...args) => {
+      r.calls.jobRewrite.push(args);
+      return rewriteOf(r);
     },
     originless: r.origin === null,
     read: async (p) => readWork(r, p),

@@ -2,7 +2,7 @@
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the test package, the
 // package record's read, the tree hash, the opt-in read (the gate's and the heal's), one setting, the machine folder, the
 // CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
-// version-only change, the status:building list, the public slug.
+// version-only change, the status:building list, the public slug. Plus one JavaScript pair, the plain-object test.
 
 const fs = require('fs');
 const os = require('os');
@@ -526,6 +526,17 @@ while IFS= read -r p; do if [[ "$p" =~ $PUBLIC_SLUG_RE ]]; then echo 1; else ech
     const { SLUG_RE, publicLink } = require(path.join(KIT, 'workflow', 'public', 'lib.js'));
     agree(PUBLIC_KEYS, shell, (k) => SLUG_RE.test(k), 'PUBLIC_SLUG_RE against SLUG_RE');
     agree(PUBLIC_KEYS, shell, (k) => publicLink(`Public: https://github.com/${k}/issues/1`) !== null, 'PUBLIC_SLUG_RE against the Public: link');
+  });
+
+  group('twins: the plain-object test, isPlain in workflow/ship/entries.js against hooks/mods/settings.js');
+
+  await test('both isPlain copies answer every value alike: only a non-null, non-array object is plain', () => {
+    const { isPlain: entriesPlain } = require(path.join(KIT, 'workflow', 'ship', 'entries.js'));
+    const values = [{}, { command: 'x' }, Object.create(null), [], [{}], null, undefined, 0, 1, '', 'x', true, false, () => {}, new Date(0)];
+    const settingsPlain = mods('settings').isPlain;
+    const differ = values.flatMap((v, i) => (entriesPlain(v) === settingsPlain(v) ? [] : [`value ${i}: entries ${entriesPlain(v)}`]));
+    assertEq(differ.join('; '), '', 'the values the two copies answer differently');
+    assertEq(values.slice(0, 6).map(entriesPlain).join(','), 'true,true,true,false,false,false', 'objects are plain, arrays and null are not');
   });
 };
 

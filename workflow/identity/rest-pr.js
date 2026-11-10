@@ -3,6 +3,7 @@
 // Usage: const PR_VERBS = require('./rest-pr'); (a table in rest.js's VERBS shape)
 
 const { spawnSync } = require('../lib/run');
+const { pause } = require('../lib/pause');
 const {
   api, getJson, send, parse, repoOf, matchNumber, limitOf, bodyOf, fieldsOf, pick, printJson, field, enc, GhFailure, UsageError,
 } = require('./rest');
@@ -185,9 +186,6 @@ const checksOn = (ctx, sha) => {
   }));
   return [...runs, ...statuses];
 };
-
-/** Blocks the process for `seconds`; the watch's one wait. */
-const pause = (seconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
 
 /**
  * `pr checks`: the head sha's checks, one line each, exit 1 on a failure and 8 on

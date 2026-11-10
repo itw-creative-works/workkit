@@ -3,9 +3,9 @@
 # Making it a REQUIRED check is a repo setting (branch protection / ruleset)
 # a human turns on; until then it runs and reports, and the ship skill treats
 # a red run as unmergeable.
-# Installed once by workflow/standards.sh; after that this copy is the repo's
-# own, so repo-specific steps (extra tools, matrix builds) belong here, not in
-# the workflow core's template.
+# This is the kit's own suite, which the standards heal never touches; a
+# participating repo gets the kit's caller instead (the template in
+# workflow/templates/github-workflows/), which runs .github/workflows/ci.yml.
 #
 # The job runs the root npm test suite, the same proof the local
 # safety:commit-gate hook requires a record of before a code commit. A repo
@@ -17,7 +17,8 @@
 # everything else, so a red main must show without a pull request. A push whose
 # every change is the CHANGELOG or a version stamp (the commit gate's version-only
 # rule) runs no suite, since the work commit before it already proved that code;
-# a tag push runs nothing.
+# a tag push runs nothing. Its `release` job is the caller's: on a push, the
+# GitHub release of each release commit it brings (.github/workflows/release.yml).
 name: checks
 
 on:
@@ -106,3 +107,11 @@ jobs:
     needs: scope
     if: needs.scope.outputs.run == 'true'
     uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main
+  # The caller's release job: a pull request never reaches it, so its token stays
+  # read-only; a push gets a release per release commit it brings.
+  release:
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      actions: write
+    uses: ./.github/workflows/release.yml

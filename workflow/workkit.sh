@@ -193,11 +193,10 @@ usage: workkit <command> [args]
                        entry backfill, every check before any write
   ship watch <sha>     watch every CI run for a pushed sha and answer green or
                        red by exit code
-  ship cut <x.y.z>     the GitHub release at that version's own release commit
-                       (HEAD when none), after any earlier unreleased ones, its
-                       notes that version's CHANGELOG section, then the repo's
-                       afterRelease hooks; in a cloud session it names the
-                       version that waits
+  ship cut <x.y.z>     wait for the GitHub release CI's release job makes (any
+                       earlier unreleased ones first), then run the repo's
+                       afterRelease hooks; a caller with no release job, or no
+                       release within the wait, is one line and exit 1
   ship plan            print which packages publish to npm, in which order,
                        and which are skipped and why; publishes nothing
   ship publish         publish that plan in order, asking npm first, stopping

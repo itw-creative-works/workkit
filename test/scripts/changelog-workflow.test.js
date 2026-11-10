@@ -1,7 +1,6 @@
 // Tests for the reusable CHANGELOG workflow (.github/workflows/changelog.yml):
-// the one CI home of the entry-format check, called through each repo's
-// checks.yml `uses:` line. The shape is read off the lines: the kit has no YAML
-// dependency and every question here is line-shaped.
+// the one CI home of the entry-format check. The shape is read off the lines:
+// the kit has no YAML dependency and every question here is line-shaped.
 
 const path = require('path');
 const fs = require('fs');
@@ -9,21 +8,9 @@ const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harn
 const { indentOf, isContent, childrenOf } = require('../lib/workflow-yaml');
 
 const ROOT = path.join(__dirname, '..', '..');
-const REUSABLE_REL = '.github/workflows/changelog.yml';
-const REUSABLE = path.join(ROOT, REUSABLE_REL);
-const TEMPLATE = path.join(ROOT, 'workflow', 'templates', 'github-workflows', 'checks.yml');
-const OWN_CHECKS = path.join(ROOT, '.github', 'workflows', 'checks.yml');
+const REUSABLE = path.join(ROOT, '.github', 'workflows', 'changelog.yml');
 
 const read = (file) => fs.readFileSync(file, 'utf8');
-
-// The lines of one job, from `  <name>:` to the next top-level key or job.
-const jobBlock = (text, name) => {
-  const lines = text.split('\n');
-  const start = lines.indexOf(`  ${name}:`);
-  if (start === -1) return null;
-  const end = lines.findIndex((l, i) => i > start && /^ {0,2}[A-Za-z_-]+:/.test(l));
-  return lines.slice(start, end === -1 ? undefined : end).join('\n').trimEnd();
-};
 
 // Each step's lines, from its `- ` to the next line at its indent or less;
 // blank and comment lines are skipped, and a deeper `- ` stays inside the step.
@@ -60,9 +47,6 @@ const checkoutDepth = (text) => {
   return (own && withOf(own)['fetch-depth']) ?? null;
 };
 
-// The one `uses:` line a caller's changelog job is made of.
-const USES_RE = /^ {4}uses: ([\w.-]+\/[\w.-]+)\/(\.github\/workflows\/[\w.-]+\.yml)@main$/;
-
 const cases = async () => {
   group('changelog.yml: the reusable workflow');
 
@@ -97,28 +81,6 @@ const cases = async () => {
     assert(/BASE_REF: \$\{\{ github\.base_ref \}\}/.test(text), `the base branch reaches the step, got:\n${text}`);
     assertEq(checkoutDepth(text), '2', `the caller's checkout keeps the merge commit's parents, got:\n${text}`);
     assert(/lint\.js CHANGELOG\.md --added-only --base=HEAD\^1/.test(text), `and the linter compares against the first, got:\n${text}`);
-  });
-
-  group('checks.yml: callers use the published path');
-
-  await test('the template\'s changelog job is the one uses: line, aimed at this repo\'s workflow', () => {
-    const block = jobBlock(read(TEMPLATE), 'changelog');
-    assert(block, 'the template defines a changelog job');
-    const lines = block.split('\n');
-    assertEq(lines.length, 2, `the job is its name and one uses: line, got:\n${block}`);
-    const m = lines[1].match(USES_RE);
-    assert(m, `a uses: line of owner/repo/path@main, got: ${lines[1]}`);
-    assertEq(m[2], REUSABLE_REL, 'the path is the workflow this repo publishes');
-    assert(fs.existsSync(path.join(ROOT, m[2])), 'and that file exists');
-    const repo = read(REUSABLE).match(/^ +repository: (\S+)$/m);
-    assertEq(m[1], repo && repo[1], 'the repo it calls is the repo the workflow checks the linter out of');
-    assert(!read(TEMPLATE).includes('changelog-lint'), 'the template names no vendored copy');
-  });
-
-  await test('this repo\'s own checks.yml calls the same workflow the same way', () => {
-    const uses = (text) => (jobBlock(text, 'changelog') || '').split('\n').find((line) => USES_RE.test(line)) ?? null;
-    assert(uses(read(TEMPLATE)), 'the template\'s changelog job has a uses: line');
-    assertEq(uses(read(OWN_CHECKS)), uses(read(TEMPLATE)), 'the kit runs the check its callers run');
   });
 
   return summary();

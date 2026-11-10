@@ -41,6 +41,8 @@ const NEW_FILES = T.newFiles('lib/y.js');
  */
 const mkWorld = ({ claude = true, issues, tags } = {}) => {
   const w = mkRepo('githooks-', SEED);
+  // origin/HEAD as a clone has it, the default branch the heal's caller step reads.
+  w.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
   w.git('config', 'core.hooksPath', HOOKS);
   const gh = commitGh({ issues, tags });
   const env = { ...w.env, PATH: joinPath(gh.binDir, w.env.PATH), ...(claude ? { CLAUDECODE: '1' } : {}) };

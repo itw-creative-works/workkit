@@ -1,18 +1,16 @@
 // Tests for safety:commit-gate's logic, preCommitVerdict(facts) in hooks/mods/commit-gate.js: heal
 // bookkeeping skips the review and new-file checks, and a heal arm whose tool fails or never starts
-// is held by name; `jobRewrite` runs the real wk_checks_heal_rewrite. Plus the rewrite entry, `changelog-job.sh
-// rewrite a b`, against it, run in bash. The shared prologue (repo, facts, texts) is ./helpers.js.
+// is held by name; `jobRewrite` runs the real `changelog-job.sh rewrite`, whose answer is the kit's
+// caller on the root's default branch. The shared prologue (repo, facts, texts) is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
 const {
-  WORKFLOW_DIR, JOB, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, gitRm, commit, proveTree,
+  WORKFLOW_DIR, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, gitRm, commit, proveTree,
   judge, denyOf, blocks, passes, realRewrite,
 } = require('./helpers');
-const { withCloneStep } = require('../../lib/checks-template');
+const { withSteps, withCloneStep, OLD_CHECKS } = require('../../lib/checks-template');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 // A repo with a committed settings.json carrying a version key: the bookkeeping
@@ -35,34 +33,13 @@ const oldChecks = (copy) => `${OLD_HEADER}${CHECKS_BODY}  changelog:\n    runs-o
   + `      - uses: actions/checkout@v5\n      - name: CHANGELOG entry format\n        run: node ${copy} CHANGELOG.md --unreleased-only\n`;
 const PR_ONLY = `${CHECKS_BODY}  changelog:\n    uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main\n`;
 
-const scratchFile = (text) => {
-  const file = path.join(mkTmp('cg-heal-'), 'checks.yml');
-  fs.writeFileSync(file, text);
-  return file;
-};
-
-// The heal's push trigger over a body, the heal's own answer.
-const withPushTrigger = (body) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"\nwk_checks_push_trigger "$2"', 'bash', shellPath(JOB), shellPath(scratchFile(body))],
-    { encoding: 'utf8', timeout: SPAWN_DEADLINE });
-  assertEq(res.status, 0, `wk_checks_push_trigger answers, stderr: ${res.stderr}`);
-  return res.stdout;
-};
-// What the heal writes over it: the template's header paragraph, its one-line
-// job, and the push trigger the PR-only body lacks.
+// What the heal writes over any checks.yml: the kit's caller on main, the
+// default branch the world's root names unless a case sets another.
+const CALLER_JOB = '  checks:\n    uses: itw-creative-works/workkit/.github/workflows/ci.yml@main\n    secrets: inherit\n';
 const healedChecks = () => {
-  const template = fs.readFileSync(TEMPLATE, 'utf8').split('\n');
-  const from = template.findIndex((l) => l.startsWith('# The `changelog` job is the only job'));
-  const to = template.findIndex((l, i) => i > from && !l.startsWith('#'));
-  return withPushTrigger(`${template.slice(from, to).join('\n')}\n${PR_ONLY}`);
-};
-// The heal's removal of the kit clone step from a body, read back from its scratch copy.
-const droppedCloneStep = (body) => {
-  const file = scratchFile(body);
-  const res = spawnSync(BASH, [...NO_RC, '-c', '. "$1"\nwk_checks_drop_clone_step "$2"', 'bash', shellPath(JOB), shellPath(file)],
-    { encoding: 'utf8', timeout: SPAWN_DEADLINE });
-  assertEq(res.status, 0, `wk_checks_drop_clone_step answers, stderr: ${res.stderr}`);
-  return fs.readFileSync(file, 'utf8');
+  const caller = fs.readFileSync(TEMPLATE, 'utf8').replace('__DEFAULT_BRANCH__', 'main');
+  assert(caller.includes(CALLER_JOB) && caller.includes('    branches: [main]\n'), `the caller calls ci.yml on main, got: ${caller}`);
+  return caller;
 };
 const PUSH = /^ {2}push:/m;
 const CHECKS = '.github/workflows/checks.yml';
@@ -134,41 +111,32 @@ const cases = async () => {
     blocks(await judge(r, 'chore: heal plus blank lines'), T.noReview, 'byte for byte means the trailing newlines too');
   });
 
-  await test('a header-only swap above a job already in the uses: form, no marker: exit 0', async () => {
-    const r = mkStampedRepo();
-    stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
-    const current = healedChecks();
-    const header = current.slice(0, current.indexOf('name: checks'));
-    stage(r, CHECKS, current.replace(header, OLD_HEADER.replace('changelog-lint.cjs', 'changelog-lint.js')));
-    commit(r);
-    stage(r, CHECKS, current);
-    proveTree(r);
-    passes(await judge(r, 'chore(workflow): the header comment'), NOTICE.proved, 'the heal\'s header swap alone needs no review');
+  await test('an older checks.yml replaced by the caller alone, whatever it held, no marker: exit 0', async () => {
+    const olders = {
+      'the last template': OLD_CHECKS,
+      'a PR-only copy': PR_ONLY,
+      'a copy with the kit clone step': withCloneStep(OLD_CHECKS),
+      'a copy with steps of its own': withSteps(OLD_CHECKS, ['      - name: Install ffmpeg', '        run: sudo apt-get install -y ffmpeg']),
+    };
+    for (const [what, older] of Object.entries(olders)) {
+      const r = mkStampedRepo();
+      stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+      stage(r, CHECKS, older);
+      commit(r);
+      stage(r, CHECKS, healedChecks());
+      proveTree(r);
+      passes(await judge(r, 'chore(workflow): the kit\'s CI caller'), NOTICE.proved, `${what}: the heal's rewrite alone needs no review`);
+    }
   });
 
-  await test('the push trigger added alone to a PR-only checks.yml, no marker: exit 0', async () => {
+  await test('a hand edit to the caller undone by the heal, no marker: exit 0', async () => {
     const r = mkStampedRepo();
     stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
-    stage(r, CHECKS, PR_ONLY);
+    stage(r, CHECKS, `${healedChecks()}  extra:\n    uses: someone/else/.github/workflows/x.yml@main\n`);
     commit(r);
-    const healed = withPushTrigger(PR_ONLY);
-    assert(PUSH.test(healed) && !PUSH.test(PR_ONLY), `the trigger is in the diff, got: ${healed}`);
-    stage(r, CHECKS, healed);
+    stage(r, CHECKS, healedChecks());
     proveTree(r);
-    passes(await judge(r, 'chore(workflow): run checks on a push'), NOTICE.proved, 'the heal\'s push trigger alone needs no review');
-  });
-
-  await test('the kit clone step removed alone from checks.yml in a repo on workkit-core is bookkeeping, no marker: exit 0', async () => {
-    const r = mkStampedRepo();
-    stage(r, 'package.json', '{ "devDependencies": { "workkit-core": "*" }, "scripts": { "test": "workkit test" } }\n');
-    const older = withCloneStep(fs.readFileSync(TEMPLATE, 'utf8'));
-    stage(r, CHECKS, older);
-    commit(r);
-    const healed = droppedCloneStep(older);
-    assert(healed !== older, 'the removal is in the diff');
-    stage(r, CHECKS, healed);
-    proveTree(r);
-    passes(await judge(r, 'chore(workflow): drop the kit clone step from CI'), NOTICE.proved, 'the heal\'s clone step removal alone needs no review');
+    passes(await judge(r, 'chore(workflow): restore the caller'), NOTICE.proved, 'restoring the caller is the heal\'s output');
   });
 
   await test('the copy deleted while checks.yml still runs it, no marker: exit 2', async () => {
@@ -190,7 +158,7 @@ const cases = async () => {
   await test('checks.yml rewritten with one more changed line, no marker: exit 2', async () => {
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
-    stage(r, CHECKS, healedChecks().replace('runs-on: ubuntu-latest', 'runs-on: macos-14'));
+    stage(r, CHECKS, healedChecks().replace('branches: [main]', 'branches: [develop]'));
     blocks(await judge(r, 'chore: heal plus an edit'), T.noReview, 'only the heal\'s exact rewrite is bookkeeping');
   });
 
@@ -266,20 +234,47 @@ const cases = async () => {
     assert(deny !== null && shape.test(deny) && deny.endsWith(HELD), `the check, the command and exited null, got: ${deny}`);
   });
 
-  group('changelog-job.sh rewrite: the entry over wk_checks_heal_rewrite');
+  await test('a first caller, where HEAD has no checks.yml, is the heal\'s output too, no marker: exit 0', async () => {
+    const r = mkStampedRepo();
+    stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+    commit(r);
+    stage(r, CHECKS, healedChecks());
+    proveTree(r);
+    passes(await judge(r, 'chore(workflow): the kit\'s CI caller'), NOTICE.proved, 'the caller added alone needs no review');
+  });
 
-  // Both run from a repo on workkit-core, so the clone step body is rewritten too.
-  await test('given the run of `changelog-job.sh rewrite a b` and `wk_checks_heal_rewrite a b`: the same text', () => {
-    const root = mkTmp('cg-heal-root-');
-    fs.writeFileSync(path.join(root, 'package.json'), '{ "devDependencies": { "workkit-core": "*" } }\n');
-    for (const body of [oldChecks('.github/changelog-lint.cjs'), PR_ONLY, withCloneStep(fs.readFileSync(TEMPLATE, 'utf8'))]) {
-      const a = scratchFile(body);
-      const entry = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', shellPath(a), shellPath(TEMPLATE)], { cwd: root, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-      const fn = realRewrite(a, TEMPLATE, root);
-      assert(fn !== null && fn !== body, 'the function rewrites the file');
-      assertEq(entry.status, 0, `the entry exits 0, stderr: ${entry.stderr}`);
-      assertEq(entry.stdout, fn, 'and prints the function\'s text byte for byte');
-    }
+  await test('a caller on another branch than the repo\'s default is not the heal\'s output, no marker: exit 2', async () => {
+    const r = mkStampedRepo();
+    stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+    commit(r);
+    r.defaultBranch = 'trunk';
+    stage(r, CHECKS, healedChecks());
+    blocks(await judge(r, 'chore: a caller on main'), T.noReview, 'the rewrite names trunk, the staged file main');
+  });
+
+  await test('no default branch to read holds the commit naming the rewrite and the fix, never a pass or the review bounce', async () => {
+    const r = mkStampedRepo();
+    stage(r, 'package.json', '{ "scripts": { "test": "exit 0" } }\n');
+    commit(r);
+    r.defaultBranch = null;
+    stage(r, CHECKS, healedChecks());
+    proveTree(r);
+    const deny = denyOf(await judge(r, 'chore(workflow): the kit\'s CI caller'));
+    const shape = new RegExp(`^${PREFIX}the checks\\.yml rewrite check could not run: \`changelog-job\\.sh rewrite\` exited 2 \\(changelog-job\\.sh: no default branch: [^)]*git remote set-head origin -a\\)`);
+    assert(deny !== null && shape.test(deny) && deny.endsWith(HELD), `held, naming the fix, got: ${deny}`);
+  });
+
+  group('changelog-job.sh rewrite: the caller, its branch the repo\'s');
+
+  await test('`changelog-job.sh rewrite` prints the template on the root\'s default branch, and fails 2 naming the fix with none', () => {
+    const on = realRewrite(undefined, 'trunk');
+    assertEq(on.exitCode, 0, `exit 0, stderr: ${on.stderr}`);
+    assertEq(on.stdout, fs.readFileSync(TEMPLATE, 'utf8').replace('__DEFAULT_BRANCH__', 'trunk'), 'the caller on trunk');
+    const none = realRewrite(undefined, null);
+    assertEq(none.exitCode, 2, 'no branch is 2');
+    assertEq(none.stdout, '', 'and prints no caller');
+    assert(none.stderr.includes('git remote set-head origin -a'), `it names the fix, got: ${none.stderr}`);
+    assertEq(realRewrite(TEMPLATE, 'main').stdout, healedChecks(), 'a template named by path reads the same');
   });
 };
 

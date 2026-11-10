@@ -15,7 +15,7 @@ const {
 } = require('../../lib/identity');
 
 const RELEASES = 'repos/acme/rostered/releases';
-const REFUSED = 'gh: a cloud session cannot create a release (the proxy refuses release writes); the next ship on a machine cuts it';
+const REFUSED = 'gh: a cloud session cannot create a release (the proxy refuses release writes); CI\'s release job makes it when the release commit reaches the default branch';
 
 const { runCloud } = cloudWorld();
 

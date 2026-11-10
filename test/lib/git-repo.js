@@ -1,18 +1,16 @@
-// A throwaway git repo on `main`: its own identity, one commit of the seeded
-// files, the unfetched FIXTURE_ORIGIN every fixture repo carries, and a scratch
-// home and TMPDIR so no child reads the real gitconfig. It is opted in to
-// workkit, since the hooks module stands down in a repo that is not. Consumers:
-// every suite that needs a real repo (red-proof, review-covers, prove, slug, the
-// identity and workkit-cli suites, the snapshot and command logic suites).
+// A throwaway git repo on `main` for every suite that needs a real one: its own
+// identity, one commit of the seeded files, the unfetched FIXTURE_ORIGIN, a
+// scratch home and TMPDIR so no child reads the real gitconfig, and opted in to
+// workkit, since the hooks module stands down in a repo that is not.
 // `mkOriginRepo` is the minimal form: an init and an origin, nothing committed.
-// `commitGh` is the `gh` a commit's own hooks ask (the githooks and release-taken
-// suites) and `workkit ship cut` asks (ship-cut): `issue view`, `release view`
-// and `release create` answered from fixtures.
+// `commitGh` is the `gh` the commit hooks, `workkit ship cut` and the CI release
+// scan ask: `issue view`, `release view`, `release create`, `run list` and
+// `workflow run` answered from fixtures.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { shellPath, homeEnv, stubTool } = require('./platform');
+const { shellPath, homeEnv, stubTool, which } = require('./platform');
 const { mkTmp, WORKKIT_DIR } = require('./harness');
 const { recordArgv, readArgv } = require('./argv-log');
 const { OPT_IN_SHAPES } = require('./mod-fixtures.mjs');
@@ -23,6 +21,9 @@ const FIXTURE_ORIGIN = 'https://example.invalid/owner/repo.git';
 
 // The opt-in committed with the seeded files unless `files` names its own.
 const OPT_IN_FILE = `${WORKKIT_DIR}/settings.json`;
+
+// What the fake gh's refused `workflow run` prints, as an Actions token without write gets.
+const DISPATCH_REFUSAL = 'could not create workflow dispatch event: HTTP 403: Resource not accessible by integration';
 
 /**
  * A scratch world whose repo holds `files` in one commit.
@@ -82,21 +83,19 @@ const mkOriginRepo = (dir, origin) => {
 };
 
 /**
- * A `gh` on its own bin folder, recording every call: `issue view <N>` prints
- * `issues[N]` whole as JSON (an unknown number exits 1), `release view <tag>`
- * prints the tag when `tags` holds it and "release not found" (exit 1) when not,
- * `release create` runs `onCreate` and exits `createExit`; with `fails` every
- * call exits 1 the way a signed-out gh does.
+ * A recording `gh` on its own bin folder, every answer from `opts`: `issue view <N>`
+ * prints `issues[N]` as JSON (unknown: exit 1); `release view <tag>` runs `onView`
+ * (a bash line), then prints the tag when `tags` holds it or `late` (tag to its
+ * "not found" misses) has spent them, else "release not found", exit 1; `release
+ * create` runs `onCreate` (a bash line) and exits `createExit`; `run list` prints
+ * `runs` as JSON, through jq for `--jq`/`-q`; `workflow run <file>` exits 1 with a
+ * refusal on stderr when `dispatchFails` names the file, else 0; with `fails`
+ * every call exits 1 the way a signed-out gh does.
  * @param {object} [opts]
- * @param {object} [opts.issues] - issue number to its `--json` answer
- * @param {string[]} [opts.tags] - the release tags the repo carries
- * @param {boolean} [opts.fails]
- * @param {number} [opts.createExit=0] - `release create`'s exit code
- * @param {string} [opts.onCreate=':'] - a bash line `release create` runs first
  * @returns {{binDir: string, calls: Function}} `calls()` is every argv, in order
  */
 const commitGh = ({
-  issues = {}, tags = [], fails = false, createExit = 0, onCreate = ':',
+  issues = {}, tags = [], late = {}, fails = false, createExit = 0, onCreate = ':', onView = ':', runs = [], dispatchFails = [],
 } = {}) => {
   const dir = mkTmp('commit-gh-');
   const binDir = path.join(dir, 'bin');
@@ -104,6 +103,12 @@ const commitGh = ({
   fs.mkdirSync(binDir, { recursive: true });
   fs.mkdirSync(issuesDir, { recursive: true });
   for (const [n, answer] of Object.entries(issues)) fs.writeFileSync(path.join(issuesDir, `${n}.json`), JSON.stringify(answer));
+  const lateDir = path.join(dir, 'late');
+  fs.mkdirSync(lateDir, { recursive: true });
+  for (const [tag, misses] of Object.entries(late)) fs.writeFileSync(path.join(lateDir, tag), String(misses));
+  const runsFile = path.join(dir, 'runs.json');
+  fs.writeFileSync(runsFile, JSON.stringify(runs));
+  const jq = which('jq');
   const log = path.join(dir, 'gh.log');
   stubTool(binDir, 'gh', [
     '#!/usr/bin/env bash',
@@ -114,13 +119,29 @@ const commitGh = ({
     '  exit 0',
     'fi',
     'if [[ "$1 $2" == "release view" ]]; then',
+    `  ${onView}`,
     `  case " ${tags.join(' ')} " in *" $3 "*) echo "$3"; exit 0 ;; esac`,
+    `  late="${shellPath(lateDir)}/$3"`,
+    '  if [[ -f "$late" ]]; then',
+    '    n=$(cat "$late")',
+    '    if (( n <= 0 )); then echo "$3"; exit 0; fi',
+    '    echo $(( n - 1 )) > "$late"',
+    '  fi',
     "  echo 'release not found' >&2",
     '  exit 1',
     'fi',
     'if [[ "$1 $2" == "release create" ]]; then',
     `  ${onCreate}`,
     `  exit ${createExit}`,
+    'fi',
+    'if [[ "$1 $2" == "run list" ]]; then',
+    "  q=''; prev=''",
+    '  for a in "$@"; do case "$prev" in -q|--jq) q=$a ;; esac; prev=$a; done',
+    `  if [[ -n "$q" ]]; then "${jq ? shellPath(jq) : 'jq'}" -r "$q" "${shellPath(runsFile)}"; else cat "${shellPath(runsFile)}"; fi`,
+    '  exit 0',
+    'fi',
+    'if [[ "$1 $2" == "workflow run" ]]; then',
+    `  case " ${dispatchFails.join(' ')} " in *" $3 "*) echo '${DISPATCH_REFUSAL}' >&2; exit 1 ;; esac`,
     'fi',
     'exit 0',
   ]);

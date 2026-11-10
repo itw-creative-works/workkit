@@ -3,8 +3,8 @@
 # here needs the suite, printed as one `run=true|false` line. It is a release stamp
 # (false) when every path changed since <before> is the root CHANGELOG.md or a version
 # file that changed only its version (hook_is_manifest, hook_version_only_change).
-# It soft-resets HEAD to <before>, so it runs only in a throwaway checkout.
-# Called by checks.yml's `scope` job, its output appended to $GITHUB_OUTPUT.
+# It soft-resets HEAD to <before> to judge and back on exit, so the checkout ends as
+# it began. Called by the kit's checks.yml `scope` job and by ci-test.sh.
 
 if [ "$#" -lt 1 ]; then
   echo "usage: release-push.sh <before>" >&2
@@ -20,6 +20,8 @@ if [ -z "$1" ] || [[ "$1" =~ ^0+$ ]] || ! git cat-file -e "$1^{commit}" 2>/dev/n
   exit 0
 fi
 
+pushed="$(git rev-parse -q --verify HEAD)"
+trap 'git reset -q --soft "$pushed"' EXIT
 git reset -q --soft "$1"
 
 changed=0

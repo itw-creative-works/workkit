@@ -13,7 +13,8 @@
   "hooks": {
     "afterRelease": [],
     "afterPublish": [],
-    "afterDeploy": []
+    "afterDeploy": [],
+    "ciSetup": []
   },
   "manager": {
     "mode": "rewrite",

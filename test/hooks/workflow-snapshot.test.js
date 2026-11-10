@@ -1,5 +1,5 @@
 // Tests for workflow:snapshot: snapshotPlan({ lines, cwd, roster, slugOf, building }) in hooks/mods/snapshot.js decides,
-// over one Bash call's gh journal lines, a take at a claim and a drop at the last building issue's release (a real gh
+// over one Bash call's gh journal lines, a take at a claim and a drop at a release leaving none building or at qa (a real gh
 // call through the shim proves the line read); `bash hooks/lib/snapshot.sh take|add|stale|drop <root>` copies for real
 // in a temp repo with its own home. The wiring, the loader's take, a claim's mode: test/mods/post-tool-use-bash.test.ts.
 
@@ -30,6 +30,8 @@ const CLOSE = (n) => ghEntry({ sub: 'close', numbers: [n] });
 
 /** The `issue list` answer: each number open at status:building. */
 const building = (...numbers) => numbers.map((number) => ({ number, labels: [{ name: 'status:building' }] }));
+/** The `issue list` answer: each number open at status:qa. */
+const atQa = (...numbers) => numbers.map((number) => ({ number, labels: [{ name: 'status:qa' }] }));
 const json = (o) => JSON.stringify(o);
 
 // The plan's world: the session repo and another, both on the roster.
@@ -40,8 +42,8 @@ const SLUGS = { [HERE]: 'acme/repo', [OTHER]: 'owner/other' };
 
 /**
  * snapshotPlan over the journal `lines` of one Bash call from the session repo,
- * gh's building answer `list` (null when it cannot answer); hands back the plan
- * and how often the building list was read.
+ * gh's building or qa answer `list` (null when it cannot answer); hands back the
+ * plan and how often that list was read.
  */
 const planOf = async (lines, {
   list = [], roster = ROSTER, cwd = HERE, slugs = SLUGS,
@@ -344,6 +346,12 @@ const cases = async () => {
     assertEq(json(issuesOf(snap)), json(['5']), 'the number is recorded once');
   });
 
+  await test('a claim after every recorded issue left building replaces the snapshot though one sits at qa: stale answers stale', () => {
+    const w = mkWorld();
+    take(w, 5);
+    assertEq(stale(w, atQa(5)).code, 0, 'the recorded #5 at qa, none building: stale');
+  });
+
   await test('a failed GitHub read at a claim keeps the live snapshot and adds the number: stale answers 2', () => {
     const w = mkWorld();
     take(w, 5);
@@ -362,10 +370,22 @@ const cases = async () => {
 
   group('workflow:snapshot: removal');
 
-  for (const [flip, line] of [['the qa flip', QA(5)], ['the complete flip', COMPLETE(5)], ['the close', CLOSE(5)]]) {
-    await test(`the last building issue leaving removes the snapshot: ${flip}: the plan is a drop`, async () => {
+  await test('the qa flip of the last building issue leaves the snapshot and asks GitHub nothing', async () => {
+    const { plan, asked } = await planOf([QA(5)], { list: [] });
+    assertEq(json(stepsOf(plan)), '[]', 'no step');
+    assertEq(asked, 0, 'no building read');
+  });
+
+  for (const [flip, line] of [['the complete flip', COMPLETE(5)], ['the close', CLOSE(5)]]) {
+    await test(`a release leaving no issue building or at qa removes the snapshot: ${flip}: the plan is a drop`, async () => {
       const { plan, asked } = await planOf([line], { list: [] });
-      assertEq(drops(plan), HERE, 'none left building drops the session repo\'s snapshot');
+      assertEq(drops(plan), HERE, 'none left building or at qa drops the session repo\'s snapshot');
+      assertEq(asked, 1, 'one building read');
+    });
+
+    await test(`a release with another issue at qa leaves the snapshot: ${flip}`, async () => {
+      const { plan, asked } = await planOf([line], { list: atQa(6) });
+      assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
       assertEq(asked, 1, 'one building read');
     });
   }
@@ -379,8 +399,8 @@ const cases = async () => {
     assert(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`);
   });
 
-  await test('the qa flip with another issue still building leaves the snapshot', async () => {
-    const { plan } = await planOf([QA(5)], { list: building(6) });
+  await test('the complete flip with another issue still building leaves the snapshot', async () => {
+    const { plan } = await planOf([COMPLETE(5)], { list: building(6) });
     assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
   });
 
@@ -393,7 +413,7 @@ const cases = async () => {
   }
 
   await test('a failed GitHub read at removal leaves the snapshot, exit 0', async () => {
-    const { plan } = await planOf([QA(5)], { list: null });
+    const { plan } = await planOf([COMPLETE(5)], { list: null });
     assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
   });
 

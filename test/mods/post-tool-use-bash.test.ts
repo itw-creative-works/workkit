@@ -50,6 +50,8 @@ const snapshotRuns = (w: any) => w.runs('snapshot.sh').map((c: any) => {
   return { args: c.argv.slice(at + 1), init: c.init }
 })
 const modes = (w: any) => snapshotRuns(w).map((r: any) => r.args[0])
+// The `--label` of each `gh issue list` the module ran, in order.
+const listed = (w: any) => w.ghCalls().filter((c: any) => c.argv[2] === 'list').map((c: any) => c.argv[c.argv.indexOf('--label') + 1])
 
 describe('classic.PostToolUse Bash: workflow:snapshot, the Contract cases', () => {
   test('given a claim of #5 journaled by the call, then bash snapshot.sh take <root> 5 ran and nothing was denied: the loader routes workflow:snapshot, its 600s timeout', async ($, on) => {
@@ -111,13 +113,46 @@ describe('classic.PostToolUse Bash: workflow:snapshot, the Contract cases', () =
     expect(w.files.has(MARK)).toBe(false)
   })
 
-  test('given a close journaled with no issue still building, then drop ran for the root', async ($, on) => {
+  test('given a close journaled with no issue still building or at qa, then drop ran for the root', async ($, on) => {
     const w = world(on, { files: LIVE, gh: { issues: [] } })
     const r = await ran($, w, SCRIPTED, ghEntry({ sub: 'close', numbers: [5] }))
     expect(r?.block).toBeUndefined()
     const runs = snapshotRuns(w)
     expect(runs.map((x: any) => x.args[0])).toEqual(['drop'])
     expect(runs[0].args[1]).toBe(REPO)
+  })
+
+  test('given a close journaled with none building and #6 at qa, then gh lists building then qa and the snapshot stays', async ($, on) => {
+    const w = world(on, { files: LIVE, gh: { issues: [issue(6, 'status:qa')] } })
+    const r = await ran($, w, SCRIPTED, ghEntry({ sub: 'close', numbers: [5] }))
+    expect(r?.block).toBeUndefined()
+    // The fake answers every list alike, so the labels asked are what proves the qa read ran.
+    expect(listed(w)).toEqual(['status:building', 'status:qa'])
+    expect(modes(w)).toEqual([])
+  })
+
+  test('given a complete flip journaled while #6 is still building, then gh lists building alone and the snapshot stays', async ($, on) => {
+    const w = world(on, { files: LIVE, gh: { issues: [issue(6, 'status:building')] } })
+    const r = await ran($, w, SCRIPTED, ghEntry({ numbers: [5], add: ['status:complete'] }))
+    expect(r?.block).toBeUndefined()
+    expect(listed(w)).toEqual(['status:building'])
+    expect(modes(w)).toEqual([])
+  })
+
+  test('given a close journaled with none building and the qa list failing, then gh lists building then qa and the snapshot stays', async ($, on) => {
+    const w = world(on, { files: LIVE, gh: { issues: [], offlineAt: ['status:qa'] } })
+    const r = await ran($, w, SCRIPTED, ghEntry({ sub: 'close', numbers: [5] }))
+    expect(r?.block).toBeUndefined()
+    expect(listed(w)).toEqual(['status:building', 'status:qa'])
+    expect(modes(w)).toEqual([])
+  })
+
+  test('given a close journaled with the building list failing, then qa is never asked and the snapshot stays', async ($, on) => {
+    const w = world(on, { files: LIVE, gh: { issues: [], offlineAt: ['status:building'] } })
+    const r = await ran($, w, SCRIPTED, ghEntry({ sub: 'close', numbers: [5] }))
+    expect(r?.block).toBeUndefined()
+    expect(listed(w)).toEqual(['status:building'])
+    expect(modes(w)).toEqual([])
   })
 })
 

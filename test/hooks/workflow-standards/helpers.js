@@ -23,6 +23,8 @@ const makeRepo = () => {
   const dir = mkTmp('wf-hook-');
   spawnSync('git', ['init', '-q'], { cwd: dir });
   spawnSync('git', ['remote', 'add', 'origin', 'https://example.invalid/alice/repo.git'], { cwd: dir });
+  // As a clone has it, so the default branch reads without GitHub.
+  spawnSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], { cwd: dir });
   fs.mkdirSync(path.join(dir, W), { recursive: true });
   fs.writeFileSync(path.join(dir, W, 'settings.json'), OPT_IN_SHAPES.current);
   return dir;

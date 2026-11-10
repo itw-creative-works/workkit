@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # workflow/standards/changelog.sh: the CHANGELOG heals: the retired linter
-# copies removed, the em dash separator converted once, and the changelog job
-# put in the repo's checks.yml. The job's reading and rewriting is
-# changelog-job.sh's. Sourced by standards.sh, functions only.
+# copies removed and the em dash separator converted once. Sourced by
+# standards.sh, functions only.
 
 # ── 2b-i. The CHANGELOG linter copy, retired ──
 # Only a copy carrying the kit's vendor header on line 2 is removed, and a copy
-# a workflow still runs is kept and reported. This runs after the job rewrite,
-# so the job the heal owns never holds a copy in place.
+# a workflow still runs is kept and reported. This runs after the caller's
+# rewrite, so the checks.yml the heal owns never runs a copy.
 remove_changelog_linter_copies() {
   local copy runs
 
@@ -64,88 +63,4 @@ ensure_changelog_separator() {
     return 0
   fi
   wk_ok "changelog separator: converted $count em dashes in $file to spaced hyphens; commit it"
-}
-
-# ── 2b-iii. The changelog job in the repo's checks.yml ──
-# checks.yml is the repo's own: the heal appends the template's job, then rewrites
-# the file (changelog-job.sh: the job, the header, the first line, the push trigger),
-# never whole. Appending needs `jobs:` last at top level; else the job is left by hand.
-ensure_changelog_job() {
-  local dest=".github/workflows/checks.yml" src block runs=0 noted=0 pushed=0 other=0 first=0 last tmp trig eol
-  src="$(wk_checks_template)"
-
-  [[ -f "$dest" ]] || return 0
-  # A missing template was already reported by the install step above.
-  [[ -f "$src" ]] || return 0
-
-  block="$(wk_changelog_job_block "$src")"
-  if [[ -z "$block" ]]; then
-    wk_warn "checks: the template at $(wk_native_path "$src") defines no changelog job; reinstall the workflow core"
-    needs_attention=1
-    return 0
-  fi
-
-  if ! grep -qE '^  changelog:' "$dest"; then
-    # A CRLF file's keys end in \r; read the last one bare, and append in the
-    # file's own line ending so the heal never mixes the two.
-    last="$(grep -E '^[A-Za-z_-]+:' "$dest" | tail -n 1 | tr -d '\r')"
-    if [[ "$last" != "jobs:" ]]; then
-      wk_skip "checks: $dest does not end in its jobs: block; add a changelog job whose one line is '$(grep -m 1 'uses:' <<<"$block" | sed 's/^ *//')' by hand"
-    else
-      eol=$'\n'
-      if head -n 1 "$dest" | grep -q $'\r$'; then eol=$'\r\n'; fi
-      if [[ -n "$(tail -c 1 "$dest" | tr -d '\r\n')" ]]; then
-        printf '%s' "$eol" >>"$dest"
-      fi
-      printf '%s' "${block//$'\n'/$eol}$eol" >>"$dest"
-      wk_ok "checks: added the changelog job to $dest; commit it"
-    fi
-    noted=1
-  fi
-
-  # The rewrite also adds the push trigger, so each change is named apart.
-  if wk_changelog_job_runs_copy "$dest"; then runs=1; fi
-  tmp="$dest.tmp.$$" trig="$dest.push.$$"
-  # A failed trigger read fails the rewrite below, which reports it.
-  wk_checks_push_trigger "$dest" >"$trig" 2>/dev/null || true
-  cmp -s "$trig" "$dest" || pushed=1
-  if ! wk_changelog_job_rewrite "$dest" "$src" >"$tmp" 2>/dev/null || [[ ! -s "$tmp" ]]; then
-    rm -f "$tmp" "$trig"
-    wk_warn "checks: could not rewrite the changelog job in $dest; replace it with the template's job by hand"
-    needs_attention=1
-    return 0
-  fi
-  if cmp -s "$tmp" "$dest"; then
-    rm -f "$tmp" "$trig"
-    [[ "$noted" -eq 1 ]] || wk_skip "checks: the changelog job is already in $dest"
-    return 0
-  fi
-  # A swapped line 1 is the template's opening sentence in the result, so
-  # the rest is compared past that many lines. Only that swap can change line 1: a retired header paragraph
-  # there opens with the same line as the template's, and the job rule
-  # needs an indented key.
-  if [[ "$(head -n 1 "$trig")" != "$(head -n 1 "$tmp")" ]]; then
-    first=1
-    cmp -s <(tail -n +2 "$trig") <(tail -n "+$(( $(wk_checks_top_count "$src") + 1 ))" "$tmp") || other=1
-  else
-    cmp -s "$trig" "$tmp" || other=1
-  fi
-  rm -f "$trig"
-  if ! mv "$tmp" "$dest"; then
-    rm -f "$tmp"
-    wk_warn "checks: could not write $dest"
-    needs_attention=1
-    return 0
-  fi
-  if [[ "$other" -eq 1 && "$runs" -eq 1 ]]; then
-    wk_ok "checks: the changelog job in $dest now calls the kit's workflow; commit it"
-  elif [[ "$other" -eq 1 ]]; then
-    wk_ok "checks: the header comment in $dest now describes the kit's workflow; commit it"
-  fi
-  if [[ "$first" -eq 1 ]]; then
-    wk_ok "checks: the first line of $dest now says the gate runs on pushes too; commit it"
-  fi
-  if [[ "$pushed" -eq 1 ]]; then
-    wk_ok "checks: $dest now also runs on a push to main; commit it"
-  fi
 }

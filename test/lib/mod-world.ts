@@ -355,6 +355,8 @@ export const mkWorld = (on: any, opts: any = {}) => {
     if (cmd === 'gh') {
       if (world.gh === 'absent') return { deny: 'spawn gh ENOENT' }
       if (world.gh === 'offline') return ok('', 'error connecting to api.github.com\n', 1)
+      // `gh.offlineAt`: the `--label` values whose list fails as an offline gh does, every other answered.
+      if (world.gh.offlineAt?.includes(argv[argv.indexOf('--label') + 1])) return ok('', 'error connecting to api.github.com\n', 1)
       return ok(JSON.stringify(world.gh.issues))
     }
     const script = argv.find((a) => /(standards|workkit|changelog\/lint|hooks)\.(sh|js)$/.test(a)) || ''

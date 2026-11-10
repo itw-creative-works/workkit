@@ -12,6 +12,7 @@ const { report, npmEnd } = require('./plan');
 const { spawnSync } = require('../lib/run');
 const { runHooks } = require('./hooks');
 const { repoRoot } = require('../lib/git');
+const { errLine } = require('../lib/say');
 
 /**
  * Is `name@version` already on the registry? The `safety:release-taken` hook's
@@ -26,7 +27,7 @@ const onRegistry = (root, { name, version }) => {
   if (res.status === 0) return res.stdout.trim() === version;
   const stderr = res.stderr || '';
   if (res.status !== null && stderr.includes('E404')) return false;
-  const why = stderr.split('\n')[0].trim() || npmEnd(res);
+  const why = errLine(res, npmEnd(res));
   console.error(`publish-plan: the npm check stood down for ${name}@${version}: ${why}; publishing anyway, npm refuses a taken version.`);
   return false;
 };

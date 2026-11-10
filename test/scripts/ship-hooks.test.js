@@ -161,6 +161,20 @@ const cases = async () => {
     }
   });
 
+  await test('a hooks.ciSetup list beside the ship events is accepted and never run by any of them', () => {
+    const settings = {
+      enabled: true,
+      hooks: { ciSetup: [{ command: 'echo ci >> ci.txt' }], afterRelease: [{ command: 'echo afterRelease >> ran.txt' }] },
+    };
+    for (const event of ['afterRelease', 'afterPublish', 'afterDeploy']) {
+      const w = mkWorld(settings);
+      const { code, all } = run(w, event);
+      assertEq(code, 0, `${event}: 0, got: ${all}`);
+      assertEq(w.mark('ci.txt'), null, `${event}: the ciSetup command never ran`);
+      assertEq(w.mark('ran.txt'), event === 'afterRelease' ? 'afterRelease\n' : null, `${event}: its own hooks alone ran`);
+    }
+  });
+
   await test('each command runs through bash at the root, announced before it, its streams passed through; all passing is 0', () => {
     const first = 'echo one >> order.txt && echo out-one && echo err-one >&2';
     const second = 'printf "%s\\n" two | cat >> order.txt; echo out-two';

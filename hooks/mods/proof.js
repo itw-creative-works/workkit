@@ -1,6 +1,6 @@
 /**
  * hooks/mods/proof.js: the issue view's two answers (the proof and the stage),
- * the building list's read, and the `Proof:` line pattern. Plain functions
+ * the stage lists' read, and the `Proof:` line pattern. Plain functions
  * over gh's JSON text; the gh calls are gh.js's.
  */
 
@@ -46,16 +46,17 @@ export function viewStage(view) {
 }
 
 /**
- * The open issues at status:building, from gh's `issue list --json
+ * The open issues at a status: label, from gh's `issue list --json
  * number,labels` answer. Never agent:claimed: an agent:ok item keeps that
  * claim through the park, so it would hold the ship's own run.
  * @param {string} list gh's answer
+ * @param {string} stage the status: label (`status:qa`)
  * @returns {number[]|null} null when the list cannot be read
  */
-export function issuesBuilding(list) {
+export function issuesAt(list, stage) {
   const issues = parseJson(list);
   if (!Array.isArray(issues)) return null;
   return issues
-    .filter((issue) => listOf(issue?.labels).some((l) => l?.name === 'status:building'))
+    .filter((issue) => listOf(issue?.labels).some((l) => l?.name === stage))
     .map((issue) => issue.number);
 }
