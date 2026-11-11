@@ -52,6 +52,18 @@ const SPAWN_HOME = [
   'const end = (child) => { setTimeout(() => kill(child), 2000); };',
   'module.exports = { end };',
 ];
+// A suite whose weak case sits inside a template literal spanning lines: a
+// fixture's text, never a case of this suite.
+const TEMPLATE_CASE = [
+  "const fs = require('fs');",
+  "const { test, assert } = require('./lib/harness');",
+  'const SUITE = `',
+  "test('the mark is there', () => {",
+  "  assert(fs.existsSync('mark'), 'seen');",
+  '});',
+  '`;',
+  "test('the suite is text', () => assert(SUITE.length > 0, 'a suite'));",
+];
 
 const cases = async () => {
   group('test-bar: each mechanical miss names its line and rule');
@@ -125,6 +137,15 @@ const cases = async () => {
     ]);
     names(out, rel, 5, 'worth');
     assert(!out.split('\n').some((l) => /^test-bar: tests\/skip\.test\.js:4 /.test(l)), `the real case is not named, got: ${out}`);
+  });
+
+  await test('a weak case beside a template literal holding one: only the real case is named, at its own line', () => {
+    const rel = 'tests/fixture.test.js';
+    const out = write(rel, [
+      ...TEMPLATE_CASE,
+      "test('the script is there', () => { assert(fs.existsSync('scripts/run.sh'), 'there'); });",
+    ]);
+    assertEq(ruleLines(out, 'worth').join('\n'), `test-bar: ${rel}:9 worth`, 'the fixture\'s case is text');
   });
 
   await test('a readFileSync under the source tree followed by assert.match: the source-regex rule', () => {

@@ -54,6 +54,26 @@ const listItems = (keyBlock) => {
   return items;
 };
 
+// The 1-based lines of a YAML text YAML refuses with "mapping values are not
+// allowed": a `key: value` or `- key: value` whose plain value holds `: ` or
+// ends in `:`, its comment aside. A `|` or `>` block's body is never judged.
+const plainColonLines = (text) => {
+  const out = [];
+  let body = -1;
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (body >= 0 && (line.trim() === '' || indentOf(line) > body)) return;
+    body = -1;
+    if (!isContent(line)) return;
+    const m = line.match(/^( *(?:- +)?)(?:"[^"]*"|'[^']*'|[^\s'"#][^:]*?):(?: +(.*))?$/);
+    if (!m) return;
+    const value = (m[2] || '').replace(/(^|\s+)#.*$/, '');
+    if (/^[|>][-+0-9]*$/.test(value)) body = m[1].length;
+    else if (!/^['"|>[{&*!]/.test(value) && (value.includes(': ') || value.endsWith(':'))) out.push(i + 1);
+  });
+  return out;
+};
+
 module.exports = {
   indentOf, isComment, isContent, childrenOf, block, inlineValue, listValue, listItems, unquote,
+  plainColonLines,
 };

@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- (no issue) - The kit's reusable `ci.yml` is valid YAML again: an unquoted `run` line holding a colon made GitHub refuse the file, so every participating repo's checks failed at startup with no job. A new test names any such line in the kit's workflows and templates.
+- (no issue) - The `safety:test-bar` nudge no longer reads a test case written inside a string as a real one, so a fixture holding a weak case draws no "worth" line.
+
 ## [0.93.0] - 2026-11-11
 
 ### Added

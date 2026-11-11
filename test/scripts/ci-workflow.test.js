@@ -1,20 +1,21 @@
 /* eslint-disable no-console */
-// Tests for .github/workflows/checks.yml, read as text: a push runs on main
-// and a pull request still runs, and the jobs are wired so the scope job's
-// run answer gates the suite and the changelog check, while the required
-// `test` job waits on both scope and suite; the `release` job runs on a push only.
-// Then the reusable ci.yml: its `test` job's Scope step decides before setup,
-// and setup, the install and the suite each run only on its run answer.
+// The kit's workflows, read as text: every kit workflow and installed template holds
+// no plain value with a colon; checks.yml runs a push on main only, its scope answer
+// gates suite and changelog, and release runs on a push only; ci.yml's Scope step
+// decides before setup and gates the rest, and is checks.yml's but name and path.
 
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
 const {
-  indentOf, isContent, block, inlineValue, listValue, listItems, unquote,
+  indentOf, isContent, block, inlineValue, listValue, listItems, unquote, plainColonLines,
 } = require('../lib/workflow-yaml');
 
-const WORKFLOW = path.join(__dirname, '..', '..', '.github', 'workflows', 'checks.yml');
-const CI = path.join(__dirname, '..', '..', '.github', 'workflows', 'ci.yml');
+const ROOT = path.join(__dirname, '..', '..');
+const WORKFLOW = path.join(ROOT, '.github', 'workflows', 'checks.yml');
+const CI = path.join(ROOT, '.github', 'workflows', 'ci.yml');
+// The kit's own workflows and the workflow templates it installs into a repo.
+const WORKFLOW_DIRS = [path.join(ROOT, '.github', 'workflows'), path.join(ROOT, 'workflow', 'templates', 'github-workflows')];
 
 // The children of a block, at the indent of its first content line.
 const childIndent = (keyBlock) => {
@@ -52,7 +53,40 @@ const ciSteps = () => listItems(jobKey(CI)('test', 'steps')).map((item) => {
   return { name: value('name'), id: value('id'), if: value('if') };
 });
 
+// Every content line of the step with id scope in `jobs.<job>.steps` of `file`,
+// trimmed, its `name:` left out and the release-push.sh argument as one fixed
+// word: the two parts the two copies spell apart.
+const scopeStep = (file, job) => {
+  const step = listItems(jobKey(file)(job, 'steps')).find((item) => {
+    const id = block(item, 'id', indentOf(item[0]));
+    return id && unquote(inlineValue(id)) === 'scope';
+  });
+  assert(step, `${path.basename(file)} jobs.${job} has a step with id scope`);
+  const name = new RegExp(`^ {${indentOf(step[0])}}name:`);
+  return step.filter((line) => isContent(line) && !name.test(line))
+    .map((line) => line.trim().replace(/"[^"\s]*release-push\.sh"|\S*release-push\.sh/, 'RELEASE_PUSH')).join('\n');
+};
+
 const cases = async () => {
+  group('workflows: a plain value holding a colon');
+
+  await test('names a run line whose plain value holds `: `, and only that line', () => {
+    const text = 'jobs:\n  a:\n    steps:\n      - name: x\n        run: echo "a release push: no suite"\n';
+    assertEq(JSON.stringify(plainColonLines(text)), '[5]', 'lines named');
+  });
+
+  await test('every kit workflow and installed workflow template is free of such a line', () => {
+    const named = [];
+    for (const dir of WORKFLOW_DIRS) {
+      for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.yml'))) {
+        const text = fs.readFileSync(path.join(dir, file), 'utf8');
+        const lines = text.split(/\r?\n/);
+        for (const n of plainColonLines(text)) named.push(`${path.relative(ROOT, dir)}/${file}:${n}: ${lines[n - 1].trim()}`);
+      }
+    }
+    assertEq(named.join('\n'), '', 'lines YAML refuses');
+  });
+
   group('checks.yml: the triggers');
 
   await test('a push runs only on main; a pull request still runs', () => {
@@ -111,6 +145,12 @@ const cases = async () => {
       assert(step, `a ${name} step, got: ${JSON.stringify(steps)}`);
       assertEq(step.if, "steps.scope.outputs.run == 'true'", `${name}: if`);
     }
+  });
+
+  await test('ci.yml\'s scope step is checks.yml\'s whole step, its name and the release-push.sh path aside', () => {
+    const ci = scopeStep(CI, 'test');
+    assert(ci !== '', 'ci.yml scope step has content lines');
+    assertEq(ci, scopeStep(WORKFLOW, 'scope'), 'ci.yml scope step against checks.yml');
   });
 
   return summary();

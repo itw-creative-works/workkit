@@ -69,6 +69,6 @@ jobs:
       # Its work commit's run proved that code, so a release push ends here.
       - name: Release push
         if: steps.scope.outputs.run == 'false'
-        run: echo "a release push: every change is the CHANGELOG or a version stamp, so no suite"
+        run: 'echo "a release push: every change is the CHANGELOG or a version stamp, so no suite"'
   changelog:
     uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main

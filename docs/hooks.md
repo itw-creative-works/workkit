@@ -711,6 +711,7 @@
     - one inside a quoted span or a template literal spanning lines is left alone: a fixture's text, never this test's call;
   - `serial`: a literal `/tmp/<name>` path or a literal port (`localhost:<n>`, `port: <n>`, `.listen(<n>`);
   - `worth`: a case (`test(`, `it(` or a `testUnless(...)(` call) whose every assertion is an `existsSync`, a mode or exec-bit check, or `assert.ok(true)`, named at its first;
+    - a case inside a quoted span or a template literal spanning lines is left alone: a fixture's text, never this suite's case;
   - `source-regex`: a `readFileSync` of a source path (a repo-root anchor or a repo-relative literal, never a path through a `test/` or `tests/` folder) whose text reaches `assert.match`, inline or through the name it is held under;
   - `deadline`: a JavaScript wait bound written as a nonzero number literal;
     - the bounds: a `setTimeout` or `setInterval` delay, a `sleep(<n>)` call, a `timeout: <n>` option, the last argument of `Atomics.wait`;
@@ -718,7 +719,7 @@
     - a bound passed to `until` or `elapsedUntil` is left alone;
     - so is any literal inside a quoted span or a template literal spanning lines: a fixture's or a child program's text, never this test's wait;
     - that read is `quoteFree`, through the kit's one line lexer, `lexLine` in `packages/core/test/lib/lexer.js`;
-    - it keeps the code of a template's `${...}` expressions for this rule and `mkTmp`, so `` `${os.tmpdir()}/x` `` is named;
+    - it keeps the code of a template's `${...}` expressions for this rule, `mkTmp` and `worth`, so `` `${os.tmpdir()}/x` `` is named;
     - the lexer also drops a regex literal and a `//` or one-line `/* */` comment, so a backtick in any of them opens no template;
   - `helper-test`: a test-named file under a `test/lib/` or `tests/lib/` folder at any depth (the kit's `packages/core/test/lib/` among them), named at line 1.
 - It shares test-reminder's repo read (`repoRel` in `hooks/register.js`) and so its silences.

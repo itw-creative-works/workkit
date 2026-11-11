@@ -91,12 +91,12 @@ export function quoteFree(lines) {
  * The `[line, rule]` findings of the one-line rules: serial, and mkTmp and
  * deadline, which read the quote-free lines (quoted text is a fixture's).
  * @param {string[]} lines the file's lines
+ * @param {string[]} free the same lines through `quoteFree`
  * @param {string} rel the file, repo-relative
  * @returns {Array<[number, string]>}
  */
-function lineFindings(lines, rel) {
+function lineFindings(lines, free, rel) {
   const found = [];
-  const free = quoteFree(lines);
   lines.forEach((line, i) => {
     if (COMMENT.test(line)) return;
     if (!SCRATCH.has(rel) && TMP_DIR.test(free[i])) found.push([i + 1, 'mkTmp']);
@@ -110,7 +110,8 @@ function lineFindings(lines, rel) {
 /**
  * The `[line, 'worth']` findings: a case whose every assertion is an
  * existence, mode or exec-bit check, or `assert.ok(true)`, named at its first.
- * @param {string[]} lines the file's lines
+ * A case inside quoted text is a fixture's, so this reads the quote-free lines.
+ * @param {string[]} lines the file's lines through `quoteFree`
  * @returns {Array<[number, string]>}
  */
 function worthFindings(lines) {
@@ -163,7 +164,8 @@ export function testBarContext(facts) {
   const rel = String(facts.rel ?? '').replace(/\\/g, '/');
   if (!isTestPath(rel) || typeof facts.text !== 'string') return '';
   const lines = facts.text.split(/\r?\n/);
-  const found = [...lineFindings(lines, rel), ...worthFindings(lines), ...sourceRegexFindings(lines)];
+  const free = quoteFree(lines);
+  const found = [...lineFindings(lines, free, rel), ...worthFindings(free), ...sourceRegexFindings(lines)];
   if (HELPER_DIR.test(rel) && isTestName(rel)) found.push([1, 'helper-test']);
   return found.sort((a, b) => a[0] - b[0]).map(([line, rule]) => `test-bar: ${rel}:${line} ${rule}`).join('\n');
 }
