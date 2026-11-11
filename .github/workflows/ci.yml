@@ -5,6 +5,7 @@
 
 # A repo's own setup is its hooks.ciSetup commands, run before the dependency
 # install; one sets a variable for the later steps by appending it to $GITHUB_ENV.
+# A release push runs neither: the Scope step skips every step after it.
 name: ci
 
 on:
@@ -23,31 +24,51 @@ jobs:
       # Outside the workspace, so no glob of the repo's own tests reaches the kit's.
       - name: Fetch the workkit kit
         run: git clone --depth 1 https://github.com/itw-creative-works/workkit.git "$RUNNER_TEMP/workkit-kit"
+      # Whether the suite runs, decided before any setup: always for a pull request;
+      # for a push unless it is a release stamp, which the kit's release-push.sh answers.
+      - name: Scope
+        id: scope
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != push ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            bash "$RUNNER_TEMP/workkit-kit/.github/scripts/release-push.sh" "$BEFORE" >> "$GITHUB_OUTPUT"
+          fi
       - name: Node version
         id: node
+        if: steps.scope.outputs.run == 'true'
         run: echo "version=$(bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-node-version.sh")" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v5
+        if: steps.scope.outputs.run == 'true'
         with:
           node-version: ${{ steps.node.outputs.version }}
       # A runner has no global git identity, so any test that builds a scratch
       # repo and commits into it fails at "Author identity unknown".
       - name: Configure git identity
+        if: steps.scope.outputs.run == 'true'
         run: |
           git config --global user.name "checks"
           git config --global user.email "checks@ci.local"
       # Before the install, so a tool or a $GITHUB_ENV value it needs is in place.
       - name: Setup (hooks.ciSetup)
+        if: steps.scope.outputs.run == 'true'
         run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-setup.sh"
       - name: Install dependencies
+        if: steps.scope.outputs.run == 'true'
         run: |
           if [ -f package-lock.json ]; then
             npm ci --no-audit --no-fund
           elif [ -f package.json ]; then
             npm install --no-audit --no-fund
           fi
-      # A release push, every change the CHANGELOG or a version stamp, runs no suite:
-      # its work commit's run proved that code (the kit's release-push.sh decides).
       - name: Test
+        if: steps.scope.outputs.run == 'true'
         run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-test.sh"
+      # Its work commit's run proved that code, so a release push ends here.
+      - name: Release push
+        if: steps.scope.outputs.run == 'false'
+        run: echo "a release push: every change is the CHANGELOG or a version stamp, so no suite"
   changelog:
     uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main

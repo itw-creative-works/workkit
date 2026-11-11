@@ -2,7 +2,8 @@
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the test package, the
 // package record's read, the tree hash, the opt-in read (the gate's and the heal's), one setting, the machine folder, the
 // CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
-// version-only change, the status:building list, the public slug. Plus one JavaScript pair, the plain-object test.
+// version-only change, the status:building list, the public slug, the ship verb list. Plus one JavaScript pair, the
+// plain-object test.
 
 const fs = require('fs');
 const os = require('os');
@@ -526,6 +527,18 @@ while IFS= read -r p; do if [[ "$p" =~ $PUBLIC_SLUG_RE ]]; then echo 1; else ech
     const { SLUG_RE, publicLink } = require(path.join(KIT, 'workflow', 'public', 'lib.js'));
     agree(PUBLIC_KEYS, shell, (k) => SLUG_RE.test(k), 'PUBLIC_SLUG_RE against SLUG_RE');
     agree(PUBLIC_KEYS, shell, (k) => publicLink(`Public: https://github.com/${k}/issues/1`) !== null, 'PUBLIC_SLUG_RE against the Public: link');
+  });
+
+  group('twins: the ship verb list, ALLOW_RULES in workflow/workkit/allow.sh against ALLOWED_SHIP_VERBS in hooks/mods/bare-call.js');
+
+  await test('the allow rules are one ship rule per ALLOWED_SHIP_VERBS entry, in its order, then review and npm publish', () => {
+    const script = `. "${lib('workflow', 'workkit', 'ship.sh')}"; . "${lib('workflow', 'workkit', 'allow.sh')}"; printf '%s\\n' "\${ALLOW_RULES[@]}"`;
+    const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], { env: { PATH: SYSTEM_PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    assertEq(res.status, 0, `the shell printed its rules, stderr: ${res.stderr}`);
+    const verbs = mods('bare-call').ALLOWED_SHIP_VERBS;
+    assert(Array.isArray(verbs), 'bare-call.js exports ALLOWED_SHIP_VERBS as a list');
+    const want = [...verbs.map((v) => `Bash(workkit ship ${v}:*)`), 'Bash(workkit review:*)', 'Bash(npm publish:*)'];
+    assertEq(res.stdout.replace(/\r/g, ''), `${want.join('\n')}\n`, 'the shell rules and the hook\'s list');
   });
 
   group('twins: the plain-object test, isPlain in workflow/ship/entries.js against hooks/mods/settings.js');

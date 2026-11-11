@@ -2,9 +2,10 @@
 // for real at the root of a scratch repo, given the commit before the push.
 // A push that only stamps a release (CHANGELOG.md, version spots in the JSON
 // files) prints `run=false`; anything else, or a before it cannot read, prints
-// `run=true`.
+// `run=true`. A before the shallow CI clone lacks is fetched from origin first.
 
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
 const {
   group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE,
@@ -47,6 +48,25 @@ const push = (w, files) => {
   for (const [rel, body] of Object.entries(files)) w.write(rel, body);
   w.git('add', '-A');
   w.git('commit', '-q', '-m', 'push');
+};
+
+/**
+ * The CI world: a local origin (a bare repo) holding the first commit and the
+ * push of `files`, and a `--depth 1` clone of it, which holds the push alone.
+ * Hands back the clone as a world and the first sha, which only origin has.
+ */
+const mkShallow = (files) => {
+  const { w, before } = mkWorld();
+  push(w, files);
+  const origin = path.join(w.dir, 'origin.git');
+  const clone = path.join(w.dir, 'clone');
+  w.git('clone', '-q', '--bare', w.repo, origin);
+  w.git('clone', '-q', '--depth', '1', pathToFileURL(origin).href, clone);
+  const c = { ...w, repo: clone, git: (...args) => w.git('-C', clone, ...args) };
+  if (c.git('rev-list', '--all').split('\n').includes(before)) {
+    throw new Error('the shallow clone already holds <before>; the world is wrong');
+  }
+  return { c, before };
 };
 
 /** The script at `w`'s root, given `args`. */
@@ -135,16 +155,27 @@ const cases = async () => {
     answers(w, before, 'run=true', 'empty push');
   });
 
-  await test('a before that is all zeros, not a commit here, or empty prints run=true', () => {
+  await test('a before that is all zeros or empty prints run=true', () => {
     for (const [before, what] of [
       ['0000000000000000000000000000000000000000', 'all zeros'],
-      ['deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', 'unknown sha'],
       ['', 'empty'],
     ]) {
       const { w } = mkWorld();
       push(w, { 'CHANGELOG.md': STAMP['CHANGELOG.md'] });
       answers(w, before, 'run=true', what);
     }
+  });
+
+  group('release-push.sh: a <before> the shallow CI clone lacks');
+
+  await test('origin holds it: it is fetched, and a release-stamp push prints run=false', () => {
+    const { c, before } = mkShallow(STAMP);
+    answers(c, before, 'run=false', 'shallow release stamp');
+  });
+
+  await test('origin lacks it too: the failed fetch is passed over, run=true', () => {
+    const { c } = mkShallow(STAMP);
+    answers(c, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', 'run=true', 'unknown everywhere');
   });
 
   group('release-push.sh: usage');

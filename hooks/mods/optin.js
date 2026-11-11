@@ -3,7 +3,8 @@
  * in: the command's cd steps and the cwd decide, and a command the walk
  * cannot place runs the guards, so a guard fails closed (docs/hooks.md
  * § Where every hook stands down). The roster's one reader, a folder's origin
- * slug and the folder a gh journal line's call acted on live here too.
+ * slug, a file's path from its repo root and the folder a gh journal line's
+ * call acted on live here too.
  */
 
 import {
@@ -161,6 +162,19 @@ export async function originless(cwd, run) {
   if (!cwd) return false;
   const inside = await run(['git', 'rev-parse', '--is-inside-work-tree'], { cwd });
   return inside.exitCode === 0 && (await repoSlug(cwd, run)) === '';
+}
+
+/**
+ * A file's path from its repo root, through git's show-prefix run in its
+ * folder, or null outside a repo.
+ * @param {string} dir the file's folder
+ * @param {function} run runs `(argv, { cwd })`, resolving `{ exitCode, stdout }`
+ * @param {string} name the file's name
+ * @returns {Promise<string|null>}
+ */
+export async function repoPathOf(dir, run, name) {
+  const prefix = await run(['git', 'rev-parse', '--show-prefix'], { cwd: dir });
+  return prefix.exitCode === 0 ? `${prefix.stdout.trim()}${name}` : null;
 }
 
 /**

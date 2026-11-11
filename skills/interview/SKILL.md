@@ -7,8 +7,7 @@ disallowed-tools: AskUserQuestion
 
 # Interview: grill thoroughly, accept easily
 
-Two jobs, one mechanism: surface EVERY assumption and decision the human owns, and pre-work each one so answering is nearly effortless.
-
+- Two jobs, one mechanism: surface EVERY assumption and decision the human owns, and pre-work each one so answering is nearly effortless.
 - The output is not a transcript. It is the `## Spec`, written from the answers.
 - A thorough grill is what MAKES acceptance easy. The human authors every call one at a time, so reading the spec is recognition, not review.
 
@@ -21,7 +20,8 @@ Two jobs, one mechanism: surface EVERY assumption and decision the human owns, a
 
 ## The sweep: coverage is what makes it a grill
 
-Walk EVERY category against the task and collect the decisions each surfaces. Weak interviews ask only what blocks the next action; the questions nobody thought to ask are where misalignment lives.
+- Walk EVERY category against the task and collect the decisions each surfaces.
+  - Weak interviews ask only what blocks the next action; the questions nobody thought to ask are where misalignment lives.
 
 - **Scope**: what is in, what is explicitly OUT, the half-related thing the human may assume is included.
 - **Behavior & edge cases**: empty states, conflicts, ordering, the second run, the weird input.
@@ -31,11 +31,10 @@ Walk EVERY category against the task and collect the decisions each surfaces. We
 - **Testing depth**: what proof this change deserves (global §6 sets the floor; the human sets appetite beyond it).
 - **Non-goals**: what is deliberately NOT being built, said out loud so it cannot creep back.
 
-Size the sweep and say it out loud:
-
-- A small item clears most categories with nothing to decide. Name the cleared category; never pad it with filler.
-- A subsystem gets multiple rounds.
-- Filler questions are as much a failure as missing ones.
+- Size the sweep and say it out loud:
+  - A small item clears most categories with nothing to decide. Name the cleared category; never pad it with filler.
+  - A subsystem gets multiple rounds.
+  - Filler questions are as much a failure as missing ones.
 
 ## How questions are asked: chat rounds, never a form
 
@@ -73,7 +72,7 @@ Size the sweep and say it out loud:
 
 ## The close: the spec is written FROM the answers
 
-The interview is done when the `## Spec` exists (a written one with its `### Contract`), not when the questions run out:
+- The interview is done when the `## Spec` exists (a written one with its `### Contract`), not when the questions run out:
 
 1. Draft (or deepen) the issue's `## Spec` from the answers. Each decision the human made lands as a spec statement in their terms; each category cleared with a default names that default.
    - A written Spec opens with one plain sentence stating the behaviour rule, the line the owner's yes answers, and ends with its `### Contract` part: Files, Names, Cases (the shape's home is spec § Specs).
@@ -82,7 +81,7 @@ The interview is done when the `## Spec` exists (a written one with its `### Con
 3. Durable rulings (preferences that outlive this task) get recorded verbatim and dated where they bind: `AGENTS.md`/`docs/` if doctrine, else a comment on the issue under their `@<login>` (spec § The pass).
 4. Note rejected directions. A real proposal that died closes its issue as **not planned**, with the ruling in a comment under their `@<login>` (spec § The pass).
 
-Done-criteria: zero open decisions, and a spec the human accepted, its Contract included when the Spec is written.
+- Done-criteria: zero open decisions, and a spec the human accepted, its Contract included when the Spec is written.
 
 ## Never
 

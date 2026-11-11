@@ -6,8 +6,7 @@ user-invocable: true
 
 # Checkpoint: apply the chat to the board before it is compacted
 
-A long chat holds verdicts and findings that exist NOWHERE ELSE, and compaction throws them away.
-
+- A long chat holds verdicts and findings that exist NOWHERE ELSE, and compaction throws them away.
 - This skill WRITES the conversation onto the board first: it files what is new, updates what exists, and moves every issue the owner's words moved.
 - Afterwards "go", "continue" or "resume" starts from the issues, not the scrollback.
 - **Invoking it is the owner's word to file AND to apply every status change they spoke**, for this run only.
@@ -31,7 +30,7 @@ A long chat holds verdicts and findings that exist NOWHERE ELSE, and compaction 
 
 ## 2. Route each line to exactly one home
 
-Search first, open AND closed: `gh issue list --state all --search "<key words>" --limit 1000`. Then:
+- Search first, open AND closed: `gh issue list --state all --search "<key words>" --limit 1000`. Then:
 
 - **An issue exists**: update it with whichever apply: a dated comment quoting the owner's words under their `@<login>` (spec § The pass), a spec line, a label.
 - **No issue exists**: file one through the `workkit:triage` routing table, the SSOT for destination, the filing litmus test, and the issue anatomy (spec § Issue anatomy). An entry for another repo or for the home repo routes the same way triage routes it.
@@ -39,7 +38,8 @@ Search first, open AND closed: `gh issue list --state all --search "<key words>"
 
 ## 3. Apply the status the owner spoke
 
-Status changes ARE checkpoint work. Apply every owner word that moves an issue's stage, with the words quoted on the issue under their `@<login>`, dated:
+- Status changes ARE checkpoint work.
+- Apply every owner word that moves an issue's stage, with the words quoted on the issue under their `@<login>`, dated:
 
 | The owner said | The flip |
 |---|---|

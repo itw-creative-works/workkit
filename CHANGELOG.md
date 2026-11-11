@@ -7,6 +7,23 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- (no issue) - workkit-core's test harness exports `failureOf(fn)`: the error a call threw or rejected with, and a failure of its own when the call returned. The kit's suites read it from there instead of two local copies.
+- [#516](../../issues/516) - The ship skill runs each kit verb as its own bare call from the repo root, the form its allow rule matches, and retries a refused one bare before reporting it. The new `workflow:bare-call` hook names a verb run inside a compound or with a command substitution, never blocking.
+
+### Changed
+
+- [#517](../../issues/517) - A participating repo's CI decides a release push before its setup, so a release push runs no `hooks.ciSetup` command, install or suite. `release-push.sh` fetches the commit it compares against itself, one home for both callers.
+- [#519](../../issues/519) - The fix-or-file rule reads as short bullets: fix now, raise nothing, bring it to the owner, file. A one-time problem, such as a slow network or an outage, is never a finding. The agent names its cause in one report line and reruns.
+- [#520](../../issues/520) - `docs:board-guard` checks the markdown shape under the `docs.bullets` setting, off by default: every line a heading, list item, table row, quote or markup, none over 400 bytes. Front matter, the issue forms, `CHANGELOG.md` and `LICENSE.md` are exempt; fenced lines are never paragraphs. The kit's markdown was rewritten to that shape.
+- [#521](../../issues/521) - The markdown shape check is a ratchet: a write bounces only when it leaves more paragraph lines, or more lines over 400 bytes, than the file's copy in the git index. The new `docs.paths` setting names the docs it judges. A doc in a merge conflict waits until staged.
+
+### Fixed
+
+- (no issue) - `safety:test-bar` no longer names `mkTmp` on a `mkdtempSync(` or `tmpdir(` that sits inside a quoted string. That text is a fixture, so a test file holding one got a false nudge on every write.
+- [#518](../../issues/518) - A `gh` write a Bash call makes in another opted-in repo is now seen by the hooks that run after the call, so a claim made that way takes that repo's snapshot and `workkit proof red` runs there. The call's mark holds every gh journal's length.
+
 ## [0.92.0] - 2026-11-10
 
 ### Changed

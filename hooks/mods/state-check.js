@@ -5,12 +5,10 @@
  * (docs/hooks.md § docs:state-check).
  */
 
-import { AGENTS_MAX_BYTES, AGENTS_MAX_LINES, agentsBudget } from './board-guard.js';
+import { AGENTS_MAX_BYTES, AGENTS_MAX_LINES, agentsBudget, plural } from './board-guard.js';
 import { unfiledCount } from './change-tracker.js';
 import { rowsOf } from './session-guard.js';
 import { parseJson } from './settings.js';
-
-const plural = (n) => (n === 1 ? '' : 's');
 
 /** The close of every nudge whose fix is mechanical: the agent makes it, never asks. */
 export const FIX_NOW = "Make this fix now, in this session, without asking; it rides the session's next commit like any small fix found on the way.";

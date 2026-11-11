@@ -4,7 +4,7 @@
 
 <p align="center">One plugin turns your GitHub Issues into an automated SDLC pipeline. Each issue is specced, built, reviewed &amp; tested by an agent crew.</p>
 
-workkit is a plugin for [Claude Code](https://code.claude.com/docs/en/overview), Anthropic's coding agent for the terminal.
+- workkit is a plugin for [Claude Code](https://code.claude.com/docs/en/overview), Anthropic's coding agent for the terminal.
 
 ## Install
 
@@ -13,20 +13,37 @@ claude plugin marketplace add ITW-Creative-Works/workkit
 claude plugin install workkit@workkit
 ```
 
-Then start Claude Code (`claude`) in any folder.
-The first session sees that setup has not run yet and Claude runs it for you, handing you only what you must do yourself.
-
-Setup prints one line per step, so you can see what it did.
-It asks before anything big: creating your home repo (a private GitHub repo for work that belongs to no single project), minting a Claude token, publishing the dashboard, and turning workkit on for the repo you are standing in.
-It is safe to run again: every step checks first and only fixes what is missing.
-
-When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the PATH line to add if that folder is not on it).
-Setup also links a `gh` shim there: inside a Claude session on your machine it posts the agent's issue bookkeeping as `workkit-agent[bot]`, in a cloud session it runs the kit's verbs through REST as the signed-in account, and everywhere else `gh` is yours as before. For that you sign in once per machine (setup asks, opens GitHub in your browser and finishes the sign-in itself; `workkit setup --login` does it again, and a bookkeeping call at a terminal signs you in itself), and the App must be installed once per account or org on the repos workkit works in, from <https://github.com/apps/workkit-agent> (setup offers that page for the repo you are standing in, with its owner already selected, even after the owner was renamed, and `workkit setup --bot` offers it alone); without either, the agent's bookkeeping stops and tells you which ([docs/setup.md § The bot identity](docs/setup.md#the-bot-identity)).
-`workkit doctor` shows what is set up, and `workkit help` lists every command.
-Start a new Claude Code session so the plugin loads.
-Setup adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in your `~/.claude/settings.json`, so auto mode does not block the commands a ship or a review runs, `workkit review mark` among them. Every ship command is listed but `workkit ship deploy`, which prompts outside a ship, and setup takes out the retired `Bash(workkit ship:*)`, which let it through. Beyond that it adds only the missing ones and leaves the rest of the file as it is, and `workkit doctor` names any that goes missing or a retired one still there. The skills also run `gh issue ...` often; to skip most of those prompts, add `Bash(gh issue *)` there yourself.
-
-To work on workkit itself, install from a clone instead; the clone then outranks the plugin copy:
+- Then start Claude Code (`claude`) in any folder.
+- The first session sees that setup has not run yet and Claude runs it for you, handing you only what you must do yourself.
+- Setup prints one line per step, so you can see what it did.
+- It asks before anything big:
+  - creating your home repo (a private GitHub repo for work that belongs to no single project);
+  - minting a Claude token;
+  - publishing the dashboard;
+  - and turning workkit on for the repo you are standing in.
+- It is safe to run again: every step checks first and only fixes what is missing.
+- When it finishes, the `workkit` command is in `~/.local/bin` (setup prints the PATH line to add if that folder is not on it).
+- Setup also links a `gh` shim there:
+  - inside a Claude session on your machine it posts the agent's issue bookkeeping as `workkit-agent[bot]`;
+  - in a cloud session it runs the kit's verbs through REST as the signed-in account;
+  - and everywhere else `gh` is yours as before.
+- For that you sign in once per machine.
+  - Setup asks, opens GitHub in your browser and finishes the sign-in itself.
+  - `workkit setup --login` does it again, and a bookkeeping call at a terminal signs you in itself.
+- And the App must be installed once per account or org on the repos workkit works in, from <https://github.com/apps/workkit-agent>.
+  - Setup offers that page for the repo you are standing in, with its owner already selected, even after the owner was renamed.
+  - `workkit setup --bot` offers it alone.
+- Without either, the agent's bookkeeping stops and tells you which ([docs/setup.md § The bot identity](docs/setup.md#the-bot-identity)).
+- `workkit doctor` shows what is set up, and `workkit help` lists every command.
+- Start a new Claude Code session so the plugin loads.
+- Setup adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in your `~/.claude/settings.json`.
+  - So auto mode does not block the commands a ship or a review runs, `workkit review mark` among them.
+  - Every ship command is listed but `workkit ship deploy`, which prompts outside a ship.
+  - Setup takes out the retired `Bash(workkit ship:*)`, which let it through.
+  - Beyond that it adds only the missing ones and leaves the rest of the file as it is.
+  - `workkit doctor` names any that goes missing or a retired one still there.
+- The skills also run `gh issue ...` often; to skip most of those prompts, add `Bash(gh issue *)` there yourself.
+- To work on workkit itself, install from a clone instead; the clone then outranks the plugin copy:
 
 ```sh
 git clone https://github.com/ITW-Creative-Works/workkit.git
@@ -34,62 +51,82 @@ cd workkit
 ./workflow/workkit.sh setup
 ```
 
-Every setup step, and how to turn workkit on in another repo: [docs/setup.md](docs/setup.md).
+- Every setup step, and how to turn workkit on in another repo: [docs/setup.md](docs/setup.md).
 
 ## First use
 
-Turn workkit on in a project of yours, then open Claude Code there:
+- Turn workkit on in a project of yours, then open Claude Code there:
 
 ```sh
 cd <your-project> && workkit enable
 claude
 ```
 
-`workkit enable` commits `{ "enabled": true }` to the project's `.workkit/settings.json`, and that line is the only thing that turns workkit on. Every other setting has its default in the kit's [`defaults/settings.json`](defaults/settings.json), which your `~/.workkit/settings.json` and then the project's own file override, key by key.
-
-workkit also keeps the project's `.github/workflows/checks.yml`: a few lines the kit owns and rewrites on every heal, so any edit there is lost. They call the kit's CI, which runs `npm test` on every pull request and every push to the default branch, plus the changelog check. The project's own CI needs (a tool to install, a variable to set) go under `hooks.ciSetup` in its `.workkit/settings.json`, entries shaped like the ship's (`{ "command": "<shell command>" }`), run in order before the dependency install; a variable reaches the later steps by appending `NAME=value` to `$GITHUB_ENV`, and an entry marked `"local": true` is skipped there.
-
-Type `/workkit:status` for a plain-language list of the open issues and what each one is waiting on.
-No issues yet? Tell Claude what you want built, and it files the first one.
-
-Then type `work on #12`, with a real issue number.
-Claude checks the issue has an accepted spec, and interviews you to write one if not.
-Then it builds the change with tests, has it reviewed, and leaves it in your working tree for you to try.
-
-When you are happy, say `ship`.
+- `workkit enable` commits `{ "enabled": true }` to the project's `.workkit/settings.json`.
+  - That line is the only thing that turns workkit on.
+- Every other setting has its default in the kit's [`defaults/settings.json`](defaults/settings.json).
+  - Your `~/.workkit/settings.json` and then the project's own file override it, key by key.
+- workkit also keeps the project's `.github/workflows/checks.yml`.
+  - It is a few lines the kit owns and rewrites on every heal, so any edit there is lost.
+  - They call the kit's CI, which runs `npm test` on every pull request and every push to the default branch, plus the changelog check.
+- The project's own CI needs (a tool to install, a variable to set) go under `hooks.ciSetup` in its `.workkit/settings.json`.
+  - The entries are shaped like the ship's (`{ "command": "<shell command>" }`), and run in order before the dependency install.
+  - A variable reaches the later steps by appending `NAME=value` to `$GITHUB_ENV`.
+  - An entry marked `"local": true` is skipped there.
+- Type `/workkit:status` for a plain-language list of the open issues and what each one is waiting on.
+- No issues yet? Tell Claude what you want built, and it files the first one.
+- Then type `work on #12`, with a real issue number.
+  - Claude checks the issue has an accepted spec, and interviews you to write one if not.
+  - Then it builds the change with tests, has it reviewed, and leaves it in your working tree for you to try.
+- When you are happy, say `ship`.
 
 ## How it works
 
-Every piece of work travels one road, and each stop is a label on its GitHub issue (`status:inbox`, `status:specced`, and so on).
+- Every piece of work travels one road, and each stop is a label on its GitHub issue (`status:inbox`, `status:specced`, and so on).
 
 1. **Capture.** An idea becomes an issue: from an issue form, a chat note, or `workkit note "the thought"` in any shell. It lands in the inbox.
 2. **Triage.** `/workkit:triage` routes each new issue: shape it now, keep it for later, or close it.
 3. **Spec.** You and Claude write down what done looks like. Accepting the spec is the go-ahead to build.
 4. **Build.** Your chat acts as a manager. It hands the work to helper agents: one writes the code, one writes the tests, and a third checks both without seeing how they were made.
 5. **Check.** The finished work waits, uncommitted, until you have tried it and said it is good.
-6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue. In a cloud session, or when you say `pr`, the work and release commits go through one pull request that merges once its checks pass. CI makes the GitHub release once the release commit reaches the default branch, the same from a cloud session as from your machine, and the ship waits for it. A repo can list commands to run after the release, the npm publish or the deploy under `hooks` in its `.workkit/settings.json` (`afterRelease`, `afterPublish`, `afterDeploy`); the ship runs them once that step succeeds, if the file says `"enabled": true`. An entry marked `"local": true` needs your machine, so a cloud session skips it and says so.
+6. **Ship.** Say `ship`. Claude writes the changelog entry, commits, releases, and closes the issue.
+   - In a cloud session, or when you say `pr`, the work and release commits go through one pull request that merges once its checks pass.
+   - CI makes the GitHub release once the release commit reaches the default branch, and the ship waits for it.
+     - It works the same from a cloud session as from your machine.
+   - A repo can list commands to run after the release, the npm publish or the deploy.
+     - They go under `hooks` in its `.workkit/settings.json` (`afterRelease`, `afterPublish`, `afterDeploy`).
+     - The ship runs them once that step succeeds, if the file says `"enabled": true`.
+     - An entry marked `"local": true` needs your machine, so a cloud session skips it and says so.
 
-Hooks guard each step on their own. For example, no code commits until the full test suite has passed on exactly what is being committed.
-A repo that has not turned workkit on gets none of its hooks.
-The commit checks run in git's own commit hooks and the issue checks in workkit's `gh` shim, so they judge the real commit and the real `gh` call, and only in a Claude session in a repo that turned workkit on. The shim's secrets check runs on every `gh` call, yours included.
-Three hooks still read the command Claude typed: the shared-tree guard, the capture guard and the npm publish check.
-The rules for every stop: [docs/project-state.md](docs/project-state.md).
+- Hooks guard each step on their own.
+  - For example, no code commits until the full test suite has passed on exactly what is being committed.
+- A repo that has not turned workkit on gets none of its hooks.
+- The commit checks run in git's own commit hooks and the issue checks in workkit's `gh` shim.
+  - So they judge the real commit and the real `gh` call.
+  - And only in a Claude session in a repo that turned workkit on.
+- The shim's secrets check runs on every `gh` call, yours included.
+- Four hooks still read the command Claude typed: the shared-tree guard, the capture guard, the npm publish check and the bare-call notice.
+- The rules for every stop: [docs/project-state.md](docs/project-state.md).
 
 ## Seeing your board
 
-The dashboard shows the board of every repo in one place, and it comes in three tiers. Use whichever suits you, and switch any time.
+- The dashboard shows the board of every repo in one place, and it comes in three tiers.
+- Use whichever suits you, and switch any time.
 
-- **The central copy, out of the box.** Open <https://itw-creative-works.github.io/workkit/> and paste a GitHub token once. That address is the kit's own GitHub Pages site for now, so it may move. The token stays in that browser. The site holds no data: it reads GitHub live, and finds your home repo (`<login>/workkit`) from the token.
+- **The central copy, out of the box.** Open <https://itw-creative-works.github.io/workkit/> and paste a GitHub token once.
+  - That address is the kit's own GitHub Pages site for now, so it may move.
+  - The token stays in that browser.
+  - The site holds no data: it reads GitHub live, and finds your home repo (`<login>/workkit`) from the token.
 - **The local tower.** `workkit tower` runs it on your own machine, where it also shows the running agents, token spend and repo health.
 - **Your own published copy.** `workkit publish` puts it on your home repo's GitHub Pages, for a custom domain or full control.
 
-The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to-see-your-board).
+- The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to-see-your-board).
 
 ## What is inside
 
 | Part | Count | What it does |
 |---|---|---|
-| [Hooks](docs/hooks.md) | 29 | Run by themselves: at session start, before edits and commits, and when a reply ends. Twenty-three run inside Claude Code as one module; seven guards run in the `gh` shim and git's own commit hooks, the release check in both |
+| [Hooks](docs/hooks.md) | 30 | Run by themselves: at session start, before edits and commits, and when a reply ends. Twenty-four run inside Claude Code as one module; seven guards run in the `gh` shim and git's own commit hooks, the release check in both |
 | [Agents](docs/agents.md) | 5 | The crew your chat delegates to, each briefed from a role template in [`briefs/`](briefs/) |
 | Skills | 9 | Procedures Claude follows when your words match, or when you type `/workkit:<name>` |
 | [Dashboard](tower/README.md) | 7 pages | `workkit tower` opens a local view of every board, the running agents, token spend, and repo health |
@@ -98,8 +135,8 @@ The token, and what each tier needs: [docs/setup.md](docs/setup.md#three-ways-to
 
 ### Skills
 
-`workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:ship`.
-Each is one `SKILL.md` of bullets.
+- `workkit:feature` · `workkit:interview` · `workkit:diagnose` · `workkit:review` · `workkit:triage` · `workkit:status` · `workkit:checkpoint` · `workkit:migrate` · `workkit:ship`.
+- Each is one `SKILL.md` of bullets.
 
 ## Requirements
 
@@ -109,7 +146,9 @@ Each is one `SKILL.md` of bullets.
 - Node.js with npm, 22.22 or newer (the root `package.json` names the floor)
 - the Claude Code CLI (`claude`)
 
-It runs on macOS, on Linux, and on Windows under Git Bash. The 9am schedule on your own machine is macOS only; everywhere else the same brief runs in the cloud from your home repo.
+- It runs on macOS, on Linux, and on Windows under Git Bash.
+  - The 9am schedule on your own machine is macOS only.
+  - Everywhere else the same brief runs in the cloud from your home repo.
 
 ## Docs
 
@@ -123,4 +162,7 @@ It runs on macOS, on Linux, and on Windows under Git Bash. The 9am schedule on y
 
 ## License
 
-[Functional Source License, Version 1.1, MIT Future License](LICENSE.md) (FSL-1.1-MIT). Use it, change it, share it, and run it inside your own work freely; do not offer it as a competing product or service. Each release becomes MIT two years after it ships.
+- [Functional Source License, Version 1.1, MIT Future License](LICENSE.md) (FSL-1.1-MIT).
+- Use it, change it, share it, and run it inside your own work freely.
+- Do not offer it as a competing product or service.
+- Each release becomes MIT two years after it ships.

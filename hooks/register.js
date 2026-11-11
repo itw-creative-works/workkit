@@ -1,5 +1,5 @@
 /**
- * hooks/register.js: the workkit hooks module, the twenty-three in-process
+ * hooks/register.js: the workkit hooks module, the twenty-four in-process
  * hooks on ten events (docs/hooks.md § The hooks module); seven guards run in
  * the `gh` shim and git's hooks instead, release-taken in both. The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
@@ -8,7 +8,7 @@
  */
 
 import { addonContext, addonPath } from './mods/addon.js';
-import { boardGuardVerdict } from './mods/board-guard.js';
+import { boardGuardGather, boardGuardRepo } from './mods/board-guard.js';
 import { changeTrackerGather } from './mods/change-tracker.js';
 import { changelogGuardVerdict, isChangelog, linterPath } from './mods/changelog-guard.js';
 import { checkpointContext } from './mods/checkpoint.js';
@@ -16,10 +16,11 @@ import { closeGuardGather } from './mods/close-guard.js';
 import { featureContext, featureMatch } from './mods/feature.js';
 import { isSystemPrompt } from './mods/frame.js';
 import { isExempt } from './mods/gate.js';
-import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, folderOpted, runChain } from './mods/guards.js';
+import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, folderOpted, grownLines, runChain } from './mods/guards.js';
 import { appendLog, homeOf, logLine, pad, userDirOf } from './mods/log.js';
 import { crewClass, isAdvise, managerConfig } from './mods/manager.js';
-import { journalFor, journalMarkPath, journalTail, sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
+import { journalFor, journalMarkPath, journalMarkText, journalMarks, journalSizes, sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
+import { repoPathOf } from './mods/optin.js';
 import { profileContext } from './mods/profile.js';
 import { reloadFingerprint, reloadGuardContext, surfacePaths } from './mods/reload-guard.js';
 import { resolverAdvice, resolverModel } from './mods/resolver.js';
@@ -265,12 +266,15 @@ async function configOf($, env, cwd) {
   return managerConfig(ladderText, settings);
 }
 
+// A folder's entry names, none when it is absent.
+const namesIn = ($, path) => $.fs.list(path).then((entries) => entries.map((f) => f.name), () => []);
+
 // The engine calls a mods gatherer makes, as plain functions: `$` stays here.
 const ioOf = ($, env) => ({
   pluginRoot: $.plugin.root,
   top: (cwd) => gitTop($, cwd), read: (path) => readText($, path), now: () => now($),
   exists: (path) => exists($, path), real: (path) => realPath($, path), run: (argv, init) => run($, argv, init),
-  list: (path) => $.fs.list(path).then((entries) => entries.map((f) => f.name), () => []),
+  list: (path) => namesIn($, path),
   write: (path, text) => quiet($.fs.write(path, text)), sha1: sha1Hex, stat: (path) => $.fs.stat(path).catch(() => null),
   config: (cwd) => configOf($, env, cwd), model: () => sessionModel($),
   messages: () => $.session.messages(), log: (text) => $.ui.log(text),
@@ -293,10 +297,8 @@ async function repoRel($, e, file) {
   if (!file || !(await exists($, file))) return null;
   const dir = dirOf(file);
   const [root, fileRoot] = await Promise.all([gitTop($, e.cwd || (await sessionCwd($))), gitTop($, dir)]);
-  if (!root || root !== fileRoot) return null;
-  const prefix = await run($, ['git', 'rev-parse', '--show-prefix'], { cwd: dir });
-  if (prefix.exitCode !== 0) return null;
-  return { root, rel: `${prefix.stdout.trim()}${file.split('/').pop()}` };
+  const rel = root && root === fileRoot ? await repoPathOf(dir, (argv, init) => run($, argv, init), file.split('/').pop()) : null;
+  return rel && { root, rel };
 }
 
 async function testReminderHook($, e, where) {
@@ -494,25 +496,26 @@ async function journalSize($, journal) {
   return counted.exitCode === 0 ? Number.parseInt(counted.stdout.trim(), 10) || 0 : 0;
 }
 
-// Before a Bash call runs: its mark holds the journal's path and its length.
-async function markJournal($, env, id, cwd) {
-  if (!id || !cwd) return;
-  const [journal, mark] = await Promise.all([journalAt($, env, cwd), journalMarkPath(id, userDirOf(env))]);
+// Before a Bash call runs: its mark holds every gh journal on the machine
+// and its length (journalSizes); no command text, no git call.
+async function markJournal($, env, id) {
+  if (!id) return;
+  const sizing = journalSizes((dir) => namesIn($, dir), (journal) => journalSize($, journal), userDirOf(env));
+  const [sized, mark] = await Promise.all([sizing, journalMarkPath(id, userDirOf(env))]);
   const dir = dirOf(mark);
   if ((await $.fs.stat(dir).catch(() => null))?.kind !== 'dir') await run($, ['mkdir', '-p', dir]);
-  await quiet($.fs.write(mark, `${journal}\n${await journalSize($, journal)}`));
+  await quiet($.fs.write(mark, journalMarkText(sized)));
 }
 
-// After it ran: the lines past its mark in the journal the mark names, the
-// mark removed; no mark, no lines.
+// After it ran: the opted-in lines of each journal the call changed, oldest
+// first (grownLines), the mark removed; no mark, no lines.
 async function journalSince($, env, e) {
   if (!e.tool_use_id) return [];
   const mark = await journalMarkPath(e.tool_use_id, userDirOf(env));
   const held = await readText($, mark);
   if (held === null) return [];
   await run($, ['rm', '-f', mark]);
-  const [journal, bytes] = held.split('\n');
-  return journal ? journalTail((argv) => run($, argv), journal, Number(bytes)) : [];
+  return grownLines(ioOf($, env), userDirOf(env), journalMarks(held), (journal) => journalSize($, journal));
 }
 
 // The owner prompt's turn start: the time and the length of the journal of its
@@ -525,10 +528,9 @@ async function turnJournalHook($, env, e) {
   return null;
 }
 
-// The facts of a Bash call that already ran: the journal lines its gh writes left.
-const postBashFacts = ($, e) => async (env) => ({
-  command: e.tool_input?.command ?? '', cwd: e.cwd ?? '', lines: await journalSince($, env, e).catch(() => []),
-});
+// The facts of a Bash call that already ran: the journal lines its gh writes
+// left, and no command text.
+const postBashFacts = ($, e) => async (env) => ({ cwd: e.cwd ?? '', lines: await journalSince($, env, e).catch(() => []) });
 
 export function register(on) {
   on('classic.PostToolUse', { tool_name: ['Edit', 'Write'] }, async ($, e, next) => {
@@ -545,7 +547,7 @@ export function register(on) {
       // In order: the first block wins and the hooks after it do not run.
       const text = file ? await readText($, file) : null;
       fires.push([HOOK.boardGuard, 'run']);
-      block = boardGuardVerdict(file, text, `${$.plugin.root}/docs/project-state.md`);
+      block = await caught($, HOOK.boardGuard, boardGuardGather(file, text, `${$.plugin.root}/docs/project-state.md`, () => boardGuardRepo(file, dirOf(file), env, ioOf($, env))));
       if (!block) {
         fires.push([HOOK.changelogGuard, 'run']);
         block = await caught($, HOOK.changelogGuard, changelogGuardHook($, env, file, text));
@@ -629,7 +631,7 @@ export function register(on) {
   // subagent. The journal mark is left first, for the PostToolUse to read past.
   on('tool.call', { tool: 'Bash' }, ($, e, next) => guardChain($, e, next, 'tool.call', BASH_GUARDS, async (env) => {
     const cwd = await $.session.cwd();
-    await quiet(markJournal($, env, e.tool_use_id, cwd));
+    await quiet(markJournal($, env, e.tool_use_id));
     return { command: e.command ?? '', cwd };
   })).catch(failClosed);
 

@@ -6,7 +6,8 @@ user-invocable: true
 
 # Diagnose: loop first, hypothesis second
 
-The iron rule: **build a feedback loop that shows the failure BEFORE you form a hypothesis or touch the code.** Guess-and-check edits without a repro destroy evidence and can't prove a fix.
+- The iron rule: **build a feedback loop that shows the failure BEFORE you form a hypothesis or touch the code.**
+  - Guess-and-check edits without a repro destroy evidence and can't prove a fix.
 
 ## 1. Reproduce: the red-capable loop
 

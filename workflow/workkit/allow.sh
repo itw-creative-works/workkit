@@ -3,10 +3,10 @@
 # settings, and the setup and doctor steps that keep them there.
 # Sourced by workkit.sh, functions only.
 
-# The commands a ship or review runs that auto mode may block though a skill
-# allows them, in Claude Code's allow-rule syntax. One list, kept in the global
-# settings, so no repo carries a copy. Every ship verb (ship.sh's SHIP_VERBS,
-# sourced first) but deploy, which prompts anywhere but inside a ship.
+# The commands a ship or review runs that auto mode may block though a skill allows them,
+# kept in the global settings: every ship verb (ship.sh's SHIP_VERBS, sourced first) but
+# deploy, which prompts outside a ship. The ship rules twin ALLOWED_SHIP_VERBS in
+# hooks/mods/bare-call.js, pinned by test/hooks/twins.test.js: change one and change the other.
 ALLOW_RULES=()
 for _wk_verb in "${SHIP_VERBS[@]}"; do
   [[ "$_wk_verb" == deploy ]] || ALLOW_RULES+=("Bash(workkit ship $_wk_verb:*)")

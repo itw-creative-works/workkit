@@ -36,8 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         if: github.event_name == 'push'
-      # The checkout is the pushed commit alone; the script needs <before> too, and
-      # a fetch that fails leaves it unreadable, which the script answers with run.
+      # The checkout is the pushed commit alone; the script fetches <before> itself.
       - id: scope
         env:
           BEFORE: ${{ github.event.before }}
@@ -45,7 +44,6 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" != push ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
-            git fetch -q --depth=1 origin "$BEFORE" || true
             bash .github/scripts/release-push.sh "$BEFORE" >> "$GITHUB_OUTPUT"
           fi
   suite:

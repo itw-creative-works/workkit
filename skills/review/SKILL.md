@@ -6,7 +6,7 @@ user-invocable: true
 
 # Review: parallel lenses, separate scorer, one report
 
-Finder lenses read the diff in parallel, a separate scorer rates every finding, and one report carries what clears the bar.
+- Finder lenses read the diff in parallel, a separate scorer rates every finding, and one report carries what clears the bar.
 
 ## 1. Scope
 
@@ -23,7 +23,7 @@ Finder lenses read the diff in parallel, a separate scorer rates every finding, 
   - the same brief discipline, and it still execution-verifies its claims.
 - Both tiers run the §3 scorer: it is never skipped.
 
-Downgrade to light ONLY when ALL of these hold (any miss = stay full):
+- Downgrade to light ONLY when ALL of these hold (any miss = stay full):
 
 1. Kind of change: the diff is a fix to an existing rule or behaviour, with no new behaviour and no new source file.
 2. No guard surface touched: nothing under `hooks/`, `skills/`, `.claude/` or a repo's `setup/`. Those are the surfaces where a one-liner is catastrophic.

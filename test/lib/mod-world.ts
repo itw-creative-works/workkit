@@ -79,10 +79,10 @@ const touchedGit = (args: string[], branch: any, status: string | undefined) => 
   return list(status.split('\n').filter((l) => l.length > 3 && !l.startsWith('?? ')).map((l) => l.slice(3)))
 }
 
-// The git reads behind a commit the gate judges, from `opts.git`: `staged`, `changed`
-// (`diff [--cached] --name-only`, `added`/`deleted` their A and D), `headTime`, `blobs`
-// by `HEAD:<path>` and `:<path>`, `indexTree` (tree-hash.sh -i's answer); `broken` makes the staged read resolve to
-// nothing; `unstarted` makes the HEAD reads answer as a timed-out run. Null for any other read.
+// The git reads behind a commit the gate judges, from `opts.git`: `staged`, `changed` (`diff [--cached] --name-only`,
+// `added`/`deleted` their A and D), `headTime`, `blobs` by `HEAD:<path>` and `:<path>`, `conflicts` (the paths
+// `ls-files --stage` answers with stages 1 to 3), `indexTree` (tree-hash.sh -i's answer); `broken` makes the staged read
+// resolve to nothing; `unstarted` makes the HEAD reads answer as a timed-out run. Null for any other read.
 const commitGit = (args: string[], git: any) => {
   let sub = args
   while (sub[0] === '-c') sub = sub.slice(2)
@@ -107,21 +107,16 @@ const commitGit = (args: string[], git: any) => {
 }
 
 /**
- * Registers the world on `on` and hands back its state: `files` (path to text), `mtimes`,
- * `store`, `calls` (each process.run argv and init), `fsOps` (each fs read and write, in order),
- * `logs` ($.ui.log lines), `spawned`
- * (what reached the spawn), `reached` (each classic event past the module), `messages`
- * ($.session.messages(), `opts.messages`: `row` rows). `opts.links`: link to target, every
- * read goes through it, a resolving stat answers `realPath`. `opts.origins`: a root's
- * origin url, null for none; `opts.npm`: `{ taken, known }` or `offline`;
- * `opts.releases`: `{ tags }` or `offline`; `opts.treeId`. `opts.status`, `opts.diff`: a
- * root's `git status --porcelain` and `git diff HEAD` text; `opts.ignored`: the paths
- * `git check-ignore` answers for, one ending in `/` a whole folder. `opts.git`,
- * `opts.scriptShell`, `opts.rewrite`: the commit reads (`commitGit`, the npm branch).
- * `opts.dirs`: folders that exist with nothing in them; a run whose `cwd` is no folder
- * the world holds (PLAIN and the session folder always are) does not start, nor does one
- * of `opts.absent`'s tools (by name, as PATH would miss it).
- * A link to a folder carries every path beneath it.
+ * Registers the world on `on` and hands back its state: `files` (path to text), `mtimes`, `store`, `calls` (each process.run
+ * argv and init), `fsOps` (each fs read and write, in order, a write with `runs`, the count of `calls` before it), `logs`
+ * ($.ui.log lines), `spawned` (what reached the spawn), `reached` (each classic event past the module), `messages`
+ * ($.session.messages(), `opts.messages`: `row` rows). `opts.links`: link to target, every read goes through it, a resolving
+ * stat answers `realPath`. `opts.origins`: a root's origin url, null for none; `opts.npm`: `{ taken, known }` or `offline`;
+ * `opts.releases`: `{ tags }` or `offline`; `opts.treeId`. `opts.status`, `opts.diff`: a root's `git status --porcelain` and
+ * `git diff HEAD` text; `opts.ignored`: the paths `git check-ignore` answers for, one ending in `/` a whole folder. `opts.git`,
+ * `opts.scriptShell`, `opts.rewrite`: the commit reads (`commitGit`, the npm branch). `opts.dirs`: folders that exist with
+ * nothing in them; a run whose `cwd` is no folder the world holds (PLAIN and the session folder always are) does not start,
+ * nor does one of `opts.absent`'s tools (by name, as PATH would miss it). A link to a folder carries every path beneath it.
  */
 export const mkWorld = (on: any, opts: any = {}) => {
   const now = opts.now ?? Date.now()
@@ -217,7 +212,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
   })
   on('fs.write', ($: any, e: any) => {
     const p = norm(e.path, world.cwd)
-    world.fsOps.push({ op: 'write', path: p })
+    world.fsOps.push({ op: 'write', path: p, runs: world.calls.length })
     files.set(p, e.text)
     mtimes.set(p, Date.now())
     return { value: undefined }
@@ -297,6 +292,14 @@ export const mkWorld = (on: any, opts: any = {}) => {
         const hits = rest.slice(1).filter((a) => !a.startsWith('-') && isIgnored(norm(a, dir)))
         if (!hits.length) return ok('', '', 1)
         return ok(rest.includes('-q') ? '' : hits.map((a) => `${a}\n`).join(''))
+      }
+      // `ls-files --stage -- <path>`: stage 0 for a path with a `git.blobs` `:<rel>` copy,
+      // stages 1 to 3 for one in `git.conflicts` (a merge conflict), no entry else.
+      if (rest[0] === 'ls-files' && rest.includes('--stage')) {
+        const rel = norm(rest[rest.length - 1], dir).slice(root.length + 1)
+        const entry = (stage: number) => `100644 ${'c'.repeat(40)} ${stage}\t${rel}\n`
+        if ((world.git.conflicts || []).includes(rel)) return ok([1, 2, 3].map(entry).join(''))
+        return ok(`:${rel}` in world.git.blobs ? entry(0) : '')
       }
       // The untracked files are the status's `??` lines, each a file.
       if (rest[0] === 'ls-files' && rest.includes('--others') && !rest.includes('--cached')) {

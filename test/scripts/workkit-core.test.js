@@ -55,7 +55,7 @@ const packedRepo = () => {
 // What the harness entry exports, every one of which `workkit-core/test` carries.
 const HARNESS_EXPORTS = [
   'CASE_INDENT', 'PIPE_GRACE_MS', 'POOL', 'SPAWN_DEADLINE', 'WORKKIT_DIR', 'alive', 'assert', 'assertEq',
-  'drain', 'elapsedUntil', 'endTree', 'findModSuites', 'findSuites', 'group', 'hasLaunchd', 'log', 'mkTmp',
+  'drain', 'elapsedUntil', 'endTree', 'failureOf', 'findModSuites', 'findSuites', 'group', 'hasLaunchd', 'log', 'mkTmp',
   'needs', 'openCase', 'readPid', 'run', 'seeded', 'selfRun', 'skip', 'skipSuite', 'start', 'stripAnsi',
   'suiteDir', 'summary', 'test', 'testUnless', 'until',
 ];

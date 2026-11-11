@@ -23,7 +23,7 @@ const { mkOriginRepo, OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { mkRosterHome } = require('../../lib/roster');
 const {
   INSTALL_FIX, PRESELECTED, BOT_HINT, deviceFlowRoutes, userRoute, writeLogin, readWrittenLogin, useTokenService, startServer, startService,
-  scratchKit, hostsOf, PTY, atTerminal, journalLines,
+  scratchKit, hostsOf, PTY, atTerminal, journalFile, journalLines,
 } = require('../../lib/identity');
 const { plantPkgRecord } = require('../../lib/suite-record');
 const { BLOCK: PROOF_BLOCK, QA_BLOCK } = require('../../hooks/proof-guard/helpers');
@@ -696,6 +696,23 @@ const gateCases = async () => {
     const lines = journal(world);
     assertEq(lines.length, 1, `one line for the answered write, got: ${JSON.stringify(lines)}`);
     assertEq(lines[0][1], 'api', 'its verb');
+  });
+
+  await test('journal case 12: a journal last written eight days ago keeps its one line, and the shim\'s write lands after it', async () => {
+    const world = mkGateWorld();
+    const file = journalFile(path.join(world.home, '.workkit'), world.rostered);
+    const old = ['1700000000000', 'issue', 'edit', 'acme/rostered', '7', 'status:building', '', gitPath(world.rostered)];
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${old.join('\t')}\n`);
+    const idle = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(file, idle, idle);
+
+    const comment = ['api', '-X', 'POST', 'repos/acme/rostered/issues/1/comments', '-f', 'body=x'];
+    const answered = { 'POST repos/acme/rostered/issues/1/comments': { status: 201, body: { id: 2001, body: 'x' } } };
+    assertEq(runShim(world, comment, { api: answered }).code, 0, 'the answered write passes');
+    const lines = journal(world);
+    assertEq(JSON.stringify(lines.map((l) => l[1])), JSON.stringify(['issue', 'api']), 'the old line\'s verb, then the new one\'s');
+    assertEq(JSON.stringify(lines[0]), JSON.stringify(old), 'the old line unchanged');
   });
 
   await test('ports proof-guard\'s close cases through the gate: --reason "not planned" and --duplicate-of pass unproved, --reason completed bounces', async () => {

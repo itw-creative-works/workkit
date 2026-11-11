@@ -6,7 +6,8 @@ user-invocable: true
 
 # Feature flow: ceremony scales with the task
 
-Each phase prevents one failure: building the wrong thing, missing a consumer, shipping unreviewed. Skip a phase only when its failure cannot happen at this size.
+- Each phase prevents one failure: building the wrong thing, missing a consumer, shipping unreviewed.
+- Skip a phase only when its failure cannot happen at this size.
 
 ## 0a. Pipeline gate: build only from `status:specced`
 
@@ -23,8 +24,8 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 ### The claim, and the road the labels take
 
 - Claim the issue before working it: move it to `status:building` AND add `agent:claimed`, then say whose session holds it:
-  `gh issue edit <N> --remove-label status:specced --add-label status:building,agent:claimed`
-  `gh issue comment <N> --body "Claimed by workkit-agent[bot] for @<login>'s session."` (the login the sign-in status reports, spec § The pass)
+  - `gh issue edit <N> --remove-label status:specced --add-label status:building,agent:claimed`
+  - `gh issue comment <N> --body "Claimed by workkit-agent[bot] for @<login>'s session."` (the login the sign-in status reports, spec § The pass)
 - That flip makes the `workflow:snapshot` hook take the snapshot the red proofs run against (`docs/hooks.md`).
 - `agent:claimed` IS the claim. The assignee is a person's mark and never the claim: the bot that posts the agent's bookkeeping can never be an assignee, so the claim comment names it and the session's owner.
 - Skip an issue already carrying `agent:claimed`. Re-read the labels when you start, not when you listed the queue.
@@ -73,7 +74,7 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 ### Crew staging
 
 - Stage the class agents by phase, never all at once.
-- A batch builds in parallel groups on the shared tree, grouped and launched as `docs/agents.md` § Batches says. It spawns by that section's start rule, its first paragraph: never held for a neighbour's Spec or a question about other work.
+- A batch builds in parallel groups on the shared tree, grouped and launched as `docs/agents.md` § Batches says. It spawns by that section's start rule bullet: never held for a neighbour's Spec or a question about other work.
 - Build: ONE pair of `workkit:worker` briefs per group, a feature-developer and a test-developer on the shared tree. The rule is `docs/agents.md` § Crew sizing.
   - The feature-developer's brief starts from `briefs/feature-developer.md` and names its source paths and the issue's `### Contract`.
   - The test-developer's brief starts from `briefs/test-developer.md` and names its test paths, the Contract and the Description.
@@ -88,13 +89,13 @@ Each phase prevents one failure: building the wrong thing, missing a consumer, s
 - Each agent runs the test files touched by the edit it made or checks, and the maker also runs the suites of the modules that require a changed file (its importers, one grep of the package's source per changed file), as `npm test -- <files>` from that package's folder (`docs/project-state.md` § The proof).
   - The park runs no root suite: its proof is the flip to `status:qa`, which runs nothing and needs a green `npm test` recorded on its own id of the parked tree for each package owning a touched test file (`safety:proof-guard`).
   - A package the flip lists as missing, with its touched files, gets its own tests narrowed to those files, in the path form its runner takes, then the flip again.
-  - A package's record is keyed to its own id: the code it can see (the rule: `docs/hooks.md` § `safety:proof-guard`, the record paragraph), so any edit it can see voids it, a fix round's, the docs' and the CHANGELOG's included.
+  - A package's record is keyed to its own id: the code it can see (the rule: `docs/hooks.md` § `safety:proof-guard`, the package id bullet), so any edit it can see voids it, a fix round's, the docs' and the CHANGELOG's included.
   - So the narrowed runs of the packages an edit can touch come last, right before the flip.
   - The full suite runs once, a root `npm test` before the commit. So no brief asks an agent for the whole touched set.
 - Then [workkit:review](../review/SKILL.md) on the diff. Trivial tasks skip formal review.
 - A ≥80 finding is built in the batch, or said in chat under **🧭 Findings** (filed only when `findings.file` is on or the owner says file), before calling it done, per the fix-or-file rule (`docs/project-state.md` § How big is one issue). The review's simplification lens covers post-green cleanup.
 - After the review: ONE light verification pass over the fixes (its brief from `briefs/fix-verifier.md`), ONE worker round for what it finds, then retouch the review marker so it covers the parked diff, with `full` only when that review was the full panel (the retouch closes its round; `workkit:review` § 5), then the park:
-  `workkit review mark` (add `full` after a full panel)
+  - `workkit review mark` (add `full` after a full panel)
 - A finding made after that round is said or filed per the fix-or-file rule, never worked in another round. The one exception is a bug in a `safety:` hook, fixed before the park.
 - Done-criteria:
   - green at every layer the change has a surface on (`docs/project-state.md` § The proof);

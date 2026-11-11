@@ -8,7 +8,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { stripVTControlCharacters } = require('util');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, run,
+  group, test, testUnless, assert, assertEq, failureOf, summary, selfRun, mkTmp, run,
 } = require('./lib/harness');
 const { IS_WINDOWS, NO_EXEC_BIT, stubTool } = require('./lib/platform');
 
@@ -339,6 +339,20 @@ if (require.main === module) selfRun(module.exports);
       assert(!output.includes('⊘'), `${call}: never the skip path, got:\n${output}`);
       assertEq(marks(output).passed, 0, `${call}: the suite's case never ran, got:\n${output}`);
     }
+  });
+
+  group('harness: failureOf');
+
+  await test('failureOf resolves the error a sync call threw and the one an async call rejected with', async () => {
+    const thrown = new Error('sync');
+    const rejected = new Error('async');
+    assertEq(await failureOf(() => { throw thrown; }), thrown, 'the thrown error');
+    assertEq(await failureOf(async () => { throw rejected; }), rejected, 'the rejected error');
+  });
+
+  await test('failureOf over a call that returns rejects, naming the return', async () => {
+    const err = await failureOf(() => failureOf(async () => 'answered'));
+    assertEq(err.message, 'expected a failure, got a return', 'the failure of its own');
   });
 };
 

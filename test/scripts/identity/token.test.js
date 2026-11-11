@@ -9,11 +9,11 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
+  group, test, testUnless, assert, assertEq, failureOf, summary, selfRun, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const { IS_WINDOWS } = require('../../lib/platform');
 const {
-  INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf, startServer,
+  INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json, startServer,
   startService, scratchKit, scratchEnv, hostsOf, PTY, atTerminal,
 } = require('../../lib/identity');
 

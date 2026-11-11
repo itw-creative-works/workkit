@@ -44,11 +44,16 @@ const cases = async () => {
   }
 
   group('manager-profile: the injection is the delegation core only');
-  await test('the injection stays under 1600 characters on both rungs', () => {
+  await test('the injection stays under 1700 characters on both rungs', () => {
     for (const rung of ['fable', 'opus']) {
       const ctx = ctxFor(MODELS[rung]);
-      assert(ctx.length < 1600, `${rung} injection is ${ctx.length} chars`);
+      assert(ctx.length < 1700, `${rung} injection is ${ctx.length} chars`);
     }
+  });
+  await test('the one-time clause follows the findings sentence on both rungs', () => {
+    const clause = 'findings.file is on. A one-time problem';
+    assert(ctxFor(MODELS.fable).includes(clause), 'frontier session lacks the one-time clause');
+    assert(ctxFor(MODELS.opus).includes(clause), 'workhorse session lacks the one-time clause');
   });
 
   group('manager-profile: layered overrides (repo > user > ladder)');

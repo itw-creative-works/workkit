@@ -1,25 +1,48 @@
-This turn parked, blocked or closed an issue; the line above says what the tracker found (uncommitted code or config changes, unfiled entries, or both). Record on that issue where the work stands: for a park, what to check and where; for a block, the question that holds it; for a close, the CHANGELOG entry it points at. Work items live as GitHub issues (the SSOT); `.workkit/` holds per-session working state that is never committed (only `.workkit/settings.json`, the repo's workflow opt-in, is tracked). Before you stop:
+- This turn parked, blocked or closed an issue.
+- The line above says what the tracker found: uncommitted code or config changes, unfiled entries, or both.
+- Record on that issue where the work stands:
+  - for a park, what to check and where;
+  - for a block, the question that holds it;
+  - for a close, the CHANGELOG entry it points at.
+- Work items live as GitHub issues (the SSOT).
+- `.workkit/` holds per-session working state that is never committed.
+  - Only `.workkit/settings.json`, the repo's workflow opt-in, is tracked.
+- Before you stop:
 
 ## 1. Keep the work item true (always)
 
-The issue is the record: its labels say where the work is, its comments carry the trail.
+- The issue is the record: its labels say where the work is, its comments carry the trail.
 
-- Work in flight → `agent:claimed` is the claim: the issue carries it with `status:building` while the work runs. A block releases it: when a human decision is pending, the flip to `status:blocked` takes `agent:claimed` off in the same edit and the question goes in a comment; the issue is claimed again once answered. Exactly one `status:` label either way.
-- Work BUILT this turn → the issue is at `status:qa` with a comment naming what to check and where; it ships on the owner's word, never on yours. On an `agent:ok` issue the park is a pass-through: the agent performs the check itself and ships in the same run.
-- The owner's check PASSED this turn → the issue moves to `status:complete` with the pass comment ("QA passed by @<login>, <date>"); that stage is what the ship reads from. The verdict is the owner's alone. Never grant it on their behalf.
-- Work shipped this turn → write the CHANGELOG `[Unreleased]` entry, then close the issue with a comment pointing at it (`Fixes #N` in the commit message does both).
-- New notes/ideas surfaced this turn → the FINDINGS line below says where they go. Never write to `.workkit/capture.md`: it is the owner's capture surface, cleared only by a triage run.
+- Work in flight → `agent:claimed` is the claim: the issue carries it with `status:building` while the work runs.
+  - A block releases it: when a human decision is pending, the flip to `status:blocked` takes `agent:claimed` off in the same edit.
+  - The question goes in a comment; the issue is claimed again once answered.
+  - Exactly one `status:` label either way.
+- Work BUILT this turn → the issue is at `status:qa` with a comment naming what to check and where.
+  - It ships on the owner's word, never on yours.
+  - On an `agent:ok` issue the park is a pass-through: the agent performs the check itself and ships in the same run.
+- The owner's check PASSED this turn → the issue moves to `status:complete` with the pass comment ("QA passed by @<login>, <date>").
+  - That stage is what the ship reads from.
+  - The verdict is the owner's alone. Never grant it on their behalf.
+- Work shipped this turn → write the CHANGELOG `[Unreleased]` entry, then close the issue with a comment pointing at it.
+  - `Fixes #N` in the commit message does both.
+- New notes/ideas surfaced this turn → the FINDINGS line below says where they go.
+  - Never write to `.workkit/capture.md`: it is the owner's capture surface, cleared only by a triage run.
 
-Only log meaningful progress. Skip trivial formatting or typo fixes.
+- Only log meaningful progress. Skip trivial formatting or typo fixes.
 
 ## 2. Promote durable findings out of `.workkit/`
 
-Anything durable that surfaced this turn (a finding, a decision, a blocker) belongs on its issue as a comment BEFORE you stop. Scratch is session state: it is gitignored, private to this developer, and nobody else ever reads it.
+- Anything durable that surfaced this turn (a finding, a decision, a blocker) belongs on its issue as a comment BEFORE you stop.
+- Scratch is session state: it is gitignored, private to this developer, and nobody else ever reads it.
 
 ## 3. Doc parity (finalized work only)
 
-If this work is FINALIZED, follow the doc-parity rules in AGENTS.md (README, AGENTS.md, relevant docs/*.md, CHANGELOG `[Unreleased]` on any user-visible change). If mid-stream, skip.
+- If this work is FINALIZED, follow the doc-parity rules in AGENTS.md.
+  - They cover README, AGENTS.md, relevant docs/*.md, and CHANGELOG `[Unreleased]` on any user-visible change.
+- If mid-stream, skip.
 
 ## 4. Sign off
 
-State which path you took (e.g. "issue updated" or "issue + docs updated" or "trivial change: skipping"), then stop. Do not re-run this check.
+- State which path you took, then stop.
+  - For example: "issue updated" or "issue + docs updated" or "trivial change: skipping".
+- Do not re-run this check.

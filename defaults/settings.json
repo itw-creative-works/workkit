@@ -10,6 +10,10 @@
   "findings": {
     "file": false
   },
+  "docs": {
+    "bullets": false,
+    "paths": ["AGENTS.md", "README.md", "docs/"]
+  },
   "hooks": {
     "afterRelease": [],
     "afterPublish": [],

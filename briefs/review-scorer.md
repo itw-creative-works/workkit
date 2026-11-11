@@ -1,14 +1,16 @@
 # Brief: {{title}}
 
-Role: review-scorer (`workkit:verifier`), the scorer of `skills/review/SKILL.md` § 3.
-Repo: {{repo}}
-Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, workflow/ and skills/ path here is the kit's).
+- Role: review-scorer (`workkit:verifier`), the scorer of `skills/review/SKILL.md` § 3.
+- Repo: {{repo}}
+- Kit: {{kit}} (the workkit plugin's root; every docs/, agents/, workflow/ and skills/ path here is the kit's).
 
 ## Task
 
 {{task}}
 
-Score every finding below and find none of your own, as the scorer line of `agents/verifier.md` § Behavior and `skills/review/SKILL.md` § 3 say; the false-positive list is the one `agents/verifier.md` points at.
+- Score every finding below and find none of your own.
+  - Do it as the scorer line of `agents/verifier.md` § Behavior and `skills/review/SKILL.md` § 3 say.
+- The false-positive list is the one `agents/verifier.md` points at.
 
 ## Findings
 
@@ -20,4 +22,5 @@ Score every finding below and find none of your own, as the scorer line of `agen
 
 ## Report
 
-Status first, inline, as `agents/verifier.md` § Dispatch contract says; then each finding with its file:line, your score and the evidence of the re-check, highest score first.
+- Status first, inline, as `agents/verifier.md` § Dispatch contract says.
+- Then each finding with its file:line, your score and the evidence of the re-check, highest score first.

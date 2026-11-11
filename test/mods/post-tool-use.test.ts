@@ -64,6 +64,98 @@ describe('classic.PostToolUse: board-guard (docs:board-guard suite)', () => {
   })
 })
 
+describe('classic.PostToolUse: board-guard, the markdown shape (docs.bullets)', () => {
+  const bullets = (on: boolean) => JSON.stringify({ enabled: true, docs: { bullets: on } })
+  const PARAGRAPH = '# Notes\n\nA line of running text, the shape the check refuses.\n'
+  const everyDoc = JSON.stringify({ enabled: true, docs: { bullets: true, paths: ['./'] } })
+  // A doc of `n` paragraph lines; the world's index copy of a file is its `git.blobs` entry `:<rel>`.
+  const prose = (n: number) => ['# Notes', ...Array.from({ length: n }, (_, i) => `Paragraph line ${i}, running text.`), ''].join('\n')
+  const tracked = (rel: string, n: number) => ({ blobs: { [`:${rel}`]: prose(n) } })
+
+  test('a tracked README.md with 5 paragraph lines in the index: a write leaving 5 passes', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: bullets(true) }, git: tracked('README.md', 5), files: { [`${REPO}/README.md`]: prose(5) } })
+    expect((await write($, `${REPO}/README.md`)).block).toBeUndefined()
+  })
+
+  test('the same README.md and a write leaving 6: bounced, naming 6 and 5', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: bullets(true) }, git: tracked('README.md', 5), files: { [`${REPO}/README.md`]: prose(6) } })
+    expect((await write($, `${REPO}/README.md`)).block).toContain('DOC PROSE: 6 paragraph lines, 5 before')
+  })
+
+  test('a tracked docs/a/b.md with 1 paragraph line in the index: a write leaving 1 passes, one leaving 2 is bounced naming 2 and 1', async ($, on) => {
+    const file = `${REPO}/docs/a/b.md`
+    const w = mkWorld(on, { repos: { [REPO]: bullets(true) }, git: tracked('docs/a/b.md', 1), files: { [file]: prose(1) } })
+    expect((await write($, file)).block).toBeUndefined()
+    w.files.set(file, prose(2))
+    expect((await write($, file)).block).toContain('DOC PROSE: 2 paragraph lines, 1 before')
+  })
+
+  test('a tracked docs/x.md in a merge conflict, the index holding stages 1 to 3: a write adding paragraph lines passes unjudged', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: bullets(true) }, git: { conflicts: ['docs/x.md'] }, files: { [`${REPO}/docs/x.md`]: prose(4) } })
+    expect((await write($, `${REPO}/docs/x.md`)).block).toBeUndefined()
+  })
+
+  for (const [label, git] of [['new', {}], ['tracked', tracked('src/pages/about.md', 1)]] as const) {
+    test(`the default set and a ${label} src/pages/about.md full of paragraphs: nothing is bounced`, async ($, on) => {
+      mkWorld(on, { repos: { [REPO]: bullets(true) }, git, files: { [`${REPO}/src/pages/about.md`]: prose(8) } })
+      expect((await write($, `${REPO}/src/pages/about.md`)).block).toBeUndefined()
+    })
+  }
+
+  test('case 6: docs.bullets true and a paragraph line in docs/x.md: the write is bounced naming the file and the line', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: bullets(true) }, files: { [`${REPO}/docs/x.md`]: PARAGRAPH } })
+    const r = await write($, `${REPO}/docs/x.md`)
+    expect(r.block).toContain('board-guard: ')
+    expect(r.block).toContain('x.md breaks the markdown shape')
+    expect(r.block).toContain('DOC PROSE: line 3')
+  })
+
+  test('case 16: five prose lines and a 401-byte bullet: three prose lines named, the third with the rest counted, and the dense line with its bytes', async ($, on) => {
+    const text = ['One line.', 'Two line.', 'Three line.', 'Four line.', 'Five line.', '', `- ${'x'.repeat(399)}`, ''].join('\n')
+    mkWorld(on, { repos: { [REPO]: bullets(true) }, files: { [`${REPO}/docs/x.md`]: text } })
+    const r = await write($, `${REPO}/docs/x.md`)
+    expect(r.block).toContain('DOC PROSE: line 1')
+    expect(r.block).toContain('DOC PROSE: line 2')
+    expect(r.block).toContain('DOC PROSE: line 3, and 2 more')
+    expect(r.block).toContain('DOC DENSITY: line 7 (401 bytes)')
+  })
+
+  for (const [label, settings] of [['absent', OPTED_IN], ['false', bullets(false)]]) {
+    test(`case 7: the same write with docs.bullets ${label}: nothing is bounced`, async ($, on) => {
+      mkWorld(on, { repos: { [REPO]: settings }, files: { [`${REPO}/docs/x.md`]: PARAGRAPH } })
+      expect((await write($, `${REPO}/docs/x.md`)).block).toBeUndefined()
+    })
+  }
+
+  for (const name of ['CHANGELOG.md', 'LICENSE.md']) {
+    test(`case 8: docs.bullets true, docs.paths ["./"] and a paragraph line in ${name}: the shape check bounces nothing`, async ($, on) => {
+      mkWorld(on, { repos: { [REPO]: everyDoc }, files: { [`${REPO}/${name}`]: PARAGRAPH } })
+      expect((await write($, `${REPO}/${name}`)).block).toBeUndefined()
+    })
+  }
+
+  test('case 17: docs.bullets true, docs.paths ["./"] and a paragraph line in an issue template folder bounces nothing, the same text in docs/bug.md is bounced', async ($, on) => {
+    const quiet = ['.github/ISSUE_TEMPLATE/bug.md', 'workflow/templates/issue-forms/bug.md']
+    const files = Object.fromEntries([...quiet, 'docs/bug.md'].map((rel) => [`${REPO}/${rel}`, PARAGRAPH]))
+    mkWorld(on, { repos: { [REPO]: everyDoc }, files })
+    for (const rel of quiet) expect((await write($, `${REPO}/${rel}`)).block).toBeUndefined()
+    expect((await write($, `${REPO}/docs/bug.md`)).block).toContain('DOC PROSE: line 3')
+  })
+
+  test('case 9: docs.bullets false and an AGENTS.md of 251 lines: the budget bounce, and no shape bounce', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: bullets(false) }, files: { [`${REPO}/AGENTS.md`]: agentsLines(251) } })
+    const r = await write($, `${REPO}/AGENTS.md`)
+    expect(r.block).toContain('AGENTS BUDGET')
+    expect(r.block).toContain('251 lines (max 250)')
+    expect(r.block).not.toContain('breaks the markdown shape')
+  })
+
+  test('case 10: docs.bullets true and a paragraph line in a file that is not markdown: nothing is bounced', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: bullets(true) }, files: { [`${REPO}/notes.txt`]: PARAGRAPH } })
+    expect((await write($, `${REPO}/notes.txt`)).block).toBeUndefined()
+  })
+})
+
 describe('classic.PostToolUse: changelog-guard (docs:changelog-guard suite)', () => {
   const failing = { exitCode: 1, stdout: '', stderr: 'CHANGELOG.md:7: issue-link: the entry links no issue\n' }
 

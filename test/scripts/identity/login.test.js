@@ -6,14 +6,14 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, until, SPAWN_DEADLINE, mkTmp,
+  group, test, testUnless, assert, assertEq, failureOf, summary, selfRun, until, SPAWN_DEADLINE, mkTmp,
 } = require('../../lib/harness');
 const {
   IS_WINDOWS, NO_NODE_STUB, stubTool, pathWith,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
-  DEVICE_CODE, deviceFlowRoutes, readWrittenLogin, collector, json, failureOf, startServer, scratchEnv, hostsOf,
+  DEVICE_CODE, deviceFlowRoutes, readWrittenLogin, collector, json, startServer, scratchEnv, hostsOf,
 } = require('../../lib/identity');
 
 const KIT = path.join(__dirname, '..', '..', '..');

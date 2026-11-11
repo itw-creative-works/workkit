@@ -16,10 +16,23 @@
 | Shipped record | `CHANGELOG.md` + git + Releases | Yes |
 | "Removed but not gone" | `_attic/`: gitignored FOLDER; evicted files keep their names (`_attic/CLAUDE.proposed.md`), harvested scraps go to topical files (`_attic/inbox.md`) with a `from <path>, <date>, <why>` header line. Attic contents are NEVER source material for doctrine. Harvest facts only from live sources | Never |
 
-- The queue is a QUERY, never a file: `gh issue list`. Nothing about work state is stored in the repo. Every kit query reads up to 1,000 issues (`--limit 1000`): a filter is applied before the cap, and `gh` never says when a cap cut the answer.
+- The queue is a QUERY, never a file: `gh issue list`. Nothing about work state is stored in the repo.
+  - Every kit query reads up to 1,000 issues (`--limit 1000`).
+  - A filter is applied before the cap, and `gh` never says when a cap cut the answer.
 - **Promotion rule**: anything durable (a finding, a decision, a blocker) is promoted to its issue as a comment the moment it exists. `.workkit/` holds only in-flight session state; it is private per developer, so nobody else ever reads it. It is a routing stop, never a destination.
-- **`.workkit/` splits by owner**. Three things live there, beside two logs, and nothing else: `settings.json`, the tracked opt-in · `capture.md`, the ONE owner-editable file (§ Capture) · `agents/`, everything the agents maintain: `session.md`, the `docs:change-tracker` fingerprint, anything future. The logs are the kit's detached runs' own, the owner's and the agents' alike to read and neither's to write: `suite.log`, a root `npm test`'s output, and `ci.log`, the ship's CI watch's, each truncated per run and written there only where git ignores it. The boundary is structural rather than a convention: the owner writes above `agents/`, the agents write inside it, and the one file that crosses is `capture.md`, which an agent only ever CLEARS, during a triage run.
-- **Participation is a tri-state, split across the two settings files.** Only a real yes (or a deliberate project-level no) belongs in the repo; never-asked and declined are personal. A teammate reading `enabled: false` in a shared repo would take it for the project's decision when it was one developer undecided.
+- **`.workkit/` splits by owner**. Three things live there, beside two logs, and nothing else:
+  - `settings.json`, the tracked opt-in;
+  - `capture.md`, the ONE owner-editable file (§ Capture);
+  - `agents/`, everything the agents maintain: `session.md`, the `docs:change-tracker` fingerprint, anything future.
+  - The logs are the kit's detached runs' own, the owner's and the agents' alike to read and neither's to write:
+    - `suite.log`, a root `npm test`'s output;
+    - `ci.log`, the ship's CI watch's.
+    - Each is truncated per run and written there only where git ignores it.
+  - The boundary is structural rather than a convention: the owner writes above `agents/`, the agents write inside it.
+    - The one file that crosses is `capture.md`, which an agent only ever CLEARS, during a triage run.
+- **Participation is a tri-state, split across the two settings files.**
+  - Only a real yes (or a deliberate project-level no) belongs in the repo; never-asked and declined are personal.
+  - A teammate reading `enabled: false` in a shared repo would take it for the project's decision when it was one developer undecided.
 
 | Repo state | What happens |
 |---|---|
@@ -29,31 +42,88 @@
 | No committed file, or one with no `enabled` answer, and `repos["<absolute repo root>"] == "declined"` in the user file | Silent, forever |
 | The tower clone at `~/.workkit/tower` | Silent, always. It is engine territory: never offered, never healed, never registered, and `--enable` refuses it |
 
-  **A repo that is not a yes gets none of the hooks.** No workkit hook runs for it, the safety guards and the manager's included. Three run everywhere, since they speak to the machine: `workflow:standards`, the source of the setup reminder and the offer line above (its own gate keeps the heal to a yes), `workflow:reload-guard`, the restart notice, and `safety:issue-guard`, which the `gh` shim runs on every `gh` call, the owner's own included, to keep the machine's secrets out of every `gh` write. The guards that judge a commit or a `gh` write run where the real action is visible: the commit's in git's own `pre-commit` and `commit-msg` hooks on the staged tree and the message, the `gh` write's in the `gh` shim on the expanded argv, both behind one gate, a Claude session in a repo that is a yes (`wk_session_judges`: `workflow/README.md`, the `lib/participation.sh` row). Only three still read a command's text: `safety:tree-guard`, `safety:capture-guard` and `safety:release-taken`'s `npm publish` half. How a hook in the hooks module finds the repo it acts on: [`hooks.md`](hooks.md) § Where every hook stands down.
+- **A repo that is not a yes gets none of the hooks.** No workkit hook runs for it, the safety guards and the manager's included.
+  - Three run everywhere, since they speak to the machine:
+    - `workflow:standards`, the source of the setup reminder and the offer line above (its own gate keeps the heal to a yes);
+    - `workflow:reload-guard`, the restart notice;
+    - `safety:issue-guard`, which the `gh` shim runs on every `gh` call, the owner's own included, to keep the machine's secrets out of every `gh` write.
+  - The guards that judge a commit or a `gh` write run where the real action is visible:
+    - the commit's in git's own `pre-commit` and `commit-msg` hooks, on the staged tree and the message;
+    - the `gh` write's in the `gh` shim, on the expanded argv.
+    - Both sit behind one gate, a Claude session in a repo that is a yes (`wk_session_judges`: `workflow/README.md`, the `lib/participation.sh` row).
+  - Only four still read a command's text: `safety:tree-guard`, `safety:capture-guard`, `safety:release-taken`'s `npm publish` half and the `workflow:bare-call` notice.
+  - How a hook in the hooks module finds the repo it acts on: [`hooks.md`](hooks.md) § Where every hook stands down.
 
-  **Every heal runs.** Nothing in a repo records which heals it has had: every heal is idempotent, so each daily heal runs them all, and a `version` key an older kit left in `settings.json` is removed by it. What a heal must not decide alone, a retired file (`PROGRESS.md`, `INBOX.md`, `TODO.md`, `plans/`) or a CHANGELOG history outside the entry format, is the `workkit:migrate` skill's to find and move, on request: deleting a retired file deletes work items nobody migrated, and rewriting CHANGELOG prose needs judgment. Both are a human's call.
+- **Every heal runs.** Nothing in a repo records which heals it has had.
+  - Every heal is idempotent, so each daily heal runs them all.
+  - A `version` key an older kit left in `settings.json` is removed by it.
+  - What a heal must not decide alone is the `workkit:migrate` skill's to find and move, on request:
+    - a retired file (`PROGRESS.md`, `INBOX.md`, `TODO.md`, `plans/`);
+    - a CHANGELOG history outside the entry format.
+  - Deleting a retired file deletes work items nobody migrated, and rewriting CHANGELOG prose needs judgment. Both are a human's call.
 
-  Both answers are deliberate commands, never a hook's doing: `workkit enable [repo]` writes the committed `{ "enabled": true }` and then heals; `workkit decline [repo]` records the repo under `repos` in `~/.workkit/.repos.json` (writing only that key, leaving every other key and value intact). The gitignore pattern in a participating repo is two lines: `.workkit/*` then `!.workkit/settings.json`.
+- Both answers are deliberate commands, never a hook's doing:
+  - `workkit enable [repo]` writes the committed `{ "enabled": true }` and then heals;
+  - `workkit decline [repo]` records the repo under `repos` in `~/.workkit/.repos.json`, writing only that key and leaving every other key and value intact.
+- The gitignore pattern in a participating repo is two lines: `.workkit/*` then `!.workkit/settings.json`.
 
-  **Every key has its default in the kit.** `defaults/settings.json` holds every setting below with its default value, and every reader sees one merged view: the kit's defaults, then `~/.workkit/settings.json`, then the repo's `.workkit/settings.json`, key by key, the more specific layer winning. A `null` in a higher layer, or a value that is no object where the lower layer holds an object, leaves the lower layer's value, an array replaces rather than appends, and a layer that is absent or does not parse adds nothing to the view, the standards heal warning while either file is broken. Most readers then skip the broken layer; three do not: the token client refuses a machine file that is no JSON object, or whose `identity` is set aside, rather than fall back to the hosted service, the qa flip names every fault in the repo's own file and under `proof`, and the ship hooks run nothing from a repo file that is no JSON object or a `hooks` set aside in any layer; `enabled` alone is the repo file's (the table above). The kit's defaults missing or not parsing is an error naming the file, never a silent fallback. The readers: `loadSettings` in `hooks/mods/settings.js` for Node, `wk_setting` in `workflow/lib/participation.sh` for the shell.
+- **Every key has its default in the kit.** `defaults/settings.json` holds every setting below with its default value.
+  - Every reader sees one merged view: the kit's defaults, then `~/.workkit/settings.json`, then the repo's `.workkit/settings.json`.
+    - The merge goes key by key, the more specific layer winning.
+  - A `null` in a higher layer leaves the lower layer's value.
+    - So does a value that is no object where the lower layer holds an object.
+  - An array replaces rather than appends.
+  - A layer that is absent or does not parse adds nothing to the view, the standards heal warning while either file is broken.
+  - Most readers then skip the broken layer; three do not:
+    - the token client refuses a machine file that is no JSON object, or whose `identity` is set aside, rather than fall back to the hosted service;
+    - the qa flip names every fault in the repo's own file and under `proof`;
+    - the ship hooks run nothing from a repo file that is no JSON object, or from a `hooks` set aside in any layer.
+  - `enabled` alone is the repo file's (the table above).
+  - The kit's defaults missing or not parsing is an error naming the file, never a silent fallback.
+  - The readers: `loadSettings` in `hooks/mods/settings.js` for Node, `wk_setting` in `workflow/lib/participation.sh` for the shell.
 
-  **Other systems may add their own key.** The top-level key above (`enabled`), `public` (the paired public issue repo: § Capture), `proof` (its `rootOnly`, the packages the root run alone proves: § The proof), `tests` (its `budget`, the minutes a root run may take: [`tests.md`](tests.md) § The budget) and `hooks` (the ship hooks, the commands its `afterRelease`, `afterPublish` and `afterDeploy` arrays name for `workkit ship cut`, `publish` and `deploy` to run once their step succeeds, in a repo whose file says `"enabled": true`, an entry marked `"local": true` skipped in a cloud session: `workflow/README.md`, the `ship/hooks.js` row; an `afterRelease` hook must be idempotent, since the ship's no-commit path reruns `workkit ship cut` for a version already released, and so reruns every `afterRelease` hook; and its `ciSetup`, the repo's own CI setup, which the ship never runs: § The system works without the harness) belong to this spec; a separate system claims a separate key and leaves them alone. The one in use today is `manager`, the manager system's `mode`, model `tiers` and an `enabled` of its own, defaults in the same file, a Claude-harness concern documented in [`hooks.md`](hooks.md) § `manager:resolver`, with no effect on the issue workflow. The kit's defaults file also holds the machine's `site` options and `identity.tokenUrl` (§ The global layer).
+- **Other systems may add their own key.** These keys belong to this spec:
+  - the top-level key above (`enabled`);
+  - `public`, the paired public issue repo (§ Capture);
+  - `proof`, its `rootOnly`: the packages the root run alone proves (§ The proof);
+  - `tests`, its `budget`: the minutes a root run may take ([`tests.md`](tests.md) § The budget);
+  - `hooks`, the ship hooks: the commands its `afterRelease`, `afterPublish` and `afterDeploy` arrays name, for `workkit ship cut`, `publish` and `deploy` to run once their step succeeds.
+    - They run in a repo whose file says `"enabled": true`, an entry marked `"local": true` skipped in a cloud session (`workflow/README.md`, the `ship/hooks.js` row).
+    - An `afterRelease` hook must be idempotent. The ship's no-commit path reruns `workkit ship cut` for a version already released, and so reruns every `afterRelease` hook.
+    - `hooks` also holds its `ciSetup`, the repo's own CI setup, which the ship never runs (§ The system works without the harness).
+  - A separate system claims a separate key and leaves them alone.
+  - The one in use today is `manager`: the manager system's `mode`, model `tiers` and an `enabled` of its own, defaults in the same file.
+    - It is a Claude-harness concern documented in [`hooks.md`](hooks.md) § `manager:resolver`, with no effect on the issue workflow.
+  - The kit's defaults file also holds the machine's `site` options and `identity.tokenUrl` (§ The global layer).
 - **Rulings split by scope**: project doctrine → `AGENTS.md`/`docs/`; per-item calls → a comment on that issue.
 
 ## Repo docs (AGENTS.md, no CLAUDE.md)
 
-Repo instructions live in `AGENTS.md` (provider-agnostic), and a repo carries no `CLAUDE.md`: Claude Code reads `AGENTS.md` natively (v2.1.277 and later), and a project `CLAUDE.md` blocks that read. A new repo gets `AGENTS.md` alone. A repo `CLAUDE.md` is healed on contact, never by a bulk sweep, by its shape:
+- Repo instructions live in `AGENTS.md` (provider-agnostic), and a repo carries no `CLAUDE.md`.
+  - Claude Code reads `AGENTS.md` natively (v2.1.277 and later), and a project `CLAUDE.md` blocks that read.
+- A new repo gets `AGENTS.md` alone.
+- A repo `CLAUDE.md` is healed on contact, never by a bulk sweep, by its shape:
+
 1. **Pointer only** (its one meaningful line is `@AGENTS.md`): delete it.
 2. **Content, no `AGENTS.md` beside it**: rename it with `git mv CLAUDE.md AGENTS.md`, which keeps its history.
 3. **Content beside an `AGENTS.md`**: merge it into `AGENTS.md` by hand, then delete it. Never merged automatically.
 
-The user-level `~/.claude/CLAUDE.md` is out of scope: it is no repo file, and Claude Code documents no global `AGENTS.md`, so that pointer stays. `docs:state-check` names the fix at session start; making it stays the agent's.
+- The user-level `~/.claude/CLAUDE.md` is out of scope: it is no repo file, and Claude Code documents no global `AGENTS.md`, so that pointer stays.
+- `docs:state-check` names the fix at session start; making it stays the agent's.
 
-`AGENTS.md` stays ≤250 lines AND carries no line over 400 BYTES. It is the architectural overview; deep references live in `docs/<topic>.md` and AGENTS.md points at them. The DENSITY half is the second budget: a markdown paragraph is one source line, so a line count alone passes a file carrying a book. The unit is bytes, pinned there (`LC_ALL=C`) so one measurement holds on every machine. Both halves are enforced at write time by the `docs:board-guard` hook and announced at session start by `docs:state-check`, which read one set of limits.
+- `AGENTS.md` stays ≤250 lines AND carries no line over 400 BYTES.
+  - It is the architectural overview; deep references live in `docs/<topic>.md` and AGENTS.md points at them.
+  - The DENSITY half is the second budget: a markdown paragraph is one source line, so a line count alone passes a file carrying a book.
+  - The unit is bytes, pinned there (`LC_ALL=C`) so one measurement holds on every machine.
+  - Both halves are enforced at write time by the `docs:board-guard` hook and announced at session start by `docs:state-check`, which read one set of limits.
 
 ## Labels: the universal state machine
 
-**Every label is `group:value`.** Values are single lowercase words, never hyphenated. The set is identical in every participating repo. The machine SSOT is `~/.claude/workkit/labels.json` (groups, values, descriptions, colors, and each group's `exclusive`/`required` rules); the standards script creates the labels from it AND writes each label's GitHub description from it, so `gh label list` teaches the vocabulary to any human or agent with no harness at all.
+- **Every label is `group:value`.** Values are single lowercase words, never hyphenated.
+  - The set is identical in every participating repo.
+  - The machine SSOT is `~/.claude/workkit/labels.json` (groups, values, descriptions, colors, and each group's `exclusive`/`required` rules).
+  - The standards script creates the labels from it AND writes each label's GitHub description from it.
+    - So `gh label list` teaches the vocabulary to any human or agent with no harness at all.
 
 | Label | Meaning |
 |---|---|
@@ -67,14 +137,32 @@ The user-level `~/.claude/CLAUDE.md` is out of scope: it is no repo file, and Cl
 | `type:bug` · `type:enhancement` · `type:idea` | What kind of thing it is, exactly one per open issue, like `status:`. Applied by the issue templates at capture (a dump is `type:idea`); rarely changes. (Native GitHub issue types are org-only, so labels carry this.) |
 | `priority:high` · `priority:low` | Order within the queue. **Absence = normal**. There is no `priority:normal` label. |
 | `agent:ok` | An agent may work this issue autonomously at every stage, the ship included: the owner's gate, exercised in advance at labeling time. Absence means humans only. |
-| `agent:claimed` | The claim: an agent has this issue. The agent applies it in the edit that moves the issue to `status:building`, comments `Claimed by workkit-agent[bot] for @<login>'s session.`, and removes it at release. The claim covers `status:building` (and an `agent:ok` pass-through until its ship close): a block releases it, `agent:claimed` coming off in the flip to `status:blocked` since the agent now waits on a human, and the answered issue is claimed again from `status:specced`. The assignee is a person's mark, never the claim: the bot that posts the agent's bookkeeping cannot be an assignee. The standards heal flips a `status:specced` issue carrying it to `status:building`, and releases a claim idle for 24 hours. |
+| `agent:claimed` | The claim: an agent has this issue. |
 
+- **`agent:claimed`**, the claim in full:
+  - The agent applies it in the edit that moves the issue to `status:building`, comments `Claimed by workkit-agent[bot] for @<login>'s session.`, and removes it at release.
+  - The claim covers `status:building`, and an `agent:ok` pass-through until its ship close.
+  - A block releases it: `agent:claimed` comes off in the flip to `status:blocked`, since the agent now waits on a human.
+    - The answered issue is claimed again from `status:specced`.
+  - The assignee is a person's mark, never the claim: the bot that posts the agent's bookkeeping cannot be an assignee.
+  - The standards heal flips a `status:specced` issue carrying it to `status:building`, and releases a claim idle for 24 hours.
 - **Exactly one `status:` label per open issue.** Every relabel removes the old one in the same command: `gh issue edit <N> --remove-label status:inbox --add-label status:specced`.
 - The four groups are orthogonal and compose: `status:specced` + `priority:high` + `agent:ok` on one issue is legal and means exactly what it says.
 - `area:*` is deliberately NOT bootstrapped. It is project-specific; a repo adds its own if it wants one. Adopt a group deliberately, never speculatively.
-- **A label rename is applied once, at rename time.** Moving every issue off a retired label (open and closed) and deleting it is the job of the rename itself, done by hand or by a one-off sweep. No standing code in the heal carries old vocabulary forward; `labels.json` describes the vocabulary as it is now.
+- **A label rename is applied once, at rename time.**
+  - Moving every issue off a retired label (open and closed) and deleting it is the job of the rename itself.
+  - It is done by hand or by a one-off sweep.
+  - No standing code in the heal carries old vocabulary forward; `labels.json` describes the vocabulary as it is now.
 
-**The statuses read as a PIPELINE**, intent to implemented: `status:inbox` → `status:specced` → `status:building` (build → verify) → `status:qa` (waiting on the check: the owner's, or the agent's own under `agent:ok`) → `status:complete` (the check passed) → closed against the CHANGELOG entry, with `blocked` and `backlog` as side pockets. An answered `blocked` issue rejoins at `status:specced`, a revived `backlog` one re-enters triage. The flip to `building` happens the moment work starts, and it carries the claim: `agent:claimed` goes on in the same edit, and the status label is what makes in-flight work visible on a board. No stage label comes off by hand: the flip to `qa` is mechanical, the flip to `complete` is the owner's verdict, and the ship close ends whichever one the issue is carrying.
+- **The statuses read as a PIPELINE**, intent to implemented:
+  - `status:inbox` → `status:specced` → `status:building` (build → verify) → `status:qa` (waiting on the check: the owner's, or the agent's own under `agent:ok`) → `status:complete` (the check passed) → closed against the CHANGELOG entry.
+  - `blocked` and `backlog` are side pockets. An answered `blocked` issue rejoins at `status:specced`, a revived `backlog` one re-enters triage.
+  - The flip to `building` happens the moment work starts, and it carries the claim: `agent:claimed` goes on in the same edit.
+    - The status label is what makes in-flight work visible on a board.
+  - No stage label comes off by hand:
+    - the flip to `qa` is mechanical;
+    - the flip to `complete` is the owner's verdict;
+    - the ship close ends whichever one the issue is carrying.
 
 ```mermaid
 %%{init: {"flowchart": {"curve": "linear"}}}%%
@@ -100,86 +188,305 @@ flowchart TB
     Ship --> Closed([closed])
 ```
 
-The one gate is the flip from `inbox` to `specced`, and it is a deliberate act: it says the `## Spec` is written, it is accepted, and building this is now authorized. Nobody flips it casually. A small item is specced the moment someone accepts it with the literal Spec `None needed: small item.`; a large one is specced when its implementation layer and its `### Contract` are written and accepted. "Accepted but not yet specced" is deliberately NOT a visible stage. It stays `status:inbox`, with a triage comment or a `priority:` label carrying that signal. The `workkit:feature` skill refuses to build an issue that is not `status:specced`. The road is drawn above; the crew that works it is drawn in [`agents.md`](agents.md) § Classes.
+- The one gate is the flip from `inbox` to `specced`, and it is a deliberate act. Nobody flips it casually.
+  - It says the `## Spec` is written, it is accepted, and building this is now authorized.
+  - A small item is specced the moment someone accepts it with the literal Spec `None needed: small item.`
+  - A large one is specced when its implementation layer and its `### Contract` are written and accepted.
+  - "Accepted but not yet specced" is deliberately NOT a visible stage.
+    - It stays `status:inbox`, with a triage comment or a `priority:` label carrying that signal.
+  - The `workkit:feature` skill refuses to build an issue that is not `status:specced`.
+- The road is drawn above; the crew that works it is drawn in [`agents.md`](agents.md) § Classes.
 
-**The qa stage is where a built item waits for its check**. EVERY item parks at `status:qa` when it is built. The label means "built, WAITING on the check", and what varies is WHO performs that check: the owner normally, the agent itself on an `agent:ok` issue, which is what that grant means. What checking looks like varies per item too: a visual pass on one, reading the diff and the verification comment on another. A passing check does not ship the item, it moves it one stage on, to `status:complete`, the stage a ship reads from.
+- **The qa stage is where a built item waits for its check**. EVERY item parks at `status:qa` when it is built.
+  - The label means "built, WAITING on the check", and what varies is WHO performs that check.
+    - The owner normally, the agent itself on an `agent:ok` issue, which is what that grant means.
+  - What checking looks like varies per item too: a visual pass on one, reading the diff and the verification comment on another.
+  - A passing check does not ship the item. It moves it one stage on, to `status:complete`, the stage a ship reads from.
 
-- **The park.** Build done, tests green, review passed → the work STAYS IN THE WORKING TREE, uncommitted until the owner's pass (`safety:commit-gate` check 7 bounces a commit naming an open issue that is not at `status:complete`) → the agent flips `building` → `qa` and comments naming what to check and where. That flip is MECHANICAL: no human moves a status, and the agent never asks in chat whether to ship. It releases `agent:claimed` in the same edit (the agent is done and the wait is the owner's, and a claim left standing is swept as stale after 24 idle hours); the work stays in that tree, and `status:qa` is what says so. On an `agent:ok` pass-through the claim HOLDS through the park: the agent is still working, its own check comes next, and the ship close is what releases the labels.
+- **The park.** Build done, tests green, review passed → the work STAYS IN THE WORKING TREE, uncommitted until the owner's pass.
+  - `safety:commit-gate` check 7 bounces a commit naming an open issue that is not at `status:complete`.
+  - Then the agent flips `building` → `qa` and comments naming what to check and where.
+  - That flip is MECHANICAL: no human moves a status, and the agent never asks in chat whether to ship.
+  - It releases `agent:claimed` in the same edit: the agent is done and the wait is the owner's.
+    - A claim left standing is swept as stale after 24 idle hours.
+  - The work stays in that tree, and `status:qa` is what says so.
+  - On an `agent:ok` pass-through the claim HOLDS through the park.
+    - The agent is still working, its own check comes next, and the ship close is what releases the labels.
 - **The proof**. Tests green means green at every layer the change has a surface on:
   - unit: known inputs.
   - integration: the pieces together, real where they can run real.
   - end to end: the user's own path through the real surface. Its unit is a FLOW, not an issue: one path a person takes, happy or sad. A park names the flows that cover the change; a flow that already exists is named, not rewritten.
   - A layer is skipped only when the change has no surface there, and the skip is said.
-  - The park comment opens with a `Proof:` line: one entry per layer, the command or the skip reason, and beside the layers the red-proof entry. A pair build names its run, the `workkit proof red` line the group's verifier printed (`agents.md` § Crew sizing); a group with no test surface (docs, skills, agent files, issue forms) records `red-proof: none (no test surface)`, its verifier having skipped the red proof and said so; an edit the manager made alone records `red-proof: none (manager edit)`.
-  - No `Proof:` line means not built, and that is a HARD GATE. A missing line blocks three things: the flip to `status:complete`, the close, and the `Fixes #N` trailer that closes it from a commit. The `safety:proof-guard` hook holds the first two and `safety:commit-gate` check 6 holds the third, both off one read of the issue's comments. The tower Board's own move of a card to Complete applies the same gate off the same read, on the machine and in a published copy alike, so the flip is proved whichever door it comes through.
-  - The line is written at the PARK, by the agent that built the item, from the layers it actually ran (`workkit:feature` § 6). Never invented at ship time, and never written on the owner's behalf. The SHIP still LISTS every item at `status:qa` or `status:complete` carrying no such line, since a spoken pass reaches `complete` with nothing written down, but the call there is now a hold, never "include as is": nothing without the line completes, closes, or ships.
+  - The park comment opens with a `Proof:` line: one entry per layer, the command or the skip reason, and beside the layers the red-proof entry.
+    - A pair build names its run, the `workkit proof red` line the group's verifier printed (`agents.md` § Crew sizing).
+    - A group with no test surface (docs, skills, agent files, issue forms) records `red-proof: none (no test surface)`, its verifier having skipped the red proof and said so.
+    - An edit the manager made alone records `red-proof: none (manager edit)`.
+  - No `Proof:` line means not built, and that is a HARD GATE.
+    - A missing line blocks three things: the flip to `status:complete`, the close, and the `Fixes #N` trailer that closes it from a commit.
+    - The `safety:proof-guard` hook holds the first two and `safety:commit-gate` check 6 holds the third, both off one read of the issue's comments.
+    - The tower Board's own move of a card to Complete applies the same gate off the same read, on the machine and in a published copy alike.
+    - So the flip is proved whichever door it comes through.
+  - The line is written at the PARK, by the agent that built the item, from the layers it actually ran (`workkit:feature` § 6).
+    - Never invented at ship time, and never written on the owner's behalf.
+    - The SHIP still LISTS every item at `status:qa` or `status:complete` carrying no such line, since a spoken pass reaches `complete` with nothing written down.
+    - But the call there is now a hold, never "include as is": nothing without the line completes, closes, or ships.
   - Each repo's `AGENTS.md` names its own lane per layer.
-  - The kit never runs a test of its own: every run it starts is the package's `npm test`, whole or narrowed, and that is the only test command. Bare, it is that package's whole suite; with arguments (`npm test -- <what>`) it is narrowed, and the package's runner decides what the arguments mean. A repo's root `test` script is the whole definition of its tests; a nested package's suite is that script's job. A tree is proved by running `npm test` at the repo root, by anyone (the owner in a terminal, the agent, a background run): the shell records the tree it proved, and the gate checks the record. Every tree id a record is keyed to (the working tree's, a package's own, the index's) is the tree with `.workkit/` left out, so a write there (the suite log, a marker, `settings.json`) never re-keys a green record. The shell is npm's `script-shell`, which `workkit setup` points at the kit's wrapper; a green root run records the tree it started on, and a run that changed the tree records nothing. The wrapper first runs the gate's cheap check, the CHANGELOG format over every modified `CHANGELOG.md`, so a bad entry stops the run before the suite starts. The suite then runs in its own session, its output written to `.workkit/suite.log` as well as the terminal: a kill of the shell that started it (an agent tool's time limit) leaves it running to its record, and the agent reads the log for the result, its last line `script-shell: exit <code>`. A Ctrl-C still ends it, and a second root `npm test` while one runs starts nothing, naming the log. The record is the engine-agnostic contract and the wrapper is npm's adapter; another engine proves a tree through an adapter of its own that writes the same record. The commit gate never runs tests: a commit carrying code passes when the record proves the index's tree and is blocked otherwise, naming `npm test` at the repo root and its log as the fix, and a docs-only or version-stamp-only commit needs no record. In a Claude session the wrapper holds a bare root run before anything else (the full-suite hold, `workflow/lib/hold.sh`), in a repo that opted in and unless `HOOK_DISABLE=1`; the owner's terminal is never held. It refuses a tree already recorded green, so the full suite runs once per tree, before the commit. That one run comes after every item in the tree is parked and passed: the hold refuses a root run while any open issue of the repo is at `status:building`, never keyed on `agent:claimed`, since an `agent:ok` item keeps that claim through the park. Each run is judged by the root it runs in, so a run in another repo is that repo's to hold, and a repo that never opted in is never held. The kit's own CI runs the root suite on a push to `main` as well, except a release push, whose every change is the CHANGELOG or a version stamp by the commit gate's version-only rule (its code the work commit's run proved; `.github/scripts/release-push.sh` decides it), and a tag push. Every class, the manager included, still runs only the narrowest test that proves the change while touching a feature, `npm test -- <files>` from that package's folder, never the batch's whole touched set: the test files touched by the edit it made or checks, and the one who made the edit also runs the suite of every module that requires a changed file (its importers, found by one grep of the package's source per changed file for its basename); a verifier runs the narrowest command that checks the claim.
-  - When the folder holds work the commit leaves out, `workkit prove` proves the staged tree instead: it runs the root suite in a throwaway copy of the index outside the repo and, on green, records the index's tree, so held work stays in the folder and neither the folder nor the index changes. The commit gate's bounce names it for exactly that state, and the ship picks it after staging when the index differs from the disk, untracked files included (`git diff --quiet` fails, or `git ls-files --others --exclude-standard` prints a file), so the whole-folder run never starts there. It shares the root run's log and lock (one full run at a time, its output in the same suite log, its last line `prove: exit <code>`), and the same hold judges it first, against the index's tree: once per tree, and never while an issue is building.
-  - Whether a change needs a test, and whether a test earns its place, stay judgment, nudged at edit time and never bounced: `safety:test-reminder` asks once per file when no test names the written code file, a "no" recorded in the `Proof:` line, and `safety:test-bar` names each line of a written test file that misses the mechanical half of the test bar (`docs/tests.md` § The bar).
-  - `safety:proof-guard` owns the per-feature check at the park, and it runs nothing. At the flip to `status:qa`, each package that owns a touched test file (the nearest folder at or above the file with a test script of its own, else the root) must have a green `npm test` run recorded on its own id (below), whole or narrowed; a green whole root run on this exact tree covers every package. A missing record blocks the park, listing each such package with its touched files as a hint, and asking for that package's own tests, run from its folder and narrowed to those files in the path form its runner takes. A touched test file whose package has no test script (the root included) is named as not provable and never required, and the other packages are still checked. A package whose own `npm test` cannot run outside the root battery (one that boots an emulator, say) is declared in `.workkit/settings.json` as `"proof": { "rootOnly": ["<folder>"] }` (`.` for the root): the park needs no record for it, and the root run before the commit is its proof. npm's script shell is the one writer of the package record, and the suite record keeps its two writers, the script shell and `workkit prove`: a green bare root run writes the suite record, and every other green `test` run (narrowed anywhere, or a nested package's bare run) writes the package record, one line per package folder on that package's own id: the code it can see (the rule: [`hooks.md`](hooks.md) § `safety:proof-guard`, the record paragraph). A run that changed its id records nothing, so the packages a batch touched are run on the tree it parks, and an edit reruns only the packages that can see it.
-- **The drift questions**. The blind verification that precedes the park asks three questions past the brief it verified: parity, the changed files' siblings on the other surfaces; duplicates, every other site of anything hand-typed the diff adds, found by grep rather than by memory; docs, the ones the change made stale and whether the diff updated them. The wording is the `workkit:verifier` agent's § Behavior, and they are asked per group, each group's verifier over its group's diff; the batch's one `workkit:review` panel carries the check across groups through its Parity lens. The wider pass is the ship's, where `workkit:review` reads the whole ship diff, light when the full-panel review marker already covers it (`workkit:ship` step 3.2b).
-- **The pass**. A check that PASSES flips `qa` → `complete` and lands a comment naming who passed it and when ("QA passed by @<login>, <date>"); the agent's session notes record it too. Wherever a bot comment credits or quotes the owner, it names them by handle, the login the sign-in status reports (`identity/token.js --status`, what `workkit doctor` prints as `identity: signed in as @<login>`), never in plain text. The verdict is the OWNER'S, exactly like `agent:ok`. An agent never applies it on their behalf, and only their explicit word moves the label. On an `agent:ok` issue the agent's own passing check IS that word: it flips the label itself, comments the same way, and ships in the same run. The stage exists so "checked and good to go" is queryable at a glance, however long the gap between the check and the ship.
-- **The nod.** The owner's word ("ship", or `/workkit:ship`) runs the normal ship over the `status:complete` items: the CHANGELOG move, the commit, and the close of each issue against its entry, which releases the label. Nothing else ends a complete stage.
+  - The kit never runs a test of its own: every run it starts is the package's `npm test`, whole or narrowed, and that is the only test command.
+    - Bare, it is that package's whole suite.
+    - With arguments (`npm test -- <what>`) it is narrowed, and the package's runner decides what the arguments mean.
+    - A repo's root `test` script is the whole definition of its tests; a nested package's suite is that script's job.
+  - A tree is proved by running `npm test` at the repo root, by anyone (the owner in a terminal, the agent, a background run).
+    - The shell records the tree it proved, and the gate checks the record.
+    - Every tree id a record is keyed to (the working tree's, a package's own, the index's) is the tree with `.workkit/` left out.
+    - So a write there (the suite log, a marker, `settings.json`) never re-keys a green record.
+  - The shell is npm's `script-shell`, which `workkit setup` points at the kit's wrapper.
+    - A green root run records the tree it started on, and a run that changed the tree records nothing.
+    - The wrapper first runs the gate's cheap check, the CHANGELOG format over every modified `CHANGELOG.md`. So a bad entry stops the run before the suite starts.
+    - The suite then runs in its own session, its output written to `.workkit/suite.log` as well as the terminal.
+    - A kill of the shell that started it (an agent tool's time limit) leaves it running to its record.
+    - The agent reads the log for the result, its last line `script-shell: exit <code>`.
+    - A Ctrl-C still ends it, and a second root `npm test` while one runs starts nothing, naming the log.
+  - The record is the engine-agnostic contract and the wrapper is npm's adapter.
+    - Another engine proves a tree through an adapter of its own that writes the same record.
+  - The commit gate never runs tests.
+    - A commit carrying code passes when the record proves the index's tree.
+    - It is blocked otherwise, naming `npm test` at the repo root and its log as the fix.
+    - A docs-only or version-stamp-only commit needs no record.
+  - In a Claude session the wrapper holds a bare root run before anything else (the full-suite hold, `workflow/lib/hold.sh`).
+    - It holds in a repo that opted in and unless `HOOK_DISABLE=1`; the owner's terminal is never held.
+    - It refuses a tree already recorded green, so the full suite runs once per tree, before the commit.
+    - That one run comes after every item in the tree is parked and passed.
+    - The hold refuses a root run while any open issue of the repo is at `status:building`.
+      - It is never keyed on `agent:claimed`, since an `agent:ok` item keeps that claim through the park.
+    - Each run is judged by the root it runs in. So a run in another repo is that repo's to hold, and a repo that never opted in is never held.
+  - The kit's own CI runs the root suite on a push to `main` as well, with two exceptions:
+    - a release push, whose every change is the CHANGELOG or a version stamp by the commit gate's version-only rule (its code the work commit's run proved; `.github/scripts/release-push.sh` decides it);
+    - a tag push.
+  - Every class, the manager included, still runs only the narrowest test that proves the change while touching a feature.
+    - That is `npm test -- <files>` from that package's folder, never the batch's whole touched set: the test files touched by the edit it made or checks.
+    - The one who made the edit also runs the suite of every module that requires a changed file.
+      - Those are its importers, found by one grep of the package's source per changed file for its basename.
+    - A verifier runs the narrowest command that checks the claim.
+  - When the folder holds work the commit leaves out, `workkit prove` proves the staged tree instead.
+    - It runs the root suite in a throwaway copy of the index outside the repo and, on green, records the index's tree.
+    - So held work stays in the folder, and neither the folder nor the index changes.
+    - The commit gate's bounce names it for exactly that state.
+    - The ship picks it after staging when the index differs from the disk, untracked files included. So the whole-folder run never starts there.
+      - The test: `git diff --quiet` fails, or `git ls-files --others --exclude-standard` prints a file.
+    - It shares the root run's log and lock: one full run at a time, its output in the same suite log, its last line `prove: exit <code>`.
+    - The same hold judges it first, against the index's tree: once per tree, and never while an issue is building.
+  - Whether a change needs a test, and whether a test earns its place, stay judgment, nudged at edit time and never bounced:
+    - `safety:test-reminder` asks once per file when no test names the written code file, a "no" recorded in the `Proof:` line;
+    - `safety:test-bar` names each line of a written test file that misses the mechanical half of the test bar (`docs/tests.md` § The bar).
+  - `safety:proof-guard` owns the per-feature check at the park, and it runs nothing.
+    - At the flip to `status:qa`, each package that owns a touched test file must have a green `npm test` run recorded on its own id (below), whole or narrowed.
+      - The package that owns a file is the nearest folder at or above the file with a test script of its own, else the root.
+    - A green whole root run on this exact tree covers every package.
+    - A missing record blocks the park, listing each such package with its touched files as a hint.
+      - It asks for that package's own tests, run from its folder and narrowed to those files in the path form its runner takes.
+    - A touched test file whose package has no test script (the root included) is named as not provable and never required. The other packages are still checked.
+    - A package whose own `npm test` cannot run outside the root battery (one that boots an emulator, say) is declared in `.workkit/settings.json`.
+      - The form is `"proof": { "rootOnly": ["<folder>"] }`, with `.` for the root.
+      - The park needs no record for it, and the root run before the commit is its proof.
+    - npm's script shell is the one writer of the package record. The suite record keeps its two writers, the script shell and `workkit prove`.
+      - A green bare root run writes the suite record.
+      - Every other green `test` run (narrowed anywhere, or a nested package's bare run) writes the package record.
+      - That is one line per package folder, on that package's own id: the code it can see.
+      - The rule: [`hooks.md`](hooks.md) § `safety:proof-guard`, the package id bullet.
+    - A run that changed its id records nothing.
+      - So the packages a batch touched are run on the tree it parks, and an edit reruns only the packages that can see it.
+- **The drift questions**. The blind verification that precedes the park asks three questions past the brief it verified:
+  - parity: the changed files' siblings on the other surfaces;
+  - duplicates: every other site of anything hand-typed the diff adds, found by grep rather than by memory;
+  - docs: the ones the change made stale, and whether the diff updated them.
+  - The wording is the `workkit:verifier` agent's § Behavior.
+  - They are asked per group, each group's verifier over its group's diff.
+  - The batch's one `workkit:review` panel carries the check across groups through its Parity lens.
+  - The wider pass is the ship's, where `workkit:review` reads the whole ship diff.
+    - It is light when the full-panel review marker already covers it (`workkit:ship` step 3.2b).
+- **The pass**. A check that PASSES flips `qa` → `complete` and lands a comment naming who passed it and when ("QA passed by @<login>, <date>").
+  - The agent's session notes record it too.
+  - Wherever a bot comment credits or quotes the owner, it names them by handle, never in plain text.
+    - The handle is the login the sign-in status reports (`identity/token.js --status`, what `workkit doctor` prints as `identity: signed in as @<login>`).
+  - The verdict is the OWNER'S, exactly like `agent:ok`. An agent never applies it on their behalf, and only their explicit word moves the label.
+  - On an `agent:ok` issue the agent's own passing check IS that word: it flips the label itself, comments the same way, and ships in the same run.
+  - The stage exists so "checked and good to go" is queryable at a glance, however long the gap between the check and the ship.
+- **The nod.** The owner's word ("ship", or `/workkit:ship`) runs the normal ship over the `status:complete` items:
+  - the CHANGELOG move;
+  - the commit;
+  - the close of each issue against its entry, which releases the label.
+  - Nothing else ends a complete stage.
 - **A failed check** is fixed in place and re-commented on the same issue. The label does not move; qa is where the item stays until it passes.
-- **An item still at qa survives a ship untouched**. Its issue stays open and its `[Unreleased]` entry stays where it is. Its code sits in the same shared tree, though, so it rides the commit as code only and the ship LISTS it, never asks about it. That is allowed because the commit gate reads only the issues a message NAMES: the ship names none of the qa items, so their code can ride while their issues stay open at qa. The owner's ship sentence can name qa items ("ship all items in qa", "ship 210 211"): that sentence is their pass, quoted on each issue with the flip to `complete`, and that ship carries them. A bare "ship" with nothing at `complete` ships nothing and says so. File-level hold mechanics (shipping around un-passed work) are deliberately out of scope.
-- **The tree holds unshipped work while a batch sits in qa**, and the next batch builds on top of it: a parked batch is no reason to wait (`docs/agents.md` § Batches), and the one hold is the full-suite hold's while an issue is building. A batch's items park together in the same tree once its one review panel and fix round are done, and the commit word comes once, when the whole batch is parked. That is the accepted cost of the simple version: no branches, no PRs, no worktrees, no previews. Parking the work on a branch instead is a later upgrade under the same label: the label and its meaning never change, only the parking mechanics, and nothing migrates when it lands.
-- **Ship authorization**: nothing ships without the owner's word, and THE WORD IS THE PERMISSION: "ship" in chat or `/workkit:ship` authorizes that run, with no follow-up permission prompt and no re-asking (harness-level git prompts were considered and rejected). A passing mention ("we'll ship this later") is not the word. `agent:ok` is the one exception, granted per issue in advance.
+- **An item still at qa survives a ship untouched**. Its issue stays open and its `[Unreleased]` entry stays where it is.
+  - Its code sits in the same shared tree, though, so it rides the commit as code only. The ship LISTS it, never asks about it.
+  - That is allowed because the commit gate reads only the issues a message NAMES.
+    - The ship names none of the qa items, so their code can ride while their issues stay open at qa.
+  - The owner's ship sentence can name qa items ("ship all items in qa", "ship 210 211").
+    - That sentence is their pass, quoted on each issue with the flip to `complete`, and that ship carries them.
+  - A bare "ship" with nothing at `complete` ships nothing and says so.
+  - File-level hold mechanics (shipping around un-passed work) are deliberately out of scope.
+- **The tree holds unshipped work while a batch sits in qa**, and the next batch builds on top of it.
+  - A parked batch is no reason to wait (`docs/agents.md` § Batches).
+  - The one hold is the full-suite hold's, while an issue is building.
+  - A batch's items park together in the same tree once its one review panel and fix round are done.
+  - The commit word comes once, when the whole batch is parked.
+  - That is the accepted cost of the simple version: no branches, no PRs, no worktrees, no previews.
+  - Parking the work on a branch instead is a later upgrade under the same label.
+    - The label and its meaning never change, only the parking mechanics, and nothing migrates when it lands.
+- **Ship authorization**: nothing ships without the owner's word, and THE WORD IS THE PERMISSION.
+  - "ship" in chat or `/workkit:ship` authorizes that run, with no follow-up permission prompt and no re-asking.
+    - Harness-level git prompts were considered and rejected.
+  - A passing mention ("we'll ship this later") is not the word.
+  - `agent:ok` is the one exception, granted per issue in advance.
 
 ## Capture
 
-Three surfaces, all converging on issues. There is no store outside a participating repo: the capture that belongs to no project is filed straight onto the home repo as a `status:inbox` issue.
+- Three surfaces, all converging on issues.
+- There is no store outside a participating repo: the capture that belongs to no project is filed straight onto the home repo as a `status:inbox` issue.
 
-1. **Issue templates** (`.github/ISSUE_TEMPLATE/`: bug · enhancement · idea · dump): markdown templates that pre-fill the body with the issue anatomy (`## Description` then `## Spec`) and auto-apply `status:inbox` + the `type:` label, so a first-day teammate files a correctly shaped issue from the web or phone.
+1. **Issue templates** (`.github/ISSUE_TEMPLATE/`: bug · enhancement · idea · dump): markdown templates that pre-fill the body with the issue anatomy (`## Description` then `## Spec`).
+   - They auto-apply `status:inbox` + the `type:` label.
+   - So a first-day teammate files a correctly shaped issue from the web or phone.
 2. **A dump issue**: one issue holding a wall of mixed notes. The template stamps it `type:idea` (every issue carries exactly one `type:`); triage reads the body and fans it out.
-3. **`.workkit/capture.md`**: the local, gitignored free-form dump for offline moments. Triage drains it into issues the same way. The standards script creates it empty (with its capture header) so dumping is always zero-friction; it never overwrites one that has entries. It is the OWNER'S CAPTURE SURFACE: the owner adds to it freely from any shell, and the AGENT'S ONE SANCTIONED TOUCH IS THE TRIAGE DRAIN. During a triage run its contents are read and the entries that landed somewhere are deleted. The `safety:capture-guard` hook holds both directions: the marker the `workkit:triage` skill records opens a read and a rewrite, nothing opens an APPEND (`>>`, `tee -a`, the capture CLI run by an agent), since adding to it is never the agent's, and counting the entries is always free. A finding an agent cannot file as an issue goes in chat, never here. The engine's capture CLI (`workkit note "the thought"`) appends here from any shell, and standing outside every participating repo it files a `status:inbox` issue on the home repo instead, since there is no capture file out there; with no clone on this machine, or no way to reach GitHub, it writes nothing, hands the note back and names `workkit setup`.
+3. **`.workkit/capture.md`**: the local, gitignored free-form dump for offline moments. Triage drains it into issues the same way.
+   - The standards script creates it empty (with its capture header) so dumping is always zero-friction. It never overwrites one that has entries.
+   - It is the OWNER'S CAPTURE SURFACE: the owner adds to it freely from any shell, and the AGENT'S ONE SANCTIONED TOUCH IS THE TRIAGE DRAIN.
+     - During a triage run its contents are read and the entries that landed somewhere are deleted.
+   - The `safety:capture-guard` hook holds both directions:
+     - the marker the `workkit:triage` skill records opens a read and a rewrite;
+     - nothing opens an APPEND (`>>`, `tee -a`, the capture CLI run by an agent), since adding to it is never the agent's;
+     - counting the entries is always free.
+   - A finding an agent cannot file as an issue goes in chat, never here.
+   - The engine's capture CLI (`workkit note "the thought"`) appends here from any shell.
+     - Standing outside every participating repo, it files a `status:inbox` issue on the home repo instead, since there is no capture file out there.
+     - With no clone on this machine, or no way to reach GitHub, it writes nothing, hands the note back and names `workkit setup`.
 
-**A public issue repo** feeds the same inbox for a project split in two: a public repo where users file issues and read the published output, and the private one holding the code and this pipeline. The private repo's committed `.workkit/settings.json` names it, `"public": "<owner>/<repo>"`; a value that is no slug is a heal warning and the pairing stays off. The private issue carries everything (notes, decisions, spec, trail), and the public one is linked, never moved, and stays open the whole time. Every public write posts as `workkit-agent[bot]` (the `gh` shim treats the paired repo as the bot's), so the App must be installed on the public repo's owner too (`workkit setup --bot` in a clone of it, or the install page); the heal makes the `status:` labels (that group alone) on the public repo.
+- **A public issue repo** feeds the same inbox for a project split in two.
+  - The public repo is where users file issues and read the published output; the private one holds the code and this pipeline.
+  - The private repo's committed `.workkit/settings.json` names it, `"public": "<owner>/<repo>"`.
+    - A value that is no slug is a heal warning, and the pairing stays off.
+  - The private issue carries everything (notes, decisions, spec, trail).
+  - The public one is linked, never moved, and stays open the whole time.
+  - Every public write posts as `workkit-agent[bot]` (the `gh` shim treats the paired repo as the bot's).
+    - So the App must be installed on the public repo's owner too (`workkit setup --bot` in a clone of it, or the install page).
+  - The heal makes the `status:` labels (that group alone) on the public repo.
 
-- **Intake** happens at triage only, never on a schedule: the full drain runs `workkit public intake` beside its other sources. Each open public issue with no `status:` label becomes a private `status:inbox`, `type:idea` issue (triage retypes it) whose first body line is `Public: <url>`, the one link every step reads, the reporter's title, login and text quoted below it; the public issue gets the one intake comment, then `status:inbox`: "Thanks for the report. We're tracking this internally. This issue stays open and its label shows where the work is." It never names or links the private repo. A taken issue carries a label, so a second run takes nothing, and the label goes on last, so a refused comment is retried; a run cut short after the private issue was made finds it, open or closed, by its `Public:` line and only finishes the public side.
-- **The label** mirrors silently: right after each status change in the private repo (`workflow:public-mirror`), and at the daily heal for any miss, the public issue's `status:` label becomes the private one's, with no comment.
-- **The close** is the ship's: `workkit public close <version> <N>...` comments "Fixed in v<version>: <the issue's CHANGELOG entry>. Thanks for reporting it." and closes the public issue. Those two are the only comments posted there; a question is answered on the public issue directly, and any other free-form public reply waits for the owner's word.
+- **Intake** happens at triage only, never on a schedule: the full drain runs `workkit public intake` beside its other sources.
+  - Each open public issue with no `status:` label becomes a private `status:inbox`, `type:idea` issue (triage retypes it).
+    - Its first body line is `Public: <url>`, the one link every step reads.
+    - The reporter's title, login and text are quoted below it.
+  - The public issue gets the one intake comment, then `status:inbox`.
+    - The comment: "Thanks for the report. We're tracking this internally. This issue stays open and its label shows where the work is."
+    - It never names or links the private repo.
+  - A taken issue carries a label, so a second run takes nothing.
+  - The label goes on last, so a refused comment is retried.
+  - A run cut short after the private issue was made finds it, open or closed, by its `Public:` line. It only finishes the public side.
+- **The label** mirrors silently: the public issue's `status:` label becomes the private one's, with no comment.
+  - It mirrors right after each status change in the private repo (`workflow:public-mirror`).
+  - The daily heal mirrors it for any miss.
+- **The close** is the ship's: `workkit public close <version> <N>...` comments "Fixed in v<version>: <the issue's CHANGELOG entry>. Thanks for reporting it." and closes the public issue.
+  - Those two are the only comments posted there.
+  - A question is answered on the public issue directly, and any other free-form public reply waits for the owner's word.
 
-**`.workkit/agents/session.md`** is the first of the agents' own files: the session's scratchpad, created by the standards script from a fixed template and never overwritten once it has content. Three sections, always the same: `## Active` (the one issue being worked), `## Queue` (what comes next, in queue order), `## Notes` (scratch: durable findings are promoted to their issue as a comment before stopping). One file named for the session, not for a task, so it is found and updated instead of rotting.
+- **`.workkit/agents/session.md`** is the first of the agents' own files: the session's scratchpad.
+  - The standards script creates it from a fixed template and never overwrites it once it has content.
+  - Three sections, always the same:
+    - `## Active` (the one issue being worked);
+    - `## Queue` (what comes next, in queue order);
+    - `## Notes` (scratch: durable findings are promoted to their issue as a comment before stopping).
+  - One file named for the session, not for a task, so it is found and updated instead of rotting.
 
-Its one job is keeping the LOCAL AGENT on task across a compaction, a resume, or a restart, which is why it is READ BACK at every session start (the `docs:session` hook injects it on every source, silent when the file holds only its header). It is a queue, not a journal, and not long-term storage: past 40 content lines the injection says so, and the `docs:session-guard` hook bounces the write itself (the same 40-line bar plus a 350-character cap per bullet) because everything durable belonged on an issue the moment it existed. A session.md growing into the retired `PROGRESS.md` shape is the failure the bar exists to catch.
+- Its one job is keeping the LOCAL AGENT on task across a compaction, a resume, or a restart.
+  - That is why it is READ BACK at every session start: the `docs:session` hook injects it on every source, silent when the file holds only its header.
+  - It is a queue, not a journal, and not long-term storage.
+  - Past 40 content lines the injection says so.
+  - The `docs:session-guard` hook bounces the write itself: the same 40-line bar, plus a 350-character cap per bullet.
+    - The reason: everything durable belonged on an issue the moment it existed.
+  - A session.md growing into the retired `PROGRESS.md` shape is the failure the bar exists to catch.
 
-Before a deliberate compaction, the `workkit:checkpoint` skill APPLIES the conversation to the board: every owner verdict, decision and question enumerated first, then filed or commented onto its issue by the triage table, and every stage the owner's words moved flipped (a spoken "X is done" on a qa item IS the grant to `status:complete`), with `session.md` trimmed to what is in flight, so the chat's findings survive on the board instead of in the scrollback.
+- Before a deliberate compaction, the `workkit:checkpoint` skill APPLIES the conversation to the board:
+  - every owner verdict, decision and question is enumerated first, then filed or commented onto its issue by the triage table;
+  - every stage the owner's words moved is flipped (a spoken "X is done" on a qa item IS the grant to `status:complete`);
+  - `session.md` is trimmed to what is in flight.
+  - So the chat's findings survive on the board instead of in the scrollback.
 
 ## Issue anatomy
 
-Every issue body has the SAME two sections, always present, always in this order (one enforced structure so every issue reads the same):
+- Every issue body has the SAME two sections, always present, always in this order.
+  - One enforced structure, so every issue reads the same:
 
 | Section | Holds |
 |---|---|
 | `## Description` | What the thing is and why, in prose, never restating the title. Background, evidence, links, and success criteria all live here. |
 | `## Spec` | How it will be built: the editable, single-current-version part. Specs are for BIG items; a small item's Spec is the literal line `None needed: small item.` An agent that picks up a "None needed" issue and finds real complexity writes the spec in before building. A written Spec carries a `### Contract` part (§ Specs). Accepting what is written here is what earns `status:specced`. |
 
-The body is the current version of the thinking; comments are the trail of how it got there.
+- The body is the current version of the thinking; comments are the trail of how it got there.
 
-**An outside project is introduced on first mention.** The first time an issue body or comment names a project or repo other than this one, it carries a link and a one-line description of what that thing is: "workkit (ITW-Creative-Works/workkit), the issue-pipeline workflow system this repo's hooks come from", not a bare "workkit". Later mentions in the same issue need nothing. The reader is a future human or agent arriving cold, with no memory of the week the issue was filed.
+- **An outside project is introduced on first mention.**
+  - The first time an issue body or comment names a project or repo other than this one, it carries a link and a one-line description of what that thing is:
+    - "workkit (ITW-Creative-Works/workkit), the issue-pipeline workflow system this repo's hooks come from", not a bare "workkit".
+  - Later mentions in the same issue need nothing.
+  - The reader is a future human or agent arriving cold, with no memory of the week the issue was filed.
 
-**Every repo this system touches is assumed PUBLIC: issues, PRs, and comments included.** Issue content carries no secrets, no credentials, no tokens, and no private business or personal details. Sensitive context stays in chat or in local files. The `safety:issue-guard` hook blocks the outbound `gh issue`/`gh pr` write when it can see a secret; the rest is judgment.
+- **Every repo this system touches is assumed PUBLIC: issues, PRs, and comments included.**
+  - Issue content carries no secrets, no credentials, no tokens, and no private business or personal details.
+  - Sensitive context stays in chat or in local files.
+  - The `safety:issue-guard` hook blocks the outbound `gh issue`/`gh pr` write when it can see a secret; the rest is judgment.
 
-The issue templates in `.github/ISSUE_TEMPLATE/` pre-fill exactly this anatomy, so every issue conforms from the moment it is filed, no rewriting at triage.
+- The issue templates in `.github/ISSUE_TEMPLATE/` pre-fill exactly this anatomy.
+  - So every issue conforms from the moment it is filed, no rewriting at triage.
 
 ## Restating an issue: the cold-reader line
 
-Wherever an issue is restated outside its own page (the status digest, the triage and checkpoint Filed trails, the review report's findings, the build and verify handoff lines, the ship report, the owner's end-of-turn summaries), it reads for a COLD READER: someone who never opened the issue and does not know what its codename means.
+- Wherever an issue is restated outside its own page, it reads for a COLD READER.
+  - A cold reader is someone who never opened the issue and does not know what its codename means.
+  - Outside its own page means: the status digest, the triage and checkpoint Filed trails, the review report's findings, the build and verify handoff lines, the ship report, the owner's end-of-turn summaries.
 
-- One item is exactly ONE bullet, and its BOLD LEAD opens it: the item's number first (1 restarting every reply; a number the owner called by keeps it, and new items follow the highest of those), then the issue link when one applies, then the issue's status in square brackets, `[qa]`, read from its `status:` label when the reply is written: `[closed]` for a closed issue, `[merged]` for a merged pull request, the same `[closed]` for one closed unmerged, and for an open one the status of the issue it closes, never `[open]`, since an open issue carries its label (every lead with a link carries the token, one whose link sits inside a question included; a lead with no link carries none), then five words naming the thing (eight at the very most), then a colon (the owner replies by number, and the bold words say what the number is about). A bullet, never a numbered list: an ordered list starting past 1 right under a heading line renders flat. Sub-bullets under it are fine when they make it easier to read; the item stays one bullet.
-- An open linked issue with no `status:` label to read carries `[unlabeled]`: an issue in a repo that does not use the status labels, one that lost its label, an open pull request that closes no issue. `[closed]` and `[merged]` win whenever they apply. The token is a nudge to give the lead a status to read, by labeling the issue or linking the pull request to one, and it goes once the label lands.
-- Each item gets one to three sentences, one when one says it, three the cap, in this order: what was wrong (or what the thing is), what changed, how to check it or what is needed.
-- The link text is `#N` when every issue in the reply belongs to the session repo. When the reply names issues from more than one repo, EVERY link carries its repo as `<repo>#N` (`workkit#385`, `dotfiles#273`), the session repo's included, so the reader never has to open a link to learn whose number it is. The repo word is the last path segment of the repo's slug without a leading dot, and the prefix rides the link text only: the URL is unchanged.
+- One item is exactly ONE bullet, and its BOLD LEAD opens it. The lead holds, in this order:
+  - the item's number first: 1 restarting every reply; a number the owner called by keeps it, and new items follow the highest of those;
+  - then the issue link when one applies;
+  - then the issue's status in square brackets, `[qa]`, read from its `status:` label when the reply is written (the token, below);
+  - then five words naming the thing (eight at the very most);
+  - then a colon. The owner replies by number, and the bold words say what the number is about.
+  - The token:
+    - `[closed]` for a closed issue, `[merged]` for a merged pull request, the same `[closed]` for one closed unmerged;
+    - an open pull request carries the status of the issue it closes, never `[open]`, since an open issue carries its label.
+    - Every lead with a link carries the token, one whose link sits inside a question included. A lead with no link carries none.
+  - A bullet, never a numbered list: an ordered list starting past 1 right under a heading line renders flat.
+  - Sub-bullets under it are fine when they make it easier to read; the item stays one bullet.
+- An open linked issue with no `status:` label to read carries `[unlabeled]`.
+  - That is an issue in a repo that does not use the status labels, one that lost its label, an open pull request that closes no issue.
+  - `[closed]` and `[merged]` win whenever they apply.
+  - The token is a nudge to give the lead a status to read, by labeling the issue or linking the pull request to one.
+    - It goes once the label lands.
+- Each item gets one to three sentences, one when one says it, three the cap.
+  - In this order: what was wrong (or what the thing is), what changed, how to check it or what is needed.
+- The link text is `#N` when every issue in the reply belongs to the session repo.
+  - When the reply names issues from more than one repo, EVERY link carries its repo as `<repo>#N` (`workkit#385`, `dotfiles#273`), the session repo's included.
+  - So the reader never has to open a link to learn whose number it is.
+  - The repo word is the last path segment of the repo's slug without a leading dot.
+  - The prefix rides the link text only: the URL is unchanged.
 - Titles, codenames, labels, and pipeline words are never the substance. The section heading and the lead's status token carry the state; the sentences carry the meaning.
-- A check ask (the QA section, a Todos item) follows the same shape and the same order, one issue per bullet, with the check written in the bullet itself. The QA section restates only the items parked that turn; when an ask covers earlier parks too, each earlier item is its own bullet, restated the same way. Never a deferral ("check the comments", "each park comment says what to check") followed by a list of links: the restatement IS the ask.
+- A check ask (the QA section, a Todos item) follows the same shape and the same order, one issue per bullet, with the check written in the bullet itself.
+  - The QA section restates only the items parked that turn.
+  - When an ask covers earlier parks too, each earlier item is its own bullet, restated the same way.
+  - Never a deferral ("check the comments", "each park comment says what to check") followed by a list of links: the restatement IS the ask.
 - Right: "- **3. [#158](url) [qa] tower filter**: `npm run tower` used to dump omega's whole startup wall or hide everything. Now it prints a starting line, hides the boot chatter, and shows the web server's live request logs. Check by running it." Wrong: "#158 (the tower filter work) is parked at status:qa waiting on your check."
 
-This section is the rule's ONE home. The skills and the owner's personal output style point here and carry no wording of their own; the `manager/profile` hook injects the one-sentence form every prompt, so the shape is in context without a second copy (shared logic and prose live in workkit, the personal layer references them).
+- This section is the rule's ONE home.
+  - The skills and the owner's personal output style point here and carry no wording of their own.
+  - The `manager/profile` hook injects the one-sentence form every prompt, so the shape is in context without a second copy.
+  - Shared logic and prose live in workkit; the personal layer references them.
 
 ## How big is one issue
 
-**One issue = one thing that ships at one moment.** Size is not the test. A large piece of work that lands as a single release is one issue. The test is whether the parts would ever need DIFFERENT states at the same time. Cut VERTICAL slices where it makes sense: an issue that runs thin through the whole stack (schema, backend, UI, test) and works end to end beats one horizontal layer that proves nothing on its own. An issue carries exactly one `status:` label and closes against one CHANGELOG entry, so parts that disagree about their state cannot share a row.
+- **One issue = one thing that ships at one moment.** Size is not the test.
+  - A large piece of work that lands as a single release is one issue.
+  - The test is whether the parts would ever need DIFFERENT states at the same time.
+  - Cut VERTICAL slices where it makes sense.
+    - An issue that runs thin through the whole stack (schema, backend, UI, test) and works end to end beats one horizontal layer that proves nothing on its own.
+  - An issue carries exactly one `status:` label and closes against one CHANGELOG entry.
+    - So parts that disagree about their state cannot share a row.
 
 | The parts... | Shape |
 |---|---|
@@ -187,62 +494,241 @@ This section is the rule's ONE home. The skills and the owner's personal output 
 | serve one goal but ship separately, each needing its own state | a PARENT issue with GitHub sub-issues (`gh issue edit <child> --add-parent <N>`): a checkbox cannot hold a status label, a sub-issue can |
 | share only a theme | SEPARATE issues, no parent |
 
-Sub-issues are also the dependency mechanism: work that waits on OTHER WORK stays `status:specced` under its parent. The open siblings say what comes first, and each child is a real issue the queue query can see (a checkbox is not). `status:blocked` stays reserved for waiting on a human decision. A checklist line can be converted to a sub-issue from the GitHub UI the moment it turns out to need its own state, so starting small costs nothing.
+- Sub-issues are also the dependency mechanism: work that waits on OTHER WORK stays `status:specced` under its parent.
+  - The open siblings say what comes first, and each child is a real issue the queue query can see (a checkbox is not).
+  - `status:blocked` stays reserved for waiting on a human decision.
+  - A checklist line can be converted to a sub-issue from the GitHub UI the moment it turns out to need its own state.
+    - So starting small costs nothing.
 
-**A later idea is always its own issue**, never appended to an existing one, however related. Two MCP integrations decided days apart are two issues: they ship at different moments, which is the whole test. Add a `relates to #N` line when the connection matters; merge two issues only on deciding they will ship as one; reach for a parent only when separate shipments serve one coordinated goal, never for taxonomy. The fix-or-file rule below is this same ruling read from the other end: its fix-now half judges flaws in the work in the tree, never a new idea however near its file, and a later idea fails its litmus question (closing the existing issue would not finish the idea) so ideas stay separate, while a nit that would ship in the same sitting passes and attaches.
+- **A later idea is always its own issue**, never appended to an existing one, however related.
+  - Two MCP integrations decided days apart are two issues: they ship at different moments, which is the whole test.
+  - Add a `relates to #N` line when the connection matters.
+  - Merge two issues only on deciding they will ship as one.
+  - Reach for a parent only when separate shipments serve one coordinated goal, never for taxonomy.
+  - The fix-or-file rule below is this same ruling read from the other end.
+    - Its fix-now half judges flaws in the work in the tree, never a new idea however near its file.
+    - A later idea fails its litmus question (closing the existing issue would not finish the idea), so ideas stay separate.
+    - A nit that would ship in the same sitting passes and attaches.
 
-**The fix-or-file rule** judges every finding made while a batch's work is in the tree (a verifier note, a review lens finding, a worker's aside). What the false-positive list in `agents/reviewer.md` names is no finding at all, whoever raised it: it is never built, said or filed. It is BUILT IN THAT BATCH when any one of three holds: it sits in a file the diff already touches; it is a parity mismatch between the new code and its sibling; or it is a twin, the same defect the batch is fixing, found in another place. The dispatcher adds it as a follow-up line to the brief of the role whose paths the finding names, and the verifier re-checks it, so the batch grows and the board does not. The feature flow caps the rounds that absorb such a finding (`skills/feature/SKILL.md` § 5), and the last round's fixes are covered by the green `npm test` the qa flip requires on the final tree, rather than another pass: past the cap it is said or filed like any other, a `safety:` hook bug excepted. A finding that meets none of the three is SAID while `findings.file` is false, the default: it goes in the reply under **🧭 Findings**, one bullet in the cold-reader line (§ Restating an issue), the owner answers file or drop, and the agent files nothing on its own. It is FILED on the owner's "file", or straight away when `findings.file` is true (`~/.workkit/settings.json`, which the repo's `.workkit/settings.json` overrides under the same key), and the litmus question, the one asked every time an issue is about to be created, decides where: *would closing an OPEN issue automatically mean this is done too?* Yes → it belongs THERE, as a checklist line in that issue's Spec or as a comment. No → a nit (it looks or reads wrong) rolls onto the surface's `polish: <surface>` issue below, and only a bug (it behaves wrong) or a finding that needs its own design decision earns an issue of its own. A finding a ship's review scores under 80 is said or filed by this rule too; only where a filed one lands is the ship's own, its review-notes issue (`skills/ship/SKILL.md` step 3.2b). What this catches is a review that grows the board sideways, one finding per issue, while the batch that could have absorbed them sits in the tree.
+- **The fix-or-file rule**: what an agent does with a problem it notices while a batch's work is in the tree.
+  - It judges every such finding, whoever raised it: a verifier note, a review lens finding, a worker's aside.
+  - **Fix it now, without asking**, when any one holds:
+    - it is in a file the batch already changes;
+    - it is the same defect the batch is fixing, found in another place (a twin);
+    - the new code does not match its sibling (a parity mismatch).
+  - The dispatcher adds a fix-now finding as a follow-up line on the brief of the role whose paths it names.
+    - The verifier re-checks it, so the batch grows and the board does not.
+  - The feature flow caps the rounds that take such a fix (`skills/feature/SKILL.md` § 5).
+    - The green `npm test` the qa flip requires on the final tree covers the last round's fixes. No other pass runs.
+    - Past the cap, the finding is brought to the owner or filed like any other. A bug in a `safety:` hook is still fixed in the batch.
+  - **Raise nothing**, never building, saying or filing it, when any one holds:
+    - the false-positive list in `agents/reviewer.md` names it (a linter's catch, a taste with no written rule, and the rest);
+    - it is a one-time thing (**The one-time test** below).
+  - **Bring it to the owner** in every other case, while `findings.file` is false (the default): one bullet under **🧭 Findings** in the reply.
+    - The bullet reads in the cold-reader line (§ Restating an issue).
+    - The owner answers file or drop. The agent files nothing on its own.
+  - **File an issue** only on the owner's "file", or at once when `findings.file` is true.
+    - `~/.workkit/settings.json` holds the setting, and a repo's `.workkit/settings.json` overrides it under the same key.
+  - The litmus question decides where a filed finding lands. It is asked every time an issue is about to be created.
+    - The question: *would closing an OPEN issue automatically mean this is done too?*
+    - Yes → it belongs THERE, as a checklist line in that issue's Spec or as a comment.
+    - No, and it is a nit (it looks or reads wrong) → it rolls onto the surface's `polish: <surface>` issue below.
+    - No, and it is a bug (it behaves wrong) or needs its own design decision → it earns its own issue.
+  - A ship's review finding scored under 80 follows this rule too.
+    - Only where a filed one lands is the ship's own: its review-notes issue (`skills/ship/SKILL.md` step 3.2b).
+  - Why: this stops a review from growing the board sideways, one issue per finding. The batch in the tree absorbs them instead.
 
-**Bugs and failures that are filed get one issue each**, however small: each needs its own repro, its own test, and its own closing state. The one exception is a shared ROOT CAUSE: one issue, the symptoms listed in it.
+- **The one-time test**: is this problem a one-time thing?
+  - Ask: on a healthy machine, with nobody changing anything, will this happen again?
+  - No → one-time. Name the cause in one line of the report, rerun when it clears, and raise nothing.
+  - Yes, or it has already happened twice → a finding, handled by the fix-or-file rule above.
+  - Unsure → one bullet under `## Notes` of `.workkit/agents/session.md`, and raise nothing.
+    - The second time it happens makes it a finding.
 
-**Polish, docs nits, and cosmetic findings ROLL UP** onto one issue per surface, titled `polish: <surface>`, where a surface is what one look verifies (the tower, a theme, the docs). Search the titles first, since an open `polish: tower` wins over inventing a synonym. It carries `status:inbox` + `type:enhancement` while it collects, which authorizes nothing, and each nit is one checklist line in the `## Spec` with its pointer (page or file), the ship-together part list, not work-state. The owner's go on the pass IS the acceptance: the list as it stands flips to `status:specced`, one worker works every line in one sitting, one look verifies, one CHANGELOG entry closes it. At that flip the list FREEZES: a nit arriving mid-build that the fix-or-file rule does not keep in the batch starts the NEXT rolling issue for that surface, and at most one is COLLECTING per surface at a time. Its `status:inbox` is the collecting state, not an undrained capture: triage treats an open rolling issue as a destination, and the state-check announcement of it is expected. Bugs never land here, however small: polish is "looks or reads wrong", a bug is "behaves wrong".
+| One-time, never raised | Recurring, a real finding |
+|---|---|
+| The network is down or slow | Emulator processes stay alive after every interrupted run and hold their ports |
+| An outside service has an outage | A test picks its port from a busy range and fails two runs in five |
+| A tool downloads itself on first use and the download crawls | A step that needs a login fails on every fresh machine |
+| The disk filled up during one run | A cache grows on every run until the disk fills |
 
-The smell: an issue you cannot answer yes to, because yes would approve a part you have not decided. Split it. Bundling by theme produces an issue that can never carry a true status and can never close. #2 bundled four unrelated designs behind a chapter number from a retired plan file and blocked all four for days.
+- The line between the columns is recurrence, never the category.
+  - A network problem that comes back on every run is a finding.
+
+- **Bugs and failures that are filed get one issue each**, however small: each needs its own repro, its own test, and its own closing state.
+  - The one exception is a shared ROOT CAUSE: one issue, the symptoms listed in it.
+
+- **Polish, docs nits, and cosmetic findings ROLL UP** onto one issue per surface, titled `polish: <surface>`.
+  - A surface is what one look verifies (the tower, a theme, the docs).
+  - Search the titles first, since an open `polish: tower` wins over inventing a synonym.
+  - It carries `status:inbox` + `type:enhancement` while it collects, which authorizes nothing.
+  - Each nit is one checklist line in the `## Spec` with its pointer (page or file): the ship-together part list, not work-state.
+  - The owner's go on the pass IS the acceptance: the list as it stands flips to `status:specced`.
+    - One worker works every line in one sitting, one look verifies, one CHANGELOG entry closes it.
+  - At that flip the list FREEZES.
+    - A nit arriving mid-build that the fix-or-file rule does not keep in the batch starts the NEXT rolling issue for that surface.
+    - At most one is COLLECTING per surface at a time.
+  - Its `status:inbox` is the collecting state, not an undrained capture.
+    - Triage treats an open rolling issue as a destination, and the state-check announcement of it is expected.
+  - Bugs never land here, however small: polish is "looks or reads wrong", a bug is "behaves wrong".
+
+- The smell: an issue you cannot answer yes to, because yes would approve a part you have not decided. Split it.
+  - Bundling by theme produces an issue that can never carry a true status and can never close.
+  - #2 bundled four unrelated designs behind a chapter number from a retired plan file and blocked all four for days.
 
 ## Triage: the action that drains the inbox
 
-Every entry is routed to exactly ONE home: a comment on an existing issue · a new routed issue · an issue on the home repo (cross-project) · another repo's issues · `docs/`/`AGENTS.md` (a durable fact) · `_attic/inbox.md` (kept but rejected).
+- Every entry is routed to exactly ONE home:
+  - a comment on an existing issue;
+  - a new routed issue;
+  - an issue on the home repo (cross-project);
+  - another repo's issues;
+  - `docs/`/`AGENTS.md` (a durable fact);
+  - `_attic/inbox.md` (kept but rejected).
 
 - **Three modes, one table**: the bare word drains everything (the cwd repo's inbox, the capture file, the HQ pass), issue numbers in the ask scope the run to ONLY those issues, and `merge` sweeps the open board proposing merges. Only the entries read differ; routing is the same table every time.
 - **Search first, open AND closed** (`gh issue list --state all --search ...`). A closed **not planned** issue is the rejection record. Cite it instead of re-pitching.
 - **The Filed trail is mandatory**: triage ends by printing it, one bullet per entry leading with where it landed, in the shape § Restating an issue sets. On a dump issue, that trail is the closing comment. Capture is only trusted when filing is visible.
 - **Route by authorization, not by enthusiasm**: `status:specced` is only for work whose `## Spec` is written and accepted (a small item's accepted Spec is the literal `None needed: small item.`). Anything still needing design stays `status:inbox` with whatever spec exists drafted into `## Spec` or a comment. Accepting it later is its own act.
-- **The repo an entry belongs to is RESOLVED, never guessed**: a project name becomes an `owner/name` slug through this machine's roster (`~/.workkit/.repos.json`) and that checkout's `git remote get-url origin` (an entry naming a kit skill, hook, agent or engine file reads the plugin's own checkout the same way), and an entry no checkout here owns stays local with the skip named, since the home repo takes only what no repo on this machine owns.
+- **The repo an entry belongs to is RESOLVED, never guessed**: a project name becomes an `owner/name` slug.
+  - The slug comes through this machine's roster (`~/.workkit/.repos.json`) and that checkout's `git remote get-url origin`.
+  - An entry naming a kit skill, hook, agent or engine file reads the plugin's own checkout the same way.
+  - An entry no checkout here owns stays local, with the skip named.
+    - The reason: the home repo takes only what no repo on this machine owns.
 - Detection is automatic (the `docs:state-check` hook announces open `status:inbox` issues and a non-empty `.workkit/capture.md` at session start); filing stays deliberate. Full playbook: the `workkit:triage` skill.
-- **Every FULL drain includes the HQ pass** (a scoped run reads only its named issues): after the local sources, triage lists the home repo's open `status:inbox` issues and routes them with the same table, including proposing graduation (below, § The global layer) when a cluster of captures points at one project. No `site.repo`, or HQ unreachable: the pass names the skip; it is never silent. There is no separate HQ command and no HQ session: this pass is how the nursery drains, and it needs only the network, never the clone. HQ's backlog has no session-start announcer either (the `docs:state-check` hook speaks for the cwd repo alone); the tower Board and this pass are its two surfaces.
+- **Every FULL drain includes the HQ pass** (a scoped run reads only its named issues).
+  - After the local sources, triage lists the home repo's open `status:inbox` issues and routes them with the same table.
+  - That includes proposing graduation (below, § The global layer) when a cluster of captures points at one project.
+  - No `site.repo`, or HQ unreachable: the pass names the skip; it is never silent.
+  - There is no separate HQ command and no HQ session: this pass is how the nursery drains.
+    - It needs only the network, never the clone.
+  - HQ's backlog has no session-start announcer either (the `docs:state-check` hook speaks for the cwd repo alone).
+    - The tower Board and this pass are its two surfaces.
 
 ## Queue semantics
 
-- **Working** = the issue carries `status:building`, or `status:qa`, the same work one stage on, waiting on the check rather than on the build (the owner's normally, the agent's own under `agent:ok`), or `status:complete`, checked and waiting only on the next ship. Each stage is its own label query: `gh issue list --label status:building --limit 1000` for the work in flight, `--label status:qa` for the work waiting on its check, `--label status:complete` for the work waiting on the ship, and `--label agent:claimed` for the agents' live claims. There is no per-person queue: the assignee is a person's mark, not the claim, so no query by assignee lists anyone's work.
+- **Working** = the issue carries one of these:
+  - `status:building`;
+  - or `status:qa`: the same work one stage on, waiting on the check rather than on the build (the owner's normally, the agent's own under `agent:ok`);
+  - or `status:complete`: checked and waiting only on the next ship.
+  - Each stage is its own label query:
+    - `gh issue list --label status:building --limit 1000` for the work in flight;
+    - `--label status:qa` for the work waiting on its check;
+    - `--label status:complete` for the work waiting on the ship;
+    - and `--label agent:claimed` for the agents' live claims.
+  - There is no per-person queue: the assignee is a person's mark, not the claim.
+    - So no query by assignee lists anyone's work.
 - **Done** = closed `completed`. **Rejected** = closed `not planned`: the institutional no, and the thing triage cites.
 - Queue order: `priority:high`, then unlabeled (= normal), then `priority:low`. GitHub has no manual ordering; `priority:` is the substitute.
-- **Within one priority, order by dependency, risk, and reviewability**: blockers first (work other issues wait on), then bugs, then shared seams (the file or module several queued items all touch), and only then dependent feature work. A seam changed once is reviewed once; changed under three features in flight it is reviewed three times and merged badly. This is the order the autonomy loop uses to pick its next item, and the order the `workkit:status` digest reports in. A dependency has a MECHANICAL form: it is written with `gh issue edit <N> --add-blocked-by <M>` (only blocked-by is ever written, since GitHub keeps the inverse and the two directions cannot drift) with an inline `Depends on: <owner>/<repo>#<n>` line in the body as the cross-org fallback, merged with the native edges by everything that reads them; the semantics are advisory, so an open blocker orders its issue later and is named beside it, and no label ever moves because of one.
-- **Batches**: related specced issues ride ONE commit, built in parallel groups on the shared tree with one feature-developer and test-developer pair per group (the grouping and the crew: `agents.md` § Batches), and the ship closes the lot. Related means one surface or one concern (the same folder, hook or skill, the tower, the jobs), or one issue must land before another. The work decides the size, never a number: fewer larger batches over more smaller ones. An issue alone is a batch of one. When a batch starts and grows is the start rule, the first paragraph of `agents.md` § Batches. No hook, label or command marks a batch; the skills carry the judgment.
-- **`agent:claimed` is the claim; the assignee is a person.** An agent session claims an issue by adding `agent:claimed` in the edit that moves it to `status:building`, and every other session skips an issue already carrying it. That is the whole anti-double-work mechanism, and it needs nothing shared but the issues (`.workkit/` is per developer, so there are no merge conflicts and no lane collisions). The assignee is whoever answers for the work, set by hand and never read as a claim. The agent's bookkeeping posts as `workkit-agent[bot]`, which cannot be an assignee, so the claim comment names the bot and the session's owner. A person working an issue by hand moves it to `status:building` themselves, and since a claim starts only from `status:specced`, no agent picks it up.
-- **A claim that goes quiet is released.** An agent that dies mid-work would otherwise lock its issue against everyone forever, so the daily standards heal sweeps: an open issue carrying `agent:claimed` whose last activity is more than 24 hours old loses the label (a `status:building` one goes back to `status:specced` in the same edit) and keeps its assignee, and gets a comment saying the sweep did it. Only the label expires: a person's own work has no timer, and a heal that cannot reach GitHub releases nothing at all.
+- **Within one priority, order by dependency, risk, and reviewability**:
+  - blockers first (work other issues wait on), then bugs;
+  - then shared seams (the file or module several queued items all touch);
+  - and only then dependent feature work.
+  - A seam changed once is reviewed once. Changed under three features in flight, it is reviewed three times and merged badly.
+  - This is the order the autonomy loop uses to pick its next item, and the order the `workkit:status` digest reports in.
+  - A dependency has a MECHANICAL form: it is written with `gh issue edit <N> --add-blocked-by <M>`.
+    - Only blocked-by is ever written, since GitHub keeps the inverse and the two directions cannot drift.
+    - An inline `Depends on: <owner>/<repo>#<n>` line in the body is the cross-org fallback.
+    - Everything that reads them merges that line with the native edges.
+  - The semantics are advisory: an open blocker orders its issue later and is named beside it.
+    - No label ever moves because of one.
+- **Batches**: related specced issues ride ONE commit, and the ship closes the lot.
+  - They are built in parallel groups on the shared tree, with one feature-developer and test-developer pair per group.
+    - The grouping and the crew: `agents.md` § Batches.
+  - Related means one surface or one concern (the same folder, hook or skill, the tower, the jobs), or one issue must land before another.
+  - The work decides the size, never a number: fewer larger batches over more smaller ones.
+  - An issue alone is a batch of one.
+  - When a batch starts and grows is the start rule bullet of `agents.md` § Batches.
+  - No hook, label or command marks a batch; the skills carry the judgment.
+- **`agent:claimed` is the claim; the assignee is a person.**
+  - An agent session claims an issue by adding `agent:claimed` in the edit that moves it to `status:building`.
+  - Every other session skips an issue already carrying it.
+  - That is the whole anti-double-work mechanism, and it needs nothing shared but the issues.
+    - `.workkit/` is per developer, so there are no merge conflicts and no lane collisions.
+  - The assignee is whoever answers for the work, set by hand and never read as a claim.
+  - The agent's bookkeeping posts as `workkit-agent[bot]`, which cannot be an assignee.
+    - So the claim comment names the bot and the session's owner.
+  - A person working an issue by hand moves it to `status:building` themselves.
+    - A claim starts only from `status:specced`, so no agent picks it up.
+- **A claim that goes quiet is released.**
+  - An agent that dies mid-work would otherwise lock its issue against everyone forever.
+  - So the daily standards heal sweeps: an open issue carrying `agent:claimed` loses the label when its last activity is more than 24 hours old.
+    - A `status:building` one goes back to `status:specced` in the same edit.
+    - It keeps its assignee, and gets a comment saying the sweep did it.
+  - Only the label expires: a person's own work has no timer.
+  - A heal that cannot reach GitHub releases nothing at all.
 - **Re-validate immediately before starting.** Between finding an eligible issue and starting on it, its labels can change: another session added `agent:claimed`, the status moved, or the owner pulled `agent:ok`. Re-read them at the moment work begins, not at the moment the queue was listed, and stop if any moved.
 - **Collapse on ship**: the turn that writes the CHANGELOG entry also closes the issue with a pointer to that entry. A `Fixes #N` trailer in the commit does both on push.
-- **An issue is the work item; a PR is the delivery vehicle.** The issue holds what and why, the plan, the state labels, and the decision trail. It can live for months and survive many attempts. A pull request is one reviewable diff with checks, born from a branch and finished at merge; it carries the `Fixes #N` trailers of every issue its ship completes, a batch's included. The issue closes when its work ships, not when a PR merges partway there.
-- **Delivery is hybrid, decided by WHERE the work runs**: a local session runs the hooks, so it commits DIRECTLY to the default branch, whether or not the owner is watching, unless the owner says `pr` or the work sits on a branch with an open PR. The local hook gates (tests, review, message lint) are its enforcement, and a PR would re-review work they already reviewed. A PULL REQUEST is the path everywhere else: a cloud session (`CLAUDE_CODE_REMOTE=true`, an agent started by the `agent:ok` label or an @mention, or the owner's own), where the owner's "ship" is the ask the cloud platform needs before a PR, an outside contributor, the owner's literal `pr`, or a work branch with an open PR. PR mechanics: ONE pull request carries the work commit and then the `chore(release)` commit, both pushed to its branch (a cloud session's own `claude/<name>`; a local `pr` ship's `issue/<N>-slug`, no issue → `ship/<slug>`), and lands as ONE merge commit, never a squash, whose subject ends `(#<PR>)` and whose body carries the `Fixes #N` trailers, so the CHANGELOG's commit links stay valid and nothing pushes to the default branch directly. An `agent:ok` agent stops at the green PR and says so; the owner's "ship" merges it. The `checks.yml` workflow installed by the standards heal runs the test suite on every PR, so an author without the hooks still meets the bar, and on every push to the default branch but a release push (every change the CHANGELOG or a version stamp), so direct work gets the clean-runner suite too; a red check is fixed on the branch, never merged around. On the direct path the `chore(release)` commit pushes straight to the default branch after the work commit, whose pushed sha the changelog backfill needs. The push that brings a release commit to the default branch, direct or a PR's merge, runs the caller's `release` job, which makes the GitHub release; `workkit ship cut` only waits for it, so a cloud session releases the way a machine does. The standards heal also asks GitHub to REQUIRE the `checks / test` check, the suite the caller runs (branch protection) as a best effort: applied where the plan allows it, quietly skipped where it does not (free-plan private repos). The protection guards a pull request from anyone else, and the owner's direct push is exempt by design (`enforce_admins: false`), so the push run, not the protection, is what checks direct work.
+- **An issue is the work item; a PR is the delivery vehicle.**
+  - The issue holds what and why, the plan, the state labels, and the decision trail.
+  - It can live for months and survive many attempts.
+  - A pull request is one reviewable diff with checks, born from a branch and finished at merge.
+  - It carries the `Fixes #N` trailers of every issue its ship completes, a batch's included.
+  - The issue closes when its work ships, not when a PR merges partway there.
+- **Delivery is hybrid, decided by WHERE the work runs**:
+  - A local session runs the hooks, so it commits DIRECTLY to the default branch, whether or not the owner is watching.
+    - The exception: the owner says `pr`, or the work sits on a branch with an open PR.
+    - The local hook gates (tests, review, message lint) are its enforcement.
+    - A PR would re-review work they already reviewed.
+  - A PULL REQUEST is the path everywhere else:
+    - a cloud session (`CLAUDE_CODE_REMOTE=true`, an agent started by the `agent:ok` label or an @mention, or the owner's own);
+      - there the owner's "ship" is the ask the cloud platform needs before a PR;
+    - an outside contributor;
+    - the owner's literal `pr`;
+    - or a work branch with an open PR.
+  - PR mechanics: ONE pull request carries the work commit and then the `chore(release)` commit, both pushed to its branch.
+    - The branch is a cloud session's own `claude/<name>`, or a local `pr` ship's `issue/<N>-slug` (no issue → `ship/<slug>`).
+    - The pull request lands as ONE merge commit, never a squash.
+    - That commit's subject ends `(#<PR>)`, and its body carries the `Fixes #N` trailers.
+    - So the CHANGELOG's commit links stay valid, and nothing pushes to the default branch directly.
+  - An `agent:ok` agent stops at the green PR and says so; the owner's "ship" merges it.
+  - The `checks.yml` workflow installed by the standards heal runs the test suite on every PR.
+    - So an author without the hooks still meets the bar.
+  - It also runs on every push to the default branch but a release push (every change the CHANGELOG or a version stamp).
+    - So direct work gets the clean-runner suite too.
+  - A red check is fixed on the branch, never merged around.
+  - On the direct path the `chore(release)` commit pushes straight to the default branch after the work commit.
+    - The changelog backfill needs the work commit's pushed sha.
+  - The push that brings a release commit to the default branch, direct or a PR's merge, runs the caller's `release` job.
+    - That job makes the GitHub release; `workkit ship cut` only waits for it.
+    - So a cloud session releases the way a machine does.
+  - The standards heal also asks GitHub to REQUIRE the `checks / test` check (branch protection), as a best effort.
+    - That check is the suite the caller runs.
+    - It is applied where the plan allows it, and quietly skipped where it does not (free-plan private repos).
+  - The protection guards a pull request from anyone else.
+    - The owner's direct push is exempt by design (`enforce_admins: false`).
+    - So the push run, not the protection, is what checks direct work.
 
 ## CHANGELOG entries
 
-The git history carries the full story: why a change was made, what was tried, what the review caught. The CHANGELOG is the INDEX a human scans to answer "what changed in this version, and does it affect me?". An entry that repeats the commit body is a second copy of a fact that already has a home.
-
-So an entry is **one short paragraph that points at the depth**, in the shape of `@changesets/changelog-github`. The contributor field stays even in a repo with one maintainer, because that is not a permanent condition.
+- The git history carries the full story: why a change was made, what was tried, what the review caught.
+- The CHANGELOG is the INDEX a human scans to answer "what changed in this version, and does it affect me?".
+- An entry that repeats the commit body is a second copy of a fact that already has a home.
+- So an entry is **one short paragraph that points at the depth**, in the shape of `@changesets/changelog-github`.
+- The contributor field stays even in a repo with one maintainer.
+  - The reason: that is not a permanent condition.
 
 ```
 [Unreleased]   - [#4](../../issues/4) - Plugins install from settings.json instead of being tracked as files.
 released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [@who]! - Plugins install from settings.json.
 ```
 
-Every link is written SHORT, so the repo URL appears nowhere in the file. `../..` is a relative link GitHub resolves against the blob path (it also follows a fork), and `[@who]` is a markdown shortcut reference whose one definition sits at the bottom of the file however many entries a person appears in. The depth assumes a CHANGELOG at the repo root.
-
-**Nobody types the metadata.** During ordinary work you write only the issue link and the sentence; the commit link and the handle are filled in at release time by `~/.claude/workkit/changelog/changelog-links.js`, which finds each entry's commits through the closing trailer they already carry (`Fixes #N`, or any keyword the commit gate reads). Re-running it is a no-op. The commit link is derivable offline (remote URL plus sha); the handle needs the GitHub API, so it is written when resolvable and never demanded: an offline release still produces a valid CHANGELOG.
-
-It fills **`[Unreleased]` entries only**, which is why the ship skill runs it BEFORE moving them into the version section. A released section is history and is never rewritten. An entry whose issue no commit closes is named in the output ("add a `Fixes #N` trailer"), never skipped in silence.
-
-The rules, with `~/.claude/workkit/changelog/lint.js` (`workkit changelog lint`) as their machine SSOT:
+- Every link is written SHORT, so the repo URL appears nowhere in the file.
+  - `../..` is a relative link GitHub resolves against the blob path (it also follows a fork).
+  - `[@who]` is a markdown shortcut reference. Its one definition sits at the bottom of the file, however many entries a person appears in.
+  - The depth assumes a CHANGELOG at the repo root.
+- **Nobody types the metadata.** During ordinary work you write only the issue link and the sentence.
+  - The commit link and the handle are filled in at release time by `~/.claude/workkit/changelog/changelog-links.js`.
+  - It finds each entry's commits through the closing trailer they already carry (`Fixes #N`, or any keyword the commit gate reads).
+  - Re-running it is a no-op.
+  - The commit link is derivable offline (remote URL plus sha).
+  - The handle needs the GitHub API, so it is written when resolvable and never demanded.
+    - An offline release still produces a valid CHANGELOG.
+- It fills **`[Unreleased]` entries only**.
+  - That is why the ship skill runs it BEFORE moving them into the version section.
+  - A released section is history and is never rewritten.
+  - An entry whose issue no commit closes is named in the output ("add a `Fixes #N` trailer"), never skipped in silence.
+- The rules, with `~/.claude/workkit/changelog/lint.js` (`workkit changelog lint`) as their machine SSOT:
 
 | Rule | What it asks |
 |---|---|
@@ -252,102 +738,329 @@ The rules, with `~/.claude/workkit/changelog/lint.js` (`workkit changelog lint`)
 | `one-paragraph` | One paragraph: a second one is detail that belongs in the commit or the issue |
 | `commit-link` | An entry in a RELEASED section carries its commit link. `(no issue)` entries are exempt: with no issue there is nothing to look up, and a hand-typed sha is what this format avoids |
 
-Enforced at write time by the `docs:changelog-guard` hook and at commit time by the `safety:commit-gate` hook, which is the authority of the two: it sees hand edits made outside the tools. Both judge only the lines a change ADDS, so adopting the format never bounces a repo for its history, and the `commit-link` rule makes an un-backfilled release commit impossible: moving an entry into a version section is what subjects it to the rule.
-
-Three things are deliberately NOT entries, because a guard that judges them bounces correct work: anything inside a fenced code block (a CHANGELOG documenting its own format), anything under a `##` heading that is not a version section (a prose appendix), and any flush-left line following a bullet, which is what keepachangelog's `[1.0.0]: <url>` reference footer is made of.
+- The rules are enforced at write time by the `docs:changelog-guard` hook and at commit time by the `safety:commit-gate` hook.
+  - The commit gate is the authority of the two: it sees hand edits made outside the tools.
+  - Both judge only the lines a change ADDS, so adopting the format never bounces a repo for its history.
+  - The `commit-link` rule makes an un-backfilled release commit impossible.
+    - Moving an entry into a version section is what subjects it to the rule.
+- Three things are deliberately NOT entries, because a guard that judges them bounces correct work:
+  - anything inside a fenced code block (a CHANGELOG documenting its own format);
+  - anything under a `##` heading that is not a version section (a prose appendix);
+  - and any flush-left line following a bullet, which is what keepachangelog's `[1.0.0]: <url>` reference footer is made of.
 
 ## Specs
 
-**A spec is not a file. A spec is the `## Spec` section of its issue body**: one home, always current, always attached to the work it describes. There is no `plans/` directory and no plan frontmatter.
+- **A spec is not a file. A spec is the `## Spec` section of its issue body**: one home, always current, always attached to the work it describes.
+  - There is no `plans/` directory and no plan frontmatter.
 
 - **Editing beats appending.** The body carries the current version of the proposal; a superseded paragraph is rewritten, not struck through. The comments carry the trail: what changed, why, and who called it.
 - Specs are PROPOSALS. **No checkboxes, no work-state inside the `## Spec` section**: state is the issue's labels and open/closed; an assignee names a person, never a state. The one carve-out is the ship-together part list (§ How big is one issue): parts, never work-state.
 - **Accepting the spec is the authorization**, and it is one act: the `## Spec` is agreed and the label goes to `status:specced` in the same moment. Without `agent:ok` that act is the owner's; with it, an agent may write a spec and accept its own.
-- **A written Spec opens with one plain sentence stating the behaviour rule, and carries a `### Contract` part below it**; a `None needed: small item.` spec is exempt. It has three parts: **Files** (the paths that change or appear), **Names** (functions, flags, fields, messages), and **Cases** (one line each: given X, then Y). The build reads it from both sides: the test-developer writes one test per Case from the Contract and the Description, the feature-developer builds the Names from the Contract and the Spec, and the verifier maps Cases to tests (`agents.md` § Crew sizing). The `safety:spec-guard` hook holds the flip to `status:specced` while a written Spec has no Contract (`hooks.md` § `safety:spec-guard`). The tower Board's own move of a card to Specced applies the same rule, on the machine and in a published copy alike.
-- **A real spec is built WITH the owner, before acceptance is asked for.** Any Spec beyond the literal `None needed: small item.` is designed in conversation: the open decisions put one at a time, each with a recommendation (the `workkit:interview` skill is the mechanism). A spec the owner designed in live chat already satisfies this; what the rule forbids is a spec drafted whole and handed over for a bare yes, which makes the gate a rubber stamp. `agent:ok` issues are exempt: self-ratification is exactly what that grant means (see the label table above).
+- **A written Spec opens with one plain sentence stating the behaviour rule, and carries a `### Contract` part below it**.
+  - A `None needed: small item.` spec is exempt.
+  - The Contract has three parts: **Files** (the paths that change or appear), **Names** (functions, flags, fields, messages), and **Cases** (one line each: given X, then Y).
+  - The build reads it from both sides:
+    - the test-developer writes one test per Case from the Contract and the Description;
+    - the feature-developer builds the Names from the Contract and the Spec;
+    - and the verifier maps Cases to tests (`agents.md` § Crew sizing).
+  - The `safety:spec-guard` hook holds the flip to `status:specced` while a written Spec has no Contract (`hooks.md` § `safety:spec-guard`).
+  - The tower Board's own move of a card to Specced applies the same rule, on the machine and in a published copy alike.
+- **A real spec is built WITH the owner, before acceptance is asked for.**
+  - Any Spec beyond the literal `None needed: small item.` is designed in conversation.
+  - The open decisions are put one at a time, each with a recommendation (the `workkit:interview` skill is the mechanism).
+  - A spec the owner designed in live chat already satisfies this.
+  - What the rule forbids is a spec drafted whole and handed over for a bare yes, which makes the gate a rubber stamp.
+  - `agent:ok` issues are exempt: self-ratification is exactly what that grant means (see the label table above).
 - **Promotion**: when a spec's content is validated in practice, its durable parts move to `docs/<topic>.md` (with `AGENTS.md` pointing at them), and the issue closes citing that path. Docs follow validation, never intentions.
 - **Rejection** is closing the issue as **not planned**: the institutional no, at every scale. Nothing turned down leaves a file behind; the closed issue IS the record, and triage cites it instead of re-pitching (`gh issue list --state all --search ...`).
 - A design too large for one issue splits into sub-issues, each carrying its own `## Spec`. A design worth keeping but not now is `status:backlog`, body intact.
 
 ## Handoffs
 
-Read-once context docs ("write what you'd need after your memory is erased"). Never carry GO markers or standing instructions: a gate is a `status:blocked` issue with the question in a comment. After consumption → `archive/` beside them.
+- Read-once context docs ("write what you'd need after your memory is erased").
+- Never carry GO markers or standing instructions: a gate is a `status:blocked` issue with the question in a comment.
+- After consumption → `archive/` beside them.
 
 ## The global layer
 
-**State lives in cloud surfaces; disks hold only scratch that never syncs**. Work is issues, and summaries are Discussions on the home repo. **Generated records are never files**, not in a repo, not on a machine: anything a machine produced and a human reads is published where every machine can see it, so no laptop is the one place a record exists. What is left on disk is scratch (the capture inbox, session state, caches, logs) and none of it is a source of truth.
-
-Two surfaces, both generic. There is no assumed folder layout anywhere, and no path outside them.
-
-**1. `~/.workkit`**: workkit's user-level home on any machine (`$WORKFLOW_HOME` overrides it). It is a PLAIN FOLDER and never a git repo: nothing in it is versioned, so nothing in it has to be kept out of a commit.
+- **State lives in cloud surfaces; disks hold only scratch that never syncs**.
+  - Work is issues, and summaries are Discussions on the home repo.
+- **Generated records are never files**, not in a repo, not on a machine.
+  - Anything a machine produced and a human reads is published where every machine can see it.
+  - So no laptop is the one place a record exists.
+- What is left on disk is scratch (the capture inbox, session state, caches, logs), and none of it is a source of truth.
+- Two surfaces, both generic.
+  - There is no assumed folder layout anywhere, and no path outside them.
+- **1. `~/.workkit`**: workkit's user-level home on any machine (`$WORKFLOW_HOME` overrides it).
+  - It is a PLAIN FOLDER and never a git repo.
+  - Nothing in it is versioned, so nothing in it has to be kept out of a commit.
 
 | Surface | Job |
 |---|---|
-| `settings.json` | HAND-EDITED, seeded holding no setting (`{ "version": 1 }`): the machine's layer over the kit's `defaults/settings.json` (§ The model, the merged view), so an absent key reads the kit's default. It holds the site options `site.repo` (the home repo, below), `site.publish` (the all-or-nothing publish switch), `site.url` (the custom domain) and `site.sidebar` (link groups the dashboard build appends to its sidebar), and any other setting for every repo on the machine, `findings.file` (whether an agent files a finding on its own, § How big is one issue) among them, a repo's `.workkit/settings.json` overriding it under the same key. Its `enabled` turns no repo on. `site.publish` is THREE-STATE: `true`/`false` are answers, and null (the default) is a machine nobody has asked yet |
+| `settings.json` | HAND-EDITED: the machine's layer over the kit's defaults (in full under this table) |
 | `.repos.json` | MACHINE-MAINTAINED: the `repos` map: the roster (below) plus this developer's declines |
 | `.cache.json` | DISPOSABLE: the cached GitHub node ids and the upstream-news cursor. Safe to delete; every reader rebuilds what it does not find |
 | `jobs/` | Scheduled-job state (marks, caches). Machine-local by definition; never a record |
 | `morning.d/` | HAND-WRITTEN: the owner's own scripts, which the local morning runs last, in name order (`jobs/README.md` § The morning on this machine) |
 | `tower/` | The clone of the home repo: the ONE git repo in the global layer, and the subject of everything below |
 
-**2. The home repo**: one private GitHub repo, `<login>/workkit`, created by `workkit setup`, named in `~/.workkit/settings.json` as `site.repo`, and cloned at `~/.workkit/tower`. It is the queue for everything that belongs to no single repo, and its issues carry the standard's labels and issue anatomy like every other repo's.
+- **`settings.json`**, the table's first row in full:
+  - It is HAND-EDITED, seeded holding no setting (`{ "version": 1 }`).
+  - It is the machine's layer over the kit's `defaults/settings.json` (§ The model, the merged view), so an absent key reads the kit's default.
+  - It holds the site options:
+    - `site.repo` (the home repo, below);
+    - `site.publish` (the all-or-nothing publish switch);
+    - `site.url` (the custom domain);
+    - and `site.sidebar` (link groups the dashboard build appends to its sidebar).
+  - It holds any other setting for every repo on the machine, among them:
+    - `findings.file` (whether an agent files a finding on its own, § How big is one issue);
+    - `docs.bullets` (whether a markdown write must keep the doc shape, § Enforcement);
+    - and `docs.paths` (which markdown the shape check judges, § Enforcement).
+  - A repo's `.workkit/settings.json` overrides it under the same key.
+  - Its `enabled` turns no repo on.
+  - `site.publish` is THREE-STATE: `true`/`false` are answers, and null (the default) is a machine nobody has asked yet.
+- **2. The home repo**: one private GitHub repo, `<login>/workkit`, created by `workkit setup`.
+  - It is named in `~/.workkit/settings.json` as `site.repo`, and cloned at `~/.workkit/tower`.
+  - It is the queue for everything that belongs to no single repo.
+  - Its issues carry the standard's labels and issue anatomy like every other repo's.
+- It is also a real PROJECT: the clone is the tower's dashboard, seeded from the kit's own `tower/app`.
+  - It is shaped like any other site project: a brand root with `targets/`, `config/`, its own `.gitignore`.
+  - Nothing generated is committed as source: there is no project list in it, and no build output on its default branch.
+- **The clone is ENGINE TERRITORY and is never hand-edited.**
+  - It carries no `.workkit/` of its own (no participation flag, no capture file).
+    - The reason: the engine knows it BY PATH rather than by a committed file.
+    - Every user-owned option lives in `~/.workkit/settings.json` instead.
+  - The heal never registers it on the roster; the tower's board discovers it by that same path.
+- **Setup creates it and nothing else ever does.**
+  - The wizard detects the login, creates the private repo, clones it into `~/.workkit/tower`, and seeds the project when the clone is empty.
+  - It installs its dependencies, enables Discussions and Pages, and asks the one question the publish path leaves: whether to publish the site at all.
+  - Each step is idempotent; each failure warns with the exact fix, and the wizard carries on.
+  - **Nothing is ever converted or adopted**: an absent path is cloned, and the right clone is a no-op.
+    - Anything else already at that path stops the home steps.
+  - The daily path and the session hook never create, clone, or enable anything.
+    - The one exception is the `gh-pages` branch, which is generated output and belongs to the publish that generates it.
+- The seed copies the two `@omega.js` npm pins as they are.
+  - A `file:` spec, which only a maintainer's tree left in local mode carries, is made absolute against the machine that seeded it.
+  - The reason: a relative one means nothing in the clone.
+- Its **issues** are the cross-project and business queue:
+  - whatever triage cannot route to a project repo;
+  - and where a capture made outside every participating repo lands directly, as a `status:inbox` issue.
+  - There is no inbox file outside a project, so that one path needs the network.
+    - Offline, the capture CLI prints the note back and exits non-zero rather than buffering it anywhere.
+- It is also the **nursery** for projects that do not exist yet.
+  - An idea with no repo becomes a `type:idea` issue there, and related notes accumulate as comments on it.
+- **Graduation is the owner's word: the system proposes, never creates**.
+  - Triage's HQ pass proposes it when captures cluster around one project.
+  - The owner's yes executes it, and creation always asks who OWNS the new repo (the personal account or an org, never assumed).
+  - The mechanics (transfer or recreate, the three questions a new repo is asked, the enable question) are the `workkit:triage` skill's § Graduation.
+  - No automation ever creates a repo or moves an issue on its own.
+- **Unset `site.repo`, or no clone yet**: triage says so and leaves global entries where they are.
+  - Nothing is invented, and nothing is filed into a project repo it does not belong to.
 
-It is also a real PROJECT: the clone is the tower's dashboard, seeded from the kit's own `tower/app` and shaped like any other site project: a brand root with `targets/`, `config/`, its own `.gitignore`. Nothing generated is committed as source: there is no project list in it, and no build output on its default branch.
+- **The roster replaces the walk.** Nothing scans a filesystem root for repos.
+  - Whenever the engine touches an enabled repo (`workkit enable`, the daily heal), it records that repo's absolute path.
+    - The path goes under `repos` in `~/.workkit/.repos.json`, as `"enabled"`.
+  - An entry is pruned on the same contact when one of these holds:
+    - its path is gone;
+    - its committed `.workkit/settings.json` is gone;
+    - or its committed file no longer says `"enabled": true` (a file jq cannot read excepted).
+  - A `"declined"` entry is a decision rather than an observation and is never pruned.
+  - The committed per-repo file stays the SSOT of membership.
+    - This list is a self-maintaining machine-local INDEX of it, and the tower reads it.
+  - A repo never opened on this machine is not on that machine's dashboard, correct by definition.
+  - The roster is the ONLY thing the daily heal owes the global layer from a project repo's session.
+    - The clone carries no opt-in and is never registered on the roster.
+  - The clone IS healed, by the engine itself, at setup and each morning's publish.
+    - The heal is scoped to what makes a repo fileable into: labels and issue forms, no session scaffolding.
+  - `workkit doctor` reports the count, the clone's state (unset · absent · clone · other), and how it stands against its upstream.
+    - A diverged clone is reported and healed by pull-rebase, never by a force push.
 
-**The clone is ENGINE TERRITORY and is never hand-edited.** It carries no `.workkit/` of its own (no participation flag, no capture file) because the engine knows it BY PATH rather than by a committed file, and every user-owned option lives in `~/.workkit/settings.json` instead. The heal never registers it on the roster; the tower's board discovers it by that same path.
+- **Capture surfaces, all draining through triage:**
+  - `workkit note` → the nearest inbox, or a new `status:inbox` issue on the home repo when no participating repo is nearer;
+    - when there is no clone yet or no network, a plain refusal, the note handed back;
+  - an editor → the inbox file directly;
+  - phone or web → a new issue on the home repo (the GitHub app is the interface: there is no second UI);
+  - the tower's intake dialog → any repo on this machine's roster, which is what its repo list offers.
+    - A home repo that is not cloned on this machine is reachable from GitHub, not from that dialog.
 
-- **Setup creates it and nothing else ever does.** The wizard detects the login, creates the private repo, clones it into `~/.workkit/tower`, seeds the project when the clone is empty, installs its dependencies, enables Discussions and Pages, and asks the one question the publish path leaves: whether to publish the site at all. Each step is idempotent, each failure warns with the exact fix and the wizard carries on. **Nothing is ever converted or adopted**: an absent path is cloned, the right clone is a no-op, and anything else already at that path stops the home steps. The daily path and the session hook never create, clone, or enable anything. The one exception is the `gh-pages` branch, which is generated output and belongs to the publish that generates it.
-- The seed copies the two `@omega.js` npm pins as they are. A `file:` spec, which only a maintainer's tree left in local mode carries, is made absolute against the machine that seeded it, since a relative one means nothing in the clone.
-- Its **issues** are the cross-project and business queue: whatever triage cannot route to a project repo, and where a capture made outside every participating repo lands directly, as a `status:inbox` issue. There is no inbox file outside a project, so that one path needs the network: offline, the capture CLI prints the note back and exits non-zero rather than buffering it anywhere.
-- It is also the **nursery** for projects that do not exist yet. An idea with no repo becomes a `type:idea` issue there, and related notes accumulate as comments on it.
-- **Graduation is the owner's word: the system proposes, never creates**. Triage's HQ pass proposes it when captures cluster around one project; the owner's yes executes it, and creation always asks who OWNS the new repo (the personal account or an org, never assumed). The mechanics (transfer or recreate, the three questions a new repo is asked, the enable question) are the `workkit:triage` skill's § Graduation. No automation ever creates a repo or moves an issue on its own.
-- **Unset `site.repo`, or no clone yet**: triage says so and leaves global entries where they are. Nothing is invented, and nothing is filed into a project repo it does not belong to.
+- **Summaries and briefs** are generated records, so they are never written to disk.
+  - The daily summary is published as a Discussion on the home repo in the `Daily` category.
+  - The rollups are published in `Weekly` and `Monthly`.
+  - Each reads its inputs back from the API rather than from any folder.
+  - GitHub offers no way to CREATE a discussion category (there is no such mutation).
+    - So setup opens the page that makes them and polls until they are there.
+    - Where it cannot ask, it prints the pointer.
+    - Until they exist, the delivery publishes in the repo's default category, saying so every time.
+  - No home repo, no network, or an API that refuses: the step logs its reason and exits 0.
+    - That is the same doctrine the brief runs under.
 
-**The roster replaces the walk.** Nothing scans a filesystem root for repos. Whenever the engine touches an enabled repo (`workkit enable`, the daily heal), it records that repo's absolute path under `repos` in `~/.workkit/.repos.json` as `"enabled"`; an entry whose path is gone, whose committed `.workkit/settings.json` is gone, or whose committed file no longer says `"enabled": true` (a file jq cannot read excepted), is pruned on the same contact. A `"declined"` entry is a decision rather than an observation and is never pruned. The committed per-repo file stays the SSOT of membership; this list is a self-maintaining machine-local INDEX of it, and the tower reads it. A repo never opened on this machine is not on that machine's dashboard, correct by definition. The roster is the ONLY thing the daily heal owes the global layer from a project repo's session; the clone carries no opt-in and is never registered on the roster. The clone IS healed, by the engine itself, at setup and each morning's publish, scoped to what makes a repo fileable into: labels and issue forms, no session scaffolding. `workkit doctor` reports the count, the clone's state (unset · absent · clone · other), and how it stands against its upstream (a diverged clone is reported and healed by pull-rebase, never by a force push).
+- The morning brief publishes the same way, as a Discussion titled `brief: <YYYY-MM-DD>`.
+  - The title is what identifies it, since the category it lands in is whatever the fallback resolved to.
+  - It is also the ONLY record of how far the upstream Claude Code news has been reported.
+    - Each brief carries one machine-readable line, `<!-- cc-news: <version> -->`.
+    - The newest brief carrying one is the cursor the next morning counts from.
+    - Nothing on a machine records it, so a machine that has never published reports no news and seeds the cursor instead.
+  - The board is READ BEFORE it is written, twice over:
+    - a title already posted for today is not posted again;
+    - and a board that could not be read publishes no version line at all.
+      - An unreadable board is not an empty one.
+      - The last published cursor must outlive a morning that could not see it.
+  - WHERE the brief is composed is not this spec's business.
+    - A laptop and a cloud runner publish it the same way, which is precisely why the title check comes first.
 
-**Capture surfaces, all draining through triage:** `workkit note` → the nearest inbox, or a new `status:inbox` issue on the home repo when no participating repo is nearer (and a plain refusal, the note handed back, when there is no clone yet or no network); an editor → the inbox file directly; phone or web → a new issue on the home repo (the GitHub app is the interface: there is no second UI); the tower's intake dialog → any repo on this machine's roster, which is what its repo list offers. A home repo that is not cloned on this machine is reachable from GitHub, not from that dialog.
-
-**Summaries and briefs** are generated records, so they are never written to disk. The daily summary is published as a Discussion on the home repo in the `Daily` category, the rollups in `Weekly` and `Monthly`, each reading its inputs back from the API rather than from any folder. GitHub offers no way to CREATE a discussion category (there is no such mutation) so setup opens the page that makes them and polls until they are there, printing the pointer where it cannot ask, and the delivery publishes in the repo's default category until they exist, saying so every time. No home repo, no network, or an API that refuses: the step logs its reason and exits 0, the same doctrine the brief runs under.
-
-The morning brief publishes the same way, as a Discussion titled `brief: <YYYY-MM-DD>`: the title is what identifies it, since the category it lands in is whatever the fallback resolved to. It is also the ONLY record of how far the upstream Claude Code news has been reported: each brief carries one machine-readable line, `<!-- cc-news: <version> -->`, and the newest brief carrying one is the cursor the next morning counts from. Nothing on a machine records it, so a machine that has never published reports no news and seeds the cursor instead. The board is READ BEFORE it is written, twice over: a title already posted for today is not posted again, and a board that could not be read publishes no version line at all: an unreadable board is not an empty one, and the last published cursor must outlive a morning that could not see it. WHERE the brief is composed is not this spec's business: a laptop and a cloud runner publish it the same way, which is precisely why the title check comes first.
-
-**The published dashboard.** The tower project in `~/.workkit/tower`, built locally by the engine and pushed to the home repo's `gh-pages` branch, which GitHub Pages serves from the branch ROOT, so no build output ever exists on the default branch and no folder is named for a Pages rule. The board readable from a phone, and nothing about it is baked in: the published pages speak GitHub live from the browser (reads, the Board's drag and the intake dialog alike) with a token the viewer supplies and localStorage alone holds, so at most one file is published beside them, `data/home.json`, naming the home repo and the branch its roster is on and nothing else. The central copy, built from this kit for every viewer, carries none and finds each viewer's home repo from their token. The roster of repos to sweep (`data/repos.json`) is written to that repo's DEFAULT branch and read back through the API with the viewer's token: Pages is public even on a private repo, which is why no issue data (and no list of private repo names) is ever written into it. Whether anything publishes AT ALL is `site.publish`, the same owner's call and the same default off, all or nothing, checked before the build, and taken at its word: the engine detects no plan and checks no visibility. The owner is ASKED for that call once, by the interactive `workkit setup` that built the publish path, and an answer of either kind is never asked for again; unanswered publishes nothing while it waits. A fresh yes is asked one follow-up (the custom domain, enter for none) and then the setup that ends with the switch on publishes the site itself, so the first pages carry their CNAME. The daily job publishes after the brief, and `workkit publish` does it on demand; a machine without the build tooling, or a clone that has diverged, skips cleanly and forces nothing. `settings.json`'s `site.url` becomes the CNAME, and a settings file that does not parse publishes nothing and says so rather than defaulting.
+- **The published dashboard.** The tower project in `~/.workkit/tower` is built locally by the engine.
+  - It is pushed to the home repo's `gh-pages` branch, which GitHub Pages serves from the branch ROOT.
+    - So no build output ever exists on the default branch, and no folder is named for a Pages rule.
+  - The board is readable from a phone, and nothing about it is baked in.
+  - The published pages speak GitHub live from the browser (reads, the Board's drag and the intake dialog alike).
+    - They use a token the viewer supplies and localStorage alone holds.
+    - So at most one file is published beside them: `data/home.json`, naming the home repo and the branch its roster is on, and nothing else.
+  - The central copy, built from this kit for every viewer, carries none and finds each viewer's home repo from their token.
+  - The roster of repos to sweep (`data/repos.json`) is written to that repo's DEFAULT branch.
+    - It is read back through the API with the viewer's token.
+    - Pages is public even on a private repo, which is why no issue data (and no list of private repo names) is ever written into it.
+  - Whether anything publishes AT ALL is `site.publish`: the same owner's call and the same default off, all or nothing.
+    - It is checked before the build, and taken at its word: the engine detects no plan and checks no visibility.
+  - The owner is ASKED for that call once, by the interactive `workkit setup` that built the publish path.
+    - An answer of either kind is never asked for again; unanswered publishes nothing while it waits.
+    - A fresh yes is asked one follow-up (the custom domain, enter for none).
+    - Then the setup that ends with the switch on publishes the site itself, so the first pages carry their CNAME.
+  - The daily job publishes after the brief, and `workkit publish` does it on demand.
+    - A machine without the build tooling, or a clone that has diverged, skips cleanly and forces nothing.
+  - `settings.json`'s `site.url` becomes the CNAME.
+    - A settings file that does not parse publishes nothing and says so rather than defaulting.
 
 ## The system works without the harness
 
-Everything a contributor or a cloud agent touches is PLAIN GITHUB: that is the design, not an accident. The labels are ordinary labels (healed by the standards engine, but usable by anyone), the issue templates auto-apply the right ones and pre-fill the anatomy, `checks.yml` runs the tests on every PR, and the repo's committed `AGENTS.md` carries the knowledge an agent needs. That `checks.yml` is the kit's, not the repo's: a caller the standards heal rewrites whenever it differs, holding only the triggers (pull requests; pushes to the default branch) and two jobs: `checks`, `uses: itw-creative-works/workkit/.github/workflows/ci.yml@main` with `secrets: inherit`, and `release`, on a push only with `contents: write` and `actions: write`, calling the kit's `release.yml@main` (the GitHub release of each `chore(release): <x.y.z>` commit the push brought, then a dispatch of each workflow on `release`). That reusable workflow sets up Node from the repo's root `.nvmrc`, else its root `.node-version`, else `lts/*` (read as nvm reads it: blank and comment lines skipped, `v22/*` and `v22` as `22`), runs each entry of the repo's `hooks.ciSetup` before the dependency install, so a tool or a `$GITHUB_ENV` value the install needs is in place (`.workkit/settings.json`, the ship hooks' shape and check, `workflow/ship/entries.js`: `[{ "command": "<shell command>" }]`, each through `bash` from the repo root in order, an entry marked `"local": true` skipped with a line, the first failure failing the job and naming the command; a variable for the later steps is appended to `$GITHUB_ENV`), installs the dependencies, then runs `xvfb-run -a npm test` when the repo has a test script (a release push, every change the CHANGELOG or a version stamp, skips it with one line, by the kit's `.github/scripts/release-push.sh`), then the changelog check. The repo's own `npm test` script is the one test command CI runs; a repo that wants a narrower run in CI reads `$CI` (set on every runner) in that script. No job setting a copy carried (`env`, `timeout-minutes`, `services`, a matrix) is carried into the caller, and a newer push to the same pull request cancels the older run. A heal that replaces a customized copy warns once per customization, so nothing is dropped unnamed: a step of the repo's own (to move into `hooks.ciSetup`, its inputs said), a kit step it changed, a trigger, a job setting (`env`, `timeout-minutes`, `services`, a matrix) or a workflow setting (`concurrency`). A push filter is kept silently only when it is exactly the default branch, and a retired kit clone step is named with its fix (a repo whose tests need `WORKKIT_ENGINE` sets it in `hooks.ciSetup`). The default branch is GitHub's answer, else `origin/HEAD`'s, the one read branch protection shares; with neither the heal leaves the file and warns, naming `git remote set-head origin -a`, a repo with no origin remote gets no caller, and the commit gate holds a staged `checks.yml` it cannot judge. Once the default branch on GitHub carries the caller, a protection still requiring the copy's `test` check has that one check swapped for `checks / test`; before then it is left as it is. Someone without the local layer files issues through the templates, branches, and opens PRs like on any normal repo; their work meets the bar through CI instead of the hooks. Cloud Claude (claude-code-action) is just such a contributor: it checks out the repo, reads the committed `AGENTS.md` and any repo-scope `.claude/settings.json`, and delivers through a PR: it never sees, and never needs, `~/.claude`. The local hook layer is ONE developer's acceleration: stricter and faster feedback for whoever installs it, a contract for nobody.
+- Everything a contributor or a cloud agent touches is PLAIN GITHUB: that is the design, not an accident.
+  - The labels are ordinary labels (healed by the standards engine, but usable by anyone).
+  - The issue templates auto-apply the right ones and pre-fill the anatomy.
+  - `checks.yml` runs the tests on every PR.
+  - The repo's committed `AGENTS.md` carries the knowledge an agent needs.
+- That `checks.yml` is the kit's, not the repo's: a caller the standards heal rewrites whenever it differs.
+  - It holds only the triggers (pull requests; pushes to the default branch) and two jobs:
+    - `checks`, `uses: itw-creative-works/workkit/.github/workflows/ci.yml@main` with `secrets: inherit`;
+    - and `release`, on a push only with `contents: write` and `actions: write`, calling the kit's `release.yml@main`.
+      - That makes the GitHub release of each `chore(release): <x.y.z>` commit the push brought, then a dispatch of each workflow on `release`.
+- That reusable workflow first decides, before any setup, whether the suite runs.
+  - A release push, every change the CHANGELOG or a version stamp, skips every later step with one line.
+    - The kit's `.github/scripts/release-push.sh` judges it.
+  - Otherwise it sets up Node from the repo's root `.nvmrc`, else its root `.node-version`, else `lts/*`.
+    - It reads the file as nvm reads it: blank and comment lines skipped, `v22/*` and `v22` as `22`.
+  - It runs each entry of the repo's `hooks.ciSetup` before the dependency install.
+    - So a tool or a `$GITHUB_ENV` value the install needs is in place.
+    - The key lives in `.workkit/settings.json`, with the ship hooks' shape and check (`workflow/ship/entries.js`): `[{ "command": "<shell command>" }]`.
+    - Each entry runs through `bash` from the repo root, in order.
+    - An entry marked `"local": true` is skipped with a line.
+    - The first failure fails the job and names the command.
+    - A variable for the later steps is appended to `$GITHUB_ENV`.
+  - It installs the dependencies, then runs `xvfb-run -a npm test` when the repo has a test script.
+  - The changelog check is a job of its own that runs either way.
+- The repo's own `npm test` script is the one test command CI runs.
+  - A repo that wants a narrower run in CI reads `$CI` (set on every runner) in that script.
+- No job setting a copy carried (`env`, `timeout-minutes`, `services`, a matrix) is carried into the caller.
+- A newer push to the same pull request cancels the older run.
+- A heal that replaces a customized copy warns once per customization, so nothing is dropped unnamed. It names:
+  - a step of the repo's own (to move into `hooks.ciSetup`, its inputs said);
+  - a kit step it changed;
+  - a trigger;
+  - a job setting (`env`, `timeout-minutes`, `services`, a matrix);
+  - or a workflow setting (`concurrency`).
+- A push filter is kept silently only when it is exactly the default branch.
+- A retired kit clone step is named with its fix (a repo whose tests need `WORKKIT_ENGINE` sets it in `hooks.ciSetup`).
+- The default branch is GitHub's answer, else `origin/HEAD`'s, the one read branch protection shares.
+  - With neither, the heal leaves the file and warns, naming `git remote set-head origin -a`.
+  - A repo with no origin remote gets no caller.
+  - The commit gate holds a staged `checks.yml` it cannot judge.
+- Once the default branch on GitHub carries the caller, a protection still requiring the copy's `test` check has that one check swapped for `checks / test`.
+  - Before then it is left as it is.
+- Someone without the local layer files issues through the templates, branches, and opens PRs like on any normal repo.
+  - Their work meets the bar through CI instead of the hooks.
+- Cloud Claude (claude-code-action) is just such a contributor.
+  - It checks out the repo, reads the committed `AGENTS.md` and any repo-scope `.claude/settings.json`, and delivers through a PR.
+  - It never sees, and never needs, `~/.claude`.
+- The local hook layer is ONE developer's acceleration: stricter and faster feedback for whoever installs it, a contract for nobody.
 
 ## The automation ladder
 
-Built day one, each rung opt-in. **Dormant by default**: with no `agent:ok` label anywhere, the whole system is human-run.
+- Built day one, each rung opt-in.
+- **Dormant by default**: with no `agent:ok` label anywhere, the whole system is human-run.
 
 1. **Manual**: humans file and label; sessions work "issue #42" or pull from the queue.
 2. **Scheduled read-only digest**: an Actions cron sweeps the roster's repos and posts the digest as a GitHub Discussion (announcements, not work items). Digest items are numbered and linked, so "file item 3" creates the linked `status:inbox` issue.
 3. **Capture bots**: a plain script on an Actions cron (Sentry, etc.): query → dedupe → `gh issue create` with `status:inbox` + `type:bug`. Files only, fixes nothing.
 4. **Agent execution**: an agent action fires on the `agent:ok` label (or an @mention) → branch + PR; a human always merges.
 
-`agent:ok` = standing, provider-agnostic permission for the WHOLE pipeline, and it is the owner's to grant, never applied on their behalf. **It means fully autonomous, every step, the ship included**: on an issue carrying it an agent writes the `## Spec`, accepts its own spec (flip to `status:specced`), builds, verifies, parks at `status:qa`, performs the check itself, flips it to `status:complete`, ships and closes: no human touch anywhere. The two labels COMPOSE: an issue wearing both is an autonomous run at its checking stage, and the qa check is one more step the grant covers. The label IS the owner's gate, exercised in advance at labeling time; applying it says "ship this without me". Without it the owner personally carries the item across every decision point: the spec accept, the qa check that grants `status:complete`, the word "ship" (§ Labels holds that rule). Self-ratification is the defined meaning of the grant, given per issue with that understanding. Cloud self-merge stays CLOSED even under the label, a dial to open deliberately later. Imperative dispatch ("this agent, now") is adapter wiring (an @mention or a bot assignee), not part of this spec; both coexist and neither replaces the label. GitHub Actions is the runtime for everything above rung 1, machine-independent and teammate-visible.
-
-Three rules bind any agent working the pipeline, granted or dispatched:
-
-- **Never merge without an explicit grant.** `agent:ok` authorizes the work, not the merge; merging is asked for in words, every time.
-- **Resume someone else's branch or PR only when it came from a trusted maintainer, or from an earlier run on this same issue.** Anything else is started fresh: a stranger's branch is unverified input, not a starting point.
-- **When several issues are eligible, order by dependency, then risk, then reviewability**: blockers, bugs, and shared seams before dependent feature work.
+- `agent:ok` = standing, provider-agnostic permission for the WHOLE pipeline.
+  - It is the owner's to grant, never applied on their behalf.
+- **It means fully autonomous, every step, the ship included**:
+  - on an issue carrying it, an agent writes the `## Spec`, accepts its own spec (flip to `status:specced`), builds, verifies and parks at `status:qa`;
+  - then it performs the check itself, flips it to `status:complete`, ships and closes: no human touch anywhere.
+- The two labels COMPOSE: an issue wearing both is an autonomous run at its checking stage.
+  - The qa check is one more step the grant covers.
+- The label IS the owner's gate, exercised in advance at labeling time; applying it says "ship this without me".
+- Without it the owner personally carries the item across every decision point (§ Labels holds that rule):
+  - the spec accept;
+  - the qa check that grants `status:complete`;
+  - the word "ship".
+- Self-ratification is the defined meaning of the grant, given per issue with that understanding.
+- Cloud self-merge stays CLOSED even under the label, a dial to open deliberately later.
+- Imperative dispatch ("this agent, now") is adapter wiring (an @mention or a bot assignee), not part of this spec.
+  - Both coexist, and neither replaces the label.
+- GitHub Actions is the runtime for everything above rung 1, machine-independent and teammate-visible.
+- Three rules bind any agent working the pipeline, granted or dispatched:
+  - **Never merge without an explicit grant.** `agent:ok` authorizes the work, not the merge; merging is asked for in words, every time.
+  - **Resume someone else's branch or PR only when it came from a trusted maintainer, or from an earlier run on this same issue.**
+    - Anything else is started fresh: a stranger's branch is unverified input, not a starting point.
+  - **When several issues are eligible, order by dependency, then risk, then reviewability**: blockers, bugs, and shared seams before dependent feature work.
 
 ## Enforcement (why this spec holds when prose alone would not)
 
-A format rule without a mechanism does not hold. Corollary, **a pointer may carry reference detail, never sole enforcement**: every rule that must bind every session gets a hook. This spec is where detail lives, not where obedience comes from.
+- A format rule without a mechanism does not hold.
+- Corollary, **a pointer may carry reference detail, never sole enforcement**: every rule that must bind every session gets a hook.
+- This spec is where detail lives, not where obedience comes from.
 
-- **`workflow:standards`** (SessionStart, once per repo per day): runs `~/.claude/workkit/standards.sh`: creates every label from `labels.json` and corrects description/color drift, installs the issue templates, keeps the required-checks CI workflow (`.github/workflows/checks.yml`, the kit's caller, rewritten whenever it differs: § The system works without the harness), asks GitHub for branch protection on the `checks / test` check (best effort, quietly skipped where the plan refuses), seeds `.workkit/capture.md` and `.workkit/agents/session.md`, registers the repo in this machine's roster (`repos` in `~/.workkit/.repos.json`, pruning the entries that went away), keeps `.workkit/` in `.gitignore` (settings.json excepted) along with the basics every repo needs (`.DS_Store` and `.env`, appended only when nothing already covers them), and names any open issue missing a required `status:`/`type:` label or carrying two from an exclusive group (exactly one status, always: a violation flags the run, so the heal re-reports it every session until triage routes them). **Participation gate**: the engine owns the tri-state above and the hook only routes it: heal, stay silent, or offer once. Joining is a deliberate `--enable`, never a side effect of opening a session, and an undecided repo is never written to. Safe idempotent heals are silent; only real fixes are announced. Offline, unauthenticated, or remote-less = clean skip.
-- **`docs:state-check`** (SessionStart): announces open `status:inbox` issues, a non-empty `.workkit/capture.md`, a repo `CLAUDE.md` with the one fix its shape calls for (delete, rename, or merge by hand; § Repo docs), and an `AGENTS.md` past either half of its budget (over 250 lines, or any line over 400 bytes). Heal-on-contact, no manual sweeps. Standing rule: every new doctrine gets its detection added here (or to the guard) the same turn it is adopted.
+- **`workflow:standards`** (SessionStart, once per repo per day): runs `~/.claude/workkit/standards.sh`.
+  - The script:
+    - creates every label from `labels.json` and corrects description/color drift;
+    - installs the issue templates;
+    - keeps the required-checks CI workflow (`.github/workflows/checks.yml`, the kit's caller, rewritten whenever it differs: § The system works without the harness);
+    - asks GitHub for branch protection on the `checks / test` check (best effort, quietly skipped where the plan refuses);
+    - seeds `.workkit/capture.md` and `.workkit/agents/session.md`;
+    - registers the repo in this machine's roster (`repos` in `~/.workkit/.repos.json`, pruning the entries that went away);
+    - keeps `.workkit/` in `.gitignore` (settings.json excepted), along with the basics every repo needs;
+      - those are `.DS_Store` and `.env`, appended only when nothing already covers them;
+    - and names any open issue missing a required `status:`/`type:` label or carrying two from an exclusive group.
+      - Exactly one status, always: a violation flags the run, so the heal re-reports it every session until triage routes them.
+  - **Participation gate**: the engine owns the tri-state above and the hook only routes it: heal, stay silent, or offer once.
+    - Joining is a deliberate `--enable`, never a side effect of opening a session.
+    - An undecided repo is never written to.
+  - Safe idempotent heals are silent; only real fixes are announced.
+  - Offline, unauthenticated, or remote-less = clean skip.
+- **`docs:state-check`** (SessionStart): announces open `status:inbox` issues and a non-empty `.workkit/capture.md`.
+  - It also announces a repo `CLAUDE.md`, with the one fix its shape calls for (delete, rename, or merge by hand; § Repo docs).
+  - It also announces an `AGENTS.md` past either half of its budget (over 250 lines, or any line over 400 bytes).
+  - Heal-on-contact, no manual sweeps.
+  - Standing rule: every new doctrine gets its detection added here (or to the guard) the same turn it is adopted.
 - **`docs:session`** (SessionStart, every source): injects `.workkit/agents/session.md` in a participating repo so a compacted or restarted session reads its own task state first, and says so when the file has grown past the ~40-line light bar. Silent for a header-only or absent file.
 - **`docs:session-guard`** (PostToolUse): bounces a `.workkit/agents/session.md` write that leaves the file over 40 content lines or any bullet over 350 characters: the write-time enforcement of the same bar `docs:session` warns about, with the `workkit:ship` close step (delete the entries a ship completed) as the workflow fix.
 - **`docs:change-tracker`** (Stop of a turn that parked, blocked or closed an issue, with uncommitted work): re-injects the three obligations: keep the issue true, promote durable findings out of `.workkit/`, doc parity on finalized work. Once per change: it fingerprints the state it nags about and remembers it in `.workkit/agents/`, so the endpoints over an unchanged tree are silent.
-- **`docs:board-guard`** (PostToolUse): validates `AGENTS.md` (≤250 lines, and no line over 400 bytes), its one duty; a `CLAUDE.md` write passes, since `docs:state-check` names its fix. Violations bounce to the writing agent with a precise fix-list while the context that produced them is still loaded. Board-shape checks retired with the board (label legality is the standards script's job); spec-file checks retired with `plans/` (a spec lives in its issue body, which no write-time hook sees).
+- **`docs:board-guard`** (PostToolUse): validates `AGENTS.md` (≤250 lines, and no line over 400 bytes) and the markdown shape below.
+  - A `CLAUDE.md` write passes, since `docs:state-check` names its fix.
+  - Violations bounce to the writing agent with a precise fix-list while the context that produced them is still loaded.
+  - Board-shape checks retired with the board (label legality is the standards script's job).
+  - Spec-file checks retired with `plans/` (a spec lives in its issue body, which no write-time hook sees).
+  - **The markdown shape**: in a repo whose settings set `docs.bullets` to `true`, a doc is headings, bullets, tables and code blocks.
+    - The docs are the markdown the `docs.paths` setting names, paths from the repo root; the kit default and the entry forms are `docs/hooks.md` § `docs:board-guard`.
+    - The check is a ratchet. A write that leaves more paragraph lines, or more lines over 400 bytes, than the file's copy in the git index bounces by count and line. Each count is held on its own.
+    - A new file has no index copy, so it must be clean. An old doc can be edited freely while neither count rises.
+  - Front matter and fenced blocks are never prose. `CHANGELOG.md`, `LICENSE.md` and the issue forms are exempt. The full rule is `docs/hooks.md` § `docs:board-guard`.
 
 ## Migration recipe (board repo → v4)
 
-The `workkit:migrate` skill EXECUTES this recipe: it is the doer, and this section stays the rules. Run it rather than doing the steps by hand; it also carries the CHANGELOG-history half, which is mechanical enough to fan out and easy to get wrong (a dropped category, a range only half rewritten).
+- The `workkit:migrate` skill EXECUTES this recipe: it is the doer, and this section stays the rules.
+- Run it rather than doing the steps by hand.
+  - It also carries the CHANGELOG-history half, which is mechanical enough to fan out and easy to get wrong (a dropped category, a range only half rewritten).
 
 1. Run `workkit enable` in the repo: it writes `.workkit/settings.json` holding `{ "enabled": true }` (COMMIT it, that is the opt-in) and heals the repo in the same pass: labels, issue templates, `.workkit/` ignored, the capture and session files seeded.
 2. Read the whole board. Nothing is deleted; every line lands somewhere.
@@ -355,5 +1068,10 @@ The `workkit:migrate` skill EXECUTES this recipe: it is the doer, and this secti
 4. `Rulings` → `AGENTS.md`/`docs/` if doctrine, else a comment on the issue they bind.
 5. `Done` → deleted. CHANGELOG + git are the record.
 6. `INBOX.md` entries → issues with `status:inbox`, then run triage.
-7. CHANGELOG history → the entry format, the WHOLE file: every section including the pre-issue eras, whose entries take the literal `(no issue)`. Do not trust `workkit changelog lint` to name this work. Its section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard), so era sections lint green while still in the old long-line format. The eyeball check is the gate: no massive single-line entries anywhere. Rewrite rules and the fan-out recipe: the `workkit:migrate` skill §2.
+7. CHANGELOG history → the entry format, the WHOLE file: every section including the pre-issue eras, whose entries take the literal `(no issue)`.
+   - Do not trust `workkit changelog lint` to name this work.
+   - Its section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard).
+     - So era sections lint green while still in the old long-line format.
+   - The eyeball check is the gate: no massive single-line entries anywhere.
+   - Rewrite rules and the fan-out recipe: the `workkit:migrate` skill §2.
 8. `git rm PROGRESS.md INBOX.md`. The roster registers itself: step 1 put the repo on it.

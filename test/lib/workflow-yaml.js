@@ -40,4 +40,20 @@ const listValue = (keyBlock) => {
   return keyBlock.slice(1).filter(isContent).map((line) => unquote(line.trim().replace(/^- /, '')));
 };
 
-module.exports = { indentOf, isComment, isContent, childrenOf, block, inlineValue, listValue };
+// The items of a block-style list of maps (a job's `steps:`), each its own lines
+// with the leading `- ` blanked, so `block(item, key, indentOf(item[0]))` reads a key.
+const listItems = (keyBlock) => {
+  const first = keyBlock.slice(1).find(isContent);
+  if (!first || !/^ *- /.test(first)) return [];
+  const dash = new RegExp(`^ {${indentOf(first)}}- `);
+  const items = [];
+  for (const line of keyBlock.slice(1)) {
+    if (dash.test(line)) items.push([line.replace('- ', '  ')]);
+    else if (items.length) items[items.length - 1].push(line);
+  }
+  return items;
+};
+
+module.exports = {
+  indentOf, isComment, isContent, childrenOf, block, inlineValue, listValue, listItems, unquote,
+};

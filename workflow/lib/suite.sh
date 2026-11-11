@@ -110,11 +110,10 @@ _wk_record_holds() {
 # minutes. Consumers: the suite record's two writers, timing their run.
 wk_elapsed_ms() { printf '%s\n' "$(( (SECONDS - $1) * 1000 ))"; }
 
-# wk_suite_marker_write <repo_root> <tree> <ms>: record <tree>, the id hashed
-# BEFORE the green run, so an edit made while it ran is never counted proved,
-# and `ms=<ms>`, the run's wall time. Consumers: script-shell.sh (the working
-# tree a root run started on) and prove.sh (the staged tree, proved in a copy).
-# Like every marker writer, it sweeps first (wk_sweep_markers).
+# wk_suite_marker_write <repo_root> <tree> <ms>: sweep the markers, then record
+# <tree>, the id hashed BEFORE the green run (an edit made while it ran is never
+# counted proved), and `ms=<ms>`, the run's wall time. Consumers: script-shell.sh
+# (the working tree a root run started on) and prove.sh (the staged tree, in a copy).
 wk_suite_marker_write() {
   wk_sweep_markers
   _wk_record_write wk_suite_marker_path "$1" "$2" "ms=$3"

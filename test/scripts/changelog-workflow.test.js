@@ -5,27 +5,12 @@
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
-const { indentOf, isContent, childrenOf } = require('../lib/workflow-yaml');
+const { childrenOf, block, listItems } = require('../lib/workflow-yaml');
 
 const ROOT = path.join(__dirname, '..', '..');
 const REUSABLE = path.join(ROOT, '.github', 'workflows', 'changelog.yml');
 
 const read = (file) => fs.readFileSync(file, 'utf8');
-
-// Each step's lines, from its `- ` to the next line at its indent or less;
-// blank and comment lines are skipped, and a deeper `- ` stays inside the step.
-const steps = (text) => {
-  const out = [];
-  let step = null;
-  for (const line of text.split('\n')) {
-    if (!isContent(line)) continue;
-    const dash = /^ *- /.test(line);
-    if (step && indentOf(line) > step.indent) step.lines.push(line);
-    else if (dash) out.push(step = { indent: indentOf(line), lines: [line] });
-    else step = null;
-  }
-  return out.map((s) => s.lines);
-};
 
 // A step's `with:` keys and their values, the lines indented under `with:`.
 const withOf = (lines) => {
@@ -40,9 +25,10 @@ const withOf = (lines) => {
 };
 
 // The fetch-depth in the `with:` of the caller's own checkout (the
-// actions/checkout step naming no other repository), or null.
+// actions/checkout step naming no other repository), or null. The steps are
+// the one job's, its `steps:` block at the job's key indent.
 const checkoutDepth = (text) => {
-  const own = steps(text).find((lines) => lines.some((l) => /^ *(- )?uses: actions\/checkout@/.test(l))
+  const own = listItems(block(text.split('\n'), 'steps', 4)).find((lines) => lines.some((l) => /^ *(- )?uses: actions\/checkout@/.test(l))
     && !('repository' in withOf(lines)));
   return (own && withOf(own)['fetch-depth']) ?? null;
 };

@@ -262,6 +262,18 @@ const cases = async () => {
     assertEq(JSON.stringify(runs.map((c) => c[2])), JSON.stringify(['pages.yml']), `pages.yml is run, got: ${fmtCalls(gh.calls())}`);
   });
 
+  await test('a re-run that makes no release: v1.2.3 already there, its release commit in the push, a tag-input workflow is run with -f tag=v1.2.3', () => {
+    const { g, before } = mkWorld({ '.github/workflows/vsix.yml': VSIX });
+    releaseCommit(g, '1.2.3');
+    const gh = releaseGh(g, { tags: ['v1.2.3'] });
+    const { code, all } = scan(g, gh, before);
+    assertEq(code, 0, `exit 0, got: ${all}`);
+    assertEq(creates(gh).length, 0, `no create, got: ${fmtCalls(gh.calls())}`);
+    const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
+    assertEq(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), JSON.stringify([['vsix.yml', 'tag=v1.2.3']]),
+      `vsix.yml with the found release's tag, got: ${fmtCalls(gh.calls())}`);
+  });
+
   await test('a workflow whose dispatch declares a tag input: v1.1.0 and v1.2.0 released, it is run once with -f tag=v1.2.0; one without it gets no -f', () => {
     const { g } = mkWorld({ '.github/workflows/pages.yml': PAGES, '.github/workflows/vsix.yml': VSIX });
     releaseCommit(g, '1.0.0');

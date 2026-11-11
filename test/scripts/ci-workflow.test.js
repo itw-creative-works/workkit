@@ -3,13 +3,18 @@
 // and a pull request still runs, and the jobs are wired so the scope job's
 // run answer gates the suite and the changelog check, while the required
 // `test` job waits on both scope and suite; the `release` job runs on a push only.
+// Then the reusable ci.yml: its `test` job's Scope step decides before setup,
+// and setup, the install and the suite each run only on its run answer.
 
 const path = require('path');
 const fs = require('fs');
 const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
-const { indentOf, isContent, block, inlineValue, listValue } = require('../lib/workflow-yaml');
+const {
+  indentOf, isContent, block, inlineValue, listValue, listItems, unquote,
+} = require('../lib/workflow-yaml');
 
 const WORKFLOW = path.join(__dirname, '..', '..', '.github', 'workflows', 'checks.yml');
+const CI = path.join(__dirname, '..', '..', '.github', 'workflows', 'ci.yml');
 
 // The children of a block, at the indent of its first content line.
 const childIndent = (keyBlock) => {
@@ -23,11 +28,11 @@ const needsOf = (keyBlock) => {
   return one && !one.startsWith('[') ? [one] : listValue(keyBlock);
 };
 
-// A reader of `jobs.<name>.<key>` blocks in checks.yml, each asserted present.
-const jobKey = () => {
-  const lines = fs.readFileSync(WORKFLOW, 'utf8').split(/\r?\n/);
+// A reader of `jobs.<name>.<key>` blocks in `file`, each asserted present.
+const jobKey = (file = WORKFLOW) => {
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
   const jobs = block(lines, 'jobs', 0);
-  assert(jobs, 'checks.yml has a top-level `jobs:`');
+  assert(jobs, `${path.basename(file)} has a top-level \`jobs:\``);
   const at = childIndent(jobs);
   return (name, k) => {
     const job = block(jobs, name, at);
@@ -37,6 +42,15 @@ const jobKey = () => {
     return found;
   };
 };
+
+// ci.yml's `jobs.test.steps`, each step as `{ name, id, if }` (absent keys null).
+const ciSteps = () => listItems(jobKey(CI)('test', 'steps')).map((item) => {
+  const value = (k) => {
+    const found = block(item, k, indentOf(item[0]));
+    return found ? unquote(inlineValue(found)) : null;
+  };
+  return { name: value('name'), id: value('id'), if: value('if') };
+});
 
 const cases = async () => {
   group('checks.yml: the triggers');
@@ -77,6 +91,26 @@ const cases = async () => {
       assertEq(inlineValue(found), 'write', `jobs.release.permissions.${scope}`);
     }
     assertEq(inlineValue(key('release', 'uses')), './.github/workflows/release.yml', 'jobs.release.uses');
+  });
+
+  group('ci.yml: the release-push skip is decided before setup');
+
+  await test('the Scope step (id scope) comes before Setup (hooks.ciSetup)', () => {
+    const steps = ciSteps();
+    const scope = steps.findIndex((s) => s.id === 'scope');
+    const setup = steps.findIndex((s) => s.name === 'Setup (hooks.ciSetup)');
+    assert(scope >= 0, `a step with id scope, got: ${JSON.stringify(steps)}`);
+    assert(setup >= 0, `a Setup (hooks.ciSetup) step, got: ${JSON.stringify(steps)}`);
+    assert(scope < setup, `Scope (step ${scope}) before Setup (step ${setup})`);
+  });
+
+  await test('Setup, Install dependencies and Test each run only on the scope step\'s run answer', () => {
+    const steps = ciSteps();
+    for (const name of ['Setup (hooks.ciSetup)', 'Install dependencies', 'Test']) {
+      const step = steps.find((s) => s.name === name);
+      assert(step, `a ${name} step, got: ${JSON.stringify(steps)}`);
+      assertEq(step.if, "steps.scope.outputs.run == 'true'", `${name}: if`);
+    }
   });
 
   return summary();

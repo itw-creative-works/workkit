@@ -1,7 +1,7 @@
 // tool.call Bash through the hooks module: safety:tree-guard in the module's
 // Bash chain, its deny, the escape's notice as the result's `context` plus one
 // $.ui.log line, and the path probe answered by the world's files; then the
-// chain around it: release-taken, tree-guard and capture-guard, each fire
+// chain around it: release-taken, tree-guard, bare-call and capture-guard, each fire
 // logged, the opt-in and HOOK_DISABLE stand-downs, and a gh write passed on for
 // the gh shim to judge. The verdict's own cases are test/hooks/tree-guard.test.js.
 
@@ -14,7 +14,7 @@ const ASIDE = 'tree-guard: stood aside for a deliberate discard: WORKKIT_ALLOW_D
 const verdictsOf = (w: any, hook: string) => hooksLog(w).filter((l: any) => l.hook === hook).map((l: any) => l.verdict)
 const verdicts = (w: any) => verdictsOf(w, 'safety:tree-guard')
 // The Bash chain, in its order.
-const GUARDS = ['safety:release-taken', 'safety:tree-guard', 'safety:capture-guard']
+const GUARDS = ['safety:release-taken', 'safety:tree-guard', 'workflow:bare-call', 'safety:capture-guard']
 
 describe('tool.call Bash: safety:tree-guard', () => {
   test('the loader routes safety:tree-guard to the script: git reset --hard is denied with the hook\'s text, its run line logged', { plugins: [TOOL_SPY] }, async ($, on) => {
@@ -56,7 +56,7 @@ describe('tool.call Bash: the chain around its guards', () => {
     expect(w.toolRan).toBeUndefined()
   })
 
-  test('one Bash call through the three guards writes its fire lines with one read and one write of hooks.log', { plugins: [TOOL_SPY] }, async ($, on) => {
+  test('one Bash call through the whole chain writes its fire lines with one read and one write of hooks.log', { plugins: [TOOL_SPY] }, async ($, on) => {
     const w = mkWorld(on)
     await bash($, 'ls')
     const logFile = `${HOME}/.workkit/hooks.log`

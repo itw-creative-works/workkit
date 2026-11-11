@@ -7,13 +7,14 @@ argument-hint: "[repo path] [files|changelog]"
 
 # Migrate: the judgment half of a repo migration
 
-`workflow:standards` heals what is safe to heal automatically and leaves the rest alone. The rest lands here: each item destroys information or needs a human's call. It runs only when invoked; no hook fires it.
-
-Spec (SSOT for every rule below): the workkit plugin's `docs/project-state.md`.
+- `workflow:standards` heals what is safe to heal automatically and leaves the rest alone.
+- The rest lands here: each item destroys information or needs a human's call.
+- It runs only when invoked; no hook fires it.
+- Spec (SSOT for every rule below): the workkit plugin's `docs/project-state.md`.
 
 ## 0. Scope from this skill's own scan
 
-Check the repo is opted in, then, from its root, scan for exactly what this skill migrates:
+- Check the repo is opted in, then, from its root, scan for exactly what this skill migrates:
 
 ```sh
 workkit state <repo>                # is the repo even opted in?
@@ -29,9 +30,10 @@ workkit changelog lint CHANGELOG.md # entries outside the entry format
 
 ## 1. Retired files → issues
 
-`PROGRESS.md`, `INBOX.md`, `TODO.md`, and `plans/` are retired. Their contents are work items, and work items live as GitHub issues.
-
-This is `workkit:triage`'s routing pointed at a file instead of an inbox. **Invoke that skill for the routing decisions**; this section adds only the file handling:
+- `PROGRESS.md`, `INBOX.md`, `TODO.md`, and `plans/` are retired.
+  - Their contents are work items, and work items live as GitHub issues.
+- This is `workkit:triage`'s routing pointed at a file instead of an inbox.
+- **Invoke that skill for the routing decisions**; this section adds only the file handling:
 
 1. Read the whole file first. Split it into discrete items; never file a mixed dump as one issue.
 2. Drop what is already true. A board's `Done` lane is history, which lives in the CHANGELOG and the commits. Never file completed work as an open issue.
@@ -40,7 +42,8 @@ This is `workkit:triage`'s routing pointed at a file instead of an inbox. **Invo
 5. **Print the Filed trail before deleting anything.** It is the `**🗂️ Filed**` section `workkit:triage` prints: one bullet per item, leading with its issue link, in the cold-reader line (`docs/project-state.md` § Restating an issue).
 6. **Never delete a file whose items are not yet filed.** Delete it only once every live item in it has an issue number; the trail is the receipt. Deleting first turns a mis-read into lost work.
 
-An item whose home is genuinely unclear: file it `status:inbox` and mark it `(check placement)` in the trail. Do not stop to ask per item.
+- An item whose home is genuinely unclear: file it `status:inbox` and mark it `(check placement)` in the trail.
+  - Do not stop to ask per item.
 
 ## 2. CHANGELOG history → the entry format
 
@@ -48,15 +51,15 @@ An item whose home is genuinely unclear: file it `status:inbox` and mark it `(ch
 - In short: one short paragraph per entry, at most 50 words. It starts with `[#N](../../issues/N)` or the literal `(no issue)`, then ` - ` before the prose.
 - The depth is NOT deleted: it already lives in the commit each entry links to. That makes the compression safe.
 
-**The WHOLE file migrates, and the linter cannot scope this work for you.**
-- The linter's section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard).
-- So a pre-issue era section (`## [cp1–cp99]: …`) lints green while every entry in it is still a massive old-format line.
-- Scope by EYEBALL: every `## ` section with bullets under it migrates. Any long-line entry anywhere means the work is not done.
-- Pre-issue-tracker entries take the literal `(no issue)`.
+- **The WHOLE file migrates, and the linter cannot scope this work for you.**
+  - The linter's section detector deliberately skips non-semver `## [...]` headings (the `## [Plans for 2026]` guard).
+  - So a pre-issue era section (`## [cp1–cp99]: …`) lints green while every entry in it is still a massive old-format line.
+  - Scope by EYEBALL: every `## ` section with bullets under it migrates. Any long-line entry anywhere means the work is not done.
+  - Pre-issue-tracker entries take the literal `(no issue)`.
 
 ### Split the work by version section
 
-A long history does not fit one context. Fan it out:
+- A long history does not fit one context. Fan it out:
 
 1. List every `## [version]` heading and its line range, including non-semver era headings the linter ignores.
 2. Divide into contiguous ranges, one subagent per range.
@@ -70,11 +73,12 @@ A long history does not fit one context. Fan it out:
 - Any `---` rules and prose sections between version blocks.
 - An entry that already has generated metadata (`[`sha`](../../commit/sha)`, `Thanks [@who]!`) keeps it, untouched.
 
-Rewriting a released entry is a rewrite of the RECORD. Compress the prose; never change what an entry claims happened.
+- Rewriting a released entry is a rewrite of the RECORD.
+  - Compress the prose; never change what an entry claims happened.
 
 ### Assemble and gate
 
-Reassemble in order, then gate on the whole file:
+- Reassemble in order, then gate on the whole file:
 
 ```sh
 workkit changelog lint CHANGELOG.md

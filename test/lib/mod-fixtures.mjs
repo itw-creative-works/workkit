@@ -21,6 +21,7 @@ export const DEFAULTS = {
   proof: { rootOnly: null },
   tests: { budget: null },
   findings: { file: false },
+  docs: { bullets: false, paths: ['AGENTS.md', 'README.md', 'docs/'] },
   hooks: { afterRelease: [], afterPublish: [], afterDeploy: [], ciSetup: [] },
   manager: { mode: 'rewrite', enabled: true, tiers: { frontier: 'fable', workhorse: 'opus', fast: 'sonnet' } },
   site: { repo: null, publish: null, url: null, sidebar: null },

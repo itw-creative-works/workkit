@@ -2,7 +2,8 @@
  * hooks/mods/settings.js: the one settings loader, the kit defaults under the
  * machine's file under the repo's (workflow/README.md § The two settings
  * files), for the mods and the engine's Node scripts alike, and the
- * findings.file predicate and route sentence read through it.
+ * findings.file and docs.bullets predicates, the docs.paths reader and the
+ * route sentence read through it.
  */
 
 import { userDirOf } from './log.js';
@@ -194,6 +195,31 @@ export function homeSlugOf(settings) {
  */
 export function findingsOn(settings) {
   return String(settings.findings?.file) === 'true';
+}
+
+/**
+ * Whether docs.bullets is on: off unless a settings file says true
+ * (docs/hooks.md § docs:board-guard).
+ * @param {object} settings the merged view (loadSettings)
+ * @returns {boolean}
+ */
+export function bulletsOn(settings) {
+  return String(settings.docs?.bullets) === 'true';
+}
+
+/**
+ * The doc set docs.paths names, the paths from the repo root the markdown
+ * shape check judges (docs/hooks.md § docs:board-guard), or null when the
+ * value is not an array of strings or an entry can match nothing: one ending
+ * in neither `/` nor `.md`, starting with `/`, or holding a backslash.
+ * @param {object} settings the merged view (loadSettings)
+ * @returns {string[]|null}
+ */
+export function shapePaths(settings) {
+  const paths = settings.docs?.paths;
+  const usable = (path) => typeof path === 'string' && (path.endsWith('/') || path.endsWith('.md'))
+    && !path.startsWith('/') && !path.includes('\\');
+  return Array.isArray(paths) && paths.every(usable) ? paths : null;
 }
 
 /**

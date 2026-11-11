@@ -206,16 +206,16 @@ stdin_bodies() {
 
 # journal_append: LINE as one more line of the gh journal of the cwd's repo
 # root, else of the cwd; a journal that cannot take it is said, never fatal.
+# The sweep runs after the append, so it never removes the journal just written.
 journal_append() {
   local root journal
   root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=''
   [[ -n "$root" ]] || root="$PWD"
-  wk_sweep_markers
-  if journal="$(wk_marker_path claude-gh-journal "$root")" && mkdir -p "${journal%/*}" \
-    && printf '%s\n' "$LINE" >>"$journal"; then
-    return 0
+  if ! { journal="$(wk_marker_path claude-gh-journal "$root")" && mkdir -p "${journal%/*}" \
+    && printf '%s\n' "$LINE" >>"$journal"; }; then
+    printf 'gh: the call ran, but the workkit gh journal could not take its line\n' >&2
   fi
-  printf 'gh: the call ran, but the workkit gh journal could not take its line\n' >&2
+  wk_sweep_markers
 }
 
 # run_gh <command...>: the call's last step. In a Claude session it runs as a

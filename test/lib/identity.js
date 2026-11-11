@@ -107,16 +107,6 @@ const json = (status, body) => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json' },
 });
 
-/** The error `fn` throws or rejects with; a failure of its own when `fn` returns. */
-const failureOf = async (fn) => {
-  try {
-    await fn();
-  } catch (err) {
-    return err;
-  }
-  throw new Error('expected a failure, got a return');
-};
-
 // The server runs in its own process, so a suite blocked in spawnSync on the
 // command under test still gets its answer. A request matching a route by method,
 // url and `whenBody` gets that route's answer, the next of its `answers` when it
@@ -284,13 +274,17 @@ const writes = (res) => res.requests.filter((r) => r.method !== 'GET');
 const routes = (reqs) => reqs.map((r) => [r.method, r.path]);
 
 /**
- * The gh journal's text for <dir>'s repo under the workflow <home>, '' when the
- * file is absent. The file sits beside the suite record, keyed the same way:
- * `<home>/markers/claude-gh-journal/<sha1 of the root>`.
+ * The gh journal file for <dir>'s repo under the workflow <home>. It sits beside
+ * the suite record, keyed the same way: `<home>/markers/claude-gh-journal/<sha1 of the root>`.
  */
-const journalFileText = (home, dir) => {
+const journalFile = (home, dir) => {
   const record = suiteMarkerPath(home, dir);
-  const file = path.join(path.dirname(path.dirname(record)), 'claude-gh-journal', path.basename(record));
+  return path.join(path.dirname(path.dirname(record)), 'claude-gh-journal', path.basename(record));
+};
+
+/** The gh journal's text for <dir>'s repo under the workflow <home>, '' when the file is absent. */
+const journalFileText = (home, dir) => {
+  const file = journalFile(home, dir);
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
 };
 
@@ -355,7 +349,7 @@ const atTerminal = (argv, { env, cwd, dir }) => {
 };
 
 module.exports = {
-  IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json, failureOf,
-  startServer, startService, scratchKit, scratchEnv, hostsOf, attentionCount, PTY, atTerminal, journalFileText, journalLines,
+  IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json,
+  startServer, startService, scratchKit, scratchEnv, hostsOf, attentionCount, PTY, atTerminal, journalFile, journalFileText, journalLines,
   git, cloudEnv, cloudWorld, assertSame, assertOk, printedJson, writes, routes,
 };

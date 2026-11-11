@@ -35,11 +35,35 @@ const NAMED = /\b(?:const|let|var)\s+(\w+)\s*=/;
 const WEAK = [/\bexistsSync\s*\(/, /\bl?stat(Sync)?\s*\(.*\.mode\b|\b0o[0-7]{3,4}\b|\bX_OK\b|\baccessSync\s*\(/, /\bassert(\.ok)?\s*\(\s*true\s*[,)]/];
 
 /**
+ * The code of a template span's `${...}` expressions, space-joined, the literal
+ * text between them dropped; an expression still open at the span's end runs
+ * to it. A template nested in an expression is not followed.
+ * @param {string} text the span's text
+ * @returns {string}
+ */
+function templateCode(text) {
+  const code = [];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '\\') {
+      i += 1;
+    } else if (text.startsWith('${', i)) {
+      let depth = 1;
+      let j = i + 2;
+      for (; j < text.length && depth > 0; j += 1) depth += { '{': 1, '}': -1 }[text[j]] ?? 0;
+      code.push(text.slice(i + 2, depth === 0 ? j - 1 : j));
+      i = j - 1;
+    }
+  }
+  return code.join(' ');
+}
+
+/**
  * The file's lines with every quoted span removed: a `'...'`, `"..."` or
  * backtick span on one line, and every line inside a template literal left
- * open at a line's end, up to the text after its closing backtick. A regex
- * literal and a `//` or one-line `/* *\/` comment are dropped too and open no
- * span. A comment line outside a template passes through whole and opens no span.
+ * open at a line's end, up to the text after its closing backtick. A template
+ * keeps the code of its `${...}` expressions. A regex literal and a `//` or
+ * one-line `/* *\/` comment are dropped too and open no span. A comment line
+ * outside a template passes through whole and opens no span.
  * @param {string[]} lines the file's lines
  * @returns {string[]}
  */
@@ -48,12 +72,15 @@ export function quoteFree(lines) {
   return lines.map((line) => {
     if (!open && COMMENT.test(line)) return line;
     const lexed = lexLine(line, open);
+    const carried = open;
     // Only a template literal runs past its line here.
     open = lexed.open === '`' ? '`' : '';
     let out = '';
     let at = 0;
     for (const span of lexed.spans) {
       out += line.slice(at, span.start);
+      const template = line[span.start] === '`' || (span.start === 0 && carried === '`');
+      if (template) out += templateCode(line.slice(span.start, span.end));
       at = span.end;
     }
     return out + line.slice(at);
@@ -61,8 +88,8 @@ export function quoteFree(lines) {
 }
 
 /**
- * The `[line, rule]` findings of the one-line rules: mkTmp, serial, and
- * deadline, which reads the quote-free lines (quoted text is a fixture's).
+ * The `[line, rule]` findings of the one-line rules: serial, and mkTmp and
+ * deadline, which read the quote-free lines (quoted text is a fixture's).
  * @param {string[]} lines the file's lines
  * @param {string} rel the file, repo-relative
  * @returns {Array<[number, string]>}
@@ -72,7 +99,7 @@ function lineFindings(lines, rel) {
   const free = quoteFree(lines);
   lines.forEach((line, i) => {
     if (COMMENT.test(line)) return;
-    if (!SCRATCH.has(rel) && TMP_DIR.test(line)) found.push([i + 1, 'mkTmp']);
+    if (!SCRATCH.has(rel) && TMP_DIR.test(free[i])) found.push([i + 1, 'mkTmp']);
     if (FIXED_PATH.test(line) || FIXED_PORT.test(line)) found.push([i + 1, 'serial']);
     const bound = (wait) => Number(free[i].match(wait)?.[1].replace(/_/g, '')) > 0;
     if (!DEADLINE_HOME.has(rel) && WAITS.some(bound)) found.push([i + 1, 'deadline']);

@@ -1,12 +1,10 @@
 # The tower app
 
-The tower's UI, built on the OMEGA framework rather than on a hand-written
-shell. The sidebar, the topbar, the rail collapse, the mobile drawer, the
-routing, the dark mode and the whole classy stylesheet are OMEGA's; what lives
-here is seven pages, a nav file, and the JavaScript that draws the data.
-
-The data comes from the tower API - the plain Node server in `tower/api/`, on
-**8693**. This app never reads a repository or runs `gh`; it fetches JSON.
+- The tower's UI, built on the OMEGA framework rather than on a hand-written shell.
+  - The sidebar, the topbar, the rail collapse, the mobile drawer, the routing, the dark mode and the whole classy stylesheet are OMEGA's.
+  - What lives here is seven pages, a nav file, and the JavaScript that draws the data.
+- The data comes from the tower API - the plain Node server in `tower/api/`, on **8693**.
+  - This app never reads a repository or runs `gh`; it fetches JSON.
 
 ## Running it
 
@@ -16,36 +14,34 @@ npm install          # its OWN npm root - see below
 cd targets/web && npx omega dev # serving https://localhost:4300
 ```
 
-Dev and build write the same `targets/web/dist/`: an `omega build` run while the dev server is up leaves the server serving a production-stamped page (`environment: "production"`, no tower connection) until it re-renders. Restart the dev server after any build.
-
-The API is started separately, from the repo root with `npm run tower`, and both
-have to be up for the pages to carry data: with the API down every page still
-draws, saying which feed did not answer.
-
-Port 4300 keeps the OMEGA family clear of each other: playground 4000,
-dailybuild 4100, omega-brand 4200, tower 4300.
+- Dev and build write the same `targets/web/dist/`.
+  - An `omega build` run while the dev server is up leaves the server serving a production-stamped page until it re-renders.
+  - That page has `environment: "production"` and no tower connection.
+  - Restart the dev server after any build.
+- The API is started separately, from the repo root with `npm run tower`.
+  - Both have to be up for the pages to carry data.
+  - With the API down every page still draws, saying which feed did not answer.
+- Port 4300 keeps the OMEGA family clear of each other: playground 4000, dailybuild 4100, omega-brand 4200, tower 4300.
 
 ## Why this is its own npm root
 
-npm workspaces do not nest. `tower/app` declares `workspaces: ["targets/*"]`
-for its one web target, so it cannot also be a member of workkit's root
-`package.json` - it gets its own `npm install`, and workkit's root install
-never reaches it.
+- npm workspaces do not nest.
+- `tower/app` declares `workspaces: ["targets/*"]` for its one web target.
+  - So it cannot also be a member of workkit's root `package.json`.
+  - It gets its own `npm install`, and workkit's root install never reaches it.
 
 ## The framework pins
 
-Both `@omega.js/*` dependencies pin an **exact npm version**, so `npm install`
-needs no Omega checkout:
+- Both `@omega.js/*` dependencies pin an **exact npm version**, so `npm install` needs no Omega checkout:
 
 | package.json | dependency | spec |
 |---|---|---|
 | `tower/app/package.json` | `@omega.js/manager` | `0.54.1` |
 | `tower/app/targets/web/package.json` | `@omega.js/web` | `0.54.1` |
 
-The maintainer with a sibling Omega checkout runs `omega i local` here to link
-the framework from it, and `omega i live` to restore the pins before a commit.
-`tower/README.md` § "Where a published copy comes from" has the longer
-explanation.
+- The maintainer with a sibling Omega checkout runs `omega i local` here to link the framework from it.
+  - And `omega i live` to restore the pins before a commit.
+- `tower/README.md` § "Where a published copy comes from" has the longer explanation.
 
 ## The shape of it
 
@@ -70,44 +66,32 @@ tower/app/
                 └── libs/tower/  # api, format, modal, the page runtime
 ```
 
-A few things worth knowing before changing it:
-
-- **A page's JS is bound by its URL**, not by an import: `/board` loads
-  `assets/js/pages/board.js`, and `/` loads `pages/index.js`.
-- **Consumer page frontmatter is machinery-limited, and a config section goes
-  under `config:`.** The engine strips any key outside `{meta, schema, config,
-  append, sitemap, ...}` from a page under `src/pages/` and warns, and a config
-  section restated BARE fails the build outright - `meta` is the only one that
-  keeps its bare spelling, so each page's header block sits at `config.theme`.
-  The auth opt-out (`config.client.auth.config.policy: "disabled"` - the blob
-  was named `web_manager` before the framework renamed it) lives in `src/_layouts/tower/page.html` so the seven pages share
-  one home.
-- **The nav is `_includes/backend/sections/sidebar.json`**, which replaces the
-  framework's file wholesale. It is the `backend` spelling rather than `admin`
-  because the shell layout picks the admin pair only for URLs containing
-  `/admin`, and the tower's pages sit at clean top-level URLs.
-- **The project switch is the framework's SELECTOR module, filled at runtime**
-  - the dropdown the base shell draws above the nav, turned on by the
-  `selector` block in that same sidebar JSON and filled by `libs/tower/
-  page/sidebar.js`, which `libs/tower/page.js` writes into the menu and wires. The
-  roster is fetched at runtime and the sidebar JSON is baked at build time, so
-  the one item in that block is a placeholder that makes Liquid ship the `ul`;
-  the entries are markup from the `repos` feed like everything else, and the
-  same page JS patches the button's label and rewrites the nav's own links to
-  carry `?repo=`.
-- **Charts, refreshing in place and markdown are the FRAMEWORK's.** The chart
-  helpers come from `__main_assets__/js/libs/charts.js` (Chart.js is a
-  dependency of `@omega.js/web`, dynamically imported into its own chunk - the
-  tower declares no charting dependency); `loading`, `swap` and the feed poller
-  behind the page runtime come from `@omega.js/client/modules/live-page`; the
-  issue dialog's body is drawn with `omega.utilities().renderMarkdown`, handed
-  to `mountIssueModal` by `main.js` so `libs/tower/modal.js` stays pure string
-  functions the suite runs under Node.
-- **The API origin is written once**, in `assets/js/libs/tower/api.js`, and is
-  overridable per page load with `?api=http://host:port`.
-- **Settings is the one page that draws without a token**. It
-  declares `tokenless: true` to the page runtime, which is what keeps the locked
-  arm from returning before it renders; every other page in that state writes
-  one line pointing at Settings and sends the viewer there with
-  `location.replace`. The card, its guidance and its two listeners are
-  `libs/tower/token.js`, beside the storage they read and write.
+- A few things worth knowing before changing it:
+  - **A page's JS is bound by its URL**, not by an import: `/board` loads `assets/js/pages/board.js`, and `/` loads `pages/index.js`.
+  - **Consumer page frontmatter is machinery-limited, and a config section goes under `config:`.**
+    - The engine strips any key outside `{meta, schema, config, append, sitemap, ...}` from a page under `src/pages/` and warns.
+    - A config section restated BARE fails the build outright.
+    - `meta` is the only one that keeps its bare spelling, so each page's header block sits at `config.theme`.
+    - The auth opt-out (`config.client.auth.config.policy: "disabled"`) lives in `src/_layouts/tower/page.html`, so the seven pages share one home.
+    - The blob was named `web_manager` before the framework renamed it.
+  - **The nav is `_includes/backend/sections/sidebar.json`**, which replaces the framework's file wholesale.
+    - It is the `backend` spelling rather than `admin`, because the shell layout picks the admin pair only for URLs containing `/admin`.
+    - The tower's pages sit at clean top-level URLs.
+  - **The project switch is the framework's SELECTOR module, filled at runtime**: the dropdown the base shell draws above the nav.
+    - It is turned on by the `selector` block in that same sidebar JSON.
+    - It is filled by `libs/tower/page/sidebar.js`, which `libs/tower/page.js` writes into the menu and wires.
+    - The roster is fetched at runtime and the sidebar JSON is baked at build time.
+    - So the one item in that block is a placeholder that makes Liquid ship the `ul`.
+    - The entries are markup from the `repos` feed like everything else.
+    - The same page JS patches the button's label and rewrites the nav's own links to carry `?repo=`.
+  - **Charts, refreshing in place and markdown are the FRAMEWORK's.**
+    - The chart helpers come from `__main_assets__/js/libs/charts.js`.
+    - Chart.js is a dependency of `@omega.js/web`, dynamically imported into its own chunk; the tower declares no charting dependency.
+    - `loading`, `swap` and the feed poller behind the page runtime come from `@omega.js/client/modules/live-page`.
+    - The issue dialog's body is drawn with `omega.utilities().renderMarkdown`, handed to `mountIssueModal` by `main.js`.
+    - So `libs/tower/modal.js` stays pure string functions the suite runs under Node.
+  - **The API origin is written once**, in `assets/js/libs/tower/api.js`, and is overridable per page load with `?api=http://host:port`.
+  - **Settings is the one page that draws without a token**.
+    - It declares `tokenless: true` to the page runtime, which is what keeps the locked arm from returning before it renders.
+    - Every other page in that state writes one line pointing at Settings and sends the viewer there with `location.replace`.
+    - The card, its guidance and its two listeners are `libs/tower/token.js`, beside the storage they read and write.

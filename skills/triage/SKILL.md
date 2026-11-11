@@ -6,15 +6,14 @@ argument-hint: "[merge | <issue numbers>]"
 
 # Triage: drain the inbox, visibly
 
-Work items live as **GitHub issues**. Triage is the ACTION that drains `status:inbox`, not a state.
-
-Labels (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label list`):
-- `status:inbox|specced|building|qa|complete|blocked|backlog`: the PIPELINE, drawn in the workkit plugin's `docs/project-state.md` § Labels, one per issue (§ Rules) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal).
-- `agent:ok`: an agent may work it autonomously at every stage: spec, accept, build, the `status:qa` check that grants `status:complete`, ship.
+- Work items live as **GitHub issues**. Triage is the ACTION that drains `status:inbox`, not a state.
+- Labels (SSOT: `~/.claude/workkit/labels.json`, and every repo's own `gh label list`):
+  - `status:inbox|specced|building|qa|complete|blocked|backlog`: the PIPELINE, drawn in the workkit plugin's `docs/project-state.md` § Labels, one per issue (§ Rules) · `type:bug|enhancement|idea` · `priority:high|low` (absence = normal).
+  - `agent:ok`: an agent may work it autonomously at every stage: spec, accept, build, the `status:qa` check that grants `status:complete`, ship.
 
 ## Marker (opens the capture file)
 
-FULL drain only; a scoped run sets none (§ Scoped mode). Run it before reading anything:
+- FULL drain only; a scoped run sets none (§ Scoped mode). Run it before reading anything:
 
 ```sh
 workkit triage mark
@@ -26,13 +25,17 @@ workkit triage mark
 ## Sources to drain (the FULL drain; § Scoped mode reads only the named issues)
 
 1. **Open `status:inbox` issues** on the cwd repo: `gh issue list --state open --label status:inbox --json number,title,body,labels --limit 1000`.
-   - A repo paired with a public issue repo (`"public": "<owner>/<repo>"` in its `.workkit/settings.json`) runs `workkit public intake` FIRST. Each new public report becomes a linked `status:inbox` issue here, printed one line each, so this list holds it. Route it like any other, its `type:` label included. Intake happens here and nowhere else (the pairing: the workkit plugin's `docs/project-state.md` § Capture).
+   - A repo paired with a public issue repo (`"public": "<owner>/<repo>"` in its `.workkit/settings.json`) runs `workkit public intake` FIRST.
+     - Each new public report becomes a linked `status:inbox` issue here, printed one line each, so this list holds it.
+     - Route it like any other, its `type:` label included.
+     - Intake happens here and nowhere else (the pairing: the workkit plugin's `docs/project-state.md` § Capture).
 2. **`.workkit/capture.md`**: the local, gitignored capture file (offline moments, free-form dumps).
 3. **Mid-chat note dumps**: same routing, no file needed first.
 4. **The HQ pass**: the home repo's open `status:inbox` issues, routed with the same table, from any repo: `gh issue list --repo <site.repo> --state open --label status:inbox ... --limit 1000` (`site.repo` from `~/.workkit/settings.json`).
    - This is how the nursery drains, since no session ever opens in the clone. `workkit note` files a capture made outside every participating repo straight onto the home repo, so it drains here. Captures cluster around one project: propose graduation (§ Graduation).
 
-Split every source into discrete entries. A wall of mixed notes fans out to MANY destinations, never one blob. A dump issue fans out to N new issues and comments. Then close it with the Filed trail as its closing comment.
+- Split every source into discrete entries. A wall of mixed notes fans out to MANY destinations, never one blob.
+- A dump issue fans out to N new issues and comments. Then close it with the Filed trail as its closing comment.
 
 ## Route each entry to exactly ONE home
 
@@ -54,20 +57,27 @@ Split every source into discrete entries. A wall of mixed notes fans out to MANY
 | An idea for a project that has no repo yet | A `type:idea` issue on the **home repo**; later notes are comments on it. Never create a repo or a folder here. Graduation: § Graduation |
 | A durable fact about how things work | The right `docs/*.md` (or AGENTS.md if doctrinal), then close the issue pointing at it |
 
-**The kit's own repo** resolves from the plugin's own checkout, a CHAIN, not a default: `[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && git -C "${CLAUDE_PLUGIN_ROOT}" remote get-url origin || git -C ~/.claude/workkit remote get-url origin`.
-- The variable is set only inside hook commands. An empty `-C` would answer with the session's own repo, so the guard makes the second link run. A published install's plugin root is a cache folder with no git, and the second link takes over there too. `gh issue create --repo` accepts the URL git prints as is.
-
-**A destination that cannot be reached** keeps the entry local, the skip named in the Filed trail. Never drop it or invent a destination.
-- The home repo is optional. With no `site.repo`, or a failed `gh` call against it, an entry routed there stays in `.workkit/capture.md`. The HQ pass names its skip the same way; its entries already live on HQ, so nothing is held locally.
-- Unresolvable kit repo, or a different project with no roster match: never fall back to the home repo.
+- **The kit's own repo** resolves from the plugin's own checkout, a CHAIN, not a default: `[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && git -C "${CLAUDE_PLUGIN_ROOT}" remote get-url origin || git -C ~/.claude/workkit remote get-url origin`.
+  - The variable is set only inside hook commands. An empty `-C` would answer with the session's own repo, so the guard makes the second link run.
+  - A published install's plugin root is a cache folder with no git, and the second link takes over there too.
+  - `gh issue create --repo` accepts the URL git prints as is.
+- **A destination that cannot be reached** keeps the entry local, the skip named in the Filed trail. Never drop it or invent a destination.
+  - The home repo is optional. With no `site.repo`, or a failed `gh` call against it, an entry routed there stays in `.workkit/capture.md`.
+  - The HQ pass names its skip the same way; its entries already live on HQ, so nothing is held locally.
+  - Unresolvable kit repo, or a different project with no roster match: never fall back to the home repo.
 
 ## Draining `.workkit/capture.md`
 
-Each entry becomes an issue: `gh issue create --label status:inbox,type:<kind>` then route it, or file it routed directly. Delete only the entries that actually landed somewhere; keep the file header. Offline: leave the file untouched and say the queue could not be reached.
+- Each entry becomes an issue: `gh issue create --label status:inbox,type:<kind>` then route it, or file it routed directly.
+- Delete only the entries that actually landed somewhere; keep the file header.
+- Offline: leave the file untouched and say the queue could not be reached.
 
 ## Graduation (the HQ pass's proposal)
 
-The system proposes, the owner creates. No automation makes a repo or moves an issue on its own. When HQ captures cluster around one project, propose graduation in chat, then wait for the owner's word. A cluster is several issues or comments naming the same not-yet-project. No standing "ripe for graduation" surface exists: this proposal is the mechanism, and the tower Board shows HQ's issues.
+- The system proposes, the owner creates. No automation makes a repo or moves an issue on its own.
+- When HQ captures cluster around one project, propose graduation in chat, then wait for the owner's word.
+  - A cluster is several issues or comments naming the same not-yet-project.
+- No standing "ripe for graduation" surface exists: this proposal is the mechanism, and the tower Board shows HQ's issues.
 
 - **To an existing repo**: `gh issue transfer <n> <owner>/<repo>` where GitHub allows it (same owner or org). Otherwise recreate the issue on the target with pointers both ways. Either way the HQ issue closes with a comment naming where it went.
 - **To a project with no repo**: the proposal asks three things in chat. The repo name; the OWNER, never assumed (the personal account or an org the owner belongs to); the visibility (private default).
@@ -87,19 +97,25 @@ The system proposes, the owner creates. No automation makes a repo or moves an i
 
 ## Scoped mode (`/workkit:triage 215 211`)
 
-Numbers in the ask mean SCOPED: only the named issues are read, nothing else is touched. The `#` is optional (`215`, `#215`). Plain words mean the same: "215 211 triage", "triage 215", "accept 215", "spec 215 and 211". The FULL drain needs the bare word with NO numbers ("triage", "empty the inbox").
+- Numbers in the ask mean SCOPED: only the named issues are read, nothing else is touched.
+  - The `#` is optional (`215`, `#215`).
+  - Plain words mean the same: "215 211 triage", "triage 215", "accept 215", "spec 215 and 211".
+- The FULL drain needs the bare word with NO numbers ("triage", "empty the inbox").
 
 1. Read only the named issues (`gh issue view <N> --comments`). One already past `status:inbox` is REPORTED as it stands, never re-routed. Only the owner's word in the same ask moves a label it already carries.
 2. Route each through the SAME table. Scoped changes only WHICH entries are read, never how. A named issue still parks to `status:backlog`, goes `status:blocked` with its question in a comment, or becomes a polish line or a fold into another issue, whichever it is.
 3. End with the Filed trail, listing only the numbers named. Nothing else runs: no capture-file drain, no HQ pass, and no marker, since the capture file is never read.
 
-**"Accept" flips only on a real spec.**
-- `accept 215` earns `status:specced` only on a `## Spec` with content: a spec the owner accepted AND its `### Contract`, or the table's literal small-item line, which passes as is. An issue that still needs real design takes the table's interview row instead (spec § Specs).
-- An empty Spec or a `None yet` placeholder: draft one from the body and comments, print it, and wait for the owner's yes. The flip follows the yes, never the draft. The ask itself is the accept, so a small drafted spec shown in chat flips on that yes.
+- **"Accept" flips only on a real spec.**
+  - `accept 215` earns `status:specced` only on a `## Spec` with content: a spec the owner accepted AND its `### Contract`, or the table's literal small-item line, which passes as is.
+  - An issue that still needs real design takes the table's interview row instead (spec § Specs).
+  - An empty Spec or a `None yet` placeholder: draft one from the body and comments, print it, and wait for the owner's yes.
+  - The flip follows the yes, never the draft. The ask itself is the accept, so a small drafted spec shown in chat flips on that yes.
 
 ## Merge mode (`/workkit:triage merge`)
 
-Instead of draining the inbox, sweep the OPEN board and apply the same litmus test across the existing issues. Never unattended, never on its own judgment: a wrong merge buries a real bug.
+- Instead of draining the inbox, sweep the OPEN board and apply the same litmus test across the existing issues.
+- Never unattended, never on its own judgment: a wrong merge buries a real bug.
 
 1. List and read the open issues (`gh issue list --state open --json number,title,labels,body --limit 1000`). Group them by the test: *would closing one of these automatically mean the other is done too?*
 2. Present a merge PLAN and stop: **merge these** (which survives, which closes, what moves), **attach that** (an issue that becomes a checklist line or a comment on another), **keep these separate**. Every group gets one line of why, separations included.

@@ -1,6 +1,6 @@
 // Tests for the scripts the kit's reusable ci.yml runs beside a repo's checkout:
 // .github/scripts/ci-node-version.sh (the Node version), ci-setup.sh (the repo's
-// hooks.ciSetup commands) and ci-test.sh (the suite, skipped for a release push).
+// hooks.ciSetup commands) and ci-test.sh (the suite).
 // Each runs for real through bash, given a scratch repo, from a folder outside it.
 
 const fs = require('fs');
@@ -70,31 +70,6 @@ const withTestScript = (code = 0) => ({
     scripts: { test: `node -e "require('fs').writeFileSync('ran.txt', 'ran'); process.exit(${code})"` },
   })}\n`,
 });
-
-/** `git <args>` in `w`'s repo under its scratch home; the output. */
-const gitIn = (w, ...args) => {
-  const res = spawnSync('git', args, {
-    cwd: w.repo, env: homeEnv(w.home, { PATH: basePath() }), encoding: 'utf8',
-  });
-  assertEq(res.status, 0, `git ${args.join(' ')}: ${res.stderr}`);
-  return res.stdout.trim();
-};
-
-/** `w`'s files committed, then `files` written over them and committed as the push; the push's event file. */
-const pushOf = (w, files) => {
-  gitIn(w, 'init', '-q', '-b', 'main');
-  gitIn(w, 'config', 'user.email', 'test@example.com');
-  gitIn(w, 'config', 'user.name', 'Test');
-  gitIn(w, 'add', '-A');
-  gitIn(w, 'commit', '-q', '-m', 'init');
-  const before = gitIn(w, 'rev-parse', 'HEAD');
-  for (const [rel, body] of Object.entries(files)) fs.writeFileSync(path.join(w.repo, rel), body);
-  gitIn(w, 'add', '-A');
-  gitIn(w, 'commit', '-q', '-m', 'push');
-  const event = path.join(w.dir, 'event.json');
-  fs.writeFileSync(event, JSON.stringify({ before, after: gitIn(w, 'rev-parse', 'HEAD') }));
-  return { GITHUB_EVENT_NAME: 'push', GITHUB_EVENT_PATH: event };
-};
 
 // A stub, not the real xvfb-run: a Mac has none, and this is the only way to see
 // the wrapper there. It records its argv, then runs the command after `-a`.
@@ -250,20 +225,6 @@ const cases = async () => {
       assert(all.trim() !== '', `${name}: a line, not silence`);
       assertEq(xvfb.argv(), null, `${name}: xvfb-run never called`);
     }
-  });
-
-  await test('a push that only stamps a release: one line, exit 0, the suite never run; a code push runs it', () => {
-    const changelog = '# Changelog\n\n## [Unreleased]\n';
-    const stamped = mkWorld({ ...withTestScript(), 'CHANGELOG.md': changelog });
-    const skip = run(stamped, 'ci-test.sh', { env: pushOf(stamped, { 'CHANGELOG.md': `${changelog}\n## [1.0.1]\n\n### Fixed\n\n- A fix.\n` }) });
-    assertEq(skip.code, 0, `exit 0, got: ${skip.all}`);
-    assertEq(skip.all.trim().split('\n').length, 1, `one line, got: ${skip.all}`);
-    assert(skip.all.trim() !== '', 'a line, not silence');
-    assertEq(stamped.read('ran.txt'), null, 'the repo\'s test script never ran');
-    const code = mkWorld({ ...withTestScript(), 'CHANGELOG.md': changelog, 'x.js': 'module.exports = 1;\n' });
-    const ran = run(code, 'ci-test.sh', { env: pushOf(code, { 'x.js': 'module.exports = 2;\n' }) });
-    assertEq(ran.code, 0, `exit 0, got: ${ran.all}`);
-    assertEq(code.read('ran.txt'), 'ran', 'a push changing code runs the suite');
   });
 
   return summary();

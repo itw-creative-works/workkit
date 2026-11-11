@@ -67,6 +67,25 @@ const cases = async () => {
     names(out, rel, 3, 'mkTmp');
   });
 
+  await test('a mkdtempSync( inside a quoted fixture string: no mkTmp line', () => {
+    const rel = 'tests/thing.test.js';
+    const out = write(rel, [
+      "const { test, assertEq } = require('./lib/harness');",
+      "const body = \"const dir = fs.mkdtempSync('thing-');\";",
+      "test('holds the call', () => assertEq(body.length, 37, 'the fixture text'));",
+    ]);
+    assertEq(ruleLines(out, 'mkTmp').join('\n'), '', 'quoted text is a fixture, never a call');
+  });
+
+  await test('os.tmpdir() inside a template literal\'s ${...}: the mkTmp rule', () => {
+    const rel = 'tests/thing.test.js';
+    const out = write(rel, [
+      "const os = require('os');",
+      'const d = `${os.tmpdir()}/x`;',
+    ]);
+    names(out, rel, 2, 'mkTmp');
+  });
+
   await test('tests/lib/scratch.js itself, the one writer of a scratch folder: nothing added', () => {
     assertEq(write('tests/lib/scratch.js', SCRATCH_HOME), '', 'the mkTmp rule exempts its own home');
   });

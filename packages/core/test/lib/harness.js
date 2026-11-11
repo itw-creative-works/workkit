@@ -97,6 +97,16 @@ export const assertEq = (actual, expected, msg) => {
   }
 };
 
+/** The error `fn` throws or rejects with; a failure of its own when `fn` returns. */
+export const failureOf = async (fn) => {
+  try {
+    await fn();
+  } catch (err) {
+    return err;
+  }
+  throw new Error('expected a failure, got a return');
+};
+
 // One case this machine cannot answer, named rather than dropped: it counts as
 // neither pass nor failure. skipSuite() would drop the whole file, cases that
 // could run included.

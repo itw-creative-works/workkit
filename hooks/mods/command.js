@@ -1,9 +1,9 @@
 /**
  * hooks/mods/command.js: the command-text reads the Bash guards share: the
- * heredoc and quote strips, the `NAME=1` escape, the redirect `&` fold, the
- * prefix peel, the directory-change tests, the cd step, the step split and its
- * folder walk, git's subcommand, the line-by-line test, and the slug rule over
- * a remote. Plain functions over text.
+ * heredoc and quote strips and the quoted spans, the `NAME=1` escape, the
+ * redirect `&` fold, the prefix peel, the directory-change tests, the cd step,
+ * the step split and its folder walk, git's subcommand, the line-by-line test,
+ * and the slug rule over a remote. Plain functions over text.
  */
 
 /** The word a quoted span becomes under stripQuotes. */
@@ -125,13 +125,25 @@ export function stripHeredocs(text) {
  * @returns {string}
  */
 export function stripQuotes(text) {
+  return stripQuotesKeeping(text).text;
+}
+
+/**
+ * stripQuotes' text, and the quoted span each placeholder stands for, in order.
+ * @param {string} text the command text
+ * @returns {{text: string, quoted: string[]}}
+ */
+export function stripQuotesKeeping(text) {
   let out = '';
   let at = 0;
+  const quoted = [];
   for (const { start, end } of quotedSpans(text)) {
-    out += `${text.slice(at, start)}${end - start > 2 ? PLACEHOLDER : ''}`;
+    const kept = end - start > 2;
+    if (kept) quoted.push(text.slice(start, end));
+    out += `${text.slice(at, start)}${kept ? PLACEHOLDER : ''}`;
     at = end;
   }
-  return `${out}${text.slice(at)}`;
+  return { text: `${out}${text.slice(at)}`, quoted };
 }
 
 /**
