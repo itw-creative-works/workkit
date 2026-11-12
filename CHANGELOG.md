@@ -7,18 +7,20 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-11-12
+
 ### Added
 
-- [#523](../../issues/523) - A new Bash guard, `safety:script-write`, refuses an in-place `sed` or `perl` and a python or node snippet that writes a file, so a file edit goes through Edit or Write. `WORKKIT_ALLOW_SCRIPT_WRITE=1` stands it aside for a scratch or generated file. The worker file and build briefs say the rule.
-- [#525](../../issues/525) - A repo that sets `commit.attribution` to false in its workkit settings has git's commit-msg hook refuse a message carrying a Claude co-author line or the "Generated with Claude Code" text. A `Claude-Session` line and a person's co-author line pass.
-- [#526](../../issues/526) - workkit-core's runner ends a suite file's worker process group past its deadline (600 seconds, or `TEST_DEADLINE=<seconds>`) and reports one timed-out failure; a detached child is the suite's to end. A file is a `node:test` suite only when it imports a runner name. CI test jobs end after 60 minutes.
-- [#527](../../issues/527) - A root `npm test` or `workkit prove` with no output and no processor use for two checks (`tests.check`, default 5 minutes) is ended, exit 124. A quiet, busy run asks for a look, exit 125, and runs on. Ctrl-C or an `end` file ends the whole run; Macs stay awake.
-- [#528](../../issues/528) - `workkit supervise -- <command>` runs any command under the supervisor, as the root `npm test` runs. `workkit watch`, allow-listed, attaches to the live run again; `--end` ends it. A manager starts each background test run supervised and acts on its end; `workflow:unwatched` names that form otherwise.
+- [#523](../../issues/523) [`0e16745`](../../commit/0e16745) Thanks [@ianwieds]! - A new Bash guard, `safety:script-write`, refuses an in-place `sed` or `perl` and a python or node snippet that writes a file, so a file edit goes through Edit or Write. `WORKKIT_ALLOW_SCRIPT_WRITE=1` stands it aside for a scratch or generated file. The worker file and build briefs say the rule.
+- [#525](../../issues/525) [`0e16745`](../../commit/0e16745) Thanks [@ianwieds]! - A repo that sets `commit.attribution` to false in its workkit settings has git's commit-msg hook refuse a message carrying a Claude co-author line or the "Generated with Claude Code" text. A `Claude-Session` line and a person's co-author line pass.
+- [#526](../../issues/526) [`0e16745`](../../commit/0e16745) Thanks [@ianwieds]! - workkit-core's runner ends a suite file's worker process group past its deadline (600 seconds, or `TEST_DEADLINE=<seconds>`) and reports one timed-out failure; a detached child is the suite's to end. A file is a `node:test` suite only when it imports a runner name. CI test jobs end after 60 minutes.
+- [#527](../../issues/527) [`0e16745`](../../commit/0e16745) Thanks [@ianwieds]! - A root `npm test` or `workkit prove` with no output and no processor use for two checks (`tests.check`, default 5 minutes) is ended, exit 124. A quiet, busy run asks for a look, exit 125, and runs on. Ctrl-C or an `end` file ends the whole run; Macs stay awake.
+- [#528](../../issues/528) [`0e16745`](../../commit/0e16745) Thanks [@ianwieds]! - `workkit supervise -- <command>` runs any command under the supervisor, as the root `npm test` runs. `workkit watch`, allow-listed, attaches to the live run again; `--end` ends it. A manager starts each background test run supervised and acts on its end; `workflow:unwatched` names that form otherwise.
 
 ### Fixed
 
-- [#522](../../issues/522) - The proof copy of `workkit prove` and `workkit proof red` now sits in `~/.cache/workkit/proof`, out of the crowded system temp folder that slowed a run until green trees read red. `TMPDIR` no longer moves it, and a stale run folder is swept after a day.
-- [#524](../../issues/524) - `workkit proof red` reads red when the missing module is a named source path reached through a workspace link, or loaded as a bare specifier with a subpath (`@scope/a/new`). It exited 2 as not runnable.
+- [#522](../../issues/522) [`0e16745`](../../commit/0e16745) Thanks [@ianwieds]! - The proof copy of `workkit prove` and `workkit proof red` now sits in `~/.cache/workkit/proof`, out of the crowded system temp folder that slowed a run until green trees read red. `TMPDIR` no longer moves it, and a stale run folder is swept after a day.
+- [#524](../../issues/524) [`0e16745`](../../commit/0e16745) Thanks [@ianwieds]! - `workkit proof red` reads red when the missing module is a named source path reached through a workspace link, or loaded as a bare specifier with a subpath (`@scope/a/new`). It exited 2 as not runnable.
 
 ## [0.93.1] - 2026-11-11
 
