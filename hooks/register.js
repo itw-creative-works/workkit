@@ -1,6 +1,6 @@
 /**
- * hooks/register.js: the workkit hooks module, the twenty-four in-process
- * hooks on ten events (docs/hooks.md § The hooks module); seven guards run in
+ * hooks/register.js: the workkit hooks module, the twenty-six in-process
+ * hooks on ten events (docs/hooks.md § The hooks module); eight guards run in
  * the `gh` shim and git's hooks instead, release-taken in both. The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
  * and this file gathers their facts (or hands a mods gatherer the engine calls
@@ -632,7 +632,7 @@ export function register(on) {
   on('tool.call', { tool: 'Bash' }, ($, e, next) => guardChain($, e, next, 'tool.call', BASH_GUARDS, async (env) => {
     const cwd = await $.session.cwd();
     await quiet(markJournal($, env, e.tool_use_id));
-    return { command: e.command ?? '', cwd };
+    return { command: e.command ?? '', cwd, background: e.run_in_background === true };
   })).catch(failClosed);
 
   on('tool.call', { tool: ['Edit', 'Write'] }, ($, e, next) => guardChain($, e, next, 'tool.call', FILE_GUARDS, () => fileFacts($, e))).catch(failClosed);

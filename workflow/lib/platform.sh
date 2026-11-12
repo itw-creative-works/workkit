@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/lib/platform.sh: the spellings that differ per platform and the read
 # shapes built on them, for the engine and the hooks. Sourced: functions, plus the
-# one MSYS export, WK_NODE_FLOOR and MARKER_KEEP_DAYS below. The shell twin of
+# one MSYS export, WK_NODE_FLOOR, MARKER_KEEP_DAYS and PROOF_KEEP_DAYS below. The shell twin of
 # test/lib/platform.js, with lib/run.js as its Node twin; on macOS and Linux every
 # function is the plain POSIX spelling. What each answers: workflow/README.md, the lib/platform.sh row.
 
@@ -77,11 +77,43 @@ wk_native_path() {
   printf '%s' "$p"
 }
 
+# wk_posix_path <path>: the Git Bash spelling (`/d/a/x`, never `D:/a/x`), the
+# inverse of wk_native_path: `cygpath -u` on Windows, the path unchanged
+# elsewhere. A failure is passed on.
+wk_posix_path() {
+  local p="$1"
+  case "${OSTYPE:-}" in
+    msys*|cygwin*) p="$(cygpath -u "$p")" || return 1 ;;
+  esac
+  printf '%s' "$p"
+}
+
 # wk_user_dir: the machine's own workkit folder, ~/.workkit, which WORKFLOW_HOME
 # moves. Every engine script, hook and job reads the folder through this one;
 # its Node twin is ../user-dir.js, shape for shape.
 wk_user_dir() {
   printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}"
+}
+
+# wk_proof_base: the folder every proof run folder lives under, the kit's cache
+# folder ~/.cache/workkit/proof, short and with no crowded parent. HOME moves it;
+# WORKFLOW_HOME does not, since ~/.workkit can be a link into a repo.
+wk_proof_base() {
+  printf '%s\n' "${HOME:-}/.cache/workkit/proof"
+}
+
+# wk_proof_dir: a new run folder, <wk_proof_base>/<id>, printed. Each run folder
+# there last changed over PROOF_KEEP_DAYS ago is removed first, since no system
+# cleaner reaches the cache folder; one holding `live` (a --live run's only copy
+# of the live files) or one it cannot remove is left. 1 when none is made.
+wk_proof_dir() {
+  local base run
+  base="$(wk_proof_base)"
+  mkdir -p "$base" || return 1
+  while IFS= read -r -d '' run; do
+    [ -e "$run/live" ] || rm -rf "$run" 2>/dev/null || true
+  done < <(find "$base" -mindepth 1 -maxdepth 1 -type d -mmin "+$((PROOF_KEEP_DAYS * 1440))" -print0 2>/dev/null)
+  mktemp -d "$base/XXXXXX"
 }
 
 # wk_script_shell_exe: npm's script shell on Windows, the executable setup
@@ -207,7 +239,7 @@ _wk_group_gone() {
   done
 }
 
-# wk_end_run <pid>: end a detached run, the supervisor and everything under it.
+# wk_end_run <pid>: end a detached run's supervisor <pid> and its process group.
 # Windows ends its process tree (taskkill /T; wk_end_pid where there is none).
 # Elsewhere the supervisor leads its own process group: INT first, so the body
 # logs its own code, then TERM, then KILL, 1.5s apart. Always 0.
@@ -276,6 +308,9 @@ wk_sha1() {
 
 # The days a marker outlives its last write; wk_sweep_markers removes older.
 MARKER_KEEP_DAYS=7
+
+# The days a proof run folder outlives its last change; wk_proof_dir removes older.
+PROOF_KEEP_DAYS=1
 
 # wk_markers_dir: the folder every marker lives under, markers/ in wk_user_dir's
 # folder, where no system temp cleaner reaches.

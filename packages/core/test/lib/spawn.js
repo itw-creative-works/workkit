@@ -49,6 +49,33 @@ const signalTree = (who, pid, signal) => {
   if (pid === 1 || trySignal(-pid, signal) !== 'sent') send(who, pid, pid, signal);
 };
 
+// Climb LADDER from <signal> while <lives()> holds, waiting END_GRACE after each
+// rung as the shell's `_wk_group_gone` polls: a group's rung reaches the group
+// <pid> leads, else <pid> alone. Alive after SIGKILL throws `<who>: pid <N> survived SIGKILL`.
+const climb = async (who, pid, signal, group, lives) => {
+  for (const rung of LADDER.slice(LADDER.indexOf(signal))) {
+    if (!lives()) break;
+    if (group) signalTree(who, pid, rung);
+    else send(who, pid, pid, rung);
+    await until(() => !lives(), END_GRACE);
+  }
+  if (lives()) throw new Error(`${who}: pid ${pid} survived SIGKILL`);
+};
+
+// 0 or a negative pid signals the caller's own group or another, so it throws.
+const checkPid = (who, pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`${who}: pid must be a positive integer, got ${inspect(pid)}`);
+};
+
+/**
+ * Whether the process group <pid> leads still has a member. A group whose
+ * members exited but are not yet reaped answers EPERM on macOS, so the zero
+ * probe reads it as gone, as `_wk_group_gone` does; a real rung's refusal throws.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+export const groupLives = (pid) => trySignal(-pid, 0) === 'sent';
+
 /**
  * End the tree a raw <pid> heads: the group it leads, else the pid; on Windows
  * `taskkill /T /F` ends its whole tree. A pid that is not a positive integer
@@ -58,12 +85,28 @@ const signalTree = (who, pid, signal) => {
  * @param {string} [signal]
  */
 export const endTree = (pid, signal = 'SIGTERM') => {
-  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`endTree: pid must be a positive integer, got ${inspect(pid)}`);
+  checkPid('endTree', pid);
   if (IS_WINDOWS) {
     spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', timeout: SPAWN_DEADLINE });
     return;
   }
   signalTree('endTree', pid, signal);
+};
+
+/**
+ * End the process group a detached <pid> leads by the ladder `end()` climbs,
+ * SIGINT first so its members can run their exit handlers; on Windows one
+ * `taskkill` tree end. Throws as endTree does, and `endGroup: pid <N> survived SIGKILL`.
+ * @param {number} pid
+ * @returns {Promise<void>}
+ */
+export const endGroup = async (pid) => {
+  checkPid('endGroup', pid);
+  if (IS_WINDOWS) {
+    endTree(pid);
+    return;
+  }
+  await climb('endGroup', pid, 'SIGINT', true, () => groupLives(pid));
 };
 
 /**
@@ -144,12 +187,7 @@ export const start = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE, d
   // A detached group outlives its leader, so its life is the group's, not the child's.
   // Windows has no process group: its one end is taskkill's tree end.
   const group = detached && !IS_WINDOWS;
-  // A group whose members exited but are not yet reaped answers EPERM on macOS,
-  // so the zero probe reads it as gone, as `_wk_group_gone` does; a real rung's refusal throws.
-  const lives = () => (group ? trySignal(-child.pid, 0) === 'sent' : !gone());
-  // Wait until the target is gone or END_GRACE has passed, polled as the shell's
-  // `_wk_group_gone` does, since a group has no exit event.
-  const settle = () => until(() => !lives(), END_GRACE);
+  const lives = () => (group ? groupLives(child.pid) : !gone());
 
   const end = async (signal = 'SIGINT') => {
     if (!LADDER.includes(signal)) throw new Error(`end: signal must be one of ${LADDER.join(', ')}, got ${inspect(signal)}`);
@@ -158,13 +196,7 @@ export const start = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE, d
     if (IS_WINDOWS) {
       if (lives()) endTree(child.pid);
     } else {
-      for (const rung of LADDER.slice(LADDER.indexOf(signal))) {
-        if (!lives()) break;
-        if (group) signalTree('end', child.pid, rung);
-        else send('end', child.pid, child.pid, rung);
-        await settle();
-      }
-      if (lives()) throw new Error(`end: pid ${child.pid} survived SIGKILL`);
+      await climb('end', child.pid, signal, group, lives);
     }
     await exited;
     // The exit's own grace closes the streams, so output written while ending is read.

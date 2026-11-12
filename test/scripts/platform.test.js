@@ -14,6 +14,7 @@ const {
   stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const { proofBase } = require('../lib/workflow-home');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 const DETACH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'detach.js');
@@ -165,6 +166,16 @@ const cases = async () => {
       assertEq(out.replace(/\n$/, ''), 'D:/a/x', `the native spelling, got: ${JSON.stringify(out)}`);
     });
 
+  group('platform.sh: wk_posix_path');
+
+  await test('this machine answers for itself: unchanged off Windows, Git Bash\'s spelling on it', () => {
+    // No OSTYPE override and no stub: the real cygpath on Windows, whose `-u`
+    // answer the seam's stub does not spell.
+    const { out } = inPlatform('wk_posix_path C:/Users/x/repo; printf "|"');
+    const expected = IS_WINDOWS ? '/c/Users/x/repo|' : 'C:/Users/x/repo|';
+    assertEq(out, expected, `the platform's own spelling, got: ${JSON.stringify(out)}`);
+  });
+
   group('platform.sh: wk_user_dir');
 
   await test('wk_user_dir: WORKFLOW_HOME wins, else ~/.workkit, and an unset HOME never aborts set -u', () => {
@@ -173,6 +184,45 @@ const cases = async () => {
     const bare = inPlatform('set -u; unset HOME; wk_user_dir');
     assertEq(bare.code, 0, `no unbound-variable abort: ${bare.err}`);
     assertEq(bare.out, '/.workkit\n', 'the default with no HOME');
+  });
+
+  group('platform.sh: wk_proof_dir');
+
+  await test('wk_proof_dir: two calls each make and print their own run folder under <HOME>/.cache/workkit/proof', () => {
+    const dir = mkTmp('wf-platform-');
+    const { code, out, err } = inPlatform('a=$(wk_proof_dir) && b=$(wk_proof_dir) && printf "%s\\n%s\\n" "$a" "$b"',
+      { HOME: shellPath(dir) });
+    assertEq(code, 0, `both calls answered, stderr: ${err}`);
+    const [a, b] = out.split('\n');
+    for (const made of [a, b]) {
+      assertEq(made.slice(0, made.lastIndexOf('/')), `${shellPath(dir)}/.cache/workkit/proof`, `a folder under the cache's proof/, got: ${JSON.stringify(out)}`);
+      assert(fs.statSync(path.join(proofBase(dir), path.basename(made))).isDirectory(), `${made} was made`);
+    }
+    assert(a !== b, `two folders, got: ${JSON.stringify(out)}`);
+    cleanup(dir);
+  });
+
+  await test('wk_proof_dir: WORKFLOW_HOME elsewhere still leaves the run folder under <HOME>/.cache/workkit/proof, no proof in it', () => {
+    const dir = mkTmp('wf-platform-');
+    const home = path.join(dir, 'home');
+    const kit = path.join(dir, 'kit');
+    fs.mkdirSync(home);
+    fs.mkdirSync(kit);
+    const { code, out, err } = inPlatform('wk_proof_dir', { HOME: shellPath(home), WORKFLOW_HOME: shellPath(kit) });
+    assertEq(code, 0, `a run folder made, stderr: ${err}`);
+    const made = out.trim();
+    assertEq(made.slice(0, made.lastIndexOf('/')), `${shellPath(home)}/.cache/workkit/proof`, `under HOME's cache, got: ${JSON.stringify(out)}`);
+    assert(!fs.existsSync(path.join(kit, 'proof')), 'no proof made in the WORKFLOW_HOME folder');
+    cleanup(dir);
+  });
+
+  await test('wk_proof_dir: 1 when proof/ is a file, so no run folder can be made', () => {
+    const dir = mkTmp('wf-platform-');
+    fs.mkdirSync(path.dirname(proofBase(dir)), { recursive: true });
+    fs.writeFileSync(proofBase(dir), '');
+    const { code } = inPlatform('wk_proof_dir', { HOME: shellPath(dir) });
+    assertEq(code, 1, 'no run folder');
+    cleanup(dir);
   });
 
   group('platform.sh: wk_node');

@@ -20,12 +20,13 @@
   - Every kit query reads up to 1,000 issues (`--limit 1000`).
   - A filter is applied before the cap, and `gh` never says when a cap cut the answer.
 - **Promotion rule**: anything durable (a finding, a decision, a blocker) is promoted to its issue as a comment the moment it exists. `.workkit/` holds only in-flight session state; it is private per developer, so nobody else ever reads it. It is a routing stop, never a destination.
-- **`.workkit/` splits by owner**. Three things live there, beside two logs, and nothing else:
+- **`.workkit/` splits by owner**. Three things live there, beside three logs, and nothing else:
   - `settings.json`, the tracked opt-in;
   - `capture.md`, the ONE owner-editable file (§ Capture);
   - `agents/`, everything the agents maintain: `session.md`, the `docs:change-tracker` fingerprint, anything future.
   - The logs are the kit's detached runs' own, the owner's and the agents' alike to read and neither's to write:
     - `suite.log`, a root `npm test`'s output;
+    - `run.log`, a `workkit supervise` run's;
     - `ci.log`, the ship's CI watch's.
     - Each is truncated per run and written there only where git ignores it.
   - The boundary is structural rather than a convention: the owner writes above `agents/`, the agents write inside it.
@@ -51,7 +52,7 @@
     - the commit's in git's own `pre-commit` and `commit-msg` hooks, on the staged tree and the message;
     - the `gh` write's in the `gh` shim, on the expanded argv.
     - Both sit behind one gate, a Claude session in a repo that is a yes (`wk_session_judges`: `workflow/README.md`, the `lib/participation.sh` row).
-  - Only four still read a command's text: `safety:tree-guard`, `safety:capture-guard`, `safety:release-taken`'s `npm publish` half and the `workflow:bare-call` notice.
+  - Only six still read a command's text: `safety:tree-guard`, `safety:capture-guard`, `safety:script-write`, `safety:release-taken`'s `npm publish` half and the `workflow:bare-call` and `workflow:unwatched` notices.
   - How a hook in the hooks module finds the repo it acts on: [`hooks.md`](hooks.md) § Where every hook stands down.
 
 - **Every heal runs.** Nothing in a repo records which heals it has had.
@@ -86,7 +87,8 @@
   - the top-level key above (`enabled`);
   - `public`, the paired public issue repo (§ Capture);
   - `proof`, its `rootOnly`: the packages the root run alone proves (§ The proof);
-  - `tests`, its `budget`: the minutes a root run may take ([`tests.md`](tests.md) § The budget);
+  - `tests`, its `budget`: the minutes a root run may take ([`tests.md`](tests.md) § The budget), and its `check`: the minutes between the supervisor's checks of a run ([`tests.md`](tests.md) § The checks);
+  - `commit`, its `attribution`: `true` by default, and `false` refuses a commit message carrying a Claude attribution line ([`hooks.md`](hooks.md) § `safety:commit-attribution`);
   - `hooks`, the ship hooks: the commands its `afterRelease`, `afterPublish` and `afterDeploy` arrays name, for `workkit ship cut`, `publish` and `deploy` to run once their step succeeds.
     - They run in a repo whose file says `"enabled": true`, an entry marked `"local": true` skipped in a cloud session (`workflow/README.md`, the `ship/hooks.js` row).
     - An `afterRelease` hook must be idempotent. The ship's no-commit path reruns `workkit ship cut` for a version already released, and so reruns every `afterRelease` hook.
@@ -244,8 +246,12 @@ flowchart TB
     - The wrapper first runs the gate's cheap check, the CHANGELOG format over every modified `CHANGELOG.md`. So a bad entry stops the run before the suite starts.
     - The suite then runs in its own session, its output written to `.workkit/suite.log` as well as the terminal.
     - A kill of the shell that started it (an agent tool's time limit) leaves it running to its record.
-    - The agent reads the log for the result, its last line `script-shell: exit <code>`.
+    - The agent reads the log for the result: the suite's closing line is `script-shell: exit <code>`, and a `detach:` line follows it after a frozen or requested end.
     - A Ctrl-C still ends it, and a second root `npm test` while one runs starts nothing, naming the log.
+    - Its supervisor reads it every `tests.check` minutes (`docs/tests.md` § The checks).
+      - A run with no output and no processor use is frozen: it is ended, its log's last line saying so.
+      - A run with no output that still works asks for a look: the call prints the evidence and returns, and the run goes on to its record.
+    - A test run started in the background is one the supervisor reads, and its end is acted on: `agents.md` § Watching a run.
   - The record is the engine-agnostic contract and the wrapper is npm's adapter.
     - Another engine proves a tree through an adapter of its own that writes the same record.
   - The commit gate never runs tests.
@@ -273,7 +279,7 @@ flowchart TB
     - The commit gate's bounce names it for exactly that state.
     - The ship picks it after staging when the index differs from the disk, untracked files included. So the whole-folder run never starts there.
       - The test: `git diff --quiet` fails, or `git ls-files --others --exclude-standard` prints a file.
-    - It shares the root run's log and lock: one full run at a time, its output in the same suite log, its last line `prove: exit <code>`.
+    - It shares the root run's log and lock: one full run at a time, its output in the same suite log, its closing line `prove: exit <code>`.
     - The same hold judges it first, against the index's tree: once per tree, and never while an issue is building.
   - Whether a change needs a test, and whether a test earns its place, stay judgment, nudged at edit time and never bounced:
     - `safety:test-reminder` asks once per file when no test names the written code file, a "no" recorded in the `Proof:` line;
@@ -491,7 +497,7 @@ flowchart TB
 | The parts... | Shape |
 |---|---|
 | always ship together | ONE issue; list the parts as a checklist in the Spec |
-| serve one goal but ship separately, each needing its own state | a PARENT issue with GitHub sub-issues (`gh issue edit <child> --add-parent <N>`): a checkbox cannot hold a status label, a sub-issue can |
+| serve one goal but ship separately, each needing its own state | a PARENT issue with GitHub sub-issues (`gh issue edit <child> --parent <N>`): a checkbox cannot hold a status label, a sub-issue can |
 | share only a theme | SEPARATE issues, no parent |
 
 - Sub-issues are also the dependency mechanism: work that waits on OTHER WORK stays `status:specced` under its parent.
@@ -790,7 +796,8 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
   - So no laptop is the one place a record exists.
 - What is left on disk is scratch (the capture inbox, session state, caches, logs), and none of it is a source of truth.
 - Two surfaces, both generic.
-  - There is no assumed folder layout anywhere, and no path outside them.
+  - There is no assumed folder layout anywhere, and no path outside them but one.
+  - The one is the kit's cache folder, `~/.cache/workkit/proof`: scratch, the run folders of `workkit prove` and `workkit proof red` (`workflow/README.md`, `wk_proof_base`).
 - **1. `~/.workkit`**: workkit's user-level home on any machine (`$WORKFLOW_HOME` overrides it).
   - It is a PLAIN FOLDER and never a git repo.
   - Nothing in it is versioned, so nothing in it has to be kept out of a commit.
@@ -815,6 +822,7 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
   - It holds any other setting for every repo on the machine, among them:
     - `findings.file` (whether an agent files a finding on its own, § How big is one issue);
     - `docs.bullets` (whether a markdown write must keep the doc shape, § Enforcement);
+    - `commit.attribution` (whether a commit message may carry a Claude attribution line, § The model);
     - and `docs.paths` (which markdown the shape check judges, § Enforcement).
   - A repo's `.workkit/settings.json` overrides it under the same key.
   - Its `enabled` turns no repo on.

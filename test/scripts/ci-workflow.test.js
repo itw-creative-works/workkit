@@ -1,12 +1,16 @@
 /* eslint-disable no-console */
-// The kit's workflows, read as text: every kit workflow and installed template holds
-// no plain value with a colon; checks.yml runs a push on main only, its scope answer
+// The kit's workflows: every kit workflow and installed template parses under Ruby's YAML
+// and holds no plain value with a colon; checks.yml runs a push on main only, its scope answer
 // gates suite and changelog, and release runs on a push only; ci.yml's Scope step
-// decides before setup and gates the rest, and is checks.yml's but name and path.
+// decides before setup and gates the rest, and is checks.yml's but name and path;
+// ci.yml's test job and checks.yml's suite job each carry a 60 minute limit.
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { spawnSync } = require('../lib/platform');
+const {
+  group, test, testUnless, assert, assertEq, run, SPAWN_DEADLINE, selfRun, summary,
+} = require('../lib/harness');
 const {
   indentOf, isContent, block, inlineValue, listValue, listItems, unquote, plainColonLines,
 } = require('../lib/workflow-yaml');
@@ -16,6 +20,12 @@ const WORKFLOW = path.join(ROOT, '.github', 'workflows', 'checks.yml');
 const CI = path.join(ROOT, '.github', 'workflows', 'ci.yml');
 // The kit's own workflows and the workflow templates it installs into a repo.
 const WORKFLOW_DIRS = [path.join(ROOT, '.github', 'workflows'), path.join(ROOT, 'workflow', 'templates', 'github-workflows')];
+
+// Ruby's YAML is the real parser the kit reads with, so no dependency ships for it.
+const HAS_RUBY = spawnSync('ruby', ['-ryaml', '-e', ''], { timeout: SPAWN_DEADLINE }).status === 0;
+// Parses each file named for syntax alone, so an anchor or a date value passes,
+// printing `<file>: <message>` for one YAML refuses.
+const RUBY_PARSE = 'ARGV.each { |f| begin; YAML.parse_file(f); rescue => e; puts "#{f}: #{e.message.delete_prefix("(#{f}): ")}"; end }';
 
 // The children of a block, at the indent of its first content line.
 const childIndent = (keyBlock) => {
@@ -87,6 +97,17 @@ const cases = async () => {
     assertEq(named.join('\n'), '', 'lines YAML refuses');
   });
 
+  group('workflows: a real YAML parse');
+
+  await testUnless(!HAS_RUBY, 'ruby with its YAML library does not run on this machine')('every kit workflow and installed workflow template parses as YAML', () => {
+    const files = WORKFLOW_DIRS.flatMap((dir) => fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => path.relative(ROOT, path.join(dir, f)).split(path.sep).join('/')));
+    assert(files.length > 0, 'workflow files to parse');
+    const res = run('ruby', ['-ryaml', '-e', RUBY_PARSE, ...files], { cwd: ROOT });
+    assertEq(res.status, 0, `ruby exit (${res.stderr.trim()})`);
+    assertEq(res.stdout.trim().split(/\r?\n/).filter(Boolean).join('\n'), '', 'files YAML refuses');
+  });
+
   group('checks.yml: the triggers');
 
   await test('a push runs only on main; a pull request still runs', () => {
@@ -151,6 +172,13 @@ const cases = async () => {
     const ci = scopeStep(CI, 'test');
     assert(ci !== '', 'ci.yml scope step has content lines');
     assertEq(ci, scopeStep(WORKFLOW, 'scope'), 'ci.yml scope step against checks.yml');
+  });
+
+  group('workflows: a hung run ends at a time limit');
+
+  await test('ci.yml jobs.test and checks.yml jobs.suite each end after 60 minutes', () => {
+    assertEq(inlineValue(jobKey(CI)('test', 'timeout-minutes')), '60', 'ci.yml jobs.test.timeout-minutes');
+    assertEq(inlineValue(jobKey(WORKFLOW)('suite', 'timeout-minutes')), '60', 'checks.yml jobs.suite.timeout-minutes');
   });
 
   return summary();

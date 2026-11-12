@@ -44,11 +44,16 @@ const cases = async () => {
   }
 
   group('manager-profile: the injection is the delegation core only');
-  await test('the injection stays under 1700 characters on both rungs', () => {
+  await test('the injection stays under 1800 characters on both rungs', () => {
     for (const rung of ['fable', 'opus']) {
       const ctx = ctxFor(MODELS[rung]);
-      assert(ctx.length < 1700, `${rung} injection is ${ctx.length} chars`);
+      assert(ctx.length < 1800, `${rung} injection is ${ctx.length} chars`);
     }
+  });
+  await test('the watching clause names docs/agents.md § Watching a run on both rungs', () => {
+    const clause = 'docs/agents.md § Watching a run';
+    assert(ctxFor(MODELS.fable).includes(clause), 'frontier session lacks the watching clause');
+    assert(ctxFor(MODELS.opus).includes(clause), 'workhorse session lacks the watching clause');
   });
   await test('the one-time clause follows the findings sentence on both rungs', () => {
     const clause = 'findings.file is on. A one-time problem';

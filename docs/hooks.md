@@ -2,8 +2,8 @@
 
 - This file is the behavior detail behind `AGENTS.md` § Hooks, which keeps one line per hook.
 - The rules the hooks enforce live in [`project-state.md`](project-state.md). This file describes how each hook executes them.
-- Of the thirty hooks, twenty-four run in process, in the hooks module (§ The hooks module).
-  - Seven guards run in the `gh` shim and git's `pre-commit` and `commit-msg` hooks.
+- Of the thirty-three hooks, twenty-six run in process, in the hooks module (§ The hooks module).
+  - Eight guards run in the `gh` shim and git's `pre-commit` and `commit-msg` hooks.
   - `hooks/hooks.json` wires no shell hook.
 
 ## How they are wired
@@ -16,7 +16,7 @@
 ### The hooks log
 
 - Every fire of a hook the hooks module runs leaves one line in `hooks.log`.
-  - The seven guards' runs in the `gh` shim and git's hooks leave none, since they run outside the module.
+  - The eight guards' runs in the `gh` shim and git's hooks leave none, since they run outside the module.
   - `safety:release-taken`'s publish half, a `tool.call` guard, still logs.
 - The log lives in the workkit folder (`~/.workkit`).
   - `WORKFLOW_HOME` moves it.
@@ -62,7 +62,7 @@
   - an Edit or Write: the repo holding the file it writes, a linked file read where it really is.
     - It is walked up from the nearest folder that exists, as spelled, else from that folder's physical path.
     - `~/.claude/settings.json` and a path through `~/.claude/skills` name the dotfiles checkout only behind the link;
-  - a Bash command, for the parsers the Bash chain before the call keeps (`safety:release-taken`'s publish half, `safety:tree-guard`, `workflow:bare-call`, `safety:capture-guard`).
+  - a Bash command, for the parsers the Bash chain before the call keeps (`safety:release-taken`'s publish half, `safety:tree-guard`, `workflow:bare-call`, `workflow:unwatched`, `safety:capture-guard`, `safety:script-write`).
     - The repo is the one holding its `cwd`, plus the repo of every folder a `cd` step lands in.
     - The hook runs when any of those repos opted in.
     - A plain `cd <folder>` is followed past the shared prefix peel (`cdStep` in `hooks/mods/command.js`).
@@ -114,7 +114,7 @@
     - The engine's npm `script-shell` wrapper (`workflow/script-shell.sh`) and `workkit prove` (`workflow/prove.sh`) write the suite marker.
     - The same wrapper writes the package record (`wk_pkg_marker_path`): the packages a green `npm test` other than the bare root run proved on a tree.
     - `safety:proof-guard` reads the package record at the qa flip.
-  - The same derivation names the two run locks and the fallback logs of the detached suite run and CI watch (`workflow/lib/suite.sh`).
+  - The same derivation names the three run locks and the fallback logs of the detached suite run, supervised run and CI watch (`workflow/lib/suite.sh`).
   - A machine with neither tool is refused loudly rather than keyed to an empty string.
     - An empty string would be one marker shared by every repo on it.
   - The engine keys the suite record with the same digest, so the body is `wk_sha1` in `workflow/lib/platform.sh`.
@@ -180,8 +180,10 @@
 
 - The reads the module's guards share each have one home under `hooks/mods/`:
   - `command.js`: the command text, read by the kept parsers alone.
-    - It holds the strips, `stripQuotesKeeping` (handing back the quoted spans the placeholders stand for), the redirect `&` fold and the prefix peel.
-    - It holds the step split and its folder walk `stepDirs`, the cd step, the interpreter list and git's subcommand `gitSubcommand`.
+    - It holds the strips, `stripQuotesKeeping` (handing back the quoted spans the placeholders stand for), the heredoc bodies `heredocsOf`, the redirect `&` fold and the prefix peel.
+    - It holds the redirect drop `unredirectedIndices`, the quoted spans put back `quoteRestorer`, and `writtenSteps`, a command's steps with their words as written, which `workflow:bare-call`, `workflow:unwatched` and `safety:script-write` share.
+    - It holds the sed and perl in-place pattern `IN_PLACE` and its step test `inPlaceEdit`.
+    - It holds the step split `stepsOf` and its folder walk `stepDirs`, the cd step, a command word's `baseName`, the interpreter list and git's subcommand `gitSubcommand`.
     - It holds the line-by-line test `anyLine` and the slug rule `slugFromRemote`.
   - `gh.js`: the `gh` calls, `issueView`, `stageList`, and the gh guards' `denyAfter` and `ghSkipped`.
     - It also holds `buildingList`, the `status:building` list no guard reads.
@@ -225,6 +227,8 @@
   - `findings.file`;
   - `docs.bullets` and `docs.paths` (`docs:board-guard`, through `bulletsOn` and `shapePaths`);
   - `tests.budget` (the commit gate);
+  - `tests.check` (`workflow/lib/detach.js`, the minutes between the supervisor's checks of a run, default 5);
+  - `commit.attribution` (`safety:commit-attribution`, through `attributionOff`);
   - `public` (`workflow:public-mirror`, `workflow/public/lib.js`);
   - `proof.rootOnly` (`safety:proof-guard`);
   - the `manager` block (`managerConfig` in `hooks/mods/manager.js`);
@@ -255,8 +259,8 @@
 
 ## The hooks module
 
-- Of the thirty hooks, twenty-four run inside Claude Code itself, in one hooks module.
-- Seven guards run in the `gh` shim and git's `pre-commit` and `commit-msg` hooks.
+- Of the thirty-three hooks, twenty-six run inside Claude Code itself, in one hooks module.
+- Eight guards run in the `gh` shim and git's `pre-commit` and `commit-msg` hooks.
   - `safety:release-taken` runs in both: its release commit in `commit-msg`, its `npm publish` here.
 - `hooks/hooks.json` names the module under `modules` (`./register.js`), and the session loads it once.
   - So dispatching a fire starts no process.
@@ -297,9 +301,12 @@
 | `docs:change-tracker` | `classic.Stop` | Nags once per change, at a park, a block or a close, about uncommitted work, keeping the issue true, promoting findings, and unfiled captures |
 | `safety:commit-gate` | git `pre-commit` and `commit-msg` | Blocks a `git commit` the work is not ready for (the proved-tree record, test files, review marker, CHANGELOG entry, the issue it closes and its proof, an issue it names that the owner has not passed, a closing line naming more than one issue) |
 | `safety:commit-language` | git `commit-msg` | Bounces kill/destroy/dead wording, and a subject line that is not Conventional Commits or carries a version outside `chore(release)` |
+| `safety:commit-attribution` | git `commit-msg` | Bounces a message carrying a Claude co-author line or the Claude Code footer, in a repo whose `commit.attribution` is false |
 | `safety:release-taken` | git `commit-msg` (the release commit), `tool.call` (Bash) (the publish) | Bounces the release commit and the `npm publish` whose version npm or the GitHub release tag already has, before the commit and the tag exist |
 | `safety:tree-guard` | `tool.call` (Bash) | Blocks the git commands that DISCARD a shared working tree, with one deliberate escape |
+| `safety:script-write` | `tool.call` (Bash) | Blocks a command that rewrites a file past the Edit and Write tools (sed or perl in place, a python or node snippet that writes a file), with one escape for a scratch or generated file |
 | `workflow:bare-call` | `tool.call` (Bash) | Names, never blocking, each allow-listed kit verb run inside a compound command or with a command substitution in an argument, with the bare call its allow rule matches |
+| `workflow:unwatched` | `tool.call` (Bash) | Names, never blocking, the `workkit supervise` form of a test run started in the background that the supervisor does not read |
 | `safety:issue-guard` | the `gh` shim | Blocks a `gh` call whose outbound text carries a local `.env` value or a token-shaped string |
 | `safety:proof-guard` | the `gh` shim | Blocks the flip to `status:complete` and the `gh issue close` of an issue carrying no `Proof:` comment, and the flip to `status:qa` while a package owning a touched test file has no green `npm test` recorded on its own id, the code it can see (§ `safety:proof-guard`, the package id bullet), a package the settings list under `proof.rootOnly` excepted |
 | `safety:spec-guard` | the `gh` shim | Blocks the flip to `status:specced` while the issue's `## Spec` is written but carries no `### Contract` |
@@ -327,7 +334,7 @@
 | `agent.spawn` | `manager:resolver`: `next({ ...e, model })`, or `{ deny }` in advise mode |
 | `classic.Stop` | `manager:close-guard`: its warning as one `$.ui.log` line and nothing else, since a Stop context would continue the turn; then `docs:change-tracker`: its nag as the `block`, which continues the turn on purpose |
 | `session.end` | none: it deletes every `$.store` key of the ending session |
-| `tool.call` (Bash) | `BASH_GUARDS` in `hooks/mods/guards.js`, in this order: `safety:release-taken` (its publish half), `safety:tree-guard`, `workflow:bare-call`, `safety:capture-guard` |
+| `tool.call` (Bash) | `BASH_GUARDS` in `hooks/mods/guards.js`, in this order: `safety:release-taken` (its publish half), `safety:tree-guard`, `workflow:bare-call`, `workflow:unwatched`, `safety:capture-guard`, `safety:script-write` |
 | `tool.call` (Edit/Write) and (Read/Grep) | `FILE_GUARDS` (`safety:vendor-guard`, then `safety:capture-guard`) and `READ_GUARDS` (`safety:capture-guard`) in `hooks/mods/guards.js` |
 | `classic.PostToolUse` and `classic.PostToolUseFailure` (Bash) | `POST_BASH_GUARDS` in `hooks/mods/guards.js`: `workflow:snapshot`, then `workflow:public-mirror` |
 
@@ -338,6 +345,7 @@
   - The journals are every gh journal on the machine: the files of the journal folder (`journalDir`) in name order, each with its length (`journalSizes`).
     - An empty folder is an empty mark.
   - The mark reads no command text and makes no git call.
+  - The guards' facts carry the command, the session's folder and `background`, true when the call's `run_in_background` is true (`bashFacts`).
   - The first `{ deny }` refuses the call, and the guards after it do not run.
   - Every notice goes to Claude as one `context` entry on the result, and to the owner as one `$.ui.log` line.
 - **`tool.call` (Edit/Write) and (Read/Grep)**, the row's detail:
@@ -410,7 +418,7 @@
     - the `Proof:` pattern (`workflow/ship/items.sh`, `PROOF_RE` in `hooks/mods/proof.js`);
     - the version file test (`hook_is_manifest` in `hooks/lib/tree.sh`, `isManifest` in `hooks/mods/commit-gate/checks.js`);
     - the version-only diff (`hook_version_only_change` in `hooks/lib/tree.sh`, `versionOnly` in `hooks/mods/commit-gate/checks.js`);
-    - the ship verb list (`ALLOW_RULES` in `workflow/workkit/allow.sh`, `ALLOWED_SHIP_VERBS` in `hooks/mods/bare-call.js`);
+    - the allowed verb lists (`ALLOW_RULES` in `workflow/workkit/allow.sh`, `ALLOWED_SHIP_VERBS` and `ALLOWED_VERBS` in `hooks/mods/bare-call.js`);
     - and the hooks log line (`logLine` in `hooks/mods/log.js`).
   - The prompt shape (`hooks/mods/frame.js`) and the manager config and model tier (`hooks/mods/manager.js`) have no shell side.
 - **State.**
@@ -549,8 +557,22 @@
 ### `manager:profile`: UserPromptSubmit
 
 - Injects the manager standing instruction in frontier/workhorse sessions only, the session model read from `$.session.model()`.
-  - The instruction: delegate to the crew, keep the todo checklist current, announce each spawn.
   - An unknown model hears it as a frontier session does.
+  - `manager.enabled: false` silences it.
+- The instruction, in its order:
+  - the session is the manager, judgment and dispatch: recon to `workkit:scout`, implementation to `workkit:worker`, blind review to `workkit:verifier`;
+  - the advisor line by rung: a workhorse session consults `workkit:advisor` for plans and hard calls, a frontier or unknown one never spawns it;
+  - the resolver picks models, so no spawn passes a model;
+  - a todo checklist for any multi-step task, kept current;
+  - every crew spawn announced in chat as it is made, and what it returned reported;
+  - the handoff: a brief file only to dispatch, from a `briefs/` template, naming the framework guide, and the agent's reply is the report;
+  - authorized issues built in batches of parallel groups, each a pair and a verifier, with one `workkit:review` full panel per batch ([`agents.md`](agents.md) § Batches);
+  - every background test run started supervised and acted on at its end ([`agents.md`](agents.md) § Watching a run);
+  - authorized work spawns now, and an owner question rides beside running work;
+  - design, contracts and verdicts stay with the manager, and an owner question takes the `workkit:interview` shape;
+  - off-issue findings go in chat under 🧭 Findings, and a one-time problem is one report line;
+  - an issue line is one bullet for a cold reader (`project-state.md` § Restating an issue).
+- It stays under 1800 characters on both rungs, held by `test/hooks/manager-profile.test.js`.
 - The logic is `profileContext(config, model)` in `hooks/mods/profile.js`.
 
 ### `docs:checkpoint`: UserPromptSubmit
@@ -986,6 +1008,20 @@
   - A brand-new local repo gets the check the moment it has a remote.
 - The logic is `commitLanguageVerdict(message)` in `hooks/mods/commit-language.js`, over the whole message.
 
+### `safety:commit-attribution`: git commit-msg
+
+- Bounces a commit message carrying a Claude attribution line, in a repo that turns attribution off.
+  - The setting is `commit.attribution`, merged from the kit default (`true`), the machine file and the repo file as every key is.
+  - Attribution is allowed unless a file says `false` (`attributionOff` in `hooks/mods/settings.js`). Without that, the check asks nothing.
+- With the setting false, it refuses the first line that is either:
+  - a `Co-Authored-By:` line, in any letter case, whose name's first word is Claude or whose address is at `anthropic.com`;
+  - or a line holding `Generated with Claude Code`, with or without the link brackets.
+- It never refuses a `Claude-Session:` line, a `Co-Authored-By:` line for a person (`Jean-Claude Van` too), or the word Claude in a subject or a body.
+- It runs in git's `commit-msg` hook (`workflow/githooks/`, the gate and the chain § `safety:commit-gate` names), after `safety:commit-language`.
+  - It reads the real message, as `safety:commit-language` does, in a repo with an origin or without.
+- The deny quotes the line and says to remove it and commit again.
+- The logic is `commitAttributionVerdict(message)` in `hooks/mods/commit-attribution.js`.
+
 ### `safety:release-taken`: git commit-msg (the release commit), tool.call (Bash) (the publish)
 
 - Bounces a release whose version npm or the GitHub release tag ALREADY has, at the one moment the number is still free to change.
@@ -994,7 +1030,7 @@
     - A redirect before `npm` or `publish` is skipped, and `--dry-run` publishes nothing.
   - Found afterwards, a taken version costs a second release rather than a different number.
 - The release commit is judged in git's `commit-msg` hook (`workflow/githooks/`, the gate and the chain § `safety:commit-gate` names).
-  - It runs after the commit gate and `safety:commit-language`, when the real message's subject is exactly `chore(release): <x.y.z>`.
+  - It runs after the commit gate, `safety:commit-language` and `safety:commit-attribution`, when the real message's subject is exactly `chore(release): <x.y.z>`.
   - `releaseCommitVerdict({ subject, root, facts })` reads the project off disk and runs the two lookups below.
   - The version shape is `VERSION_RE`, the one `safety:commit-language` accepts in a release subject.
   - `npm publish` is the one half still read off the command text, a guard on the `tool.call` Bash chain.
@@ -1076,6 +1112,37 @@
   - The call goes on as if the guard were silent.
 - The logic is `treeGuardVerdict({ command, cwd, exists })` in `hooks/mods/tree-guard.js`, `exists(rel)` asking whether `<cwd>/<rel>` is there.
 
+### `safety:script-write`: tool.call (Bash)
+
+- Blocks a Bash command that rewrites a file in place, since the write hooks fire on the Edit and Write tools alone and never see it.
+  - A file edit goes through Edit or Write (`agents/worker.md`), and a write hook's bounce is fixed or reported, never worked around.
+- What it bounces:
+  - `sed` or `perl` with an in-place flag (`-i`, `-i.bak`, `-pi`, `--in-place`), as a step's command word past the shared prefix peel, by any path.
+    - The pattern is `IN_PLACE` in `hooks/mods/command.js`, the one `safety:capture-guard` reads; the step test is `inPlaceEdit`.
+    - The step test cuts a perl flag that takes the rest of its word (`-M`, `-m`, `-I`, `-v`, `-V`), so a module, a folder or a version query (`-Mstrict`, `-Ilib`, `-version`) never reads as `-i`.
+    - It is read after the heredoc and quote strips, so a `sed -i` in a quoted commit message or an `echo` is data.
+  - `python`, `python3` or `node` handed a snippet whose text writes a file, read with its quotes, or the body of a heredoc the interpreter reads.
+    - The snippet is the argument after python's `-c`, alone or ending a flag cluster (`-Bc`), or after node's `-e`, `--eval`, `-p`, `--print` or `-pe`.
+    - An interpreter's flags are read up to its script file, or a module after `-m` (alone or ending a cluster, `-Bm`), so a `-c`, `-e` or `-p` after the script file is the script's own argument.
+      - A script file is known by its ending: node's `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`; python's `.py`, `.pyw`.
+      - Every other word is read past, as a flag's value or a redirect (`--input-type module`, `2>/dev/null`).
+      - The value of a listed flag is skipped whatever its ending (node's `-r`, `--require`, `--import`, `--loader`, `--experimental-loader`, `-C`, `--conditions`; python's `-W`, `-X`), so `node -r ./setup.js -e ...` is read on to its `-e`.
+    - Python: a call to `open(` or a method `.open(` whose mode writes, appends, creates or updates (a `w`, `a`, `x` or `+`), `.write_text(`, `.write_bytes(`.
+      - The mode is the second argument of `open(` (`open(os.path.join('a','b'), 'w')`), the first or second of `.open(` (`Path(p).open('w')`), or a `mode=` argument.
+      - An argument nested past two levels of parentheses is not read.
+    - Node: `writeFile`, `writeFileSync`, `appendFile`, `appendFileSync`, `createWriteStream`.
+- The accepted misses: it reads the command's text only.
+  - A script file run by name, a redirect (`>`), `tee` and a script inside a kit command are out of its reach.
+  - So are a launcher the peel does not list in front (`bash -c`, `sh -c`, `nice`, `timeout`, `sudo`, `xargs`, `find -exec`), a sed by another name (`gsed`) and a snippet piped into the interpreter.
+  - So is an in-place flag after a flag that takes a value (`sed -e expr -i x`), since the pattern reads the flags only up to the first word that is not one.
+  - A script named with no ending keeps the old refusal: in `node build -p writeFile` the `-p` reads as node's own.
+  - A script-looking value of a flag outside `VALUE_FLAG` ends the walk (`node --env-file x.js -e ...`), so a writing snippet after it passes.
+- One escape, for a file no write hook judges (a scratch file, a generated file): `WORKKIT_ALLOW_SCRIPT_WRITE=1` as an assignment on the command.
+  - It is read off the quote-stripped text, as the tree guard's is, so a mention inside quotes is not one.
+  - The guard then stands aside out loud, one notice line (`script-write: stood aside for a scratch or generated file: ...`).
+- It runs last in the Bash chain, so a rewrite of `.workkit/capture.md` still gets `safety:capture-guard`'s answer first.
+- The logic is `scriptWriteVerdict(command)` in `hooks/mods/script-write.js`, answering `{ deny }`, `{ context }` or null.
+
 ### `workflow:bare-call`: tool.call (Bash)
 
 - A kit verb's allow rule matches the bare command alone (`ALLOW_RULES` in `workflow/workkit/allow.sh`, which `workkit setup` keeps in the global settings).
@@ -1083,10 +1150,10 @@
   - The command is judged before the call. The notice naming the bare form rides the call's result (§ The hooks module, the `tool.call` (Bash) row).
   - It never denies.
 - A kit step is a step whose command word, past the shared prefix peel, is `workkit`.
-  - It is followed by `ship` and a verb of `ALLOWED_SHIP_VERBS` in `hooks/mods/bare-call.js`, or by `review`.
+  - It is followed by `ship` and a verb of `ALLOWED_SHIP_VERBS` in `hooks/mods/bare-call.js`, or by a verb of `ALLOWED_VERBS` there (`review`, `watch`).
   - Any other `ship` word (`deploy`, which has no allow rule, a flag, a typo) is not one.
-  - The list is `workflow/workkit/ship.sh`'s `SHIP_VERBS` less `deploy`, in its order.
-  - A twin in `test/hooks/twins.test.js` holds it to the `workkit ship` rules of `ALLOW_RULES`.
+  - The ship list is `workflow/workkit/ship.sh`'s `SHIP_VERBS` less `deploy`, in its order.
+  - A twin in `test/hooks/twins.test.js` holds both lists to the `workkit` rules of `ALLOW_RULES`.
   - The steps are `hooks/mods/command.js`'s split, after its heredoc and quote strips and the redirect `&` fold.
   - So a quoted mention (`echo "workkit ship publish"`) and a heredoc body are data.
 - The notice is one line per kit step found:
@@ -1103,6 +1170,30 @@
   - A pipe, a `;`, an `&&`, a subshell, a prefix or a redirect makes it a compound.
   - `workkit ship plan && workkit ship publish` gets two lines.
 - The logic is `bareCallVerdict({ command })` in `hooks/mods/bare-call.js`, answering `{ context }` or null.
+
+### `workflow:unwatched`: tool.call (Bash)
+
+- A test run the manager starts in the background is one the supervisor reads ([`agents.md`](agents.md) § Watching a run).
+  - A Bash call started in the background whose test run the supervisor does not read gets a notice naming the `workkit supervise` form.
+  - It never denies.
+- It reads only a call whose facts carry `background` true, the call's `run_in_background` (§ The hooks module, the `tool.call` (Bash) row).
+- A test step is a step whose command word, past the shared prefix peel and by any path, is:
+  - `npm test`;
+  - `npm run` with a `test` script name (`test`, or `test` then `:`, `-` or `.`, as `test:unit`);
+  - `workkit test`.
+- The supervisor reads the step already, so it says nothing, when the step is the root suite, bare (no argument, a redirect aside):
+  - `npm test` or `npm run test` whose folder is the repo root, since the npm wrapper sends the bare `test` script there to the suite (`workflow/script-shell.sh`);
+    - its folder is the call's `cwd`, moved by any `cd` step before it (`stepDirs` in `hooks/mods/command.js`);
+    - the folder is the root when git's `--show-prefix` there is empty (`repoPathOf` in `hooks/mods/optin.js`);
+    - a folder the walk cannot place is never the root;
+  - `workkit test` from any folder, since the verb moves to the repo root first;
+  - or when any step of the command is `workkit supervise`. `workkit prove` is no test step.
+- The steps are `writtenSteps` in `hooks/mods/command.js`, after its heredoc and quote strips and the redirect `&` fold, so a quoted mention and a heredoc body are data.
+- The notice is one line per test step the supervisor does not read:
+  - `workflow:unwatched: the supervisor does not read this background test run; start that step as workkit supervise -- <the test step>`.
+  - `<the test step>` is the step from its command word on, as `workflow:bare-call` names one: a prefix (`FOO=1`) and every redirect dropped, each quoted argument put back as written.
+  - A step before it (`cd <path> &&`) stays where it is: only that step moves under `workkit supervise`.
+- The logic is `unwatchedGuard(facts)` in `hooks/mods/unwatched.js`, answering `{ context }` or null.
 
 ### `safety:proof-guard`: the gh shim
 
@@ -1374,6 +1465,7 @@
 
 - Gates `.workkit/capture.md` in both directions: the owner's capture surface, whose one sanctioned touch is the triage drain. It sits in all three chains.
 - A read of its contents AND a rewrite of it (Edit/Write, `>`, plain `tee`, `sed -i`, `perl -i`) need the marker the `workkit:triage` skill records, stale after 30 minutes.
+  - With the marker, a `sed -i` or `perl -i` on it still meets `safety:script-write` after this guard, which refuses it unless `WORKKIT_ALLOW_SCRIPT_WRITE=1` is set on the command, so the drain clears entries with Edit or Write.
 - An APPEND (`>>`, `tee -a`, or the capture CLI (`workkit note`, which names no path)) is blocked with the marker or without, since adding to it is the owner's alone.
 - Counting stays open.
 - The marker is `triageMarkerPath` in `hooks/mods/markers.js`, the file `workkit triage mark` writes.

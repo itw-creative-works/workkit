@@ -4,7 +4,7 @@
 # other green test run proved, on that package's own tree id), where each is
 # kept, and the tree ids they are compared with, plus the paths of the detached
 # runs' logs and locks. Sourced, functions only, by script-shell.sh (the records'
-# writer), ship/watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
+# writer), supervise.sh, watch.sh, ship/watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
 # wk_marker_path, wk_sweep_markers, wk_native_path, wk_node, WK_NODE_FLOOR, wk_take_lock
 # and wk_drop_lock from platform.sh, and runs workspaces.js beside it.
 
@@ -34,10 +34,12 @@ wk_log_path() {
   fi
 }
 
-# The root suite's log and lock, and the CI watch's twins. The lock is a
-# directory taken by mkdir (lib/detach.sh).
+# The root suite's log and lock, the supervised run's (supervise.sh) and the
+# CI watch's twins. The lock is a directory taken by mkdir (lib/detach.sh).
 wk_suite_log_path() { wk_log_path "$1" suite.log; }
 wk_suite_lock_path() { wk_marker_path claude-suite-lock "$1"; }
+wk_run_log_path() { wk_log_path "$1" run.log; }
+wk_run_lock_path() { wk_marker_path claude-run-lock "$1"; }
 wk_ci_log_path() { wk_log_path "$1" ci.log; }
 wk_ci_lock_path() { wk_marker_path claude-ci-watch-lock "$1"; }
 

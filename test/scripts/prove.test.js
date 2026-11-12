@@ -1,7 +1,8 @@
 // Tests for `workkit prove`: the root suite run on exactly the staged tree, in a
-// throwaway copy outside the repo, recording the index's tree on green
-// (docs/project-state.md § The proof). Every case is a real throwaway repo with
-// a home and a TMPDIR of its own, on a machine whose npm names the kit's wrapper.
+// throwaway copy under the home's `.cache/workkit/proof`, recording the index's
+// tree on green (docs/project-state.md § The proof), and ending a suite that
+// freezes. Each case is a real repo with its own home and TMPDIR, on a machine
+// whose npm names the kit's wrapper.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -20,6 +21,10 @@ const {
 } = require('../lib/script-shell');
 const { runCli } = require('./workkit-cli/helpers');
 const { gateOn } = require('../lib/real-gate');
+const { homeOf, proofBase, runFolders, plantRun } = require('../lib/workflow-home');
+const {
+  CHECK_MINUTES, processTest, checkSettings, pidIn, reap,
+} = require('../lib/supervise');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -62,7 +67,25 @@ const holdBreaking = (w) => {
 // The fixture's suite run straight in the working folder.
 const folderRun = (w) => run(process.execPath, ['run.js'], { cwd: w.repo }).status;
 
-const prove = (w) => runCli(w, ['prove'], { cwd: w.repo, env: wiredNpmEnv(w) });
+const prove = (w, env = {}) => runCli(w, ['prove'], { cwd: w.repo, env: { ...wiredNpmEnv(w), ...env } });
+
+// A fixture test that writes, to the file PROVE_SEEN names, the root of the
+// tree it runs in and the entries of the folder PROVE_TMP names.
+const WHERE = [
+  "const fs = require('fs'), path = require('path');",
+  'fs.writeFileSync(process.env.PROVE_SEEN, JSON.stringify({',
+  "  root: fs.realpathSync(path.join(__dirname, '..')),",
+  '  tmp: fs.readdirSync(process.env.PROVE_TMP),',
+  '}));',
+  '',
+].join('\n');
+
+/** A world whose suite reports where it ran, and the env that names the report and the TMPDIR to list. */
+const seeingWorld = () => {
+  const w = mkWorld({ 'test/where.test.js': WHERE });
+  const seen = path.join(w.dir, 'seen.json');
+  return { w, seen, env: { PROVE_SEEN: seen, PROVE_TMP: w.tmp } };
+};
 
 /** The record a green run left for the world's repo, or undefined. */
 const recorded = (w) => {
@@ -76,12 +99,13 @@ const indexTree = (w) => kitIndexTree(w.repo, w.env);
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex');
 
 // What a run must leave as it found it: the status, the index's whole tree, the
-// worktree list, TMPDIR (the throwaway folder is gone), and a hash of every
-// path outside .git.
+// worktree list, the run folders and TMPDIR (the throwaway folder is gone), and
+// a hash of every path outside .git.
 const stateOf = (w) => ({
   status: w.git('status', '--porcelain'),
   index: w.git('write-tree').trim(),
   worktrees: w.git('worktree', 'list', '--porcelain'),
+  runs: runFolders(homeOf(w)).join(', '),
   tmp: fs.readdirSync(w.tmp).join(', '),
   files: Object.fromEntries(Object.entries(treeOf(w.repo)).map(([rel, body]) => [rel, sha1(body)])),
 });
@@ -90,6 +114,7 @@ const assertUnchanged = (before, after, label) => {
   assertEq(after.status, before.status, `${label}: git status --porcelain is unchanged`);
   assertEq(after.index, before.index, `${label}: the index tree is unchanged`);
   assertEq(after.worktrees, before.worktrees, `${label}: the worktree list is unchanged, the copy removed`);
+  assertEq(after.runs, before.runs, `${label}: proof/ holds no run folder`);
   assertEq(after.tmp, before.tmp, `${label}: TMPDIR holds no throwaway folder`);
   assertEq(JSON.stringify(after.files, null, 1), JSON.stringify(before.files, null, 1),
     `${label}: every file in the folder hashes the same`);
@@ -210,6 +235,81 @@ const cases = async () => {
     stagePassing(w);
     const res = prove(w);
     assertEq(res.code, 0, `the copy holds the ignored folder's module as it is, got: ${res.said}`);
+    cleanup(w.dir);
+  });
+
+  group('workkit prove: the run folder');
+
+  /** The suite's report: its tree's root as `[proof, <id>, copy]` under the home's `.cache/workkit`, and the TMPDIR entries. */
+  const seenBy = (w, seen) => {
+    const report = JSON.parse(fs.readFileSync(seen, 'utf8'));
+    const cache = path.join(fs.realpathSync(homeOf(w)), '.cache', 'workkit');
+    return { parts: path.relative(cache, report.root).split(path.sep), tmp: report.tmp };
+  };
+
+  await test('the suite runs in <HOME>/.cache/workkit/proof/<id>/copy, no prove.* in TMPDIR, and the run folder is gone after', () => {
+    const { w, seen, env } = seeingWorld();
+    stagePassing(w);
+    const res = prove(w, env);
+    assertEq(res.code, 0, `green, got: ${res.said}`);
+    const { parts, tmp } = seenBy(w, seen);
+    assert(parts.length === 3 && parts[0] === 'proof' && /^[^/\\]{6}$/.test(parts[1]) && parts[2] === 'copy',
+      `the copy is proof/<six characters>/copy under the home's .cache/workkit, got: ${parts.join('/')}`);
+    assert(!tmp.some((name) => name.startsWith('prove.')), `no prove.* in TMPDIR while the suite ran: ${tmp.join(', ')}`);
+    assertEq(runFolders(homeOf(w)).join(', '), '', 'the run folder is gone');
+    cleanup(w.dir);
+  });
+
+  await test('a run folder under proof/ changed over a day ago is removed by the next run, one changed within the day is left', () => {
+    const w = mkWorld();
+    plantRun(homeOf(w), 'stale1', 2);
+    plantRun(homeOf(w), 'fresh1', 1 / 24);
+    stagePassing(w);
+    const res = prove(w);
+    assertEq(res.code, 0, `green, got: ${res.said}`);
+    assertEq(runFolders(homeOf(w)).join(', '), 'fresh1', 'the stale folder removed, the fresh one and nothing else left');
+    cleanup(w.dir);
+  });
+
+  await test('a green suite whose record cannot be written: exit 1, no record, the run folder gone', () => {
+    const { w, seen, env } = seeingWorld();
+    stagePassing(w);
+    fs.mkdirSync(suiteMarkerPath(w.workflowHome, w.repo), { recursive: true });
+    const res = prove(w, env);
+    assertEq(res.code, 1, `the failed record write, got: ${res.said}`);
+    assertEq(seenBy(w, seen).parts[0], 'proof', `the suite ran in a run folder first: ${res.said}`);
+    assertEq(runFolders(homeOf(w)).join(', '), '', 'the run folder is gone');
+    cleanup(w.dir);
+  });
+
+  await test('a proof/ no run folder can be made in: exit 1 with the could-not-make line, no record', () => {
+    const w = mkWorld();
+    stagePassing(w);
+    fs.mkdirSync(path.dirname(proofBase(homeOf(w))), { recursive: true });
+    fs.writeFileSync(proofBase(homeOf(w)), '');
+    const res = prove(w);
+    assertEq(res.code, 1, `exit 1, got: ${res.said}`);
+    const line = res.said.split('\n').find((l) => l.startsWith('prove: could not make a run folder under ')) || '';
+    assert(line.endsWith('.cache/workkit/proof'), `the line names the folder, got: ${res.said}`);
+    assertEq(recorded(w), undefined, 'nothing recorded');
+    cleanup(w.dir);
+  });
+
+  group('workkit prove: the supervisor\'s checks');
+
+  await processTest('a suite that freezes: exit 124, no record, the run folder gone', () => {
+    // A test that writes its pid to the file PROVE_PID names and then waits in silence.
+    const hang = "require('fs').writeFileSync(process.env.PROVE_PID, String(process.pid));\nsetInterval(() => {}, 1 << 30);\n";
+    const w = mkWorld({ '.workkit/settings.json': checkSettings(CHECK_MINUTES, true), 'test/hang.test.js': hang });
+    const pidFile = path.join(w.dir, 'hang.pid');
+    try {
+      const res = prove(w, { PROVE_PID: pidFile });
+      assertEq(res.code, 124, `the frozen run's code, got: ${res.said}`);
+      assertEq(recorded(w), undefined, 'a frozen run records nothing');
+      assertEq(runFolders(homeOf(w)).join(', '), '', 'the run folder is gone');
+    } finally {
+      reap(pidIn(pidFile));
+    }
     cleanup(w.dir);
   });
 

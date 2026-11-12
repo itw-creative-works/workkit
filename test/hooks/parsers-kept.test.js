@@ -2,7 +2,7 @@
 // under hooks/mods/ that import hooks/mods/command.js, read from their import
 // lines, are the kept parsers and nothing else, so a new
 // guard that reads command text fails here. The kept set: release-taken's
-// publish half, tree-guard, bare-call, capture-guard and optin.js's cd fold.
+// publish half, tree-guard, bare-call, unwatched, capture-guard, script-write and optin.js's cd fold.
 
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +10,7 @@ const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
 
 const MODS = path.join(__dirname, '..', '..', 'hooks', 'mods');
 const PARSERS = ['command.js'].map((name) => path.join(MODS, name));
-const KEPT = ['bare-call.js', 'capture-guard.js', 'optin.js', 'release-taken.js', 'tree-guard.js'];
+const KEPT = ['bare-call.js', 'capture-guard.js', 'optin.js', 'release-taken.js', 'script-write.js', 'tree-guard.js', 'unwatched.js'];
 
 // A static import or re-export, a bare import, and a dynamic import, each by its quoted specifier.
 const IMPORTS = [

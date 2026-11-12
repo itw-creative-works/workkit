@@ -136,6 +136,7 @@ flowchart TB
   - Each package's `node_modules` and the kit's own paths are left out.
   - The full list: `hooks.md` § `workflow:snapshot`.
 - Each run adds a git worktree of HEAD, so the copy stays a git repo.
+  - It sits in the run's own folder, `~/.cache/workkit/proof/<id>/copy`, never in the system temp folder.
   - It checks HEAD out into it as the floor, so a tracked file the snapshot lacks is HEAD's.
   - It fills it from the snapshot.
   - Then each of these paths gets its live version, or is removed when the live tree lacks it:
@@ -157,6 +158,11 @@ flowchart TB
   - The line: `red-proof: not runnable: a module failed to load: <module>`.
   - A missing module that resolves to a source path is absent by design and stays red.
     - A source path here is the path, the path less its extension, or a file in a source folder.
+    - The module resolves in each of three spellings node reports it in:
+      - its own path, relative to the requiring file or absolute;
+      - its path through a workspace link, the nearest folder that exists resolved through links;
+      - a bare specifier with a subpath (`@scope/a/new`), against its package folder in the nearest `node_modules` at or above the requiring file.
+    - A bare package name with no subpath, or a package not there, never resolves.
   - The same message about any other folder, a test merely printing it, is ignored.
 - When the output carries node's whole summary block, the block decides.
   - The block is its eight lines `tests`, `suites`, `pass`, `fail`, `cancelled`, `skipped`, `todo`, `duration_ms`.
@@ -189,7 +195,7 @@ flowchart TB
   - Example: an OMEGA backend route suite against an adopted emulator sends its requests to functions served from the live tree.
   - So the copy's red is hollow.
 - For it the verifier runs `workkit proof red --live <source paths> -- <command>`. No copy is made.
-  - Each source path's live version is moved under the run's temp folder.
+  - Each source path's live version is moved under the run's own folder, `~/.cache/workkit/proof/<id>`.
   - The snapshot's version is put in its place (or none, where the snapshot lacks it).
   - The command runs where the caller stands.
   - The EXIT trap moves every live version back, once, on red, green, a stop, HUP, INT or TERM.
@@ -276,6 +282,30 @@ flowchart TB
 - Unrelated decisions still batch into one pass: the questions arrive together, each standing alone.
 - A question in the owner's prompt is answered first in the reply.
   - Work the same prompt authorizes starts in the same turn.
+
+### Watching a run
+
+- A run the manager starts in the background is one the supervisor reads, never a bare background command:
+  - the root `npm test`, started as `npm test` or `npm run test` in the repo root, or `workkit test` from any folder of it;
+  - `workkit prove`;
+  - or `workkit supervise -- <command>`, for any other run (a narrowed `npm test -- <files>`, a lane, a build).
+- The root `npm test`, `workkit test` and `workkit prove` are never wrapped in `workkit supervise`: it refuses them.
+- The supervised call ends with the command's own code, 124 after a frozen end, or 125 on a look.
+  - The checks, the verdicts and the evidence: `tests.md` § The checks.
+- On 125 the manager reads the evidence and the log's last lines.
+  - A run that still moves gets `workkit watch`.
+  - A run that goes in circles gets `workkit watch --end`.
+  - Each runs as its own Bash call, since its allow rule matches the bare call alone (`hooks.md` § `workflow:bare-call`).
+- After a frozen end, or an end it asked for, the manager reads the evidence and finds the cause.
+  - A bug it can reach is fixed and the run started again.
+  - A one-time cause is a rerun.
+- It goes to the owner only when it is out of moves:
+  - the same freeze comes back with no cause found;
+  - or the fix sits in a repo the session may not change.
+- The manager may end, without asking, a run its own session started.
+  - It never ends a process the run did not start.
+- Every freeze, its cause and what was done are said in the report.
+- `workflow:unwatched` names the `workkit supervise` form of a background test run the supervisor does not read (`hooks.md` § `workflow:unwatched`).
 
 ## Agents from other repos
 

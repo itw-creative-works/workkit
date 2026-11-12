@@ -2,8 +2,8 @@
  * hooks/mods/settings.js: the one settings loader, the kit defaults under the
  * machine's file under the repo's (workflow/README.md § The two settings
  * files), for the mods and the engine's Node scripts alike, and the
- * findings.file and docs.bullets predicates, the docs.paths reader and the
- * route sentence read through it.
+ * findings.file, commit.attribution and docs.bullets predicates, the
+ * docs.paths and tests.check readers and the route sentence read through it.
  */
 
 import { userDirOf } from './log.js';
@@ -198,6 +198,16 @@ export function findingsOn(settings) {
 }
 
 /**
+ * Whether commit.attribution is off: on unless a settings file says false
+ * (docs/hooks.md § safety:commit-attribution).
+ * @param {object} settings the merged view (loadSettings)
+ * @returns {boolean}
+ */
+export function attributionOff(settings) {
+  return String(settings.commit?.attribution) === 'false';
+}
+
+/**
  * Whether docs.bullets is on: off unless a settings file says true
  * (docs/hooks.md § docs:board-guard).
  * @param {object} settings the merged view (loadSettings)
@@ -220,6 +230,21 @@ export function shapePaths(settings) {
   const usable = (path) => typeof path === 'string' && (path.endsWith('/') || path.endsWith('.md'))
     && !path.startsWith('/') && !path.includes('\\');
   return Array.isArray(paths) && paths.every(usable) ? paths : null;
+}
+
+/**
+ * The minutes between a supervised run's checks, tests.check (docs/tests.md
+ * § The checks).
+ * @param {object} settings the merged view (loadSettings)
+ * @returns {number}
+ * @throws {Error} when the value is not a finite number above 0, naming it in
+ *   its JSON form, or as written when it is a number JSON cannot spell (Infinity)
+ */
+export function checkMinutes(settings) {
+  const minutes = settings.tests?.check;
+  if (typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0) return minutes;
+  const shown = typeof minutes === 'number' ? String(minutes) : JSON.stringify(minutes);
+  throw new Error(`tests.check must be a number of minutes above 0 (got ${shown})`);
 }
 
 /**

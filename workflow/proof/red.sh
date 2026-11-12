@@ -1,12 +1,12 @@
 #!/bin/bash
 # workflow/proof/red.sh (`workkit proof red [--live] <path>... -- <command>...`):
 # prove the tests check the source. The command runs in a detached worktree of
-# HEAD filled from the repo's snapshot (workflow:snapshot takes it at the
-# claim), every path changed since laid on live, save the named paths, kept as
-# the snapshot holds them; --live swaps the named paths in the live tree
-# instead, restored on exit. Red exits 0, green 1, any other stop 2 with a
-# `red-proof:` line on stderr. The verdict is stdout's last line.
-# A node test summary with no test, or a failing run with none failed, is a stop.
+# HEAD under ~/.cache/workkit/proof (wk_proof_dir), filled from the snapshot
+# workflow:snapshot takes at the claim, every path changed since laid on live,
+# save the named paths, kept as the snapshot holds them; --live swaps the named
+# paths in the live tree, restored on exit. Red exits 0, green 1, any other stop
+# 2 with a `red-proof:` line on stderr. The verdict is stdout's last line. A node
+# test summary with no test, or a failing run with none failed, is a stop.
 
 set -euo pipefail
 
@@ -60,20 +60,30 @@ lexical() {
   printf '%s\n' "$norm"
 }
 
-# root_relative <path>: the path as the root spells it, from here, absolute or
-# with ../. The nearest folder that exists resolves physically, the rest
-# lexically, so a deleted path still resolves. 1 when it lies outside the root.
-root_relative() {
-  local abs norm head tail="" phys
-  case "$1" in /*) abs="$1" ;; *) abs="$here/$1" ;; esac
-  norm=$(lexical "$abs")
-  head="$norm"
+# physical <abs>: the path with its nearest folder that exists resolved
+# physically (links followed), the rest joined lexically, so a deleted path
+# still resolves. On Windows a drive path (`C:/x`) is walked as Git Bash spells
+# it (`/c/x`) and answered in the native spelling it came in.
+physical() {
+  local head="$1" tail="" drive=0
+  case "$1" in [A-Za-z]:/*) drive=1; head=$(wk_posix_path "$1") || return 1 ;; esac
+  head=$(lexical "$head")
   while [ -n "$head" ] && [ ! -d "$head" ]; do
     tail="/${head##*/}$tail"
     head="${head%/*}"
   done
-  phys="$(cd "${head:-/}" && pwd -P)" || return 1
-  phys="${phys%/}$tail"
+  head="$(cd "${head:-/}" && pwd -P)" || return 1
+  head="${head%/}$tail"
+  [ "$drive" -eq 0 ] || head=$(wk_native_path "$head") || return 1
+  printf '%s\n' "$head"
+}
+
+# root_relative <path>: the path as the root spells it, from here, absolute or
+# with ../, read through physical. 1 when it lies outside the root.
+root_relative() {
+  local abs phys
+  case "$1" in /*) abs="$1" ;; *) abs="$here/$1" ;; esac
+  phys=$(physical "$abs") || return 1
   case "$phys" in
     "$root") printf '\n' ;;
     "$root"/*) printf '%s\n' "${phys#"$root"/}" ;;
@@ -81,7 +91,7 @@ root_relative() {
   esac
 }
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/red-proof.XXXXXX") || fail "could not make a temp folder"
+tmp=$(wk_proof_dir) || fail "could not make a run folder under $(wk_native_path "$(wk_proof_base)")"
 copy="$tmp/copy"
 added=0
 # The live mode's record: the paths it swaps, each one's first folder the swap
@@ -359,23 +369,41 @@ load_failures() {
   ' "$tmp/out" "$tmp/err"
 }
 
-# module_path <specifier> <from>: the module's absolute path, a relative one
-# read against the requiring file; 1 for a package name. Windows paths read with /.
+# module_path <specifier> <from>: the module's physical path, a relative one read
+# against the requiring file, a bare one with a subpath against its package
+# folder in the nearest node_modules at or above it; 1 for a bare package name
+# or a package not there. Windows paths read with /.
 module_path() {
-  local s="${1//\\//}" f="${2//\\//}"
+  local s="${1//\\//}" f="${2//\\//}" name="" dir
   case "$s" in
-    .|..|./*|../*) [ -n "$f" ] || return 1; lexical "${f%/*}/$s" ;;
-    /*|[A-Za-z]:/*) lexical "$s" ;;
-    *) return 1 ;;
+    .|..|./*|../*) [ -n "$f" ] || return 1; physical "${f%/*}/$s" ;;
+    /*|[A-Za-z]:/*) physical "$s" ;;
+    *)
+      [ -n "$f" ] || return 1
+      case "$s" in
+        @*/*/*) name="${s%%/*}/"; s="${s#*/}" ;;
+        @*) return 1 ;;
+      esac
+      case "$s" in */*) ;; *) return 1 ;; esac
+      name="$name${s%%/*}"
+      dir="${f%/*}"
+      while [ ! -d "$dir/node_modules/$name" ]; do
+        [ "$dir" != "${dir%/*}" ] || return 1
+        dir="${dir%/*}"
+      done
+      physical "$dir/node_modules/$name/${s#*/}"
+      ;;
   esac
 }
 
-# The copy's own folder, unique to this run, so another run's copy never matches;
-# in the live mode the repo root, in node's spelling.
+# The copy's own folder, unique to this run (its parent and its run id), so
+# another run's copy never matches; in the live mode the repo root, in node's
+# spelling.
 if [ "$live" -eq 1 ]; then
   marker="$(wk_native_path "$root")/"
 else
-  marker="/${tmp##*/}/copy/"
+  marker="${tmp%/*}"
+  marker="/${marker##*/}/${tmp##*/}/copy/"
 fi
 
 # in_copy <specifier> <from>: the failure happened in this run's copy, its

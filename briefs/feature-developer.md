@@ -29,6 +29,8 @@
 
 - Yours: {{paths}}
 - The other roles': {{other-paths}}. Touch none of them.
+- Every file edit goes through the Edit or Write tool, never a script run from Bash.
+  - A write hook's bounce is fixed, or reported to the manager. It is never worked around.
 
 ## Verify
 

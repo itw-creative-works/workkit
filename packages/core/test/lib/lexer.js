@@ -1,6 +1,7 @@
 // The one JavaScript line lexer of the kit: which spans of a line are strings,
 // templates, regex literals or comments rather than code. `workkit tools`
-// (test/tools.js) and safety:test-bar (hooks/mods/test-bar.js) read through it.
+// (test/tools.js), the runner's suite kind check (lib/node-test.js) and
+// safety:test-bar (hooks/mods/test-bar.js) read through it.
 
 // A `/` opens a regex literal at the line's start, after an operator or an
 // opener (an arrow's `>` included) or after a keyword that takes a value;

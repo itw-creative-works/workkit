@@ -4,41 +4,69 @@
 
 import { run } from 'node:test';
 import { indentWriter } from './log.js';
+import { lexLine } from './lexer.js';
 
-// Met outside any quote: a `require('node:test')` call, or the specifier of an
-// `import ... from` or bare `import` naming it.
-const IMPORT_AT = /\brequire\(\s*(['"])node:test\1\s*\)|\b(?:from|import)\s*(['"])node:test\2/y;
-const COMMENT = /^(?:\/\/|\/\*|\*)/;
+// The names whose binding runs a suite: Node's runner functions, and the
+// default export, which is `test` itself.
+const RUNNER_NAMES = new Set(['test', 'it', 'describe', 'suite', 'default']);
+// Over the code alone (codeOf): an `import` of `node:test`, its clause (absent
+// for a bare import), and a `require('node:test')` call.
+const IMPORT = /\bimport\b\s*(?:([\w$\s{},*]*?)\s*\bfrom\s*)?'node:test'/g;
+const REQUIRE = /\brequire\(\s*'node:test'\s*\)/g;
+// A lexer span that is `node:test` in single or double quotes, no template.
+const QUOTED_NODE_TEST = /^(['"])node:test\1$/;
+// The object pattern a require's result is destructured into, just before it.
+const DESTRUCTURE = /\{([^{}]*)\}\s*=\s*$/;
 // The line Node prints for an uncaught error, `Error: msg` or `Error [CODE]: msg`.
 const ERROR_LINE = /^\w*Error(?: \[[^\]]+\])?: (.+)$/;
 
+// The source over the kit's lexer spans: every comment a space, every string,
+// template or regex literal `''`, save a quoted `node:test`, kept as `'node:test'`.
+const codeOf = (text) => {
+  let open = '';
+  return text.split('\n').map((line) => {
+    const lexed = lexLine(line, open);
+    open = lexed.open;
+    let code = '';
+    let at = 0;
+    for (const { start, end, comment } of lexed.spans) {
+      const span = line.slice(start, end);
+      code += `${line.slice(at, start)}${comment ? ' ' : QUOTED_NODE_TEST.test(span) ? "'node:test'" : "''"}`;
+      at = end;
+    }
+    return `${code}${line.slice(at)}`;
+  }).join('\n');
+};
+
+// Whether a list of bindings, each its source name first, holds a runner name;
+// a rest element holds them all.
+const holdsRunner = (names) => names.some((name) => RUNNER_NAMES.has(name) || name.startsWith('...'));
+
+// An import clause's bindings: a default or namespace binding is the runner
+// itself, a named one counts by the name it imports.
+const importsRunner = (clause) => {
+  const named = clause.match(/\{([^}]*)\}/);
+  if (/[\w$*]/.test(clause.replace(/\{[^}]*\}/, ''))) return true;
+  return named !== null && holdsRunner(named[1].split(',').map((part) => part.trim().split(/\s+as\s+/)[0]));
+};
+
 /**
- * Whether a suite's source imports `node:test`. Comment lines, quoted strings
- * and template literals (a fixture another suite writes) never count; only a
- * template literal runs past its line, and a backtick inside a quote opens none.
+ * Whether a suite's source binds a `node:test` runner name: a default,
+ * namespace or bare import, a `require('node:test')` not destructured, or a
+ * named import or destructure holding `test`, `it`, `describe` or `suite`.
+ * Comments, quoted strings, template literals (a fixture another suite
+ * writes) and regex literals never count, and a backtick inside one opens none.
  * @param {string} text the suite file's source
  * @returns {boolean}
  */
 export const isNodeTestSuite = (text) => {
-  let quote = '';
-  for (const line of text.split('\n')) {
-    if (!quote && COMMENT.test(line.trim())) continue;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '\\') {
-        i++;
-      } else if (quote) {
-        if (c === quote) quote = '';
-      } else if (c === '/' && line[i + 1] === '/') {
-        break;
-      } else if (c === "'" || c === '"' || c === '`') {
-        quote = c;
-      } else {
-        IMPORT_AT.lastIndex = i;
-        if (IMPORT_AT.test(line)) return true;
-      }
-    }
-    if (quote !== '`') quote = '';
+  const code = codeOf(text);
+  for (const [, clause] of code.matchAll(IMPORT)) {
+    if (clause === undefined || importsRunner(clause)) return true;
+  }
+  for (const call of code.matchAll(REQUIRE)) {
+    const pattern = code.slice(0, call.index).match(DESTRUCTURE);
+    if (!pattern || holdsRunner(pattern[1].split(',').map((part) => part.split(/[:=]/)[0].trim()))) return true;
   }
   return false;
 };

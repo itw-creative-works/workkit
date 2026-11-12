@@ -2,7 +2,8 @@
 // Tests for packages/core/test/run.js, the kit's suite runner the workkit bin
 // runs: a named skip stays green and a real throw fails, paths narrow a run, suites
 // run whole in a worker pool with a serial tail after the wave, a crashed,
-// unloadable or orphaned worker fails or dies loudly, a node:test suite reports
+// unloadable or orphaned worker fails or dies loudly, a suite past TEST_DEADLINE
+// is ended with its process group and fails, a node:test suite reports
 // in the same lines, the suite folder is test/ before tests/, and every suite runs by file.
 
 const path = require('path');
@@ -12,7 +13,9 @@ const { spawnSync } = require('child_process');
 const {
   group, test, testUnless, assert, assertEq, selfRun, summary, findSuites, POOL, mkTmp, SPAWN_DEADLINE, until, alive, start, endTree,
 } = require('./lib/harness');
-const { which, basePathWithout, joinPath, NODE_DIR } = require('./lib/platform');
+const {
+  which, basePathWithout, joinPath, NODE_DIR, IS_WINDOWS,
+} = require('./lib/platform');
 
 const KIT_TEST = path.join(__dirname, '..', 'packages', 'core', 'test');
 const RUNNER = path.join(KIT_TEST, 'run.js');
@@ -44,14 +47,16 @@ const mkFixture = (suites, serial = [], folder = 'tests') => {
 
 // The fixture run from its root with the arguments `args(root)` returns; `read`
 // lists files under the root returned as `files` (null when absent) before it
-// is removed. `beside` maps a second suite folder to its `{ suites, serial }`.
-// `stderr` is the runner's alone; `output` is both streams.
+// is removed. `beside` maps a second suite folder to its `{ suites, serial }`;
+// `env` adds to the runner's environment. `stderr` is the runner's alone; `output` is both streams.
 const runSuites = (suites, {
-  args = () => [], serial = [], read = [], folder = 'tests', beside = {},
+  args = () => [], serial = [], read = [], folder = 'tests', beside = {}, env = {},
 } = {}) => {
   const { root } = mkFixture(suites, serial, folder);
   for (const [other, more] of Object.entries(beside)) writeSuiteDir(root, other, more.suites, more.serial || []);
-  const res = spawnSync('node', [RUNNER, ...args(root)], { cwd: root, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+  const res = spawnSync('node', [RUNNER, ...args(root)], {
+    cwd: root, encoding: 'utf8', env: { ...process.env, ...env }, timeout: SPAWN_DEADLINE,
+  });
   const files = Object.fromEntries(read.map((name) => {
     const file = path.join(root, name);
     return [name, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null];
@@ -472,6 +477,122 @@ test('prints a block', () => {
     }
   });
 
+  // Off Windows a worker leads its own group, which a signal to the runner's
+  // never reaches, and a worker spinning in a synchronous loop never hears its
+  // disconnect: only the runner can end it and the child its suite started.
+  await testUnless(IS_WINDOWS, 'a Windows worker shares the runner\'s console, not a process group')('a runner ended by SIGTERM ends each worker and its suite\'s child, and exits 143', async () => {
+    const { root } = mkFixture({
+      'spinner.test.js': SUITE(`
+  const { spawn } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  fs.writeFileSync(path.join(__dirname, '..', 'child.pid'), String(child.pid));
+  fs.writeFileSync(path.join(__dirname, '..', 'worker.pid'), String(process.pid));
+  for (;;) {}
+`),
+    });
+    const pidOf = (name) => {
+      const file = path.join(root, name);
+      return fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+    };
+    const runner = start(process.execPath, [RUNNER], { cwd: root });
+    try {
+      assert(await until(() => pidOf('worker.pid') > 0), 'the worker wrote its pid');
+      // A pid of 0 would signal this process group, so only written pids are probed and ended.
+      const pids = [pidOf('worker.pid'), pidOf('child.pid')];
+      assert(pids[1] > 0, 'the suite wrote its child\'s pid');
+      runner.child.kill('SIGTERM');
+      const { status } = await runner.done;
+      const gone = await until(() => pids.every((pid) => !alive(pid)));
+      const survivors = pids.filter(alive);
+      for (const pid of survivors) endTree(pid);
+      assert(gone, `outlived their runner: ${survivors.join(', ')}`);
+      assertEq(status, 143, 'the runner\'s exit code');
+    } finally {
+      await runner.end('SIGKILL');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The worker ignores INT and TERM and never ends itself on its parent's exit,
+  // so it goes only by the runner's KILL; the TERM lands while the ladder climbs.
+  await testUnless(IS_WINDOWS, 'a Windows worker shares the runner\'s console, not a process group')('a second signal while the runner is stopping KILLs each worker at once, and the runner exits by that signal', async () => {
+    const { root } = mkFixture({
+      'stubborn.test.js': SUITE(`
+  const fs = require('fs');
+  const path = require('path');
+  for (const event of ['SIGINT', 'SIGTERM', 'disconnect']) process.removeAllListeners(event);
+  process.on('SIGINT', () => fs.writeFileSync(path.join(__dirname, '..', 'interrupted'), ''));
+  process.on('SIGTERM', () => {});
+  fs.writeFileSync(path.join(__dirname, '..', 'worker.pid'), String(process.pid));
+  await new Promise(() => { setInterval(() => {}, 1000); });
+`),
+    });
+    const pidFile = path.join(root, 'worker.pid');
+    const runner = start(process.execPath, [RUNNER], { cwd: root });
+    try {
+      assert(await until(() => fs.existsSync(pidFile) && Number(fs.readFileSync(pidFile, 'utf8')) > 0), 'the worker wrote its pid');
+      // A pid of 0 would signal this process group, so only a written pid is probed and ended.
+      const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+      runner.child.kill('SIGINT');
+      assert(await until(() => fs.existsSync(path.join(root, 'interrupted'))), 'the runner\'s ladder sent the worker SIGINT');
+      runner.child.kill('SIGTERM');
+      const { status } = await runner.done;
+      const gone = await until(() => !alive(pid));
+      if (!gone) endTree(pid, 'SIGKILL');
+      assert(gone, `worker ${pid} outlived its runner`);
+      assertEq(status, 143, 'the runner exits by the second signal');
+    } finally {
+      await runner.end('SIGKILL');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The worker ends on the first SIGINT and leaves the live set, while the child
+  // it started in its group ignores INT and TERM, so the group outlives the worker.
+  await testUnless(IS_WINDOWS, 'a Windows worker shares the runner\'s console, not a process group')('a second signal KILLs the group of a worker that already exited on the first, and the runner exits by that signal', async () => {
+    const { root } = mkFixture({
+      'leaver.test.js': SUITE(`
+  const { spawn } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  const out = (name) => path.join(__dirname, '..', name);
+  const script = [
+    \`process.on('SIGINT', () => require('fs').writeFileSync(\${JSON.stringify(out('interrupted'))}, ''));\`,
+    "process.on('SIGTERM', () => {});",
+    \`require('fs').writeFileSync(\${JSON.stringify(out('child.pid'))}, String(process.pid));\`,
+    'setInterval(() => {}, 1000);',
+  ].join('\\n');
+  spawn(process.execPath, ['-e', script], { stdio: 'ignore' });
+  fs.writeFileSync(out('worker.pid'), String(process.pid));
+  await new Promise(() => { setInterval(() => {}, 1000); });
+`),
+    });
+    const pidOf = (name) => {
+      const file = path.join(root, name);
+      return fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+    };
+    const runner = start(process.execPath, [RUNNER], { cwd: root });
+    try {
+      assert(await until(() => pidOf('worker.pid') > 0 && pidOf('child.pid') > 0), 'the worker and its child wrote their pids');
+      // A pid of 0 would signal this process group, so only written pids are probed and ended.
+      const [worker, child] = [pidOf('worker.pid'), pidOf('child.pid')];
+      runner.child.kill('SIGINT');
+      assert(await until(() => fs.existsSync(path.join(root, 'interrupted'))), 'the runner\'s ladder sent the child SIGINT');
+      assert(await until(() => !alive(worker)), `worker ${worker} ended on SIGINT`);
+      runner.child.kill('SIGTERM');
+      const { status } = await runner.done;
+      const gone = await until(() => !alive(child));
+      if (!gone) endTree(child, 'SIGKILL');
+      assert(gone, `child ${child} outlived its runner`);
+      assertEq(status, 143, 'the runner exits by the second signal');
+    } finally {
+      await runner.end('SIGKILL');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // Known counts across three workers, one failing case among them.
   const COUNTED = {
     'alpha.test.js': SUITE(`
@@ -493,6 +614,80 @@ test('prints a block', () => {
     assertEq(code, 1, `exit 1, got: ${output}`);
     assert(TOTALS.test(stripVTControlCharacters(output)), `"7 passed, 1 failed (Ns, 3 suites)", got: ${output}`);
     assert(stripVTControlCharacters(output).includes('beta.test.js › beta case three: beta breaks'), `lists the failure, got: ${output}`);
+  });
+
+  // TEST_DEADLINE, in seconds, bounds each suite file for one run.
+  group('run.js: a per-file deadline');
+
+  // A suite that runs `inner`, prints, then holds its worker open for good.
+  const HANGS = (inner = '') => SUITE(`${inner}
+  console.error('still waiting');
+  await new Promise(() => { setInterval(() => {}, 1000); });
+`);
+
+  // The tail runs one suite at a time, so the later file runs only once the hung one has ended.
+  await test('a suite that never exits under TEST_DEADLINE=2 is one timed-out failure and the next file still runs', () => {
+    const { code, output } = runSuites({
+      'a-hang.test.js': HANGS(),
+      'b-after.test.js': SUITE(`  await test('after case', () => { assert(true); });`),
+    }, { serial: ['a-hang.test.js', 'b-after.test.js'], env: { TEST_DEADLINE: '2' } });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    assert(plain.includes('after case'), `the file after it ran, got: ${output}`);
+    assert(/^1 passed, 1 failed \(/m.test(plain), `the hung file is one failure, got: ${output}`);
+    const failures = plain.split('Failures:')[1];
+    assert(failures, `a Failures: list, got: ${output}`);
+    const timedOut = failures.split('\n').find((line) => line.includes('timed out after 2s without a result'));
+    assert(timedOut && timedOut.includes('a-hang.test.js'), `names a-hang.test.js as timed out after 2s, got: ${failures}`);
+    assert(failures.includes('still waiting'), `quotes the last thing it wrote, got: ${failures}`);
+  });
+
+  // The child holds no pipe of the worker's, so only an end of the worker's group ends it.
+  await test('a timed-out suite\'s own child process is ended with it', async () => {
+    const { code, output, files } = runSuites({
+      'hang.test.js': HANGS(`
+  const { spawn } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  fs.writeFileSync(path.join(__dirname, '..', 'child.pid'), String(child.pid));
+`),
+    }, { env: { TEST_DEADLINE: '2' }, read: ['child.pid'] });
+    const pid = Number(files['child.pid']);
+    // A pid of 0 would signal this process group, so only a written pid is probed and killed.
+    assert(pid > 0, `the suite wrote its child's pid, got: ${output}`);
+    const gone = await until(() => !alive(pid));
+    if (!gone) endTree(pid);
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    assert(gone, `child ${pid} outlived its timed-out suite`);
+  });
+
+  // Read as milliseconds, 120 would end the suite mid-pause; a deadline timer
+  // left running would hold the run past the spawn deadline.
+  await test('a suite that ends inside its deadline reports its own result', () => {
+    const { code, output } = runSuites({
+      'steady.test.js': SUITE(`
+  await test('passes after a pause', async () => { await new Promise((resolve) => { setTimeout(resolve, 300); }); });
+  await test('breaks', () => { assert(false, 'steady breaks'); });
+`),
+    }, { env: { TEST_DEADLINE: '120' } });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 1, `exit 1, got: ${output}`);
+    assert(/^1 passed, 1 failed \(/m.test(plain), `"1 passed, 1 failed", got: ${output}`);
+    assert(plain.includes('steady.test.js › breaks: steady breaks'), `lists its own failure, got: ${output}`);
+  });
+
+  // 2147484 seconds is past the longest delay a node timer holds.
+  await test('a TEST_DEADLINE of abc, 0 or past a node timer fails the run at the start naming it, and runs no suite', () => {
+    for (const value of ['abc', '0', '2147484']) {
+      const { code, output } = runSuites({
+        'alpha.test.js': SUITE(`  await test('alpha case', () => { assert(true); });`),
+      }, { env: { TEST_DEADLINE: value } });
+      const plain = stripVTControlCharacters(output);
+      assert(code !== 0 && code !== null, `${value}: a non-zero exit, got ${code}: ${output}`);
+      assert(plain.includes(`TEST_DEADLINE must be a positive number of seconds, got ${value}`), `${value}: the start failure line, got: ${output}`);
+      assert(!plain.includes('▶') && !plain.includes('alpha case'), `${value}: no suite ran, got: ${output}`);
+    }
   });
 
   // A suite on Node's own test library runs through its run() and reports in
@@ -664,6 +859,29 @@ describe('split import', () => {
     assertEq(code, 0, `exit 0, got: ${output}`);
     assert(/^2 passed, 0 failed \(/m.test(plain), `its cases counted, got: ${output}`);
     assert(!plain.includes('export a.test.js'), `never read as export, got: ${output}`);
+  });
+
+  // Handed to Node's run(), this file would define no node:test case and count none.
+  await test('a kit-harness suite holding import { mock } from node:test runs as a kit-harness suite', () => {
+    const { code, output } = runSuites({
+      'mocked.test.js': `import { mock } from 'node:test';
+import harness from './lib/harness.js';
+
+const { test, assertEq, summary } = harness;
+const cases = async () => {
+  await test('a mocked call is counted', () => {
+    const fn = mock.fn(() => 1);
+    fn();
+    assertEq(fn.mock.callCount(), 1);
+  });
+};
+const run = async () => { await cases(); return summary(); };
+export { run as 'module.exports' };
+`,
+    });
+    const plain = stripVTControlCharacters(output);
+    assertEq(code, 0, `exit 0, got: ${output}`);
+    assert(/^1 passed, 0 failed \(/m.test(plain), `its harness case counted, got: ${output}`);
   });
 
   await test('a todo describe is no skip itself; its passing test is one case skip named todo', () => {

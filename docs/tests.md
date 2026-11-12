@@ -129,8 +129,24 @@
   - Then the mod half, when `test/mods/` holds `*.test.ts` suites.
   - Suite paths narrow the run.
   - A path matching no suite exits 1, naming it and the folder read.
+- Each suite file has a deadline, `SUITE_DEADLINE` (600 seconds).
+  - `TEST_DEADLINE=<seconds>` in the environment sets it for one run.
+    - A value that is no positive number, or above 2147483 (more than node's timer holds), exits 1 before any suite runs: `TEST_DEADLINE must be a positive number of seconds, got <value>`.
+  - A worker not closed when it passes, and with no result sent, has its process group ended.
+    - `endGroup` climbs `end()`'s ladder over the worker's process group, so a worker on `SIGINT` or `SIGTERM` runs its exit handlers and removes its scratch folders.
+    - A child the suite starts detached leads its own group, so it is the suite's own to end.
+    - Its file is one failure, `run <suite>`: `timed out after <n>s without a result; last output: ...`.
+    - The run goes on to the next file and exits 1.
+  - Off Windows a signal to the runner's group reaches no worker, so on `SIGINT`, `SIGTERM` or `SIGHUP` the runner ends every live worker's group the same way, then exits 128 plus the signal's number.
+    - A second of the three while it is ending sends `SIGKILL` at once, before anything else runs, to every group the first began to end that still lives, its worker exited or not, then exits 128 plus that second signal's number.
+      - So `workkit prove`'s ladder on the runner (`wk_end_run`) leaves no worker behind: its `SIGTERM` has the runner KILL every worker before its own `SIGKILL` comes.
+    - A runner ended by `SIGKILL` cannot; a worker then ends its own tree only once its event loop notices the parent gone.
 - It carries a second shape for a repo that already has suites on `node:test`.
-  - A file whose text imports `node:test` runs through Node's own `run()` in the same worker.
+  - A file that binds a runner from `node:test` runs through Node's own `run()` in the same worker.
+    - A default, namespace or bare import binds one, as does a `require('node:test')` not destructured.
+    - So does a named import or a destructure holding `test`, `it`, `describe` or `suite`, renamed or not.
+    - A file whose every binding is another name (`mock`, `before`, `snapshot`) is a kit-harness suite.
+    - A comment, a quoted string or a template literal never counts; an import over several lines reads as one.
     - The text is read, never required, since requiring it runs its tests.
   - Its pass, fail, skip and todo events fill the harness's result object.
   - So every line above prints for it unchanged.
@@ -156,3 +172,39 @@
   - The commit still passes.
 - With no budget there is no line.
 - The gate's side: `docs/hooks.md` § `safety:commit-gate`.
+
+### The checks
+
+- The supervisor of a root `npm test`, of `workkit prove` and of a `workkit supervise` run reads its run at every check and judges it by evidence. The CI watch is not read: it waits on GitHub and ends by itself.
+- `tests.check` is the minutes between checks, default 5, set where `tests.budget` is.
+  - A value that is not a finite number above 0 stops the run before it starts: `detach: tests.check must be a number of minutes above 0 (got <value>)`, exit 2.
+- Each check reads two things:
+  - output: whether the run's log was written since the last check;
+  - work: whether the run's processes used the processor since the last check.
+- Within a check the processes are read every 5 seconds at most, and at least 4 times, so a child that lives a moment is still seen.
+  - A process new since the read before counts as work, whatever its time.
+  - Otherwise the processor time gained across the check's reads counts once it reaches 1 percent of one processor over the check's length.
+  - On Linux a process's time includes the children it has waited for, so a short-lived child's time reaches its parent.
+- The run's processes are the command and every process under it by parent, a child in its own session included.
+  - The supervisor and its `caffeinate` are never among them.
+- A read of the processes that fails puts one line in the log, `detach: could not read the run's processes (<message>), so the checks are off`, and the run goes on to its own end.
+- The verdicts:
+  - output or work: alive, and nothing happens;
+  - neither, two checks in a row: frozen. The log gets the evidence, then the run is ended and exits 124.
+  - no output for six checks in a row, with work among them: a look. The run goes on, and the call attached to it prints the evidence and exits 125.
+- The evidence is one line per process seen in the check, `detach:   <pid> <seconds>s <command>`, the seconds those it used in the check.
+- A frozen log ends `detach: no output and no processor use for <N> minutes, so the run was ended (exit 124)`, under the body's own `<prefix>: exit 143`.
+- After a look, the next one is asked after six more checks with no output.
+- An `end` file in the run's lock folder is read within a second and ends the run: its log ends `detach: the run was ended on request (exit 143)`, and the run exits 143.
+  - Ctrl-C on the call that started the run writes that file, so the whole run ends and the call exits 130 (`workflow/README.md` § `lib/detach.sh`).
+- Ending a run: each of its processes gets a terminate signal, and what still lives 10 seconds later a forced end.
+  - A signal the system refuses is passed over, so every other process still gets its own.
+  - An ended run exits with its own code once its whole tree is gone, never the code the command's exit would give.
+- An end that fails, with the command still alive, records nothing: the log gets `detach: the run could not be ended (<message>), so it goes on`.
+  - The `end` file is removed, and the run goes on to its own end. A later end request can try again.
+  - The checks stay on, so a frozen run is tried again at its next frozen verdict.
+  - With the command itself gone, the log gets the failure as `detach: <message>` (a refused signal: `detach: could not signal <pids> (<message>)`), then the closing line, and the code is recorded as always.
+- A busy run is never ended, however long it takes.
+- On macOS every supervised run holds the machine awake (`caffeinate -i`), so idle sleep does not pause it.
+- On Windows no process is read, so there is no frozen and no look.
+- The mechanics: `workflow/README.md` § `lib/detach.js`.

@@ -223,6 +223,9 @@ const cases = async () => {
     ['findings.file', { findings: { file: true } }, { enabled: true }],
     ['findings.file', { findings: { file: true } }, { enabled: true, findings: { file: false } }],
     ['tests.budget', { tests: { budget: 5 } }, { enabled: true, tests: { budget: null } }],
+    ['tests.check', undefined, { enabled: true }],
+    ['tests.check', { tests: { check: 2 } }, { enabled: true }],
+    ['tests.check', { tests: { check: 2 } }, { enabled: true, tests: { check: 0.5 } }],
     ['proof.rootOnly', { proof: { rootOnly: ['a', 'b'] } }, { enabled: true, proof: { rootOnly: ['c'] } }],
     ['hooks.afterRelease', { hooks: { afterRelease: null } }, { enabled: true }],
     ['public', { public: 'acme/public' }, { enabled: true }],
@@ -529,15 +532,16 @@ while IFS= read -r p; do if [[ "$p" =~ $PUBLIC_SLUG_RE ]]; then echo 1; else ech
     agree(PUBLIC_KEYS, shell, (k) => publicLink(`Public: https://github.com/${k}/issues/1`) !== null, 'PUBLIC_SLUG_RE against the Public: link');
   });
 
-  group('twins: the ship verb list, ALLOW_RULES in workflow/workkit/allow.sh against ALLOWED_SHIP_VERBS in hooks/mods/bare-call.js');
+  group('twins: the verb lists, ALLOW_RULES in workflow/workkit/allow.sh against ALLOWED_SHIP_VERBS and ALLOWED_VERBS in hooks/mods/bare-call.js');
 
-  await test('the allow rules are one ship rule per ALLOWED_SHIP_VERBS entry, in its order, then review and npm publish', () => {
+  await test('the allow rules are one ship rule per ALLOWED_SHIP_VERBS entry, then one rule per ALLOWED_VERBS entry, each in its order, then npm publish', () => {
     const script = `. "${lib('workflow', 'workkit', 'ship.sh')}"; . "${lib('workflow', 'workkit', 'allow.sh')}"; printf '%s\\n' "\${ALLOW_RULES[@]}"`;
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], { env: { PATH: SYSTEM_PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     assertEq(res.status, 0, `the shell printed its rules, stderr: ${res.stderr}`);
-    const verbs = mods('bare-call').ALLOWED_SHIP_VERBS;
-    assert(Array.isArray(verbs), 'bare-call.js exports ALLOWED_SHIP_VERBS as a list');
-    const want = [...verbs.map((v) => `Bash(workkit ship ${v}:*)`), 'Bash(workkit review:*)', 'Bash(npm publish:*)'];
+    const { ALLOWED_SHIP_VERBS: shipVerbs, ALLOWED_VERBS: kitVerbs } = mods('bare-call');
+    assert(Array.isArray(shipVerbs), 'bare-call.js exports ALLOWED_SHIP_VERBS as a list');
+    assert(Array.isArray(kitVerbs), 'bare-call.js exports ALLOWED_VERBS as a list');
+    const want = [...shipVerbs.map((v) => `Bash(workkit ship ${v}:*)`), ...kitVerbs.map((v) => `Bash(workkit ${v}:*)`), 'Bash(npm publish:*)'];
     assertEq(res.stdout.replace(/\r/g, ''), `${want.join('\n')}\n`, 'the shell rules and the hook\'s list');
   });
 

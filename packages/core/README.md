@@ -31,7 +31,13 @@ npm i -D workkit-core
 - A suite named in the repo's `test/lib/serial.js` (`module.exports = { SERIAL: ['x.test.js'] }`) runs alone, after the parallel wave.
 - `test/mods/*.test.ts` suites run after that through `claude plugin test`, skipped by name with no `claude` on PATH.
 - The run ends with `N passed, M failed (Ns, K suites)` and a `slowest:` line, then names every skipped suite and case, then every failure; any failure exits 1.
+- Each suite file has a deadline of 600 seconds (`SUITE_DEADLINE`); `TEST_DEADLINE=<seconds>` sets it for one run.
+  - A suite still running when it passes has its worker's process group ended, and is one failure, `timed out after <n>s without a result`.
+    - A child the suite starts detached leads its own group, so it is the suite's own to end.
+  - A `TEST_DEADLINE` that is no positive number, or above 2147483 (more than node's timer holds), fails the run before any suite starts.
 - A suite written on `node:test` runs too, through Node's own `run()`, counted the same way.
+  - It is one when it binds a runner: `test`, `it`, `describe` or `suite`, a default or namespace import, a bare import, or a whole `require('node:test')`.
+  - A suite that takes only a helper from it (`const { mock } = require('node:test')`) runs as a kit-harness suite.
 
 ## The library
 
@@ -55,7 +61,8 @@ if (require.main === module) selfRun(run);
   - `log`: lines printed under a failing case, and under every case with `TEST_LOG=1`.
   - `indentRest` and `indentWriter`: a quoted text or a child's output kept off column zero.
 - Scratch and worlds: `mkTmp(prefix)`, a temp folder removed at exit; `seeded(build)`, a folder built once per process and copied per case.
-- Processes on one deadline (`SPAWN_DEADLINE`): `run`, `start` (with `end()` climbing SIGINT, SIGTERM, SIGKILL), `endTree`, `until`, `elapsedUntil`, `alive`, `readPid`.
+- The runner's per-file deadline: `SUITE_DEADLINE`.
+- Processes on one deadline (`SPAWN_DEADLINE`): `run`, `start` (with `end()` climbing SIGINT, SIGTERM, SIGKILL), `endTree`, `endGroup` (the same ladder over a detached leader's group), `groupLives` (whether that group still has a member), `until`, `elapsedUntil`, `alive`, `readPid`.
 - Suite discovery: `suiteDir(root)` (the repo's `test/`, or `tests/` when it has no `test/`), `findSuites`, `findModSuites`, `POOL`.
 
 - `workkit-core/run` is the kit's program starter (`spawnSync`, `spawn`, `execFileSync`, `launchOf`, `windowsQuoted`), CommonJS.

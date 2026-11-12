@@ -1,7 +1,7 @@
 /**
  * Watching a process a suite started without waiting for it: whether a pid is
  * alive, a bounded poll for a condition, a pid read from the file a script
- * left, the one spawn deadline and the pipe grace.
+ * left, the one spawn deadline, the suite deadline and the pipe grace.
  */
 
 import fs from 'node:fs';
@@ -12,6 +12,10 @@ import fs from 'node:fs';
  * case asserts order and never a duration.
  */
 export const SPAWN_DEADLINE = 60000;
+
+// How long the runner waits for one suite file's worker to close before it
+// ends the worker's process group; `TEST_DEADLINE=<seconds>` sets it for a run.
+export const SUITE_DEADLINE = 600000;
 
 // How long a child's pipes stay open past its exit, for a grandchild still
 // holding them; the child's own output is already in the pipe by then.

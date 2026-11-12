@@ -5,7 +5,7 @@
  * tripwire, not a sandbox (docs/hooks.md § safety:capture-guard).
  */
 
-import { BLANK, anyLine } from './command.js';
+import { BLANK, IN_PLACE, NS, anyLine } from './command.js';
 import { homeOf, userDirOf } from './log.js';
 import { fileAge, triageMarkerPath } from './markers.js';
 import { findingsRoute, settingsOf } from './settings.js';
@@ -13,9 +13,7 @@ import { findingsRoute, settingsOf } from './settings.js';
 const SUFFIX = '.workkit/capture.md';
 const MARKER_MAX_AGE_S = 1800;
 
-// grep reads a command line by line, so every pattern is tried per line;
-// NS is BLANK's members, for a negated class.
-const NS = ' \\t\\v\\f\\r';
+// grep reads a command line by line, so every pattern is tried per line.
 const WORD = '(^|[^A-Za-z0-9_./-])';
 // The capture file as a TARGET, its folder optional; the rest of one simple command.
 const TARGET = `${BLANK}*["']?([^${NS}"'<>|;&]*/)?capture\\.md`;
@@ -28,7 +26,7 @@ const APPENDS = [
 const OVERWRITE = new RegExp(`>${TARGET}`);
 const REWRITES = [
   new RegExp(`${WORD}tee(${BLANK}|$)${SAME}${TARGET}`),
-  new RegExp(`${WORD}(sed|perl)${BLANK}+(-[^${NS}]+${BLANK}+)*(--in-place|-[A-Za-z0-9]*i)${SAME}${TARGET}`),
+  new RegExp(`${WORD}${IN_PLACE}${SAME}${TARGET}`),
 ];
 const READER = new RegExp(`${WORD}(cat|head|tail|less|more|grep|sed|awk|bat)(${BLANK}|$)${SAME}${TARGET}`);
 const SPELLED = new RegExp(`[^${NS}"']*\\.workkit/capture\\.md`);

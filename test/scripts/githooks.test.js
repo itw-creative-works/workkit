@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, run, mkTmp,
+  group, test, assert, assertEq, summary, selfRun, run, mkTmp, WORKKIT_DIR,
 } = require('../lib/harness');
 const {
   SH, shellPath, gitPath, joinPath, systemPathWith, stubNode,
@@ -37,10 +37,11 @@ const NEW_FILES = T.newFiles('lib/y.js');
 
 /**
  * A scratch repo with the kit's hooks installed and `gh` answering `issues` and
- * `tags` from `ghDir`, its env a Claude session's unless `claude` is false.
+ * `tags` from `ghDir`, its env a Claude session's unless `claude` is false, and
+ * `files` committed over the seed.
  */
-const mkWorld = ({ claude = true, issues, tags } = {}) => {
-  const w = mkRepo('githooks-', SEED);
+const mkWorld = ({ claude = true, issues, tags, files = {} } = {}) => {
+  const w = mkRepo('githooks-', { ...SEED, ...files });
   // origin/HEAD as a clone has it, the default branch the heal's caller step reads.
   w.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
   w.git('config', 'core.hooksPath', HOOKS);
@@ -238,6 +239,21 @@ const cases = async () => {
     const file = path.join(w.tmp, 'msg.txt');
     fs.writeFileSync(file, 'docs: note the watcher\n\nkill the process before a relaunch.\n');
     bounced(commit(w, ['-F', file]), 'commit-language: BLOCKED this commit: the message uses non-neutral vocabulary: kill', 'the -F body');
+  });
+
+  await test('a Claude co-author line bounces on commit-attribution where the repo turns attribution off, and lands where it does not', () => {
+    const line = 'Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>';
+    const off = mkWorld({ files: { [`${WORKKIT_DIR}/settings.json`]:'{\n  "enabled": true,\n  "commit": { "attribution": false }\n}\n' } });
+    off.write('README.md', '# fixture, noted\n');
+    off.git('add', 'README.md');
+    const res = commit(off, ['-m', `docs: note the fixture\n\n${line}`]);
+    bounced(res, 'commit-attribution: BLOCKED this commit:', 'attribution off');
+    assert(res.err.includes(line), `the bounce quotes the line, got: ${res.err}`);
+
+    const absent = mkWorld();
+    absent.write('README.md', '# fixture, noted\n');
+    absent.git('add', 'README.md');
+    landed(commit(absent, ['-m', `docs: note the fixture\n\n${line}`]), 'no attribution setting');
   });
 
   await test('chore(release): 1.2.3 bounces on release-taken when the GitHub release v1.2.3 exists', () => {

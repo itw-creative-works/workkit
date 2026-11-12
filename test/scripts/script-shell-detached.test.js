@@ -1,13 +1,14 @@
 // Tests for workflow/script-shell.sh's root `npm test`: the suite runs detached,
 // its output in the suite log and on the terminal, one run at a time, and the
-// CHANGELOG check runs before it starts. The world both script-shell suites run
-// npm in is test/lib/script-shell.js.
+// CHANGELOG check runs before it starts; a suite that freezes is ended, and one
+// that works in silence asks for a look and runs on. The world both script-shell
+// suites run npm in is test/lib/script-shell.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun, until, alive, readPid, start, endTree,
+  group, test, assert, assertEq, testUnless, summary, selfRun, until, alive, readPid, start,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, joinPath, stubTool,
@@ -18,6 +19,9 @@ const { CHANGELOG, ISSUE } = require('../hooks/commit-gate/helpers');
 const {
   cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord,
 } = require('../lib/script-shell');
+const {
+  CHECK_MINUTES, processTest, FROZEN_LINE, checkSettings, pidIn, reap, realOf, ended,
+} = require('../lib/supervise');
 
 // The suite log of a repo that does not ignore .workkit/, the lock's pid, and
 // the log of one that does.
@@ -25,7 +29,6 @@ const tmpLog = (world, repo) => suiteLogPath(world.workflowHome, repo);
 const lockPid = (world, repo) => path.join(suiteLockPath(world.workflowHome, repo), 'pid');
 const repoLog = (repo) => path.join(repo, '.workkit', 'suite.log');
 const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined);
-const realOf = (file) => { try { return fs.realpathSync(file); } catch { return `(unresolved) ${file}`; } };
 const lineCount = (file) => (read(file) || '').split('\n').filter(Boolean).length;
 
 // A folder outside the repo the suite scripts write to (a counter, their pid),
@@ -48,12 +51,8 @@ const npmStart = (world, cwd, args, extra = {}) => start(
   { cwd, env: { ...world.env, ...extra } },
 );
 
-const ended = (child) => child.exitCode !== null || child.signalCode !== null;
-
-// Whatever a red case left running, ended hard so the next case starts clean.
-const reap = (...pids) => {
-  for (const pid of pids.filter(Boolean)) endTree(pid, 'SIGKILL');
-};
+// A repo's settings setting a check of about a second.
+const SHORT_CHECK = { '.workkit/settings.json': checkSettings(CHECK_MINUTES) };
 
 // The pid of <parent>'s child whose command line names <needle>, or undefined.
 const childPid = (parent, needle) => {
@@ -327,6 +326,52 @@ const cases = async () => {
     assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
     cleanup(world.root); cleanup(repo);
   });
+
+  group('script-shell: the supervisor\'s checks');
+
+  await processTest('a root npm test whose suite freezes: exit 124, the log\'s last line the frozen line', () => {
+    const world = mkWorld();
+    const out = mkOut(world);
+    const repo = mkRepo({ scripts: { test: 'echo $$ > "$WK_OUT/suite.pid"; exec sleep 600' } }, SHORT_CHECK);
+    const pidFile = path.join(out.dir, 'suite.pid');
+    try {
+      const res = npm(world, repo, ['test'], world.wrapper, out.env);
+      assertEq(res.code, 124, `the frozen run's code, got: ${res.code} ${res.err}`);
+      const lines = (read(tmpLog(world, repo)) || '').replace(/\n$/, '').split('\n');
+      assert(FROZEN_LINE.test(lines[lines.length - 1]), `the log's last line is the frozen line, got: ${JSON.stringify(lines.slice(-3))}`);
+    } finally {
+      reap(pidIn(pidFile));
+    }
+    cleanup(world.root); cleanup(repo);
+  });
+
+  await processTest(
+    'a root npm test that asks for a look: exit 125, the suite runs on, and its green end still writes the record',
+    async () => {
+      const world = mkWorld();
+      const out = mkOut(world);
+      // Busy and silent until the case writes its go file, then green; exec
+      // keeps the pid it wrote, so a red case ends the busy loop itself.
+      const busy = 'exec node -e \'const fs = require("fs"); while (!fs.existsSync(process.env.WK_OUT + "/go")) {}\'';
+      const repo = mkRepo({ scripts: { test: `echo $$ > "$WK_OUT/suite.pid"; ${busy}` } }, SHORT_CHECK);
+      const tree = treeHash(repo);
+      const pidFile = path.join(out.dir, 'suite.pid');
+      const { child, output, end } = npmStart(world, repo, ['test'], out.env);
+      try {
+        assert(await until(() => ended(child)), `npm never returned; npm said: ${output()}`);
+        assertEq(child.exitCode, 125, `the look's code; npm said: ${output()}`);
+        const suite = pidIn(pidFile);
+        assert(suite !== undefined && alive(suite), `the suite runs on, pid: ${suite}`);
+        fs.writeFileSync(path.join(out.dir, 'go'), '');
+        assert(await until(() => recorded(world, repo) !== undefined), 'the green end never wrote its record');
+        assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
+      } finally {
+        reap(pidIn(pidFile));
+        await end('SIGKILL');
+      }
+      cleanup(world.root); cleanup(repo);
+    },
+  );
 
   return summary();
 };

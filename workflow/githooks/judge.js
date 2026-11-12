@@ -30,12 +30,14 @@ function messageOf(text) {
   return kept.join('\n').replace(/^(?:[ \t]*\n)+/, '').replace(/\s+$/, '');
 }
 
-// commit-msg's three rulings in order, the first deny ending it, the notices kept.
+// commit-msg's four rulings in order, the first deny ending it, the notices kept.
 async function commitMsg(g, root, file) {
   const message = messageOf(fs.readFileSync(path.resolve(root, file), 'utf8'));
   const steps = [
     () => mod('commit-gate').commitMsgVerdict(mod('commit-gate').commitFacts(g, root, message)),
     async () => ((await g.originless()) ? null : mod('commit-language').commitLanguageVerdict(message)),
+    async () => (mod('settings').attributionOff(await mod('settings').rootSettings(root, g.env, g))
+      ? mod('commit-attribution').commitAttributionVerdict(message) : null),
     () => mod('release-taken').releaseCommitVerdict({ subject: message.split('\n')[0], root, facts: g }),
   ];
   const notices = [];

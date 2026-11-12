@@ -79,7 +79,7 @@ claude plugin install workkit@workkit
      - With that link missing, setup prints a named skip and `script-shell` stays unset.
      - On Windows, setup first builds the kit's script shell with the compiler every Windows ships.
   6. **The allow rules.** Adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in `~/.claude/settings.json`.
-     - This is so auto mode does not block the commands a ship or a review runs.
+     - This is so auto mode does not block the commands a ship or a review runs, or the manager's `workkit watch`.
      - Every `workkit ship` command is listed but `deploy`, so a deploy outside a ship prompts.
      - A retired rule the kit once kept (`Bash(workkit ship:*)`, which let a deploy through) is taken out, and doctor names one still there.
      - Only the missing rules are added, after the ones already there, and every other key stays as it is.
@@ -225,6 +225,7 @@ claude plugin install workkit@workkit
     - the site options: which repo the site publishes from, whether it publishes at all, any custom domain, and your own sidebar link groups ([`workflow/README.md`](../workflow/README.md#the-two-settings-files) § The two settings files);
     - the bot identity's `identity.tokenUrl`, the token service's address, the hosted one when absent;
     - `findings.file`, whether an agent files its findings as issues instead of saying them in chat (off when absent; a repo's own `.workkit/settings.json` can override it);
+    - `commit.attribution`, whether a commit message may carry a Claude attribution line (allowed when absent; `false` has `safety:commit-attribution` refuse it, [`hooks.md`](hooks.md) § `safety:commit-attribution`; a repo's own `.workkit/settings.json` can override it);
     - `docs.bullets`, whether a markdown write must keep the doc shape (off when absent; a repo's own `.workkit/settings.json` can override it);
     - `docs.paths`, which markdown that check judges (the kit default when absent, [`hooks.md`](hooks.md) § `docs:board-guard`; a repo's own `.workkit/settings.json` can override it).
     - It starts holding no setting: an absent key reads the kit's default from `defaults/settings.json`.

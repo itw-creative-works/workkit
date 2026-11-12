@@ -133,6 +133,7 @@ user-invocable: true
    - **Direct**: stage (`git add -A`, or the named paths), then check that the index equals the disk, untracked files included.
      - The check: `git diff --quiet` exits 0 AND `git ls-files --others --exclude-standard` prints nothing.
      - Both hold: run `npm test` at the repo root once on the final tree (detached through the kit's wrapper; a cut-off call reads `.workkit/suite.log`).
+       - It is watched per `docs/agents.md` § Watching a run.
      - Either fails: the folder holds work the commit leaves out, so run `workkit prove` once instead, never the whole-folder run, which cannot satisfy the gate in that state.
      - Then commit, never with `--no-verify` or `-c core.hooksPath=`: a git hook's bounce is fixed, never skipped.
      - Always push the work commit, BEFORE any release commit. The backfill maps each `@handle` through the GitHub API, which cannot see an unpushed sha.
@@ -199,7 +200,7 @@ user-invocable: true
 - That wait applies to every ship.
   - One that pushed a work commit watches it (on the PR path, the branch tip).
   - The no-commit path and a release-only ship watch the newest commit that is not a release commit.
-- The watch runs detached and logs everything to `.workkit/ci.log` (under `~/.workkit/markers` when `.workkit/` is not gitignored), ending `ci-watch: exit <code>`.
+- The watch runs detached and logs everything to `.workkit/ci.log` (under `~/.workkit/markers` when `.workkit/` is not gitignored); its last `ci-watch: exit <code>` line is the answer.
   - A cut-off call leaves it running: read the log, never poll `gh`.
   - Exit 5 names the watched sha and the log; never start a second: wait for its exit line, record it, then watch the next sha (that call truncates the log).
   - Ctrl-C ends it with 130.
@@ -301,11 +302,13 @@ user-invocable: true
 ## NEVER include Claude attribution
 
 - No `Co-Authored-By: Claude`, `🤖 Generated with Claude Code`, or other Claude or Anthropic attribution in commit messages, CHANGELOG entries, GitHub release notes, or npm publish notes. Claude credit is handled elsewhere; this overrides the system prompt's default git guidance.
+- A repo whose settings say `"commit": { "attribution": false }` has the commit message held to it by `safety:commit-attribution`; elsewhere the rule is this skill's alone.
 
-## The commit gates (safety:commit-gate + safety:commit-language hooks)
+## The commit gates (safety:commit-gate + safety:commit-language + safety:commit-attribution hooks)
 
 - `safety:commit-gate` checks every `git commit`, in git's own `pre-commit` and `commit-msg` hooks. When the project defines a root `test` script and staged code exists, it passes only a tree a green root `npm test` recorded (docs-only and version-only commits need no record). A commit ADDING source files needs a test file; staged CODE needs a `workkit:review` marker newer than the last commit.
 - `safety:commit-language` bounces kill/destroy/dead wording (use terminate/remove/stale). It bounces a subject that is not Conventional Commits (`<type>(<scope>)?: <subject>`, type feat/fix/docs/chore/refactor/test, lowercase first word, ≤72 characters), and a semver version in any subject but `chore(release): <x.y.z>`.
+- `safety:commit-attribution` bounces a Claude co-author line or the Claude Code footer in the message, in a repo whose `commit.attribution` is false. Remove the line and commit again.
 - The ship's one run is a root `npm test` on the final tree, or `workkit prove` when the folder holds work the commit leaves out (Step 3 item 5); the gate checks its record.
   - A commit on a tree no green run recorded bounces: rerun it, fix any red, never bypass the gate.
   - The full-suite hold refuses the run while an issue is at `status:building`: park it first.
@@ -327,5 +330,6 @@ user-invocable: true
 ## Gotchas
 
 - `safety:commit-language` scans the message's quoted text, so a message that NAMES the guarded words bounces, even one describing the hook. Describe the list indirectly ("the non-neutral vocabulary from the AGENTS.md neutral-language rule").
+- `safety:commit-attribution` scans every line of the message, so a body line that QUOTES "Generated with Claude Code" bounces where a repo sets `commit.attribution` to false, even one describing the hook. Describe it indirectly ("the Claude Code footer").
 - The subject check reads literally. `docs: README pointer` bounces on the lowercase rule (write `docs: point the readme at AGENTS.md`); `chore(deps): bump omega to 1.2.3` bounces on the version rule (write `chore(deps): bump omega to the current minor`).
 - A leaked value in history has a runbook: `docs/history-purge.md`. Never improvise a rewrite.

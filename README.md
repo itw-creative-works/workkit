@@ -37,7 +37,7 @@ claude plugin install workkit@workkit
 - `workkit doctor` shows what is set up, and `workkit help` lists every command.
 - Start a new Claude Code session so the plugin loads.
 - Setup adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in your `~/.claude/settings.json`.
-  - So auto mode does not block the commands a ship or a review runs, `workkit review mark` among them.
+  - So auto mode does not block the commands a ship or a review runs, `workkit review mark` among them, or the manager's `workkit watch`.
   - Every ship command is listed but `workkit ship deploy`, which prompts outside a ship.
   - Setup takes out the retired `Bash(workkit ship:*)`, which let it through.
   - Beyond that it adds only the missing ones and leaves the rest of the file as it is.
@@ -105,7 +105,7 @@ claude
   - So they judge the real commit and the real `gh` call.
   - And only in a Claude session in a repo that turned workkit on.
 - The shim's secrets check runs on every `gh` call, yours included.
-- Four hooks still read the command Claude typed: the shared-tree guard, the capture guard, the npm publish check and the bare-call notice.
+- Six hooks still read the command Claude typed: the shared-tree guard, the capture guard, the npm publish check, the script-write guard, the bare-call notice and the unwatched-run notice.
 - The rules for every stop: [docs/project-state.md](docs/project-state.md).
 
 ## Seeing your board
@@ -126,7 +126,7 @@ claude
 
 | Part | Count | What it does |
 |---|---|---|
-| [Hooks](docs/hooks.md) | 30 | Run by themselves: at session start, before edits and commits, and when a reply ends. Twenty-four run inside Claude Code as one module; seven guards run in the `gh` shim and git's own commit hooks, the release check in both |
+| [Hooks](docs/hooks.md) | 33 | Run by themselves: at session start, before edits and commits, and when a reply ends. Twenty-six run inside Claude Code as one module; eight guards run in the `gh` shim and git's own commit hooks, the release check in both |
 | [Agents](docs/agents.md) | 5 | The crew your chat delegates to, each briefed from a role template in [`briefs/`](briefs/) |
 | Skills | 9 | Procedures Claude follows when your words match, or when you type `/workkit:<name>` |
 | [Dashboard](tower/README.md) | 7 pages | `workkit tower` opens a local view of every board, the running agents, token spend, and repo health |

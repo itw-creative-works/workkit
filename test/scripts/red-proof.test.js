@@ -3,8 +3,8 @@
 // snapshot holds them and every other change since is live; with --live they run
 // in the live tree, the named paths swapped for the run. Every case is a real
 // throwaway git repo whose snapshot is made by hand in the claim's layout, in a
-// home of its own, with a TMPDIR of its own so the worktree the script makes is
-// seen to go; nothing is stubbed.
+// home and a TMPDIR of its own, so the run folder the script makes under the
+// home's `.cache/workkit/proof` is seen to go; nothing is stubbed.
 
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +17,7 @@ const {
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
+const { homeOf, proofBase, runFolders, plantRun } = require('../lib/workflow-home');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'proof', 'red.sh');
 const NO_SNAPSHOT = 'red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)';
@@ -98,6 +99,25 @@ const mkWorkspaces = () => {
   return w;
 };
 
+/**
+ * A scratch workspaces repo whose package `packages/a` (`@scope/a`, exports 1)
+ * maps each subpath through its `exports` map, `./*` to `./src/*.js`, behind the
+ * relative link `node_modules/@scope/a`.
+ */
+const mkExports = () => {
+  const w = mkRepo('red-proof-exports-', {
+    'package.json': ROOT_WS,
+    '.gitignore': 'node_modules/\n',
+    'packages/a/package.json': `${JSON.stringify({ name: '@scope/a', exports: { '.': './index.js', './*': './src/*.js' } })}\n`,
+    'packages/a/index.js': 'module.exports = 1;\n',
+  });
+  linkPackages(w, 'a');
+  return w;
+};
+
+// A test loading `spec` and asserting it exports 3.
+const LOADS = (spec) => `if (require(${JSON.stringify(spec)}) !== 3) throw new Error('not 3');\n`;
+
 // `@scope/b`'s build: a tag naming the build, and `@scope/a` as it loads.
 const BUILT = (tag) => `module.exports = { built: '${tag}', a: require('@scope/a') };\n`;
 
@@ -172,12 +192,22 @@ const lines = (out) => out.split('\n').filter(Boolean);
 /** The value after `<tag> ` on the stdout line that starts with it. */
 const field = (out, tag) => (lines(out).find((l) => l.startsWith(`${tag} `)) || '').slice(tag.length + 1);
 
-/** The worktree is gone: one `git worktree list` line, nothing left in TMPDIR. */
+/** The worktree is gone: one `git worktree list` line, no run folder left, nothing in TMPDIR. */
 const assertNoWorktree = (w) => {
   assertEq(lines(w.git('worktree', 'list')).length, 1, 'git worktree list is back to one entry');
+  assertEq(runFolders(homeOf(w)).join(', '), '', 'no run folder left under proof/');
   const left = fs.readdirSync(w.tmp);
   assertEq(left.length, 0, `nothing left in TMPDIR: ${left}`);
 };
+
+// A command that prints its folder, the run folders under proof/ and the
+// TMPDIR entries as the run sees them, then passes.
+const WHERE = (w) => [
+  "const fs = require('fs');",
+  "console.log('cwd', fs.realpathSync(process.cwd()));",
+  `console.log('runs', JSON.stringify(fs.readdirSync(${JSON.stringify(proofBase(homeOf(w)))})));`,
+  `console.log('tmp', JSON.stringify(fs.readdirSync(${JSON.stringify(w.tmp)})));`,
+].join(' ');
 
 const cases = async () => {
   group('proof red: the verdict');
@@ -761,6 +791,53 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
+  await test('a named new file a test loads through a workspace package\'s exports map: red, exit 0', () => {
+    const w = mkExports();
+    takeSnapshot(w);
+    w.write('packages/a/src/new.js', 'module.exports = 3;\n');
+    w.write('tests/new.test.js', LOADS('@scope/a/new'));
+    const { code, out, err } = runScript(w, ['packages/a/src/new.js', '--', 'node', 'tests/new.test.js']);
+    assert(err.includes(path.join('node_modules', '@scope', 'a', 'src', 'new.js')), `node named it through the workspace link: ${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  await test('a named new file a test loads as a bare specifier from a package with no exports map: red, exit 0', () => {
+    const w = mkWorkspaces();
+    takeSnapshot(w);
+    w.write('packages/a/new.js', 'module.exports = 3;\n');
+    w.write('tests/new.test.js', LOADS('@scope/a/new'));
+    const { code, out, err } = runScript(w, ['packages/a/new.js', '--', 'node', 'tests/new.test.js']);
+    assert(err.includes("Cannot find module '@scope/a/new'"), `node named the bare specifier: ${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  // The same two loads of a file no named path covers, and the module each names.
+  for (const [label, world, module] of [
+    ['through the exports map', mkExports, path.join('node_modules', '@scope', 'a', 'src', 'gone.js')],
+    ['as a bare specifier', mkWorkspaces, ': @scope/a/gone'],
+  ]) {
+    await test(`a missing file loaded ${label}, not a named path: exit 2 naming the module, never red`, () => {
+      const w = world();
+      takeSnapshot(w);
+      w.write('packages/a/index.js', 'module.exports = 2;\n');
+      w.write('tests/gone.test.js', LOADS('@scope/a/gone'));
+      const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/gone.test.js']);
+      assertEq(code, 2, `exit 2: ${out}${err}`);
+      assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+      const last = lines(err).pop() || '';
+      assert(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(module),
+        `the last stderr line names the module: ${err}`);
+      assertNoWorktree(w);
+      cleanup(w.dir);
+    });
+  }
+
   group('proof red: the test summary');
 
   await test('a node --test glob matching nothing: exit 2, no test ran, never a verdict', () => {
@@ -902,6 +979,20 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
+  await test('--live, a named new file a test loads through a workspace package\'s exports map: red, exit 0, the file back', () => {
+    const w = mkExports();
+    takeSnapshot(w);
+    w.write('packages/a/src/new.js', 'module.exports = 3;\n');
+    w.write('tests/new.test.js', LOADS('@scope/a/new'));
+    const before = liveState(w, 'packages/a/src/new.js');
+    const { code, out, err } = runScript(w, ['--live', 'packages/a/src/new.js', '--', 'node', 'tests/new.test.js']);
+    assert(err.includes(path.join('node_modules', '@scope', 'a', 'src', 'new.js')), `node named it through the workspace link: ${err}`);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertRestored(w, 'packages/a/src/new.js', before);
+    cleanup(w.dir);
+  });
+
   await test('--live with a command not on PATH: exit 2, never a verdict, the file back', () => {
     const w = mkWorld();
     takeSnapshot(w);
@@ -966,6 +1057,72 @@ const cases = async () => {
     assert(res.marked, `the command started and wrote its marker: ${res.said}`);
     assertEq(fs.readFileSync(marker, 'utf8'), 'module.exports = 1;\n', 'the snapshot\'s version was live when TERM came');
     assertRestored(w, 'src/x.js', before);
+    cleanup(w.dir);
+  });
+
+  group('proof red: the run folder');
+
+  for (const [mode, flags] of [['the copy mode', []], ['--live', ['--live']]]) {
+    await test(`${mode}: the run folder is one folder under <HOME>/.cache/workkit/proof, no red-proof.* in TMPDIR, gone after`, () => {
+      const w = mkWorld();
+      takeSnapshot(w);
+      w.write('src/x.js', 'module.exports = 2;\n');
+      const { out, err } = runScript(w, [...flags, 'src/x.js', '--', 'node', '-e', WHERE(w)]);
+      const runs = JSON.parse(field(out, 'runs') || 'null');
+      assert(Array.isArray(runs) && runs.length === 1 && /^[^/\\]{6}$/.test(runs[0]),
+        `one six-character run folder under proof/ while the command ran: ${out}${err}`);
+      const tmp = JSON.parse(field(out, 'tmp') || 'null');
+      assert(Array.isArray(tmp) && !tmp.some((name) => name.startsWith('red-proof.')), `no red-proof.* in TMPDIR while the command ran: ${out}`);
+      if (!flags.length) {
+        const rel = path.relative(path.join(fs.realpathSync(proofBase(homeOf(w))), runs[0]), field(out, 'cwd'));
+        assert(rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel), `the command ran in a copy inside the run folder: ${out}`);
+      }
+      assertNoWorktree(w);
+      cleanup(w.dir);
+    });
+  }
+
+  await test('a run folder under proof/ changed over a day ago is removed by the next run, one changed within the day is left', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    plantRun(homeOf(w), 'stale1', 2);
+    plantRun(homeOf(w), 'fresh1', 1 / 24);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', TEST_OF(2));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    assertEq(runFolders(homeOf(w)).join(', '), 'fresh1', 'the stale folder removed, the fresh one and nothing else left');
+    cleanup(w.dir);
+  });
+
+  await test('a run folder changed two days ago holding live/ (a --live run it could not restore) survives the next run, one without it is removed', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    plantRun(homeOf(w), 'kept1', 2, 'live/x');
+    plantRun(homeOf(w), 'stale1', 2);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', TEST_OF(2));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
+    assertEq(code, 0, `exit 0: ${out}${err}`);
+    assertEq(runFolders(homeOf(w)).join(', '), 'kept1', 'the folder holding live/ left, the other stale one removed');
+    assert(fs.existsSync(path.join(proofBase(homeOf(w)), 'kept1', 'live', 'x')), 'the kept live file is still there');
+    cleanup(w.dir);
+  });
+
+  await test('a proof/ no run folder can be made in: exit 2 with the could-not-make line, never a verdict', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    fs.mkdirSync(path.dirname(proofBase(homeOf(w))), { recursive: true });
+    fs.writeFileSync(proofBase(homeOf(w)), '');
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', TEST_OF(2));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
+    assertEq(code, 2, `exit 2: ${out}${err}`);
+    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+    const last = lines(err).pop() || '';
+    assert(last.startsWith('red-proof: could not make a run folder under ') && last.endsWith('.cache/workkit/proof'),
+      `the last stderr line names the folder: ${err}`);
     cleanup(w.dir);
   });
 

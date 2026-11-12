@@ -22,6 +22,8 @@ STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 PROVE="$SCRIPT_DIR/prove.sh"
+SUPERVISE="$SCRIPT_DIR/supervise.sh"
+WATCH="$SCRIPT_DIR/watch.sh"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
 # The same two files the 9am schedule runs, so `workkit brief` is that morning
@@ -178,6 +180,14 @@ usage: workkit <command> [args]
   prove                run the root suite on exactly the staged tree, in a copy
                        outside the repo, and record it on green, so a commit
                        of it passes the gate while other work stays unstaged
+  supervise -- <command> [args...]
+                       run the command detached under the supervisor, as the
+                       root suite runs, its output tailed here and in the run
+                       log; exit its code, 124 frozen and ended, 125 a look
+  watch [--end] [suite|run]
+                       follow the live run again: the suite's, else the
+                       supervised one, or the one named; --end ends the named
+                       run, or the one live run
   public intake        take each new issue on the paired public repo into this
                        repo's inbox, linked, with the intake comment on it
   public mirror <N>... | --all
@@ -328,13 +338,15 @@ case "${1:-help}" in
     fi
     exec bash "$TOWER_START" "$@"
     ;;
-  # These six hand the whole run to another script, which speaks for itself.
+  # These eight hand the whole run to another script, which speaks for itself.
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;
   decline) shift; exec bash "$STANDARDS" --decline "${1:-$PWD}" ;;
   heal)    shift; exec bash "$STANDARDS" "${1:-$PWD}" ;;
   state)   shift; exec bash "$STANDARDS" --state "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;
   prove)   shift; exec bash "$PROVE" "$@" ;;
+  supervise) shift; exec bash "$SUPERVISE" "$@" ;;
+  watch)   shift; exec bash "$WATCH" "$@" ;;
   *)
     wk_error "unknown command $1"
     printf '\n' >&2

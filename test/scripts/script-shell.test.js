@@ -40,17 +40,26 @@ const isOurs = (value) => value !== '' && fs.existsSync(value) && fs.realpathSyn
 // `npm install` in <repo> as the owner's terminal runs it: no Claude session.
 const install = (world, repo) => npm(world, repo, ['install', '--no-audit', '--no-fund'], world.wrapper, { CLAUDECODE: undefined });
 
-// A copy of the wrapper and its libs under <world.root>/claude/workkit, so a
-// case may rewrite it. On Windows the world's exe reaches the copy through
-// WORKFLOW_CLAUDE_HOME (the claude home, native spelling, as mkWorld passes it);
-// `file` is the copy in node's spelling.
+// What the wrapper's run reaches in the kit, by its path from the kit root: its
+// libs, and the settings reader the launcher loads for a run's root.
+const WRAPPER_PARTS = [
+  'workflow/script-shell.sh', 'workflow/lib', 'workflow/user-dir.js',
+  'hooks/package.json', 'hooks/mods/settings.js', 'hooks/mods/log.js', 'defaults/settings.json',
+];
+
+// The wrapper and what it reaches, copied in the kit's layout to <world.root>/kit
+// so a case may rewrite it, its workflow/ linked as <world.root>/claude/workkit.
+// On Windows the exe reaches it through WORKFLOW_CLAUDE_HOME (native, as mkWorld
+// passes it); `file` is the copy in node's spelling.
 const mkWrapperCopy = (world) => {
   const claude = path.join(world.root, 'claude');
-  const kit = path.join(claude, 'workkit');
-  fs.mkdirSync(kit, { recursive: true });
-  const file = path.join(kit, 'script-shell.sh');
-  fs.cpSync(path.join(ROOT, 'workflow', 'script-shell.sh'), file);
-  fs.cpSync(path.join(ROOT, 'workflow', 'lib'), path.join(kit, 'lib'), { recursive: true });
+  const kit = path.join(world.root, 'kit');
+  for (const part of WRAPPER_PARTS) {
+    fs.cpSync(path.join(ROOT, ...part.split('/')), path.join(kit, ...part.split('/')), { recursive: true });
+  }
+  fs.mkdirSync(claude, { recursive: true });
+  fs.symlinkSync(path.join(kit, 'workflow'), path.join(claude, 'workkit'), 'junction');
+  const file = path.join(kit, 'workflow', 'script-shell.sh');
   return IS_WINDOWS
     ? { shell: world.wrapper, env: { WORKFLOW_CLAUDE_HOME: claude }, file }
     : { shell: shellPath(file), env: {}, file };

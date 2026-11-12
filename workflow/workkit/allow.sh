@@ -3,16 +3,16 @@
 # settings, and the setup and doctor steps that keep them there.
 # Sourced by workkit.sh, functions only.
 
-# The commands a ship or review runs that auto mode may block though a skill allows them,
+# The commands a ship or review runs, and the manager's workkit watch, that auto mode may block,
 # kept in the global settings: every ship verb (ship.sh's SHIP_VERBS, sourced first) but
-# deploy, which prompts outside a ship. The ship rules twin ALLOWED_SHIP_VERBS in
-# hooks/mods/bare-call.js, pinned by test/hooks/twins.test.js: change one and change the other.
+# deploy, which prompts outside a ship. The workkit rules twin ALLOWED_SHIP_VERBS and ALLOWED_VERBS
+# in hooks/mods/bare-call.js, pinned by test/hooks/twins.test.js: change one and change the other.
 ALLOW_RULES=()
 for _wk_verb in "${SHIP_VERBS[@]}"; do
   [[ "$_wk_verb" == deploy ]] || ALLOW_RULES+=("Bash(workkit ship $_wk_verb:*)")
 done
 unset _wk_verb
-ALLOW_RULES+=('Bash(workkit review:*)' 'Bash(npm publish:*)')
+ALLOW_RULES+=('Bash(workkit review:*)' 'Bash(workkit watch:*)' 'Bash(npm publish:*)')
 
 # Rules the kit once kept and every run takes out: the whole ship verb's rule
 # let `workkit ship deploy` through with no prompt.

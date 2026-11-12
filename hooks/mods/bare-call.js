@@ -1,13 +1,13 @@
 /**
  * hooks/mods/bare-call.js: workflow:bare-call. A kit verb with an allow rule
- * (`workkit ship <verb>` for each ALLOWED_SHIP_VERBS entry, `workkit review
- * ...`) matches that rule only as a bare call, so a compound, a prefix or a
- * redirect around it gets a one-line notice naming the bare form; never a deny
- * (docs/hooks.md § workflow:bare-call).
+ * (`workkit ship <verb>` for each ALLOWED_SHIP_VERBS entry, `workkit <verb>
+ * ...` for each ALLOWED_VERBS entry) matches that rule only as a bare call, so a
+ * compound, a prefix or a redirect around it gets a one-line notice naming the
+ * bare form; never a deny (docs/hooks.md § workflow:bare-call).
  */
 
 import {
-  PLACEHOLDER, count, foldRedirectAmp, peelPrefixes, redirectSpan, stepDirs, stripHeredocs, stripQuotesKeeping, wordsOf,
+  peelPrefixes, unredirectedIndices, wordsOf, writtenSteps,
 } from './command.js';
 
 /**
@@ -16,16 +16,11 @@ import {
  */
 export const ALLOWED_SHIP_VERBS = ['items', 'release', 'watch', 'cut', 'plan', 'publish'];
 
-// The indices of the words left once each redirection and its target is dropped.
-function keptIndices(words) {
-  const out = [];
-  for (let i = 0; i < words.length; i += 1) {
-    const span = redirectSpan(words[i]);
-    if (span === 0) out.push(i);
-    else i += span - 1;
-  }
-  return out;
-}
+/**
+ * The kit verbs whose every call has an allow rule, in ALLOW_RULES's order:
+ * twin of workflow/workkit/allow.sh's ALLOW_RULES, pinned by test/hooks/twins.test.js.
+ */
+export const ALLOWED_VERBS = ['review', 'watch'];
 
 // Whether a word opens a command substitution: a backtick, or a `$` the step
 // split cut from its `(`.
@@ -37,11 +32,11 @@ const substitutesQuoted = (span) => span[0] === '"' && (span.includes('$(') || s
 
 // The indices of the kit command's words in a step, from its command word on, or null.
 function kitIndices(words) {
-  const kept = keptIndices(words);
+  const kept = unredirectedIndices(words);
   const { skip, word } = peelPrefixes(kept.map((i) => words[i]));
   if (word !== 'workkit') return null;
   const [sub, verb] = kept.slice(skip + 1).map((i) => words[i]);
-  const kit = sub === 'review' || (sub === 'ship' && ALLOWED_SHIP_VERBS.includes(verb));
+  const kit = ALLOWED_VERBS.includes(sub) || (sub === 'ship' && ALLOWED_SHIP_VERBS.includes(verb));
   return kit ? kept.slice(skip) : null;
 }
 
@@ -56,14 +51,9 @@ function kitIndices(words) {
  */
 export function bareCallVerdict({ command }) {
   if (!command) return null;
-  const { text, quoted } = stripQuotesKeeping(stripHeredocs(command));
-  const stripped = foldRedirectAmp(text);
+  const { text: stripped, steps } = writtenSteps(command);
   const found = [];
-  let next = 0;
-  for (const step of stepDirs(stripped)) {
-    const words = wordsOf(step.text);
-    const spans = words.map((w) => Array.from({ length: count(w, PLACEHOLDER) }, () => quoted[next++] ?? PLACEHOLDER));
-    const written = words.map((w, i) => w.split(PLACEHOLDER).reduce((out, part, j) => `${out}${spans[i][j - 1]}${part}`));
+  for (const { words, spans, written } of steps) {
     const kit = kitIndices(words);
     if (!kit) continue;
     const cut = kit.findIndex((i) => substitutes(words[i], i === words.length - 1) || spans[i].some(substitutesQuoted));

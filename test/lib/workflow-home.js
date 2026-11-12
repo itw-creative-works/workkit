@@ -1,6 +1,7 @@
-// A scratch workflow home, where every marker and record lives, and a file aged
-// by its mtime for the sweep that clears them. Consumers: the test/hooks/lib,
-// lib-record and commit-gate/marker suites.
+// A scratch workflow home, where every marker and record lives, the proof run
+// folders under a HOME's cache, and a file or run folder aged by its mtime for
+// the sweeps. Consumers: the test/hooks/lib, lib-record, commit-gate/marker,
+// prove and red-proof suites.
 
 const fs = require('fs');
 const path = require('path');
@@ -42,4 +43,43 @@ const agedFile = (file, days) => {
   return file;
 };
 
-module.exports = { scratchWorkflowHome, daysAgo, agedFile };
+/**
+ * The HOME of a world whose workflow home is its `.workkit`.
+ * @param {{workflowHome: string}} w
+ * @returns {string} native
+ */
+const homeOf = (w) => path.dirname(w.workflowHome);
+
+/**
+ * The folder every proof run folder lives under, `<home>/.cache/workkit/proof`.
+ * @param {string} home - the HOME, native
+ * @returns {string}
+ */
+const proofBase = (home) => path.join(home, '.cache', 'workkit', 'proof');
+
+/**
+ * The run folders under proofBase(home), sorted, none when it is not there.
+ * @param {string} home - the HOME, native
+ * @returns {string[]}
+ */
+const runFolders = (home) => {
+  const dir = proofBase(home);
+  return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+};
+
+/**
+ * A run folder `name` under proofBase(home) holding the empty file `rel`,
+ * it and every folder from it up to the run folder last changed <days> days back.
+ * @param {string} home - the HOME, native
+ * @param {string} name
+ * @param {number} days
+ * @param {string} [rel] - the file, relative to the run folder
+ */
+const plantRun = (home, name, days, rel = 'copy/left.js') => {
+  const run = path.join(proofBase(home), name);
+  const file = agedFile(path.join(run, rel), days);
+  const at = daysAgo(days);
+  for (let dir = path.dirname(file); dir !== path.dirname(run); dir = path.dirname(dir)) fs.utimesSync(dir, at, at);
+};
+
+module.exports = { scratchWorkflowHome, daysAgo, agedFile, homeOf, proofBase, runFolders, plantRun };

@@ -1,5 +1,5 @@
 // Tests for workflow:bare-call's logic, bareCallVerdict({ command }) in hooks/mods/bare-call.js:
-// a kit step (`workkit ship <verb>` for each ALLOWED_SHIP_VERBS entry, `workkit review ...`) inside
+// a kit step (`workkit ship <verb>` for each ALLOWED_SHIP_VERBS entry, `workkit review ...`, `workkit watch ...`) inside
 // a compound command, or with a command substitution argument, gets one notice line naming the
 // bare form, never a deny; a bare call, a deploy, an unknown verb, a quoted mention and an
 // unrelated compound get nothing. The run line is test/mods/guards-bare-call.test.ts.
@@ -37,6 +37,10 @@ const cases = async () => {
     await says('workkit review mark full && git add -A', [NOTE('workkit review mark full')]);
   });
 
+  await test('a watch step behind a cd prefix: cd pkg && workkit watch --end names workkit watch --end', async () => {
+    await says('cd pkg && workkit watch --end', [NOTE('workkit watch --end')]);
+  });
+
   await test('a quoted argument is named as written: ls && workkit review mark "full"', async () => {
     await says('ls && workkit review mark "full"', [NOTE('workkit review mark "full"')]);
   });
@@ -70,7 +74,7 @@ const cases = async () => {
   group('bare-call: nothing to say');
 
   await test('a bare kit call, with or without blanks around it: nothing', async () => {
-    for (const c of ['workkit ship publish', 'workkit ship watch abc1234', 'workkit review covers',
+    for (const c of ['workkit ship publish', 'workkit ship watch abc1234', 'workkit review covers', 'workkit watch --end run',
       '  workkit ship publish  ', ' workkit ship watch abc1234', 'workkit review covers   ']) {
       await says(c, []);
     }

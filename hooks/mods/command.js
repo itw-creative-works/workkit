@@ -1,9 +1,10 @@
 /**
  * hooks/mods/command.js: the command-text reads the Bash guards share: the
- * heredoc and quote strips and the quoted spans, the `NAME=1` escape, the
- * redirect `&` fold, the prefix peel, the directory-change tests, the cd step,
- * the step split and its folder walk, git's subcommand, the line-by-line test,
- * and the slug rule over a remote. Plain functions over text.
+ * heredoc and quote strips, the heredoc bodies and the quoted spans, the
+ * `NAME=1` escape, the redirect `&` fold, the prefix peel, the basename of a
+ * command word, the sed and perl in-place test, the directory-change tests,
+ * the cd step, the step split and its folder walk, git's subcommand, the
+ * line-by-line test, and the slug rule over a remote. Plain functions over text.
  */
 
 /** The word a quoted span becomes under stripQuotes. */
@@ -21,8 +22,18 @@ const HEREDOC_BODY = /(<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\2)[\s\S]*?\n[\t ]*
 const NAMES_DIR_CHANGE = /(^|[^A-Za-z0-9_.-])(cd|pushd|popd)([^A-Za-z0-9_.-]|$)/;
 const BLANK_STEP = /^[ \t\n\r\f\v]*$/;
 
+/** BLANK's members, for a regex source's negated class: `[^${NS}]`. */
+export const NS = ' \\t\\v\\f\\r';
 /** The blank class without the newline, `[[:space:]]` as grep reads a line, for a regex source. */
-export const BLANK = '[ \\t\\v\\f\\r]';
+export const BLANK = `[${NS}]`;
+
+/**
+ * sed or perl and its in-place flag past the options before it (`-i`,
+ * `-i.bak`, `-pi`, `--in-place`), for a regex source: the one pattern
+ * capture-guard and inPlaceEdit read.
+ */
+export const IN_PLACE = `(sed|perl)${BLANK}+(-[^${NS}]+${BLANK}+)*(--in-place|-[A-Za-z0-9]*i)`;
+const IN_PLACE_STEP = new RegExp(`^${IN_PLACE}`);
 
 /**
  * Whether any line of the text matches, as grep tries a pattern line by line.
@@ -61,6 +72,13 @@ export const isShortCluster = (word) => word.length > 1 && word[0] === '-' && wo
  * @returns {boolean}
  */
 export const isGitWord = (word) => word === 'git' || word.endsWith('/git');
+
+/**
+ * A command word less its folder (`/usr/bin/sed` to `sed`).
+ * @param {string} word the command word
+ * @returns {string}
+ */
+export const baseName = (word) => word.replace(/^.*\//, '');
 
 /**
  * Every quoted span perl's `\\.(*SKIP)(*FAIL)|"(?:[^"\\]|\\.)*"|'[^']*'`
@@ -115,6 +133,19 @@ function closingDouble(text, open) {
 export function stripHeredocs(text) {
   if (FED_HEREDOC.test(text)) return text;
   return text.replace(HEREDOC_BODY, '$1');
+}
+
+/**
+ * Each terminated heredoc: `head`, its line's text before the `<<`, and
+ * `body`, the text after the opener through the closing word.
+ * @param {string} text the command text
+ * @returns {Array<{head: string, body: string}>}
+ */
+export function heredocsOf(text) {
+  return [...text.matchAll(HEREDOC_BODY)].map((m) => ({
+    head: text.slice(text.lastIndexOf('\n', m.index) + 1, m.index),
+    body: m[0].slice(m[1].length),
+  }));
 }
 
 /**
@@ -194,6 +225,38 @@ export function redirectSpan(word) {
 }
 
 /**
+ * The indices of a step's quote-stripped words left once each redirection and
+ * its target is dropped.
+ * @param {string[]} words the step's quote-stripped words
+ * @returns {number[]}
+ */
+export function unredirectedIndices(words) {
+  const out = [];
+  for (let i = 0; i < words.length; i += 1) {
+    const span = redirectSpan(words[i]);
+    if (span === 0) out.push(i);
+    else i += span - 1;
+  }
+  return out;
+}
+
+/**
+ * A reader that puts stripQuotesKeeping's quoted spans back, in order, where
+ * the strip left each placeholder; call it on each step's words in turn.
+ * @param {string[]} quoted the spans stripQuotesKeeping handed back
+ * @returns {function(string[]): {spans: string[][], written: string[]}} each
+ *   word's quoted spans, and each word as the call spelled it
+ */
+export function quoteRestorer(quoted) {
+  let next = 0;
+  return (words) => {
+    const spans = words.map((w) => Array.from({ length: count(w, PLACEHOLDER) }, () => quoted[next++] ?? PLACEHOLDER));
+    const written = words.map((w, i) => w.split(PLACEHOLDER).reduce((out, part, j) => `${out}${spans[i][j - 1]}${part}`));
+    return { spans, written };
+  };
+}
+
+/**
  * The one prefix peel every command-word reader uses: `(`, `{`, `!`, command,
  * builtin, env, eval, time, NAME=v, a redirect, and if/then/elif/else/do/
  * while/until.
@@ -220,6 +283,31 @@ export function peelPrefixes(words) {
     }
   }
   return { skip, isEval, word: '' };
+}
+
+// A perl flag word cut where a flag taking the rest of it begins (-M, -m, -I, -v, -V),
+// so a module, a folder or a version query never reads as -i; dropped when nothing is left.
+const perlFlag = (word) => {
+  const cut = word.match(/^(-[A-Za-z0-9]*?)[MmIvV]/)?.[1];
+  return cut === undefined ? [word] : cut === '-' ? [] : [cut];
+};
+
+/**
+ * Whether a step of the command runs sed or perl in place (IN_PLACE): its
+ * command word past the prefix peel, by any path, and the flags after it,
+ * read after the heredoc and quote strips, so a quoted mention is data.
+ * @param {string} command the command text
+ * @returns {boolean}
+ */
+export function inPlaceEdit(command) {
+  const stripped = foldRedirectAmp(stripQuotes(stripHeredocs(command)));
+  return stepsOf(stripped).some((step) => {
+    const words = wordsOf(step);
+    const { skip, word } = peelPrefixes(words);
+    const name = baseName(word);
+    const args = words.slice(skip + 1);
+    return IN_PLACE_STEP.test([name, ...(name === 'perl' ? args.flatMap(perlFlag) : args)].join(' '));
+  });
 }
 
 /**
@@ -310,6 +398,16 @@ function cmdSteps(text) {
 }
 
 /**
+ * cmdSteps' steps as text, the subshell marks dropped. Fold a redirect's &
+ * away first.
+ * @param {string} text the command text
+ * @returns {string[]}
+ */
+export function stepsOf(text) {
+  return cmdSteps(text).flatMap((event) => (event.kind === 'step' ? [event.text] : []));
+}
+
+/**
  * cmdSteps' steps, each with the folder it runs FROM (cdStep's value, '' for
  * the cwd): a step naming cd, pushd or popd moves the folder for the steps
  * after it, and a subshell's move is undone at its `)`.
@@ -332,6 +430,25 @@ export function stepDirs(text) {
     }
   }
   return steps;
+}
+
+/**
+ * A command read into its steps as written: the heredoc and quote strips and
+ * the redirect `&` fold, then each stepDirs step with its quote-stripped words,
+ * each word's quoted spans and each word as the call spelled it (quoteRestorer).
+ * @param {string} command the command text
+ * @returns {{text: string, steps: Array<{dir: string, words: string[], spans: string[][], written: string[]}>}}
+ *   the stripped, folded text and its steps
+ */
+export function writtenSteps(command) {
+  const { text, quoted } = stripQuotesKeeping(stripHeredocs(command));
+  const stripped = foldRedirectAmp(text);
+  const restore = quoteRestorer(quoted);
+  const steps = stepDirs(stripped).map(({ dir, text: step }) => {
+    const words = wordsOf(step);
+    return { dir, words, ...restore(words) };
+  });
+  return { text: stripped, steps };
 }
 
 /**

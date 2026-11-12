@@ -74,10 +74,17 @@ const writeJson = (file, value) => {
   fs.writeFileSync(file, JSON.stringify(value));
 };
 
-/** Both suites' preconditions: a script shell to name, and an npm to call it. */
+/** Why no npm run reaches a script shell here (none to name, or no npm to call it), or null. */
+const wrapperMissing = () => {
+  if (!WRAPPER) return 'no C# compiler on this Windows, so the script shell cannot be built';
+  if (!which('npm', NODE_DIR)) return 'no npm beside this node, so no script shell is ever called';
+  return null;
+};
+
+/** Both suites' preconditions, a whole suite skipped by name when one is missing. */
 const skipWithoutWrapper = () => {
-  if (!WRAPPER) skipSuite('no C# compiler on this Windows, so the script shell cannot be built');
-  if (!which('npm', NODE_DIR)) skipSuite('no npm beside this node, so no script shell is ever called');
+  const missing = wrapperMissing();
+  if (missing) skipSuite(missing);
 };
 
 /**
@@ -170,5 +177,5 @@ const wiredNpmEnv = (world) => ({
 
 module.exports = {
   WRAPPER, EXE_CLAUDE_HOME, wireShell, scratchNpmrc, wiredNpmEnv,
-  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord, packaged,
+  cleanup, git, wrapperMissing, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord, packaged,
 };

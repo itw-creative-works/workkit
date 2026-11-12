@@ -249,6 +249,23 @@ const cases = async () => {
     assert(on.includes('status:inbox'), `and on files a status:inbox issue, got: ${on}`);
   });
 
+  group('settings: attributionOff over the merged view');
+
+  await test('attributionOff: an absent commit.attribution, or a true one, reads false', async () => {
+    const { attributionOff } = mods('settings');
+    assertEq(attributionOff(await view(world({ repo: { enabled: true } }))), false, 'absent');
+    assertEq(attributionOff(await view(world({ repo: { enabled: true, commit: { attribution: true } } }))), false, 'true');
+  });
+
+  await test('attributionOff: false in the repo file or the machine file reads true, a repo true winning over a machine false', async () => {
+    const { attributionOff } = mods('settings');
+    const off = { commit: { attribution: false } };
+    assertEq(attributionOff(await view(world({ repo: { enabled: true, ...off } }))), true, 'the repo file says false');
+    assertEq(attributionOff(await view(world({ repo: { enabled: true }, user: off }))), true, 'the machine file says false');
+    assertEq(attributionOff(await view(world({ repo: { enabled: true, commit: { attribution: true } }, user: off }))), false,
+      'the repo true wins');
+  });
+
   group('settings: bulletsOn and shapePaths over the merged view');
 
   await test('bulletsOn: the machine file true and no repo value turns the check on, a repo false keeps it off', async () => {
@@ -282,6 +299,36 @@ const cases = async () => {
       assertEq(shapePaths({ docs: { bullets: true, paths } }), null, `${JSON.stringify(paths)} answers null`);
     }
     same(shapePaths({ docs: { bullets: true, paths: [] } }), [], 'an empty set is valid');
+  });
+
+  group('settings: checkMinutes over the merged view');
+
+  await test('checkMinutes: the kit default is 5', async () => {
+    assertEq(mods('settings').checkMinutes(await view(world({ repo: { enabled: true } }))), 5, 'the default check');
+  });
+
+  await test('checkMinutes: the machine file sets it for a repo that sets none, and a repo value wins over it, a fraction included', async () => {
+    const { checkMinutes } = mods('settings');
+    const user = { tests: { check: 2 } };
+    assertEq(checkMinutes(await view(world({ user, repo: { enabled: true } }))), 2, 'the machine value');
+    assertEq(checkMinutes(await view(world({ user, repo: { enabled: true, tests: { check: 0.5 } } }))), 0.5, 'the repo value');
+  });
+
+  await test('checkMinutes: 0, a negative number or a word throws the line naming the key and the value', async () => {
+    const { checkMinutes } = mods('settings');
+    for (const check of [0, -1, 'five']) {
+      const err = await failureOf(() => checkMinutes({ tests: { check } }));
+      assert(err instanceof Error, `${JSON.stringify(check)}: an Error`);
+      assertEq(err.message, `tests.check must be a number of minutes above 0 (got ${JSON.stringify(check)})`, `${JSON.stringify(check)}: the line`);
+    }
+  });
+
+  await test('checkMinutes: 1e999 in the repo file, an infinite number, throws the line naming the key and the value as Infinity', async () => {
+    const { checkMinutes } = mods('settings');
+    const s = await view(world({ repo: '{ "enabled": true, "tests": { "check": 1e999 } }\n' }));
+    const err = await failureOf(() => checkMinutes(s));
+    assert(err instanceof Error, 'an Error');
+    assertEq(err.message, 'tests.check must be a number of minutes above 0 (got Infinity)', 'the line');
   });
 
   return summary();

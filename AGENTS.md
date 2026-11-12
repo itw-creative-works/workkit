@@ -20,7 +20,7 @@
 ├── .github/workflows/    # checks.yml (the suite on every pull request and push to main but a release-only one; the release job on a push) · ci.yml, release.yml (the reusable CI and release job every kit-owned checks.yml calls) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
 ├── .github/scripts/      # release-push.sh (checks.yml's scope job and ci.yml's Scope step: whether a push is a release stamp only) · ci-node-version.sh, ci-setup.sh, ci-test.sh (ci.yml's steps: the Node version, a repo's hooks.ciSetup, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
-│   ├── register.js       # the hooks module: the twenty-four in-process hooks (seven guards run in the `gh` shim and git's hooks), the one file that touches `$`
+│   ├── register.js       # the hooks module: the twenty-six in-process hooks (eight guards run in the `gh` shim and git's hooks), the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
 │   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage,proof}/, prove.sh, the snapshot entry and .github/scripts/release-push.sh, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
@@ -55,9 +55,9 @@
 
 ## Hooks
 
-- Twenty-four of the thirty run in process, in the hooks module the `modules` list of `hooks/hooks.json` names.
+- Twenty-six of the thirty-three run in process, in the hooks module the `modules` list of `hooks/hooks.json` names.
   - The module is `hooks/register.js`, each hook's logic in `hooks/mods/`, loaded once per session.
-- Seven guards run in the `gh` shim and git's hooks, below, `safety:release-taken` in both.
+- Eight guards run in the `gh` shim and git's hooks, below, `safety:release-taken` in both.
 - Settings and the hooks log name a hook by `prefix:name`.
 - A repo that has not opted in gets none of the hooks.
   - Opting in is its own `.workkit/settings.json` saying `"enabled": true`; nothing else counts.
@@ -67,9 +67,10 @@
   - Both judge the real tree, message and argv.
   - Both sit under one gate, `wk_session_judges` (`workflow/README.md`, the `lib/participation.sh` row).
   - The shim's secrets scan runs on every `gh` call.
-- Four parsers still read a command's text: `safety:tree-guard`, `safety:capture-guard`, `safety:release-taken`'s `npm publish` half and `workflow:bare-call`.
+- Six parsers still read a command's text: `safety:tree-guard`, `safety:capture-guard`, `safety:release-taken`'s `npm publish` half, `workflow:bare-call`, `workflow:unwatched` and `safety:script-write`.
   - `workflow:bare-call` is a notice naming a kit verb run inside a compound or with a command substitution in an argument.
-- The index of all thirty and what each one does: `docs/hooks.md` § The hooks module.
+  - `workflow:unwatched` is a notice naming the `workkit supervise` form of a background test run the supervisor does not read.
+- The index of all thirty-three and what each one does: `docs/hooks.md` § The hooks module.
 
 ## Agents
 
@@ -89,7 +90,7 @@
   - Those are the plugin's install and list, and `claude setup-token`.
   - The test runner's mod half (`claude plugin test`) lives in `workkit-core`.
 - `workkit.sh` is the one command and the from-zero entry point:
-  - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `tools` · `prove`;
+  - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `tools` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run]`;
   - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
 - Beside it live:
   - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;

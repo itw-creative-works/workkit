@@ -14,6 +14,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A hung run ends here, not at GitHub's six hour default.
+    timeout-minutes: 60
     # A newer push to the same pull request ends the older run; a push to a
     # branch gets a group of its own commit, so every commit keeps its result.
     concurrency:

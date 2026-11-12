@@ -156,11 +156,12 @@ main() {
   fi
 
   # The suite runs in its own session, so a kill of the shell that started it
-  # leaves it running to its record; INT (a human's Ctrl-C) still ends it.
+  # leaves it running to its record; INT (a human's Ctrl-C) still ends it. A
+  # frozen suite exits 124, and a look at an unclear one 125 with the suite on.
   log=$(wk_suite_log_path "$root") || exit 1
   lock=$(wk_suite_lock_path "$root") || exit 1
   rc=0
-  wk_run_detached "$log" "$lock" -- "$BASH" "$SCRIPT_DIR/script-shell.sh" --suite-body "$root" "$@" || rc=$?
+  wk_run_detached "$log" "$lock" --root "$root" -- "$BASH" "$SCRIPT_DIR/script-shell.sh" --suite-body "$root" "$@" || rc=$?
   if [ -n "$WK_HELD_PID" ]; then
     printf 'script-shell: a root npm test is already running (pid %s); its output is in %s\n' "$WK_HELD_PID" "$log" >&2
     exit 1

@@ -16,7 +16,7 @@ const {
 // The kit's rules, by the names the issue's Contract gives them: every ship
 // verb but deploy, so a deploy outside a ship still prompts.
 const SHIP_RULES = ['items', 'release', 'watch', 'cut', 'plan', 'publish'].map((verb) => `Bash(workkit ship ${verb}:*)`);
-const RULES = [...SHIP_RULES, 'Bash(workkit review:*)', 'Bash(npm publish:*)'];
+const RULES = [...SHIP_RULES, 'Bash(workkit review:*)', 'Bash(workkit watch:*)', 'Bash(npm publish:*)'];
 // The whole ship verb's rule, which let a deploy through with no prompt.
 const RETIRED = 'Bash(workkit ship:*)';
 const without = (rule) => RULES.filter((r) => r !== rule);

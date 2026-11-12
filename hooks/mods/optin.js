@@ -23,7 +23,7 @@ const MOVES_BY_ENV = /(^|[^A-Za-z0-9_])(GIT_DIR|GIT_WORK_TREE|CDPATH)=/;
  * @param {string} path the folder
  * @returns {boolean}
  */
-const isAbsolute = (path) => path.startsWith('/') || /^[A-Za-z]:\//.test(path);
+export const isAbsolute = (path) => path.startsWith('/') || /^[A-Za-z]:\//.test(path);
 
 // The cheap test sparing most commands the walk: could the text move its
 // folder or repo? An empty quote pair is dropped first, as the shell drops it.

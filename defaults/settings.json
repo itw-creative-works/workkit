@@ -5,10 +5,14 @@
     "rootOnly": null
   },
   "tests": {
-    "budget": null
+    "budget": null,
+    "check": 5
   },
   "findings": {
     "file": false
+  },
+  "commit": {
+    "attribution": true
   },
   "docs": {
     "bullets": false,

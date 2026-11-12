@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# workflow/prove.sh: `workkit prove`, the root suite on exactly the staged tree:
-# a detached worktree of the index's tree outside the repo, its gitignored files
-# filled from the live folder, the root `npm test` run there, and the index's
-# tree recorded on green. The working folder and the index are never changed.
+# workflow/prove.sh: `workkit prove`, the root `npm test` on exactly the staged
+# tree, in its detached worktree under ~/.cache/workkit/proof (wk_proof_dir)
+# with its gitignored files filled from the live folder; the index's tree is
+# recorded on green. The working folder and the index are never changed.
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
@@ -23,7 +23,7 @@ load_libs() {
 }
 
 # prove_cleanup: the copy's worktree removed (hook_snapshot_worktree_remove)
-# and its temp folder with it, on every exit of the body.
+# and its run folder with it, on every exit of the body.
 prove_cleanup() {
   cd "$PROVE_ROOT" 2>/dev/null || cd /
   if [ "$PROVE_ADDED" -eq 1 ]; then
@@ -40,7 +40,7 @@ prove_body() {
   local root="$1" tree staged index copy add_err fill_root sh_path rel before after rc=0 started ms ignored=()
   PROVE_ROOT="$root" PROVE_TMP="" PROVE_COPY="" PROVE_ADDED=0
   wk_body_traps prove prove_cleanup
-  PROVE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/prove.XXXXXX") || fail "could not make a temp folder"
+  PROVE_TMP=$(wk_proof_dir) || fail "could not make a run folder under $(wk_native_path "$(wk_proof_base)")"
   # One scratch copy of the index (the real one is never written): the copy's
   # whole tree first, then the record's id, the same copy less .workkit/.
   index=$(wk_index_copy "$root" "$PROVE_TMP") || fail "could not copy the index of $root into $(wk_native_path "$PROVE_TMP")"
@@ -110,10 +110,11 @@ main() {
   wk_suite_hold "$root" wk_suite_index_tree || exit 1
 
   # The root run's log and lock: one full run at a time, and a kill of this
-  # shell leaves the run going to its record and its cleanup.
+  # shell leaves the run going to its record and its cleanup. A frozen run
+  # exits 124, and a look at an unclear one 125 with the run on.
   log=$(wk_suite_log_path "$root") || exit 1
   lock=$(wk_suite_lock_path "$root") || exit 1
-  wk_run_detached "$log" "$lock" -- "$BASH" "$SCRIPT_DIR/prove.sh" --body "$root" || rc=$?
+  wk_run_detached "$log" "$lock" --root "$root" -- "$BASH" "$SCRIPT_DIR/prove.sh" --body "$root" || rc=$?
   if [ -n "$WK_HELD_PID" ]; then
     printf 'prove: a root suite run is already running (pid %s); its output is in %s\n' "$WK_HELD_PID" "$(wk_native_path "$log")" >&2
     exit 1

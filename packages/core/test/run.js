@@ -10,11 +10,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { constants } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import { fork, spawnSync } from 'node:child_process';
 import { suiteDir, findSuites, findModSuites, POOL } from './lib/suites.js';
 import { isNodeTestSuite, runNodeTest } from './lib/node-test.js';
-import { PIPE_GRACE_MS } from './lib/process.js';
+import { PIPE_GRACE_MS, SUITE_DEADLINE } from './lib/process.js';
+import { endTree, endGroup, groupLives } from './lib/spawn.js';
 import { indentRest, indentWriter } from './lib/log.js';
 
 // Suites and a repo's serial list are CommonJS, loaded by absolute path.
@@ -22,6 +24,16 @@ const require = createRequire(import.meta.url);
 
 const TAIL_LINES = 3;
 const SLOWEST = 5;
+// The most seconds TEST_DEADLINE may name: node's timers hold 2^31 - 1 ms at most.
+const MAX_DEADLINE_SECONDS = 2147483;
+// The signals the runner passes on to its workers' groups before it exits.
+const PASSED_ON = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
+// The pids of the workers still running, whether a signal is ending the run, and
+// the pids whose groups that signal began to end.
+const live = new Set();
+let stopping = false;
+let ending = [];
 
 // The repo the run covers, the cwd, and the suite paths it was handed: `--`
 // dropped, every other argument a suite path.
@@ -29,6 +41,19 @@ const parseArgs = (argv) => {
   const root = process.cwd();
   const testDir = suiteDir(root);
   return { root, testDir, modDir: path.join(testDir, 'mods'), paths: argv.filter((arg) => arg !== '--') };
+};
+
+// The per-file deadline in ms: SUITE_DEADLINE, or the seconds TEST_DEADLINE
+// names; a value that is no positive number, or more than a timer holds, ends
+// the run before any suite.
+const deadlineOf = (raw) => {
+  if (raw === undefined) return SUITE_DEADLINE;
+  const seconds = Number(raw);
+  if (!(seconds > 0) || seconds > MAX_DEADLINE_SECONDS) {
+    console.error(`TEST_DEADLINE must be a positive number of seconds, got ${raw}`);
+    process.exit(1);
+  }
+  return seconds * 1000;
 };
 
 // The repo's serial tail, relative to the suite folder; none without a serial.js.
@@ -141,32 +166,76 @@ const runOne = async (suite, testDir) => {
 };
 
 // One suite in a worker process: everything it wrote, both streams in arrival
-// order, its message (null when it ended without one) and its wall time in ms.
-const runWorker = (suite, testDir) => new Promise((resolve) => {
+// order, its message (null when it ended without one), its wall time in ms and
+// whether <deadline> passed first, which ends the worker's process group.
+const runWorker = (suite, testDir, deadline) => new Promise((resolve) => {
+  // A run a signal is ending starts no more workers; its exit ends the wait.
+  if (stopping) return;
   const began = Date.now();
-  const child = fork(import.meta.filename, ['--worker', suite, testDir], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  // Its own process group off Windows, so endGroup reaches what the suite started in it.
+  const child = fork(import.meta.filename, ['--worker', suite, testDir], {
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: process.platform !== 'win32',
+  });
+  live.add(child.pid);
   const chunks = [];
   let result = null;
+  let timedOut = false;
   let settled = false;
+  const watchdog = setTimeout(() => {
+    // A result that arrived wins, and a worker that already exited is a crash.
+    if (result !== null || child.exitCode !== null || child.signalCode !== null) return;
+    timedOut = true;
+    // No caller awaits the ladder, so its failure is the file's last output line.
+    endGroup(child.pid).catch((err) => {
+      chunks.push(Buffer.from(`${err.message}\n`));
+      settle({ code: null, signal: null });
+    });
+  }, deadline);
   const settle = (outcome) => {
     if (settled) return;
     settled = true;
-    resolve({ output: Buffer.concat(chunks).toString(), result, ms: Date.now() - began, ...outcome });
+    clearTimeout(watchdog);
+    resolve({ output: Buffer.concat(chunks).toString(), result, ms: Date.now() - began, timedOut, ...outcome });
   };
   child.stdout.on('data', (chunk) => chunks.push(chunk));
   child.stderr.on('data', (chunk) => chunks.push(chunk));
   child.on('message', (message) => { result = message; });
   child.on('exit', () => {
+    live.delete(child.pid);
     setTimeout(() => { child.stdout.destroy(); child.stderr.destroy(); }, PIPE_GRACE_MS).unref();
   });
   child.on('close', (code, signal) => settle({ code, signal }));
   child.on('error', (err) => settle({ code: null, signal: null, error: err.message }));
 });
 
-// Why a worker that sent nothing ended: its exit code or signal, then the last
-// lines it wrote, so the failure line alone says where it stopped.
-const crashMessage = ({ output, code, signal, error }) => {
-  const how = error ? `did not run: ${error}` : signal ? `killed by ${signal}` : `exited with code ${code}`;
+// Off Windows each worker leads its own group, which a signal to the runner's
+// never reaches: on one the runner ends every live worker's group, starts no more,
+// and exits as the signal would, 128 plus its number. A second KILLs each group the
+// first began to end that still lives, before any await, so a KILL to the runner after it cannot land first.
+const passSignalsOn = () => {
+  for (const signal of PASSED_ON) {
+    process.on(signal, async () => {
+      const code = 128 + constants.signals[signal];
+      if (stopping) {
+        // A gone group is skipped: endTree would fall back to its pid, anyone's by now.
+        for (const pid of ending) {
+          try { if (groupLives(pid)) endTree(pid, 'SIGKILL'); } catch (err) { console.error(err.message); }
+        }
+        process.exit(code);
+      }
+      stopping = true;
+      ending = [...live];
+      await Promise.all(ending.map((pid) => endGroup(pid).catch((err) => console.error(err.message))));
+      process.exit(code);
+    });
+  }
+};
+
+// Why a worker that sent nothing ended: its deadline, exit code or signal, then
+// the last lines it wrote, so the failure line alone says where it stopped.
+const crashMessage = ({ output, code, signal, error, timedOut }, deadline) => {
+  const how = timedOut ? `timed out after ${deadline / 1000}s`
+    : error ? `did not run: ${error}` : signal ? `killed by ${signal}` : `exited with code ${code}`;
   const tail = stripVTControlCharacters(output).split('\n').map((line) => line.trim()).filter(Boolean).slice(-TAIL_LINES);
   return `${how} without a result${tail.length ? `; last output: ${tail.join(' | ')}` : ''}`;
 };
@@ -179,12 +248,21 @@ const crashMessage = ({ output, code, signal, error }) => {
  */
 export const main = async (argv) => {
   if (argv[0] === '--worker') {
-    // A parent that is gone takes its workers with it.
-    process.on('disconnect', () => process.exit(1));
+    // A parent that is gone takes its workers with it, and each worker the
+    // processes its suite started: off Windows its own group never hears the terminal.
+    process.on('disconnect', () => {
+      if (process.platform !== 'win32') endTree(process.pid, 'SIGINT');
+      process.exit(1);
+    });
+    // The deadline's ladder ends a worker through its exit handlers, so a
+    // suite's scratch folders are removed.
+    for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => process.exit(1));
     await runOne(argv[1], argv[2]);
     return;
   }
 
+  const deadline = deadlineOf(process.env.TEST_DEADLINE);
+  if (process.platform !== 'win32') passSignalsOn();
   const start = Date.now();
   const args = parseArgs(argv);
   const { root, testDir } = args;
@@ -209,9 +287,9 @@ export const main = async (argv) => {
     timings.push({ rel, ms: outcome.ms });
     process.stdout.write(`\n\x1b[1m\x1b[36m▶ ${rel}\x1b[0m\n${outcome.output}`);
     const res = outcome.result;
-    if (!res) {
+    if (!res || outcome.timedOut) {
       failed++;
-      allFailures.push({ name: `run ${rel}`, message: crashMessage(outcome) });
+      allFailures.push({ name: `run ${rel}`, message: crashMessage(outcome, deadline) });
       return;
     }
     if (res.skipped !== null) {
@@ -238,7 +316,7 @@ export const main = async (argv) => {
   const lane = async () => {
     while (next < wave.length) {
       const i = next++;
-      outcomes[i] = await runWorker(wave[i], testDir);
+      outcomes[i] = await runWorker(wave[i], testDir, deadline);
       while (printed < wave.length && outcomes[printed]) {
         report(wave[printed], outcomes[printed]);
         printed++;
@@ -248,7 +326,7 @@ export const main = async (argv) => {
   await Promise.all(Array.from({ length: Math.min(POOL, wave.length) }, lane));
 
   for (const suite of suites.filter((s) => serial.has(s))) {
-    report(suite, await runWorker(suite, testDir));
+    report(suite, await runWorker(suite, testDir, deadline));
   }
 
   if (withMods) {

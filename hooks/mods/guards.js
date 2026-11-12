@@ -15,9 +15,11 @@ import { journalSizes, journalTail, journalsGrown, shellEnvOf, windowsKit } from
 import { optinRepo, originless, rootOf } from './optin.js';
 import { publicMirrorGuard } from './public-mirror.js';
 import { releaseTakenGuard } from './release-taken.js';
+import { scriptWriteGuard } from './script-write.js';
 import { repoSettingsFile } from './settings.js';
 import { snapshotGuard } from './snapshot.js';
 import { treeGuardGuard } from './tree-guard.js';
+import { unwatchedGuard } from './unwatched.js';
 import { vendorGuardGuard } from './vendor-guard.js';
 
 /** The Bash guards on `tool.call`, run in the order listed here. */
@@ -25,7 +27,9 @@ export const BASH_GUARDS = [
   { hook: 'safety:release-taken', run: releaseTakenGuard },
   { hook: 'safety:tree-guard', run: treeGuardGuard },
   { hook: 'workflow:bare-call', run: bareCallGuard },
+  { hook: 'workflow:unwatched', run: unwatchedGuard },
   { hook: 'safety:capture-guard', run: captureGuardGuard },
+  { hook: 'safety:script-write', run: scriptWriteGuard },
 ];
 
 /** The guards on `tool.call` for Edit and Write. */
@@ -104,21 +108,23 @@ export async function grownLines(io, home, marks, size) {
 const guardEnv = (io, env) => shellEnvOf(env, windowsKit(io.pluginRoot) ? 'win32' : 'posix');
 
 /**
- * The Bash guards' facts: the command and its folder, the gh journal lines
- * the call left, the variables, the reads, a scratch write and the kit's
- * folder; the origin is asked once, and only by a guard that needs it. The gh
- * shim's gate and the git hooks' judge build theirs here too.
+ * The Bash guards' facts: the command and its folder, whether it runs in the
+ * background, the gh journal lines the call left, the variables, the reads, a
+ * scratch write and the kit's folder; the origin is asked once, and only by a
+ * guard that needs it. The gh shim's gate and the git hooks' judge build theirs here too.
  * @param {object} io the engine calls register.js hands over (`ioOf`), or the real machine's (workflow/lib/io.js)
  * @param {object} env the variables the module read
- * @param {{command?: string, cwd: string, lines?: object[]}} call the command, none after the call ran, its
- *   folder, and the journal lines (journalLines in markers.js) a call that already ran wrote, none before it runs
+ * @param {{command?: string, cwd: string, background?: boolean, lines?: object[]}} call the command, none after
+ *   the call ran, its folder, true for a call's `run_in_background`, and the journal lines (journalLines in
+ *   markers.js) a call that already ran wrote, none before it runs
  * @returns {object}
  */
-export function bashFacts(io, env, { command, cwd, lines = [] }) {
+export function bashFacts(io, env, { command, cwd, background = false, lines = [] }) {
   let origin = null;
   return {
     command,
     cwd,
+    background,
     lines,
     env: guardEnv(io, env),
     originless: () => (origin ??= originless(cwd, io.run)),
@@ -143,7 +149,7 @@ export function bashFacts(io, env, { command, cwd, lines = [] }) {
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {object} env the variables the module read
  * @param {Array<{hook: string, run: function}>} guards the chain, in order
- * @param {object} facts `{ command, cwd }` before a Bash call, `{ cwd, lines }` after it, `{ tool, input, cwd, file, typed, dir, gateDir }` for a file
+ * @param {object} facts `{ command, cwd, background }` before a Bash call, `{ cwd, lines }` after it, `{ tool, input, cwd, file, typed, dir, gateDir }` for a file
  * @returns {Promise<{fires: Array<[string, string]>, deny: string|null, notice: string|null, error: *}>}
  *   each fire's hook and verdict for the hooks log, the first deny, the notices as one entry, a throw
  */

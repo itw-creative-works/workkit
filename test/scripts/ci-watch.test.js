@@ -580,7 +580,9 @@ const cases = async () => {
       const r = await fg.result();
       assert(r !== null, 'the foreground never exited after the INT');
       assertEq(r.code, 130, `exit 130 (signal: ${r.signal}, stderr: ${r.err})`);
-      assert(await until(() => (readLog(w) || '').endsWith('ci-watch: exit 130\n')), `the log never ended with the exit line, got: ${JSON.stringify(readLog(w))}`);
+      const ending = 'ci-watch: exit 143\ndetach: the run was ended on request (exit 143)\n';
+      assert(await until(() => (readLog(w) || '').endsWith(ending)),
+        `the log never ended with the exit line and then the request line, got: ${JSON.stringify(readLog(w))}`);
     } finally {
       if (stub) endTree(stub, 'SIGKILL');
       await fg.end('SIGKILL');
