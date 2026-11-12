@@ -944,7 +944,7 @@
   - The copy is removed on every exit (`hook_snapshot_worktree_remove`, the shared removal beside the add), and its run folder with it.
   - It shares the root run's log and lock (`wk_suite_log_path`, `wk_suite_lock_path`, run through `lib/detach.sh`).
     - So one full run goes at a time. A second prints the holder's pid and the log, exit 1.
-    - The log's last line is `prove: exit <code>`.
+    - Its closing line is `prove: exit <code>`; a `detach:` line follows it after a frozen or requested end.
     - It is passed `--root <root>` too: a frozen run exits 124 with no record and its run folder gone, the frozen line after its `prove: exit 143`, and a look exits 125 with the run going on.
   - A red run prints so, and exits with the suite's code.
   - Every other way no record is written exits 1 with one `prove:` line:
