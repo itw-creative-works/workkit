@@ -5,64 +5,60 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
 
-const cases = async () => {
-  skipUnlessDarwin();
-
-  group('jobs/morning (local): the brief is the cloud’s');
-
+describe('jobs/morning (local): the brief is the cloud’s', { skip: skipUnlessDarwin() }, () => {
   // Everything below is about the day going over, or not going over, which is
   // a briefless morning and never a local compose.
 
-  await test('a dispatch that lands hands the day to the cloud and composes nothing here', () => {
+  test('a dispatch that lands hands the day to the cloud and composes nothing here', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
 
     const sent = world.dispatched();
-    assertEq(sent.length, 1, `one workflow run: ${fmtCalls(world.ghCalls()).slice(0, 400)}`);
-    assertEq(sent[0][2], 'brief.yml', 'and it names the brief workflow');
-    assertEq(sent[0][3], '--repo', 'on a repo');
+    expect(sent.length, `one workflow run: ${fmtCalls(world.ghCalls()).slice(0, 400)}`).toBe(1);
+    expect(sent[0][2], 'and it names the brief workflow').toBe('brief.yml');
+    expect(sent[0][3], 'on a repo').toBe('--repo');
     // The home repo, which is where setup seeded the workflow and
     // wrote the secrets, never this checkout's own, which is distributed.
-    assertEq(sent[0][4], 'owner/private-home', 'the home repo this machine is configured for');
+    expect(sent[0][4], 'the home repo this machine is configured for').toBe('owner/private-home');
 
-    assertEq(world.calls().length, 0, `claude never ran here: ${fmtCalls(world.calls()).slice(0, 200)}`);
-    assertEq(world.created().length, 0, 'and nothing was published from this machine');
-    assert(/dispatched brief\.yml on /.test(world.log()), `the log records the dispatch: ${world.log()}`);
-    assert(res.stdout.includes('dispatched brief.yml on'), 'and says so on screen');
+    expect(world.calls().length, `claude never ran here: ${fmtCalls(world.calls()).slice(0, 200)}`).toBe(0);
+    expect(world.created().length, 'and nothing was published from this machine').toBe(0);
+    expect(/dispatched brief\.yml on /.test(world.log()), `the log records the dispatch: ${world.log()}`).toBeTruthy();
+    expect(res.stdout.includes('dispatched brief.yml on'), 'and says so on screen').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('the summaries step still runs before the dispatch', () => {
+  test('the summaries step still runs before the dispatch', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     runJob(world);
-    assert(fs.existsSync(world.nightlyLog), 'yesterday is written up whether or not the day goes over');
+    expect(fs.existsSync(world.nightlyLog), 'yesterday is written up whether or not the day goes over').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a dispatch that does not land is a logged, briefless morning', async () => {
+  test('a dispatch that does not land is a logged, briefless morning', async () => {
     // The brief needs the sweep token and the roster, which live on the home
     // repo, so a morning the day cannot be handed over has no brief, and the
     // log is the only place that says why.
     const world = mkWorld({ home: 'owner/private-home' });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(world.dispatched().length, 1, 'the trigger was tried');
-    assertEq(world.calls().length, 0, `and nothing was composed here: ${fmtCalls(world.calls()).slice(0, 200)}`);
-    assertEq(world.created().length, 0, 'nothing was published from this machine');
-    assert(/no brief this morning/.test(world.log()), `the log says the morning is briefless: ${world.log()}`);
-    assert(/did not land/.test(world.log()), `and names the reason: ${world.log()}`);
-    assert(/no brief this morning/.test(res.stderr), `it reaches the plist log too: ${res.stderr}`);
-    assert(!(await settle(world)), 'and nothing was announced: there is no digest to announce');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(world.dispatched().length, 'the trigger was tried').toBe(1);
+    expect(world.calls().length, `and nothing was composed here: ${fmtCalls(world.calls()).slice(0, 200)}`).toBe(0);
+    expect(world.created().length, 'nothing was published from this machine').toBe(0);
+    expect(/no brief this morning/.test(world.log()), `the log says the morning is briefless: ${world.log()}`).toBeTruthy();
+    expect(/did not land/.test(world.log()), `and names the reason: ${world.log()}`).toBeTruthy();
+    expect(/no brief this morning/.test(res.stderr), `it reaches the plist log too: ${res.stderr}`).toBeTruthy();
+    expect(!(await settle(world)), 'and nothing was announced: there is no digest to announce').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a checkout missing brief-dispatch.sh is a briefless morning, not an abort', async () => {
+  test('a checkout missing brief-dispatch.sh is a briefless morning, not an abort', async () => {
     // The lib is sourced under `set -e`: without its own guard a partial
     // checkout would end the morning at the source line, costing the publish.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
@@ -70,38 +66,32 @@ const cases = async () => {
     fs.mkdirSync(stray, { recursive: true });
     fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(world.dispatched().length, 0, 'nothing was triggered');
-    assert(/kit is incomplete/.test(world.log()), `the reason names the missing lib: ${world.log()}`);
-    assert(/no brief this morning/.test(world.log()), `and the morning is briefless, not broken: ${world.log()}`);
-    assert(/marker: the engine library is missing/.test(world.log()), `the marker names the missing lib: ${world.log()}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(world.dispatched().length, 'nothing was triggered').toBe(0);
+    expect(/kit is incomplete/.test(world.log()), `the reason names the missing lib: ${world.log()}`).toBeTruthy();
+    expect(/no brief this morning/.test(world.log()), `and the morning is briefless, not broken: ${world.log()}`).toBeTruthy();
+    expect(/marker: the engine library is missing/.test(world.log()), `the marker names the missing lib: ${world.log()}`).toBeTruthy();
     const said = [world.log(), res.stdout, res.stderr].join('\n');
-    assert(said.includes('morning.d: the engine library is missing'), `and so does the morning.d step: ${said}`);
+    expect(said.includes('morning.d: the engine library is missing'), `and so does the morning.d step: ${said}`).toBeTruthy();
     await settle(world);
     cleanup(world.root);
   });
 
-  await test('--now never dispatches: a rehearsal must not hand the day to a runner', () => {
+  test('--now never dispatches: a rehearsal must not hand the day to a runner', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     const res = runJob(world, ['--now']);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(world.dispatched().length, 0, 'the cloud was never asked');
-    assertEq(world.calls().length, 1, 'the rehearsal ran here');
-    assertEq(world.created().length, 0, 'and published nothing, as it always did');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(world.dispatched().length, 'the cloud was never asked').toBe(0);
+    expect(world.calls().length, 'the rehearsal ran here').toBe(1);
+    expect(world.created().length, 'and published nothing, as it always did').toBe(0);
     cleanup(world.root);
   });
 
-  await test('a message argument never dispatches: the generic runner stays generic', () => {
+  test('a message argument never dispatches: the generic runner stays generic', () => {
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
     runJob(world, ['hello']);
-    assertEq(world.dispatched().length, 0, 'no workflow was triggered');
-    assertEq(world.calls()[0][1], 'hello', 'the message went straight to claude');
+    expect(world.dispatched().length, 'no workflow was triggered').toBe(0);
+    expect(world.calls()[0][1], 'the message went straight to claude').toBe('hello');
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

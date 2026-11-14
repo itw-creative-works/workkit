@@ -8,8 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { execFileSync } = require('child_process');
-const { testUnless, mkTmp } = require('../../lib/harness');
-const { IS_WINDOWS, NO_NODE_STUB, gitPath, homeEnv, pathWith, shellPath, stubTool } = require('../../lib/platform');
+const { mkTmp } = require('../../lib/harness');
+const { gitPath, homeEnv, pathWith, shellPath, stubTool } = require('../../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js');
 const { composeBrief, render, writeBriefMarks, INSTRUCTION } = require(SCRIPT);
@@ -194,13 +194,8 @@ const localNoon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0).toISOString();
 const MONDAY = localNoon(2026, 8, 3);
 const TUESDAY = localNoon(2026, 8, 4);
 
-// A case resting on the `gh` shim the script itself spawns: it still skips on
-// Windows (`stubTool`, `NO_NODE_STUB`), its stub written before the launcher,
-// where the sealed machine gh would answer an empty board instead.
-const newsTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
-
 module.exports = {
   SCRIPT, composeBrief, render, writeBriefMarks, INSTRUCTION, parseStatsMark, SLUG, STAMP, cleanup,
   CC_CHANGELOG, ccFixture, mkNewsWorld, issueNode, mkWorld, captureStderr, composeIn, nameHomeRepo, discussion,
-  MONDAY, TUESDAY, newsTest,
+  MONDAY, TUESDAY,
 };

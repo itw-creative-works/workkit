@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   SYSTEM_BASH, NO_RC, shellPath, systemPathWith,
@@ -41,20 +41,18 @@ const changelogRepo = (words) => {
   return dir;
 };
 
-const cases = async () => {
-  group('workflow/lib/changelog.sh: wk_changelog_lint resolves the linter');
-
-  await test("with no WORKFLOW_DIR it runs the engine's own lint.js", () => {
+describe('workflow/lib/changelog.sh: wk_changelog_lint resolves the linter', () => {
+  test("with no WORKFLOW_DIR it runs the engine's own lint.js", () => {
     const long = lint(changelogRepo(62));
-    assertEq(long.code, 1, `a 62-word entry fails, got: ${long.stdout}|${long.stderr}`);
-    assert(long.stderr.startsWith('the CHANGELOG entry does not match the format (see docs/project-state.md). '),
-      `with the shared message, got: ${long.stderr}`);
-    assert(long.stderr.includes('[word-cap] 62 words (max 50)'), `and the real linter's line, got: ${long.stderr}`);
+    expect(long.code, `a 62-word entry fails, got: ${long.stdout}|${long.stderr}`).toBe(1);
+    expect(long.stderr.startsWith('the CHANGELOG entry does not match the format (see docs/project-state.md). '),
+      `with the shared message, got: ${long.stderr}`).toBeTruthy();
+    expect(long.stderr.includes('[word-cap] 62 words (max 50)'), `and the real linter's line, got: ${long.stderr}`).toBeTruthy();
     const short = lint(changelogRepo(20));
-    assertEq(short.code, 0, `a 20-word entry passes, got: ${short.stdout}|${short.stderr}`);
+    expect(short.code, `a 20-word entry passes, got: ${short.stdout}|${short.stderr}`).toBe(0);
   });
 
-  await test('WORKFLOW_DIR names the engine whose linter it runs', () => {
+  test('WORKFLOW_DIR names the engine whose linter it runs', () => {
     const engine = mkTmp('changelog-lint-engine-');
     const argvFile = path.join(engine, 'argv.json');
     fs.mkdirSync(path.join(engine, 'changelog'));
@@ -64,30 +62,24 @@ const cases = async () => {
       'process.exit(1);',
     ].join('\n'));
     const out = lint(changelogRepo(20), { WORKFLOW_DIR: shellPath(engine) });
-    assertEq(out.code, 1, `the stand-in's failure is the answer, got: ${out.stdout}|${out.stderr}`);
-    assert(out.stderr.includes('the stand-in linter said no'), `its words reach the message, got: ${out.stderr}`);
+    expect(out.code, `the stand-in's failure is the answer, got: ${out.stdout}|${out.stderr}`).toBe(1);
+    expect(out.stderr.includes('the stand-in linter said no'), `its words reach the message, got: ${out.stderr}`).toBeTruthy();
     const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
-    assert(argv[0].replace(/\\/g, '/').endsWith('/CHANGELOG.md'), `it was handed the repo's CHANGELOG, got: ${argv}`);
-    assertEq(JSON.stringify(argv.slice(1)), '["--added-only"]', 'judging only the added lines');
+    expect(argv[0].replace(/\\/g, '/').endsWith('/CHANGELOG.md'), `it was handed the repo's CHANGELOG, got: ${argv}`).toBeTruthy();
+    expect(JSON.stringify(argv.slice(1)), 'judging only the added lines').toBe('["--added-only"]');
   });
+});
 
-  group('workflow/lib/changelog.sh: wk_changelog_lint with nothing to run');
-
-  await test('no node, or no linter: exit 0 with one line saying the linter did not run, never the format refusal', () => {
+describe('workflow/lib/changelog.sh: wk_changelog_lint with nothing to run', () => {
+  test('no node, or no linter: exit 0 with one line saying the linter did not run, never the format refusal', () => {
     const noNode = lint(changelogRepo(62), { PATH: systemPathWith() });
     const noLinter = lint(changelogRepo(62), { WORKFLOW_DIR: shellPath(mkTmp('changelog-lint-empty-')) });
     for (const [label, out] of [['no node', noNode], ['no linter', noLinter]]) {
-      assertEq(out.code, 0, `${label}: the check stands aside, got: ${out.stdout}|${out.stderr}`);
+      expect(out.code, `${label}: the check stands aside, got: ${out.stdout}|${out.stderr}`).toBe(0);
       const lines = out.stderr.split('\n').filter(Boolean);
-      assertEq(lines.length, 1, `${label}: one stderr line, got: ${out.stderr}`);
-      assert(lines[0].includes('did not run'), `${label}: saying the linter did not run, got: ${lines[0]}`);
-      assert(!out.stderr.includes('does not match the format'), `${label}: never the refusal, got: ${out.stderr}`);
+      expect(lines.length, `${label}: one stderr line, got: ${out.stderr}`).toBe(1);
+      expect(lines[0].includes('did not run'), `${label}: saying the linter did not run, got: ${lines[0]}`).toBeTruthy();
+      expect(!out.stderr.includes('does not match the format'), `${label}: never the refusal, got: ${out.stderr}`).toBeTruthy();
     }
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

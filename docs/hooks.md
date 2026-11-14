@@ -2,22 +2,25 @@
 
 - This file is the behavior detail behind `AGENTS.md` § Hooks, which keeps one line per hook.
 - The rules the hooks enforce live in [`project-state.md`](project-state.md). This file describes how each hook executes them.
-- Of the thirty-three hooks, twenty-six run in process, in the hooks module (§ The hooks module).
-  - Eight guards run in the `gh` shim and git's `pre-commit` and `commit-msg` hooks.
+- Of the thirty-one hooks, twenty-two run in process, in the hooks module (§ The hooks module).
+  - Nine guards run in the `gh` shim, the `git` shim and git's `pre-commit` and `commit-msg` hooks.
   - `hooks/hooks.json` wires no shell hook.
 
 ## How they are wired
 
 - `hooks/hooks.json` holds one key, its `modules` list, naming the hooks module, `./register.js` (§ The hooks module).
   - Settings and the hooks log name a hook by `prefix:name`, never by a path.
+- The nine guards outside the module are wired where the real action happens:
+  - the `gh` shim (`workflow/identity/gh`), linked into `~/.local/bin`;
+  - the `git` shim (`workflow/gitshim/git`), which the module's `classic.SessionStart` puts first on a session's PATH (§ `safety:tree-guard`);
+  - and git's own hooks (`workflow/githooks/`), set as a repo's `core.hooksPath` by the heal.
 - The shell left under `hooks/` is no hook.
   - `hooks/_lib.sh` and `hooks/lib/*.sh` are the library the `workflow/review/`, `workflow/triage/` and `workflow/proof/` scripts, `workflow/prove.sh` and the snapshot entry source (§ Platforms).
 
 ### The hooks log
 
 - Every fire of a hook the hooks module runs leaves one line in `hooks.log`.
-  - The eight guards' runs in the `gh` shim and git's hooks leave none, since they run outside the module.
-  - `safety:release-taken`'s publish half, a `tool.call` guard, still logs.
+  - The nine guards' runs in the `gh` shim, the `git` shim and git's hooks leave none, since they run outside the module.
 - The log lives in the workkit folder (`~/.workkit`).
   - `WORKFLOW_HOME` moves it.
   - `wk_hooks_log` in `workflow/lib/platform.sh` is the one spelling of the path.
@@ -33,7 +36,7 @@
   - Those are `agent.spawn`, the Agent tool's `PreToolUse` (whose `cwd` is a subagent's), and the `tool.call` chains.
 - The verdict is `run`, `stood-down` or `crashed`.
   - `stood-down` means not opted in (§ Where every hook stands down).
-  - The chain after a Bash call never stands down, so it logs `run`.
+  - The chain after a Bash call stands down only when no root it looks at opted in and the call left no gh journal line.
   - `crashed` is a guard that threw. A `tool.call` chain then refuses the call.
   - The `classic.PostToolUse` and `classic.PostToolUseFailure` Bash chains refuse nothing.
 - A `tool.call` guard's fire is logged under `PreToolUse`.
@@ -49,9 +52,10 @@
 - A hook runs only when the repo it acts on has opted in, and steps aside silently when the answer is no.
 - One reader answers it: `settingsOptedIn` in `hooks/mods/gate.js`, over the repo's `.workkit/settings.json` text.
 - The repos it reads differ by handler (§ The hooks module):
-  - the Bash chain before a call asks `optinRepo` in `hooks/mods/optin.js`, by the rules below;
-  - the chain after it asks none (below);
+  - the chain after a Bash call asks two roots and the call's gh journal lines (below);
   - every other handler asks `folderOpted` in `hooks/mods/guards.js`, the repo holding one folder.
+- The guards outside the module ask `wk_session_judges` (`workflow/README.md`, the `lib/participation.sh` row) of the repo the call acts in.
+  - They are the `gh` shim's, the `git` shim's and git's hooks'.
 
 - Opted in: a `.workkit/settings.json` at the repo root that parses and whose top-level `enabled` is `true`.
   - A nested `enabled` changes nothing.
@@ -62,28 +66,15 @@
   - an Edit or Write: the repo holding the file it writes, a linked file read where it really is.
     - It is walked up from the nearest folder that exists, as spelled, else from that folder's physical path.
     - `~/.claude/settings.json` and a path through `~/.claude/skills` name the dotfiles checkout only behind the link;
-  - a Bash command, for the parsers the Bash chain before the call keeps (`safety:release-taken`'s publish half, `safety:tree-guard`, `workflow:bare-call`, `workflow:unwatched`, `safety:capture-guard`, `safety:script-write`).
-    - The repo is the one holding its `cwd`, plus the repo of every folder a `cd` step lands in.
-    - The hook runs when any of those repos opted in.
-    - A plain `cd <folder>` is followed past the shared prefix peel (`cdStep` in `hooks/mods/command.js`).
-      - The folder is absolute, or relative to where the earlier steps left it.
-      - A subshell's `cd` is undone at its `)`.
-      - A `cd` in a heredoc body or inside quotes is never a step.
-    - A command the walk cannot place runs the hook, so a guard fails closed. The fail-closed forms:
-      - any step naming `cd`, `pushd` or `popd` as a word that is not a plain `cd` it can follow (`pushd`, `popd`, `env cd`, a bare `cd`, a flag, `~`, a variable or substitution, a quoted folder, a folder with a space or a trailing redirect, `echo cd`), and a relative `cd` with no `cwd`;
-      - git's `-C`, `--git-dir` or `--work-tree`;
-      - a `GIT_DIR=`, `GIT_WORK_TREE=` or `CDPATH=` assignment;
-      - `eval`;
-      - an interpreter's `-c` string (`isInterpreter`);
-      - a quoted command word;
-      - and a backtick, or a `$(` inside quotes, in a command the cheap test below flags.
-    - A cheap test spares most commands the walk.
-      - It flags `cd`, `pushd` and `popd` matched as whole words (`namesDirChange`), and `eval`.
-      - It flags a short flag cluster holding `c` or `C`, `--git-dir`, `--work-tree` and the three assignments.
-      - A command the cheap test does not flag adds no fork, so a hash or a path holding the letters "cd" costs nothing;
-  - a Bash call that already ran, for `workflow:snapshot` and `workflow:public-mirror`: no gate of its own, and no command text read.
+  - a Bash call before it runs, for `safety:capture-guard`: the repo holding the call's real folder, `$.session.cwd()` (a subagent's own in a subagent).
+    - No command text is read for the gate;
+  - a Bash call that already ran, for `workflow:snapshot`, `workflow:public-mirror` and `safety:script-write`: two roots, and no command text read.
+    - The roots are the repo the call began in, recorded before it ran (the call's start, § The hooks module), and the repo holding the folder it ended in, the event's `cwd`.
+    - Each is asked once, and only a root that opted in is kept.
+    - The chain runs when a root was kept, or when the call left a gh journal line.
     - Each journal line was already kept by its own repo's opt-in (`grownLines`).
-    - A guard given no line does nothing;
+    - So a script in a plain folder that claims an issue in an opted-in repo still gets that repo's `workflow:snapshot`.
+    - A guard given no line does nothing, and the disk check looks only at the kept roots;
   - anything else: the repo holding the input's `cwd`.
     - A payload with no `cwd`, and a `cwd` outside every repo, stand down.
 - The safety and manager hooks stand down with the rest.
@@ -91,9 +82,6 @@
   - `workflow:standards` runs everywhere for its setup reminder. Its own gate keeps the heal per repo.
   - `workflow:reload-guard` runs everywhere for the restart notice.
   - The guard chains name none.
-- `optinRepo` answers `{ root, opted }`.
-  - It is opted when any repo root it found opted in.
-  - It is opted for a Bash command it cannot place (the fail-closed forms above), so the guards run.
 
 ## Platforms
 
@@ -126,7 +114,7 @@
     - The writers are `_hook_write_marker` (through `hook_sweep_markers`), the suite and package record writers, and the `gh` shim's journal append (`journal_append` in `workflow/identity/gh`).
     - The two record writers sweep before they write; `_hook_write_marker` and the shim sweep after theirs.
     - The sweep removes every regular file one folder under that base whose mtime is older than `MARKER_KEEP_DAYS` (7 days).
-    - It never enters a folder there (a run lock, a red snapshot).
+    - It never enters a folder there (a run lock).
   - The sweep is shell-only because every other marker writer is shell.
     - The module reads markers, and writes and removes one: the gh journal mark (`journalMarkPath` in `hooks/mods/markers.js`).
     - A Bash call's `tool.call` writes that mark, and its `PostToolUse` or `PostToolUseFailure` removes it.
@@ -145,7 +133,7 @@
   - git stores a remote exactly as it was typed, so a Windows checkout's origin comes back a native path with backslashes.
   - A reader that took only a forward slash answered nothing about it.
   - The rule lives once in the engine's [`workflow/lib/slug.sh`](../workflow/lib/slug.sh). Its Node twin is `slugFromRemote` in `workflow/slug.js`.
-  - The module reads it through `repoSlug` in `hooks/mods/optin.js`, over `slugFromRemote` in `hooks/mods/command.js`.
+  - The module reads it through `repoSlug` in `hooks/mods/optin.js`, over `slugFromRemote` in `hooks/mods/slug.js`.
     - That is the module's copy of the Node twin, shape for shape, since a hooks module cannot import CommonJS.
     - The three change together.
   - `safety:release-taken` names the repo in its github-release bounce through that same `slugFromRemote`.
@@ -163,7 +151,8 @@
     - The fill rebuilds those: § `workflow:snapshot`.
   - Every platform also leaves out the kit's paths inside the folder copied, by real path (`_hook_snapshot_kit_rels`).
     - Links are resolved, as when `~/.workkit` links into a dotfiles repo.
-    - Its markers folder (`wk_markers_dir`), where the snapshot itself is built, is always left out.
+    - The snapshot home (`~/.cache/workkit/snapshot`), where the snapshot itself is built, is left out when it lies inside the folder (a repo at `$HOME`).
+    - So is the kit home's markers folder (`wk_markers_dir`).
     - So is every path in the kit home (`wk_user_dir`) that git ignores in that repo (`git ls-files --others --ignored --exclude-standard --directory`).
     - So a tracked file there, or an untracked one git does not ignore, is still copied.
   - The copy walks a folder holding one the same way, and a repo's own folder of the same name elsewhere is still copied.
@@ -179,12 +168,10 @@
   - No workkit hook sources it.
 
 - The reads the module's guards share each have one home under `hooks/mods/`:
-  - `command.js`: the command text, read by the kept parsers alone.
-    - It holds the strips, `stripQuotesKeeping` (handing back the quoted spans the placeholders stand for), the heredoc bodies `heredocsOf`, the redirect `&` fold and the prefix peel.
-    - It holds the redirect drop `unredirectedIndices`, the quoted spans put back `quoteRestorer`, and `writtenSteps`, a command's steps with their words as written, which `workflow:bare-call`, `workflow:unwatched` and `safety:script-write` share.
-    - It holds the sed and perl in-place pattern `IN_PLACE` and its step test `inPlaceEdit`.
-    - It holds the step split `stepsOf` and its folder walk `stepDirs`, the cd step, a command word's `baseName`, the interpreter list and git's subcommand `gitSubcommand`.
-    - It holds the line-by-line test `anyLine` and the slug rule `slugFromRemote`.
+  - `facts.js`: the Bash guards' facts (`bashFacts`, its one home) and the variables as a guard reads them (`guardEnv`).
+    - The facts carry no command text. The `gh` shim's gate and the git hooks' judge build theirs here too.
+  - `slug.js`: the slug rule `slugFromRemote`.
+  - `changed.js`: the files a repo's working tree changed since a moment (`changedSince`), and the capture file's path `CAPTURE_PATH`.
   - `gh.js`: the `gh` calls, `issueView`, `stageList`, and the gh guards' `denyAfter` and `ghSkipped`.
     - It also holds `buildingList`, the `status:building` list no guard reads.
     - That is kept as the twin of `wk_issues_building` in `workflow/lib/hold.sh`, which `test/hooks/twins.test.js` holds to one argv.
@@ -196,10 +183,13 @@
   - `markers.js`: the marker paths, and the folder rule for what the shell spelled.
     - It also holds the gh journal folder and its sized listing, the per-call mark, the journals a call changed and their tail read.
     - Those are `journalDir`, `journalPath`, `journalSizes`, `journalFor`, `journalMarkText`, `journalMarks`, `journalsGrown`, `journalTail`, `journalLines`, `onIssue`.
-- Three hook files are shared homes as well:
+    - It holds a call's start beside its mark (`callStartPath`, `callStartText`, `callStartOf`) and the triage marker's age limit `TRIAGE_MAX_AGE_S`.
+    - It holds the session's PATH with the `git` shim's folder first (`sessionPath`).
+- Four hook files are shared homes as well:
   - `test-reminder.js`: the code and test path shapes, `CODE_EXT`, the regex escape `escaped`;
   - `changelog-guard.js`: `isChangelog`, `linterPath`;
-  - `change-tracker.js`: `unfiledCount`.
+  - `change-tracker.js`: `unfiledCount`;
+  - `script-write.js`: the five write checks over one file (`writeChecks`, `WRITE_CHECKS`), which the Edit and Write handler runs too, and a path's folder `dirOf`.
 - A guard on the chains imports from these and the modules above, never from another chain guard.
 - The settings read is `loadSettings(read, { kit, root, user })` in `hooks/mods/settings.js`.
   - It is the one loader for the mods (`io.read`) and the engine's Node scripts (`fs`, through `settingsAt` in `workflow/lib/settings.js`).
@@ -259,9 +249,9 @@
 
 ## The hooks module
 
-- Of the thirty-three hooks, twenty-six run inside Claude Code itself, in one hooks module.
-- Eight guards run in the `gh` shim and git's `pre-commit` and `commit-msg` hooks.
-  - `safety:release-taken` runs in both: its release commit in `commit-msg`, its `npm publish` here.
+- Of the thirty-one hooks, twenty-two run inside Claude Code itself, in one hooks module.
+- Nine guards run in the `gh` shim, the `git` shim and git's `pre-commit` and `commit-msg` hooks.
+  - The module's one part in them: its `classic.SessionStart` puts the `git` shim's folder first on the session's PATH (§ `safety:tree-guard`).
 - `hooks/hooks.json` names the module under `modules` (`./register.js`), and the session loads it once.
   - So dispatching a fire starts no process.
   - A hook runs only the programs it asks for (`git`, `gh`, `node`, an engine entry).
@@ -302,11 +292,9 @@
 | `safety:commit-gate` | git `pre-commit` and `commit-msg` | Blocks a `git commit` the work is not ready for (the proved-tree record, test files, review marker, CHANGELOG entry, the issue it closes and its proof, an issue it names that the owner has not passed, a closing line naming more than one issue) |
 | `safety:commit-language` | git `commit-msg` | Bounces kill/destroy/dead wording, and a subject line that is not Conventional Commits or carries a version outside `chore(release)` |
 | `safety:commit-attribution` | git `commit-msg` | Bounces a message carrying a Claude co-author line or the Claude Code footer, in a repo whose `commit.attribution` is false |
-| `safety:release-taken` | git `commit-msg` (the release commit), `tool.call` (Bash) (the publish) | Bounces the release commit and the `npm publish` whose version npm or the GitHub release tag already has, before the commit and the tag exist |
-| `safety:tree-guard` | `tool.call` (Bash) | Blocks the git commands that DISCARD a shared working tree, with one deliberate escape |
-| `safety:script-write` | `tool.call` (Bash) | Blocks a command that rewrites a file past the Edit and Write tools (sed or perl in place, a python or node snippet that writes a file), with one escape for a scratch or generated file |
-| `workflow:bare-call` | `tool.call` (Bash) | Names, never blocking, each allow-listed kit verb run inside a compound command or with a command substitution in an argument, with the bare call its allow rule matches |
-| `workflow:unwatched` | `tool.call` (Bash) | Names, never blocking, the `workkit supervise` form of a test run started in the background that the supervisor does not read |
+| `safety:release-taken` | git `commit-msg` | Bounces the release commit whose version npm or the GitHub release tag already has, before the commit and the tag exist |
+| `safety:tree-guard` | the `git` shim | Blocks the git commands that DISCARD a shared working tree, with one deliberate escape |
+| `safety:script-write` | `classic.PostToolUse` and `classic.PostToolUseFailure` (Bash) | After a Bash call, runs the five write checks an Edit gets on each file the call changed on disk, a failed check a notice, never blocking |
 | `safety:issue-guard` | the `gh` shim | Blocks a `gh` call whose outbound text carries a local `.env` value or a token-shaped string |
 | `safety:proof-guard` | the `gh` shim | Blocks the flip to `status:complete` and the `gh issue close` of an issue carrying no `Proof:` comment, and the flip to `status:qa` while a package owning a touched test file has no green `npm test` recorded on its own id, the code it can see (§ `safety:proof-guard`, the package id bullet), a package the settings list under `proof.rootOnly` excepted |
 | `safety:spec-guard` | the `gh` shim | Blocks the flip to `status:specced` while the issue's `## Spec` is written but carries no `### Contract` |
@@ -326,17 +314,17 @@
 
 | Handler | Its hooks, in order |
 |---|---|
-| `classic.PostToolUse` (Edit/Write) | `docs:board-guard`, `docs:changelog-guard`, `docs:session-guard`, `safety:test-reminder`, `safety:test-bar`: the first block wins, and the hooks after it do not run |
-| `classic.SessionStart` | `docs:state-check`, `workflow:standards`, `workflow:reload-guard`'s stamp on a `startup` or `resume` source, then `docs:session`: its context last, and one `$.ui.log` line the owner sees when state carried over |
+| `classic.PostToolUse` (Edit/Write) | `docs:board-guard`, `docs:changelog-guard`, `docs:session-guard`, `safety:test-reminder`, `safety:test-bar`, through `writeChecks` in `hooks/mods/script-write.js`: the first block wins, and the hooks after it do not run |
+| `classic.SessionStart` | first the `git` shim's folder put on the session's PATH, on every source (§ `safety:tree-guard`); then `docs:state-check`, `workflow:standards`, `workflow:reload-guard`'s stamp on a `startup` or `resume` source, then `docs:session`: its context last, and one `$.ui.log` line the owner sees when state carried over |
 | `classic.UserPromptSubmit` | `manager:profile`, `workflow:reload-guard`, `docs:checkpoint`, `workflow:feature`, their contexts in that order; it also records the turn's start for `docs:change-tracker` (the `turn-journal` key), adding no context |
 | `classic.SubagentStart` (`^workkit:`) | `manager:addon` |
 | `classic.PreToolUse` (Task/Agent) | `manager:spawn-guard`: its warning as `additionalContext`, and one `$.ui.log` line the owner sees |
 | `agent.spawn` | `manager:resolver`: `next({ ...e, model })`, or `{ deny }` in advise mode |
 | `classic.Stop` | `manager:close-guard`: its warning as one `$.ui.log` line and nothing else, since a Stop context would continue the turn; then `docs:change-tracker`: its nag as the `block`, which continues the turn on purpose |
 | `session.end` | none: it deletes every `$.store` key of the ending session |
-| `tool.call` (Bash) | `BASH_GUARDS` in `hooks/mods/guards.js`, in this order: `safety:release-taken` (its publish half), `safety:tree-guard`, `workflow:bare-call`, `workflow:unwatched`, `safety:capture-guard`, `safety:script-write` |
+| `tool.call` (Bash) | `BASH_GUARDS` in `hooks/mods/guards.js`: `safety:capture-guard` alone |
 | `tool.call` (Edit/Write) and (Read/Grep) | `FILE_GUARDS` (`safety:vendor-guard`, then `safety:capture-guard`) and `READ_GUARDS` (`safety:capture-guard`) in `hooks/mods/guards.js` |
-| `classic.PostToolUse` and `classic.PostToolUseFailure` (Bash) | `POST_BASH_GUARDS` in `hooks/mods/guards.js`: `workflow:snapshot`, then `workflow:public-mirror` |
+| `classic.PostToolUse` and `classic.PostToolUseFailure` (Bash) | `POST_BASH_GUARDS` in `hooks/mods/guards.js`: `workflow:snapshot`, then `workflow:public-mirror`, then `safety:script-write` |
 
 - **`tool.call` (Bash)**, the row's detail:
   - The chain first leaves the call's gh journal mark (`journalMarkPath` in `hooks/mods/markers.js`, keyed by its `tool_use_id`).
@@ -344,8 +332,13 @@
     - The length comes from the journal's stat, never a read of it.
   - The journals are every gh journal on the machine: the files of the journal folder (`journalDir`) in name order, each with its length (`journalSizes`).
     - An empty folder is an empty mark.
-  - The mark reads no command text and makes no git call.
-  - The guards' facts carry the command, the session's folder and `background`, true when the call's `run_in_background` is true (`bashFacts`).
+  - The mark reads no command text and is written before any git call (`markCall` in `hooks/mods/guards.js`).
+  - Beside it goes the call's start (`callStartPath`, `callStartText` in `hooks/mods/markers.js`), keyed the same way.
+    - It holds the time taken when the call began, before the journals are sized, and the repo root of the call's folder, one `git rev-parse`.
+    - It is what `safety:script-write` reads after the call.
+  - The guards' facts carry no command text (`bashFacts` in `hooks/mods/facts.js`).
+    - They carry the session's folder, `background` (the call's `run_in_background`) and `namesCapture`.
+    - `namesCapture` is true when the command contains `.workkit/capture.md`. That one match in `hooks/register.js` is the module's one read of a command's text.
   - The first `{ deny }` refuses the call, and the guards after it do not run.
   - Every notice goes to Claude as one `context` entry on the result, and to the owner as one `$.ui.log` line.
 - **`tool.call` (Edit/Write) and (Read/Grep)**, the row's detail:
@@ -357,8 +350,9 @@
   - The same runner, one chain under two registrations.
   - Their notices go as one `additionalContext` entry and one `$.ui.log` line, never a block.
   - A Bash call that exited non-zero fires only `PostToolUseFailure`.
-  - The facts carry `lines` and no command text (`bashFacts`). The opt-in is § Where every hook stands down's.
-  - `journalSince` in `hooks/register.js` reads the mark (`journalMarks`) and removes it. No mark, no lines.
+  - The facts carry `lines`, `since` and `roots`, and no command text (`bashFacts`). The opt-in is § Where every hook stands down's.
+  - `callSince` in `hooks/mods/guards.js` reads the mark (`journalMarks`) and the start (`callStartOf`), and removes both. No mark, no lines; no start, no `since` and no roots.
+  - `since` is the start's time. `roots` are the root the start recorded and the root of the event's `cwd`, each once (`callRoots`), cut by `runChain` to those that opted in.
   - `grownLines` in `hooks/mods/guards.js` then lists and measures the journal folder again.
     - Each journal longer than its marked length is read past it as a tail (`journalTail`, `journalsGrown` in `hooks/mods/markers.js`).
     - One the mark does not hold, or one shorter than its mark (replaced during the call), is read from its start.
@@ -386,14 +380,14 @@
     - An empty file, a file with no key and text that does not parse are all off.
   - `workflow:standards` and `workflow:reload-guard` are exempt.
   - The guard chains gate once per call through `runChain` in `hooks/mods/guards.js`. No guard is exempt.
-    - A Bash chain before the call gates by `optinRepo` (§ Where every hook stands down).
-    - That is the repo holding the `cwd` plus every folder a `cd` step lands in, and a command it cannot place runs the guards.
+    - A Bash chain before the call gates by its real folder, `$.session.cwd()`.
     - A file chain gates by `gateDir`: the repo holding the file for an Edit or Write, and the session folder's for a Read or Grep.
-  - The chain after a Bash call, its facts carrying `lines`, is the exception § Where every hook stands down states.
+  - The chain after a Bash call, its facts carrying `lines`, gates by its two roots and its journal lines, as § Where every hook stands down states.
   - A hook that stands down says nothing, and still leaves its line in the hooks log.
 - **The kill switch.**
   - `HOOK_DISABLE=1` in Claude Code's own environment makes every handler pass its event straight on, with no line in the hooks log.
-  - The `gh` shim's session gates and git's hooks read it from the call's own environment (`wk_session_judges`).
+    - So a session started with it gets no `git` shim on its PATH.
+  - The `gh` shim's session gates, the `git` shim and git's hooks read it from the call's own environment (`wk_session_judges`).
     - Whoever runs the command sets it per command.
     - So `HOOK_DISABLE=1 git commit` there is a per-command escape the owner uses, never an agent.
   - The shim's leak scan runs either way.
@@ -414,11 +408,12 @@
       - the shell twin reads the top-level key through node, and only `"enabled": true` reads opted in on both;
     - the machine folder (`wk_user_dir`, `userDir` in `hooks/mods/log.js` and `workflow/user-dir.js`);
     - the CHANGELOG path test (`wk_is_changelog`, `isChangelog` in `hooks/mods/changelog-guard.js`);
-    - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/command.js`);
+    - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/slug.js`);
     - the `Proof:` pattern (`workflow/ship/items.sh`, `PROOF_RE` in `hooks/mods/proof.js`);
     - the version file test (`hook_is_manifest` in `hooks/lib/tree.sh`, `isManifest` in `hooks/mods/commit-gate/checks.js`);
     - the version-only diff (`hook_version_only_change` in `hooks/lib/tree.sh`, `versionOnly` in `hooks/mods/commit-gate/checks.js`);
-    - the allowed verb lists (`ALLOW_RULES` in `workflow/workkit/allow.sh`, `ALLOWED_SHIP_VERBS` and `ALLOWED_VERBS` in `hooks/mods/bare-call.js`);
+    - git's global options that take a value (`VALUE_FLAGS` in `workflow/gitshim/git`, `GIT_VALUE_FLAGS` in `hooks/mods/tree-guard.js`);
+    - the two shims' shared shell helpers, `norm_dir`, `real_path` and `in_list`, and their PATH walk to the real tool (`real_git` against `real_gh`), `workflow/gitshim/git` against `workflow/identity/gh`;
     - and the hooks log line (`logLine` in `hooks/mods/log.js`).
   - The prompt shape (`hooks/mods/frame.js`) and the manager config and model tier (`hooks/mods/manager.js`) have no shell side.
 - **State.**
@@ -433,7 +428,8 @@
   - `WORKFLOW_DIR` (the engine folder, the tests' override), `WORKFLOW_CLAUDE_HOME`, the two cache folders;
   - `RELOAD_GUARD_ROOT` (the folder whose surfaces reload-guard reads, the plugin root by default);
   - `MANAGER_LADDER`, `MANAGER_USER_SETTINGS`, `MANAGER_DEBUG`, `MANAGER_CLOSE_EDITS`;
-  - and `CLAUDE_CODE_REMOTE` (the cloud session flag the setup pester reads).
+  - `CLAUDE_CODE_REMOTE` (the cloud session flag the setup pester reads);
+  - and `PATH`, which `classic.SessionStart` sets again through `$.env.set` with the `git` shim's folder first.
   - `claude plugin validate .` lists them, with the ten events and every `$` call.
   - Each folder the shell spelled (`TMPDIR`, `/tmp` when unset, `WORKFLOW_HOME` and `HOME`) is read as the folder Git Bash means by it (`shellEnvOf` in `hooks/mods/markers.js`).
     - On Windows `/tmp/<rest>` is the Windows temp folder plus the rest: the first native `TMP` or `TEMP`, else `%LOCALAPPDATA%\Temp`.
@@ -732,11 +728,14 @@
   - `mkTmp`: a `mkdtempSync(` or `tmpdir(` outside the scratch writer (`test/lib/scratch.js` or `tests/lib/scratch.js`, or the kit's `packages/core/test/lib/scratch.js`);
     - one inside a quoted span or a template literal spanning lines is left alone: a fixture's text, never this test's call;
   - `serial`: a literal `/tmp/<name>` path or a literal port (`localhost:<n>`, `port: <n>`, `.listen(<n>`);
-  - `worth`: a case (`test(`, `it(` or a `testUnless(...)(` call) whose every assertion is an `existsSync`, a mode or exec-bit check, or `assert.ok(true)`, named at its first;
+  - `worth`: a case whose every assertion is an `existsSync`, a mode or exec-bit check, `assert(true)`, `assert.ok(true)` or `expect(true)`, named at its first;
+    - a case is a line opening with `test(` or `it(`, or its `.skip`, `.todo` or `.only` form, `await` before it or not;
+    - an assertion is an `assert(`, an `assert.<name>(` or an `expect(` call;
+    - a case runs to the next case, a `describe(` (its `.skip`, `.todo` or `.only` form too), or a hook (`before(`, `after(`, `beforeEach(`, `afterEach(`), and a hook's assertions count to no case;
     - a case inside a quoted span or a template literal spanning lines is left alone: a fixture's text, never this suite's case;
-  - `source-regex`: a `readFileSync` of a source path (a repo-root anchor or a repo-relative literal, never a path through a `test/` or `tests/` folder) whose text reaches `assert.match`, inline or through the name it is held under;
+  - `source-regex`: a `readFileSync` of a source path (a repo-root anchor or a repo-relative literal, never a path through a `test/` or `tests/` folder) whose text reaches a regex check, `assert.match` or `expect(...).toMatch`, inline or through the name it is held under;
   - `deadline`: a JavaScript wait bound written as a nonzero number literal;
-    - the bounds: a `setTimeout` or `setInterval` delay, a `sleep(<n>)` call, a `timeout: <n>` option, the last argument of `Atomics.wait`;
+    - the bounds: a `setTimeout` or `setInterval` delay, a `sleep(<n>)` call, a `timeout: <n>` option (a case's own among them), the last argument of `Atomics.wait`;
     - outside the deadline's homes: `test/lib/process.js` or `tests/lib/process.js`, or the kit's `packages/core/test/lib/process.js` and `packages/core/test/lib/spawn.js`;
     - a bound passed to `until` or `elapsedUntil` is left alone;
     - so is any literal inside a quoted span or a template literal spanning lines: a fixture's or a child program's text, never this test's wait;
@@ -907,6 +906,7 @@
 - Check 5 runs no tests; it reads the record.
   - A green `npm test` at the repo root records the id of the working tree it started on, through npm's `script-shell`.
   - A green `workkit prove` records the index's tree.
+  - A run with `CI` set (any value but the empty string) records nothing, and the gate never reads `CI`: a tree only such a run proved is refused for a missing record.
   - The record's shape and home, and its two writers: `workflow/README.md`, the `lib/suite.sh`, `script-shell.sh` and `prove.sh` rows.
   - The gate compares it with the tree the commit carries (`treeId`): the commit's index's tree less `.workkit/`.
   - That id comes through `bash workflow/lib/tree-hash.sh <root> -i` (`wk_suite_index_tree`).
@@ -1022,69 +1022,67 @@
 - The deny quotes the line and says to remove it and commit again.
 - The logic is `commitAttributionVerdict(message)` in `hooks/mods/commit-attribution.js`.
 
-### `safety:release-taken`: git commit-msg (the release commit), tool.call (Bash) (the publish)
+### `safety:release-taken`: git commit-msg
 
-- Bounces a release whose version npm or the GitHub release tag ALREADY has, at the one moment the number is still free to change.
+- Bounces a release commit whose version npm or the GitHub release tag ALREADY has, at the one moment the number is still free to change.
   - The release commit: a commit whose real subject is exactly `chore(release): <x.y.z>`.
-  - And `npm publish`: a clause whose command word, past the shared prefix peel, is `npm`, and whose first non-option argument is `publish`.
-    - A redirect before `npm` or `publish` is skipped, and `--dry-run` publishes nothing.
   - Found afterwards, a taken version costs a second release rather than a different number.
-- The release commit is judged in git's `commit-msg` hook (`workflow/githooks/`, the gate and the chain § `safety:commit-gate` names).
+- It is judged in git's `commit-msg` hook (`workflow/githooks/`, the gate and the chain § `safety:commit-gate` names).
   - It runs after the commit gate, `safety:commit-language` and `safety:commit-attribution`, when the real message's subject is exactly `chore(release): <x.y.z>`.
   - `releaseCommitVerdict({ subject, root, facts })` reads the project off disk and runs the two lookups below.
   - The version shape is `VERSION_RE`, the one `safety:commit-language` accepts in a release subject.
-  - `npm publish` is the one half still read off the command text, a guard on the `tool.call` Bash chain.
-- The release commit asks npm for every package with publish intent, each at its own `package.json` version.
+- An `npm publish` is not judged here. The ship's publish asks npm itself (`onRegistry` in `workflow/ship/publish.js`) and skips a version already out.
+- It asks npm for every package with publish intent, each at its own `package.json` version.
   - It asks for the GitHub release `v<x.y.z>` once.
-- The publish asks npm only: the GitHub release legitimately precedes it in the ship pipeline.
-  - The publish's two strips are `hooks/mods/command.js`'s, so a quoted mention and a heredoc body are data.
-  - A quoted `eval "npm publish"` and `sh -c "npm publish"` walk past the npm walk.
-  - These are accepted misses, since neither is how a publish is typed.
-- The project is the package.json at the git toplevel for a commit and at the cwd for a publish.
+- The project is the package.json at the git toplevel.
   - Plus every `workspaces` member (the array, or the object's `packages`).
   - A literal directory is read where it stands. `dir/*` is every direct subdirectory of `dir` holding a package.json.
   - Any other glob shape, a pattern that matched nothing and a member with no package.json are each named and skipped.
 - Publish intent is the publish plan's rule, and [`workflow/ship/plan.js`](../workflow/ship/plan.js) is its home.
   - npm is asked about exactly the packages the plan would not skip (`"private": false` and a `files` or `publishConfig` key).
   - Plus a workspaces root that carries the intent itself.
-- A publish naming its workspaces asks about those members alone.
-  - The flags: `--workspace=<x>`, `--workspace <x>`, `-w <x>`, `-w=<x>`, as often as the command repeats them.
-  - A member is matched by package name or by path from the root (`@fam/core`, `packages/core`, `./packages/core/`). The root is never one.
-  - Every publishing clause of a chain counts. A redirect's `&` never splits its clause.
-  - One naming no workspace checks the whole set, and `--workspaces` keeps the whole set.
-  - A name that matches no member, a quoted name and an empty one (`--workspace=`) stand down.
-- The lookups are two programs run from the project root through `$.process.run`, concurrently, each with a 15-second `timeoutMs`.
+- The lookups are two programs run from the project root through the judge's `run` (`workflow/lib/io.js`), concurrently, each with a 15-second `timeoutMs`.
   - `npm view --no-update-notifier --fetch-retries=0 --fetch-timeout=15000 <name>@<version> version`.
     - Taken when the trimmed answer IS the version. An E404 is free.
     - `onRegistry` in `workflow/ship/publish.js` asks the same question.
   - `gh release view v<x.y.z> --json tagName -q .tagName`.
     - Taken when the answer is `v<x.y.z>`. "release not found" is free.
-  - The bounce names the repo off the origin through `repoSlug`, left off rather than guessed at when the origin names none.
+  - The bounce names the repo off the origin (`git remote get-url origin`, read through `slugFromRemote`), left off rather than guessed at when the origin names none.
 - Cannot tell is not free, and is never silent.
-  - Each of these is one line in the notice, and the call goes ahead:
+  - Each of these is one line on the hook's stderr, and the commit goes ahead:
     - a lookup that fails any other way (offline, unauthenticated, the tool missing);
-    - a publish behind a `cd`, `pushd` or `popd`;
     - and every member left out.
-  - The notice is the chain's for a publish, the hook's stderr for a commit.
   - A bounce carries those lines first.
-  - Then one `release-taken: BLOCKED <this release commit|this npm publish>: <npm|github-release> already has ...` line per taken pair.
+  - Then one `release-taken: BLOCKED this release commit: <npm|github-release> already has ...` line per taken pair.
   - Then what to do.
 - The escape is `HOOK_DISABLE=1` and nothing narrower: releasing over a taken version is the owner's deliberate call, not a per-command habit.
-- The logic is in `hooks/mods/release-taken.js`.
-  - `releaseTrigger` (the publish).
-  - `releaseTakenVerdict({ command, cwd, packageJson, members, lookups, origin })`, `origin` the remote url the repo's owner/name is read off.
-  - `releaseCommitVerdict({ subject, root, facts })`.
-  - `releaseTakenGuard` gathers the publish's facts, and only for a command that is a trigger.
+- The logic is `releaseCommitVerdict({ subject, root, facts })` in `hooks/mods/release-taken.js`, over its judgment `judged`.
 
-### `safety:tree-guard`: tool.call (Bash)
+### `safety:tree-guard`: the git shim
 
 - Blocks the git commands that DISCARD a working tree, since the tree is shared and no agent can see what else is uncommitted in it.
   - A worker reverting its own files with `git checkout -- <files>` once took another agent's uncommitted work in the same files with it.
   - The alternative it names is the scoped one: revert your own changes by reverse-editing your own hunks.
-- It finds what it bounces anywhere in a compound. The `&` inside a redirect never splits the clause.
-  - It looks through the prefixes `peelPrefixes` in `hooks/mods/command.js` peels.
-  - Those are `git -C <path>`, `/usr/bin/git`, `command`, `env`, an unquoted `eval`, `VAR=x`, `(`, `{`, `time`.
-  - A redirection and its target, and everything from an unquoted `#` on, are dropped first.
+- It runs in the `git` shim, `workflow/gitshim/git`, on git's real arguments, never a command's text.
+  - So `bash -c 'git reset --hard'`, a script file and a command with quotes or a line break in it are judged alike.
+- The session puts the shim on its PATH.
+  - The hooks module's `classic.SessionStart` puts `workflow/gitshim` first on the session's PATH through `$.env.set`, on every source (startup, resume, compact, clear).
+  - The PATH is `sessionPath` in `hooks/mods/markers.js`. One whose first entry is already the folder is left alone.
+  - On Windows the folder is in its native form and the separator is `;`.
+  - `HOOK_DISABLE=1` sets nothing.
+  - A PATH that cannot be set is one `$.ui.log` line: `workkit: the git shim is not on this session's PATH, so safety:tree-guard is off: <why>`.
+  - So the session's shells and a subagent's find it first. The shim is never linked into `~/.local/bin`, so a terminal outside a session never meets it.
+  - `workkit doctor` checks it: a missing or not executable shim is a warning in a session or out of one; in a session another `git` first on PATH is a warning too, and outside one that PATH line is a skip.
+    - Doctor sees only the PATH it inherited: a shell or subagent whose PATH was set apart from the session's is not what it reads.
+- What the shim does with a call:
+  - It finds the real `git` as the `gh` shim finds the real `gh`: the first one on PATH after its own folder. With none it prints `git: no git on PATH after the workkit shim at <path>` and exits 127.
+  - When none of `checkout`, `switch`, `restore`, `stash`, `clean` and `reset` is among the arguments, and the verb is one of git's own on the shim's list (or there is none), it execs the real git at once. No other program starts first.
+  - Any other first word is looked up as an alias (`git config --get alias.<word>`). An alias that leads to one of the six is judged as that verb. A `!` alias is not.
+  - For one of the six it asks the real git for the repo root, git's own global options kept (`-C`, `-c`, `--git-dir`, `--work-tree`).
+  - Outside a repo, or where `wk_session_judges` does not hold for that root, it execs the real git.
+  - Where it holds, it runs `node workflow/githooks/judge.js tree-guard -- <argv...>` under `wk_node`.
+    - Exit 0 runs git. Any other code is a refusal whose text the judge put on stderr, and git does not run.
+    - With no node at the kit's floor it prints `git: the workkit tree-guard did not run (no node <floor> or newer found)` and runs git.
 - What it bounces:
   - `git checkout` carrying a pathspec;
   - `git switch` with `--discard-changes` or `-f`/`--force`. A plain switch takes no pathspec and stays legal;
@@ -1096,104 +1094,58 @@
   - `--` anywhere, `-f`/`--force`, `--pathspec-from-file`;
   - an operand that is `.`, `..`, `./…`, `../…`, absolute, or `~/…`;
   - an operand that carries a glob character;
-  - an operand that arrived quoted. Quoting is how a glob reaches git, and the strip leaves it unreadable;
-  - an operand that EXISTS in the session's directory;
+  - an operand that EXISTS in the folder git acts in: the shim's folder with each `-C` before the verb folded on, in order (`gitFolder` in `workflow/githooks/judge.js`);
   - and more than one operand (`<ref> <path>`).
   - `git checkout main`, `git checkout -`, `git checkout -b new main` stay legal.
   - A branch whose name is also a path in the tree blocks, the case git itself calls ambiguous.
-- The accepted misses:
-  - a quoted eval body or interpreter string (`eval "git stash"`, `sh -c "git checkout -- ."`);
-  - a launcher or control-flow wrapper the peel does not list (`sudo`, `xargs`, `for … do`);
-  - and a command substitution.
-  - This is a tripwire on the honest reach, not a sandbox.
-- Always on, with one escape, the owner's deliberate discard: `WORKKIT_ALLOW_DISCARD=1` as an assignment on the command.
-  - It is read off the quote-stripped text, so a mention inside quotes is not one.
-  - The guard then stands aside out loud, one notice line (`tree-guard: stood aside for a deliberate discard: ...`).
-  - The call goes on as if the guard were silent.
-- The logic is `treeGuardVerdict({ command, cwd, exists })` in `hooks/mods/tree-guard.js`, `exists(rel)` asking whether `<cwd>/<rel>` is there.
+- Where it does not look:
+  - a program that starts `git` by a full path, or on Windows through a native process call, never passes the shim;
+  - a `git` that git itself starts never passes it either, since git puts its own exec folder first on PATH: an alias's shell, `rebase -x`, `submodule foreach`, `bisect run`, a git hook;
+  - a `!` alias passes unjudged;
+  - an alias chain is followed up to five hops, the global options leading an alias skipped, and a chain deeper than five hops is refused (exit 1, git not run), never passed unjudged;
+  - and every `git` call a session's shell makes pays the shim's few milliseconds, a test suite's included.
+- Always on, with one escape, the owner's deliberate discard: `WORKKIT_ALLOW_DISCARD=1` in the shim's real environment (`WORKKIT_ALLOW_DISCARD=1 git reset --hard`).
+  - The guard then stands aside out loud, one stderr line (`tree-guard: stood aside for a deliberate discard: ...`), and git runs.
+- The logic is `treeGuardVerdict({ argv, exists, allow })` in `hooks/mods/tree-guard.js`.
+  - `argv` is git's real argument list as the shim got it, an alias for one of the six spelled as its words.
+  - `exists(rel)` answers for the folder git acts in, and `allow` is true when `WORKKIT_ALLOW_DISCARD=1` is set.
+  - It answers `{ deny }`, `{ context }` or null.
+- `judge.js tree-guard -- <argv...>` exits 0 to run git and 1 with the block text on stderr.
+  - A judge that fails before its verdict prints `tree-guard: the workkit judge failed before it could judge this git call, so git did not run: <message>`, exit 1.
 
-### `safety:script-write`: tool.call (Bash)
+### `safety:script-write`: classic.PostToolUse and classic.PostToolUseFailure (Bash)
 
-- Blocks a Bash command that rewrites a file in place, since the write hooks fire on the Edit and Write tools alone and never see it.
+- The write hooks fire on the Edit and Write tools alone. So after a Bash call this checks, on disk, each file the call changed.
   - A file edit goes through Edit or Write (`agents/worker.md`), and a write hook's bounce is fixed or reported, never worked around.
-- What it bounces:
-  - `sed` or `perl` with an in-place flag (`-i`, `-i.bak`, `-pi`, `--in-place`), as a step's command word past the shared prefix peel, by any path.
-    - The pattern is `IN_PLACE` in `hooks/mods/command.js`, the one `safety:capture-guard` reads; the step test is `inPlaceEdit`.
-    - The step test cuts a perl flag that takes the rest of its word (`-M`, `-m`, `-I`, `-v`, `-V`), so a module, a folder or a version query (`-Mstrict`, `-Ilib`, `-version`) never reads as `-i`.
-    - It is read after the heredoc and quote strips, so a `sed -i` in a quoted commit message or an `echo` is data.
-  - `python`, `python3` or `node` handed a snippet whose text writes a file, read with its quotes, or the body of a heredoc the interpreter reads.
-    - The snippet is the argument after python's `-c`, alone or ending a flag cluster (`-Bc`), or after node's `-e`, `--eval`, `-p`, `--print` or `-pe`.
-    - An interpreter's flags are read up to its script file, or a module after `-m` (alone or ending a cluster, `-Bm`), so a `-c`, `-e` or `-p` after the script file is the script's own argument.
-      - A script file is known by its ending: node's `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`; python's `.py`, `.pyw`.
-      - Every other word is read past, as a flag's value or a redirect (`--input-type module`, `2>/dev/null`).
-      - The value of a listed flag is skipped whatever its ending (node's `-r`, `--require`, `--import`, `--loader`, `--experimental-loader`, `-C`, `--conditions`; python's `-W`, `-X`), so `node -r ./setup.js -e ...` is read on to its `-e`.
-    - Python: a call to `open(` or a method `.open(` whose mode writes, appends, creates or updates (a `w`, `a`, `x` or `+`), `.write_text(`, `.write_bytes(`.
-      - The mode is the second argument of `open(` (`open(os.path.join('a','b'), 'w')`), the first or second of `.open(` (`Path(p).open('w')`), or a `mode=` argument.
-      - An argument nested past two levels of parentheses is not read.
-    - Node: `writeFile`, `writeFileSync`, `appendFile`, `appendFileSync`, `createWriteStream`.
-- The accepted misses: it reads the command's text only.
-  - A script file run by name, a redirect (`>`), `tee` and a script inside a kit command are out of its reach.
-  - So are a launcher the peel does not list in front (`bash -c`, `sh -c`, `nice`, `timeout`, `sudo`, `xargs`, `find -exec`), a sed by another name (`gsed`) and a snippet piped into the interpreter.
-  - So is an in-place flag after a flag that takes a value (`sed -e expr -i x`), since the pattern reads the flags only up to the first word that is not one.
-  - A script named with no ending keeps the old refusal: in `node build -p writeFile` the `-p` reads as node's own.
-  - A script-looking value of a flag outside `VALUE_FLAG` ends the walk (`node --env-file x.js -e ...`), so a writing snippet after it passes.
-- One escape, for a file no write hook judges (a scratch file, a generated file): `WORKKIT_ALLOW_SCRIPT_WRITE=1` as an assignment on the command.
-  - It is read off the quote-stripped text, as the tree guard's is, so a mention inside quotes is not one.
-  - The guard then stands aside out loud, one notice line (`script-write: stood aside for a scratch or generated file: ...`).
-- It runs last in the Bash chain, so a rewrite of `.workkit/capture.md` still gets `safety:capture-guard`'s answer first.
-- The logic is `scriptWriteVerdict(command)` in `hooks/mods/script-write.js`, answering `{ deny }`, `{ context }` or null.
-
-### `workflow:bare-call`: tool.call (Bash)
-
-- A kit verb's allow rule matches the bare command alone (`ALLOW_RULES` in `workflow/workkit/allow.sh`, which `workkit setup` keeps in the global settings).
-  - So the same verb inside a compound goes to auto mode's classifier, which can refuse a call the owner already authorized.
-  - The command is judged before the call. The notice naming the bare form rides the call's result (§ The hooks module, the `tool.call` (Bash) row).
-  - It never denies.
-- A kit step is a step whose command word, past the shared prefix peel, is `workkit`.
-  - It is followed by `ship` and a verb of `ALLOWED_SHIP_VERBS` in `hooks/mods/bare-call.js`, or by a verb of `ALLOWED_VERBS` there (`review`, `watch`).
-  - Any other `ship` word (`deploy`, which has no allow rule, a flag, a typo) is not one.
-  - The ship list is `workflow/workkit/ship.sh`'s `SHIP_VERBS` less `deploy`, in its order.
-  - A twin in `test/hooks/twins.test.js` holds both lists to the `workkit` rules of `ALLOW_RULES`.
-  - The steps are `hooks/mods/command.js`'s split, after its heredoc and quote strips and the redirect `&` fold.
-  - So a quoted mention (`echo "workkit ship publish"`) and a heredoc body are data.
-- The notice is one line per kit step found:
-  - ``bare-call: run `<the step>` as its own Bash call from the repo root; inside a compound command it misses its allow rule and auto mode can refuse it.``
-  - `<the step>` is the kit command from its command word on.
-  - A prefix (`FOO=1`, `cd <path> &&`) and every redirect are dropped.
-  - Each quoted argument is put back as written (`stripQuotesKeeping`).
-- The named step stops before its first argument that opens a command substitution (`$(` or a backtick).
-  - That holds unquoted or inside a double-quoted span (`"$(cat VERSION)"`, `"v$(cat VERSION)"`).
-  - So `workkit ship cut "$(cat VERSION)"` names `workkit ship cut`.
-  - The notice still fires, a lone step included.
-  - A single-quoted span is literal and changes nothing.
-- A command that is one kit step and nothing else, blanks around it aside, says nothing.
-  - A pipe, a `;`, an `&&`, a subshell, a prefix or a redirect makes it a compound.
-  - `workkit ship plan && workkit ship publish` gets two lines.
-- The logic is `bareCallVerdict({ command })` in `hooks/mods/bare-call.js`, answering `{ context }` or null.
-
-### `workflow:unwatched`: tool.call (Bash)
-
-- A test run the manager starts in the background is one the supervisor reads ([`agents.md`](agents.md) § Watching a run).
-  - A Bash call started in the background whose test run the supervisor does not read gets a notice naming the `workkit supervise` form.
-  - It never denies.
-- It reads only a call whose facts carry `background` true, the call's `run_in_background` (§ The hooks module, the `tool.call` (Bash) row).
-- A test step is a step whose command word, past the shared prefix peel and by any path, is:
-  - `npm test`;
-  - `npm run` with a `test` script name (`test`, or `test` then `:`, `-` or `.`, as `test:unit`);
-  - `workkit test`.
-- The supervisor reads the step already, so it says nothing, when the step is the root suite, bare (no argument, a redirect aside):
-  - `npm test` or `npm run test` whose folder is the repo root, since the npm wrapper sends the bare `test` script there to the suite (`workflow/script-shell.sh`);
-    - its folder is the call's `cwd`, moved by any `cd` step before it (`stepDirs` in `hooks/mods/command.js`);
-    - the folder is the root when git's `--show-prefix` there is empty (`repoPathOf` in `hooks/mods/optin.js`);
-    - a folder the walk cannot place is never the root;
-  - `workkit test` from any folder, since the verb moves to the repo root first;
-  - or when any step of the command is `workkit supervise`. `workkit prove` is no test step.
-- The steps are `writtenSteps` in `hooks/mods/command.js`, after its heredoc and quote strips and the redirect `&` fold, so a quoted mention and a heredoc body are data.
-- The notice is one line per test step the supervisor does not read:
-  - `workflow:unwatched: the supervisor does not read this background test run; start that step as workkit supervise -- <the test step>`.
-  - `<the test step>` is the step from its command word on, as `workflow:bare-call` names one: a prefix (`FOO=1`) and every redirect dropped, each quoted argument put back as written.
-  - A step before it (`cd <path> &&`) stays where it is: only that step moves under `workkit supervise`.
-- The logic is `unwatchedGuard(facts)` in `hooks/mods/unwatched.js`, answering `{ context }` or null.
+  - It reads no command text: a `sed -i`, a redirect, `tee`, a script run by name and a kit command are seen alike.
+- It runs last in the chain after a Bash call, after `workflow:snapshot` and `workflow:public-mirror`.
+  - Its facts are the call's start time (`since`) and the opted-in roots it began and ended in (`roots`, § The hooks module).
+  - No start time, or no root, checks nothing.
+- The files are `changedSince(io, root, ms)` in `hooks/mods/changed.js`, for each root.
+  - It runs `git ls-files -z -m -o --exclude-standard` at the root: the modified and untracked files.
+  - It adds `git diff --cached --name-only -z`, so a file staged in the same call is listed too.
+  - It adds `.workkit/capture.md` and `.workkit/agents/session.md`, which git ignores.
+  - It keeps each one that is there, is not a folder, and was modified at or after `ms`, in path order.
+  - So a file git shows modified but last changed before the call began is not listed.
+  - The same root and time give the same list every time.
+  - A listing git refuses is one line, and that root is not checked: `script-write: the files changed during this Bash call could not be listed (<message>), so none in that repo was checked.`
+- Each listed file gets the five write checks an Edit gets, in the same order: `docs:board-guard`, `docs:changelog-guard`, `docs:session-guard`, `safety:test-reminder`, `safety:test-bar`.
+  - They are `writeChecks` in `hooks/mods/script-write.js`, the function the Edit and Write handler runs. The first block ends that file's checks.
+  - Each finding is one notice line naming the file and the check, then the check's own text.
+    - It says the file changed during this Bash call, and asks for a fix with the Edit or Write tool only if the call wrote it.
+  - Nothing is refused and nothing is undone.
+- A changed `.workkit/capture.md` outside a triage run (no triage marker under 30 minutes, `TRIAGE_MAX_AGE_S`) is a notice that the file is the owner's.
+  - So `workkit note` run from a Bash call is reported here.
+- At most 50 files are checked per call (`CHECK_LIMIT`).
+  - Past that, one line says how many were not: `script-write: <N> files changed during this Bash call; <M> were not checked, past the 50 a call is checked for.`
+- `changedSince` is the one export another plugin calls, with its own start time, to run its own write checks on the same files.
+  - No list file is shared, since two plugins' after-call handlers run in no fixed order.
+- Where it does not look:
+  - two repos alone, the one the call began in and the one it ended in: a write in a third repo is not seen;
+  - a file git ignores, but the two `.workkit` files above;
+  - a file the call wrote and committed in the same call, since git's own hooks judged that commit;
+  - and who wrote a file: one another writer changed during the call's window (a parallel agent, the owner) is named too.
+- The logic is `scriptWriteGuard(facts)` in `hooks/mods/script-write.js`, a member of `POST_BASH_GUARDS`, answering `{ context }` or null, never `{ deny }`.
 
 ### `safety:proof-guard`: the gh shim
 
@@ -1268,7 +1220,7 @@
   - A repo with no workspaces keys every package to the whole tree.
 - A package's run rewrites the record under its lock, every other package's line copied and its own appended.
   - So overlapping runs each keep their line.
-  - A red run, or a run that changed its id, writes nothing.
+  - A red run, a run that changed its id, or a run with `CI` set (any value but the empty string), writes nothing.
 - The guard hashes each package the same way before it reads, through `bash workflow/lib/tree-hash.sh <root> [<pkg>]` with a 600-second `timeoutMs`.
   - The root's `.` is hashed on the whole tree.
   - It runs with the variables the gate read (HOME, PATH, TMPDIR and WORKKIT_NODE among them). So its `wk_node` finds node the way the record's writer did.
@@ -1330,9 +1282,11 @@
 
 - Takes the snapshot `workkit proof red` runs against.
   - After a Bash call whose `gh` write moved an issue to `status:building` (the claim in `skills/feature/SKILL.md`), it copies the whole repo folder.
-  - The copy goes to `tree/` in `wk_marker_path claude-red-snapshot <repo root>`, outside the repo.
+  - The copy goes to `tree/` in the repo's snapshot folder, `~/.cache/workkit/snapshot/<sha1 of the repo root>` (`hook_snapshot_dir`), outside every repo even when `~/.workkit` is a link into one.
+    - Its base is the kit's cache folder (`wk_cache_dir`), beside the proof copies (`~/.cache/workkit/proof`). `HOME` moves it; `WORKFLOW_HOME` does not.
+    - The keyed name comes from `wk_keyed_path <folder> <anchor>`, the step `wk_marker_path` shares.
   - Gitignored files are included.
-  - Left out: `.git`, each package's `node_modules`, and the kit home's markers folder and git-ignored paths (when the repo holds the kit home).
+  - Left out: `.git`, each package's `node_modules`, the snapshot home when the repo holds it (a repo at `$HOME`), and the kit home's markers folder and git-ignored paths (when the repo holds the kit home).
 - It reads the gh journal lines the call left, each `{ ms, verb, sub, repo, numbers, add, remove, cwd }`, never the command text. The post-call row states the read. On the opt-in, it follows § Where every hook stands down, the Bash call that already ran. So a claim in another opted-in repo is read, whatever `cd`, subshell or script led there.
 - The read crosses sessions: a line another session's `gh` write left during the call is read too.
   - Two sessions in one repo already read each other's lines this way.
@@ -1385,7 +1339,8 @@
   - So two claims racing on one repo never leave a half tree under the final name.
   - A failed take removes the sibling, keeps any snapshot already there, and is a notice naming the error.
   - An old snapshot the take cannot remove is moved aside to a `<dir>.XXXXXX` sibling, named in a notice, and the new one takes its place.
-  - Siblings older than 10 minutes (a take the timeout cut short) are swept at the next take.
+  - A take ended by `TERM`, `INT` or `HUP` removes its sibling at once and exits non-zero (143, 130 or 129).
+  - Siblings older than 10 minutes, left by a take ended without a signal it can catch (a `SIGKILL`), are swept at the next take.
 - The fill that turns a folder into a runnable copy is `hook_snapshot_fill <tree> <root> <dest> [rel]...` in `hooks/lib/snapshot.sh`.
   - `<dest>` is filled from the folder `<tree>`, only the named paths when any are given.
   - Each package's `node_modules` the live repo `<root>` holds is rebuilt as above, on every platform.
@@ -1450,38 +1405,47 @@
 - It names the key or the kind, never the match.
 - A relative body file is read against the shim's cwd. Each pattern is tried line by line, as grep read it.
 - Local `.env` values come from the shim's cwd and the repo root above it, the committed example and template variants skipped.
-- An obviously plain value never matches: under 8 characters, one lowercase word, a boolean, a bare number or version, a local URL with no credentials.
+  - Each value is read two ways. Node's own `.env` reader (`util.parseEnv`, handed in by the gate) drops a trailing comment and reads all three quote kinds, a `\n` escape in double quotes and a quoted value over several lines.
+  - Each line is read too: the whole text after `=` (trimmed, one outer quote pair stripped), and that value with its trailing comment cut (a quoted value ends at its closing quote when only whitespace or a comment follows, a bare one before the first `#` after whitespace).
+  - The line reading keeps what Node's reader drops: an earlier line of a repeated key, a bare value holding `#`, a line under an unclosed quote.
+- An obviously plain value never matches: under 8 characters (every boolean is), one lowercase word, a bare number or version, a local URL with no credentials.
+  - Under a key naming a secret (holding `PASS`, `PWD`, `SECRET`, `TOKEN`, `KEY` or `CREDENTIAL`, in any case and anywhere in the key, so `KEYBOARD_LAYOUT` names a secret too) only the under-8 rule holds.
+  - So a common word of 8 or more characters there (`API_KEY="development"`) blocks a call whose text holds it, the block naming the key.
 - Nor does a value that is, ignoring case, a public GitHub name the outbound text itself names (`publicNames`):
   - an owner or repository segment of a `github.com/<owner>/<name>` URL, of a `repos/<owner>/<name>` API path or of a `--repo`/`-R <owner>/<name>` flag, in the argv or its body files (one trailing punctuation character dropped);
   - or the owner or name of the repository the shim's cwd stands in (its `origin` slug).
 - The shim fetches the bot's token only after the gate has judged the call and hands it to `gh` through the environment (`GH_TOKEN`), never in argv, so a `ghs_` token written into the call is still blocked.
-- The logic is `leakVerdict({ text, bodies, envFiles, slug })` in `hooks/mods/issue-guard.js`.
+- The logic is `leakVerdict({ text, bodies, envFiles, slug, parseEnv })` in `hooks/mods/issue-guard.js`.
   - `text` is the action's own text, and `bodies` each body file's text it sends.
   - `envFiles` `[{ path, text }]` and `slug` (the root repository's `owner/name` or null) are the two `leakFacts` reads for a folder.
+  - `parseEnv` is Node's `util.parseEnv`, handed in by the gate, since no `hooks/mods/` file imports a Node built-in. It has no default: a call without it throws, and the gate fails the call closed.
   - It scans what it is handed; the caller decides what is outbound, and the gate hands it every call.
   - A `--repo`/`-R` value is public on the next line too, as the shim's newline-joined argv spells it.
 
 ### `safety:capture-guard`: tool.call (Bash, Edit/Write, Read/Grep)
 
 - Gates `.workkit/capture.md` in both directions: the owner's capture surface, whose one sanctioned touch is the triage drain. It sits in all three chains.
-- A read of its contents AND a rewrite of it (Edit/Write, `>`, plain `tee`, `sed -i`, `perl -i`) need the marker the `workkit:triage` skill records, stale after 30 minutes.
-  - With the marker, a `sed -i` or `perl -i` on it still meets `safety:script-write` after this guard, which refuses it unless `WORKKIT_ALLOW_SCRIPT_WRITE=1` is set on the command, so the drain clears entries with Edit or Write.
-- An APPEND (`>>`, `tee -a`, or the capture CLI (`workkit note`, which names no path)) is blocked with the marker or without, since adding to it is the owner's alone.
-- Counting stays open.
+- A Read or Grep of it, an Edit or Write of it, and a Bash command naming its path need the marker the `workkit:triage` skill records, stale after 30 minutes (`TRIAGE_MAX_AGE_S`).
+- The Bash half reads no command text itself.
+  - The Bash handler in `hooks/register.js` makes one match: does the command contain `.workkit/capture.md`. The guard gets that answer as the boolean `namesCapture`.
+  - A match outside a triage run is refused before the call runs, a read, a count and a write alike. The session-start line already says whether the file has entries.
+  - A match inside a triage run passes.
+  - The marker it asks for is the one of the session folder's repo.
+- A write a Bash call makes without naming the path, `workkit note` among them, is reported after the call by `safety:script-write`, never refused.
 - The marker is `triageMarkerPath` in `hooks/mods/markers.js`, the file `workkit triage mark` writes.
   - It is keyed to the capture file's repo root, or for a file in no repo the `.workkit` folder's parent.
   - Its age is `$.fs.stat`'s mtime against `$.clock.now()`.
 - A `~/`, `$HOME/` or `${HOME}/` path resolves through `HOME`, a relative one against the `cwd`.
 - A Grep is gated only when its path points at the file or its folder (the file present there) or its glob names it.
   - A repo-wide search stays open.
-- A Bash command is judged by what it runs against the path:
-  - a reader (`cat`, `head`, `tail`, `less`, `more`, `grep`, `sed`, `awk`, `bat`);
-  - a rewrite or an append;
-  - and the capture CLI in command position.
-  - A count and a bare mention are neither.
-- The write and rewrite blocks name where a finding goes instead, by `findings.file` read for the session's `cwd` (`findingsRoute` in `hooks/mods/settings.js`): said in chat under 🧭 Findings while it is off, the default; a `status:inbox` issue when it is on (`docs/project-state.md` § How big is one issue).
-- A substring tripwire, not a sandbox: an interpreter-level write and a case-folded path pass.
-- The logic is `captureTarget({ tool, input, cwd })` (the path a call reaches and its mode) and `captureGuardVerdict({ tool, input, cwd, root, markerAgeS, route })` in `hooks/mods/capture-guard.js`, `markerAgeS` the marker's age in seconds or null.
+- The write and Bash blocks name where a finding goes instead, by `findings.file` read for the session's `cwd` (`findingsRoute` in `hooks/mods/settings.js`): said in chat under 🧭 Findings while it is off, the default; a `status:inbox` issue when it is on (`docs/project-state.md` § How big is one issue).
+- Where it does not look:
+  - a Bash command that reaches the file without spelling its path (`cd .workkit && cat capture.md`) is not matched, since the one text match stays a tripwire;
+  - a Bash call is gated by the session's folder before it runs, so from a folder that did not opt in `cd <repo> && cat .workkit/capture.md` stands down;
+  - a path to another repo's capture file is judged against the triage marker of the session folder's repo;
+  - and a command that only MENTIONS the path (a commit message, an issue comment body) is refused like a read. The way around is a body file.
+- The logic is `captureGuardVerdict({ tool, input, cwd, root, markerAgeS, route })` in `hooks/mods/capture-guard.js`, `markerAgeS` the marker's age in seconds or null.
+  - A Bash call's `input` is `{ namesCapture }`. `captureGuardGuard` gathers the facts for all three chains.
 
 ### `docs:change-tracker`: classic.Stop
 

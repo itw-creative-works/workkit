@@ -4,7 +4,7 @@
 // test/mods/pre-tool-use-files.test.ts. Shared facts: ./helpers.js.
 
 const {
-  group, test, summary, WORKKIT_DIR: W, selfRun,
+  describe, test, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
   REPO, CAPTURE, FRESH, READ, grep, refuses, allows,
@@ -12,10 +12,8 @@ const {
 
 const label = (input) => JSON.stringify(input);
 
-const cases = async () => {
-  group('capture-guard: the Grep path');
-
-  await test('a Grep whose path IS the capture file: exit 2', async () => {
+describe('capture-guard: the Grep path', () => {
+  test('a Grep whose path IS the capture file: exit 2', async () => {
     for (const input of [
       { pattern: 'salary', path: CAPTURE, output_mode: 'content' },
       { pattern: 'salary', path: `${W}/capture.md` },
@@ -25,19 +23,19 @@ const cases = async () => {
     }
   });
 
-  await test('a Grep whose path is the .workkit directory: exit 2', async () => {
+  test('a Grep whose path is the .workkit directory: exit 2', async () => {
     for (const p of [`${REPO}/${W}`, W]) await refuses(grep({ pattern: 'salary', path: p }), READ, p);
   });
 
-  await test('a glob spelling the capture file out: exit 2', async () => {
+  test('a glob spelling the capture file out: exit 2', async () => {
     await refuses(grep({ pattern: 'salary', path: REPO, glob: '**/capture.md' }), READ, 'the glob names the file');
   });
 
-  await test('a fresh marker opens the Grep path too: exit 0', async () => {
+  test('a fresh marker opens the Grep path too: exit 0', async () => {
     await allows(grep({ pattern: 'salary', path: CAPTURE, output_mode: 'content' }, { markerAgeS: FRESH }), 'a triage run reads freely');
   });
 
-  await test('a broad repo-wide Grep: exit 0', async () => {
+  test('a broad repo-wide Grep: exit 0', async () => {
     for (const input of [
       { pattern: 'salary', path: REPO, output_mode: 'content' },
       { pattern: 'salary' },
@@ -48,7 +46,7 @@ const cases = async () => {
     }
   });
 
-  await test('a .workkit Grep narrowed away from the capture file by its glob: exit 0', async () => {
+  test('a .workkit Grep narrowed away from the capture file by its glob: exit 0', async () => {
     for (const input of [
       { pattern: 'salary', path: `${REPO}/${W}`, glob: 'agents/session.md' },
       { pattern: 'salary', path: `${REPO}/${W}`, glob: '*.json' },
@@ -57,17 +55,11 @@ const cases = async () => {
     }
   });
 
-  await test('a glob merely mentioning capture is still pointed at it: exit 2', async () => {
+  test('a glob merely mentioning capture is still pointed at it: exit 2', async () => {
     await refuses(grep({ pattern: 'salary', path: REPO, glob: '*capture*' }), READ, 'the glob names the capture file');
   });
 
-  await test('a trailing slash does not slip the Grep gate: exit 2', async () => {
+  test('a trailing slash does not slip the Grep gate: exit 2', async () => {
     for (const p of [`${REPO}/${W}/`, `${CAPTURE}/`]) await refuses(grep({ pattern: 'salary', path: p }), READ, p);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

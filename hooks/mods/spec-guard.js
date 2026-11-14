@@ -84,7 +84,7 @@ export async function specVerdict({ steps, repo, facts }) {
 
 /**
  * The facts specVerdict reads, over the call's: gh asked from the call's folder.
- * @param {{cwd: string, run: function}} facts the call's facts (guards.js bashFacts)
+ * @param {{cwd: string, run: function}} facts the call's facts (facts.js bashFacts)
  * @returns {{issueView: function}}
  */
 export const specFacts = ({ cwd, run }) => ({

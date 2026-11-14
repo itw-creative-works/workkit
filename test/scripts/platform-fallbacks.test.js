@@ -5,8 +5,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const { SYSTEM_PATH, NO_RC, shellPath, spawnBash, stubTool, systemPathWith } = require('../lib/platform');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { SYSTEM_PATH, NO_RC, shellPath, spawnBash, stubTool, systemPathWith, skipWithoutFileLink } = require('../lib/platform');
 
 const WORKFLOW = path.join(__dirname, '..', '..', 'workflow');
 const PLATFORM = shellPath(path.join(WORKFLOW, 'lib', 'platform.sh'));
@@ -32,7 +32,7 @@ const defines = (text, name) => spawnBash([...NO_RC, '-c', 'eval "$1" || exit 1;
 const fallbackOf = (name) => {
   const lines = fs.readFileSync(WORKKIT, 'utf8').split('\n');
   const starts = lines.flatMap((line, i) => (line.startsWith(`declare -f ${name} `) ? [i] : []));
-  assertEq(starts.length, 1, `workkit.sh has one fallback guard for ${name}`);
+  expect(starts.length, `workkit.sh has one fallback guard for ${name}`).toBe(1);
   for (let end = starts[0] + 1; end <= lines.length; end += 1) {
     const text = lines.slice(starts[0], end).join('\n');
     if (defines(text, name)) return text;
@@ -53,8 +53,8 @@ const probe = (load, args, env, cwd) => {
   const res = spawnBash([...NO_RC, '-c', script, 'probe', ...args], {
     env: { PATH: SYSTEM_PATH, ...env }, cwd, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
-  assert(res.status !== UNDEFINED, `${args[0]} was defined by: ${load.split('\n')[0]}`);
+  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
+  expect(res.status !== UNDEFINED, `${args[0]} was defined by: ${load.split('\n')[0]}`).toBeTruthy();
   return { code: res.status, out: res.stdout, err: res.stderr };
 };
 
@@ -62,20 +62,18 @@ const probe = (load, args, env, cwd) => {
 const same = (label, args, env = {}, cwd = undefined) => {
   const original = probe(`. ${JSON.stringify(PLATFORM)}`, args, env, cwd);
   const fallback = probe(fallbackLoad(), args, env, cwd);
-  assertEq(JSON.stringify(fallback), JSON.stringify(original), `${args.join(' ')}, ${label}`);
+  expect(JSON.stringify(fallback), `${args.join(' ')}, ${label}`).toBe(JSON.stringify(original));
 };
 
-const cases = async () => {
-  group('workkit.sh fallbacks answer as platform.sh does');
-
-  await test('wk_is_cloud: CLAUDE_CODE_REMOTE true, unset, false and empty', () => {
+describe('workkit.sh fallbacks answer as platform.sh does', () => {
+  test('wk_is_cloud: CLAUDE_CODE_REMOTE true, unset, false and empty', () => {
     same('true', ['wk_is_cloud'], { CLAUDE_CODE_REMOTE: 'true' });
     same('unset', ['wk_is_cloud']);
     same('false', ['wk_is_cloud'], { CLAUDE_CODE_REMOTE: 'false' });
     same('empty', ['wk_is_cloud'], { CLAUDE_CODE_REMOTE: '' });
   });
 
-  await test("wk_npm_script_shell: npm's CRLF value, its LF value, its failure alone and with output", () => {
+  test("wk_npm_script_shell: npm's CRLF value, its LF value, its failure alone and with output", () => {
     const answers = {
       crlf: ['printf "C:/h/.workkit/script-shell.exe\\r\\n"'],
       lf: ['printf "/usr/local/bin/bash\\n"'],
@@ -96,15 +94,15 @@ const cases = async () => {
     'neither set': {},
   };
 
-  await test('wk_user_dir: WORKFLOW_HOME set, empty or unset, with and without HOME', () => {
+  test('wk_user_dir: WORKFLOW_HOME set, empty or unset, with and without HOME', () => {
     for (const [label, env] of Object.entries(homes)) same(label, ['wk_user_dir'], env);
   });
 
-  await test('wk_script_shell_exe: WORKFLOW_HOME set, empty or unset, with and without HOME', () => {
+  test('wk_script_shell_exe: WORKFLOW_HOME set, empty or unset, with and without HOME', () => {
     for (const [label, env] of Object.entries(homes)) same(label, ['wk_script_shell_exe'], env);
   });
 
-  await test('wk_physical_path: a linked folder, a missing folder and a bare name', () => {
+  test('wk_physical_path: a linked folder, a missing folder and a bare name', () => {
     const dir = mkTmp('wf-fallbacks-');
     const real = path.join(dir, 'real');
     fs.mkdirSync(real);
@@ -116,23 +114,10 @@ const cases = async () => {
     same('bare name', ['wk_physical_path', 'shell.sh'], {}, real);
   });
 
-  // A file symlink needs a privilege Windows may not grant, so the probe asks once.
-  const NO_FILE_LINK = (() => {
-    const dir = mkTmp('wf-fallbacks-');
-    fs.writeFileSync(path.join(dir, 'target'), '');
-    try { fs.symlinkSync(path.join(dir, 'target'), path.join(dir, 'link'), 'file'); return ''; }
-    catch (e) { return `this machine cannot make a file symlink (${e.code})`; }
-  })();
-  await testUnless(Boolean(NO_FILE_LINK), NO_FILE_LINK)('wk_physical_path: a link to a file', () => {
+  test('wk_physical_path: a link to a file', { skip: skipWithoutFileLink() }, () => {
     const dir = mkTmp('wf-fallbacks-');
     fs.writeFileSync(path.join(dir, 'target.sh'), '');
     fs.symlinkSync(path.join(dir, 'target.sh'), path.join(dir, 'link.sh'), 'file');
     same('link to a file', ['wk_physical_path', `${shellPath(dir)}/link.sh`]);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { isDeepStrictEqual } = require('util');
 const {
-  assert, assertEq, mkTmp, seeded, until, start, SPAWN_DEADLINE,
+  expect, mkTmp, seeded, until, start, SPAWN_DEADLINE,
 } = require('./harness');
 const {
   IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, which, homeEnv, shellPath, systemPathWith, spawnBash,
@@ -148,7 +148,7 @@ const startServer = async (routes, dir) => {
   const logFile = path.join(dir, `server-requests-${process.hrtime.bigint()}.log`);
   const server = start(process.execPath, ['-e', SERVER, JSON.stringify(routes), logFile]);
   await until(() => server.stdout().endsWith('\n') || server.child.exitCode !== null);
-  assert(server.stdout().endsWith('\n'), `the stand-in server printed its port, stderr: ${server.stderr()}`);
+  expect(server.stdout().endsWith('\n'), `the stand-in server printed its port, stderr: ${server.stderr()}`).toBeTruthy();
   return {
     url: `http://127.0.0.1:${server.stdout().trim()}`,
     requests: () => (fs.existsSync(logFile)
@@ -250,12 +250,12 @@ const cloudWorld = ({ branch = null } = {}) => {
 
 /** A failure naming `msg` and both values as JSON, unless `actual` deep-equals `expected`. */
 const assertSame = (actual, expected, msg) => {
-  assert(isDeepStrictEqual(actual, expected), `${msg}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  expect(isDeepStrictEqual(actual, expected), `${msg}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`).toBeTruthy();
 };
 
 /** Exit 0, or a failure naming what the shim said and asked. */
 const assertOk = (res, what) => {
-  assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()}, requests: ${JSON.stringify(res.requests)})`);
+  expect(res.code, `${what}: the exit (stderr: ${res.stderr.trim()}, requests: ${JSON.stringify(res.requests)})`).toBe(0);
 };
 
 /** What the shim printed, parsed as the JSON gh prints; a failure naming the text when it is not. */
@@ -310,11 +310,14 @@ const hostsOf = (server) => ({ GITHUB_SERVER_URL: server.url, GITHUB_API_URL: se
 const attentionCount = (said) => {
   const match = said.match(/(\d+) item\(s\) need attention/);
   if (match) return Number(match[1]);
-  assert(said.includes('Everything this command can see is current'), `doctor neither counted nor cleared, got: ${said}`);
+  expect(said.includes('Everything this command can see is current'), `doctor neither counted nor cleared, got: ${said}`).toBeTruthy();
   return 0;
 };
 
-const shQuote = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+/** The warnings a doctor run printed on stderr, its closing attention line left out. */
+const doctorWarnings = (res) => res.err.split('\n').filter((l) => /^ *⚠ /.test(l) && !l.includes('need attention'));
+
+const shQuote =(s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 
 // `script` hands a command a terminal: BSD takes the command after the file,
 // util-linux takes it in -c and needs -e to return its status. Null: none here.
@@ -350,6 +353,6 @@ const atTerminal = (argv, { env, cwd, dir }) => {
 
 module.exports = {
   IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json,
-  startServer, startService, scratchKit, scratchEnv, hostsOf, attentionCount, PTY, atTerminal, journalFile, journalFileText, journalLines,
+  startServer, startService, scratchKit, scratchEnv, hostsOf, attentionCount, doctorWarnings, PTY, atTerminal, journalFile, journalFileText, journalLines,
   git, cloudEnv, cloudWorld, assertSame, assertOk, printedJson, writes, routes,
 };

@@ -1,7 +1,7 @@
 /**
  * What the suites of the detached supervisor's checks share: the check length a
  * case sets, the settings that set it, the frozen line, the reason a process
- * read is skipped and the case that skips for it, the fake commands and the reads
+ * read is skipped and the skip value of a case that needs one, the fake commands and the reads
  * of what they leave, whether a started call has ended, and the end of whatever
  * a red case left running.
  * Consumers: test/scripts/detach.test.js, script-shell-detached.test.js,
@@ -11,17 +11,17 @@
 
 const fs = require('fs');
 const {
-  endTree, until, assert, testUnless,
+  endTree, until, expect, pidIn,
 } = require('./harness');
-const { IS_WINDOWS } = require('./platform');
+const { IS_WINDOWS, jsPath } = require('./platform');
 
 // A check of about a second, so two checks pass well inside the spawn deadline.
 const CHECK_MINUTES = 0.02;
 
 const NO_PROCESS_READ = 'the supervisor reads no processes on Windows, so it gives no frozen or look verdict there';
 
-/** A case that needs a process read, skipped by name on Windows. */
-const processTest = testUnless(IS_WINDOWS, NO_PROCESS_READ);
+/** The skip value of a case that needs a process read: the reason on Windows, else false. */
+const skipOnWindows = () => IS_WINDOWS && NO_PROCESS_READ;
 
 // The line a frozen run's log ends with, its minutes as the supervisor spells them.
 const FROZEN_LINE = /^detach: no output and no processor use for \S+ minutes, so the run was ended \(exit 124\)$/;
@@ -29,15 +29,9 @@ const FROZEN_LINE = /^detach: no output and no processor use for \S+ minutes, so
 /** A `.workkit/settings.json` body setting `tests.check` to <check>, `enabled` on when <optIn>. */
 const checkSettings = (check, optIn = false) => `${JSON.stringify({ ...(optIn ? { enabled: true } : {}), tests: { check } })}\n`;
 
-/** The pid a script wrote to <file>, or undefined while there is none. */
-const pidIn = (file) => {
-  const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : '';
-  return text === '' ? undefined : Number(text);
-};
-
 /** The pid <file> holds, once the command has written it. */
 const pidOf = async (file) => {
-  assert(await until(() => pidIn(file) !== undefined), `no pid was written to ${file}`);
+  expect(await until(() => pidIn(file) > 0), `no pid was written to ${file}`).toBeTruthy();
   return pidIn(file);
 };
 
@@ -45,10 +39,6 @@ const pidOf = async (file) => {
 const reap = (...pids) => {
   for (const pid of pids.filter(Boolean)) endTree(pid, 'SIGKILL');
 };
-
-// A path written into a `node -e` script: forward slashes, since Git Bash
-// halves a Windows path's backslashes on the way to node.
-const jsPath = (p) => JSON.stringify(p.replace(/\\/g, '/'));
 
 // The fake commands, each writing its own pid to <pidFile> once it is set up:
 // one that waits in silence, one that keeps a processor busy in silence.
@@ -69,6 +59,6 @@ const lastLine = (text) => text.replace(/\n$/, '').split('\n').pop();
 const realOf = (file) => { try { return fs.realpathSync(file); } catch { return `(unresolved) ${file}`; } };
 
 module.exports = {
-  CHECK_MINUTES, NO_PROCESS_READ, processTest, FROZEN_LINE, checkSettings, pidIn, pidOf, reap,
-  jsPath, writesPid, silent, busy, ended, read, lastLine, realOf,
+  CHECK_MINUTES, NO_PROCESS_READ, skipOnWindows, FROZEN_LINE, checkSettings, pidOf, reap,
+  writesPid, silent, busy, ended, read, lastLine, realOf,
 };

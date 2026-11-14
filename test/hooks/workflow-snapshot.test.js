@@ -7,14 +7,18 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const { mkRepo, mkOriginRepo } = require('../lib/git-repo');
-const { snapshotDir, treeOf } = require('../lib/red-snapshot');
+const {
+  snapshotBase, snapshotKey, snapshotDir, treeOf,
+} = require('../lib/red-snapshot');
+const { homeOf } = require('../lib/workflow-home');
+const { runLib } = require('../lib/hook-lib');
 const { scratchKit, journalFileText } = require('../lib/identity');
 const { mods, ghEntry } = require('../lib/mods-inputs');
 
@@ -102,7 +106,7 @@ const viaShim = (w, args, { fails = false } = {}) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(shimDir(), 'gh')), ...args], {
     cwd: w.here, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assertEq(res.status, fails ? 1 : 0, `the shim's exit is the real gh's (stderr: ${res.stderr})`);
+  expect(res.status, `the shim's exit is the real gh's (stderr: ${res.stderr})`).toBe(fails ? 1 : 0);
   return mods('markers').journalLines(journalFileText(path.join(w.home, '.workkit'), w.here));
 };
 
@@ -133,11 +137,11 @@ const mode = (w, name, args = [], envPath = null, extra = {}) => {
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
-const ok = (out, what) => assertEq(out.code, 0, `${what} exits 0: ${out.stderr}`);
+const ok = (out, what) => expect(out.code, `${what} exits 0: ${out.stderr}`).toBe(0);
 const take = (w, ...nums) => {
   const out = mode(w, 'take', nums.map(String));
   ok(out, `take ${nums}`);
-  assert(fs.existsSync(path.join(snapshotDir(w.workflowHome, w.repo), 'tree')), `take ${nums} left a snapshot: ${out.stderr}`);
+  expect(fs.existsSync(path.join(snapshotDir(homeOf(w), w.repo), 'tree')), `take ${nums} left a snapshot: ${out.stderr}`).toBeTruthy();
   return out;
 };
 
@@ -153,16 +157,18 @@ const withCache = (w) => {
   return w;
 };
 const CACHED = path.join('cache', 'app', 'node_modules', 'x', 'index.js');
-const takenTree = (w) => treeOf(path.join(snapshotDir(w.workflowHome, w.repo), 'tree'));
+const takenTree = (w) => treeOf(path.join(snapshotDir(homeOf(w), w.repo), 'tree'));
 const modulesIn = (tree, under = '') => Object.keys(tree)
   .filter((k) => k.startsWith(under) && k.split(path.sep).includes('node_modules')).join(',');
 
 const read = (snap, name) => fs.readFileSync(path.join(snap, name), 'utf8');
 const issuesOf = (snap) => read(snap, 'issues').split('\n').filter(Boolean).sort();
 const snapshots = (w) => {
-  const dir = path.join(w.workflowHome, 'markers', 'claude-red-snapshot');
+  const dir = snapshotBase(homeOf(w));
   return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 };
+// Every path under `dir` named for the repo's snapshot, its temporary siblings included.
+const keyedUnder = (dir, w) => Object.keys(treeOf(dir)).filter((k) => path.basename(k).startsWith(snapshotKey(w.repo))).join(',');
 const workingPaths = (w) => w.git('diff', 'HEAD', '--name-only', '--no-renames', '-z')
   + w.git('ls-files', '--others', '--exclude-standard', '-z');
 
@@ -173,20 +179,18 @@ const stale = (w, list, fails = false) => {
   return { code: out.code, calls: ghCalls(stub) };
 };
 
-const cases = async () => {
-  group('workflow:snapshot: the claim');
-
-  await test('a claim with no snapshot takes one: the plan is a take of the session repo', async () => {
-    assertEq(takes((await planOf([CLAIM(5)], { list: building(5) })).plan), HERE, 'the claim takes the session repo');
+describe('workflow:snapshot: the claim', () => {
+  test('a claim with no snapshot takes one: the plan is a take of the session repo', async () => {
+    expect(takes((await planOf([CLAIM(5)], { list: building(5) })).plan), 'the claim takes the session repo').toBe(HERE);
   });
 
-  await test('a claim takes the snapshot with no building read, though GitHub lists nothing', async () => {
+  test('a claim takes the snapshot with no building read, though GitHub lists nothing', async () => {
     const { plan, asked } = await planOf([CLAIM(10)], { list: [] });
-    assertEq(json(takenIssues(plan)), json(['10']), 'the take records #10');
-    assertEq(asked, 0, 'no building read');
+    expect(json(takenIssues(plan)), 'the take records #10').toBe(json(['10']));
+    expect(asked, 'no building read').toBe(0);
   });
 
-  await test('a claim with no snapshot takes one: the whole tree, gitignored files in, no node_modules, no .git, head, paths and issues recorded', () => {
+  test('a claim with no snapshot takes one: the whole tree, gitignored files in, no node_modules, no .git, head, paths and issues recorded', () => {
     const w = mkWorld();
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('src/new.js', 'module.exports = 3;\n');
@@ -195,53 +199,53 @@ const cases = async () => {
     w.git('commit', '-q', '-m', 'pkg');
     w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
-    assert(fs.existsSync(path.join(snap, 'tree')), `the snapshot's tree exists at ${snap}`);
+    const snap = snapshotDir(homeOf(w), w.repo);
+    expect(fs.existsSync(path.join(snap, 'tree')), `the snapshot's tree exists at ${snap}`).toBeTruthy();
     const tree = treeOf(path.join(snap, 'tree'));
-    assertEq(Object.keys(tree).filter((k) => k.split(path.sep).includes('node_modules')).join(','), '',
-      'no node_modules anywhere in the snapshot, on every platform');
-    assertEq(json(tree), json(treeOf(w.repo, { skipModules: true })), 'everything else is the repo folder');
-    assertEq(tree[path.join('dist', 'out.js')], 'file module.exports = 1;\n', 'the gitignored dist/ is in it');
-    assertEq(tree['.env'], 'file KEY="snap"\n', 'the gitignored .env is in it');
-    assertEq(tree[path.join('src', 'x.js')], 'file module.exports = 2;\n', 'the working edit is in it');
-    assert(!('.git' in tree) && !fs.existsSync(path.join(snap, 'tree', '.git')), 'no .git in the snapshot');
-    assertEq(read(snap, 'head'), `${w.git('rev-parse', 'HEAD').trim()}\n`, 'head is HEAD, one sha line');
-    assertEq(read(snap, 'paths'), workingPaths(w), 'paths is the working-change list, NUL-separated');
-    assertEq(json(issuesOf(snap)), json(['5']), 'issues records the claim');
+    expect(Object.keys(tree).filter((k) => k.split(path.sep).includes('node_modules')).join(','),
+      'no node_modules anywhere in the snapshot, on every platform').toBe('');
+    expect(json(tree), 'everything else is the repo folder').toBe(json(treeOf(w.repo, { skipModules: true })));
+    expect(tree[path.join('dist', 'out.js')], 'the gitignored dist/ is in it').toBe('file module.exports = 1;\n');
+    expect(tree['.env'], 'the gitignored .env is in it').toBe('file KEY="snap"\n');
+    expect(tree[path.join('src', 'x.js')], 'the working edit is in it').toBe('file module.exports = 2;\n');
+    expect(!('.git' in tree) && !fs.existsSync(path.join(snap, 'tree', '.git')), 'no .git in the snapshot').toBeTruthy();
+    expect(read(snap, 'head'), 'head is HEAD, one sha line').toBe(`${w.git('rev-parse', 'HEAD').trim()}\n`);
+    expect(read(snap, 'paths'), 'paths is the working-change list, NUL-separated').toBe(workingPaths(w));
+    expect(json(issuesOf(snap)), 'issues records the claim').toBe(json(['5']));
   });
 
-  await test('an untracked, not ignored pkg/package.json makes pkg/node_modules a package\'s: the take leaves it out', () => {
+  test('an untracked, not ignored pkg/package.json makes pkg/node_modules a package\'s: the take leaves it out', () => {
     const w = mkWorld();
     w.write('pkg/package.json', `${JSON.stringify({ name: 'pkg' })}\n`);
     w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
     take(w, 5);
     const tree = takenTree(w);
-    assertEq(tree[path.join('pkg', 'package.json')], 'file {"name":"pkg"}\n', 'the untracked package.json is in it');
-    assertEq(modulesIn(tree, 'pkg'), '', 'no pkg/node_modules path in the snapshot');
+    expect(tree[path.join('pkg', 'package.json')], 'the untracked package.json is in it').toBe('file {"name":"pkg"}\n');
+    expect(modulesIn(tree, 'pkg'), 'no pkg/node_modules path in the snapshot').toBe('');
   });
 
-  await test('a node_modules inside an ignored folder, no package.json git sees above it: the take holds its file as a regular file', () => {
+  test('a node_modules inside an ignored folder, no package.json git sees above it: the take holds its file as a regular file', () => {
     const w = withCache(mkWorld());
     take(w, 5);
-    assertEq(takenTree(w)[CACHED], 'file module.exports = 9;\n', 'the downloaded app\'s module is copied as it is');
+    expect(takenTree(w)[CACHED], 'the downloaded app\'s module is copied as it is').toBe('file module.exports = 9;\n');
   });
 
-  await test('a relative symlink in an ignored folder\'s node_modules: the take holds the link with its target', () => {
+  test('a relative symlink in an ignored folder\'s node_modules: the take holds the link with its target', () => {
     const w = withCache(mkWorld());
     fs.symlinkSync('x', path.join(w.repo, 'cache', 'app', 'node_modules', 'y'), 'dir');
     take(w, 5);
-    assertEq(takenTree(w)[path.join('cache', 'app', 'node_modules', 'y')], 'link x', 'the link is copied as a link');
+    expect(takenTree(w)[path.join('cache', 'app', 'node_modules', 'y')], 'the link is copied as a link').toBe('link x');
   });
 
-  await test('pkg/node_modules beside no package.json git sees, pkg not ignored: the take holds it', () => {
+  test('pkg/node_modules beside no package.json git sees, pkg not ignored: the take holds it', () => {
     const w = mkWorld();
     w.write('pkg/node_modules/dep/index.js', 'module.exports = 7;\n');
     take(w, 5);
-    assertEq(takenTree(w)[path.join('pkg', 'node_modules', 'dep', 'index.js')], 'file module.exports = 7;\n',
-      'a node_modules no package owns is copied as it is');
+    expect(takenTree(w)[path.join('pkg', 'node_modules', 'dep', 'index.js')],
+      'a node_modules no package owns is copied as it is').toBe('file module.exports = 7;\n');
   });
 
-  await test('the Windows branch (OSTYPE msys, the tar copy): the root package\'s node_modules left out, an ignored folder\'s copied', () => {
+  test('the Windows branch (OSTYPE msys, the tar copy): the root package\'s node_modules left out, an ignored folder\'s copied', () => {
     const w = withCache(mkWorld());
     const bin = mkTmp('snapshot-tar-');
     const logFile = path.join(bin, 'tar.log');
@@ -249,10 +253,10 @@ const cases = async () => {
       `exec "${shellPath(which('tar', SYSTEM_PATH))}" "$@"`]);
     const out = mode(w, 'take', ['5'], joinPath(bin, w.env.PATH), { OSTYPE: 'msys' });
     ok(out, 'take 5 as Windows');
-    assert(fs.existsSync(logFile), `the take copied through tar: ${out.stderr}`);
+    expect(fs.existsSync(logFile), `the take copied through tar: ${out.stderr}`).toBeTruthy();
     const tree = takenTree(w);
-    assertEq(modulesIn(tree, 'node_modules'), '', 'no root node_modules path in the snapshot');
-    assertEq(tree[CACHED], 'file module.exports = 9;\n', 'the ignored folder\'s module is copied as it is');
+    expect(modulesIn(tree, 'node_modules'), 'no root node_modules path in the snapshot').toBe('');
+    expect(tree[CACHED], 'the ignored folder\'s module is copied as it is').toBe('file module.exports = 9;\n');
   });
 
   // World `w` whose home's .workkit is the repo's dotfiles/.workkit, `ignore`
@@ -267,7 +271,7 @@ const cases = async () => {
   };
   const homeKeys = (tree, dir) => Object.keys(tree).filter((k) => k.startsWith(path.join('dotfiles', '.workkit', dir))).join(',');
 
-  await test('a home whose .workkit links into the repo: the take leaves out every path git ignores there and copies the rest', () => {
+  test('a home whose .workkit links into the repo: the take leaves out every path git ignores there and copies the rest', () => {
     const w = homeInRepo(mkWorld(), ['dotfiles/.workkit/*', '!dotfiles/.workkit/settings.json', '!dotfiles/.workkit/notes.md']);
     w.write(path.join('dotfiles', '.workkit', 'tower', 'README.md'), 'the home clone\n');
     w.write(path.join('dotfiles', '.workkit', 'hooks.log'), 'a hook line\n');
@@ -276,215 +280,257 @@ const cases = async () => {
     w.write(path.join('tower', 'README.md'), 'the repo\'s own\n');
     take(w, 5);
     const tree = takenTree(w);
-    for (const dir of ['markers', 'tower', 'hooks.log', 'identity']) assertEq(homeKeys(tree, dir), '', `no ${dir} path in the snapshot`);
-    assertEq(tree[path.join('dotfiles', '.workkit', 'settings.json')], 'file {}\n', 'the tracked file is copied');
-    assertEq(tree[path.join('dotfiles', '.workkit', 'notes.md')], 'file not ignored\n', 'the untracked file git does not ignore is copied');
-    assertEq(tree[path.join('tower', 'README.md')], 'file the repo\'s own\n', 'the repo\'s own tower folder is copied');
+    for (const dir of ['markers', 'tower', 'hooks.log', 'identity']) expect(homeKeys(tree, dir), `no ${dir} path in the snapshot`).toBe('');
+    expect(tree[path.join('dotfiles', '.workkit', 'settings.json')], 'the tracked file is copied').toBe('file {}\n');
+    expect(tree[path.join('dotfiles', '.workkit', 'notes.md')], 'the untracked file git does not ignore is copied').toBe('file not ignored\n');
+    expect(tree[path.join('tower', 'README.md')], 'the repo\'s own tower folder is copied').toBe('file the repo\'s own\n');
   });
 
-  await test('a home whose .workkit links into a repo that ignores nothing there: the take still leaves the markers folder out', () => {
+  test('a home whose .workkit links into a repo that ignores nothing there: the take writes nothing under the repo, its snapshot under HOME\'s .cache/workkit/snapshot, the markers folder left out', () => {
     const w = homeInRepo(mkWorld(), []);
     w.write(path.join('dotfiles', '.workkit', 'hooks.log'), 'a hook line\n');
+    w.write(path.join('dotfiles', '.workkit', 'markers', 'claude-gh-journal', 'x'), 'a journal line\n');
     take(w, 5);
+    expect(keyedUnder(fs.realpathSync(w.repo), w), 'no snapshot folder and no temporary sibling under the repo').toBe('');
     const tree = takenTree(w);
-    assertEq(homeKeys(tree, 'markers'), '', 'no markers path in the snapshot');
-    assertEq(tree[path.join('dotfiles', '.workkit', 'hooks.log')], 'file a hook line\n', 'a file git does not ignore is copied');
+    expect(homeKeys(tree, 'markers'), 'no markers path in the snapshot').toBe('');
+    expect(tree[path.join('dotfiles', '.workkit', 'hooks.log')], 'a file git does not ignore is copied').toBe('file a hook line\n');
   });
 
-  await test('a second claim while the snapshot is live adds its number and leaves the tree alone: stale answers live, add records the number', () => {
+  test('WORKFLOW_HOME elsewhere does not move the snapshot; another HOME does', () => {
+    const w = mkWorld();
+    const elsewhere = mkTmp('snapshot-workflow-home-');
+    ok(mode(w, 'take', ['5'], null, { WORKFLOW_HOME: shellPath(elsewhere) }), 'take 5 with WORKFLOW_HOME elsewhere');
+    const snap = snapshotDir(homeOf(w), w.repo);
+    expect(fs.existsSync(path.join(snap, 'tree')), `the snapshot is under HOME's cache: ${snapshots(w)}`).toBeTruthy();
+    expect(keyedUnder(elsewhere, w), 'nothing of it under WORKFLOW_HOME').toBe('');
+    const other = mkTmp('snapshot-other-home-');
+    ok(mode(w, 'take', ['6'], null, { HOME: shellPath(other), WORKFLOW_HOME: shellPath(elsewhere) }), 'take 6 with another HOME');
+    expect(json(issuesOf(snapshotDir(other, w.repo))), 'the take under the other HOME records #6').toBe(json(['6']));
+    expect(json(issuesOf(snap)), 'the first HOME\'s snapshot is as it was').toBe(json(['5']));
+  });
+
+  test('a repo that is HOME, the snapshot\'s home inside it: the tree holds no .cache/workkit/snapshot, and a second take does not grow', () => {
+    const w = mkWorld();
+    w.write(path.join('.cache', 'other', 'keep.txt'), 'kept\n');
+    const tookAt = (n) => {
+      ok(mode(w, 'take', [n], null, { HOME: shellPath(w.repo) }), `take ${n} with HOME the repo`);
+      return treeOf(path.join(snapshotDir(w.repo, w.repo), 'tree'));
+    };
+    const first = tookAt('5');
+    expect(Object.keys(first).filter((k) => k.startsWith(path.join('.cache', 'workkit', 'snapshot'))).join(','),
+      'no .cache/workkit/snapshot path in the tree').toBe('');
+    expect(first[path.join('.cache', 'other', 'keep.txt')], 'the rest of .cache is copied').toBe('file kept\n');
+    expect(json(tookAt('6')), 'the second take holds what the first did').toBe(json(first));
+  });
+
+  test('a finished take leaves the caller\'s traps as they were: a sourced take under a caller\'s HUP and TERM traps, none on INT', () => {
+    const w = mkWorld();
+    const out = runLib([
+      "trap 'echo caller hup' HUP",
+      "trap 'echo caller term' TERM",
+      `hook_snapshot_take "${shellPath(fs.realpathSync(w.repo))}" 5 || echo "take failed: $?"`,
+      'trap -p HUP INT TERM',
+    ].join('\n'), w.env);
+    expect(out.stdout, `the caller's traps read back unchanged: ${out.stderr}`)
+      .toBe("trap -- 'echo caller hup' SIGHUP\ntrap -- 'echo caller term' SIGTERM\n");
+    expect(json(issuesOf(snapshotDir(homeOf(w), w.repo))), 'the take happened').toBe(json(['5']));
+  });
+
+  test('a second claim while the snapshot is live adds its number and leaves the tree alone: stale answers live, add records the number', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
+    const snap = snapshotDir(homeOf(w), w.repo);
     const before = treeOf(path.join(snap, 'tree'));
     const head = read(snap, 'head');
     w.write('src/x.js', 'module.exports = 9;\n');
     w.write('src/late.js', 'module.exports = 4;\n');
-    assertEq(stale(w, building(5, 6)).code, 1, 'a recorded issue still building: live');
+    expect(stale(w, building(5, 6)).code, 'a recorded issue still building: live').toBe(1);
     ok(mode(w, 'add', ['6']), 'add 6');
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'the tree is as the first claim took it');
-    assert(!fs.existsSync(path.join(snap, 'tree', 'src', 'late.js')), 'the file made in between is not in it');
-    assertEq(read(snap, 'head'), head, 'head is unchanged');
-    assertEq(json(issuesOf(snap)), json(['5', '6']), 'issues holds both claims');
-    assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
+    expect(json(treeOf(path.join(snap, 'tree'))), 'the tree is as the first claim took it').toBe(json(before));
+    expect(!fs.existsSync(path.join(snap, 'tree', 'src', 'late.js')), 'the file made in between is not in it').toBeTruthy();
+    expect(read(snap, 'head'), 'head is unchanged').toBe(head);
+    expect(json(issuesOf(snap)), 'issues holds both claims').toBe(json(['5', '6']));
+    expect(snapshots(w).length, `one snapshot for the repo: ${snapshots(w)}`).toBe(1);
   });
 
-  await test('a claim after every recorded issue left building replaces the snapshot: stale answers stale, the take replaces it', () => {
+  test('a claim after every recorded issue left building replaces the snapshot: stale answers stale, the take replaces it', () => {
     const w = mkWorld();
     take(w, 5);
     w.write('src/x.js', 'module.exports = 9;\n');
-    assertEq(stale(w, building(6)).code, 0, 'no recorded issue still building: stale');
+    expect(stale(w, building(6)).code, 'no recorded issue still building: stale').toBe(0);
     take(w, 6);
-    const snap = snapshotDir(w.workflowHome, w.repo);
-    assertEq(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'module.exports = 9;\n', 'the new tree carries the later change');
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the repo now');
-    assertEq(json(issuesOf(snap)), json(['6']), 'issues is the new claim alone');
-    assertEq(snapshots(w).length, 1, `one snapshot for the repo: ${snapshots(w)}`);
+    const snap = snapshotDir(homeOf(w), w.repo);
+    expect(read(path.join(snap, 'tree'), path.join('src', 'x.js')), 'the new tree carries the later change').toBe('module.exports = 9;\n');
+    expect(json(treeOf(path.join(snap, 'tree'))), 'the tree is the repo now').toBe(json(treeOf(w.repo, { skipModules: true })));
+    expect(json(issuesOf(snap)), 'issues is the new claim alone').toBe(json(['6']));
+    expect(snapshots(w).length, `one snapshot for the repo: ${snapshots(w)}`).toBe(1);
   });
 
-  await test('a take on top of a live snapshot replaces it whole: nothing of the old tree left, no temporary sibling', () => {
+  test('a take on top of a live snapshot replaces it whole: nothing of the old tree left, no temporary sibling', () => {
     const w = mkWorld();
     w.write('src/gone.js', 'module.exports = 8;\n');
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
-    assert(fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'the first take holds src/gone.js');
+    const snap = snapshotDir(homeOf(w), w.repo);
+    expect(fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'the first take holds src/gone.js').toBeTruthy();
     fs.rmSync(path.join(w.repo, 'src', 'gone.js'));
     w.write('src/x.js', 'module.exports = 9;\n');
     take(w, 6);
-    assert(!fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'a file only the old tree held is gone');
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the repo now');
-    assertEq(json(snapshots(w)), json([path.basename(snap)]), 'one folder under the final name, no sibling');
+    expect(!fs.existsSync(path.join(snap, 'tree', 'src', 'gone.js')), 'a file only the old tree held is gone').toBeTruthy();
+    expect(json(treeOf(path.join(snap, 'tree'))), 'the tree is the repo now').toBe(json(treeOf(w.repo, { skipModules: true })));
+    expect(json(snapshots(w)), 'one folder under the final name, no sibling').toBe(json([path.basename(snap)]));
   });
 
-  await test('a re-claim of a recorded issue after a block keeps the first tree, the number once: add records it once', () => {
+  test('a re-claim of a recorded issue after a block keeps the first tree, the number once: add records it once', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
+    const snap = snapshotDir(homeOf(w), w.repo);
     const before = treeOf(path.join(snap, 'tree'));
     w.write('src/x.js', 'module.exports = 9;\n');
     ok(mode(w, 'add', ['5']), 'add 5 again');
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before), 'the tree is as the first claim found it');
-    assertEq(json(issuesOf(snap)), json(['5']), 'the number is recorded once');
+    expect(json(treeOf(path.join(snap, 'tree'))), 'the tree is as the first claim found it').toBe(json(before));
+    expect(json(issuesOf(snap)), 'the number is recorded once').toBe(json(['5']));
   });
 
-  await test('a claim after every recorded issue left building replaces the snapshot though one sits at qa: stale answers stale', () => {
+  test('a claim after every recorded issue left building replaces the snapshot though one sits at qa: stale answers stale', () => {
     const w = mkWorld();
     take(w, 5);
-    assertEq(stale(w, atQa(5)).code, 0, 'the recorded #5 at qa, none building: stale');
+    expect(stale(w, atQa(5)).code, 'the recorded #5 at qa, none building: stale').toBe(0);
   });
 
-  await test('a failed GitHub read at a claim keeps the live snapshot and adds the number: stale answers 2', () => {
+  test('a failed GitHub read at a claim keeps the live snapshot and adds the number: stale answers 2', () => {
     const w = mkWorld();
     take(w, 5);
-    assertEq(stale(w, [], true).code, 2, 'GitHub cannot answer');
+    expect(stale(w, [], true).code, 'GitHub cannot answer').toBe(2);
   });
 
-  await test('a claim whose number cannot be read records none, and a later claim keeps that snapshot: a take with no number', async () => {
+  test('a claim whose number cannot be read records none, and a later claim keeps that snapshot: a take with no number', async () => {
     const w = mkWorld();
     take(w);
-    const snap = snapshotDir(w.workflowHome, w.repo);
-    assertEq(json(issuesOf(snap)), json([]), 'no number recorded');
+    const snap = snapshotDir(homeOf(w), w.repo);
+    expect(json(issuesOf(snap)), 'no number recorded').toBe(json([]));
     const { code, calls } = stale(w, building(6));
-    assertEq(code, 1, 'an empty recorded list is live');
-    assertEq(calls.length, 0, 'and asks GitHub nothing');
+    expect(code, 'an empty recorded list is live').toBe(1);
+    expect(calls.length, 'and asks GitHub nothing').toBe(0);
   });
+});
 
-  group('workflow:snapshot: removal');
-
-  await test('the qa flip of the last building issue leaves the snapshot and asks GitHub nothing', async () => {
+describe('workflow:snapshot: removal', () => {
+  test('the qa flip of the last building issue leaves the snapshot and asks GitHub nothing', async () => {
     const { plan, asked } = await planOf([QA(5)], { list: [] });
-    assertEq(json(stepsOf(plan)), '[]', 'no step');
-    assertEq(asked, 0, 'no building read');
+    expect(json(stepsOf(plan)), 'no step').toBe('[]');
+    expect(asked, 'no building read').toBe(0);
   });
 
   for (const [flip, line] of [['the complete flip', COMPLETE(5)], ['the close', CLOSE(5)]]) {
-    await test(`a release leaving no issue building or at qa removes the snapshot: ${flip}: the plan is a drop`, async () => {
+    test(`a release leaving no issue building or at qa removes the snapshot: ${flip}: the plan is a drop`, async () => {
       const { plan, asked } = await planOf([line], { list: [] });
-      assertEq(drops(plan), HERE, 'none left building or at qa drops the session repo\'s snapshot');
-      assertEq(asked, 1, 'one building read');
+      expect(drops(plan), 'none left building or at qa drops the session repo\'s snapshot').toBe(HERE);
+      expect(asked, 'one building read').toBe(1);
     });
 
-    await test(`a release with another issue at qa leaves the snapshot: ${flip}`, async () => {
+    test(`a release with another issue at qa leaves the snapshot: ${flip}`, async () => {
       const { plan, asked } = await planOf([line], { list: atQa(6) });
-      assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
-      assertEq(asked, 1, 'one building read');
+      expect(drops(plan) || takes(plan), 'neither a take nor a drop').toBe(null);
+      expect(asked, 'one building read').toBe(1);
     });
   }
 
-  await test('the last building issue leaving removes the snapshot: drop removes it whole', () => {
+  test('the last building issue leaving removes the snapshot: drop removes it whole', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
-    assert(fs.existsSync(snap), `the take left a snapshot to drop: ${snapshots(w)}`);
+    const snap = snapshotDir(homeOf(w), w.repo);
+    expect(fs.existsSync(snap), `the take left a snapshot to drop: ${snapshots(w)}`).toBeTruthy();
     ok(mode(w, 'drop'), 'drop');
-    assert(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`);
+    expect(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`).toBeTruthy();
   });
 
-  await test('the complete flip with another issue still building leaves the snapshot', async () => {
+  test('the complete flip with another issue still building leaves the snapshot', async () => {
     const { plan } = await planOf([COMPLETE(5)], { list: building(6) });
-    assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
+    expect(drops(plan) || takes(plan), 'neither a take nor a drop').toBe(null);
   });
 
   for (const [flip, line] of [['the block', BLOCK(5)]]) {
-    await test(`a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}`, async () => {
+    test(`a flip off building that adds neither qa nor complete leaves the snapshot and calls no gh: ${flip}`, async () => {
       const { plan, asked } = await planOf([line], { list: [] });
-      assertEq(json(stepsOf(plan)), '[]', 'no step');
-      assertEq(asked, 0, 'no building read');
+      expect(json(stepsOf(plan)), 'no step').toBe('[]');
+      expect(asked, 'no building read').toBe(0);
     });
   }
 
-  await test('a failed GitHub read at removal leaves the snapshot, exit 0', async () => {
+  test('a failed GitHub read at removal leaves the snapshot, exit 0', async () => {
     const { plan } = await planOf([COMPLETE(5)], { list: null });
-    assertEq(drops(plan) || takes(plan), null, 'neither a take nor a drop');
+    expect(drops(plan) || takes(plan), 'neither a take nor a drop').toBe(null);
+  });
+});
+
+describe('workflow:snapshot: which repo', () => {
+  test('a claim naming another repo snapshots its roster folder, not the session repo', async () => {
+    expect(takes((await planOf([CLAIM(5, { repo: 'owner/other' })], { list: building(5) })).plan),
+      'the take is the roster folder of owner/other').toBe(OTHER);
   });
 
-  group('workflow:snapshot: which repo');
-
-  await test('a claim naming another repo snapshots its roster folder, not the session repo', async () => {
-    assertEq(takes((await planOf([CLAIM(5, { repo: 'owner/other' })], { list: building(5) })).plan),
-      OTHER, 'the take is the roster folder of owner/other');
-  });
-
-  await test('a claim naming a repo off the roster: the notice names it, no snapshot', async () => {
+  test('a claim naming a repo off the roster: the notice names it, no snapshot', async () => {
     const { plan } = await planOf([CLAIM(5, { repo: 'owner/other' })],
       { list: building(5), roster: { version: 1, repos: { [HERE]: 'enabled' } } });
-    assertEq(takes(plan) || drops(plan), null, 'no snapshot taken or dropped');
+    expect(takes(plan) || drops(plan), 'no snapshot taken or dropped').toBe(null);
+  });
+});
+
+describe('workflow:snapshot: every journal line is a step, in order', () => {
+  test('two claim lines from one Bash call are two steps on the session repo: issues [5, 6] both recorded', async () => {
+    expect(takes((await planOf([CLAIM(5), CLAIM(6)], { list: building(5, 6) })).plan),
+      'one take step per claim, in order').toBe(`${HERE},${HERE}`);
   });
 
-  group('workflow:snapshot: every journal line is a step, in order');
-
-  await test('two claim lines from one Bash call are two steps on the session repo: issues [5, 6] both recorded', async () => {
-    assertEq(takes((await planOf([CLAIM(5), CLAIM(6)], { list: building(5, 6) })).plan), `${HERE},${HERE}`,
-      'one take step per claim, in order');
+  test('two claims in two repos, owner/other on the second line, take a snapshot of each repo', async () => {
+    expect(takes((await planOf([CLAIM(5), CLAIM(6, { repo: 'owner/other' })], { list: building(5, 6) })).plan),
+      'the session repo, then the roster folder of owner/other').toBe(`${HERE},${OTHER}`);
   });
+});
 
-  await test('two claims in two repos, owner/other on the second line, take a snapshot of each repo', async () => {
-    assertEq(takes((await planOf([CLAIM(5), CLAIM(6, { repo: 'owner/other' })], { list: building(5, 6) })).plan),
-      `${HERE},${OTHER}`, 'the session repo, then the roster folder of owner/other');
-  });
-
-  group('workflow:snapshot: a real gh call, read back from the journal');
-
-  await test('case 1: gh issue edit 7 --add-label status:building through the shim yields the claim step for 7 in the cwd\'s repo', async () => {
+describe('workflow:snapshot: a real gh call, read back from the journal', () => {
+  test('case 1: gh issue edit 7 --add-label status:building through the shim yields the claim step for 7 in the cwd\'s repo', async () => {
     const w = mkShimWorld();
     const lines = viaShim(w, ['issue', 'edit', '7', '--add-label', 'status:building']);
     const { plan } = await planOf(lines, { cwd: w.here, roster: w.roster, slugs: w.slugs });
-    assertEq(takes(plan), w.here, 'the take is the cwd\'s repo');
-    assertEq(json(takenIssues(plan)), json(['7']), 'the take records #7');
+    expect(takes(plan), 'the take is the cwd\'s repo').toBe(w.here);
+    expect(json(takenIssues(plan)), 'the take records #7').toBe(json(['7']));
   });
 
-  await test('case 1: the same claim with --repo other/rostered places the take in that roster folder', async () => {
+  test('case 1: the same claim with --repo other/rostered places the take in that roster folder', async () => {
     const w = mkShimWorld();
     const lines = viaShim(w, ['issue', 'edit', '7', '--repo', 'other/rostered', '--add-label', 'status:building']);
     const { plan } = await planOf(lines, { cwd: w.here, roster: w.roster, slugs: w.slugs });
-    assertEq(takes(plan), w.other, 'the take is the roster folder of other/rostered');
+    expect(takes(plan), 'the take is the roster folder of other/rostered').toBe(w.other);
   });
 
   // A claim of #8 that gh answered sits in the same journal, so a reader that saw no line at all fails here too.
-  await test('case 1: the same claim the real gh fails (exit 1) yields no step: the journal holds the answered #8 alone', async () => {
+  test('case 1: the same claim the real gh fails (exit 1) yields no step: the journal holds the answered #8 alone', async () => {
     const w = mkShimWorld();
     viaShim(w, ['issue', 'edit', '8', '--add-label', 'status:building']);
     const lines = viaShim(w, ['issue', 'edit', '7', '--add-label', 'status:building'], { fails: true });
     const { plan } = await planOf(lines, { cwd: w.here, roster: w.roster, slugs: w.slugs, list: building(8) });
-    assertEq(takes(plan), w.here, 'the answered claim still takes the cwd\'s repo');
-    assertEq(json(takenIssues(plan)), json(['8']), 'the take records #8 and never the failed #7');
+    expect(takes(plan), 'the answered claim still takes the cwd\'s repo').toBe(w.here);
+    expect(json(takenIssues(plan)), 'the take records #8 and never the failed #7').toBe(json(['8']));
   });
+});
 
-  group('workflow:snapshot: anything else');
-
+describe('workflow:snapshot: anything else', () => {
   for (const [call, lines] of [
     ['a call that wrote nothing to gh', []],
     ['a priority label', [ghEntry({ numbers: [5], add: ['priority:high'] })]],
     ['a comment', [ghEntry({ sub: 'comment', numbers: [5] })]],
   ]) {
-    await test(`no claim and no park does nothing and calls no gh: ${call}`, async () => {
+    test(`no claim and no park does nothing and calls no gh: ${call}`, async () => {
       const { plan, asked } = await planOf(lines, { list: building(5) });
-      assertEq(json(stepsOf(plan)), '[]', 'no step');
-      assertEq(asked, 0, 'no building read');
+      expect(json(stepsOf(plan)), 'no step').toBe('[]');
+      expect(asked, 'no building read').toBe(0);
     });
   }
+});
 
-  group('workflow:snapshot: a failed take');
-
+describe('workflow:snapshot: a failed take', () => {
   // The copy tool each platform's take uses (tar on Git Bash, cp elsewhere),
   // stubbed ahead on PATH to copy for real and then fail, so a whole tree is
   // left under the temporary name for the take to clear. Each call is logged.
@@ -497,31 +543,59 @@ const cases = async () => {
     return { tool, logFile, envPath: joinPath(bin, w.env.PATH) };
   };
 
-  await test('a take whose copy fails leaves no snapshot folder and no temporary sibling', () => {
+  test('a take whose copy fails leaves no snapshot folder and no temporary sibling', () => {
     const w = mkWorld();
     const copy = failingCopy(w);
     const out = mode(w, 'take', ['5'], copy.envPath);
-    assert(out.code !== 0, `the failed take says so in its exit: ${out.code}`);
-    assert(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`);
-    assertEq(json(snapshots(w)), json([]), 'no snapshot folder and no temporary sibling');
+    expect(out.code !== 0, `the failed take says so in its exit: ${out.code}`).toBeTruthy();
+    expect(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`).toBeTruthy();
+    expect(json(snapshots(w)), 'no snapshot folder and no temporary sibling').toBe(json([]));
   });
 
-  await test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', () => {
+  test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
+    const snap = snapshotDir(homeOf(w), w.repo);
     const before = { tree: treeOf(path.join(snap, 'tree')), head: read(snap, 'head'), issues: read(snap, 'issues') };
     w.write('src/x.js', 'module.exports = 9;\n');
     w.git('commit', '-q', '-am', 'later');
     const copy = failingCopy(w);
     const out = mode(w, 'take', ['6'], copy.envPath);
-    assert(out.code !== 0, `the failed take says so in its exit: ${out.code}`);
-    assert(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`);
-    assertEq(json(treeOf(path.join(snap, 'tree'))), json(before.tree), 'the live tree is as it was');
-    assertEq(read(snap, 'head'), before.head, 'head is as it was');
-    assertEq(read(snap, 'issues'), before.issues, 'issues is as it was');
-    assertEq(json(snapshots(w)), json([path.basename(snap)]), 'one folder under the final name, no sibling');
+    expect(out.code !== 0, `the failed take says so in its exit: ${out.code}`).toBeTruthy();
+    expect(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`).toBeTruthy();
+    expect(json(treeOf(path.join(snap, 'tree'))), 'the live tree is as it was').toBe(json(before.tree));
+    expect(read(snap, 'head'), 'head is as it was').toBe(before.head);
+    expect(read(snap, 'issues'), 'issues is as it was').toBe(before.issues);
+    expect(json(snapshots(w)), 'one folder under the final name, no sibling').toBe(json([path.basename(snap)]));
   });
+
+  // cp stubbed ahead on PATH to mark that it started and then wait to be
+  // ended, so a signal lands while the take copies.
+  const stalledCopy = (w) => {
+    const bin = mkTmp('snapshot-stall-');
+    const started = path.join(bin, 'started');
+    stubTool(bin, 'cp', ['#!/bin/bash', `: > "${shellPath(started)}"`, 'while :; do sleep 1; done']);
+    return { started, envPath: joinPath(bin, w.env.PATH) };
+  };
+  const SIGNAL_SKIP = IS_WINDOWS && 'Node cannot deliver TERM, INT or HUP to a Git Bash process on Windows';
+
+  for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) {
+    test(`a take ended by ${signal} while it copies leaves no temporary sibling and exits ${code}`, { skip: SIGNAL_SKIP }, async (t) => {
+      const w = mkWorld();
+      const copy = stalledCopy(w);
+      // The take leads its own group and the signal goes to the whole group, the way a cut ends a call.
+      const run = start(BASH, [...NO_RC, shellPath(SNAPSHOT), 'take', shellPath(fs.realpathSync(w.repo)), '5'], {
+        env: { ...w.env, PATH: copy.envPath }, detached: true,
+      });
+      t.after(() => run.end('SIGKILL'));
+      expect(await until(() => fs.existsSync(copy.started) && snapshots(w).length === 1),
+        `the take never reached the copy with its temporary sibling made: ${snapshots(w)} ${run.stderr()}`).toBeTruthy();
+      process.kill(-run.pid, signal);
+      const exit = await run.done;
+      expect(exit.status, `the take's exit: ${JSON.stringify(exit)}`).toBe(code);
+      expect(json(snapshots(w)), 'no snapshot folder and no temporary sibling').toBe(json([]));
+    });
+  }
 
   /** Every folder under `dir` made writable again, so the scratch can be removed. */
   const unlock = (dir) => {
@@ -532,37 +606,37 @@ const cases = async () => {
     }
   };
 
-  const lockTest = testUnless(IS_WINDOWS || process.getuid() === 0,
-    'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)');
+  const LOCK_SKIP = (IS_WINDOWS || process.getuid() === 0)
+    && 'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)';
   const siblingsOf = (w, snap) => snapshots(w).filter((name) => name.startsWith(`${path.basename(snap)}.`));
 
-  await lockTest('a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one', () => {
+  test('a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one', { skip: LOCK_SKIP }, () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
+    const snap = snapshotDir(homeOf(w), w.repo);
     fs.chmodSync(path.join(snap, 'tree', 'src'), 0o555);
     try {
       w.write('src/x.js', 'module.exports = 9;\n');
       w.git('commit', '-q', '-am', 'later');
       w.write('src/late.js', 'module.exports = 4;\n');
       const out = take(w, 6);
-      assert(`${out.stdout}${out.stderr}`.includes('moved aside to'), `the take names where the remains went: ${out.stdout}${out.stderr}`);
-      assertEq(json(issuesOf(snap)), json(['6']), 'the take recorded the new number');
-      assertEq(json(treeOf(path.join(snap, 'tree'))), json(treeOf(w.repo, { skipModules: true })), 'the tree is the new take');
-      assertEq(read(snap, 'head'), `${w.git('rev-parse', 'HEAD').trim()}\n`, 'head is the new take\'s');
-      assertEq(read(snap, 'paths'), workingPaths(w), 'paths is the new take\'s');
+      expect(`${out.stdout}${out.stderr}`.includes('moved aside to'), `the take names where the remains went: ${out.stdout}${out.stderr}`).toBeTruthy();
+      expect(json(issuesOf(snap)), 'the take recorded the new number').toBe(json(['6']));
+      expect(json(treeOf(path.join(snap, 'tree'))), 'the tree is the new take').toBe(json(treeOf(w.repo, { skipModules: true })));
+      expect(read(snap, 'head'), 'head is the new take\'s').toBe(`${w.git('rev-parse', 'HEAD').trim()}\n`);
+      expect(read(snap, 'paths'), 'paths is the new take\'s').toBe(workingPaths(w));
       const siblings = siblingsOf(w, snap);
-      assertEq(siblings.length, 1, `exactly one sibling: ${snapshots(w)}`);
-      assert(/^\.[^.]{6}$/.test(siblings[0].slice(path.basename(snap).length)), `named <dir>.<six chars>: ${siblings[0]}`);
+      expect(siblings.length, `exactly one sibling: ${snapshots(w)}`).toBe(1);
+      expect(/^\.[^.]{6}$/.test(siblings[0].slice(path.basename(snap).length)), `named <dir>.<six chars>: ${siblings[0]}`).toBeTruthy();
     } finally {
-      unlock(path.join(w.workflowHome, 'markers', 'claude-red-snapshot'));
+      unlock(snapshotBase(homeOf(w)));
     }
   });
 
-  await test('a take clears a sibling older than 10 minutes and keeps a fresh one', () => {
+  test('a take clears a sibling older than 10 minutes and keeps a fresh one', () => {
     const w = mkWorld();
     take(w, 5);
-    const snap = snapshotDir(w.workflowHome, w.repo);
+    const snap = snapshotDir(homeOf(w), w.repo);
     const old = `${snap}.abcdef`;
     const fresh = `${snap}.ghijkl`;
     const then = new Date(Date.now() - 20 * 60 * 1000);
@@ -572,14 +646,8 @@ const cases = async () => {
     for (const p of [path.join(old, 'tree', 'left.js'), path.join(old, 'tree'), old]) fs.utimesSync(p, then, then);
     w.write('src/x.js', 'module.exports = 9;\n');
     take(w, 6);
-    assert(!fs.existsSync(old), `the stale sibling is gone: ${snapshots(w)}`);
-    assert(fs.existsSync(path.join(fresh, 'tree', 'left.js')), `the fresh sibling stays: ${snapshots(w)}`);
-    assertEq(json(issuesOf(snap)), json(['6']), 'the take happened');
+    expect(!fs.existsSync(old), `the stale sibling is gone: ${snapshots(w)}`).toBeTruthy();
+    expect(fs.existsSync(path.join(fresh, 'tree', 'left.js')), `the fresh sibling stays: ${snapshots(w)}`).toBeTruthy();
+    expect(json(issuesOf(snap)), 'the take happened').toBe(json(['6']));
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(module.exports);
+});

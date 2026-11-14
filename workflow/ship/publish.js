@@ -15,10 +15,10 @@ const { repoRoot } = require('../lib/git');
 const { errLine } = require('../lib/say');
 
 /**
- * Is `name@version` already on the registry? The `safety:release-taken` hook's
- * npm question, flag for flag, asked here since that hook never sees a publish
- * inside this run. E404 answers free; any other failure stands the check down
- * on stderr and answers free, so npm itself refuses a taken version.
+ * Is `name@version` already on the registry? The npm question the
+ * `safety:release-taken` hook asks at the release commit, flag for flag; no
+ * hook judges a publish, so the ship asks it here. E404 answers free; any other
+ * failure stands the check down on stderr and answers free, so npm itself refuses a taken version.
  */
 const onRegistry = (root, { name, version }) => {
   const res = spawnSync('npm', ['view', '--no-update-notifier', '--fetch-retries=0', '--fetch-timeout=15000', `${name}@${version}`, 'version'], {

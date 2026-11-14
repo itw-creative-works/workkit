@@ -7,6 +7,7 @@
 
 import { test, expect, describe } from 'claude-code/testing'
 import { mkWorld, hooksLog, toolSpied, TOOL_SPY, REPO, HOME, OPTED_IN } from '../lib/mod-world.ts'
+import { CAPTURE_READ as READ } from '../lib/mod-fixtures.mjs'
 
 const NOW = 1800000000000
 const TMPDIR = '/w/tmp'
@@ -17,7 +18,6 @@ const VENDOR = (file: string, why: string) => `vendor-guard: BLOCKED edit to ${f
 const NODE_MODULES = 'node_modules/ is installed output.'
 const OUTPUT_DIR = 'a dist/ or build/ directly under a package root is generated output.'
 const IGNORED = 'the file is gitignored: generated/runtime files are not hand-edited (designed exceptions: _attic/, .workkit/, .env*).'
-const READ = "capture-guard: BLOCKED reading .workkit/capture.md: it is the owner's capture surface, and its contents are read only during a triage run.\nRun the workkit:triage skill, which records the marker this guard checks, and read it there. Counting the entries (wc -l) stays open."
 const REWRITE = (route: string) => `capture-guard: BLOCKED rewriting .workkit/capture.md: its entries are cleared only by the triage drain, and no drain is running.\nRun the workkit:triage skill, which records the marker this guard checks, and clear it there. Adding entries is never the agent's at all: ${route}`
 const ROUTE_OFF = 'say findings in chat under 🧭 Findings instead, one bullet each, for the owner to answer file or drop; file nothing on your own.'
 

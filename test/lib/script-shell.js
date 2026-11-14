@@ -12,7 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { assert, skipSuite, mkTmp, SPAWN_DEADLINE } = require('./harness');
+const { expect, mkTmp, SPAWN_DEADLINE } = require('./harness');
 const {
   IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, WINDOWS_CSC, shellPath, gitPath, which, joinPath, homeEnv,
 } = require('./platform');
@@ -81,11 +81,8 @@ const wrapperMissing = () => {
   return null;
 };
 
-/** Both suites' preconditions, a whole suite skipped by name when one is missing. */
-const skipWithoutWrapper = () => {
-  const missing = wrapperMissing();
-  if (missing) skipSuite(missing);
-};
+/** Both suites' preconditions, as a skip value: false when neither is missing, else the reason. */
+const skipWithoutWrapper = () => wrapperMissing() || false;
 
 /**
  * A committed repo: the root package.json (<pkg> merged over a name), app.js,
@@ -143,7 +140,7 @@ const npm = (world, cwd, args, shell = world.wrapper, extra = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${shell}`, ...args], {
     cwd, env: { ...world.env, ...extra }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `npm ${args.join(' ')} finished: ${res.error || ''}`);
+  expect(res.status !== null, `npm ${args.join(' ')} finished: ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -156,7 +153,7 @@ const recorded = (world, repo) => {
 /** Assert <text> is the record of a green root run on <tree>: the tree, then `ms=<n>`. */
 const assertRecord = (text, tree, msg) => {
   const [first, second] = (text || '').split('\n');
-  assert(first === tree && /^ms=\d+$/.test(second || ''), `${msg}: the tree then ms=<n>, got ${JSON.stringify(text)}`);
+  expect(first === tree && /^ms=\d+$/.test(second || ''), `${msg}: the tree then ms=<n>, got ${JSON.stringify(text)}`).toBeTruthy();
 };
 
 /** The package record's lines for <repo> in <world>, as JSON so a case compares them whole. */

@@ -10,10 +10,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, IS_WINDOWS, NO_NODE_STUB, shellPath, gitPath, spawnBash, systemPathWith, homeEnv, basePathWithout, stubNode, stubTool,
+  BASH, NO_RC, NODE_DIR, skipWithoutNodeStub, shellPath, gitPath, spawnBash, systemPathWith, homeEnv, basePathWithout, stubNode, stubTool,
 } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -170,17 +170,17 @@ const callsOf = (res, argv) => res.calls.filter((c) => eqArgv(c, argv));
 
 /** The gate refused: exit 1, `text` on stderr, and the real gh never ran `argv`. */
 const assertBounced = (res, argv, text, what) => {
-  assertEq(res.code, 1, `${what}: the exit (stderr: ${res.stderr.trim()})`);
-  assert(res.stderr.includes(text), `${what}: stderr carries the bounce, got: ${res.stderr}`);
-  assertEq(callsOf(res, argv).length, 0, `${what}: the real gh never ran it, got ${fmtCalls(res.calls)}`);
+  expect(res.code, `${what}: the exit (stderr: ${res.stderr.trim()})`).toBe(1);
+  expect(res.stderr.includes(text), `${what}: stderr carries the bounce, got: ${res.stderr}`).toBeTruthy();
+  expect(callsOf(res, argv).length, `${what}: the real gh never ran it, got ${fmtCalls(res.calls)}`).toBe(0);
 };
 
 /** The real `gh` ran once, exit 0, with `argv` whole and GH_TOKEN `token` (null: unset). */
 const assertRan = (res, argv, token, what) => {
-  assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()})`);
-  assertEq(res.calls.length, 1, `${what}: the real gh runs once, got ${fmtCalls(res.calls)}`);
-  assert(eqArgv(res.calls[0], argv), `${what}: every argument passed through, got ${fmtCalls(res.calls)}`);
-  assertEq(res.envs[0].GH_TOKEN, token, `${what}: GH_TOKEN`);
+  expect(res.code, `${what}: the exit (stderr: ${res.stderr.trim()})`).toBe(0);
+  expect(res.calls.length, `${what}: the real gh runs once, got ${fmtCalls(res.calls)}`).toBe(1);
+  expect(eqArgv(res.calls[0], argv), `${what}: every argument passed through, got ${fmtCalls(res.calls)}`).toBeTruthy();
+  expect(res.envs[0].GH_TOKEN, `${what}: GH_TOKEN`).toBe(token);
 };
 
 /**
@@ -189,25 +189,45 @@ const assertRan = (res, argv, token, what) => {
  * gate's own `issue view`.
  */
 const assertWrote = (res, argv, token, what) => {
-  assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()})`);
+  expect(res.code, `${what}: the exit (stderr: ${res.stderr.trim()})`).toBe(0);
   const at = res.calls.map((c, i) => (eqArgv(c, argv) ? i : -1)).filter((i) => i >= 0);
-  assertEq(at.length, 1, `${what}: the real gh ran it once, got ${fmtCalls(res.calls)}`);
-  assertEq(res.envs[at[0]].GH_TOKEN, token, `${what}: GH_TOKEN`);
+  expect(at.length, `${what}: the real gh ran it once, got ${fmtCalls(res.calls)}`).toBe(1);
+  expect(res.envs[at[0]].GH_TOKEN, `${what}: GH_TOKEN`).toBe(token);
   const others = res.calls.filter((c, i) => i !== at[0] && !(c[0] === 'issue' && c[1] === 'view'));
-  assertEq(others.length, 0, `${what}: no other call but the gate's view, got ${fmtCalls(res.calls)}`);
+  expect(others.length, `${what}: no other call but the gate's view, got ${fmtCalls(res.calls)}`).toBe(0);
 };
 
-const cases = async () => {
-  group('identity/gh: the owner\'s own calls');
+/**
+ * `gh <args>` through the shim from the rostered repo, a `gh` ahead of the stub
+ * on PATH that the shim takes for the real one: it prints `real-gh: <argv>` and
+ * `real-gh-parent: <its parent pid>`, and the calling shell prints `caller: <pid>`
+ * after it: `lines` are that output in write order, `execd` whether the real
+ * gh's parent is the caller (the shim exec'd it), `ran` the hook's mark, null
+ * when no hook ran.
+ */
+const runRealGh = (world, args, opts = {}) => {
+  const realGh = path.join(world.root, 'real-gh');
+  fs.mkdirSync(realGh, { recursive: true });
+  stubTool(realGh, 'gh', ['#!/usr/bin/env bash', 'echo "real-gh: $*"', 'echo "real-gh-parent: $PPID"', 'exit 0']);
+  const out = shellPath(path.join(world.root, 'real-gh.log'));
+  const call = args.map((a) => `'${a}'`).join(' ');
+  const res = runShim(world, [], { ...opts, extraDirs: [realGh], script: `gh ${call} > '${out}' 2>&1; echo "code: $?" >> '${out}'; echo "caller: $$" >> '${out}'` });
+  const marks = path.join(world.rostered, 'ran.txt');
+  const lines = fs.readFileSync(path.join(world.root, 'real-gh.log'), 'utf8').split('\n').filter(Boolean);
+  const caller = (lines.find((l) => l.startsWith('caller: ')) || '').slice('caller: '.length);
+  expect(res.code === 0, `the calling shell finished, got: ${res.stderr}`).toBeTruthy();
+  return { lines, execd: lines.includes(`real-gh-parent: ${caller}`), ran: fs.existsSync(marks) ? fs.readFileSync(marks, 'utf8') : null };
+};
 
-  await test('case 15: outside a Claude session, gh issue list runs the real gh with no GH_TOKEN', async () => {
+describe('identity/gh: the owner\'s own calls', () => {
+  test('case 15: outside a Claude session, gh issue list runs the real gh with no GH_TOKEN', async () => {
     const world = mkWorld();
     assertRan(runShim(world, ['issue', 'list'], { claude: false }), ['issue', 'list'], null, 'gh issue list');
   });
+});
 
-  group('identity/gh: the bot\'s bookkeeping');
-
-  await test('case 15: on a rostered repo the bookkeeping verbs get the client\'s token, the rest run as the owner', async () => {
+describe('identity/gh: the bot\'s bookkeeping', () => {
+  test('case 15: on a rostered repo the bookkeeping verbs get the client\'s token, the rest run as the owner', async () => {
     const world = mkWorld();
     const comment = ['issue', 'comment', '1', '--body', 'x'];
     assertRan(runShim(world, comment), comment, 'ghs_testtoken', 'gh issue comment, repo from the cwd');
@@ -229,13 +249,13 @@ const cases = async () => {
     for (const argv of asOwner) assertRan(runShim(world, argv), argv, null, `gh ${argv.join(' ')}`);
   });
 
-  await test('case 15: on a repo not on the roster, a bookkeeping verb runs with no GH_TOKEN', async () => {
+  test('case 15: on a repo not on the roster, a bookkeeping verb runs with no GH_TOKEN', async () => {
     const world = mkWorld();
     const comment = ['issue', 'comment', '1', '--body', 'x'];
     assertRan(runShim(world, comment, { cwd: world.unrostered }), comment, null, 'gh issue comment');
   });
 
-  await test('case 15: GH_REPO names the repo when no flag does, and -R beats it', async () => {
+  test('case 15: GH_REPO names the repo when no flag does, and -R beats it', async () => {
     const world = mkWorld();
     const opts = { cwd: world.unrostered, env: { GH_REPO: 'other/rostered' } };
     const comment = ['issue', 'comment', '1', '--body', 'x'];
@@ -244,13 +264,13 @@ const cases = async () => {
     assertRan(runShim(world, byFlag, opts), byFlag, 'ghs_testtoken', '-R over GH_REPO');
   });
 
-  await test('case 15: an issue URL argument names the repo gh acts on, over the cwd\'s origin', async () => {
+  test('case 15: an issue URL argument names the repo gh acts on, over the cwd\'s origin', async () => {
     const world = mkWorld();
     const byUrl = ['issue', 'comment', 'https://github.com/other/rostered/issues/1', '--body', 'x'];
     assertRan(runShim(world, byUrl), byUrl, 'ghs_othertoken', 'gh issue comment <url> from acme/rostered');
   });
 
-  await test('a pull request URL after a boolean flag names the repo: gh pr review --approve <url> gets that repo\'s token, from any cwd', async () => {
+  test('a pull request URL after a boolean flag names the repo: gh pr review --approve <url> gets that repo\'s token, from any cwd', async () => {
     const world = mkWorld();
     const review = ['pr', 'review', '--approve', 'https://github.com/other/rostered/pull/3'];
     assertRan(runShim(world, review), review, 'ghs_othertoken', 'gh pr review --approve <url> from acme/rostered');
@@ -258,13 +278,13 @@ const cases = async () => {
       'gh pr review --approve <url> from acme/unrostered');
   });
 
-  await test('an issue URL after a boolean flag names the repo: gh issue comment --edit-last <url> --body x gets that repo\'s token', async () => {
+  test('an issue URL after a boolean flag names the repo: gh issue comment --edit-last <url> --body x gets that repo\'s token', async () => {
     const world = mkWorld();
     const edit = ['issue', 'comment', '--edit-last', 'https://github.com/other/rostered/issues/7', '--body', 'x'];
     assertRan(runShim(world, edit), edit, 'ghs_othertoken', 'gh issue comment --edit-last <url> from acme/rostered');
   });
 
-  await test('a URL with a fragment or a trailing path still names the repo: #issuecomment-<n> and /pull/<n>/files get that repo\'s token', async () => {
+  test('a URL with a fragment or a trailing path still names the repo: #issuecomment-<n> and /pull/<n>/files get that repo\'s token', async () => {
     const world = mkWorld();
     const calls = [
       ['issue', 'comment', 'https://github.com/other/rostered/issues/7#issuecomment-123', '--body', 'x'],
@@ -273,7 +293,7 @@ const cases = async () => {
     for (const argv of calls) assertRan(runShim(world, argv), argv, 'ghs_othertoken', `gh ${argv.join(' ')} from acme/rostered`);
   });
 
-  await test('a URL that is a body or title flag\'s whole value names no repo; a boolean flag\'s neighbour still does', async () => {
+  test('a URL that is a body or title flag\'s whole value names no repo; a boolean flag\'s neighbour still does', async () => {
     const world = mkWorld();
     const values = [
       ['issue', 'comment', '5', '--body', 'https://github.com/other/rostered/issues/3'],
@@ -284,14 +304,14 @@ const cases = async () => {
     assertRan(runShim(world, review), review, 'ghs_othertoken', 'gh pr review --approve <url> from acme/rostered');
   });
 
-  await test('a bare verb or a help flag runs the real gh as the owner and never asks the client, signed in or not', async () => {
+  test('a bare verb or a help flag runs the real gh as the owner and never asks the client, signed in or not', async () => {
     const helps = [['issue'], ['label', '-h'], ['issue', 'comment', '--help']];
     // The stand-in is the token service, so a call that asked the client would show as a request.
     const service = await startService(200, { token: 'ghs_never', expires_at: '2099-01-01T00:00:00Z' });
     try {
       const signedIn = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
       for (const argv of helps) assertRan(runShim(signedIn, argv), argv, null, `signed in, gh ${argv.join(' ')}`);
-      assertEq(service.requests().length, 0, `the client never asked the service, got: ${JSON.stringify(service.requests())}`);
+      expect(service.requests().length, `the client never asked the service, got: ${JSON.stringify(service.requests())}`).toBe(0);
     } finally {
       await service.close();
     }
@@ -300,26 +320,26 @@ const cases = async () => {
     for (const argv of helps) assertRan(runShim(signedOut, argv), argv, null, `not signed in, gh ${argv.join(' ')}`);
   });
 
-  await test('gh issue list and gh pr create still run as the owner on a rostered repo', async () => {
+  test('gh issue list and gh pr create still run as the owner on a rostered repo', async () => {
     const world = mkWorld();
     for (const argv of [['issue', 'list'], ['pr', 'create']]) assertRan(runShim(world, argv), argv, null, `gh ${argv.join(' ')}`);
   });
 
-  await test('case 15: gh pr revert and gh pr update-branch run as the owner on a rostered repo', async () => {
+  test('case 15: gh pr revert and gh pr update-branch run as the owner on a rostered repo', async () => {
     const world = mkWorld();
     for (const argv of [['pr', 'revert', '3'], ['pr', 'update-branch', '3']]) {
       assertRan(runShim(world, argv), argv, null, `gh ${argv.join(' ')}`);
     }
   });
 
-  await test('case 17a: the reads run the real gh once with no GH_TOKEN on a rostered repo, signed in or not', async () => {
+  test('case 17a: the reads run the real gh once with no GH_TOKEN on a rostered repo, signed in or not', async () => {
     const reads = [['issue', 'list'], ['issue', 'view', '1'], ['label', 'list'], ['pr', 'checks', '3'], ['pr', 'status']];
     for (const [label, world] of [['signed in', mkWorld()], ['not signed in', mkWorld({ signedIn: false, cache: false })]]) {
       for (const argv of reads) assertRan(runShim(world, argv), argv, null, `${label}, gh ${argv.join(' ')}`);
     }
   });
 
-  await test('case 17b: a github.com URL inside a body or title value\'s prose names no repo; the cwd\'s token is taken', async () => {
+  test('case 17b: a github.com URL inside a body or title value\'s prose names no repo; the cwd\'s token is taken', async () => {
     const world = mkWorld();
     const calls = [
       ['issue', 'comment', '5', '--body', 'https://github.com/other/thing/issues/3 is related'],
@@ -329,7 +349,7 @@ const cases = async () => {
     for (const argv of calls) assertRan(runShim(world, argv), argv, 'ghs_testtoken', `gh ${argv.join(' ')}`);
   });
 
-  await test('case 17c: -R and GH_REPO given as a github.com URL or host/owner/name read as owner/name', async () => {
+  test('case 17c: -R and GH_REPO given as a github.com URL or host/owner/name read as owner/name', async () => {
     const world = mkWorld();
     for (const value of ['https://github.com/other/rostered', 'github.com/other/rostered']) {
       const argv = ['issue', 'comment', '1', '--body', 'x', '-R', value];
@@ -345,16 +365,16 @@ const cases = async () => {
     assertRan(runShim(world, comment, { cwd: world.unrostered, env: { GH_REPO: 'github.com/acme/rostered' } }), comment,
       'ghs_testtoken', 'GH_REPO=github.com/acme/rostered from acme/unrostered');
   });
+});
 
-  group('identity/gh: the escape hatch and the PATH');
-
-  await test('case 15: WORKKIT_IDENTITY_OFF=1 runs the real gh with no token, even for bookkeeping on a rostered repo', async () => {
+describe('identity/gh: the escape hatch and the PATH', () => {
+  test('case 15: WORKKIT_IDENTITY_OFF=1 runs the real gh with no token, even for bookkeeping on a rostered repo', async () => {
     const world = mkWorld();
     const comment = ['issue', 'comment', '1', '--body', 'x'];
     assertRan(runShim(world, comment, { env: { WORKKIT_IDENTITY_OFF: '1' } }), comment, null, 'gh issue comment');
   });
 
-  await test('case 15: a PATH holding a second copy of the shim\'s folder still reaches the real gh in time', async () => {
+  test('case 15: a PATH holding a second copy of the shim\'s folder still reaches the real gh in time', async () => {
     const world = mkWorld();
     // A second kit, since a shim loads its gate and libraries from its own kit.
     const second = path.join(world.root, 'second');
@@ -363,10 +383,10 @@ const cases = async () => {
     assertRan(runShim(world, list, { claude: false, extraDirs: [path.join(second, 'workflow', 'identity')] }), list, null,
       'gh issue list past two shims');
   });
+});
 
-  group('identity/gh: the refusals');
-
-  await test('case 16: not signed in, no terminal, a bookkeeping verb on a rostered repo exits 3 naming workkit setup --login, starts no sign-in, and gh never runs', async () => {
+describe('identity/gh: the refusals', () => {
+  test('case 16: not signed in, no terminal, a bookkeeping verb on a rostered repo exits 3 naming workkit setup --login, starts no sign-in, and gh never runs', async () => {
     // The stand-in is GitHub's sign-in host, so a device flow started here would show.
     const github = await startServer(deviceFlowRoutes({ userCode: 'SHIM-0016', accessToken: 'ghu_never', login: 'hubot' }),
       mkTmp('wk-gh-shim-github-'));
@@ -374,18 +394,18 @@ const cases = async () => {
       const world = mkWorld({ signedIn: false, cache: false });
       const res = runShim(world, ['issue', 'comment', '1', '--body', 'x'],
         { env: hostsOf(github) });
-      assertEq(res.code, 3, `exit 3, stderr: ${res.stderr}`);
-      assert(res.stderr.includes('workkit setup --login'), `stderr names workkit setup --login, got: ${res.stderr}`);
-      assert(!res.stderr.includes('workkit login'), `and no longer workkit login, got: ${res.stderr}`);
-      assertEq(github.requests().length, 0, `no device-code request, got: ${JSON.stringify(github.requests())}`);
-      assertEq(res.calls.length, 0, `the real gh never runs, got ${fmtCalls(res.calls)}`);
+      expect(res.code, `exit 3, stderr: ${res.stderr}`).toBe(3);
+      expect(res.stderr.includes('workkit setup --login'), `stderr names workkit setup --login, got: ${res.stderr}`).toBeTruthy();
+      expect(!res.stderr.includes('workkit login'), `and no longer workkit login, got: ${res.stderr}`).toBeTruthy();
+      expect(github.requests().length, `no device-code request, got: ${JSON.stringify(github.requests())}`).toBe(0);
+      expect(res.calls.length, `the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
     } finally {
       await github.close();
     }
   });
 
-  await testUnless(!PTY, 'no `script` here to hand the shim a terminal')(
-    'case 16a: not signed in at a terminal, the client\'s own sign-in reaches the person, then the real gh runs once with the service\'s token', async () => {
+  test(
+    'case 16a: not signed in at a terminal, the client\'s own sign-in reaches the person, then the real gh runs once with the service\'s token', { skip: !PTY && 'no `script` here to hand the shim a terminal' }, async () => {
       const stand = await startServer([
         ...deviceFlowRoutes({ userCode: 'SHIM-016A', accessToken: 'ghu_shimkeyboard', login: 'hubot' }),
         { method: 'POST', url: '/token', status: 200, body: JSON.stringify({ token: 'ghs_aftersignin', expires_at: '2099-01-01T00:00:00Z' }) },
@@ -394,23 +414,23 @@ const cases = async () => {
         const world = mkWorld({ signedIn: false, cache: false, tokenUrl: `${stand.url}/token` });
         const comment = ['issue', 'comment', '1', '--body', 'x'];
         const res = runShim(world, comment, { keyboard: true, env: hostsOf(stand) });
-        assert(res.stderr.includes('https://github.com/login/device'), `the terminal shows the device page, got: ${res.stderr}`);
-        assert(res.stderr.includes('SHIM-016A'), `and the user code, got: ${res.stderr}`);
+        expect(res.stderr.includes('https://github.com/login/device'), `the terminal shows the device page, got: ${res.stderr}`).toBeTruthy();
+        expect(res.stderr.includes('SHIM-016A'), `and the user code, got: ${res.stderr}`).toBeTruthy();
         const written = readWrittenLogin(world.home);
-        assertEq(written.login, 'hubot', 'the login file holds the stand-in\'s login');
-        assertEq(written.token, 'ghu_shimkeyboard', 'and its token');
+        expect(written.login, 'the login file holds the stand-in\'s login').toBe('hubot');
+        expect(written.token, 'and its token').toBe('ghu_shimkeyboard');
         // The stub exits 0 on a comment, so the shim's 0 is the stub's, handed on by exec.
         assertRan(res, comment, 'ghs_aftersignin', 'gh issue comment after the sign-in');
         const posts = stand.requests().filter((r) => r.method === 'POST' && r.url === '/token');
-        assertEq(posts.length, 1, `one service request, got: ${JSON.stringify(stand.requests())}`);
-        assertEq(posts[0].auth, 'Bearer ghu_shimkeyboard', 'carrying the new sign-in\'s bearer');
+        expect(posts.length, `one service request, got: ${JSON.stringify(stand.requests())}`).toBe(1);
+        expect(posts[0].auth, 'carrying the new sign-in\'s bearer').toBe('Bearer ghu_shimkeyboard');
       } finally {
         await stand.close();
       }
     },
   );
 
-  await test('case 17: the service answers 412, the verb exits 4 naming the install page pre-selected on the owner, then or run: workkit setup --bot, and gh never runs', async () => {
+  test('case 17: the service answers 412, the verb exits 4 naming the install page pre-selected on the owner, then or run: workkit setup --bot, and gh never runs', async () => {
     // One stand-in is both the service and GitHub's API. It answers no repo read,
     // so the id comes from the public user read the owner falls back to.
     const service = await startServer([
@@ -420,26 +440,26 @@ const cases = async () => {
     try {
       const world = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
       const res = runShim(world, ['issue', 'comment', '1', '--body', 'x'], { env: { GITHUB_API_URL: service.url } });
-      assertEq(res.code, 4, `exit 4, stderr: ${res.stderr}`);
-      assert(res.stderr.includes(`install workkit-agent[bot] on acme: ${PRESELECTED}4242\n${BOT_HINT}\n`),
-        `stderr names the pre-selected page, then the --bot command, got: ${res.stderr}`);
-      assertEq(res.calls.length, 0, `the real gh never runs, got ${fmtCalls(res.calls)}`);
+      expect(res.code, `exit 4, stderr: ${res.stderr}`).toBe(4);
+      expect(res.stderr.includes(`install workkit-agent[bot] on acme: ${PRESELECTED}4242\n${BOT_HINT}\n`),
+        `stderr names the pre-selected page, then the --bot command, got: ${res.stderr}`).toBeTruthy();
+      expect(res.calls.length, `the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
       const posts = service.requests().filter((r) => r.method === 'POST' && r.url === '/token');
-      assert(posts.length > 0, `the client asked the stand-in, got: ${JSON.stringify(service.requests())}`);
+      expect(posts.length > 0, `the client asked the stand-in, got: ${JSON.stringify(service.requests())}`).toBeTruthy();
     } finally {
       await service.close();
     }
   });
 
-  await test('case 17d: with no jq on PATH, a bookkeeping verb on a rostered repo exits 1 naming jq, and gh never runs', async () => {
+  test('case 17d: with no jq on PATH, a bookkeeping verb on a rostered repo exits 1 naming jq, and gh never runs', async () => {
     const world = mkWorld();
     const res = runShim(world, ['issue', 'comment', '1', '--body', 'x'], { noJq: true });
-    assertEq(res.code, 1, `exit 1, stderr: ${res.stderr}`);
-    assert(/\bjq\b/.test(res.stderr), `stderr names jq, got: ${res.stderr}`);
-    assertEq(res.calls.length, 0, `the real gh never runs, got ${fmtCalls(res.calls)}`);
+    expect(res.code, `exit 1, stderr: ${res.stderr}`).toBe(1);
+    expect(/\bjq\b/.test(res.stderr), `stderr names jq, got: ${res.stderr}`).toBeTruthy();
+    expect(res.calls.length, `the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
   });
 
-  await test('the shim relays the client\'s exit 1: a 403 and a 500 from the service each exit 1 with its message, and gh never runs', async () => {
+  test('the shim relays the client\'s exit 1: a 403 and a 500 from the service each exit 1 with its message, and gh never runs', async () => {
     const answers = [
       [403, { error: 'no write access', fix: 'you need write access to acme/rostered to post as the bot' }, 'you need write access to acme/rostered to post as the bot'],
       [500, { error: 'github refused: Server Error from the stand-in', fix: 'try again shortly' }, 'Server Error from the stand-in'],
@@ -449,47 +469,47 @@ const cases = async () => {
       try {
         const world = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
         const res = runShim(world, ['issue', 'comment', '1', '--body', 'x']);
-        assertEq(res.code, 1, `${status}: exit 1, stderr: ${res.stderr}`);
-        assert(res.stderr.includes(message), `${status}: stderr carries the service's message, got: ${res.stderr}`);
-        assertEq(res.calls.length, 0, `${status}: the real gh never runs, got ${fmtCalls(res.calls)}`);
+        expect(res.code, `${status}: exit 1, stderr: ${res.stderr}`).toBe(1);
+        expect(res.stderr.includes(message), `${status}: stderr carries the service's message, got: ${res.stderr}`).toBeTruthy();
+        expect(res.calls.length, `${status}: the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
       } finally {
         await service.close();
       }
     }
   });
 
-  await test('with only a node older than 22.12 on PATH and none under nvm, a Claude session\'s gh issue view runs the real gh, the gate saying it did not run', async () => {
+  test('with only a node older than 22.12 on PATH and none under nvm, a Claude session\'s gh issue view runs the real gh, the gate saying it did not run', async () => {
     const world = mkWorld();
     const old = path.join(world.root, 'old-node');
     stubNode(old, '20.15.1');
     const view = ['issue', 'view', '1'];
     const res = runShim(world, view, { nodeDir: old });
     assertRan(res, view, null, 'gh issue view past a node 20');
-    assert(res.stderr.includes('did not run (no node 22.12 or newer found)'), `stderr names the gate's stand-down, got: ${res.stderr}`);
+    expect(res.stderr.includes('did not run (no node 22.12 or newer found)'), `stderr names the gate's stand-down, got: ${res.stderr}`).toBeTruthy();
   });
+});
 
-  group('identity/gh: a cloud session and off it');
-
-  await test('case 9: off the cloud (CLAUDE_CODE_REMOTE unset or false) a verb the cloud translates runs the real gh once, whole, with no gh api call', async () => {
+describe('identity/gh: a cloud session and off it', () => {
+  test('case 9: off the cloud (CLAUDE_CODE_REMOTE unset or false) a verb the cloud translates runs the real gh once, whole, with no gh api call', async () => {
     const world = mkWorld();
     const comment = ['issue', 'comment', '1', '--body', 'x'];
     for (const remote of [undefined, 'false']) {
       const res = runShim(world, comment, { cwd: world.unrostered, remote, api: {} });
       assertRan(res, comment, null, `CLAUDE_CODE_REMOTE=${remote}`);
-      assertEq(res.requests.length, 0, `CLAUDE_CODE_REMOTE=${remote}: no gh api call`);
+      expect(res.requests.length, `CLAUDE_CODE_REMOTE=${remote}: no gh api call`).toBe(0);
     }
   });
 
-  await test('off the cloud a pr or release verb the cloud serves runs the real gh once, whole, with no gh api call', async () => {
+  test('off the cloud a pr or release verb the cloud serves runs the real gh once, whole, with no gh api call', async () => {
     const world = mkWorld();
     for (const argv of [['pr', 'view', '12', '--json', 'number'], ['release', 'view', 'v1.0.0', '--json', 'tagName']]) {
       const res = runShim(world, argv, { cwd: world.unrostered, api: {} });
       assertRan(res, argv, null, argv.slice(0, 2).join(' '));
-      assertEq(res.requests.length, 0, `${argv.slice(0, 2).join(' ')}: no gh api call`);
+      expect(res.requests.length, `${argv.slice(0, 2).join(' ')}: no gh api call`).toBe(0);
     }
   });
 
-  await testUnless(IS_WINDOWS, NO_NODE_STUB)('in the cloud gh pr and gh release reach GitHub as gh api calls alone, never the real gh\'s own pr or release, with no bot token', async () => {
+  test('in the cloud gh pr and gh release reach GitHub as gh api calls alone, never the real gh\'s own pr or release, with no bot token', { skip: skipWithoutNodeStub() }, async () => {
     const pull = {
       number: 12, state: 'open', merged_at: null, html_url: 'https://github.com/acme/rostered/pull/12', head: { ref: 'claude/work', sha: 'a'.repeat(40) }, base: { ref: 'main' },
     };
@@ -501,24 +521,24 @@ const cases = async () => {
     for (const argv of [['pr', 'merge', '12', '--merge'], ['release', 'view', 'v1.0.0', '--json', 'tagName']]) {
       const what = argv.slice(0, 2).join(' ');
       const res = runShim(mkWorld(), argv, { remote: 'true', api });
-      assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()})`);
-      assert(res.calls.length > 0 && res.calls.every((c) => c[0] === 'api'), `${what}: only gh api runs, got ${fmtCalls(res.calls)}`);
-      assert(res.envs.every((e) => e.GH_TOKEN === null), `${what}: no GH_TOKEN reaches gh, got: ${JSON.stringify(res.envs)}`);
+      expect(res.code, `${what}: the exit (stderr: ${res.stderr.trim()})`).toBe(0);
+      expect(res.calls.length > 0 && res.calls.every((c) => c[0] === 'api'), `${what}: only gh api runs, got ${fmtCalls(res.calls)}`).toBeTruthy();
+      expect(res.envs.every((e) => e.GH_TOKEN === null), `${what}: no GH_TOKEN reaches gh, got: ${JSON.stringify(res.envs)}`).toBeTruthy();
     }
   });
 
-  await test('in the cloud a verb the shim does not serve runs the real gh with the clone\'s repo as GH_REPO, so gh api placeholders resolve; off it GH_REPO stays unset', async () => {
+  test('in the cloud a verb the shim does not serve runs the real gh with the clone\'s repo as GH_REPO, so gh api placeholders resolve; off it GH_REPO stays unset', async () => {
     const world = mkWorld();
     const read = ['api', 'repos/{owner}/{repo}', '-q', '.default_branch'];
     const cloud = runShim(world, read, { cwd: world.unrostered, remote: 'true' });
     assertRan(cloud, read, null, 'gh api in the cloud');
-    assertEq(cloud.envs[0].GH_REPO, 'acme/unrostered', 'the clone\'s origin, handed over');
+    expect(cloud.envs[0].GH_REPO, 'the clone\'s origin, handed over').toBe('acme/unrostered');
     const local = runShim(world, read, { cwd: world.unrostered });
     assertRan(local, read, null, 'gh api off the cloud');
-    assertEq(local.envs[0].GH_REPO, null, 'off the cloud gh reads the remote itself');
+    expect(local.envs[0].GH_REPO, 'off the cloud gh reads the remote itself').toBe(null);
   });
 
-  await testUnless(IS_WINDOWS, NO_NODE_STUB)('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', async () => {
+  test('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', { skip: skipWithoutNodeStub() }, async () => {
     const comment = ['issue', 'comment', '1', '--body', 'x'];
     const api = {
       'POST repos/acme/rostered/issues/1/comments': {
@@ -527,9 +547,9 @@ const cases = async () => {
       },
     };
     const asAccount = (res, what) => {
-      assertEq(res.code, 0, `${what}: the exit (stderr: ${res.stderr.trim()})`);
-      assert(res.calls.length > 0 && res.calls.every((c) => c[0] === 'api'), `${what}: only gh api runs, got ${fmtCalls(res.calls)}`);
-      assert(res.envs.every((e) => e.GH_TOKEN === null), `${what}: no GH_TOKEN reaches gh, got: ${JSON.stringify(res.envs)}`);
+      expect(res.code, `${what}: the exit (stderr: ${res.stderr.trim()})`).toBe(0);
+      expect(res.calls.length > 0 && res.calls.every((c) => c[0] === 'api'), `${what}: only gh api runs, got ${fmtCalls(res.calls)}`).toBeTruthy();
+      expect(res.envs.every((e) => e.GH_TOKEN === null), `${what}: no GH_TOKEN reaches gh, got: ${JSON.stringify(res.envs)}`).toBeTruthy();
     };
     asAccount(runShim(mkWorld(), comment, { remote: 'true', api }), 'a cached token on disk');
 
@@ -538,15 +558,15 @@ const cases = async () => {
     try {
       const world = mkWorld({ cache: false, tokenUrl: `${service.url}/token` });
       asAccount(runShim(world, comment, { remote: 'true', api }), 'nothing cached');
-      assertEq(service.requests().length, 0, `the token service is never asked, got: ${JSON.stringify(service.requests())}`);
+      expect(service.requests().length, `the token service is never asked, got: ${JSON.stringify(service.requests())}`).toBe(0);
     } finally {
       await service.close();
     }
   });
+});
 
-  group('identity/gh: a paired public repo');
-
-  await test('the shim posts public-repo writes as the bot for a paired repo, and leaves an unpaired outside repo to the owner\'s gh', async () => {
+describe('identity/gh: a paired public repo', () => {
+  test('the shim posts public-repo writes as the bot for a paired repo, and leaves an unpaired outside repo to the owner\'s gh', async () => {
     const world = mkWorld();
     const settings = path.join(world.rostered, '.workkit', 'settings.json');
     fs.mkdirSync(path.dirname(settings), { recursive: true });
@@ -571,21 +591,30 @@ const cases = async () => {
       }
     }
   });
-};
+});
 
-const gateCases = async () => {
-  group('identity/gh: the gate\'s leak scan, in every session');
-
-  await test('case 1: gh issue comment 1 --body "$(cat .env)" outside a Claude session exits 1 naming the KEY, and the real gh never runs', async () => {
+describe('identity/gh: the gate\'s leak scan, in every session', () => {
+  test('case 1: gh issue comment 1 --body "$(cat .env)" outside a Claude session exits 1 naming the KEY, and the real gh never runs', async () => {
     const world = mkGateWorld();
     const res = runShim(world, [], { claude: false, script: 'gh issue comment 1 --body "$(cat .env)"' });
-    assertEq(res.code, 1, `the exit (stderr: ${res.stderr.trim()})`);
-    assert(res.stderr.includes(ENV_LEAK), `stderr carries the issue-guard bounce naming API_SECRET, got: ${res.stderr}`);
-    assert(!res.stderr.includes(SECRET), 'never echoes the value');
-    assertEq(res.calls.length, 0, `the real gh never runs, got ${fmtCalls(res.calls)}`);
+    expect(res.code, `the exit (stderr: ${res.stderr.trim()})`).toBe(1);
+    expect(res.stderr.includes(ENV_LEAK), `stderr carries the issue-guard bounce naming API_SECRET, got: ${res.stderr}`).toBeTruthy();
+    expect(!res.stderr.includes(SECRET), 'never echoes the value').toBeTruthy();
+    expect(res.calls.length, `the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
   });
 
-  await test('case 2: the .env value in a --body-file file and in a --body-file - stdin body both bounce, and no copy of the stdin body is left behind', async () => {
+  test('env reader case 9: a .env value only Node\'s reader reads, in backticks, outside a Claude session exits 1 naming the KEY, and the real gh never runs', async () => {
+    const world = mkGateWorld();
+    const value = 'abc123xyz999';
+    fs.writeFileSync(path.join(world.rostered, '.env'), `SERVICE_ID=\`${value}\`\n`);
+    const res = runShim(world, ['issue', 'comment', '1', '--body', `it failed with ${value} today`], { claude: false });
+    expect(res.code, `the exit (stderr: ${res.stderr.trim()})`).toBe(1);
+    expect(res.stderr.includes(LEAK('the value of SERVICE_ID from a local .env file')), `stderr carries the issue-guard bounce naming SERVICE_ID, got: ${res.stderr}`).toBeTruthy();
+    expect(!res.stderr.includes(value), 'never echoes the value').toBeTruthy();
+    expect(res.calls.length, `the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
+  });
+
+  test('case 2: the .env value in a --body-file file and in a --body-file - stdin body both bounce, and no copy of the stdin body is left behind', async () => {
     const world = mkGateWorld();
     const file = path.join(mkTmp('wk-gh-gate-body-'), 'body.md');
     fs.writeFileSync(file, `## Description\n\nthe key is ${SECRET}\n`);
@@ -598,10 +627,10 @@ const gateCases = async () => {
     assertBounced(res, fromStdin, ENV_LEAK, 'a --body-file - stdin body');
     const held = fs.readdirSync(tmp, { recursive: true }).map((rel) => path.join(tmp, rel))
       .filter((f) => fs.statSync(f).isFile() && fs.readFileSync(f, 'utf8').includes(SECRET));
-    assertEq(held.join(', '), '', 'no file under TMPDIR still holds the stdin body');
+    expect(held.join(', '), 'no file under TMPDIR still holds the stdin body').toBe('');
   });
 
-  await test('case 2: the .env value in a gh api --input file, a gh api --field key=@file and a gh issue comment -F file each bounce', async () => {
+  test('case 2: the .env value in a gh api --input file, a gh api --field key=@file and a gh issue comment -F file each bounce', async () => {
     const world = mkGateWorld();
     fs.writeFileSync(path.join(world.rostered, 'body.json'), `${JSON.stringify({ body: `the key is ${SECRET}` })}\n`);
     fs.writeFileSync(path.join(world.rostered, 'body.txt'), `the key is ${SECRET}\n`);
@@ -613,17 +642,17 @@ const gateCases = async () => {
     for (const argv of calls) assertBounced(runShim(world, argv, { claude: false }), argv, ENV_LEAK, `gh ${argv.join(' ')}`);
   });
 
-  await test('case 3: a ghp_ token in gh pr create --body bounces; a clean gh issue comment runs the real gh with its argv unchanged', async () => {
+  test('case 3: a ghp_ token in gh pr create --body bounces; a clean gh issue comment runs the real gh with its argv unchanged', async () => {
     const world = mkGateWorld();
     const create = ['pr', 'create', '--title', 'fix', '--body', `use ${TOKEN} to retry`];
     const res = runShim(world, create, { claude: false });
     assertBounced(res, create, LEAK('a GitHub token-shaped string'), 'gh pr create with a token');
-    assert(!res.stderr.includes(TOKEN), 'never echoes the match');
+    expect(!res.stderr.includes(TOKEN), 'never echoes the match').toBeTruthy();
     const clean = ['issue', 'comment', '1', '--body', 'specced, building now'];
     assertRan(runShim(world, clean, { claude: false }), clean, null, 'a clean gh issue comment');
   });
 
-  await test('gh secret set, gh variable set and a gh api PUT to actions/secrets carry the .env value to GitHub\'s store and run; a comment carrying it still bounces', async () => {
+  test('gh secret set, gh variable set and a gh api PUT to actions/secrets carry the .env value to GitHub\'s store and run; a comment carrying it still bounces', async () => {
     const world = mkGateWorld();
     const stores = [
       ['secret', 'set', 'FOO', '--body', SECRET],
@@ -636,39 +665,38 @@ const gateCases = async () => {
     const comment = ['issue', 'comment', '7', '--body', SECRET];
     assertBounced(runShim(world, comment), comment, ENV_LEAK, 'the comment carrying the value');
   });
+});
 
-  group('identity/gh: the gate\'s label and filing gates, in a Claude session');
-
-  await test('case 4: a flip to status:qa with no Proof: comment and an unrecorded test file bounces; proved and recorded, it runs and journals one line', async () => {
+describe('identity/gh: the gate\'s label and filing gates, in a Claude session', () => {
+  test('case 4: a flip to status:qa with no Proof: comment and an unrecorded test file bounces; proved and recorded, it runs and journals one line', async () => {
     const world = mkGateWorld({ touched: true });
     const bounced = runShim(world, QA_FLIP, NO_PROOF);
     assertBounced(bounced, QA_FLIP, QA_BLOCK(1, 'the repo root: test/a.test.js'), 'the unproved flip');
-    assertEq(journal(world).length, 0, 'a bounced call journals nothing');
+    expect(journal(world).length, 'a bounced call journals nothing').toBe(0);
 
     plantPkgRecord(path.join(world.home, '.workkit'), world.rostered, ['.']);
     const before = Date.now();
     const res = runShim(world, QA_FLIP, PROVED);
     const after = Date.now();
-    assertEq(res.code, 0, `the proved flip passes (stderr: ${res.stderr.trim()})`);
-    assertEq(callsOf(res, QA_FLIP).length, 1, `the real gh ran the flip once, got ${fmtCalls(res.calls)}`);
+    expect(res.code, `the proved flip passes (stderr: ${res.stderr.trim()})`).toBe(0);
+    expect(callsOf(res, QA_FLIP).length, `the real gh ran the flip once, got ${fmtCalls(res.calls)}`).toBe(1);
     const lines = journal(world);
-    assertEq(lines.length, 1, `one journal line, got: ${JSON.stringify(lines)}`);
+    expect(lines.length, `one journal line, got: ${JSON.stringify(lines)}`).toBe(1);
     const [ms, ...fields] = lines[0];
-    assert(Number(ms) >= before && Number(ms) <= after, `the line's epoch ms falls within the call, got: ${ms}`);
-    assertEq(JSON.stringify(fields), JSON.stringify(['issue', 'edit', 'acme/rostered', '7', 'status:qa', '', gitPath(world.rostered)]),
-      'verb, sub, repo, numbers, labels added and removed, cwd');
+    expect(Number(ms) >= before && Number(ms) <= after, `the line's epoch ms falls within the call, got: ${ms}`).toBeTruthy();
+    expect(JSON.stringify(fields), 'verb, sub, repo, numbers, labels added and removed, cwd').toBe(JSON.stringify(['issue', 'edit', 'acme/rostered', '7', 'status:qa', '', gitPath(world.rostered)]));
   });
 
-  await test('case 5: a gh api POST adding status:qa to an issue\'s labels gets the same bounce; a gh api read passes and journals nothing', async () => {
+  test('case 5: a gh api POST adding status:qa to an issue\'s labels gets the same bounce; a gh api read passes and journals nothing', async () => {
     const world = mkGateWorld({ touched: true });
     const post = ['api', '-X', 'POST', 'repos/acme/rostered/issues/7/labels', '-f', 'labels[]=status:qa'];
     assertBounced(runShim(world, post, NO_PROOF), post, QA_BLOCK(1, 'the repo root: test/a.test.js'), 'the REST flip');
     const read = ['api', 'repos/acme/rostered'];
     assertRan(runShim(world, read), read, null, 'gh api repos/acme/rostered');
-    assertEq(journal(world).length, 0, `neither call journals a line, got: ${JSON.stringify(journal(world))}`);
+    expect(journal(world).length, `neither call journals a line, got: ${JSON.stringify(journal(world))}`).toBe(0);
   });
 
-  await test('case 6: a flip to status:specced on a Spec with no Contract gets the spec-guard bounce; a review notes create with findings.file off gets the findings-guard bounce', async () => {
+  test('case 6: a flip to status:specced on a Spec with no Contract gets the spec-guard bounce; a review notes create with findings.file off gets the findings-guard bounce', async () => {
     const world = mkGateWorld();
     const specced = ['issue', 'edit', '7', '--add-label', 'status:specced'];
     const body = { field: 'body', issues: { 7: '## Description\n\nX.\n\n## Spec\n\nBuild the thing, carefully.\n' } };
@@ -677,28 +705,28 @@ const gateCases = async () => {
     assertBounced(runShim(world, create), create, FINDINGS_BLOCK, 'the review notes create');
   });
 
-  await test('case 7: the same unproved flip outside a Claude session runs the real gh, unjudged, and journals nothing', async () => {
+  test('case 7: the same unproved flip outside a Claude session runs the real gh, unjudged, and journals nothing', async () => {
     const world = mkGateWorld({ touched: true });
     assertRan(runShim(world, QA_FLIP, { ...NO_PROOF, claude: false }), QA_FLIP, null, 'the flip at the owner\'s terminal');
-    assertEq(journal(world).length, 0, `no journal line, got: ${JSON.stringify(journal(world))}`);
+    expect(journal(world).length, `no journal line, got: ${JSON.stringify(journal(world))}`).toBe(0);
   });
 
-  await test('case 8: a write the real gh fails exits 1 and journals nothing; the same write answered journals its line', async () => {
+  test('case 8: a write the real gh fails exits 1 and journals nothing; the same write answered journals its line', async () => {
     const world = mkGateWorld();
     const comment = ['api', '-X', 'POST', 'repos/acme/rostered/issues/1/comments', '-f', 'body=x'];
     const failed = runShim(world, comment, { api: {} });
-    assertEq(failed.code, 1, `the stub's 404 is the shim's exit (stderr: ${failed.stderr.trim()})`);
-    assertEq(callsOf(failed, comment).length, 1, `the real gh ran the write, got ${fmtCalls(failed.calls)}`);
-    assertEq(journal(world).length, 0, `a failed write journals nothing, got: ${JSON.stringify(journal(world))}`);
+    expect(failed.code, `the stub's 404 is the shim's exit (stderr: ${failed.stderr.trim()})`).toBe(1);
+    expect(callsOf(failed, comment).length, `the real gh ran the write, got ${fmtCalls(failed.calls)}`).toBe(1);
+    expect(journal(world).length, `a failed write journals nothing, got: ${JSON.stringify(journal(world))}`).toBe(0);
 
     const answered = { 'POST repos/acme/rostered/issues/1/comments': { status: 201, body: { id: 2001, body: 'x' } } };
-    assertEq(runShim(world, comment, { api: answered }).code, 0, 'the answered write passes');
+    expect(runShim(world, comment, { api: answered }).code, 'the answered write passes').toBe(0);
     const lines = journal(world);
-    assertEq(lines.length, 1, `one line for the answered write, got: ${JSON.stringify(lines)}`);
-    assertEq(lines[0][1], 'api', 'its verb');
+    expect(lines.length, `one line for the answered write, got: ${JSON.stringify(lines)}`).toBe(1);
+    expect(lines[0][1], 'its verb').toBe('api');
   });
 
-  await test('journal case 12: a journal last written eight days ago keeps its one line, and the shim\'s write lands after it', async () => {
+  test('journal case 12: a journal last written eight days ago keeps its one line, and the shim\'s write lands after it', async () => {
     const world = mkGateWorld();
     const file = journalFile(path.join(world.home, '.workkit'), world.rostered);
     const old = ['1700000000000', 'issue', 'edit', 'acme/rostered', '7', 'status:building', '', gitPath(world.rostered)];
@@ -709,34 +737,34 @@ const gateCases = async () => {
 
     const comment = ['api', '-X', 'POST', 'repos/acme/rostered/issues/1/comments', '-f', 'body=x'];
     const answered = { 'POST repos/acme/rostered/issues/1/comments': { status: 201, body: { id: 2001, body: 'x' } } };
-    assertEq(runShim(world, comment, { api: answered }).code, 0, 'the answered write passes');
+    expect(runShim(world, comment, { api: answered }).code, 'the answered write passes').toBe(0);
     const lines = journal(world);
-    assertEq(JSON.stringify(lines.map((l) => l[1])), JSON.stringify(['issue', 'api']), 'the old line\'s verb, then the new one\'s');
-    assertEq(JSON.stringify(lines[0]), JSON.stringify(old), 'the old line unchanged');
+    expect(JSON.stringify(lines.map((l) => l[1])), 'the old line\'s verb, then the new one\'s').toBe(JSON.stringify(['issue', 'api']));
+    expect(JSON.stringify(lines[0]), 'the old line unchanged').toBe(JSON.stringify(old));
   });
 
-  await test('ports proof-guard\'s close cases through the gate: --reason "not planned" and --duplicate-of pass unproved, --reason completed bounces', async () => {
+  test('ports proof-guard\'s close cases through the gate: --reason "not planned" and --duplicate-of pass unproved, --reason completed bounces', async () => {
     const world = mkGateWorld();
     for (const argv of [['issue', 'close', '9', '--reason', 'not planned'], ['issue', 'close', '9', '--duplicate-of', '7']]) {
       const res = runShim(world, argv, NO_PROOF);
-      assertEq(res.code, 0, `${argv.join(' ')}: nothing was built, so nothing is proved (stderr: ${res.stderr.trim()})`);
-      assertEq(callsOf(res, argv).length, 1, `${argv.join(' ')}: the real gh ran it, got ${fmtCalls(res.calls)}`);
+      expect(res.code, `${argv.join(' ')}: nothing was built, so nothing is proved (stderr: ${res.stderr.trim()})`).toBe(0);
+      expect(callsOf(res, argv).length, `${argv.join(' ')}: the real gh ran it, got ${fmtCalls(res.calls)}`).toBe(1);
     }
     const completed = ['issue', 'close', '9', '--reason', 'completed'];
     assertBounced(runShim(world, completed, NO_PROOF), completed, PROOF_BLOCK(9, 'be closed'), 'completed means built');
   });
 
-  await test('a close whose issue gh cannot read passes with proof-guard\'s notice on stderr, and the real gh runs it', async () => {
+  test('a close whose issue gh cannot read passes with proof-guard\'s notice on stderr, and the real gh runs it', async () => {
     const world = mkGateWorld();
     const close = ['issue', 'close', '9'];
     const res = runShim(world, close, { field: 'comments', issues: {} });
-    assertEq(res.code, 0, `the close passes (stderr: ${res.stderr.trim()})`);
-    assert(res.stderr.includes('proof-guard: could not read issue #9 (gh could not answer), so the proof gate did not run'),
-      `stderr carries the notice, got: ${res.stderr}`);
-    assertEq(callsOf(res, close).length, 1, `the real gh ran the close, got ${fmtCalls(res.calls)}`);
+    expect(res.code, `the close passes (stderr: ${res.stderr.trim()})`).toBe(0);
+    expect(res.stderr.includes('proof-guard: could not read issue #9 (gh could not answer), so the proof gate did not run'),
+      `stderr carries the notice, got: ${res.stderr}`).toBeTruthy();
+    expect(callsOf(res, close).length, `the real gh ran the close, got ${fmtCalls(res.calls)}`).toBe(1);
   });
 
-  await test('case 12: an unproved close in a Claude session runs unjudged from a repo not opted in and under HOOK_DISABLE=1, and the leak scan still bounces there', async () => {
+  test('case 12: an unproved close in a Claude session runs unjudged from a repo not opted in and under HOOK_DISABLE=1, and the leak scan still bounces there', async () => {
     const world = mkGateWorld();
     const close = ['issue', 'close', '9'];
     // A repo with an origin and a .env but no .workkit/settings.json.
@@ -744,44 +772,19 @@ const gateCases = async () => {
     const unopted = runShim(world, close, { ...NO_PROOF, cwd: world.unrostered });
     assertWrote(unopted, close, null, 'the close from the repo not opted in');
     const lines = journalLines(path.join(world.home, '.workkit'), world.unrostered);
-    assertEq(JSON.stringify(lines.map((l) => l.slice(1, 5))), JSON.stringify([['issue', 'close', 'acme/unrostered', '9']]),
-      'the session still journals the write');
+    expect(JSON.stringify(lines.map((l) => l.slice(1, 5))), 'the session still journals the write').toBe(JSON.stringify([['issue', 'close', 'acme/unrostered', '9']]));
 
     const disabled = runShim(world, close, { ...NO_PROOF, env: { HOOK_DISABLE: '1' } });
-    assertEq(disabled.code, 0, `the close under HOOK_DISABLE=1 passes (stderr: ${disabled.stderr.trim()})`);
-    assertEq(callsOf(disabled, close).length, 1, `the real gh ran it, got ${fmtCalls(disabled.calls)}`);
+    expect(disabled.code, `the close under HOOK_DISABLE=1 passes (stderr: ${disabled.stderr.trim()})`).toBe(0);
+    expect(callsOf(disabled, close).length, `the real gh ran it, got ${fmtCalls(disabled.calls)}`).toBe(1);
 
     const leak = ['issue', 'comment', '9', '--body', `the key is ${SECRET}`];
     assertBounced(runShim(world, leak, { cwd: world.unrostered }), leak, ENV_LEAK, 'the leak from the repo not opted in');
   });
-};
+});
 
-/**
- * `gh <args>` through the shim from the rostered repo, a `gh` ahead of the stub
- * on PATH that the shim takes for the real one: it prints `real-gh: <argv>` and
- * `real-gh-parent: <its parent pid>`, and the calling shell prints `caller: <pid>`
- * after it: `lines` are that output in write order, `execd` whether the real
- * gh's parent is the caller (the shim exec'd it), `ran` the hook's mark, null
- * when no hook ran.
- */
-const runRealGh = (world, args, opts = {}) => {
-  const realGh = path.join(world.root, 'real-gh');
-  fs.mkdirSync(realGh, { recursive: true });
-  stubTool(realGh, 'gh', ['#!/usr/bin/env bash', 'echo "real-gh: $*"', 'echo "real-gh-parent: $PPID"', 'exit 0']);
-  const out = shellPath(path.join(world.root, 'real-gh.log'));
-  const call = args.map((a) => `'${a}'`).join(' ');
-  const res = runShim(world, [], { ...opts, extraDirs: [realGh], script: `gh ${call} > '${out}' 2>&1; echo "code: $?" >> '${out}'; echo "caller: $$" >> '${out}'` });
-  const marks = path.join(world.rostered, 'ran.txt');
-  const lines = fs.readFileSync(path.join(world.root, 'real-gh.log'), 'utf8').split('\n').filter(Boolean);
-  const caller = (lines.find((l) => l.startsWith('caller: ')) || '').slice('caller: '.length);
-  assert(res.code === 0, `the calling shell finished, got: ${res.stderr}`);
-  return { lines, execd: lines.includes(`real-gh-parent: ${caller}`), ran: fs.existsSync(marks) ? fs.readFileSync(marks, 'utf8') : null };
-};
-
-const releaseCases = async () => {
-  group('identity/gh: a release call');
-
-  await test('ship hooks case 9: gh release create in an enabled repo declaring afterRelease runs no hook, and the shim execs the real gh', async () => {
+describe('identity/gh: a release call', () => {
+  test('ship hooks case 9: gh release create in an enabled repo declaring afterRelease runs no hook, and the shim execs the real gh', async () => {
     const world = mkWorld();
     const settings = path.join(world.rostered, '.workkit', 'settings.json');
     fs.mkdirSync(path.dirname(settings), { recursive: true });
@@ -790,20 +793,11 @@ const releaseCases = async () => {
     for (const [what, opts] of Object.entries({ 'in a Claude session': {}, 'outside a Claude session': { claude: false } })) {
       const res = runRealGh(world, release, opts);
       const said = res.lines.join(' | ');
-      assert(res.lines.includes(`real-gh: ${release.join(' ')}`), `${what}: the real gh ran the release, got: ${said}`);
-      assert(res.lines.includes('code: 0'), `${what}: the call exits the real gh's 0, got: ${said}`);
-      assertEq(res.ran, null, `${what}: no hook ran`);
-      assertEq(res.execd, runRealGh(world, ['issue', 'list'], opts).execd, `${what}: the real gh is reached as for gh issue list, got: ${said}`);
-      if (opts.claude === false) assert(res.execd, `${what}: the shim exec'd the real gh, so its parent is the caller, got: ${said}`);
+      expect(res.lines.includes(`real-gh: ${release.join(' ')}`), `${what}: the real gh ran the release, got: ${said}`).toBeTruthy();
+      expect(res.lines.includes('code: 0'), `${what}: the call exits the real gh's 0, got: ${said}`).toBeTruthy();
+      expect(res.ran, `${what}: no hook ran`).toBe(null);
+      expect(res.execd, `${what}: the real gh is reached as for gh issue list, got: ${said}`).toBe(runRealGh(world, ['issue', 'list'], opts).execd);
+      if (opts.claude === false) expect(res.execd, `${what}: the shim exec'd the real gh, so its parent is the caller, got: ${said}`).toBeTruthy();
     }
   });
-};
-
-module.exports = async () => {
-  await cases();
-  await gateCases();
-  await releaseCases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -2,7 +2,7 @@
 // an issue loads the workkit:feature skill. With no marker given, every match answers the line; the marker, its
 // strong-only write and the later silence are per-session state, test/mods/user-prompt-submit.test.ts.
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
 
 const LINE = '[Issue work detected (#374): load the workkit:feature skill before working the issue.]';
@@ -26,36 +26,30 @@ const SILENT = [
   'version 1.2.3', 'a1234b', 'does the framework only run on mac', 'I presume this is fine', 'this api is discontinued',
 ];
 
-const cases = async () => {
-  group('workflow-feature: the issue-work lines fire');
+describe('workflow-feature: the issue-work lines fire', () => {
   for (const prompt of FIRING) {
-    await test(`fires on "${prompt}"`, () => {
+    test(`fires on "${prompt}"`, () => {
       const ctx = say(prompt);
-      assert(ctx.includes('workkit:feature'), `the injection must name the skill, got: ${ctx}`);
-      assert(ctx.includes('#374'), 'the injection must cite its issue');
+      expect(ctx.includes('workkit:feature'), `the injection must name the skill, got: ${ctx}`).toBeTruthy();
+      expect(ctx.includes('#374'), 'the injection must cite its issue').toBeTruthy();
     });
   }
+});
 
-  group('workflow-feature: everything else is silence');
+describe('workflow-feature: everything else is silence', () => {
   for (const prompt of SILENT) {
-    await test(`silent on "${prompt}"`, () => {
-      assertEq(say(prompt), '', 'an unrelated prompt produces nothing');
+    test(`silent on "${prompt}"`, () => {
+      expect(say(prompt), 'an unrelated prompt produces nothing').toBe('');
     });
   }
+});
 
-  group('workflow-feature: the line');
-  await test('valid UserPromptSubmit JSON shape: the injection is exactly the one line', () => {
-    assertEq(say('work on #12'), LINE, 'the line, whole');
+describe('workflow-feature: the line', () => {
+  test('valid UserPromptSubmit JSON shape: the injection is exactly the one line', () => {
+    expect(say('work on #12'), 'the line, whole').toBe(LINE);
   });
 
-  await test('empty stdin exits 0 silently: an empty prompt is silence', () => {
-    assertEq(say(''), '', 'nothing to match');
+  test('empty stdin exits 0 silently: an empty prompt is silence', () => {
+    expect(say(''), 'nothing to match').toBe('');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

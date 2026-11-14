@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { spawnSync } = require('child_process');
-const { assert, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
+const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
@@ -227,7 +227,7 @@ const publish = (world, args = []) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
     env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `publish finished (no timeout): ${res.error || ''}`).toBeTruthy();
   // `out` is both streams in the order a terminal shows them, since what these
   // tests read is what the run said; `err` stays separate for the checks about
   // the stream.

@@ -3,7 +3,7 @@
 // comment, read through `issueView`.
 // The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { mods } = require('../../lib/mods-inputs');
 const {
   T, mkRepo, stage, touchMarker, judge, blocks, passes, shipReadyRepo,
@@ -15,43 +15,34 @@ const withComments = (r, map) => {
   return r;
 };
 
-const cases = async () => {
-  group('commit-gate: check 6, a closed issue carries its Proof: comment (issue #233)');
-
-  await test('a Fixes trailer whose issue has no Proof: comment blocks', async () => {
+describe('commit-gate: check 6, a closed issue carries its Proof: comment (issue #233)', () => {
+  test('a Fixes trailer whose issue has no Proof: comment blocks', async () => {
     const r = withComments(shipReadyRepo(), { 4: ['QA passed by the owner, 2026-09-10.'] });
     blocks(await judge(r, 'feat: a thing\n\nFixes #4'), T.unproved(' #4'), 'names the issue and what is missing');
   });
 
-  await test('a repo that keeps no CHANGELOG.md is never asked for a proof, even when gh can answer', async () => {
+  test('a repo that keeps no CHANGELOG.md is never asked for a proof, even when gh can answer', async () => {
     const r = mkRepo();
     stage(r, 'app.js', 'const x = 1;\n');
     touchMarker(r);
     withComments(r, { 4: ['looks good to me'] });
     passes(await judge(r, 'feat: a thing\n\nFixes #4'), '', 'allowed outside the pipeline');
-    assertEq(r.calls.issueView.length, 0, 'and gh is never asked');
+    expect(r.calls.issueView.length, 'and gh is never asked').toBe(0);
   });
 
-  await test('the same commit passes once the issue carries its proof', async () => {
+  test('the same commit passes once the issue carries its proof', async () => {
     const r = withComments(shipReadyRepo(), { 4: ['Proof: unit: node tests/hooks/x.test.js'] });
     passes(await judge(r, 'feat: a thing\n\nFixes #4'), '', 'allowed');
   });
 
-  await test('every unproved issue in the message is named', async () => {
+  test('every unproved issue in the message is named', async () => {
     const r = withComments(shipReadyRepo(), { 4: ['Proof: unit: node tests/hooks/x.test.js'], 9: ['looks good'], 12: ['ok'] });
     blocks(await judge(r, 'feat: a thing\n\nFixes #4\nCloses #9\nResolves #12'), T.unproved(' #9 #12'), 'names both, never the proved one');
   });
 
-  await test('no trailer, no proof read', async () => {
+  test('no trailer, no proof read', async () => {
     const r = withComments(shipReadyRepo(), {});
     passes(await judge(r, 'feat: a thing that closes nothing'), '', 'a commit closing nothing is never asked for a proof');
-    assertEq(r.calls.issueView.length, 0, 'and nothing is read');
+    expect(r.calls.issueView.length, 'and nothing is read').toBe(0);
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

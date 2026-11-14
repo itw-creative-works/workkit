@@ -3,15 +3,13 @@
 // tool_use or the sidecar, byClass, working and done). Prologue: ./helpers.js.
 //
 
-const { group, test, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const {
   resetCache, className, cleanup, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, collect,
 } = require('./helpers');
 
-const cases = async () => {
-  group('tower/telemetry: subagent attribution');
-
-  await test('a subagent is attributed to its class through the parent tool_use', () => {
+describe('tower/telemetry: subagent attribution', () => {
+  test('a subagent is attributed to its class through the parent tool_use', () => {
     const w = mkWorld();
     const transcript = mkSession(w, {
       lines: [
@@ -24,15 +22,15 @@ const cases = async () => {
       meta: { agentType: 'workkit:worker', toolUseId: 'toolu_1', spawnDepth: 1 },
     });
     const [session] = collect(w).sessions;
-    assertEq(session.subagents.length, 1, 'one subagent');
-    assertEq(session.subagents[0].id, 'agent-aaa', 'named by its file');
-    assertEq(session.subagents[0].class, 'worker', 'the namespace is stripped');
-    assertEq(session.subagents[0].tokens.total, 240, 'with its own tokens');
-    assertEq(session.tokens.total, 30, 'and the parent keeps only its own');
+    expect(session.subagents.length, 'one subagent').toBe(1);
+    expect(session.subagents[0].id, 'named by its file').toBe('agent-aaa');
+    expect(session.subagents[0].class, 'the namespace is stripped').toBe('worker');
+    expect(session.subagents[0].tokens.total, 'with its own tokens').toBe(240);
+    expect(session.tokens.total, 'and the parent keeps only its own').toBe(30);
     cleanup(w.root);
   });
 
-  await test('the sidecar answers when the parent line is gone, and neither reads unknown', () => {
+  test('the sidecar answers when the parent line is gone, and neither reads unknown', () => {
     const w = mkWorld();
     const transcript = mkSession(w, { lines: [assistantLine({ id: 'root', input: 1 })] });
     mkSubagent(transcript, 'bbb', {
@@ -41,13 +39,13 @@ const cases = async () => {
     });
     mkSubagent(transcript, 'ccc', { lines: [assistantLine({ id: 't', input: 10 })], meta: null });
     const classes = Object.fromEntries(collect(w).sessions[0].subagents.map((s) => [s.id, s.class]));
-    assertEq(classes['agent-bbb'], 'scout', 'the meta carries the same value');
-    assertEq(classes['agent-ccc'], 'unknown', 'and nothing at all is never a guess');
-    assertEq(className('general-purpose'), 'general-purpose', 'an unnamespaced type passes through');
+    expect(classes['agent-bbb'], 'the meta carries the same value').toBe('scout');
+    expect(classes['agent-ccc'], 'and nothing at all is never a guess').toBe('unknown');
+    expect(className('general-purpose'), 'an unnamespaced type passes through').toBe('general-purpose');
     cleanup(w.root);
   });
 
-  await test('byClass credits the root session to manager and each subagent to its class', () => {
+  test('byClass credits the root session to manager and each subagent to its class', () => {
     const w = mkWorld();
     const transcript = mkSession(w, {
       lines: [
@@ -59,13 +57,13 @@ const cases = async () => {
     mkSubagent(transcript, 'w1', { lines: [assistantLine({ id: 'a', input: 500 })], meta: { toolUseId: 'toolu_w' } });
     mkSubagent(transcript, 's1', { lines: [assistantLine({ id: 'b', input: 100 })], meta: { toolUseId: 'toolu_s' } });
     const { byClass } = collect(w);
-    assertEq(byClass.manager, 1000, 'the session drives, so it is the manager');
-    assertEq(byClass.worker, 500, 'the worker');
-    assertEq(byClass.scout, 100, 'the scout');
+    expect(byClass.manager, 'the session drives, so it is the manager').toBe(1000);
+    expect(byClass.worker, 'the worker').toBe(500);
+    expect(byClass.scout, 'the scout').toBe(100);
     cleanup(w.root);
   });
 
-  await test('a subagent is working while its transcript is fresh and done once it goes quiet', () => {
+  test('a subagent is working while its transcript is fresh and done once it goes quiet', () => {
     const w = mkWorld();
     const now = Date.parse('2026-07-27T12:00:00.000Z');
     const at = (minutesAgo) => new Date(now - minutesAgo * 60 * 1000).toISOString();
@@ -75,13 +73,13 @@ const cases = async () => {
     mkSubagent(transcript, 'silent', { lines: [], meta: {} });
 
     const states = Object.fromEntries(collect(w, { now }).sessions[0].subagents.map((s) => [s.id, s.state]));
-    assertEq(states['agent-fresh'], 'working', 'two minutes quiet is still working');
-    assertEq(states['agent-quiet'], 'done', 'three hours quiet is finished');
-    assertEq(states['agent-silent'], 'done', 'one that never spoke is not live crew');
+    expect(states['agent-fresh'], 'two minutes quiet is still working').toBe('working');
+    expect(states['agent-quiet'], 'three hours quiet is finished').toBe('done');
+    expect(states['agent-silent'], 'one that never spoke is not live crew').toBe('done');
     cleanup(w.root);
   });
 
-  await test('the subagent window is the SAME one sessions.js reads, override and all', () => {
+  test('the subagent window is the SAME one sessions.js reads, override and all', () => {
     const w = mkWorld();
     const now = Date.parse('2026-07-27T12:00:00.000Z');
     const transcript = mkSession(w, { lines: [assistantLine({ id: 'root', input: 1 })] });
@@ -90,15 +88,9 @@ const cases = async () => {
       meta: {},
     });
     // An hour quiet: outside the 45-minute default, inside a widened window.
-    assertEq(collect(w, { now }).sessions[0].subagents[0].state, 'done', 'the default window closed on it');
+    expect(collect(w, { now }).sessions[0].subagents[0].state, 'the default window closed on it').toBe('done');
     resetCache();
-    assertEq(collect(w, { now, idleMinutes: 120 }).sessions[0].subagents[0].state, 'working', 'the override moves both tiers');
+    expect(collect(w, { now, idleMinutes: 120 }).sessions[0].subagents[0].state, 'the override moves both tiers').toBe('working');
     cleanup(w.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

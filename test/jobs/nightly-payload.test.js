@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { gitPath, homeEnv } = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly', 'nightly-payload.js');
@@ -79,97 +79,95 @@ const commitsIn = (world, exec) => commitsToday({
   exec: exec || passThrough,
 });
 
-const cases = async () => {
-  group('jobs/nightly-payload: the transcript index');
-
-  await test('only the transcripts that moved inside the window are listed', () => {
+describe('jobs/nightly-payload: the transcript index', () => {
+  test('only the transcripts that moved inside the window are listed', () => {
     const root = mkProjects([
       { project: 'repo-a', name: 'fresh.jsonl', agoHours: 2 },
       { project: 'repo-b', name: 'yesterday.jsonl', agoHours: 30 },
     ]);
     const index = indexIn(root);
-    assertEq(index.length, 1, 'the day-old transcript is out of the window');
+    expect(index.length, 'the day-old transcript is out of the window').toBe(1);
     // The index carries the path the way the platform joins one, so the tail
     // this compares against is joined the same way.
-    assert(index[0].path.endsWith(path.join('repo-a', 'fresh.jsonl')), `the fresh one is in: ${index[0].path}`);
+    expect(index[0].path.endsWith(path.join('repo-a', 'fresh.jsonl')), `the fresh one is in: ${index[0].path}`).toBeTruthy();
     cleanup(root);
   });
 
-  await test('newest first, with the size and mtime the sampler needs', () => {
+  test('newest first, with the size and mtime the sampler needs', () => {
     const root = mkProjects([
       { project: 'repo-a', name: 'older.jsonl', agoHours: 20, bytes: 40 },
       { project: 'repo-b', name: 'newest.jsonl', agoHours: 1, bytes: 400 },
       { project: 'repo-b', name: 'middle.jsonl', agoHours: 6, bytes: 4000 },
     ]);
     const index = indexIn(root);
-    assertEq(index.map((t) => path.basename(t.path)).join(','), 'newest.jsonl,middle.jsonl,older.jsonl', 'ordered by mtime');
-    assertEq(index[0].bytes, 400, 'the size rides along: a 10 MB file is skipped by size alone');
-    assertEq(index[0].modifiedAt, new Date(NOW - HOUR).toISOString(), 'and the mtime as ISO');
+    expect(index.map((t) => path.basename(t.path)).join(','), 'ordered by mtime').toBe('newest.jsonl,middle.jsonl,older.jsonl');
+    expect(index[0].bytes, 'the size rides along: a 10 MB file is skipped by size alone').toBe(400);
+    expect(index[0].modifiedAt, 'and the mtime as ISO').toBe(new Date(NOW - HOUR).toISOString());
     cleanup(root);
   });
 
-  await test('only .jsonl files, and only inside a project directory', () => {
+  test('only .jsonl files, and only inside a project directory', () => {
     const root = mkProjects([{ project: 'repo-a', name: 'session.jsonl', agoHours: 1 }]);
     fs.writeFileSync(path.join(root, 'repo-a', 'notes.md'), 'not a transcript');
     fs.writeFileSync(path.join(root, 'loose.jsonl'), 'not in a project');
     const index = indexIn(root);
-    assertEq(index.length, 1, `one transcript: ${index.map((t) => t.path).join(', ')}`);
+    expect(index.length, `one transcript: ${index.map((t) => t.path).join(', ')}`).toBe(1);
     cleanup(root);
   });
 
-  await test('a missing projects root is an empty index, not a crash', () => {
-    assertEq(indexIn('/nonexistent/projects').length, 0, 'a machine with no transcripts still gets a payload');
+  test('a missing projects root is an empty index, not a crash', () => {
+    expect(indexIn('/nonexistent/projects').length, 'a machine with no transcripts still gets a payload').toBe(0);
   });
 
-  await test('WORKKIT_CLAUDE_PROJECTS overrides the root', () => {
+  test('WORKKIT_CLAUDE_PROJECTS overrides the root', () => {
     const root = mkProjects([{ project: 'repo-a', name: 'session.jsonl', agoHours: 1 }]);
     const previous = process.env.WORKKIT_CLAUDE_PROJECTS;
     process.env.WORKKIT_CLAUDE_PROJECTS = root;
     try {
-      assertEq(transcriptIndex({ home: '/nonexistent', now: NOW }).length, 1, 'the env seam points the walk at the fixture');
+      expect(transcriptIndex({ home: '/nonexistent', now: NOW }).length, 'the env seam points the walk at the fixture').toBe(1);
     } finally {
       if (previous === undefined) delete process.env.WORKKIT_CLAUDE_PROJECTS;
       else process.env.WORKKIT_CLAUDE_PROJECTS = previous;
     }
     cleanup(root);
   });
+});
 
-  group('jobs/nightly-payload: the day’s commits');
-
-  await test('a real repo’s commits arrive with their shas and subjects', () => {
+describe('jobs/nightly-payload: the day’s commits', () => {
+  test('a real repo’s commits arrive with their shas and subjects', () => {
     const world = mkRepos();
     const out = commitsIn(world);
-    assertEq(out.length, 1, `the one opted-in repo: ${JSON.stringify(out)}`);
-    assertEq(out[0].repo, 'fixture', 'named');
-    assertEq(out[0].slug, 'ITW-Creative-Works/fixture', 'and slugged');
-    assertEq(out[0].commits.length, 2, 'both of today’s commits');
-    assertEq(out[0].commits[0].subject, 'fix: the second thing', 'newest first, as git logs it');
-    assert(/^[0-9a-f]{7,}$/.test(out[0].commits[0].sha), `with a sha: ${out[0].commits[0].sha}`);
+    expect(out.length, `the one opted-in repo: ${JSON.stringify(out)}`).toBe(1);
+    expect(out[0].repo, 'named').toBe('fixture');
+    expect(out[0].slug, 'and slugged').toBe('ITW-Creative-Works/fixture');
+    expect(out[0].commits.length, 'both of today’s commits').toBe(2);
+    expect(out[0].commits[0].subject, 'newest first, as git logs it').toBe('fix: the second thing');
+    expect(/^[0-9a-f]{7,}$/.test(out[0].commits[0].sha), `with a sha: ${out[0].commits[0].sha}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a repo with nothing today is left out entirely', () => {
+  test('a repo with nothing today is left out entirely', () => {
     const world = mkRepos();
     const out = commitsIn(world, (cmd, args) => {
       if (args.includes('log')) return '';
       return passThrough(cmd, args);
     });
-    assertEq(out.length, 0, 'a quiet repo is not a line in the payload');
+    expect(out.length, 'a quiet repo is not a line in the payload').toBe(0);
     cleanup(world.root);
   });
 
-  await test('a git log that fails is reported, not dropped', () => {
+  test('a git log that fails is reported, not dropped', () => {
     const world = mkRepos();
     const out = commitsIn(world, (cmd, args) => {
       if (args.includes('log')) throw new Error('not a git repository');
       return passThrough(cmd, args);
     });
-    assertEq(out.length, 1, 'the repo still appears');
-    assert(/git log failed: not a git repository/.test(out[0].error), `carrying why: ${out[0].error}`);
+    expect(out.length, 'the repo still appears').toBe(1);
+    expect(/git log failed: not a git repository/.test(out[0].error), `carrying why: ${out[0].error}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('the window asked of git is the same 24 hours', () => {
+  test('the window asked of git is the same 24 hours', () => {
     const world = mkRepos();
     let since = null;
     commitsIn(world, (cmd, args) => {
@@ -179,13 +177,13 @@ const cases = async () => {
       }
       return passThrough(cmd, args);
     });
-    assertEq(since, '--since=24 hours ago', 'one window for both halves of the payload');
+    expect(since, 'one window for both halves of the payload').toBe('--since=24 hours ago');
     cleanup(world.root);
   });
+});
 
-  group('jobs/nightly-payload: composition');
-
-  await test('a day with sessions and commits is not quiet', () => {
+describe('jobs/nightly-payload: composition', () => {
+  test('a day with sessions and commits is not quiet', () => {
     const world = mkRepos();
     const projects = mkProjects([{ project: 'repo-a', name: 'session.jsonl', agoHours: 1 }]);
     const out = composeNightly({
@@ -195,43 +193,43 @@ const cases = async () => {
       exec: passThrough,
       now: NOW,
     });
-    assertEq(out.quiet, false, 'there is a day to reflect on');
-    assertEq(out.transcripts.length, 1, 'the index rode along');
-    assertEq(out.commits.length, 1, 'and the commits');
-    assertEq(out.window.since, new Date(NOW - 24 * HOUR).toISOString(), 'the window is stated in the payload');
-    assertEq(out.generatedAt, new Date(NOW).toISOString(), 'stamped from the injected clock');
+    expect(out.quiet, 'there is a day to reflect on').toBe(false);
+    expect(out.transcripts.length, 'the index rode along').toBe(1);
+    expect(out.commits.length, 'and the commits').toBe(1);
+    expect(out.window.since, 'the window is stated in the payload').toBe(new Date(NOW - 24 * HOUR).toISOString());
+    expect(out.generatedAt, 'stamped from the injected clock').toBe(new Date(NOW).toISOString());
     cleanup(world.root);
     cleanup(projects);
   });
 
-  await test('no sessions and no commits is a quiet day', () => {
+  test('no sessions and no commits is a quiet day', () => {
     const out = composeNightly({
       projectsRoot: '/nonexistent/projects',
       workflowHome: '/nonexistent/.workkit',
       exec: () => { throw new Error('never called'); },
       now: NOW,
     });
-    assertEq(out.quiet, true, 'the runner short-circuits on this');
-    assertEq(out.transcripts.length, 0, 'nothing to read');
-    assertEq(out.commits.length, 0, 'and nothing landed');
+    expect(out.quiet, 'the runner short-circuits on this').toBe(true);
+    expect(out.transcripts.length, 'nothing to read').toBe(0);
+    expect(out.commits.length, 'and nothing landed').toBe(0);
   });
+});
 
-  group('jobs/nightly-payload: the instruction');
-
-  await test('it names the four sections, in order', () => {
+describe('jobs/nightly-payload: the instruction', () => {
+  test('it names the four sections, in order', () => {
     const sections = ['## Went well', '## Went poorly', '## Improvements', '## Facts learned'];
     let cursor = -1;
     for (const section of sections) {
       const at = INSTRUCTION.indexOf(section);
-      assert(at > cursor, `${section} is named, after the one before it`);
+      expect(at > cursor, `${section} is named, after the one before it`).toBeTruthy();
       cursor = at;
     }
-    assert(/EXACTLY these four\s+sections/.test(INSTRUCTION), 'and they are the only four');
+    expect(/EXACTLY these four\s+sections/.test(INSTRUCTION), 'and they are the only four').toBeTruthy();
   });
+});
 
-  group('jobs/nightly-payload: what is printed');
-
-  await test('run as a script it prints a payload and exits 0', () => {
+describe('jobs/nightly-payload: what is printed', () => {
+  test('run as a script it prints a payload and exits 0', () => {
     // An empty HOME: the live machine's repos and transcripts are none of this
     // suite's business.
     const home = mkTmp('nightly-payload-');
@@ -241,16 +239,16 @@ const cases = async () => {
       env: homeEnv(home, { ...process.env, WORKKIT_CLAUDE_PROJECTS: path.join(home, 'projects') }),
     });
     cleanup(home);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(res.stdout.startsWith(INSTRUCTION), 'stdout leads with the instruction');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(res.stdout.startsWith(INSTRUCTION), 'stdout leads with the instruction').toBeTruthy();
     const parsed = JSON.parse(res.stdout.slice(INSTRUCTION.length));
-    assert(Array.isArray(parsed.transcripts), 'and carries the index');
-    assert(Array.isArray(parsed.commits), 'and the commits');
+    expect(Array.isArray(parsed.transcripts), 'and carries the index').toBeTruthy();
+    expect(Array.isArray(parsed.commits), 'and the commits').toBeTruthy();
   });
+});
 
-  group('jobs/nightly-payload: the rollups');
-
-  await test('a rollup is composed from the summaries already published', () => {
+describe('jobs/nightly-payload: the rollups', () => {
+  test('a rollup is composed from the summaries already published', () => {
     // A week's material is the daily summaries, read back from the Discussions
     // API, never the transcripts again, which the days already read.
     const prior = [
@@ -258,22 +256,22 @@ const cases = async () => {
       { title: 'daily: 2026-07-26', createdAt: '2026-07-26T09:00:00Z', body: '## Went well\nSpecced.' },
     ];
     const payload = composeRollup(prior, { cadence: 'weekly', generatedAt: '2026-07-28T09:00:00Z' });
-    assertEq(payload.cadence, 'weekly', 'it knows which period it is');
-    assertEq(payload.quiet, false, 'and that there was something to roll up');
-    assertEq(payload.summaries.length, 2, 'carrying every summary it was given');
+    expect(payload.cadence, 'it knows which period it is').toBe('weekly');
+    expect(payload.quiet, 'and that there was something to roll up').toBe(false);
+    expect(payload.summaries.length, 'carrying every summary it was given').toBe(2);
 
     const text = renderRollup(payload);
-    assert(text.startsWith(rollupInstruction('weekly')), 'the instruction is first');
-    assert(/WEEKLY SUMMARY/.test(text), 'and names the cadence it is asking for');
-    assertEq(JSON.parse(text.slice(rollupInstruction('weekly').length)).summaries.length, 2, 'the payload round-trips');
+    expect(text.startsWith(rollupInstruction('weekly')), 'the instruction is first').toBeTruthy();
+    expect(/WEEKLY SUMMARY/.test(text), 'and names the cadence it is asking for').toBeTruthy();
+    expect(JSON.parse(text.slice(rollupInstruction('weekly').length)).summaries.length, 'the payload round-trips').toBe(2);
   });
 
-  await test('a period with nothing published is quiet, not invented', () => {
-    assertEq(composeRollup([], { cadence: 'monthly' }).quiet, true, 'an empty period says so');
-    assertEq(composeRollup(null, { cadence: 'monthly' }).summaries.length, 0, 'and unreadable input is empty, never a guess');
+  test('a period with nothing published is quiet, not invented', () => {
+    expect(composeRollup([], { cadence: 'monthly' }).quiet, 'an empty period says so').toBe(true);
+    expect(composeRollup(null, { cadence: 'monthly' }).summaries.length, 'and unreadable input is empty, never a guess').toBe(0);
   });
 
-  await test('run as a script, --cadence reads the prior summaries from stdin', () => {
+  test('run as a script, --cadence reads the prior summaries from stdin', () => {
     const home = mkTmp('nightly-payload-');
     const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'weekly'], {
       encoding: 'utf8',
@@ -282,21 +280,15 @@ const cases = async () => {
       env: homeEnv(home, { ...process.env }),
     });
     cleanup(home);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(res.stdout.startsWith(rollupInstruction('weekly')), 'stdout leads with the rollup instruction');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(res.stdout.startsWith(rollupInstruction('weekly')), 'stdout leads with the rollup instruction').toBeTruthy();
     const parsed = JSON.parse(res.stdout.slice(rollupInstruction('weekly').length));
-    assertEq(parsed.summaries[0].body, 'a day', 'and carries what stdin handed it');
+    expect(parsed.summaries[0].body, 'and carries what stdin handed it').toBe('a day');
   });
 
-  await test('an unknown cadence is refused rather than guessed', () => {
+  test('an unknown cadence is refused rather than guessed', () => {
     const res = spawnSync(process.execPath, [SCRIPT, '--cadence', 'hourly'], { encoding: 'utf8', input: '[]', timeout: SPAWN_DEADLINE });
-    assertEq(res.status, 1, 'exit 1');
-    assert(/unknown cadence hourly/.test(res.stderr), `it names what it did not understand, got: ${res.stderr}`);
+    expect(res.status, 'exit 1').toBe(1);
+    expect(/unknown cadence hourly/.test(res.stderr), `it names what it did not understand, got: ${res.stderr}`).toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR, mkTmp } = require('../lib/harness');
+const { describe, test, expect, WORKKIT_DIR, mkTmp } = require('../lib/harness');
 
 const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf } =
   require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'cc-news.js'));
@@ -91,133 +91,131 @@ const board = (world, version) => {
 
 const ghCalls = (world) => world.calls.filter(([cmd]) => cmd === 'gh');
 
-const cases = async () => {
-  group('jobs/cc-news: parsing');
-
-  await test('the release sections and their entries come out in file order', () => {
+describe('jobs/cc-news: parsing', () => {
+  test('the release sections and their entries come out in file order', () => {
     const sections = parseSections(CHANGELOG);
-    assertEq(sections.length, 3, 'three releases');
-    assertEq(sections[0].version, '2.1.220', 'newest first, as published');
-    assertEq(sections[0].entries.length, 2, 'with its entries');
-    assertEq(sections[2].entries[0], 'Bug fixes and reliability improvements', 'text without the bullet');
+    expect(sections.length, 'three releases').toBe(3);
+    expect(sections[0].version, 'newest first, as published').toBe('2.1.220');
+    expect(sections[0].entries.length, 'with its entries').toBe(2);
+    expect(sections[2].entries[0], 'text without the bullet').toBe('Bug fixes and reliability improvements');
   });
 
-  await test('a heading that is not a version carries no entries', () => {
+  test('a heading that is not a version carries no entries', () => {
     const sections = parseSections('# Changelog\n\n- not a release\n\n## [Unreleased]\n\n- nor this\n');
-    assertEq(sections.length, 0, 'nothing is a release');
+    expect(sections.length, 'nothing is a release').toBe(0);
+  });
+});
+
+describe('jobs/cc-news: the topic map', () => {
+  test('entries file under the kit surface they name', () => {
+    expect(topicOf('Added a `DirectoryAdded` hook that fires mid-session'), 'hooks').toBe('hooks');
+    expect(topicOf('Added the `workflowSizeGuideline` settings key'), 'settings').toBe('settings');
+    expect(topicOf('Added HTTP status text to `claude mcp list` and MCP errors'), 'MCP').toBe('MCP');
+    expect(topicOf('Added the workflow size to the running status line'), 'statusline').toBe('statusline');
+    expect(topicOf('Set CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1 to disable nesting'), 'env vars are settings').toBe('settings');
+    expect(topicOf('Updated the claude-api skill to default to Opus 5'), 'skills').toBe('skills');
+    expect(topicOf('Fixed a plugin marketplace refresh'), 'plugins').toBe('plugins');
+    expect(topicOf('Raised the subagent spawn depth ceiling'), 'agents').toBe('agents');
   });
 
-  group('jobs/cc-news: the topic map');
-
-  await test('entries file under the kit surface they name', () => {
-    assertEq(topicOf('Added a `DirectoryAdded` hook that fires mid-session'), 'hooks', 'hooks');
-    assertEq(topicOf('Added the `workflowSizeGuideline` settings key'), 'settings', 'settings');
-    assertEq(topicOf('Added HTTP status text to `claude mcp list` and MCP errors'), 'MCP', 'MCP');
-    assertEq(topicOf('Added the workflow size to the running status line'), 'statusline', 'statusline');
-    assertEq(topicOf('Set CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1 to disable nesting'), 'settings', 'env vars are settings');
-    assertEq(topicOf('Updated the claude-api skill to default to Opus 5'), 'skills', 'skills');
-    assertEq(topicOf('Fixed a plugin marketplace refresh'), 'plugins', 'plugins');
-    assertEq(topicOf('Raised the subagent spawn depth ceiling'), 'agents', 'agents');
+  test('everything else files under other: a bucket, never dropped', () => {
+    expect(topicOf('Bug fixes and reliability improvements'), 'housekeeping').toBe('other');
+    expect(topicOf('Fixed multi-line paste collapsing into one line'), 'paste').toBe('other');
   });
-
-  await test('everything else files under other: a bucket, never dropped', () => {
-    assertEq(topicOf('Bug fixes and reliability improvements'), 'other', 'housekeeping');
-    assertEq(topicOf('Fixed multi-line paste collapsing into one line'), 'other', 'paste');
-  });
+});
 
 
-  group('jobs/cc-news: what is newer than the cursor');
-
-  await test('every entry above the cursor rides, each carrying its version and topic', () => {
+describe('jobs/cc-news: what is newer than the cursor', () => {
+  test('every entry above the cursor rides, each carrying its version and topic', () => {
     const world = mkWorld();
     board(world, '2.1.219');
     const news = collectIn(world);
-    assertEq(news.matches.length, 2, 'both entries of the one newer release');
-    assertEq(news.matches[0].version, '2.1.220', 'the version each shipped in');
-    assertEq(news.matches[0].topic, 'hooks', 'the hook entry files under hooks');
-    assertEq(news.matches[1].topic, 'other', 'the terminal fix files under other, not dropped');
-    assertEq(news.since, '2.1.219', 'and the brief knows where it counted from');
+    expect(news.matches.length, 'both entries of the one newer release').toBe(2);
+    expect(news.matches[0].version, 'the version each shipped in').toBe('2.1.220');
+    expect(news.matches[0].topic, 'the hook entry files under hooks').toBe('hooks');
+    expect(news.matches[1].topic, 'the terminal fix files under other, not dropped').toBe('other');
+    expect(news.since, 'and the brief knows where it counted from').toBe('2.1.219');
     cleanup(world.home);
   });
 
-  await test('an older cursor reaches back across releases, housekeeping included', () => {
+  test('an older cursor reaches back across releases, housekeeping included', () => {
     const world = mkWorld();
     board(world, '2.1.218');
     const news = collectIn(world);
-    assertEq(news.matches.length, 5, 'all five entries of the two newer releases');
-    assert(news.matches.some((m) => /model picker/.test(m.entry)), 'the picker fix rides too: the digest judges, not the job');
+    expect(news.matches.length, 'all five entries of the two newer releases').toBe(5);
+    expect(news.matches.some((m) => /model picker/.test(m.entry)), 'the picker fix rides too: the digest judges, not the job').toBeTruthy();
     cleanup(world.home);
   });
 
-  await test('a cursor at the latest release reports nothing', () => {
+  test('a cursor at the latest release reports nothing', () => {
     const world = mkWorld();
     board(world, '2.1.220');
     const news = collectIn(world);
-    assertEq(news.matches.length, 0, 'a quiet morning');
-    assertEq(renderCcNews(news), '', 'and no block at all');
+    expect(news.matches.length, 'a quiet morning').toBe(0);
+    expect(renderCcNews(news), 'and no block at all').toBe('');
     cleanup(world.home);
   });
 
-  await test('the block groups by topic, versions on every line', () => {
+  test('the block groups by topic, versions on every line', () => {
     const world = mkWorld();
     board(world, '2.1.219');
     const block = renderCcNews(collectIn(world));
-    assert(/^\n--- CC NEWS ---\n/.test(block), 'it is a labeled block');
-    assert(/since 2\.1\.219, by topic:/.test(block), 'saying where it counted from');
-    assert(/\[hooks\]\n2\.1\.220: Added a `DirectoryAdded` hook/.test(block), `entries sit under their topic: ${block}`);
-    assert(/\[other\]\n2\.1\.220: Fixed copy-on-select/.test(block), `and other files last: ${block}`);
-    assert(block.indexOf('[hooks]') < block.indexOf('[other]'), 'kit surfaces before the rest');
+    expect(/^\n--- CC NEWS ---\n/.test(block), 'it is a labeled block').toBeTruthy();
+    expect(/since 2\.1\.219, by topic:/.test(block), 'saying where it counted from').toBeTruthy();
+    expect(/\[hooks\]\n2\.1\.220: Added a `DirectoryAdded` hook/.test(block), `entries sit under their topic: ${block}`).toBeTruthy();
+    expect(/\[other\]\n2\.1\.220: Fixed copy-on-select/.test(block), `and other files last: ${block}`).toBeTruthy();
+    expect(block.indexOf('[hooks]') < block.indexOf('[other]'), 'kit surfaces before the rest').toBeTruthy();
     cleanup(world.home);
   });
+});
 
-  group('jobs/cc-news: the cursor is the board');
-
-  await test('the since is read off the latest published brief, over gh', () => {
+describe('jobs/cc-news: the cursor is the board', () => {
+  test('the since is read off the latest published brief, over gh', () => {
     const world = mkWorld();
     board(world, '2.1.219');
-    assertEq(collectIn(world).since, '2.1.219', 'the line in the brief IS the cursor');
+    expect(collectIn(world).since, 'the line in the brief IS the cursor').toBe('2.1.219');
     const calls = ghCalls(world);
-    assertEq(calls.length, 1, `one board read: ${JSON.stringify(calls)}`);
+    expect(calls.length, `one board read: ${JSON.stringify(calls)}`).toBe(1);
     const argv = calls[0].join(' ');
-    assert(/api graphql/.test(argv), 'through the GraphQL API');
-    assert(argv.includes(`owner=${SLUG.split('/')[0]}`) && argv.includes(`name=${SLUG.split('/')[1]}`),
-      `against the home repo the settings name: ${argv}`);
-    assert(/discussions\(first:/.test(argv), 'asking for its discussions');
+    expect(/api graphql/.test(argv), 'through the GraphQL API').toBeTruthy();
+    expect(argv.includes(`owner=${SLUG.split('/')[0]}`) && argv.includes(`name=${SLUG.split('/')[1]}`),
+      `against the home repo the settings name: ${argv}`).toBeTruthy();
+    expect(/discussions\(first:/.test(argv), 'asking for its discussions').toBeTruthy();
     cleanup(world.home);
   });
 
-  await test('the newest brief wins, and older ones are not consulted', () => {
+  test('the newest brief wins, and older ones are not consulted', () => {
     const world = mkWorld();
     world.discussions = [
       { title: 'brief: 2026-07-29', body: renderVersionMark('2.1.219') },
       { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.100') },
     ];
-    assertEq(collectIn(world).since, '2.1.219', 'the board is newest first and the first brief answers');
+    expect(collectIn(world).since, 'the board is newest first and the first brief answers').toBe('2.1.219');
     cleanup(world.home);
   });
 
-  await test('a summary discussion is not a brief', () => {
+  test('a summary discussion is not a brief', () => {
     // The daily summaries share the board. Only a `brief: ` title is a cursor.
     const world = mkWorld();
     world.discussions = [
       { title: 'daily: 2026-07-29', body: renderVersionMark('2.1.100') },
       { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.219') },
     ];
-    assertEq(collectIn(world).since, '2.1.219', 'the summary above it is passed over');
+    expect(collectIn(world).since, 'the summary above it is passed over').toBe('2.1.219');
     cleanup(world.home);
   });
 
-  await test('a brief with no version line is passed over for one that has it', () => {
+  test('a brief with no version line is passed over for one that has it', () => {
     const world = mkWorld();
     world.discussions = [
       { title: 'brief: 2026-07-29', body: 'HEADLINE: nothing to see.\n' },
       { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.218') },
     ];
-    assertEq(collectIn(world).since, '2.1.218', 'the line is what makes a brief a cursor');
+    expect(collectIn(world).since, 'the line is what makes a brief a cursor').toBe('2.1.218');
     cleanup(world.home);
   });
 
-  await test('a brief far down a busy board is still the cursor', () => {
+  test('a brief far down a busy board is still the cursor', () => {
     // Two posts a day share this board, and a morning whose send failed carries
     // no line at all. A narrow read window lets the last line-carrying brief
     // scroll out of view, which reads as an empty board and re-seeds the cursor,
@@ -228,47 +226,47 @@ const cases = async () => {
     ));
     world.discussions = [...filler, { title: 'brief: 2026-06-01', body: renderVersionMark('2.1.218') }];
     const news = collectIn(world);
-    assertEq(news.since, '2.1.218', 'sixty posts deep is still inside the window');
-    assertEq(news.matches.length, 5, 'so the entries in between are reported rather than seeded past');
-    assert(/discussions\(first:100/.test(ghCalls(world)[0].join(' ')), 'the window is the GraphQL maximum');
+    expect(news.since, 'sixty posts deep is still inside the window').toBe('2.1.218');
+    expect(news.matches.length, 'so the entries in between are reported rather than seeded past').toBe(5);
+    expect(/discussions\(first:100/.test(ghCalls(world)[0].join(' ')), 'the window is the GraphQL maximum').toBeTruthy();
     cleanup(world.home);
   });
 
-  await test('the version line is the shape the runner publishes', () => {
-    assertEq(renderVersionMark('2.1.220'), '<!-- cc-news: 2.1.220 -->', 'greppable, and invisible when rendered');
+  test('the version line is the shape the runner publishes', () => {
+    expect(renderVersionMark('2.1.220'), 'greppable, and invisible when rendered').toBe('<!-- cc-news: 2.1.220 -->');
   });
+});
 
-  group('jobs/cc-news: a first run seeds, it does not report');
-
-  await test('an empty board is a first run: nothing reported, the latest carried', () => {
+describe('jobs/cc-news: a first run seeds, it does not report', () => {
+  test('an empty board is a first run: nothing reported, the latest carried', () => {
     const world = mkWorld();
     const news = collectIn(world);
-    assertEq(news.since, null, 'nothing has ever been published');
-    assertEq(news.matches.length, 0, 'so the history is not dumped into the brief');
-    assertEq(news.version, '2.1.220', 'and the brief about to publish carries the latest');
+    expect(news.since, 'nothing has ever been published').toBe(null);
+    expect(news.matches.length, 'so the history is not dumped into the brief').toBe(0);
+    expect(news.version, 'and the brief about to publish carries the latest').toBe('2.1.220');
     cleanup(world.home);
   });
 
-  await test('no home repo reads as a first run, and asks gh nothing', () => {
+  test('no home repo reads as a first run, and asks gh nothing', () => {
     const world = mkWorld(CHANGELOG, { slug: null });
     const news = collectIn(world);
-    assertEq(news.since, null, 'there is no board to read');
-    assertEq(ghCalls(world).length, 0, 'so nothing was asked of it');
-    assertEq(news.version, '2.1.220', 'the version is still there to publish');
+    expect(news.since, 'there is no board to read').toBe(null);
+    expect(ghCalls(world).length, 'so nothing was asked of it').toBe(0);
+    expect(news.version, 'the version is still there to publish').toBe('2.1.220');
     cleanup(world.home);
   });
 
-  await test('the cursor never moves backwards', () => {
+  test('the cursor never moves backwards', () => {
     const world = mkWorld();
     board(world, '2.2.0');
     const news = collectIn(world);
-    assertEq(news.version, '2.2.0', 'an older source does not rewind the cursor');
+    expect(news.version, 'an older source does not rewind the cursor').toBe('2.2.0');
     cleanup(world.home);
   });
+});
 
-  group('jobs/cc-news: nothing on this machine records the cursor');
-
-  await test('a pre-seeded ccNews key is left byte-identical', () => {
+describe('jobs/cc-news: nothing on this machine records the cursor', () => {
+  test('a pre-seeded ccNews key is left byte-identical', () => {
     // No migration: the stale key is the owner's to remove, and no runner is
     // allowed to read it, write it, or take it away.
     const world = mkWorld();
@@ -276,73 +274,67 @@ const cases = async () => {
     const before = JSON.stringify({ ccNews: { version: '1.0.0' }, homeCache: { [SLUG]: { repositoryId: 'R_1' } } });
     fs.writeFileSync(world.cacheFile, before);
     const news = collectIn(world);
-    assertEq(news.since, '2.1.218', 'the board answered, not the file');
-    assertEq(fs.readFileSync(world.cacheFile, 'utf8'), before, 'and the file is untouched');
+    expect(news.since, 'the board answered, not the file').toBe('2.1.218');
+    expect(fs.readFileSync(world.cacheFile, 'utf8'), 'and the file is untouched').toBe(before);
     cleanup(world.home);
   });
+});
 
-  group('jobs/cc-news: a failure is silent');
-
-  await test('a fetch that throws reports nothing and carries the cursor forward', () => {
+describe('jobs/cc-news: a failure is silent', () => {
+  test('a fetch that throws reports nothing and carries the cursor forward', () => {
     const world = mkWorld();
     board(world, '2.1.218');
     world.fail = new Error('curl: (6) Could not resolve host');
     const news = collectIn(world);
-    assertEq(news.matches.length, 0, 'no news');
-    assertEq(renderCcNews(news), '', 'no block');
-    assertEq(news.version, '2.1.218', 'and the published line repeats the board\'s version rather than rewinding it');
+    expect(news.matches.length, 'no news').toBe(0);
+    expect(renderCcNews(news), 'no block').toBe('');
+    expect(news.version, 'and the published line repeats the board\'s version rather than rewinding it').toBe('2.1.218');
     cleanup(world.home);
   });
 
-  await test('an empty or unparseable body skips too', () => {
+  test('an empty or unparseable body skips too', () => {
     const empty = mkWorld('');
-    assertEq(collectIn(empty).version, null, 'a non-200 curl -f prints nothing, and there is no version to carry');
+    expect(collectIn(empty).version, 'a non-200 curl -f prints nothing, and there is no version to carry').toBe(null);
     cleanup(empty.home);
     const junk = mkWorld('<html><body>404: Not Found</body></html>\n');
-    assertEq(collectIn(junk).matches.length, 0, 'and a page that is not a changelog has no releases');
+    expect(collectIn(junk).matches.length, 'and a page that is not a changelog has no releases').toBe(0);
     cleanup(junk.home);
   });
 
-  await test('a gh that refuses publishes no version line rather than re-seeding', () => {
+  test('a gh that refuses publishes no version line rather than re-seeding', () => {
     // A board that could not be read is not an empty board. Seeding here would
     // move the cursor to latest on a run that reported nothing, and everything
     // the last good brief had yet to cover would be lost.
     const world = mkWorld();
     world.ghFail = new Error('gh: could not authenticate');
     const news = collectIn(world);
-    assertEq(news.since, null, 'no board, no since');
-    assertEq(news.matches.length, 0, 'so nothing is reported');
-    assertEq(news.version, null, 'and no line publishes: the last brief\'s cursor stands');
+    expect(news.since, 'no board, no since').toBe(null);
+    expect(news.matches.length, 'so nothing is reported').toBe(0);
+    expect(news.version, 'and no line publishes: the last brief\'s cursor stands').toBe(null);
     cleanup(world.home);
   });
 
-  await test('a board answer that is not the shape asked for is not a throw, and not a seed', () => {
+  test('a board answer that is not the shape asked for is not a throw, and not a seed', () => {
     const world = mkWorld();
     world.ghOut = '{ not json';
     const junk = collectIn(world);
-    assertEq(junk.since, null, 'nothing could be read');
-    assertEq(junk.version, null, 'and a failed read publishes no cursor');
+    expect(junk.since, 'nothing could be read').toBe(null);
+    expect(junk.version, 'and a failed read publishes no cursor').toBe(null);
     cleanup(world.home);
 
     const hidden = mkWorld();
     hidden.ghOut = '{"data":{"repository":null}}';
     const unseen = collectIn(hidden);
-    assertEq(unseen.since, null, 'and so is a repo the token cannot see');
-    assertEq(unseen.version, null, 'which is a failure too, not an empty board');
+    expect(unseen.since, 'and so is a repo the token cannot see').toBe(null);
+    expect(unseen.version, 'which is a failure too, not an empty board').toBe(null);
     cleanup(hidden.home);
   });
 
-  await test('an unreadable settings file reads as no home repo', () => {
+  test('an unreadable settings file reads as no home repo', () => {
     const world = mkWorld();
     fs.writeFileSync(path.join(world.workflowHome, 'settings.json'), '{ not json');
-    assertEq(collectIn(world).since, null, 'treated as never looked');
-    assertEq(ghCalls(world).length, 0, 'and nothing was asked of gh');
+    expect(collectIn(world).since, 'treated as never looked').toBe(null);
+    expect(ghCalls(world).length, 'and nothing was asked of gh').toBe(0);
     cleanup(world.home);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

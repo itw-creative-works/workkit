@@ -9,10 +9,10 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
-const { testUnless, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
-  IS_WINDOWS, BASH, NO_RC, NO_NODE_STUB, shellPath, which, homeEnv, linkTool,
+  BASH, NO_RC, shellPath, which, homeEnv, linkTool,
   stubTool, pathWith, joinPath,
 } = require('../../lib/platform');
 
@@ -210,12 +210,6 @@ const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT
   env: world.env,
 });
 
-// A case that reads what the `gh` shim recorded. The node composers the script
-// runs spawn gh directly, and the case still skips on Windows (`stubTool`,
-// `NO_NODE_STUB`): its stub predates the launcher, and the sealed machine gh
-// would answer those reads there.
-const composerTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
-
 module.exports = {
-  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, today, mkWorld, withoutJq, runJob, composerTest,
+  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, today, mkWorld, withoutJq, runJob,
 };

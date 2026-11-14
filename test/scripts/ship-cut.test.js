@@ -6,7 +6,7 @@
 // WORKKIT_CUT_RELEASE_TIMEOUT and WORKKIT_CUT_RELEASE_POLL (seconds).
 
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  describe, test, expect,
 } = require('../lib/harness');
 const { fmtCalls, isCall } = require('../lib/argv-log');
 const {
@@ -105,158 +105,149 @@ const inCloud = (g) => ({ ...g, env: { ...g.env, CLAUDE_CODE_REMOTE: 'true' } })
 const creates = (gh) => gh.calls().filter((c) => isCall(c, 'release', 'create'));
 const views = (gh) => gh.calls().filter((c) => isCall(c, 'release', 'view')).length;
 
-const cases = async () => {
-  group('ship cut: refusals');
-
-  await test('a bad or missing version is a usage line, exit 2, and gh never asked', () => {
+describe('ship cut: refusals', () => {
+  test('a bad or missing version is a usage line, exit 2, and gh never asked', () => {
     for (const args of [[], ['1.2'], ['latest']]) {
       const g = mkCutRepo();
       const gh = commitGh({ tags: ['v1.2.3'] });
       const { code, out, err } = runShip(waiting(g), 'cut', args, { binDirs: [gh.binDir] });
-      assertEq(code, 2, `exit 2 for ${JSON.stringify(args)}, got: ${out}${err}`);
-      assert(/usage/i.test(err), `a usage line for ${JSON.stringify(args)}, got: ${err}`);
-      assertEq(gh.calls().length, 0, `gh never asked for ${JSON.stringify(args)}, got: ${fmtCalls(gh.calls())}`);
-      assertEq(g.order(), null, `no hook for ${JSON.stringify(args)}`);
+      expect(code, `exit 2 for ${JSON.stringify(args)}, got: ${out}${err}`).toBe(2);
+      expect(/usage/i.test(err), `a usage line for ${JSON.stringify(args)}, got: ${err}`).toBeTruthy();
+      expect(gh.calls().length, `gh never asked for ${JSON.stringify(args)}, got: ${fmtCalls(gh.calls())}`).toBe(0);
+      expect(g.order(), `no hook for ${JSON.stringify(args)}`).toBe(null);
     }
   });
 
-  await test('no [x.y.z] section in the CHANGELOG: a ship-cut line, exit 1, no gh create and no hook', () => {
+  test('no [x.y.z] section in the CHANGELOG: a ship-cut line, exit 1, no gh create and no hook', () => {
     const g = mkCutRepo();
     const gh = commitGh();
     const { code, err } = runShip(waiting(g, '1'), 'cut', ['1.2.4'], { binDirs: [gh.binDir] });
-    assertEq(code, 1, `exit 1, got: ${err}`);
-    assert(lines(err).some((l) => l.startsWith('ship-cut: ')), `a ship-cut line, got: ${err}`);
-    assertEq(creates(gh).length, 0, `no gh create, got: ${fmtCalls(gh.calls())}`);
-    assertEq(g.order(), null, 'no hook');
+    expect(code, `exit 1, got: ${err}`).toBe(1);
+    expect(lines(err).some((l) => l.startsWith('ship-cut: ')), `a ship-cut line, got: ${err}`).toBeTruthy();
+    expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
+    expect(g.order(), 'no hook').toBe(null);
   });
 
-  await test('a caller with no release job: the standards line, a non-zero exit, no gh create and no hook', () => {
+  test('a caller with no release job: the standards line, a non-zero exit, no gh create and no hook', () => {
     const g = mkCutRepo(undefined, caller(false));
     const gh = commitGh({ tags: ['v1.2.3'] });
     const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assert(code !== 0 && code !== null, `a non-zero exit, got ${code}: ${err}`);
-    assert(lines(err).includes('ship-cut: .github/workflows/checks.yml has no release job; run the standards step (workkit standards) and commit the caller'),
-      `the no-release-job line, got: ${err}`);
-    assertEq(creates(gh).length, 0, `no gh create, got: ${fmtCalls(gh.calls())}`);
-    assertEq(g.order(), null, 'no hook');
+    expect(code !== 0 && code !== null, `a non-zero exit, got ${code}: ${err}`).toBeTruthy();
+    expect(lines(err).includes('ship-cut: .github/workflows/checks.yml has no release job; run the standards step (workkit standards) and commit the caller'),
+      `the no-release-job line, got: ${err}`).toBeTruthy();
+    expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
+    expect(g.order(), 'no hook').toBe(null);
   });
+});
 
-  group('ship cut: the wait');
-
-  await test('from a subfolder, the release appearing on the fourth view: the cut waits for it, then runs the hooks; exit 0, no gh create', () => {
+describe('ship cut: the wait', () => {
+  test('from a subfolder, the release appearing on the fourth view: the cut waits for it, then runs the hooks; exit 0, no gh create', () => {
     const g = mkCutRepo();
     const gh = commitGh({ late: { 'v1.2.3': 3 }, onView: g.note('view') });
     const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { cwd: g.sub, binDirs: [gh.binDir] });
-    assertEq(code, 0, `exit 0, got: ${err}`);
-    assertEq(g.order(), 'view\nview\nview\nview\nhook\n', `three misses, the release, then the afterRelease hook, got: ${fmtCalls(gh.calls())}`);
-    assertEq(creates(gh).length, 0, `no gh create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    expect(g.order(), `three misses, the release, then the afterRelease hook, got: ${fmtCalls(gh.calls())}`).toBe('view\nview\nview\nview\nhook\n');
+    expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
   });
 
-  await test('no release within the wait: the line naming the run, a non-zero exit, no gh create and no hook', () => {
+  test('no release within the wait: the line naming the run, a non-zero exit, no gh create and no hook', () => {
     const g = mkCutRepo();
     const gh = commitGh({ runs: RUNS });
     const { code, err } = runShip(waiting(g, '1'), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assert(code !== 0 && code !== null, `a non-zero exit, got ${code}: ${err}`);
-    assert(lines(err).includes(`ship-cut: no release v1.2.3 after 1s; check the release job: ${RUN_URL}`), `the wait line, got: ${err}`);
-    assertEq(creates(gh).length, 0, `no gh create, got: ${fmtCalls(gh.calls())}`);
-    assertEq(g.order(), null, 'no hook');
+    expect(code !== 0 && code !== null, `a non-zero exit, got ${code}: ${err}`).toBeTruthy();
+    expect(lines(err).includes(`ship-cut: no release v1.2.3 after 1s; check the release job: ${RUN_URL}`), `the wait line, got: ${err}`).toBeTruthy();
+    expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
+    expect(g.order(), 'no hook').toBe(null);
   });
 
-  await test('gh release view failing for a reason other than not found: its line at once, exit 1, no hook', () => {
+  test('gh release view failing for a reason other than not found: its line at once, exit 1, no hook', () => {
     const g = mkCutRepo();
     const gh = commitGh({ fails: true });
     const { code, err } = runShip(waiting(g, '5'), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 1, `exit 1, got: ${err}`);
-    assert(lines(err).includes('ship-cut: gh release view v1.2.3 failed: gh: To get started with GitHub CLI, please run: gh auth login'),
-      `the gh failure line, got: ${err}`);
-    assertEq(views(gh), 1, `one release view, no wait, got: ${fmtCalls(gh.calls())}`);
-    assertEq(g.order(), null, 'no hook');
+    expect(code, `exit 1, got: ${err}`).toBe(1);
+    expect(lines(err).includes('ship-cut: gh release view v1.2.3 failed: gh: To get started with GitHub CLI, please run: gh auth login'),
+      `the gh failure line, got: ${err}`).toBeTruthy();
+    expect(views(gh), `one release view, no wait, got: ${fmtCalls(gh.calls())}`).toBe(1);
+    expect(g.order(), 'no hook').toBe(null);
   });
 
-  await test('no chore(release): 1.2.3 commit and no release: the no-release-commit line at once, exit 1, no hook', () => {
+  test('no chore(release): 1.2.3 commit and no release: the no-release-commit line at once, exit 1, no hook', () => {
     const g = mkCutRepo(undefined, caller(), 'docs: add the 1.2.3 notes');
     const gh = commitGh();
     const { code, err } = runShip(waiting(g, '5'), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 1, `exit 1, got: ${err}`);
-    assert(lines(err).includes('ship-cut: v1.2.3 has no release commit; nothing for CI to release'), `the no-release-commit line, got: ${err}`);
-    assertEq(views(gh), 1, `one release view, no wait, got: ${fmtCalls(gh.calls())}`);
-    assertEq(g.order(), null, 'no hook');
+    expect(code, `exit 1, got: ${err}`).toBe(1);
+    expect(lines(err).includes('ship-cut: v1.2.3 has no release commit; nothing for CI to release'), `the no-release-commit line, got: ${err}`).toBeTruthy();
+    expect(views(gh), `one release view, no wait, got: ${fmtCalls(gh.calls())}`).toBe(1);
+    expect(g.order(), 'no hook').toBe(null);
   });
 
-  await test('no chore(release): 1.2.3 commit but v1.2.3 already released: the hooks run, exit 0', () => {
+  test('no chore(release): 1.2.3 commit but v1.2.3 already released: the hooks run, exit 0', () => {
     const g = mkCutRepo(undefined, caller(), 'docs: add the 1.2.3 notes');
     const gh = commitGh({ tags: ['v1.2.3'] });
     const { code, err } = runShip(waiting(g, '5'), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 0, `exit 0, got: ${err}`);
-    assertEq(g.order(), 'hook\n', 'the afterRelease hook ran');
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    expect(g.order(), 'the afterRelease hook ran').toBe('hook\n');
   });
 
-  await test('a failing afterRelease hook after the release: its line, exit 1, the hooks after it never run', () => {
+  test('a failing afterRelease hook after the release: its line, exit 1, the hooks after it never run', () => {
     const g = mkCutRepo((w) => ['exit 3', w.note('later')]);
     const gh = commitGh({ tags: ['v1.2.3'] });
     const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 1, `exit 1, got: ${err}`);
-    assert(lines(err).includes('ship-cut: v1.2.3 was released; an afterRelease hook failed'), `the released-but line, got: ${err}`);
-    assertEq(g.order(), null, 'the hook after the failure never ran');
+    expect(code, `exit 1, got: ${err}`).toBe(1);
+    expect(lines(err).includes('ship-cut: v1.2.3 was released; an afterRelease hook failed'), `the released-but line, got: ${err}`).toBeTruthy();
+    expect(g.order(), 'the hook after the failure never ran').toBe(null);
   });
+});
 
-  group('ship cut: earlier versions without a release');
-
-  await test('an older unreleased version is waited for first, its hooks run, and the walk stops at the newest released', () => {
+describe('ship cut: earlier versions without a release', () => {
+  test('an older unreleased version is waited for first, its hooks run, and the walk stops at the newest released', () => {
     const { g, shas } = mkHistoryRepo([['0.9.0', null], ['1.0.0', null], ['1.1.0', null], ['1.2.3', null]]);
     const gh = commitGh({ tags: ['v1.0.0', 'v1.2.3'], late: { 'v1.1.0': 2 } });
     const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 0, `exit 0, got: ${err}`);
-    assertEq(JSON.stringify(waitLines(err)),
-      JSON.stringify([`ship-cut: v1.1.0 has a release commit but no release; waiting for CI to release it at ${shas['1.1.0'].slice(0, 7)}`]),
-      `one wait line, for v1.1.0 and not v0.9.0 below the released v1.0.0, got: ${err}`);
-    assertEq(g.order(), 'hook\nhook\n', 'the hooks ran for v1.1.0, then for v1.2.3');
-    assertEq(creates(gh).length, 0, `no gh create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    expect(JSON.stringify(waitLines(err)),
+      `one wait line, for v1.1.0 and not v0.9.0 below the released v1.0.0, got: ${err}`).toBe(JSON.stringify([`ship-cut: v1.1.0 has a release commit but no release; waiting for CI to release it at ${shas['1.1.0'].slice(0, 7)}`]));
+    expect(g.order(), 'the hooks ran for v1.1.0, then for v1.2.3').toBe('hook\nhook\n');
+    expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
   });
 
-  await test('an older version shipped with Release: none is passed over, never waited for', () => {
+  test('an older version shipped with Release: none is passed over, never waited for', () => {
     const { g } = mkHistoryRepo([['1.0.0', null], ['1.1.0', 'Release: none'], ['1.2.3', null]]);
     const gh = commitGh({ tags: ['v1.0.0', 'v1.2.3'] });
     const { code, err } = runShip(waiting(g, '1'), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 0, `exit 0, got: ${err}`);
-    assertEq(waitLines(err).length, 0, `no wait line, got: ${err}`);
-    assertEq(g.order(), 'hook\n', 'the hooks ran once, for v1.2.3');
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    expect(waitLines(err).length, `no wait line, got: ${err}`).toBe(0);
+    expect(g.order(), 'the hooks ran once, for v1.2.3').toBe('hook\n');
   });
 
-  await test('a history with no release at all waits for no earlier version', () => {
+  test('a history with no release at all waits for no earlier version', () => {
     const { g } = mkHistoryRepo([['1.0.0', null], ['1.1.0', null], ['1.2.3', null]]);
     const gh = commitGh({ tags: ['v1.2.3'] });
     const { code, err } = runShip(waiting(g, '1'), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 0, `exit 0, got: ${err}`);
-    assertEq(waitLines(err).length, 0, `no wait line, got: ${err}`);
-    assertEq(g.order(), 'hook\n', 'the hooks ran once, for v1.2.3');
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    expect(waitLines(err).length, `no wait line, got: ${err}`).toBe(0);
+    expect(g.order(), 'the hooks ran once, for v1.2.3').toBe('hook\n');
   });
 
-  await test('the version\'s own release commit carries Release: none: one line, exit 0, no release view and no hook', () => {
+  test('the version\'s own release commit carries Release: none: one line, exit 0, no release view and no hook', () => {
     const { g } = mkHistoryRepo([['1.2.3', 'Release: none']]);
     const gh = commitGh();
     const { code, err } = runShip(waiting(g, '5'), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 0, `exit 0, got: ${err}`);
-    assert(lines(err).includes('ship-cut: the chore(release): 1.2.3 commit carries Release: none, so there is no v1.2.3 to wait for and no hook ran'),
-      `the Release: none line, got: ${err}`);
-    assertEq(gh.calls().filter((c) => isCall(c, 'release', 'view')).length, 0, `no release view, got: ${fmtCalls(gh.calls())}`);
-    assertEq(g.order(), null, 'no hook');
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    expect(lines(err).includes('ship-cut: the chore(release): 1.2.3 commit carries Release: none, so there is no v1.2.3 to wait for and no hook ran'),
+      `the Release: none line, got: ${err}`).toBeTruthy();
+    expect(gh.calls().filter((c) => isCall(c, 'release', 'view')).length, `no release view, got: ${fmtCalls(gh.calls())}`).toBe(0);
+    expect(g.order(), 'no hook').toBe(null);
   });
+});
 
-  group('ship cut: a cloud session');
-
-  await test('a cloud cut waits for the release and runs the hooks as a machine does; exit 0, no gh create', () => {
+describe('ship cut: a cloud session', () => {
+  test('a cloud cut waits for the release and runs the hooks as a machine does; exit 0, no gh create', () => {
     const g = mkCutRepo();
     const gh = commitGh({ late: { 'v1.2.3': 1 }, onView: g.note('view') });
     const { code, err } = runShip(inCloud(waiting(g)), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    assertEq(code, 0, `exit 0, got: ${err}`);
-    assertEq(g.order(), 'view\nview\nhook\n', `a miss, the release, then the hook, got: ${fmtCalls(gh.calls())}`);
-    assertEq(creates(gh).length, 0, `no gh create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    expect(g.order(), `a miss, the release, then the hook, got: ${fmtCalls(gh.calls())}`).toBe('view\nview\nhook\n');
+    expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

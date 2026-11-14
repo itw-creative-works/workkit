@@ -8,12 +8,12 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
-const { skipSuite, mkTmp, SPAWN_DEADLINE, until } = require('../../lib/harness');
+const { mkTmp, SPAWN_DEADLINE, until } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
   BASH, NO_RC, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, stubTool, pathWith, systemPathWith, joinPath,
 } = require('../../lib/platform');
-const { noNodeTest, barePathTest } = require('../../lib/job-path');
+const { skipOnJobPathNode, skipOnUsrLocalBin } = require('../../lib/job-path');
 const { mkKitRepo } = require('../../scripts/home/helpers');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
@@ -270,13 +270,12 @@ const withoutNode = (world) => { world.env.PATH = systemPathWith(path.join(world
 // unless the job adds it.
 const withBarePath = (world) => { world.env.PATH = joinPath(path.join(world.root, 'bin'), SYSTEM_PATH, NODE_DIR); };
 
-// Every suite asks this first: the machine leg is a macOS job.
-const skipUnlessDarwin = () => {
-  if (process.platform !== 'darwin') skipSuite('the machine leg is a macOS launchd job (Notifly, ~/Library paths)');
-};
+// Every suite's skip value: the machine leg is a macOS job.
+const skipUnlessDarwin = () => process.platform !== 'darwin'
+  && 'the machine leg is a macOS launchd job (Notifly, ~/Library paths)';
 
 module.exports = {
   SCRIPT, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner,
   pushFromElsewhere, subjects, REFRESH, notified, notifiedMatching, settle, skipUnlessDarwin,
-  noNodeTest, withoutNode, barePathTest, withBarePath,
+  skipOnJobPathNode, withoutNode, skipOnUsrLocalBin, withBarePath,
 };

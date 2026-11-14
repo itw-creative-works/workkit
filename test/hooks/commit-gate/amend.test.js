@@ -4,7 +4,7 @@
 // only check 4, which asks for a staged CHANGELOG.md, has nothing to read.
 // The shared prologue (the repo in memory, the facts, the texts) is ./helpers.js.
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { mods } = require('../../lib/mods-inputs');
 const {
   PREFIX, T, mkRepo, stage, commit, touchMarker, factsOf, denyOf, blocks, ENTRY,
@@ -27,32 +27,23 @@ const amendable = (issues = {}) => {
 /** commit-msg's verdict on `message` over the repo, as git asks it on an amend. */
 const amend = (r, message) => {
   const facts = factsOf(r);
-  assertEq(facts.staged.length, 0, 'the amend stages nothing');
+  expect(facts.staged.length, 'the amend stages nothing').toBe(0);
   return mods('commit-gate').commitMsgVerdict({ ...facts, message });
 };
 
-const cases = async () => {
-  group('commit-gate: an amend is judged on its message');
-
-  await test('two issues on one closing line bounce on check 8 with nothing staged', async () => {
+describe('commit-gate: an amend is judged on its message', () => {
+  test('two issues on one closing line bounce on check 8 with nothing staged', async () => {
     const deny = denyOf(await amend(amendable(), 'fix: x\n\nFixes #4 #5'));
-    assert(deny !== null && deny.startsWith(PREFIX) && deny.includes('#5'), `the amend is blocked naming #5, got: ${deny}`);
+    expect(deny !== null && deny.startsWith(PREFIX) && deny.includes('#5'), `the amend is blocked naming #5, got: ${deny}`).toBeTruthy();
   });
 
-  await test('Fixes #4 for a proved issue still at status:building bounces on check 7 with nothing staged', async () => {
+  test('Fixes #4 for a proved issue still at status:building bounces on check 7 with nothing staged', async () => {
     const r = amendable({ 4: { comments: PROVED, labels: ['status:building'] } });
     blocks(await amend(r, 'fix: x\n\nFixes #4'), T.unpassed('#4 is at status:building'), 'names the stage');
   });
 
-  await test('check 4 asks nothing of an amend: Fixes #4 for a proved, passed issue passes with no CHANGELOG.md staged', async () => {
+  test('check 4 asks nothing of an amend: Fixes #4 for a proved, passed issue passes with no CHANGELOG.md staged', async () => {
     const r = amendable({ 4: { comments: PROVED, labels: ['status:complete'] } });
-    assertEq(denyOf(await amend(r, 'fix: x\n\nFixes #4')), null, 'no block');
+    expect(denyOf(await amend(r, 'fix: x\n\nFixes #4')), 'no block').toBe(null);
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

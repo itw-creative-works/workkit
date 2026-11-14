@@ -331,7 +331,7 @@ function gatherFacts(g, root) {
  * hook's own environment, so `git` answers from the commit's index
  * (`GIT_INDEX_FILE`) under -a and a pathspec alike (docs/hooks.md
  * § safety:commit-gate). The git hooks' judge reads them.
- * @param {object} g the chain's facts over the real machine (guards.js bashFacts)
+ * @param {object} g the chain's facts over the real machine (facts.js bashFacts)
  * @param {string} root the repo root
  * @param {string} [message] the commit's message, for commitMsgVerdict
  * @returns {object}

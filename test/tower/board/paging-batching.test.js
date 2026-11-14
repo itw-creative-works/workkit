@@ -3,15 +3,13 @@
 // ceiling, the loops that stop) and the batched sweep. Prologue: ./helpers.js.
 //
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { execError } = require('../../lib/gh');
 const {
   fetchBoard, PAGE_SIZE, MAX_OPEN_ISSUES, REPOS_PER_REQUEST, issue, ROSTER,
 } = require('./helpers');
 
-const cases = async () => {
-  group('tower/board: paging past the first page');
-
+describe('tower/board: paging past the first page', () => {
   // GitHub caps one connection page at 100, so a repo past that is asked again
   // with the cursor its last page ended on, and only that repo: the rest of the
   // batch is already exhausted.
@@ -46,7 +44,7 @@ const cases = async () => {
     nodes: numbers.map((n) => issue(n)),
   });
 
-  await test('a repo with another page is asked again with the cursor, and only that repo', () => {
+  test('a repo with another page is asked again with the cursor, and only that repo', () => {
     const calls = [];
     const res = fetchBoard(ROSTER, {
       exec: fakePaged({
@@ -55,40 +53,39 @@ const cases = async () => {
       }, calls),
     });
     const queries = calls.filter((c) => c[1] === 'api').map((c) => c[c.length - 1]);
-    assertEq(queries.length, 2, 'the batch, then one continuation');
-    assert(queries[1].includes('after: "CUR1"'), 'the second ask carries the cursor the first page ended on');
-    assert(queries[1].includes('name: "workkit"') && !queries[1].includes('name: ".dotfiles"'),
-      'and names only the repo that had more');
-    assertEq(res.repos[0].count, 4, 'both pages are on the board');
-    assertEq(res.repos[0].truncated, false, 'a repo swept to the end is not truncated');
-    assertEq(res.issues.map((i) => i.number).join(','), '1,2,3,4,9',
-      'a repo\u2019s pages stay together, and the roster order is kept');
+    expect(queries.length, 'the batch, then one continuation').toBe(2);
+    expect(queries[1].includes('after: "CUR1"'), 'the second ask carries the cursor the first page ended on').toBeTruthy();
+    expect(queries[1].includes('name: "workkit"') && !queries[1].includes('name: ".dotfiles"'),
+      'and names only the repo that had more').toBeTruthy();
+    expect(res.repos[0].count, 'both pages are on the board').toBe(4);
+    expect(res.repos[0].truncated, 'a repo swept to the end is not truncated').toBe(false);
+    expect(res.issues.map((i) => i.number).join(','), 'a repo\u2019s pages stay together, and the roster order is kept').toBe('1,2,3,4,9');
   });
 
-  await test('a total ahead of the count is no longer truncation - only the ceiling is', () => {
+  test('a total ahead of the count is no longer truncation - only the ceiling is', () => {
     const res = fetchBoard(ROSTER, {
       exec: fakePaged({
         'ITW-Creative-Works/workkit': [conn([1, 2, 3], { total: 140 })],
         'alice/.dotfiles': [conn([9], { total: 1 })],
       }),
     });
-    assertEq(res.repos[0].truncated, false, 'GitHub said there was no next page, whatever the total claims');
-    assertEq(res.repos[0].totalCount, 140, 'the real total is still reported');
-    assertEq(res.repos[0].count, 3, 'and what actually came back');
+    expect(res.repos[0].truncated, 'GitHub said there was no next page, whatever the total claims').toBe(false);
+    expect(res.repos[0].totalCount, 'the real total is still reported').toBe(140);
+    expect(res.repos[0].count, 'and what actually came back').toBe(3);
   });
 
-  await test('the ceiling stops the sweep and the repo says it was cut', () => {
+  test('the ceiling stops the sweep and the repo says it was cut', () => {
     const calls = [];
     // Every page says another follows, so nothing but the ceiling can end it.
     const endless = { shift: () => conn(Array.from({ length: PAGE_SIZE }, (_, i) => i + 1), { total: 5000, next: 'MORE' }) };
     const res = fetchBoard([ROSTER[0]], { exec: fakePaged({ 'ITW-Creative-Works/workkit': endless }, calls) });
-    assertEq(MAX_OPEN_ISSUES, 1000, 'the ceiling both halves of the sweep hold');
-    assertEq(res.repos[0].count, MAX_OPEN_ISSUES, 'the sweep stops at it rather than paging forever');
-    assertEq(res.repos[0].truncated, true, 'and the repo says there is more it did not carry');
-    assertEq(calls.filter((c) => c[1] === 'api').length, MAX_OPEN_ISSUES / PAGE_SIZE, 'no request past the ceiling');
+    expect(MAX_OPEN_ISSUES, 'the ceiling both halves of the sweep hold').toBe(1000);
+    expect(res.repos[0].count, 'the sweep stops at it rather than paging forever').toBe(MAX_OPEN_ISSUES);
+    expect(res.repos[0].truncated, 'and the repo says there is more it did not carry').toBe(true);
+    expect(calls.filter((c) => c[1] === 'api').length, 'no request past the ceiling').toBe(MAX_OPEN_ISSUES / PAGE_SIZE);
   });
 
-  await test('an answer claiming more pages without saying where stops rather than looping', () => {
+  test('an answer claiming more pages without saying where stops rather than looping', () => {
     // The loop's own footgun: `hasNextPage` with no cursor beside it would have
     // it re-read the same page forever, inside a request the dashboard is
     // waiting on. The fake gives up after fifty asks so a regression fails here
@@ -104,11 +101,11 @@ const cases = async () => {
         });
       },
     });
-    assertEq(asked, 1, 'asked once and stopped - there was nowhere to resume from');
-    assertEq(res.repos[0].truncated, true, 'and the repo still says there is more it did not carry');
+    expect(asked, 'asked once and stopped - there was nowhere to resume from').toBe(1);
+    expect(res.repos[0].truncated, 'and the repo still says there is more it did not carry').toBe(true);
   });
 
-  await test('a page that resumes where the last one did stops rather than looping', () => {
+  test('a page that resumes where the last one did stops rather than looping', () => {
     // An answer that claims more pages, hands back the cursor it was asked with
     // and carries nothing moves neither the resume point nor the ceiling, so a
     // round that moved nothing is the tell. The fake gives up after fifty asks
@@ -128,12 +125,12 @@ const cases = async () => {
         });
       },
     });
-    assertEq(asked, 2, 'the first page, one continuation, and no more - the cursor had not moved');
-    assertEq(res.repos[0].count, 1, 'the page that arrived is kept');
-    assertEq(res.repos[0].truncated, true, 'and the repo still says there is more it did not carry');
+    expect(asked, 'the first page, one continuation, and no more - the cursor had not moved').toBe(2);
+    expect(res.repos[0].count, 'the page that arrived is kept').toBe(1);
+    expect(res.repos[0].truncated, 'and the repo still says there is more it did not carry').toBe(true);
   });
 
-  await test('a continuation that fails keeps the pages that arrived and says why', () => {
+  test('a continuation that fails keeps the pages that arrived and says why', () => {
     // The first page is already drawn; blanking the whole board because page
     // two of one repo failed would throw away every other repo's answer too.
     let asked = 0;
@@ -152,14 +149,14 @@ const cases = async () => {
         throw execError('HTTP 502', { stderr: 'gateway' });
       },
     });
-    assertEq(res.ok, true, 'the board still renders');
-    assertEq(res.repos[0].count, 2, 'the page that arrived is kept');
-    assert(/502/.test(res.repos[0].error), `the repo carries the reason, got: ${res.repos[0].error}`);
-    assertEq(res.repos[1].error, null, 'and the repo that answered whole carries none');
+    expect(res.ok, 'the board still renders').toBe(true);
+    expect(res.repos[0].count, 'the page that arrived is kept').toBe(2);
+    expect(/502/.test(res.repos[0].error), `the repo carries the reason, got: ${res.repos[0].error}`).toBeTruthy();
+    expect(res.repos[1].error, 'and the repo that answered whole carries none').toBe(null);
   });
+});
 
-  group('tower/board: the sweep is batched');
-
+describe('tower/board: the sweep is batched', () => {
   // At 23 repos GitHub answers the whole roster RESOURCE_LIMITS_EXCEEDED, so the
   // sweep asks a handful of repos at a time and merges. The aliases restart at
   // r0 in every request, so the fake answers each only for the repos it named.
@@ -184,41 +181,32 @@ const cases = async () => {
     return JSON.stringify({ data });
   };
 
-  await test('a roster longer than one batch is swept in one request per batch', () => {
+  test('a roster longer than one batch is swept in one request per batch', () => {
     const calls = [];
     const res = fetchBoard(bigRoster(13), { exec: fakeBatched(calls) });
-    assertEq(REPOS_PER_REQUEST, 6, 'the measured batch size (issue #202)');
+    expect(REPOS_PER_REQUEST, 'the measured batch size (issue #202)').toBe(6);
     const queries = calls.filter((c) => c[1] === 'api');
-    assertEq(queries.length, 3, '13 repos at 6 a request is three requests, never one');
-    assertEq((queries[0][queries[0].length - 1].match(/repository\(/g) || []).length, REPOS_PER_REQUEST, 'the first request carries a full batch');
-    assertEq((queries[2][queries[2].length - 1].match(/repository\(/g) || []).length, 1, 'and the last carries the remainder');
-    assertEq(res.ok, true, 'ok');
+    expect(queries.length, '13 repos at 6 a request is three requests, never one').toBe(3);
+    expect((queries[0][queries[0].length - 1].match(/repository\(/g) || []).length, 'the first request carries a full batch').toBe(REPOS_PER_REQUEST);
+    expect((queries[2][queries[2].length - 1].match(/repository\(/g) || []).length, 'and the last carries the remainder').toBe(1);
+    expect(res.ok, 'ok').toBe(true);
   });
 
-  await test('the batches merge back in roster order, each issue on the repo that answered it', () => {
+  test('the batches merge back in roster order, each issue on the repo that answered it', () => {
     const res = fetchBoard(bigRoster(13), { exec: fakeBatched([]) });
-    assertEq(res.repos.map((r) => r.slug).join(','), bigRoster(13).map((r) => r.slug).join(','),
-      'every repo is reported once, in the order the roster names them');
-    assertEq(res.issues.length, 13, 'and no batch was dropped');
-    assertEq(res.issues.map((i) => `${i.repo}#${i.number}`).join(' '),
-      bigRoster(13).map((r, i) => `${r.slug}#${i}`).join(' '),
-      'the aliases restart per request, so this is what proves the offset is applied');
+    expect(res.repos.map((r) => r.slug).join(','), 'every repo is reported once, in the order the roster names them').toBe(bigRoster(13).map((r) => r.slug).join(','));
+    expect(res.issues.length, 'and no batch was dropped').toBe(13);
+    expect(res.issues.map((i) => `${i.repo}#${i.number}`).join(' '), 'the aliases restart per request, so this is what proves the offset is applied').toBe(bigRoster(13).map((r, i) => `${r.slug}#${i}`).join(' '));
   });
 
-  await test('a request that fails outright still fails the sweep, batches or not', () => {
+  test('a request that fails outright still fails the sweep, batches or not', () => {
     const res = fetchBoard(bigRoster(13), {
       exec: (cmd, args) => {
         if (args[0] === '--version') return 'gh version 2.0.0\n';
         throw execError('HTTP 502', { stderr: 'gateway' });
       },
     });
-    assertEq(res.ok, false, 'nothing usable came back');
-    assert(/502/.test(res.reason), 'and the underlying message survives');
+    expect(res.ok, 'nothing usable came back').toBe(false);
+    expect(/502/.test(res.reason), 'and the underlying message survives').toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods, textOf, mergedSettings } = require('../lib/mods-inputs');
 
 const REPO = path.join(__dirname, '..', '..');
@@ -16,77 +16,72 @@ const config = (user, repo, ladder = LADDER) => mods('manager').managerConfig(la
 const ctxFor = (model, cfg = config()) => textOf(mods('profile').profileContext(cfg, model));
 const settings = (manager) => ({ enabled: true, manager });
 
-const cases = async () => {
-  group('manager-profile: injection by session tier');
-  await test('frontier session injects the profile with the advisor-redundant clause', () => {
+describe('manager-profile: injection by session tier', () => {
+  test('frontier session injects the profile with the advisor-redundant clause', () => {
     const ctx = ctxFor(MODELS.fable);
-    assert(ctx.includes('MANAGER'), 'no MANAGER block');
-    assert(ctx.includes('never pass a model param'), 'missing the resolver rule');
-    assert(ctx.includes('redundant'), 'frontier session should get the redundant clause');
-    assert(!ctx.includes('Consult the workkit:advisor'), 'frontier session must not be told to consult');
-    assert(ctx.includes('workkit:scout') && ctx.includes('workkit:worker') && ctx.includes('workkit:verifier'), 'crew names must be plugin-namespaced');
-    assert(!ctx.includes('agents/README.md'), 'no personal-tree citation');
-    assert(ctx.includes('write the brief to a file'), 'handoff convention inlined');
-    assert(ctx.includes('chat summary, never a file'), 'brief files gated on an actual dispatch');
+    expect(ctx.includes('MANAGER'), 'no MANAGER block').toBeTruthy();
+    expect(ctx.includes('never pass a model param'), 'missing the resolver rule').toBeTruthy();
+    expect(ctx.includes('redundant'), 'frontier session should get the redundant clause').toBeTruthy();
+    expect(!ctx.includes('Consult the workkit:advisor'), 'frontier session must not be told to consult').toBeTruthy();
+    expect(ctx.includes('workkit:scout') && ctx.includes('workkit:worker') && ctx.includes('workkit:verifier'), 'crew names must be plugin-namespaced').toBeTruthy();
+    expect(!ctx.includes('agents/README.md'), 'no personal-tree citation').toBeTruthy();
+    expect(ctx.includes('write the brief to a file'), 'handoff convention inlined').toBeTruthy();
+    expect(ctx.includes('chat summary, never a file'), 'brief files gated on an actual dispatch').toBeTruthy();
   });
-  await test('workhorse session injects with the consult clause', () => {
+  test('workhorse session injects with the consult clause', () => {
     const ctx = ctxFor(MODELS.opus);
-    assert(ctx.includes('Consult the workkit:advisor'), 'workhorse session should consult the advisor');
-    assert(!ctx.includes('redundant'), 'workhorse session must not get the redundant clause');
+    expect(ctx.includes('Consult the workkit:advisor'), 'workhorse session should consult the advisor').toBeTruthy();
+    expect(!ctx.includes('redundant'), 'workhorse session must not get the redundant clause').toBeTruthy();
   });
-  await test('unknown session injects (default-frontier rationale)', () => {
-    assert(ctxFor('').includes('MANAGER'), 'an unknown tier still injects');
+  test('unknown session injects (default-frontier rationale)', () => {
+    expect(ctxFor('').includes('MANAGER'), 'an unknown tier still injects').toBeTruthy();
   });
   for (const rung of ['sonnet', 'haiku']) {
-    await test(`${rung} session is solo: no output at all`, () => {
-      assertEq(ctxFor(MODELS[rung]), '', 'solo');
+    test(`${rung} session is solo: no output at all`, () => {
+      expect(ctxFor(MODELS[rung]), 'solo').toBe('');
     });
   }
+});
 
-  group('manager-profile: the injection is the delegation core only');
-  await test('the injection stays under 1800 characters on both rungs', () => {
+describe('manager-profile: the injection is the delegation core only', () => {
+  test('the injection stays under 1800 characters on both rungs', () => {
     for (const rung of ['fable', 'opus']) {
       const ctx = ctxFor(MODELS[rung]);
-      assert(ctx.length < 1800, `${rung} injection is ${ctx.length} chars`);
+      expect(ctx.length < 1800, `${rung} injection is ${ctx.length} chars`).toBeTruthy();
     }
   });
-  await test('the watching clause names docs/agents.md § Watching a run on both rungs', () => {
+  test('the watching clause names docs/agents.md § Watching a run on both rungs', () => {
     const clause = 'docs/agents.md § Watching a run';
-    assert(ctxFor(MODELS.fable).includes(clause), 'frontier session lacks the watching clause');
-    assert(ctxFor(MODELS.opus).includes(clause), 'workhorse session lacks the watching clause');
+    expect(ctxFor(MODELS.fable).includes(clause), 'frontier session lacks the watching clause').toBeTruthy();
+    expect(ctxFor(MODELS.opus).includes(clause), 'workhorse session lacks the watching clause').toBeTruthy();
   });
-  await test('the one-time clause follows the findings sentence on both rungs', () => {
+  test('the one-time clause follows the findings sentence on both rungs', () => {
     const clause = 'findings.file is on. A one-time problem';
-    assert(ctxFor(MODELS.fable).includes(clause), 'frontier session lacks the one-time clause');
-    assert(ctxFor(MODELS.opus).includes(clause), 'workhorse session lacks the one-time clause');
+    expect(ctxFor(MODELS.fable).includes(clause), 'frontier session lacks the one-time clause').toBeTruthy();
+    expect(ctxFor(MODELS.opus).includes(clause), 'workhorse session lacks the one-time clause').toBeTruthy();
   });
+});
 
-  group('manager-profile: layered overrides (repo > user > ladder)');
-  await test('enabled: false silences a frontier session', () => {
-    assertEq(ctxFor(MODELS.fable, config(undefined, settings({ enabled: false }))), '', 'silenced');
+describe('manager-profile: layered overrides (repo > user > ladder)', () => {
+  test('enabled: false silences a frontier session', () => {
+    expect(ctxFor(MODELS.fable, config(undefined, settings({ enabled: false }))), 'silenced').toBe('');
   });
-  await test('a repo workhorse override makes a sonnet session manager-capable', () => {
+  test('a repo workhorse override makes a sonnet session manager-capable', () => {
     const ctx = ctxFor(MODELS.sonnet, config(undefined, settings({ tiers: { workhorse: 'sonnet' } })));
-    assert(ctx.includes('MANAGER'), 'the overridden workhorse tier should inject');
-    assert(ctx.includes('Consult the workkit:advisor'), 'a workhorse session should consult the advisor');
+    expect(ctx.includes('MANAGER'), 'the overridden workhorse tier should inject').toBeTruthy();
+    expect(ctx.includes('Consult the workkit:advisor'), 'a workhorse session should consult the advisor').toBeTruthy();
   });
-  await test('a user-layer frontier override drives the advisor clause', () => {
+  test('a user-layer frontier override drives the advisor clause', () => {
     const user = { version: 1, repos: {}, manager: { tiers: { frontier: 'opus' } } };
-    assert(ctxFor(MODELS.opus, config(user, undefined)).includes('redundant'), 'an opus session under a frontier: opus override IS the advisor');
+    expect(ctxFor(MODELS.opus, config(user, undefined)).includes('redundant'), 'an opus session under a frontier: opus override IS the advisor').toBeTruthy();
   });
-  await test('a repo without a manager block changes nothing', () => {
-    assert(ctxFor(MODELS.fable, config(undefined, { version: 1, enabled: false })).includes('MANAGER'), 'the workflow key is not the manager key');
+  test('a repo without a manager block changes nothing', () => {
+    expect(ctxFor(MODELS.fable, config(undefined, { version: 1, enabled: false })).includes('MANAGER'), 'the workflow key is not the manager key').toBeTruthy();
   });
+});
 
-  group('manager-profile: robustness');
-  await test('missing ladder still injects, the tiers coming from the kit defaults', () => {
-    assert(ctxFor(MODELS.fable, config(undefined, undefined, null)).includes('MANAGER'), 'the defaults\' tier names');
+describe('manager-profile: robustness', () => {
+  test('missing ladder still injects, the tiers coming from the kit defaults', () => {
+    expect(ctxFor(MODELS.fable, config(undefined, undefined, null)).includes('MANAGER'), 'the defaults\' tier names').toBeTruthy();
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

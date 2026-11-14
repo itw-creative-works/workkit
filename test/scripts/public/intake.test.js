@@ -4,15 +4,14 @@
 // whole against the fake GitHub in ./helpers.js.
 
 const {
-  group, testUnless, assert, assertEq, summary, selfRun,
+  describe, test, expect,
 } = require('../../lib/harness');
-const { IS_WINDOWS, NO_NODE_STUB } = require('../../lib/platform');
+const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   mkPublicWorld, publicLine, said, PRIVATE, PUBLIC,
 } = require('./helpers');
 
 // The verb's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
-const test = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 const REPORT = {
   number: 44,
@@ -28,114 +27,105 @@ const INTAKE_WORDING = "Thanks for the report. We're tracking this internally. T
 // The private issues intake made: every one past the seeded #7.
 const madeIssues = (world) => world.gh.issues(PRIVATE).filter((i) => i.number > PRIVATE_OPEN.number);
 
-const cases = async () => {
-  group('workkit public intake');
-
-  await test('intake takes an open public issue with no status: label: one private inbox issue with the Public: line and the quoted report, one intake comment, status:inbox on the public issue', () => {
+describe('workkit public intake', () => {
+  test('intake takes an open public issue with no status: label: one private inbox issue with the Public: line and the quoted report, one intake comment, status:inbox on the public issue', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({ issues: { public: [REPORT], private: [PRIVATE_OPEN] } });
     const res = world.run(['intake']);
-    assertEq(res.code, 0, `intake exits 0 (${said(res)})`);
+    expect(res.code, `intake exits 0 (${said(res)})`).toBe(0);
 
     const made = madeIssues(world);
-    assertEq(made.length, 1, `one private issue, got: ${JSON.stringify(made)}`);
+    expect(made.length, `one private issue, got: ${JSON.stringify(made)}`).toBe(1);
     const [issue] = made;
-    assertEq(JSON.stringify([...issue.labels].sort()), JSON.stringify(['status:inbox', 'type:idea']),
-      'it carries status:inbox and type:idea, as every capture does');
+    expect(JSON.stringify([...issue.labels].sort()), 'it carries status:inbox and type:idea, as every capture does').toBe(JSON.stringify(['status:inbox', 'type:idea']));
     const lines = issue.body.split('\n');
-    assertEq(lines[0], publicLine(44), 'its first body line is the Public: link');
-    assert(issue.body.includes(REPORT.author), `the reporter's login is named, got: ${issue.body}`);
+    expect(lines[0], 'its first body line is the Public: link').toBe(publicLine(44));
+    expect(issue.body.includes(REPORT.author), `the reporter's login is named, got: ${issue.body}`).toBeTruthy();
     const quoted = lines.filter((l) => l.startsWith('>'));
     for (const want of [REPORT.title, ...REPORT.body.split('\n')]) {
-      assert(quoted.some((l) => l.includes(want)), `the report's ${JSON.stringify(want)} is quoted, got: ${issue.body}`);
+      expect(quoted.some((l) => l.includes(want)), `the report's ${JSON.stringify(want)} is quoted, got: ${issue.body}`).toBeTruthy();
     }
 
     const pub = world.gh.issue(PUBLIC, 44);
-    assertEq(pub.comments.length, 1, `one comment on the public issue, got: ${JSON.stringify(pub.comments)}`);
-    assertEq(pub.comments[0].body.trim(), INTAKE_WORDING,
-      'the intake wording, naming no private repo');
-    assert(pub.labels.includes('status:inbox'), `the public issue carries status:inbox, got: ${pub.labels}`);
-    assert(pub.labels.includes('bug'), `and keeps its own label, got: ${pub.labels}`);
-    assertEq(pub.state, 'open', 'the public issue stays open');
+    expect(pub.comments.length, `one comment on the public issue, got: ${JSON.stringify(pub.comments)}`).toBe(1);
+    expect(pub.comments[0].body.trim(), 'the intake wording, naming no private repo').toBe(INTAKE_WORDING);
+    expect(pub.labels.includes('status:inbox'), `the public issue carries status:inbox, got: ${pub.labels}`).toBeTruthy();
+    expect(pub.labels.includes('bug'), `and keeps its own label, got: ${pub.labels}`).toBeTruthy();
+    expect(pub.state, 'the public issue stays open').toBe('open');
   });
 
-  await test('intake names the reporter as a bare mention: Reported by @octo on the public repo#N, no backticks', () => {
+  test('intake names the reporter as a bare mention: Reported by @octo on the public repo#N, no backticks', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({ issues: { public: [{ ...REPORT, author: 'octo' }], private: [PRIVATE_OPEN] } });
     const res = world.run(['intake']);
-    assertEq(res.code, 0, `intake exits 0 (${said(res)})`);
+    expect(res.code, `intake exits 0 (${said(res)})`).toBe(0);
     const [issue] = madeIssues(world);
-    assert(issue.body.split('\n').includes(`Reported by @octo on ${PUBLIC}#44:`),
-      `the body carries the bare mention line, got: ${issue.body}`);
+    expect(issue.body.split('\n').includes(`Reported by @octo on ${PUBLIC}#44:`),
+      `the body carries the bare mention line, got: ${issue.body}`).toBeTruthy();
   });
 
-  await test('intake skips a public issue that already has a status: label', () => {
+  test('intake skips a public issue that already has a status: label', { skip: skipWithoutNodeStub() }, () => {
     const labelled = {
       number: 45, title: 'Already routed', author: 'someone', body: 'x', labels: ['status:building'],
     };
     const world = mkPublicWorld({ issues: { public: [REPORT, labelled], private: [PRIVATE_OPEN] } });
     const res = world.run(['intake']);
-    assertEq(res.code, 0, `intake exits 0 (${said(res)})`);
+    expect(res.code, `intake exits 0 (${said(res)})`).toBe(0);
 
     const made = madeIssues(world);
-    assertEq(JSON.stringify(made.map((i) => i.body.split('\n')[0])), JSON.stringify([publicLine(44)]),
-      'only the unrouted issue is taken in');
+    expect(JSON.stringify(made.map((i) => i.body.split('\n')[0])), 'only the unrouted issue is taken in').toBe(JSON.stringify([publicLine(44)]));
     const writes = world.gh.writes().filter((w) => w.slug === PUBLIC && w.number === 45);
-    assertEq(writes.length, 0, `public #45 is left alone, got: ${JSON.stringify(writes)}`);
+    expect(writes.length, `public #45 is left alone, got: ${JSON.stringify(writes)}`).toBe(0);
   });
 
-  await test('intake run twice takes nothing the second time', () => {
+  test('intake run twice takes nothing the second time', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({ issues: { public: [REPORT], private: [PRIVATE_OPEN] } });
     const first = world.run(['intake']);
-    assertEq(first.code, 0, `the first intake exits 0 (${said(first)})`);
+    expect(first.code, `the first intake exits 0 (${said(first)})`).toBe(0);
     const writesAfterFirst = world.gh.writes().length;
-    assert(writesAfterFirst > 0, 'the first run took the issue in');
+    expect(writesAfterFirst > 0, 'the first run took the issue in').toBeTruthy();
     const second = world.run(['intake']);
-    assertEq(second.code, 0, `the second intake exits 0 (${said(second)})`);
-    assertEq(madeIssues(world).length, 1, 'still one private issue');
-    assertEq(world.gh.issue(PUBLIC, 44).comments.length, 1, 'still one intake comment');
-    assertEq(JSON.stringify(world.gh.writes().slice(writesAfterFirst)), '[]', 'the second run wrote nothing');
+    expect(second.code, `the second intake exits 0 (${said(second)})`).toBe(0);
+    expect(madeIssues(world).length, 'still one private issue').toBe(1);
+    expect(world.gh.issue(PUBLIC, 44).comments.length, 'still one intake comment').toBe(1);
+    expect(JSON.stringify(world.gh.writes().slice(writesAfterFirst)), 'the second run wrote nothing').toBe('[]');
   });
 
-  await test('a retry after a failed public label edit makes no second private issue', () => {
+  test('a retry after a failed public label edit makes no second private issue', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({
       issues: { public: [REPORT], private: [PRIVATE_OPEN] }, fail: [{ slug: PUBLIC, number: 44, op: 'labels' }],
     });
     const first = world.run(['intake']);
-    assertEq(first.code, 1, `the first intake exits 1 on the refused label edit (${said(first)})`);
-    assertEq(madeIssues(world).length, 1, 'the first run made the private issue');
+    expect(first.code, `the first intake exits 1 on the refused label edit (${said(first)})`).toBe(1);
+    expect(madeIssues(world).length, 'the first run made the private issue').toBe(1);
     const retry = world.run(['intake']);
-    assertEq(retry.code, 0, `the retry exits 0 (${said(retry)})`);
+    expect(retry.code, `the retry exits 0 (${said(retry)})`).toBe(0);
 
     const made = madeIssues(world);
-    assertEq(made.length, 1, `still one private issue, got: ${JSON.stringify(made.map((i) => i.number))}`);
+    expect(made.length, `still one private issue, got: ${JSON.stringify(made.map((i) => i.number))}`).toBe(1);
     const pub = world.gh.issue(PUBLIC, 44);
-    assert(pub.labels.includes('status:inbox'), `the retry labelled the public issue, got: ${pub.labels}`);
-    assertEq(JSON.stringify(pub.comments.map((c) => c.body.trim())),
-      JSON.stringify([INTAKE_WORDING]),
-      'one intake comment, after the private issue the first run made');
+    expect(pub.labels.includes('status:inbox'), `the retry labelled the public issue, got: ${pub.labels}`).toBeTruthy();
+    expect(JSON.stringify(pub.comments.map((c) => c.body.trim())), 'one intake comment, after the private issue the first run made').toBe(JSON.stringify([INTAKE_WORDING]));
   });
 
-  await test('a comment refused once, then a retry, ends with one comment and the label', () => {
+  test('a comment refused once, then a retry, ends with one comment and the label', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({
       issues: { public: [REPORT], private: [PRIVATE_OPEN] }, fail: [{ slug: PUBLIC, number: 44, op: 'comment' }],
     });
     const first = world.run(['intake']);
-    assertEq(first.code, 1, `the first intake exits 1 on the refused comment (${said(first)})`);
-    assertEq((first.err.match(/public:/g) || []).length, 1, `the warning names public: once (${said(first)})`);
+    expect(first.code, `the first intake exits 1 on the refused comment (${said(first)})`).toBe(1);
+    expect((first.err.match(/public:/g) || []).length, `the warning names public: once (${said(first)})`).toBe(1);
     const retry = world.run(['intake']);
-    assertEq(retry.code, 0, `the retry exits 0 (${said(retry)})`);
+    expect(retry.code, `the retry exits 0 (${said(retry)})`).toBe(0);
 
     const made = madeIssues(world);
-    assertEq(made.length, 1, `one private issue, got: ${JSON.stringify(made.map((i) => i.number))}`);
+    expect(made.length, `one private issue, got: ${JSON.stringify(made.map((i) => i.number))}`).toBe(1);
     const pub = world.gh.issue(PUBLIC, 44);
-    assertEq(JSON.stringify(pub.comments.map((c) => c.body.trim())),
-      JSON.stringify([INTAKE_WORDING]),
-      'one intake comment');
-    assert(pub.labels.includes('status:inbox'), `the public issue carries status:inbox, got: ${pub.labels}`);
+    expect(JSON.stringify(pub.comments.map((c) => c.body.trim())), 'one intake comment').toBe(JSON.stringify([INTAKE_WORDING]));
+    expect(pub.labels.includes('status:inbox'), `the public issue carries status:inbox, got: ${pub.labels}`).toBeTruthy();
   });
+});
 
-  group('workkit public: a repo with no public key');
-
-  await test('a repo with no public key: intake and mirror do nothing', () => {
+describe('workkit public: a repo with no public key', () => {
+  test('a repo with no public key: intake and mirror do nothing', { skip: skipWithoutNodeStub() }, () => {
     const linked = {
       number: 12, title: 'Split the lists', body: `${publicLine(44)}\n\nThe fix.`, labels: ['status:qa', 'type:bug'],
     };
@@ -144,16 +134,9 @@ const cases = async () => {
       issues: { public: [{ ...REPORT, labels: ['status:building'] }, { ...REPORT, number: 47, labels: [] }], private: [linked] },
     });
     const intake = world.run(['intake']);
-    assertEq(intake.code, 0, `intake exits 0 (${said(intake)})`);
+    expect(intake.code, `intake exits 0 (${said(intake)})`).toBe(0);
     const mirror = world.run(['mirror', '12']);
-    assertEq(mirror.code, 0, `mirror exits 0 (${said(mirror)})`);
-    assertEq(JSON.stringify(world.gh.writes()), '[]', 'nothing was written on either repo');
+    expect(mirror.code, `mirror exits 0 (${said(mirror)})`).toBe(0);
+    expect(JSON.stringify(world.gh.writes()), 'nothing was written on either repo').toBe('[]');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

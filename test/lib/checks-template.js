@@ -2,7 +2,7 @@
 // shipped before the caller, and that text with steps put in, the kit clone step
 // an older template carried among them.
 
-const { assert } = require('./harness');
+const { expect } = require('./harness');
 
 // The kit clone step as the template carried it before the runner was a
 // package, the comment lines above it included.
@@ -107,7 +107,7 @@ const OLD_CHECKS = `${[
 const withSteps = (text, steps) => {
   const lines = text.split('\n');
   const at = lines.indexOf('      - name: Test');
-  assert(at > 0, 'the template carries the Test step');
+  expect(at > 0, 'the template carries the Test step').toBeTruthy();
   return [...lines.slice(0, at), ...steps, ...lines.slice(at)].join('\n');
 };
 

@@ -1,7 +1,7 @@
-// A scratch workflow home, where every marker and record lives, the proof run
-// folders under a HOME's cache, and a file or run folder aged by its mtime for
-// the sweeps. Consumers: the test/hooks/lib, lib-record, commit-gate/marker,
-// prove and red-proof suites.
+// A scratch workflow home, where every marker and record lives, a HOME's cache
+// and its proof run folders, and a file or run folder aged by its mtime for the
+// sweeps. Consumers: the test/hooks/lib, lib-record, commit-gate/marker, prove,
+// red-proof and workflow:snapshot suites, and test/lib/red-snapshot.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -51,11 +51,18 @@ const agedFile = (file, days) => {
 const homeOf = (w) => path.dirname(w.workflowHome);
 
 /**
+ * The kit's cache folder, `<home>/.cache/workkit`.
+ * @param {string} home - the HOME, native
+ * @returns {string}
+ */
+const cacheBase = (home) => path.join(home, '.cache', 'workkit');
+
+/**
  * The folder every proof run folder lives under, `<home>/.cache/workkit/proof`.
  * @param {string} home - the HOME, native
  * @returns {string}
  */
-const proofBase = (home) => path.join(home, '.cache', 'workkit', 'proof');
+const proofBase = (home) => path.join(cacheBase(home), 'proof');
 
 /**
  * The run folders under proofBase(home), sorted, none when it is not there.
@@ -82,4 +89,6 @@ const plantRun = (home, name, days, rel = 'copy/left.js') => {
   for (let dir = path.dirname(file); dir !== path.dirname(run); dir = path.dirname(dir)) fs.utimesSync(dir, at, at);
 };
 
-module.exports = { scratchWorkflowHome, daysAgo, agedFile, homeOf, proofBase, runFolders, plantRun };
+module.exports = {
+  scratchWorkflowHome, daysAgo, agedFile, homeOf, cacheBase, proofBase, runFolders, plantRun,
+};

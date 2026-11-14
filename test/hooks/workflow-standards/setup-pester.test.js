@@ -3,24 +3,17 @@
 // non-git and declined cases and the wording anywhere else are
 // test/mods/session-start.test.ts. The shared prologue is ./helpers.js.
 
-const { group, test, assert, summary, selfRun } = require('../../lib/harness');
+const { describe, test, after, expect } = require('../../lib/harness');
 const { say, dropPathWithoutGh } = require('./helpers');
 
-const cases = async () => {
-  group('workflow:standards: the setup pester');
+describe('workflow:standards: the setup pester', () => {
+  after(() => dropPathWithoutGh());
 
-  await test('an engine in the plugin cache: the pester says so', () => {
+  test('an engine in the plugin cache: the pester says so', () => {
     const engine = '/w/home/.claude/plugins/cache/workkit/workkit/0.0.0/workflow';
     const ctx = say({ participation: 'enabled', isSetUp: false, engine, isInCache: true });
     const line = ctx.split('\n').find((l) => l.startsWith('SETUP:')) || '';
-    assert(line.includes('plugin cache'), `the nudge names the plugin cache, got: ${line}`);
-    assert(line.includes('workkit.sh setup'), `and still hands over the command, got: ${line}`);
+    expect(line.includes('plugin cache'), `the nudge names the plugin cache, got: ${line}`).toBeTruthy();
+    expect(line.includes('workkit.sh setup'), `and still hands over the command, got: ${line}`).toBeTruthy();
   });
-
-  dropPathWithoutGh();
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

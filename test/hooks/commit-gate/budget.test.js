@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
+const { describe, test, expect, mkTmp } = require('../../lib/harness');
 const {
   NOTICE, stage, commit, touchMarker, proveTree, judge, denyOf, contextOf, mkReleaseRepo,
 } = require('./helpers');
@@ -39,38 +39,29 @@ const userBudget = (r, tests) => {
   return r;
 };
 
-const cases = async () => {
-  group('commit-gate: the root run against tests.budget');
-
-  await test('a recorded root run past tests.budget prints the test-budget line and the record still proves the tree', async () => {
+describe('commit-gate: the root run against tests.budget', () => {
+  test('a recorded root run past tests.budget prints the test-budget line and the record still proves the tree', async () => {
     const v = await judge(timedCommit({ budget: 2 }, 5 * MINUTE_MS), 'feat: thing');
-    assertEq(denyOf(v), null, 'the commit passes');
+    expect(denyOf(v), 'the commit passes').toBe(null);
     const lines = contextOf(v).split('\n');
-    assert(lines.includes(NOTICE.proved), `the proved notice, got: ${contextOf(v)}`);
-    assert(lines.includes('test-budget: the root run took 5m, the budget is 2m'), `the budget line, got: ${contextOf(v)}`);
+    expect(lines.includes(NOTICE.proved), `the proved notice, got: ${contextOf(v)}`).toBeTruthy();
+    expect(lines.includes('test-budget: the root run took 5m, the budget is 2m'), `the budget line, got: ${contextOf(v)}`).toBeTruthy();
   });
 
-  await test('no tests.budget: no test-budget line', async () => {
+  test('no tests.budget: no test-budget line', async () => {
     const v = await judge(timedCommit(null, 5 * MINUTE_MS), 'feat: thing');
-    assertEq(denyOf(v), null, 'the commit passes');
-    assertEq(contextOf(v), NOTICE.proved, 'the proved notice alone');
+    expect(denyOf(v), 'the commit passes').toBe(null);
+    expect(contextOf(v), 'the proved notice alone').toBe(NOTICE.proved);
   });
 
-  await test('a tests.budget only in the machine settings file prints the test-budget line', async () => {
+  test('a tests.budget only in the machine settings file prints the test-budget line', async () => {
     const v = await judge(userBudget(timedCommit(null, 5 * MINUTE_MS), { budget: 3 }), 'feat: thing');
-    assertEq(denyOf(v), null, 'the commit passes');
-    assert(contextOf(v).split('\n').includes('test-budget: the root run took 5m, the budget is 3m'), `the budget line, got: ${contextOf(v)}`);
+    expect(denyOf(v), 'the commit passes').toBe(null);
+    expect(contextOf(v).split('\n').includes('test-budget: the root run took 5m, the budget is 3m'), `the budget line, got: ${contextOf(v)}`).toBeTruthy();
   });
 
-  await test("the repo's tests.budget wins over the machine's", async () => {
+  test("the repo's tests.budget wins over the machine's", async () => {
     const v = await judge(userBudget(timedCommit({ budget: 10 }, 5 * MINUTE_MS), { budget: 2 }), 'feat: thing');
-    assertEq(contextOf(v), NOTICE.proved, "the repo's 10m budget holds the 5m run: no budget line");
+    expect(contextOf(v), "the repo's 10m budget holds the 5m run: no budget line").toBe(NOTICE.proved);
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

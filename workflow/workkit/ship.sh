@@ -3,9 +3,7 @@
 # runs (workflow/README.md, the ship/ rows). Sourced by workkit.sh, the verb
 # list and functions only; each subcommand is its script in ship/, which speaks for itself.
 
-# The ship's subcommands, the shell's one list: allow.sh builds its allow rules from it.
-# Its twin is ALLOWED_SHIP_VERBS in hooks/mods/bare-call.js, these less deploy, pinned
-# by test/hooks/twins.test.js: change one and change the other.
+# The ship's subcommands, the kit's one list: allow.sh builds its allow rules from it.
 SHIP_VERBS=(items release watch cut plan publish deploy)
 
 # workkit ship items | release <x.y.z> [--keep N,M] | watch <sha> | cut <x.y.z> | plan | publish | deploy

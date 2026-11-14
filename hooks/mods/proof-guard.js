@@ -215,7 +215,7 @@ async function touchedOf(root, { run, read }) {
 /**
  * proofVerdict's facts over the call's: the root and the roster read now, the
  * qa check's reads only when a qa flip asks for them, each once per root.
- * @param {object} facts the call's facts (guards.js bashFacts)
+ * @param {object} facts the call's facts (facts.js bashFacts)
  * @returns {Promise<object>}
  */
 export async function proofFacts(facts) {

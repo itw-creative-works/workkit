@@ -5,7 +5,7 @@
 
 const { spawnSync } = require('child_process');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, SPAWN_DEADLINE } = require('../lib/harness');
 const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
 
 const LIB = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib.sh'));
@@ -26,115 +26,102 @@ const inLib = (script, env = {}) => {
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-const cases = async () => {
-  group('lib.sh: the glyphs');
-
-  await test('every level opens with its own glyph', () => {
+describe('lib.sh: the glyphs', () => {
+  test('every level opens with its own glyph', () => {
     const { out, err } = inLib(EVERY_LEVEL, { WORKKIT_COLOR: '0' });
-    assertEq(out, '✓ engine: linked\n· engine: current\n› engine: a hint\n',
-      `the calm levels, one glyph each, got: ${JSON.stringify(out)}`);
-    assertEq(err, '⚠ engine: careful\n✖ engine: broken\n',
-      `and the loud ones, got: ${JSON.stringify(err)}`);
+    expect(out, `the calm levels, one glyph each, got: ${JSON.stringify(out)}`).toBe('✓ engine: linked\n· engine: current\n› engine: a hint\n');
+    expect(err, `and the loud ones, got: ${JSON.stringify(err)}`).toBe('⚠ engine: careful\n✖ engine: broken\n');
   });
 
-  await test('the closing line is the ✨ one, and an emoji survives a pipe', () => {
+  test('the closing line is the ✨ one, and an emoji survives a pipe', () => {
     const { out } = inLib('wk_done "Everything this command can see is current."', { WORKKIT_COLOR: '0' });
-    assertEq(out, '✨ Everything this command can see is current.\n',
-      `the closing line, uncolored, got: ${JSON.stringify(out)}`);
+    expect(out, `the closing line, uncolored, got: ${JSON.stringify(out)}`).toBe('✨ Everything this command can see is current.\n');
   });
+});
 
-  group('lib.sh: the task and the indent');
-
-  await test('a level line under a title or a section is indented two spaces', () => {
+describe('lib.sh: the task and the indent', () => {
+  test('a level line under a title or a section is indented two spaces', () => {
     const { out } = inLib('wk_ok "engine: before"\nwk_title "🧰 workkit setup in /tmp"\nwk_ok "engine: after"\n'
       + 'wk_section "💻 This machine"\nwk_skip "engine: under the section"', { WORKKIT_COLOR: '0' });
     const said = out.split('\n');
-    assertEq(said[0], '✓ engine: before', `a line before any title is flush left, got: ${JSON.stringify(said[0])}`);
-    assertEq(said[2], '  ✓ engine: after', `and a line under the title is indented, got: ${JSON.stringify(said[2])}`);
-    assertEq(said[5], '  · engine: under the section',
-      `as is a line under a section, got: ${JSON.stringify(said[5])}`);
+    expect(said[0], `a line before any title is flush left, got: ${JSON.stringify(said[0])}`).toBe('✓ engine: before');
+    expect(said[2], `and a line under the title is indented, got: ${JSON.stringify(said[2])}`).toBe('  ✓ engine: after');
+    expect(said[5], `as is a line under a section, got: ${JSON.stringify(said[5])}`).toBe('  · engine: under the section');
   });
 
-  await test('NO_COLOR beats the seam that asked for color', () => {
+  test('NO_COLOR beats the seam that asked for color', () => {
     const { out, err } = inLib('wk_ok "engine: linked"\nwk_warn "gh: careful"',
       { WORKKIT_COLOR: '1', NO_COLOR: '1' });
-    assert(!`${out}${err}`.includes(ESCAPE), `nothing is styled, got: ${JSON.stringify(out + err)}`);
-    assertEq(out, '✓ engine: linked\n', `and the words are the same, got: ${JSON.stringify(out)}`);
+    expect(!`${out}${err}`.includes(ESCAPE), `nothing is styled, got: ${JSON.stringify(out + err)}`).toBeTruthy();
+    expect(out, `and the words are the same, got: ${JSON.stringify(out)}`).toBe('✓ engine: linked\n');
   });
+});
 
-  group('lib.sh: QUIET and the stderr caller');
-
-  await test('QUIET silences everything but an action, a warning and a stop', () => {
+describe('lib.sh: QUIET and the stderr caller', () => {
+  test('QUIET silences everything but an action, a warning and a stop', () => {
     const { out, err } = inLib(
       'QUIET=1\nwk_title "🧰 a title"\nwk_section "💻 a section"\nwk_skip "engine: current"\n'
       + 'wk_info "engine: a hint"\nwk_done "all current"\nwk_ok "engine: linked"\nwk_warn "gh: careful"',
       { WORKKIT_COLOR: '0' },
     );
-    assertEq(out, '  ✓ engine: linked\n', `one line left on stdout, the action, got: ${JSON.stringify(out)}`);
-    assertEq(err, '  ⚠ gh: careful\n', `and the warning still speaks, got: ${JSON.stringify(err)}`);
+    expect(out, `one line left on stdout, the action, got: ${JSON.stringify(out)}`).toBe('  ✓ engine: linked\n');
+    expect(err, `and the warning still speaks, got: ${JSON.stringify(err)}`).toBe('  ⚠ gh: careful\n');
   });
 
-  await test('WK_LOG_STDERR sends every level to stderr, for a caller whose stdout is an answer', () => {
+  test('WK_LOG_STDERR sends every level to stderr, for a caller whose stdout is an answer', () => {
     const { out, err } = inLib(
       'WK_LOG_STDERR=1\nwk_ok "engine: linked"\nwk_skip "engine: current"\nwk_section "💻 This machine"\n'
       + 'wk_warn "gh: careful"\nprintf "%s\\n" enabled',
       { WORKKIT_COLOR: '0' },
     );
-    assertEq(out, 'enabled\n', `stdout carries the answer and nothing else, got: ${JSON.stringify(out)}`);
-    assertEq(err.split('\n').filter(Boolean).length, 4, `and every level is on stderr, got: ${JSON.stringify(err)}`);
+    expect(out, `stdout carries the answer and nothing else, got: ${JSON.stringify(out)}`).toBe('enabled\n');
+    expect(err.split('\n').filter(Boolean).length, `and every level is on stderr, got: ${JSON.stringify(err)}`).toBe(4);
   });
+});
 
-  group('lib.sh: wk_spin');
-
-  await test("the wrapped command's stdout passes through a capture untouched", () => {
+describe('lib.sh: wk_spin', () => {
+  test("the wrapped command's stdout passes through a capture untouched", () => {
     const { out } = inLib(
       'answer="$(wk_spin "reading the roster" printf "%s" "owner/repo")"\nprintf "[%s]\\n" "$answer"',
       { WORKKIT_COLOR: '0', WORKKIT_SPIN: '0' },
     );
-    assertEq(out, '[owner/repo]\n', `the capture holds the answer alone, got: ${JSON.stringify(out)}`);
+    expect(out, `the capture holds the answer alone, got: ${JSON.stringify(out)}`).toBe('[owner/repo]\n');
   });
 
-  await test('and so does its exit status', () => {
+  test('and so does its exit status', () => {
     const { out } = inLib(
       'rc=0\nwk_spin "trying" bash -c "exit 3" || rc=$?\nprintf "rc=%s\\n" "$rc"',
       { WORKKIT_COLOR: '0', WORKKIT_SPIN: '0' },
     );
-    assert(/rc=3/.test(out), `the command's own status, got: ${JSON.stringify(out)}`);
+    expect(/rc=3/.test(out), `the command's own status, got: ${JSON.stringify(out)}`).toBeTruthy();
   });
 
-  await test('off a terminal it says what it is waiting for once, on stderr', () => {
+  test('off a terminal it says what it is waiting for once, on stderr', () => {
     const { out, err } = inLib('wk_spin "reading the roster" true', { WORKKIT_COLOR: '0' });
-    assertEq(out, '', `nothing on stdout, which belongs to the command, got: ${JSON.stringify(out)}`);
-    assertEq(err, '⏳ reading the roster...\n', `the static form, with no animation, got: ${JSON.stringify(err)}`);
+    expect(out, `nothing on stdout, which belongs to the command, got: ${JSON.stringify(out)}`).toBe('');
+    expect(err, `the static form, with no animation, got: ${JSON.stringify(err)}`).toBe('⏳ reading the roster...\n');
   });
 
-  await test('QUIET silences the static line too, and never the command', () => {
+  test('QUIET silences the static line too, and never the command', () => {
     const { out, err } = inLib(
       'QUIET=1\nanswer="$(wk_spin "reading the roster" printf "%s" ok)"\nprintf "[%s]\\n" "$answer"',
       { WORKKIT_COLOR: '0' },
     );
-    assertEq(err, '', `a quiet run waits in silence, got: ${JSON.stringify(err)}`);
-    assertEq(out, '[ok]\n', `and still gets the answer, got: ${JSON.stringify(out)}`);
+    expect(err, `a quiet run waits in silence, got: ${JSON.stringify(err)}`).toBe('');
+    expect(out, `and still gets the answer, got: ${JSON.stringify(out)}`).toBe('[ok]\n');
   });
+});
 
-  group('lib.sh: wk_plain');
-
-  await test('a relayed line loses the indent and the glyph it arrived with, and nothing else', () => {
+describe('lib.sh: wk_plain', () => {
+  test('a relayed line loses the indent and the glyph it arrived with, and nothing else', () => {
     const { out } = inLib(
       'printf "%s\\n" "  ✓ engine: linked a → b" "· engine: current" "plain line" | wk_plain',
       { WORKKIT_COLOR: '0' },
     );
-    assertEq(out, 'engine: linked a → b\nengine: current\nplain line\n',
-      `only the opening goes, got: ${JSON.stringify(out)}`);
+    expect(out, `only the opening goes, got: ${JSON.stringify(out)}`).toBe('engine: linked a → b\nengine: current\nplain line\n');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

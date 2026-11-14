@@ -1,51 +1,22 @@
-// tool.call Bash through the hooks module: safety:tree-guard in the module's
-// Bash chain, its deny, the escape's notice as the result's `context` plus one
-// $.ui.log line, and the path probe answered by the world's files; then the
-// chain around it: release-taken, tree-guard, bare-call, unwatched, capture-guard and script-write,
-// each fire logged, the opt-in and HOOK_DISABLE stand-downs, and a gh write passed on for
-// the gh shim to judge. The verdict's own cases are test/hooks/tree-guard.test.js.
+// tool.call Bash through the hooks module: the Bash chain around its guards. safety:tree-guard is not on it: it
+// judges git's real arguments in the git shim (test/scripts/gitshim.test.js, its verdict test/hooks/tree-guard.test.js),
+// so the chain holds safety:capture-guard alone. Here: each fire logged, the guards-failed deny, the opt-in gate read
+// off the call's real folders (the session folder's repo before the call; after it, the repo it started in or the one
+// its event's cwd is in, never a `cd` in the text), HOOK_DISABLE, and a gh write passed on for the gh shim to judge.
 
 import { test, expect, describe } from 'claude-code/testing'
-import { mkWorld, hooksLog, toolSpied, kitLogs, TOOL_SPY, REPO, HOME, bash, answered, denyOf } from '../lib/mod-world.ts'
-
-const BLOCK = (found: string) => `tree-guard: BLOCKED this command: it runs ${found}, which discards or parks working-tree state, and this tree is SHARED: reverting your own edits that way takes whatever else is uncommitted with it (issue #157).\nRevert your own changes by reverse-editing your own hunks: edit each file back to what it was. If the discard is genuinely intended, the OWNER reruns the command with WORKKIT_ALLOW_DISCARD=1 in front of it.`
-const ASIDE = 'tree-guard: stood aside for a deliberate discard: WORKKIT_ALLOW_DISCARD=1 is set on this command (git reset --hard).'
+import { mkWorld, hooksLog, kitLogs, TOOL_SPY, REPO, PLAIN, HOME, SID, bash, answered, denyOf } from '../lib/mod-world.ts'
 
 const verdictsOf = (w: any, hook: string) => hooksLog(w).filter((l: any) => l.hook === hook).map((l: any) => l.verdict)
-const verdicts = (w: any) => verdictsOf(w, 'safety:tree-guard')
 // The Bash chain, in its order.
-const GUARDS = ['safety:release-taken', 'safety:tree-guard', 'workflow:bare-call', 'workflow:unwatched', 'safety:capture-guard', 'safety:script-write']
+const GUARDS = ['safety:capture-guard']
+const READ_CAPTURE = 'cat .workkit/capture.md'
+const capture = { [`${REPO}/.workkit/capture.md`]: '# capture\n\n- a private thought\n' }
 
-describe('tool.call Bash: safety:tree-guard', () => {
-  test('the loader routes safety:tree-guard to the script: git reset --hard is denied with the hook\'s text, its run line logged', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = mkWorld(on)
-    await bash($, 'git reset --hard')
-    expect(denyOf(w)).toBe(BLOCK('git reset --hard'))
-    expect(w.toolRan).toBeUndefined()
-    expect(verdicts(w)).toEqual(['run'])
-  })
-
-  test('given WORKKIT_ALLOW_DISCARD=1 and git reset --hard: no deny, the notice in context, one $.ui.log line', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = mkWorld(on)
-    await bash($, 'WORKKIT_ALLOW_DISCARD=1 git reset --hard')
-    const r = answered(w)
-    expect(r?.deny).toBeUndefined()
-    expect(w.toolRan?.command).toBe('WORKKIT_ALLOW_DISCARD=1 git reset --hard')
-    expect(Array.isArray(r?.context)).toBe(true)
-    expect(r.context.join('\n')).toContain(ASIDE)
-    const logged = kitLogs(w)
-    expect(logged).toHaveLength(1)
-    expect(logged[0]).toContain(ASIDE)
-  })
-
-  test('checkout with . or a path-looking token: exit 2: a path the repo holds is a pathspec, a branch name is not', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = mkWorld(on, { files: { [`${REPO}/src/app.js`]: 'const x = 1;\n' } })
-    await bash($, 'git checkout src/app.js')
-    expect(denyOf(w)).toBe(BLOCK('git checkout with a pathspec'))
-    await bash($, 'git checkout feature/thing')
-    expect(toolSpied(w)[1]?.deny).toBeUndefined()
-    expect(w.toolRan?.command).toBe('git checkout feature/thing')
-  })
+// One tool use, toolu_1: the call, whose mark records where it began, then its Post.
+const call = ($: any, command: string) => $.tool.call({ tool: 'Bash', command, description: 'x', tool_use_id: 'toolu_1' } as any)
+const post = ($: any, command: string, cwd: string) => $.classic.PostToolUse({
+  tool_name: 'Bash', tool_input: { command }, tool_response: {}, tool_use_id: 'toolu_1', session_id: SID, cwd,
 })
 
 describe('tool.call Bash: the chain around its guards', () => {
@@ -75,18 +46,18 @@ describe('tool.call Bash: the chain around its guards', () => {
   })
 
   test('a fire in a repo that has not opted in appends one line ending in stood-down: and the call is not judged', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = mkWorld(on, { repos: { [REPO]: null } })
-    await bash($, 'git reset --hard')
+    const w = mkWorld(on, { repos: { [REPO]: null }, files: capture })
+    await bash($, READ_CAPTURE)
     expect(answered(w)?.deny).toBeUndefined()
     for (const hook of GUARDS) expect(verdictsOf(w, hook)).toEqual(['stood-down'])
   })
 
   test('HOOK_DISABLE=1 no-ops a hook that would block: next(e) unchanged and no hooks-log line', { plugins: [TOOL_SPY] }, async ($, on) => {
-    const w = mkWorld(on, { env: { HOOK_DISABLE: '1' } })
-    await bash($, 'git reset --hard')
+    const w = mkWorld(on, { env: { HOOK_DISABLE: '1' }, files: capture })
+    await bash($, READ_CAPTURE)
     expect(answered(w)?.deny).toBeUndefined()
     expect(w.toolRan?.tool).toBe('Bash')
-    expect(w.toolRan?.command).toBe('git reset --hard')
+    expect(w.toolRan?.command).toBe(READ_CAPTURE)
     expect(hooksLog(w)).toHaveLength(0)
   })
 
@@ -100,5 +71,35 @@ describe('tool.call Bash: the chain around its guards', () => {
     await bash($, flip)
     expect(answered(w)?.deny).toBeUndefined()
     expect(w.toolRan?.command).toBe(flip)
+  })
+})
+
+describe('the gate reads the call\'s real folder', () => {
+  test('a session in an opted-in repo: a command that cds to a plain folder first is still judged', { plugins: [TOOL_SPY] }, async ($, on) => {
+    const w = mkWorld(on, { files: capture })
+    await bash($, `cd ${PLAIN} && ${READ_CAPTURE}`)
+    expect(verdictsOf(w, 'safety:capture-guard')).toEqual(['run'])
+    expect(denyOf(w)?.startsWith('capture-guard: BLOCKED')).toBe(true)
+  })
+
+  test('a session in a plain folder: a command that cds into an opted-in repo first stands down', { plugins: [TOOL_SPY] }, async ($, on) => {
+    const w = mkWorld(on, { cwd: PLAIN, files: capture })
+    await bash($, `cd ${REPO} && ${READ_CAPTURE}`)
+    expect(verdictsOf(w, 'safety:capture-guard')).toEqual(['stood-down'])
+    expect(answered(w)?.deny).toBeUndefined()
+  })
+
+  test('after the call, either root counts: a call from a plain session folder that ends in an opted-in repo runs the after-call chain', async ($, on) => {
+    const w = mkWorld(on, { cwd: PLAIN })
+    await call($, `cd ${REPO} && ls`)
+    await post($, `cd ${REPO} && ls`, REPO)
+    expect(verdictsOf(w, 'safety:script-write')).toEqual(['run'])
+  })
+
+  test('after the call, a call that starts and ends in plain folders and leaves no journal line stands the after-call chain down', async ($, on) => {
+    const w = mkWorld(on, { cwd: PLAIN })
+    await call($, 'ls')
+    await post($, 'ls', PLAIN)
+    expect(verdictsOf(w, 'safety:script-write')).toEqual(['stood-down'])
   })
 })

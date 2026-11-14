@@ -3,64 +3,63 @@
 // The shared prologue (the lib loader, the DOM double, the fixtures) is ./helpers.js.
 //
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, before, test, expect } = require('../../lib/harness');
 const { loadLibs } = require('./helpers');
 
-const cases = async () => {
-  const { scope } = await loadLibs();
+describe('tower/app: scope - the selection in the URL', () => {
+  let scope;
+  before(async () => { ({ scope } = await loadLibs()); });
 
-  group('tower/app: scope - the selection in the URL');
-
-  await test('a `?repo=` value parses to the set of slugs it names', () => {
-    assertEq(scope.parseRepos('').length, 0, 'nothing selected is every repo');
-    assertEq(scope.parseRepos(null).length, 0, 'and so is an absent parameter');
-    assertEq(scope.parseRepos('workkit').join(','), 'workkit', 'one slug is one slug');
-    assertEq(scope.parseRepos('workkit,omega').join('|'), 'workkit|omega', 'a comma list is the subset, in the order it names it');
-    assertEq(scope.parseRepos(' workkit , omega ').join('|'), 'workkit|omega', 'whitespace around a slug is not part of it');
-    assertEq(scope.parseRepos('workkit,,omega,workkit').join('|'), 'workkit|omega', 'blanks drop and a repeat counts once');
-    assertEq(scope.parseRepos('ITW/workkit,Omega/omega').join('|'), 'ITW/workkit|Omega/omega', 'an owner/name slug survives whole');
+  test('a `?repo=` value parses to the set of slugs it names', () => {
+    expect(scope.parseRepos('').length, 'nothing selected is every repo').toBe(0);
+    expect(scope.parseRepos(null).length, 'and so is an absent parameter').toBe(0);
+    expect(scope.parseRepos('workkit').join(','), 'one slug is one slug').toBe('workkit');
+    expect(scope.parseRepos('workkit,omega').join('|'), 'a comma list is the subset, in the order it names it').toBe('workkit|omega');
+    expect(scope.parseRepos(' workkit , omega ').join('|'), 'whitespace around a slug is not part of it').toBe('workkit|omega');
+    expect(scope.parseRepos('workkit,,omega,workkit').join('|'), 'blanks drop and a repeat counts once').toBe('workkit|omega');
+    expect(scope.parseRepos('ITW/workkit,Omega/omega').join('|'), 'an owner/name slug survives whole').toBe('ITW/workkit|Omega/omega');
   });
 
-  await test('a set of slugs formats back to the value it was parsed from', () => {
-    assertEq(scope.formatRepos([]), '', 'every repo is written as no parameter at all');
-    assertEq(scope.formatRepos(['workkit']), 'workkit', 'one slug');
-    assertEq(scope.formatRepos(['workkit', 'omega']), 'workkit,omega', 'and a subset is comma-separated');
-    assertEq(scope.formatRepos(scope.parseRepos('workkit,omega')), 'workkit,omega', 'the round trip is the identity');
-    assertEq(scope.formatRepos([' workkit ', 'workkit']), 'workkit', 'and the same cleaning applies on the way out');
+  test('a set of slugs formats back to the value it was parsed from', () => {
+    expect(scope.formatRepos([]), 'every repo is written as no parameter at all').toBe('');
+    expect(scope.formatRepos(['workkit']), 'one slug').toBe('workkit');
+    expect(scope.formatRepos(['workkit', 'omega']), 'and a subset is comma-separated').toBe('workkit,omega');
+    expect(scope.formatRepos(scope.parseRepos('workkit,omega')), 'the round trip is the identity').toBe('workkit,omega');
+    expect(scope.formatRepos([' workkit ', 'workkit']), 'and the same cleaning applies on the way out').toBe('workkit');
   });
 
-  await test('the predicate takes a SET - one slug, several, or none at all', () => {
-    assert(scope.inScope([], 'workkit') && scope.inScope([], 'anything'), 'no selection leaves every repo in play');
-    assert(scope.inScope(['workkit'], 'workkit'), 'one slug is that repo');
-    assert(!scope.inScope(['workkit'], 'omega'), 'and only that repo');
+  test('the predicate takes a SET - one slug, several, or none at all', () => {
+    expect(scope.inScope([], 'workkit') && scope.inScope([], 'anything'), 'no selection leaves every repo in play').toBeTruthy();
+    expect(scope.inScope(['workkit'], 'workkit'), 'one slug is that repo').toBeTruthy();
+    expect(!scope.inScope(['workkit'], 'omega'), 'and only that repo').toBeTruthy();
     const two = scope.parseRepos('workkit,omega');
-    assert(scope.inScope(two, 'workkit') && scope.inScope(two, 'omega'), 'a subset keeps every member');
-    assert(!scope.inScope(two, 'dotfiles'), 'and nothing else');
+    expect(scope.inScope(two, 'workkit') && scope.inScope(two, 'omega'), 'a subset keeps every member').toBeTruthy();
+    expect(!scope.inScope(two, 'dotfiles'), 'and nothing else').toBeTruthy();
   });
 
-  await test('the runtime reads its selection through the same parse', () => {
-    assertEq(scope.selectedSlugs({ selectedRepo: 'workkit,omega' }).length, 2, 'the raw query value is what state carries');
-    assertEq(scope.selectedSlugs({ selectedRepo: '' }).length, 0, 'empty is every repo');
-    assertEq(scope.selectedSlugs({}).length, 0, 'and so is a state with no selection on it yet');
-    assertEq(scope.selectedSlugs(null).length, 0, 'null never throws');
+  test('the runtime reads its selection through the same parse', () => {
+    expect(scope.selectedSlugs({ selectedRepo: 'workkit,omega' }).length, 'the raw query value is what state carries').toBe(2);
+    expect(scope.selectedSlugs({ selectedRepo: '' }).length, 'empty is every repo').toBe(0);
+    expect(scope.selectedSlugs({}).length, 'and so is a state with no selection on it yet').toBe(0);
+    expect(scope.selectedSlugs(null).length, 'null never throws').toBe(0);
   });
 
-  await test('a nav link carries the selection, and only the tower’s own pages are rewritten', () => {
-    assertEq(scope.scopedHref('/board', 'workkit'), '/board?repo=workkit', 'the value is set');
-    assertEq(scope.scopedHref('/board?repo=omega', 'workkit'), '/board?repo=workkit', 'a link already carrying one is rewritten, not appended to');
-    assertEq(scope.scopedHref('/board?repo=omega', ''), '/board', 'and an empty selection takes the parameter off');
-    assertEq(scope.scopedHref('/', 'workkit,omega'), '/?repo=workkit,omega', 'a subset stays readable - the comma is not escaped');
-    assertEq(scope.scopedHref('/board?api=http://127.0.0.1:8693', 'workkit'), '/board?api=http%3A%2F%2F127.0.0.1%3A8693&repo=workkit', 'another parameter is kept');
-    assertEq(scope.scopedHref(scope.scopedHref('/board', 'workkit'), 'workkit'), '/board?repo=workkit', 'rewriting twice writes the same link');
+  test('a nav link carries the selection, and only the tower’s own pages are rewritten', () => {
+    expect(scope.scopedHref('/board', 'workkit'), 'the value is set').toBe('/board?repo=workkit');
+    expect(scope.scopedHref('/board?repo=omega', 'workkit'), 'a link already carrying one is rewritten, not appended to').toBe('/board?repo=workkit');
+    expect(scope.scopedHref('/board?repo=omega', ''), 'and an empty selection takes the parameter off').toBe('/board');
+    expect(scope.scopedHref('/', 'workkit,omega'), 'a subset stays readable - the comma is not escaped').toBe('/?repo=workkit,omega');
+    expect(scope.scopedHref('/board?api=http://127.0.0.1:8693', 'workkit'), 'another parameter is kept').toBe('/board?api=http%3A%2F%2F127.0.0.1%3A8693&repo=workkit');
+    expect(scope.scopedHref(scope.scopedHref('/board', 'workkit'), 'workkit'), 'rewriting twice writes the same link').toBe('/board?repo=workkit');
     for (const href of ['/', '/board', '/crew', '/usage', '/health', '/brief', '/board/', '/board.html', '/board?repo=omega']) {
-      assert(scope.isScopedPath(href), `${href} is a tower page`);
+      expect(scope.isScopedPath(href), `${href} is a tower page`).toBeTruthy();
     }
     for (const href of ['/dashboard/account', '/pricing', 'https://github.com/ITW-Creative-Works/workkit', '#']) {
-      assert(!scope.isScopedPath(href), `${href} is left alone`);
+      expect(!scope.isScopedPath(href), `${href} is left alone`).toBeTruthy();
     }
     // The selector menu's placeholder: a hash-only href goes nowhere by design,
     // and rewriting it would turn "stay here" into a navigation to Overview.
-    assert(!scope.isScopedPath('#anything'), 'a fragment is never a page');
+    expect(!scope.isScopedPath('#anything'), 'a fragment is never a page').toBeTruthy();
   });
 
   /** A page built for a prefixed site: the stamp the build writes on `<html>`. */
@@ -82,42 +81,36 @@ const cases = async () => {
     }
   };
 
-  await test('a copy served under a path prefix keeps every URL the runtime builds inside it', () => {
+  test('a copy served under a path prefix keeps every URL the runtime builds inside it', () => {
     // The published copy answers at `<owner>.github.io/<name>/`, and the build
     // rewrites only the HTML it emits, so a URL this app assembles is its own to
     // get right. The mount is the build's stamp on `<html>`, so the simulation
     // is that stamp and nothing else.
     served(stamped('/workkit'), '/workkit/board', () => {
-      assertEq(scope.basePath(), '/workkit', 'the prefix is the build’s stamp, read back off the document');
-      assertEq(scope.sitePath('/settings'), '/workkit/settings', 'and applying it is what every runtime URL goes through');
-      assertEq(scope.settingsHref('omega'), '/workkit/settings?repo=omega', 'the page the runtime navigates to by itself stays on the site, scope and all');
-      assertEq(scope.settingsHref(''), '/workkit/settings', 'with or without a selection on it');
-      assertEq(scope.scopedHref('/workkit/board', 'omega'), '/workkit/board?repo=omega', 'a nav link the build already prefixed is left where it is');
-      assertEq(scope.scopedHref('/board', 'omega'), '/workkit/board?repo=omega', 'and one it did not is put under the prefix rather than off the site');
-      assertEq(scope.scopedHref('/workkit/', 'omega'), '/workkit/?repo=omega', 'the brand lockup points at the prefixed Overview, never at the domain root');
-      assertEq(scope.pathOf('/workkit/board'), '/board', 'page identity is the path with the prefix taken off');
-      assertEq(scope.pathOf('/workkit/'), '/', 'and the prefix on its own is the Overview');
-      assert(scope.isScopedPath('/workkit/board') && scope.isScopedPath('/workkit/settings'), 'so a prefixed nav link is still one of the tower’s own pages');
-      assert(!scope.isScopedPath('/workkit/pricing'), 'and a prefixed link that is not is still left alone');
+      expect(scope.basePath(), 'the prefix is the build’s stamp, read back off the document').toBe('/workkit');
+      expect(scope.sitePath('/settings'), 'and applying it is what every runtime URL goes through').toBe('/workkit/settings');
+      expect(scope.settingsHref('omega'), 'the page the runtime navigates to by itself stays on the site, scope and all').toBe('/workkit/settings?repo=omega');
+      expect(scope.settingsHref(''), 'with or without a selection on it').toBe('/workkit/settings');
+      expect(scope.scopedHref('/workkit/board', 'omega'), 'a nav link the build already prefixed is left where it is').toBe('/workkit/board?repo=omega');
+      expect(scope.scopedHref('/board', 'omega'), 'and one it did not is put under the prefix rather than off the site').toBe('/workkit/board?repo=omega');
+      expect(scope.scopedHref('/workkit/', 'omega'), 'the brand lockup points at the prefixed Overview, never at the domain root').toBe('/workkit/?repo=omega');
+      expect(scope.pathOf('/workkit/board'), 'page identity is the path with the prefix taken off').toBe('/board');
+      expect(scope.pathOf('/workkit/'), 'and the prefix on its own is the Overview').toBe('/');
+      expect(scope.isScopedPath('/workkit/board') && scope.isScopedPath('/workkit/settings'), 'so a prefixed nav link is still one of the tower’s own pages').toBeTruthy();
+      expect(!scope.isScopedPath('/workkit/pricing'), 'and a prefixed link that is not is still left alone').toBeTruthy();
     });
     // The stamp is written only when there is a prefix, so every absence says
     // the same thing whatever the page path looks like. A copy opened at
     // `/index.html` is where a path-shaped guess goes wrong.
     served(stamped(null), '/index.html', () => {
-      assertEq(scope.basePath(), '', 'no stamp is no prefix, whatever the address bar says');
-      assertEq(scope.sitePath('/settings'), '/settings', 'so nothing a root-served copy builds is moved');
-      assertEq(scope.scopedHref('/board', 'omega'), '/board?repo=omega', 'and its nav links are the links they always were');
-      assert(scope.isScopedPath('/board'), 'page identity is untouched too');
+      expect(scope.basePath(), 'no stamp is no prefix, whatever the address bar says').toBe('');
+      expect(scope.sitePath('/settings'), 'so nothing a root-served copy builds is moved').toBe('/settings');
+      expect(scope.scopedHref('/board', 'omega'), 'and its nav links are the links they always were').toBe('/board?repo=omega');
+      expect(scope.isScopedPath('/board'), 'page identity is untouched too').toBeTruthy();
     });
     served(stamped('/'), '/board', () => {
-      assertEq(scope.basePath(), '', 'a stamp naming the domain root is no prefix either');
+      expect(scope.basePath(), 'a stamp naming the domain root is no prefix either').toBe('');
     });
-    assertEq(scope.basePath(), '', 'and a runtime with no document at all is at the root - never a crash');
+    expect(scope.basePath(), 'and a runtime with no document at all is at the root - never a crash').toBe('');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

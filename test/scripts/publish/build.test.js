@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, joinPath,
 } = require('../../lib/platform');
@@ -91,15 +91,15 @@ const build = (world, args) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
     cwd: world.root, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `build.sh finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `build.sh finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
 // The one stderr line a refusal prints, which must open with `opening`.
 const assertOneLine = (err, opening, what) => {
   const lines = err.trim().split('\n');
-  assertEq(lines.length, 1, `${what} prints one stderr line, got: ${err}`);
-  assert(lines[0].startsWith(opening), `${what} opens with "${opening}", got: ${lines[0]}`);
+  expect(lines.length, `${what} prints one stderr line, got: ${err}`).toBe(1);
+  expect(lines[0].startsWith(opening), `${what} opens with "${opening}", got: ${lines[0]}`).toBeTruthy();
 };
 
 // One user group of two links, and the sidebar it should publish: the app's
@@ -126,101 +126,98 @@ const canon = (value) => {
   return value;
 };
 const assertSidebar = (file, expected, what) => {
-  assertEq(JSON.stringify(canon(readJson5(file))), JSON.stringify(canon(expected)), what);
+  expect(JSON.stringify(canon(readJson5(file))), what).toBe(JSON.stringify(canon(expected)));
 };
 
 const assertAppSidebar = (world, what) => {
-  assert(fs.readFileSync(world.sidebar).equals(fs.readFileSync(APP_SIDEBAR)), what);
+  expect(fs.readFileSync(world.sidebar).equals(fs.readFileSync(APP_SIDEBAR)), what).toBeTruthy();
 };
 
 const assertBuilt = (world, code, out) => {
-  assertEq(code, 0, `the build goes on and exits 0: ${out}`);
-  assert(world.npms().some((line) => line.split('|')[1].endsWith('run build')), `the build ran: ${world.npms().join(' | ')}`);
-  assert(fs.existsSync(path.join(world.project, 'targets', 'web', 'dist')), 'and the output is there');
+  expect(code, `the build goes on and exits 0: ${out}`).toBe(0);
+  expect(world.npms().some((line) => line.split('|')[1].endsWith('run build')), `the build ran: ${world.npms().join(' | ')}`).toBeTruthy();
+  expect(fs.existsSync(path.join(world.project, 'targets', 'web', 'dist')), 'and the output is there').toBeTruthy();
 };
 
-const cases = async () => {
-  group('workflow/publish/build.sh: install');
-
-  await test('install runs npm install with the project dir as the working directory', () => {
+describe('workflow/publish/build.sh: install', () => {
+  test('install runs npm install with the project dir as the working directory', () => {
     const world = mkProject();
     const { code, out, err } = build(world, ['install', shellPath(world.project)]);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
     const npms = world.npms();
-    assertEq(npms.length, 1, `one npm call: ${npms.join(' | ')}`);
-    assertEq(npms[0].split('|').slice(0, 2).join('|'), `${shellPath(world.project)}|install`,
-      'npm install, run inside the project');
+    expect(npms.length, `one npm call: ${npms.join(' | ')}`).toBe(1);
+    expect(npms[0].split('|').slice(0, 2).join('|'), 'npm install, run inside the project').toBe(`${shellPath(world.project)}|install`);
 
     const failing = mkProject({ installExit: 7 });
-    assertEq(build(failing, ['install', shellPath(failing.project)]).code, 7, 'and the exit is npm’s own');
+    expect(build(failing, ['install', shellPath(failing.project)]).code, 'and the exit is npm’s own').toBe(7);
   });
+});
 
-  group('workflow/publish/build.sh: mint');
-
-  await test('mint runs the project’s own omega at the project, and a minted logo is success', () => {
+describe('workflow/publish/build.sh: mint', () => {
+  test('mint runs the project’s own omega at the project, and a minted logo is success', () => {
     const world = mkProject();
     const { code, out, err } = build(world, ['mint', shellPath(world.project)]);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
     const mints = world.mints();
-    assertEq(mints.length, 1, `one call of the project’s omega: ${mints.join(' | ')}`);
-    assert(mints[0].startsWith(`${shellPath(world.project)}|`), `run at the project, got: ${mints[0]}`);
+    expect(mints.length, `one call of the project’s omega: ${mints.join(' | ')}`).toBe(1);
+    expect(mints[0].startsWith(`${shellPath(world.project)}|`), `run at the project, got: ${mints[0]}`).toBeTruthy();
   });
 
-  await test('a mint that exits 0 and leaves no logo folder exits 1 and says so', () => {
+  test('a mint that exits 0 and leaves no logo folder exits 1 and says so', () => {
     const world = mkProject({ mint: 'nothing' });
     const { code, err } = build(world, ['mint', shellPath(world.project)]);
-    assertEq(code, 1, `exit 1: ${err}`);
+    expect(code, `exit 1: ${err}`).toBe(1);
     assertOneLine(err, 'build: the mint left no logo at', 'the missing logo');
   });
 
-  await test('a mint that fails exits non-zero with its own output shown', () => {
+  test('a mint that fails exits non-zero with its own output shown', () => {
     const world = mkProject({ mint: 'fails' });
     const { code, out, err } = build(world, ['mint', shellPath(world.project)]);
-    assert(code !== 0, `non-zero: ${out}${err}`);
-    assert(err.includes('omega: the brandmark could not be read'), `what the mint said passes through, got: ${out}${err}`);
+    expect(code !== 0, `non-zero: ${out}${err}`).toBeTruthy();
+    expect(err.includes('omega: the brandmark could not be read'), `what the mint said passes through, got: ${out}${err}`).toBeTruthy();
   });
+});
 
-  group('workflow/publish/build.sh: build');
-
-  await test('build hands the prefix to the build as OMEGA_PATH_PREFIX and succeeds when dist exists', () => {
+describe('workflow/publish/build.sh: build', () => {
+  test('build hands the prefix to the build as OMEGA_PATH_PREFIX and succeeds when dist exists', () => {
     const world = mkProject();
     const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
     const npms = world.npms();
-    assertEq(npms.length, 1, `one npm call: ${npms.join(' | ')}`);
+    expect(npms.length, `one npm call: ${npms.join(' | ')}`).toBe(1);
     const [, argv, prefix] = npms[0].split('|');
-    assertEq(argv, `--prefix ${shellPath(world.project)}/targets/web run build`, 'the web target’s build script');
-    assertEq(prefix, '/x/', 'the build was told the prefix the site serves at');
-    assert(fs.existsSync(path.join(world.project, 'targets', 'web', 'dist')), 'and the output is there');
+    expect(argv, 'the web target’s build script').toBe(`--prefix ${shellPath(world.project)}/targets/web run build`);
+    expect(prefix, 'the build was told the prefix the site serves at').toBe('/x/');
+    expect(fs.existsSync(path.join(world.project, 'targets', 'web', 'dist')), 'and the output is there').toBeTruthy();
   });
 
-  await test('a build that exits 0 and leaves no dist exits 1 and says so', () => {
+  test('a build that exits 0 and leaves no dist exits 1 and says so', () => {
     const world = mkProject({ build: 'nothing' });
     const { code, err } = build(world, ['build', shellPath(world.project), '/x/']);
-    assertEq(code, 1, `exit 1: ${err}`);
+    expect(code, `exit 1: ${err}`).toBe(1);
     assertOneLine(err, 'build: the build left no output at', 'the missing output');
   });
 
-  await test('a build that fails exits non-zero with its own output shown', () => {
+  test('a build that fails exits non-zero with its own output shown', () => {
     const world = mkProject({ build: 'fails' });
     const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);
-    assert(code !== 0, `non-zero: ${out}${err}`);
-    assert(err.includes('omega: the build could not resolve a page'), `what the build said passes through, got: ${out}${err}`);
+    expect(code !== 0, `non-zero: ${out}${err}`).toBeTruthy();
+    expect(err.includes('omega: the build could not resolve a page'), `what the build said passes through, got: ${out}${err}`).toBeTruthy();
   });
+});
 
-  group('workflow/publish/build.sh: site.sidebar');
-
-  await test('one group of two links is appended after the last built-in group, each link whole', () => {
+describe('workflow/publish/build.sh: site.sidebar', () => {
+  test('one group of two links is appended after the last built-in group, each link whole', () => {
     const world = mkProject({ site: { repo: 'owner/workkit', sidebar: [ADS] } });
     const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);
     assertBuilt(world, code, `${out}${err}`);
-    assert(!`${out}${err}`.includes(SIDEBAR_WARNING), `a valid group draws no warning, got: ${out}${err}`);
+    expect(!`${out}${err}`.includes(SIDEBAR_WARNING), `a valid group draws no warning, got: ${out}${err}`).toBeTruthy();
     assertSidebar(world.builtSidebar, withAds(),
       'the build saw the app\'s sidebar, then the group\'s header row, then its two links with label, href and icon');
     assertAppSidebar(world, 'after build.sh exits the clone\'s file is the app\'s again, byte for byte');
   });
 
-  await test('each row the build adds to the app\'s sidebar parses as JSON on its own', () => {
+  test('each row the build adds to the app\'s sidebar parses as JSON on its own', () => {
     // The app's own file is JSON5 (comments, bare keys), so the added rows are
     // what can be held to JSON: each object after the app's text, parsed strictly.
     const world = mkProject({ site: { repo: 'owner/workkit', sidebar: [ADS] } });
@@ -228,12 +225,12 @@ const cases = async () => {
     assertBuilt(world, code, `${out}${err}`);
     const text = fs.readFileSync(world.builtSidebar, 'utf8');
     const at = text.lastIndexOf(ADS.header);
-    assert(at >= 0, `the merged file holds the group's header, got: ${text}`);
+    expect(at >= 0, `the merged file holds the group's header, got: ${text}`).toBeTruthy();
     let i = text.lastIndexOf('{', at);
     const rows = [];
     while (rows.length < 1 + ADS.links.length) {
       while (/[\s,]/.test(text[i])) i += 1;
-      assertEq(text[i], '{', `row ${rows.length + 1} opens an object in: ${text.slice(i - 40, i + 200)}`);
+      expect(text[i], `row ${rows.length + 1} opens an object in: ${text.slice(i - 40, i + 200)}`).toBe('{');
       let depth = 0;
       let end = i;
       do {
@@ -249,19 +246,18 @@ const cases = async () => {
       }
       i = end;
     }
-    assertEq(JSON.stringify(canon(rows)), JSON.stringify(canon([{ header: true, label: ADS.header }, ...ADS.links])),
-      'the header row, then the two links, each whole');
+    expect(JSON.stringify(canon(rows)), 'the header row, then the two links, each whole').toBe(JSON.stringify(canon([{ header: true, label: ADS.header }, ...ADS.links])));
   });
 
-  await test('no site.sidebar leaves the clone\'s sidebar.json byte-identical to the app\'s', () => {
+  test('no site.sidebar leaves the clone\'s sidebar.json byte-identical to the app\'s', () => {
     const world = mkProject({ site: { repo: 'owner/workkit' } });
     const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);
     assertBuilt(world, code, `${out}${err}`);
-    assert(!`${out}${err}`.includes(SIDEBAR_WARNING), `an absent key draws no warning, got: ${out}${err}`);
-    assert(fs.readFileSync(world.sidebar).equals(fs.readFileSync(APP_SIDEBAR)), 'the file is the app\'s, byte for byte');
+    expect(!`${out}${err}`.includes(SIDEBAR_WARNING), `an absent key draws no warning, got: ${out}${err}`).toBeTruthy();
+    expect(fs.readFileSync(world.sidebar).equals(fs.readFileSync(APP_SIDEBAR)), 'the file is the app\'s, byte for byte').toBeTruthy();
   });
 
-  await test('a site.sidebar that is not an array, or a group with no links array, warns and publishes the app\'s sidebar', () => {
+  test('a site.sidebar that is not an array, or a group with no links array, warns and publishes the app\'s sidebar', () => {
     const values = [
       { what: 'a group object, not an array', sidebar: ADS },
       { what: 'a group with no links key, beside a valid one', sidebar: [ADS, { header: 'Broken' }] },
@@ -270,25 +266,25 @@ const cases = async () => {
     for (const { what, sidebar } of values) {
       const world = mkProject({ site: { repo: 'owner/workkit', sidebar } });
       const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);
-      assert(`${out}${err}`.includes(SIDEBAR_WARNING), `${what}: the warning is printed, got: ${out}${err}`);
-      assert(fs.readFileSync(world.sidebar).equals(fs.readFileSync(APP_SIDEBAR)), `${what}: the file is the app's, byte for byte`);
+      expect(`${out}${err}`.includes(SIDEBAR_WARNING), `${what}: the warning is printed, got: ${out}${err}`).toBeTruthy();
+      expect(fs.readFileSync(world.sidebar).equals(fs.readFileSync(APP_SIDEBAR)), `${what}: the file is the app's, byte for byte`).toBeTruthy();
       assertBuilt(world, code, `${what}: ${out}${err}`);
     }
   });
 
-  await test('a second build with the same groups holds them once', () => {
+  test('a second build with the same groups holds them once', () => {
     const world = mkProject({ site: { repo: 'owner/workkit', sidebar: [ADS] } });
     for (const pass of ['first', 'second']) {
       const { code, out, err } = build(world, ['build', shellPath(world.project), '/x/']);
-      assertEq(code, 0, `the ${pass} build exits 0: ${out}${err}`);
+      expect(code, `the ${pass} build exits 0: ${out}${err}`).toBe(0);
     }
     assertSidebar(world.builtSidebar, withAds(), 'the second build saw the group once after the built-ins, not twice');
     assertAppSidebar(world, 'after the second build exits the clone\'s file is the app\'s again, byte for byte');
   });
+});
 
-  group('workflow/publish/build.sh: usage');
-
-  await test('a build with no prefix, an unknown verb and an install with no dir are usage errors', () => {
+describe('workflow/publish/build.sh: usage', () => {
+  test('a build with no prefix, an unknown verb and an install with no dir are usage errors', () => {
     const world = mkProject();
     const calls = [
       ['build', shellPath(world.project)],
@@ -297,15 +293,9 @@ const cases = async () => {
     ];
     for (const args of calls) {
       const { code, err } = build(world, args);
-      assertEq(code, 2, `build.sh ${args.join(' ')} exits 2: ${err}`);
+      expect(code, `build.sh ${args.join(' ')} exits 2: ${err}`).toBe(2);
       assertOneLine(err, 'usage: build.sh', `build.sh ${args.join(' ')}`);
     }
-    assertEq(world.npms().length + world.mints().length, 0, 'and no tool ran for any of them');
+    expect(world.npms().length + world.mints().length, 'and no tool ran for any of them').toBe(0);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -6,7 +6,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, summary, selfRun } = require('../../lib/harness');
+const { describe, test } = require('../../lib/harness');
 const { shellPath } = require('../../lib/platform');
 const { mkRepo } = require('../../lib/script-shell');
 const { plantPkgRecord } = require('../../lib/suite-record');
@@ -22,20 +22,18 @@ const ON_ROOT = QA_BLOCK(1, 'the repo root: tests/a.test.js');
 
 const flip = (over) => judge(QA, { touched: TOUCHED, ...over });
 
-const cases = async () => {
-  group('proof-guard: a record holds only the tree it was written on');
-
-  await test('a tracked edit or a new untracked file after the record: a tree id the root line was not written on blocks', async () => {
+describe('proof-guard: a record holds only the tree it was written on', () => {
+  test('a tracked edit or a new untracked file after the record: a tree id the root line was not written on blocks', async () => {
     passText(await flip({ packageRecord: pkgRecord(['.'], TREE), treeId: TREE }), 'the record on this tree');
     assertBlocks(await flip({ packageRecord: pkgRecord(['.'], TREE), treeId: OTHER_TREE }), ON_ROOT, 'the tree changed');
   });
 
-  await test('a whole suite record for another tree: blocks', async () => {
+  test('a whole suite record for another tree: blocks', async () => {
     passText(await flip({ suiteRecord: suiteRecord(TREE) }), 'the suite record on this tree');
     assertBlocks(await flip({ suiteRecord: suiteRecord(OTHER_TREE) }), ON_ROOT, 'the suite record is another tree\'s');
   });
 
-  await test('the settings losing its version key and a suite log written after the record: the flip passes; a code edit then blocks', async () => {
+  test('the settings losing its version key and a suite log written after the record: the flip passes; a code edit then blocks', async () => {
     const dir = mkRepo({ scripts: { test: 'node test/a.test.js' } }, { '.workkit/settings.json': '{\n  "version": 9,\n  "enabled": true\n}\n' });
     fs.mkdirSync(path.join(dir, 'test'));
     fs.writeFileSync(path.join(dir, 'test', 'a.test.js'), "require('../app.js');\n");
@@ -51,11 +49,4 @@ const cases = async () => {
     fs.writeFileSync(path.join(dir, 'app.js'), 'const x = 2;\n');
     assertBlocks(await realFlip(dir, env), QA_BLOCK(1, 'the repo root: test/a.test.js'), 'a code edit is a new tree');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

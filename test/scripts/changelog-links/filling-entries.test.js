@@ -4,34 +4,31 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
+const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
-  skipOnWindows, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
+  cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
 } = require('./helpers');
 
-const cases = async () => {
-  skipOnWindows();
-
-  group('changelog-links: filling entries in');
-
-  await test('an entry gains its commit link and the author handle', () => {
+describe('changelog-links: filling entries in', { skip: skipWithoutNodeStub() }, () => {
+  test('an entry gains its commit link and the author handle', () => {
     const { dir, shas } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) - Plugins install from settings.json.'),
       ['refactor(setup): install plugins\n\nFixes #4'],
     );
     const stub = makeGhStub({ login: 'Octocat' });
     const { code } = runScript(dir, stub);
-    assertEq(code, 0, 'exit 0');
+    expect(code, 'exit 0').toBe(0);
     const text = readLog(dir);
-    assert(text.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `a relative commit link, got: ${text}`);
-    assert(text.includes('Thanks [@Octocat]!'), `a shortcut attribution, got: ${text}`);
-    assert(text.includes('[@Octocat]: https://github.com/Octocat'), `defined once at the bottom, got: ${text}`);
-    assert(!text.includes('github.com/o/r'), `the repo URL appears nowhere, got: ${text}`);
-    assert(text.includes('- Plugins install from settings.json.'), `prose intact, got: ${text}`);
+    expect(text.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `a relative commit link, got: ${text}`).toBeTruthy();
+    expect(text.includes('Thanks [@Octocat]!'), `a shortcut attribution, got: ${text}`).toBeTruthy();
+    expect(text.includes('[@Octocat]: https://github.com/Octocat'), `defined once at the bottom, got: ${text}`).toBeTruthy();
+    expect(!text.includes('github.com/o/r'), `the repo URL appears nowhere, got: ${text}`).toBeTruthy();
+    expect(text.includes('- Plugins install from settings.json.'), `prose intact, got: ${text}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a contributor is defined once however many entries name them', () => {
+  test('a contributor is defined once however many entries name them', () => {
     const { dir } = mkRepo(
       CHANGELOG(
         '- [#4](../../issues/4) - First.',
@@ -42,12 +39,12 @@ const cases = async () => {
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const text = readLog(dir);
-    assertEq(text.match(/Thanks \[@who\]!/g).length, 2, 'both entries thank them');
-    assertEq(text.match(/^\[@who\]: /gm).length, 1, `one definition, got: ${text}`);
+    expect(text.match(/Thanks \[@who\]!/g).length, 'both entries thank them').toBe(2);
+    expect(text.match(/^\[@who\]: /gm).length, `one definition, got: ${text}`).toBe(1);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a new definition is separated from the entry above it by a blank line', () => {
+  test('a new definition is separated from the entry above it by a blank line', () => {
     // Appended straight under a bullet, a definition is absorbed as that
     // paragraph's lazy continuation and the reference renders as literal text.
     // A stray definition elsewhere in the file must not suppress the blank line.
@@ -59,12 +56,12 @@ const cases = async () => {
     runScript(dir, stub);
     const lines = readLog(dir).split('\n');
     const at = lines.findIndex((l) => l.startsWith('[@fresh]:'));
-    assert(at > 0, 'the definition was written');
-    assertEq(lines[at - 1].trim(), '', `preceded by a blank line, got: ${JSON.stringify(lines.slice(at - 2, at + 1))}`);
+    expect(at > 0, 'the definition was written').toBeTruthy();
+    expect(lines[at - 1].trim(), `preceded by a blank line, got: ${JSON.stringify(lines.slice(at - 2, at + 1))}`).toBe('');
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a definition differing only in case is not duplicated', () => {
+  test('a definition differing only in case is not duplicated', () => {
     // Markdown labels are case-insensitive, so `[@Who]:` already defines `who`.
     const { dir } = mkRepo(
       `${CHANGELOG('- [#4](../../issues/4) - Text.')}\n[@Who]: https://github.com/Who\n`,
@@ -72,11 +69,11 @@ const cases = async () => {
     );
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
-    assertEq(readLog(dir).match(/^\[@[Ww]ho\]: /gm).length, 1, `one definition, got: ${readLog(dir)}`);
+    expect(readLog(dir).match(/^\[@[Ww]ho\]: /gm).length, `one definition, got: ${readLog(dir)}`).toBe(1);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('the file ends with a Contributors section naming each person', () => {
+  test('the file ends with a Contributors section naming each person', () => {
     // Link definitions render as nothing; the section gives the
     // `Thanks [@who]!` credits a visible roll.
     const { dir } = mkRepo(
@@ -87,14 +84,14 @@ const cases = async () => {
     runScript(dir, stub);
     const lines = readLog(dir).trimEnd().split('\n');
     const at = lines.indexOf('## Contributors');
-    assert(at > 0, `a Contributors heading, got: ${readLog(dir)}`);
-    assert(lines.slice(at).includes('- [@who]'), `a visible bullet per person, got: ${lines.slice(at)}`);
-    assertEq(lines[lines.length - 1], '[@who]: https://github.com/who', 'definitions close the file');
-    assertEq(lines[at - 2], '---', 'the section is set off by a rule');
+    expect(at > 0, `a Contributors heading, got: ${readLog(dir)}`).toBeTruthy();
+    expect(lines.slice(at).includes('- [@who]'), `a visible bullet per person, got: ${lines.slice(at)}`).toBeTruthy();
+    expect(lines[lines.length - 1], 'definitions close the file').toBe('[@who]: https://github.com/who');
+    expect(lines[at - 2], 'the section is set off by a rule').toBe('---');
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a second backfill rebuilds the section byte for byte', () => {
+  test('a second backfill rebuilds the section byte for byte', () => {
     // The section is rebuilt on every run, so a non-idempotent rebuild would
     // stack a second heading or a second rule on each release.
     const { dir } = mkRepo(
@@ -105,12 +102,12 @@ const cases = async () => {
     runScript(dir, stub);
     const first = readLog(dir);
     runScript(dir, stub);
-    assertEq(readLog(dir), first, 'a re-run changes nothing');
-    assertEq((first.match(/^## Contributors$/gm) || []).length, 1, 'exactly one section');
+    expect(readLog(dir), 'a re-run changes nothing').toBe(first);
+    expect((first.match(/^## Contributors$/gm) || []).length, 'exactly one section').toBe(1);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('an entry already carrying its handle is not given a second one', () => {
+  test('an entry already carrying its handle is not given a second one', () => {
     // Entries are written at build time, handle and all, so a second
     // attribution would ship as "Thanks [@who]! Thanks [@who]! -".
     const { dir, shas } = mkRepo(
@@ -121,12 +118,12 @@ const cases = async () => {
     runScript(dir, stub);
     runScript(dir, stub);
     const entry = readLog(dir).split('\n').find((l) => l.startsWith('- [#4]'));
-    assertEq((entry.match(/Thanks \[@alice\]!/g) || []).length, 1, `one handle, got: ${entry}`);
-    assert(entry.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `the commit link still landed, got: ${entry}`);
+    expect((entry.match(/Thanks \[@alice\]!/g) || []).length, `one handle, got: ${entry}`).toBe(1);
+    expect(entry.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `the commit link still landed, got: ${entry}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a later contributor joins the existing section', () => {
+  test('a later contributor joins the existing section', () => {
     const { dir } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) - First.'),
       ['feat: a\n\nFixes #4'],
@@ -143,13 +140,13 @@ const cases = async () => {
     runScript(dir, stub);
 
     const text = readLog(dir);
-    assertEq((text.match(/^## Contributors$/gm) || []).length, 1, `still one section, got: ${text}`);
-    assert(text.includes('- [@first]') && text.includes('- [@second]'), `both are listed, got: ${text}`);
-    assert(text.includes('[@first]: https://github.com/first'), 'the first definition survives');
+    expect((text.match(/^## Contributors$/gm) || []).length, `still one section, got: ${text}`).toBe(1);
+    expect(text.includes('- [@first]') && text.includes('- [@second]'), `both are listed, got: ${text}`).toBeTruthy();
+    expect(text.includes('[@first]: https://github.com/first'), 'the first definition survives').toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('an existing contributor definition is never rewritten', () => {
+  test('an existing contributor definition is never rewritten', () => {
     const { dir } = mkRepo(
       `${CHANGELOG('- [#4](../../issues/4) - Text.')}\n[@who]: https://example.com/custom\n`,
       ['feat: a\n\nFixes #4'],
@@ -157,12 +154,12 @@ const cases = async () => {
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const text = readLog(dir);
-    assert(text.includes('[@who]: https://example.com/custom'), 'the hand-edited URL survives');
-    assertEq(text.match(/^\[@who\]: /gm).length, 1, `not duplicated, got: ${text}`);
+    expect(text.includes('[@who]: https://example.com/custom'), 'the hand-edited URL survives').toBeTruthy();
+    expect(text.match(/^\[@who\]: /gm).length, `not duplicated, got: ${text}`).toBe(1);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('an issue closed by two commits lists both, thanking each person once', () => {
+  test('an issue closed by two commits lists both, thanking each person once', () => {
     const { dir, shas } = mkRepo(
       CHANGELOG('- [#7](https://github.com/o/r/issues/7) - The two-part change.'),
       ['feat: part one\n\nFixes #7', 'feat: part two\n\nFixes #7'],
@@ -170,12 +167,12 @@ const cases = async () => {
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const text = readLog(dir);
-    for (const sha of shas) assert(text.includes(`\`${sha}\``), `lists ${sha}, got: ${text}`);
-    assertEq(text.match(/Thanks/g).length, 1, 'one Thanks, not one per commit');
+    for (const sha of shas) expect(text.includes(`\`${sha}\``), `lists ${sha}, got: ${text}`).toBeTruthy();
+    expect(text.match(/Thanks/g).length, 'one Thanks, not one per commit').toBe(1);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a commit-link-shaped string in the prose does not suppress the fill', () => {
+  test('a commit-link-shaped string in the prose does not suppress the fill', () => {
     // "Already linked" is anchored to the metadata run after the issue link,
     // never the whole line, or this entry would be skipped silently.
     const { dir, shas } = mkRepo(
@@ -185,14 +182,14 @@ const cases = async () => {
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const first = readLog(dir);
-    assert(first.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `filled, got: ${first}`);
-    assert(first.includes('[`abcdef1`](../../commit/abcdef1)'), 'the prose mention survives');
+    expect(first.includes(`[\`${shas[0]}\`](../../commit/${shas[0]})`), `filled, got: ${first}`).toBeTruthy();
+    expect(first.includes('[`abcdef1`](../../commit/abcdef1)'), 'the prose mention survives').toBeTruthy();
     runScript(dir, stub);
-    assertEq(readLog(dir), first, 'and a re-run changes nothing');
+    expect(readLog(dir), 'and a re-run changes nothing').toBe(first);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a CRLF file keeps its line endings on write', () => {
+  test('a CRLF file keeps its line endings on write', () => {
     // The writer normalizes for parsing but must join with the file's dominant
     // ending.
     const { dir, shas } = mkRepo(
@@ -202,31 +199,31 @@ const cases = async () => {
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const text = readLog(dir);
-    assert(text.includes(`\`${shas[0]}\``), `filled, got: ${text}`);
-    assert(text.includes('\r\n'), 'still CRLF');
-    assert(!/[^\r]\n/.test(text), 'no lone LF was written');
+    expect(text.includes(`\`${shas[0]}\``), `filled, got: ${text}`).toBeTruthy();
+    expect(text.includes('\r\n'), 'still CRLF').toBeTruthy();
+    expect(!/[^\r]\n/.test(text), 'no lone LF was written').toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('an entry whose issue no commit closes is left untouched', () => {
+  test('an entry whose issue no commit closes is left untouched', () => {
     const body = '- [#99](https://github.com/o/r/issues/99) - An entry from an older release.';
     const { dir } = mkRepo(CHANGELOG(body), ['feat: unrelated work']);
     const stub = makeGhStub();
     runScript(dir, stub);
-    assert(readLog(dir).includes(body), 'unchanged');
+    expect(readLog(dir).includes(body), 'unchanged').toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a `(no issue)` entry is left untouched', () => {
+  test('a `(no issue)` entry is left untouched', () => {
     const body = '- (no issue) - A change with nothing filed for it.';
     const { dir } = mkRepo(CHANGELOG(body), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     runScript(dir, stub);
-    assert(readLog(dir).includes(body), 'unchanged');
+    expect(readLog(dir).includes(body), 'unchanged').toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('without gh the commit link still lands, and the missing handle is reported', () => {
+  test('without gh the commit link still lands, and the missing handle is reported', () => {
     // Offline is an expected external condition, not a failure: the commit link
     // comes from git alone, so the release is never blocked on the network.
     const { dir, shas } = mkRepo(
@@ -235,15 +232,15 @@ const cases = async () => {
     );
     const stub = makeGhStub({ fails: true });
     const { code, out } = runScript(dir, stub);
-    assertEq(code, 0, 'exit 0');
+    expect(code, 'exit 0').toBe(0);
     const text = readLog(dir);
-    assert(text.includes(`\`${shas[0]}\``), `commit link, got: ${text}`);
-    assert(!text.includes('Thanks'), `no attribution, got: ${text}`);
-    assert(out.includes('could not be resolved'), `reports it, got: ${out}`);
+    expect(text.includes(`\`${shas[0]}\``), `commit link, got: ${text}`).toBeTruthy();
+    expect(!text.includes('Thanks'), `no attribution, got: ${text}`).toBeTruthy();
+    expect(out.includes('could not be resolved'), `reports it, got: ${out}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('`Closes #N` and `Resolves #N` count as closing trailers too', () => {
+  test('`Closes #N` and `Resolves #N` count as closing trailers too', () => {
     const { dir } = mkRepo(
       CHANGELOG(
         '- [#4](https://github.com/o/r/issues/4) - First.',
@@ -254,11 +251,11 @@ const cases = async () => {
     const stub = makeGhStub();
     runScript(dir, stub);
     const text = readLog(dir);
-    assertEq(text.match(/commit\//g).length, 2, `both linked, got: ${text}`);
+    expect(text.match(/commit\//g).length, `both linked, got: ${text}`).toBe(2);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('`Fixed #N` and `Closes: #N`, which the commit gate accepts, link their entries too', () => {
+  test('`Fixed #N` and `Closes: #N`, which the commit gate accepts, link their entries too', () => {
     const { dir, shas } = mkRepo(
       CHANGELOG(
         '- [#4](https://github.com/o/r/issues/4) - First.',
@@ -270,14 +267,8 @@ const cases = async () => {
     runScript(dir, stub);
     const lines = readLog(dir).split('\n');
     const entry = (n) => lines.find((l) => l.startsWith(`- [#${n}]`));
-    assert(entry(4).includes(`(../../commit/${shas[0]})`), `#4 linked to its Fixed commit, got: ${entry(4)}`);
-    assert(entry(5).includes(`(../../commit/${shas[1]})`), `#5 linked to its Closes: commit, got: ${entry(5)}`);
+    expect(entry(4).includes(`(../../commit/${shas[0]})`), `#4 linked to its Fixed commit, got: ${entry(4)}`).toBeTruthy();
+    expect(entry(5).includes(`(../../commit/${shas[1]})`), `#5 linked to its Closes: commit, got: ${entry(5)}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

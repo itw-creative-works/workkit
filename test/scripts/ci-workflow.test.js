@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('../lib/platform');
 const {
-  group, test, testUnless, assert, assertEq, run, SPAWN_DEADLINE, selfRun, summary,
+  describe, test, expect, run, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   indentOf, isContent, block, inlineValue, listValue, listItems, unquote, plainColonLines,
@@ -43,13 +43,13 @@ const needsOf = (keyBlock) => {
 const jobKey = (file = WORKFLOW) => {
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
   const jobs = block(lines, 'jobs', 0);
-  assert(jobs, `${path.basename(file)} has a top-level \`jobs:\``);
+  expect(jobs, `${path.basename(file)} has a top-level \`jobs:\``).toBeTruthy();
   const at = childIndent(jobs);
   return (name, k) => {
     const job = block(jobs, name, at);
-    assert(job, `jobs.${name} exists`);
+    expect(job, `jobs.${name} exists`).toBeTruthy();
     const found = block(job, k, childIndent(job));
-    assert(found, `jobs.${name} carries \`${k}\``);
+    expect(found, `jobs.${name} carries \`${k}\``).toBeTruthy();
     return found;
   };
 };
@@ -71,21 +71,19 @@ const scopeStep = (file, job) => {
     const id = block(item, 'id', indentOf(item[0]));
     return id && unquote(inlineValue(id)) === 'scope';
   });
-  assert(step, `${path.basename(file)} jobs.${job} has a step with id scope`);
+  expect(step, `${path.basename(file)} jobs.${job} has a step with id scope`).toBeTruthy();
   const name = new RegExp(`^ {${indentOf(step[0])}}name:`);
   return step.filter((line) => isContent(line) && !name.test(line))
     .map((line) => line.trim().replace(/"[^"\s]*release-push\.sh"|\S*release-push\.sh/, 'RELEASE_PUSH')).join('\n');
 };
 
-const cases = async () => {
-  group('workflows: a plain value holding a colon');
-
-  await test('names a run line whose plain value holds `: `, and only that line', () => {
+describe('workflows: a plain value holding a colon', () => {
+  test('names a run line whose plain value holds `: `, and only that line', () => {
     const text = 'jobs:\n  a:\n    steps:\n      - name: x\n        run: echo "a release push: no suite"\n';
-    assertEq(JSON.stringify(plainColonLines(text)), '[5]', 'lines named');
+    expect(JSON.stringify(plainColonLines(text)), 'lines named').toBe('[5]');
   });
 
-  await test('every kit workflow and installed workflow template is free of such a line', () => {
+  test('every kit workflow and installed workflow template is free of such a line', () => {
     const named = [];
     for (const dir of WORKFLOW_DIRS) {
       for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.yml'))) {
@@ -94,96 +92,90 @@ const cases = async () => {
         for (const n of plainColonLines(text)) named.push(`${path.relative(ROOT, dir)}/${file}:${n}: ${lines[n - 1].trim()}`);
       }
     }
-    assertEq(named.join('\n'), '', 'lines YAML refuses');
+    expect(named.join('\n'), 'lines YAML refuses').toBe('');
   });
+});
 
-  group('workflows: a real YAML parse');
-
-  await testUnless(!HAS_RUBY, 'ruby with its YAML library does not run on this machine')('every kit workflow and installed workflow template parses as YAML', () => {
+describe('workflows: a real YAML parse', () => {
+  test('every kit workflow and installed workflow template parses as YAML', { skip: !HAS_RUBY && 'ruby with its YAML library does not run on this machine' }, () => {
     const files = WORKFLOW_DIRS.flatMap((dir) => fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))
       .map((f) => path.relative(ROOT, path.join(dir, f)).split(path.sep).join('/')));
-    assert(files.length > 0, 'workflow files to parse');
+    expect(files.length > 0, 'workflow files to parse').toBeTruthy();
     const res = run('ruby', ['-ryaml', '-e', RUBY_PARSE, ...files], { cwd: ROOT });
-    assertEq(res.status, 0, `ruby exit (${res.stderr.trim()})`);
-    assertEq(res.stdout.trim().split(/\r?\n/).filter(Boolean).join('\n'), '', 'files YAML refuses');
+    expect(res.status, `ruby exit (${res.stderr.trim()})`).toBe(0);
+    expect(res.stdout.trim().split(/\r?\n/).filter(Boolean).join('\n'), 'files YAML refuses').toBe('');
   });
+});
 
-  group('checks.yml: the triggers');
-
-  await test('a push runs only on main; a pull request still runs', () => {
+describe('checks.yml: the triggers', () => {
+  test('a push runs only on main; a pull request still runs', () => {
     const lines = fs.readFileSync(WORKFLOW, 'utf8').split(/\r?\n/);
     const on = block(lines, 'on', 0);
-    assert(on, 'checks.yml has a top-level `on:`');
+    expect(on, 'checks.yml has a top-level `on:`').toBeTruthy();
     const triggers = childIndent(on);
-    assert(block(on, 'pull_request', triggers), 'pull_request is still a trigger');
+    expect(block(on, 'pull_request', triggers), 'pull_request is still a trigger').toBeTruthy();
     const push = block(on, 'push', triggers);
-    assert(push, 'push is a trigger');
+    expect(push, 'push is a trigger').toBeTruthy();
     const filters = childIndent(push);
     const branches = filters === -1 ? null : block(push, 'branches', filters);
-    assert(branches, 'on.push carries `branches`');
-    assertEq(JSON.stringify(listValue(branches)), JSON.stringify(['main']), 'on.push.branches');
+    expect(branches, 'on.push carries `branches`').toBeTruthy();
+    expect(JSON.stringify(listValue(branches)), 'on.push.branches').toBe(JSON.stringify(['main']));
   });
+});
 
-  group('checks.yml: the jobs');
-
-  await test('suite and changelog need scope and run only on its run answer; test needs scope and suite', () => {
+describe('checks.yml: the jobs', () => {
+  test('suite and changelog need scope and run only on its run answer; test needs scope and suite', () => {
     const key = jobKey();
     for (const name of ['suite', 'changelog']) {
-      assertEq(JSON.stringify(needsOf(key(name, 'needs'))), JSON.stringify(['scope']), `jobs.${name}.needs`);
-      assertEq(inlineValue(key(name, 'if')), "needs.scope.outputs.run == 'true'", `jobs.${name}.if`);
+      expect(JSON.stringify(needsOf(key(name, 'needs'))), `jobs.${name}.needs`).toBe(JSON.stringify(['scope']));
+      expect(inlineValue(key(name, 'if')), `jobs.${name}.if`).toBe("needs.scope.outputs.run == 'true'");
     }
-    assertEq(JSON.stringify(needsOf(key('test', 'needs')).sort()), JSON.stringify(['scope', 'suite']), 'jobs.test.needs');
+    expect(JSON.stringify(needsOf(key('test', 'needs')).sort()), 'jobs.test.needs').toBe(JSON.stringify(['scope', 'suite']));
   });
 
-  await test('release runs on a push only, with contents and actions write, calling the kit\'s own release.yml', () => {
+  test('release runs on a push only, with contents and actions write, calling the kit\'s own release.yml', () => {
     const key = jobKey();
-    assertEq(inlineValue(key('release', 'if')), "github.event_name == 'push'", 'jobs.release.if');
+    expect(inlineValue(key('release', 'if')), 'jobs.release.if').toBe("github.event_name == 'push'");
     const permissions = key('release', 'permissions');
     const at = childIndent(permissions);
     for (const scope of ['contents', 'actions']) {
       const found = block(permissions, scope, at);
-      assert(found, `jobs.release.permissions carries \`${scope}\``);
-      assertEq(inlineValue(found), 'write', `jobs.release.permissions.${scope}`);
+      expect(found, `jobs.release.permissions carries \`${scope}\``).toBeTruthy();
+      expect(inlineValue(found), `jobs.release.permissions.${scope}`).toBe('write');
     }
-    assertEq(inlineValue(key('release', 'uses')), './.github/workflows/release.yml', 'jobs.release.uses');
+    expect(inlineValue(key('release', 'uses')), 'jobs.release.uses').toBe('./.github/workflows/release.yml');
   });
+});
 
-  group('ci.yml: the release-push skip is decided before setup');
-
-  await test('the Scope step (id scope) comes before Setup (hooks.ciSetup)', () => {
+describe('ci.yml: the release-push skip is decided before setup', () => {
+  test('the Scope step (id scope) comes before Setup (hooks.ciSetup)', () => {
     const steps = ciSteps();
     const scope = steps.findIndex((s) => s.id === 'scope');
     const setup = steps.findIndex((s) => s.name === 'Setup (hooks.ciSetup)');
-    assert(scope >= 0, `a step with id scope, got: ${JSON.stringify(steps)}`);
-    assert(setup >= 0, `a Setup (hooks.ciSetup) step, got: ${JSON.stringify(steps)}`);
-    assert(scope < setup, `Scope (step ${scope}) before Setup (step ${setup})`);
+    expect(scope >= 0, `a step with id scope, got: ${JSON.stringify(steps)}`).toBeTruthy();
+    expect(setup >= 0, `a Setup (hooks.ciSetup) step, got: ${JSON.stringify(steps)}`).toBeTruthy();
+    expect(scope < setup, `Scope (step ${scope}) before Setup (step ${setup})`).toBeTruthy();
   });
 
-  await test('Setup, Install dependencies and Test each run only on the scope step\'s run answer', () => {
+  test('Setup, Install dependencies and Test each run only on the scope step\'s run answer', () => {
     const steps = ciSteps();
     for (const name of ['Setup (hooks.ciSetup)', 'Install dependencies', 'Test']) {
       const step = steps.find((s) => s.name === name);
-      assert(step, `a ${name} step, got: ${JSON.stringify(steps)}`);
-      assertEq(step.if, "steps.scope.outputs.run == 'true'", `${name}: if`);
+      expect(step, `a ${name} step, got: ${JSON.stringify(steps)}`).toBeTruthy();
+      expect(step.if, `${name}: if`).toBe("steps.scope.outputs.run == 'true'");
     }
   });
 
-  await test('ci.yml\'s scope step is checks.yml\'s whole step, its name and the release-push.sh path aside', () => {
+  test('ci.yml\'s scope step is checks.yml\'s whole step, its name and the release-push.sh path aside', () => {
     const ci = scopeStep(CI, 'test');
-    assert(ci !== '', 'ci.yml scope step has content lines');
-    assertEq(ci, scopeStep(WORKFLOW, 'scope'), 'ci.yml scope step against checks.yml');
+    expect(ci !== '', 'ci.yml scope step has content lines').toBeTruthy();
+    expect(ci, 'ci.yml scope step against checks.yml').toBe(scopeStep(WORKFLOW, 'scope'));
   });
+});
 
-  group('workflows: a hung run ends at a time limit');
-
-  await test('ci.yml jobs.test and checks.yml jobs.suite each end after 60 minutes', () => {
-    assertEq(inlineValue(jobKey(CI)('test', 'timeout-minutes')), '60', 'ci.yml jobs.test.timeout-minutes');
-    assertEq(inlineValue(jobKey(WORKFLOW)('suite', 'timeout-minutes')), '60', 'checks.yml jobs.suite.timeout-minutes');
+describe('workflows: a hung run ends at a time limit', () => {
+  test('ci.yml jobs.test and checks.yml jobs.suite each end after 60 minutes', () => {
+    expect(inlineValue(jobKey(CI)('test', 'timeout-minutes')), 'ci.yml jobs.test.timeout-minutes').toBe('60');
+    expect(inlineValue(jobKey(WORKFLOW)('suite', 'timeout-minutes')), 'checks.yml jobs.suite.timeout-minutes').toBe('60');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

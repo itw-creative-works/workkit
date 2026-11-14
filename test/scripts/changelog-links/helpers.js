@@ -5,8 +5,8 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
-const { skipSuite, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { IS_WINDOWS, NO_NODE_STUB, SYSTEM_PATH, stubTool, pathWith } = require('../../lib/platform');
+const { mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { SYSTEM_PATH, stubTool, pathWith } = require('../../lib/platform');
 const { recordArgv } = require('../../lib/argv-log');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'workflow', 'changelog', 'changelog-links.js');
@@ -72,15 +72,6 @@ const runScript = (cwd, stub, args = []) => {
 
 const readLog = (dir) => fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
 
-// Every suite asks this first: the script reaches its fake `gh` through
-// execFile, and the suite still skips on Windows (`stubTool`, `NO_NODE_STUB`):
-// its stub predates the launcher.
-const skipOnWindows = () => {
-  if (IS_WINDOWS) {
-    skipSuite(NO_NODE_STUB);
-  }
-};
-
 module.exports = {
-  repoSlug, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog, skipOnWindows,
+  repoSlug, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
 };

@@ -1,24 +1,10 @@
-/* eslint-disable no-console */
-// A case's own log: lines a case writes as it runs, held in the one slot the
-// running case owns, which the harness drains as the case ends and prints under
-// a failure (and under a pass with TEST_LOG=1). A line written with no case
-// running prints at once, indented as a case's lines are.
+// Keeping printed text off column zero under a case's mark: the case indent,
+// a quoted text's later lines indented, and a writer indenting every line.
 
-import util from 'node:util';
 import { StringDecoder } from 'node:string_decoder';
 
-// The indent of every line the harness prints under a case's mark.
+// The indent of every line the runner prints under a case's mark.
 export const CASE_INDENT = '    ';
-
-// The running case's lines, null while no case runs.
-let current = null;
-
-/** Log one line: the parts joined by spaces, a non-string inspected as console.log shows it. */
-export const log = (...parts) => {
-  const line = parts.map((part) => (typeof part === 'string' ? part : util.inspect(part))).join(' ');
-  if (current) current.push(line);
-  else console.log(`${CASE_INDENT}${indentRest(line)}`);
-};
 
 /** The text with every line after the first prefixed by `indent`, so a quoted text never reaches column zero. */
 export const indentRest = (text, indent = CASE_INDENT) => String(text).split('\n').join(`\n${indent}`);
@@ -33,16 +19,4 @@ export const indentWriter = (write) => {
     if (text) atLineStart = text.endsWith('\n');
     return write(out, ...rest);
   };
-};
-
-/** Open the slot of a case starting to run. */
-export const openCase = () => {
-  current = [];
-};
-
-/** The running case's lines, in the order written; the slot is closed after. */
-export const drain = () => {
-  const lines = current ?? [];
-  current = null;
-  return lines;
 };

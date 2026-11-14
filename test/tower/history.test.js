@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
 
 const {
@@ -40,24 +40,22 @@ const mkExec = (nodes, calls = []) => (cmd, args) => {
   return JSON.stringify({ data: { repository: { discussions: { nodes } } } });
 };
 
-const cases = async () => {
-  group('tower/history: the board over time');
-
-  await test('every published brief’s stats line becomes one entry, oldest first', () => {
+describe('tower/history: the board over time', () => {
+  test('every published brief’s stats line becomes one entry, oldest first', () => {
     const home = mkHome();
     // Newest first is how the board answers; a chart draws the other way.
     const out = briefHistory({
       workflowHome: home,
       exec: mkExec([brief('2026-08-03', 12, 4), brief('2026-08-02', 14, 1), brief('2026-08-01', 15, 0)]),
     });
-    assertEq(out.map((entry) => entry.date).join(','), '2026-08-01,2026-08-02,2026-08-03', 'ascending by date');
-    assertEq(out[0].totals.open, 15, 'the totals ride');
-    assertEq(out[2].closedDay, 4, 'and what each day closed');
-    assertEq(out[2].repos['owner/repo'].open, 12, 'and the per-repo counts');
+    expect(out.map((entry) => entry.date).join(','), 'ascending by date').toBe('2026-08-01,2026-08-02,2026-08-03');
+    expect(out[0].totals.open, 'the totals ride').toBe(15);
+    expect(out[2].closedDay, 'and what each day closed').toBe(4);
+    expect(out[2].repos['owner/repo'].open, 'and the per-repo counts').toBe(12);
     cleanup(home);
   });
 
-  await test('a summary is not a brief, and a brief without the block is skipped', () => {
+  test('a summary is not a brief, and a brief without the block is skipped', () => {
     const home = mkHome();
     const out = briefHistory({
       workflowHome: home,
@@ -68,141 +66,133 @@ const cases = async () => {
         brief('2026-07-31', 7, 2),
       ]),
     });
-    assertEq(out.length, 1, 'only the briefs that carry a readable block');
-    assertEq(out[0].date, '2026-07-31', 'and it is the one that does');
+    expect(out.length, 'only the briefs that carry a readable block').toBe(1);
+    expect(out[0].date, 'and it is the one that does').toBe('2026-07-31');
     cleanup(home);
   });
 
-  await test('the series is capped at five weeks of mornings, keeping the newest', () => {
+  test('the series is capped at five weeks of mornings, keeping the newest', () => {
     const home = mkHome();
     const nodes = [];
     // 50 mornings, newest first, dated backwards from the 50th of a long month.
     for (let i = 0; i < 50; i++) nodes.push(brief(`2026-06-${String(50 - i).padStart(2, '0')}`, i, 1));
     const out = briefHistory({ workflowHome: home, exec: mkExec(nodes) });
-    assertEq(out.length, HISTORY_LIMIT, `${HISTORY_LIMIT} entries at most`);
-    assertEq(out[out.length - 1].date, '2026-06-50', 'the newest morning is the last point');
-    assertEq(out[0].date, '2026-06-16', 'and the oldest kept is 35 back, not the oldest published');
+    expect(out.length, `${HISTORY_LIMIT} entries at most`).toBe(HISTORY_LIMIT);
+    expect(out[out.length - 1].date, 'the newest morning is the last point').toBe('2026-06-50');
+    expect(out[0].date, 'and the oldest kept is 35 back, not the oldest published').toBe('2026-06-16');
     cleanup(home);
   });
+});
 
-  group('tower/history: nothing to read is never a throw');
-
-  await test('a failed read is null; a board with no briefs is an empty series', () => {
+describe('tower/history: nothing to read is never a throw', () => {
+  test('a failed read is null; a board with no briefs is an empty series', () => {
     const home = mkHome();
-    assertEq(briefHistory({ workflowHome: home, exec: () => { throw new Error('gh: not authenticated'); } }), null, 'a read that failed');
-    assertEq(briefHistory({ workflowHome: home, exec: () => 'not json at all' }), null, 'an answer of another shape');
-    assertEq(briefHistory({ workflowHome: home, exec: mkExec([]) }).length, 0, 'a board with nothing on it has no history yet');
+    expect(briefHistory({ workflowHome: home, exec: () => { throw new Error('gh: not authenticated'); } }), 'a read that failed').toBe(null);
+    expect(briefHistory({ workflowHome: home, exec: () => 'not json at all' }), 'an answer of another shape').toBe(null);
+    expect(briefHistory({ workflowHome: home, exec: mkExec([]) }).length, 'a board with nothing on it has no history yet').toBe(0);
 
     const noHome = mkHome(null);
-    assertEq(briefHistory({
+    expect(briefHistory({
       workflowHome: noHome,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }), null, 'a machine with nowhere to read from never asks');
+    }), 'a machine with nowhere to read from never asks').toBe(null);
     cleanup(home); cleanup(noHome);
   });
+});
 
-  group('tower/history: why the mornings could not be read');
-
-  await test('a spent rate limit rides back as the reason, not as a bare null (#215)', () => {
+describe('tower/history: why the mornings could not be read', () => {
+  test('a spent rate limit rides back as the reason, not as a bare null (#215)', () => {
     const home = mkHome();
     const reset = resetIn(9);
     const out = readDiscussions({ workflowHome: home, exec: mkLimited(reset) });
-    assertEq(out.nodes, null, 'no mornings arrived');
-    assertEq(out.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`,
-      'and the read says why, in the sentence the board and the sweep say');
+    expect(out.nodes, 'no mornings arrived').toBe(null);
+    expect(out.reason, 'and the read says why, in the sentence the board and the sweep say').toBe(`GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`);
     cleanup(home);
   });
 
-  await test('a refused token wears the same 403 and is told apart from a limit', () => {
+  test('a refused token wears the same 403 and is told apart from a limit', () => {
     const home = mkHome();
     const out = readDiscussions({ workflowHome: home, exec: mkRefused() });
-    assertEq(out.nodes, null, 'nothing was read');
-    assertEq(out.reason, 'gh not authenticated', 'and a new token, not a wait, is what fixes it');
+    expect(out.nodes, 'nothing was read').toBe(null);
+    expect(out.reason, 'and a new token, not a wait, is what fixes it').toBe('gh not authenticated');
     cleanup(home);
   });
 
-  await test('a board that answered carries the mornings and no reason at all', () => {
+  test('a board that answered carries the mornings and no reason at all', () => {
     const home = mkHome();
     const out = readDiscussions({ workflowHome: home, exec: mkExec([brief('2026-08-03', 12, 4)]) });
-    assertEq(out.nodes.length, 1, 'the morning came back');
-    assertEq(out.reason, null, 'and nothing went wrong to report');
+    expect(out.nodes.length, 'the morning came back').toBe(1);
+    expect(out.reason, 'and nothing went wrong to report').toBe(null);
 
     const noHome = mkHome(null);
-    assertEq(readDiscussions({
+    expect(readDiscussions({
       workflowHome: noHome,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }).reason, null, 'a machine with no home repo has no board to have failed to read');
+    }).reason, 'a machine with no home repo has no board to have failed to read').toBe(null);
     cleanup(home); cleanup(noHome);
   });
+});
 
-  group('tower/history: the block itself');
-
-  await test('a block missing the fields a chart needs is no block', () => {
-    assertEq(parseStatsMark(''), null, 'no line at all');
-    assertEq(parseStatsMark('<!-- workkit-stats: {"v":1,"totals":{"open":1}} -->'), null, 'a point with no day cannot be placed');
-    assertEq(parseStatsMark('<!-- workkit-stats: {"v":1,"date":"2026-08-03"} -->'), null, 'nor one with no totals');
+describe('tower/history: the block itself', () => {
+  test('a block missing the fields a chart needs is no block', () => {
+    expect(parseStatsMark(''), 'no line at all').toBe(null);
+    expect(parseStatsMark('<!-- workkit-stats: {"v":1,"totals":{"open":1}} -->'), 'a point with no day cannot be placed').toBe(null);
+    expect(parseStatsMark('<!-- workkit-stats: {"v":1,"date":"2026-08-03"} -->'), 'nor one with no totals').toBe(null);
     const partial = parseStatsMark('<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":1}} -->');
-    assertEq(partial.closedDay, 0, 'a block from before closedDay reads as zero');
-    assertEq(Object.keys(partial.repos).length, 0, 'and its per-repo map is empty rather than absent');
+    expect(partial.closedDay, 'a block from before closedDay reads as zero').toBe(0);
+    expect(Object.keys(partial.repos).length, 'and its per-repo map is empty rather than absent').toBe(0);
   });
 
-  await test('the title prefix is the one the publish writes', () => {
-    assertEq(BRIEF_TITLE_PREFIX, 'brief: ', 'the literal jobs/morning/brief-publish.sh titles a brief with');
+  test('the title prefix is the one the publish writes', () => {
+    expect(BRIEF_TITLE_PREFIX, 'the literal jobs/morning/brief-publish.sh titles a brief with').toBe('brief: ');
     const shell = fs.readFileSync(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief-publish.sh'), 'utf8');
-    assert(shell.includes('title="brief: $date"'), 'and the shell still writes exactly that');
+    expect(shell.includes('title="brief: $date"'), 'and the shell still writes exactly that').toBeTruthy();
   });
+});
 
-  group('tower/history: whether the cloud brief is still posting');
-
+describe('tower/history: whether the cloud brief is still posting', () => {
   // Freshness is arithmetic on the newest entry's date and nothing else.
   const day = (date) => ({ date, totals: { open: 1 }, closedDay: 0, repos: {} });
   const at = (stamp) => new Date(stamp);
 
-  await test('today’s morning and yesterday’s are both fresh', () => {
+  test('today’s morning and yesterday’s are both fresh', () => {
     const now = at('2026-08-19T14:00:00Z');
-    assertEq(briefFreshness([day('2026-08-18'), day('2026-08-19')], now).state, 'fresh', 'this morning posted');
-    assertEq(briefFreshness([day('2026-08-18')], now).state, 'fresh',
-      'and so is yesterday’s - today’s run has not landed yet at every hour of the day');
-    assertEq(briefFreshness([day('2026-08-18')], now).date, '2026-08-18', 'the date rides either way');
+    expect(briefFreshness([day('2026-08-18'), day('2026-08-19')], now).state, 'this morning posted').toBe('fresh');
+    expect(briefFreshness([day('2026-08-18')], now).state, 'and so is yesterday’s - today’s run has not landed yet at every hour of the day').toBe('fresh');
+    expect(briefFreshness([day('2026-08-18')], now).date, 'the date rides either way').toBe('2026-08-18');
   });
 
-  await test('a morning older than yesterday is stale, and says which one it was', () => {
+  test('a morning older than yesterday is stale, and says which one it was', () => {
     const out = briefFreshness([day('2026-08-09'), day('2026-08-17')], at('2026-08-19T09:05:00Z'));
-    assertEq(out.state, 'stale', 'two whole days is a brief that stopped running');
-    assertEq(out.date, '2026-08-17', 'the newest entry, not the oldest');
+    expect(out.state, 'two whole days is a brief that stopped running').toBe('stale');
+    expect(out.date, 'the newest entry, not the oldest').toBe('2026-08-17');
   });
 
-  await test('calendar days, not 24-hour windows', () => {
+  test('calendar days, not 24-hour windows', () => {
     // A brief posted at 09:00 and read at 09:05 the next morning is one day
     // old, not 24 hours and five minutes - the post happens once a day.
-    assertEq(briefFreshness([day('2026-08-18')], at('2026-08-19T00:01:00Z')).state, 'fresh', 'a minute past midnight, yesterday still counts');
-    assertEq(briefFreshness([day('2026-08-17')], at('2026-08-19T23:59:00Z')).state, 'stale', 'and the day before yesterday never does');
+    expect(briefFreshness([day('2026-08-18')], at('2026-08-19T00:01:00Z')).state, 'a minute past midnight, yesterday still counts').toBe('fresh');
+    expect(briefFreshness([day('2026-08-17')], at('2026-08-19T23:59:00Z')).state, 'and the day before yesterday never does').toBe('stale');
   });
 
-  await test('never published and unreadable are not each other, and neither is stale', () => {
+  test('never published and unreadable are not each other, and neither is stale', () => {
     const now = at('2026-08-19T09:00:00Z');
-    assertEq(briefFreshness([], now).state, 'never', 'a home repo that has published no brief yet');
-    assertEq(briefFreshness([], now).date, null, 'with no date to name');
-    assertEq(briefFreshness(null, now).state, 'unreadable', 'a read that failed says so - it is not a quiet morning');
-    assertEq(briefFreshness(undefined, now).state, 'unreadable', 'and neither is a payload that carries no history at all');
+    expect(briefFreshness([], now).state, 'a home repo that has published no brief yet').toBe('never');
+    expect(briefFreshness([], now).date, 'with no date to name').toBe(null);
+    expect(briefFreshness(null, now).state, 'a read that failed says so - it is not a quiet morning').toBe('unreadable');
+    expect(briefFreshness(undefined, now).state, 'and neither is a payload that carries no history at all').toBe('unreadable');
     // A date the arithmetic cannot place is a date nothing can be judged
     // against; fresh and stale would both be guesses.
-    assertEq(briefFreshness([{ date: 'the ninth of never', totals: {} }], now).state, 'unreadable', 'nor is an unplaceable date');
+    expect(briefFreshness([{ date: 'the ninth of never', totals: {} }], now).state, 'nor is an unplaceable date').toBe('unreadable');
   });
 
-  await test('the freshness is arithmetic on the read, never a second one', () => {
+  test('the freshness is arithmetic on the read, never a second one', () => {
     const home = mkHome();
     const calls = [];
     const out = briefHistory({ workflowHome: home, exec: mkExec([brief('2026-08-03', 12, 4)], calls) });
     briefFreshness(out, at('2026-08-19T09:00:00Z'));
-    assertEq(calls.length, 1, 'the history read is the only round trip there is');
-    assert(calls[0].join(' ').includes('body'), 'and it asks for the body the stats line lives in');
+    expect(calls.length, 'the history read is the only round trip there is').toBe(1);
+    expect(calls[0].join(' ').includes('body'), 'and it asks for the body the stats line lives in').toBeTruthy();
     cleanup(home);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

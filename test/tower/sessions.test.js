@@ -6,7 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { asWindows } = require('../lib/platform');
 
 const { listSessions, transcriptPath, chatNameFrom, NAME_READ_BYTES } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'sessions.js'));
@@ -80,147 +80,137 @@ const list = (world, opts = {}) => listSessions({
   ...opts,
 });
 
-const cases = async () => {
-  group('tower/sessions: liveness');
-
-  await test('a marker whose assertion holds its own pid is live and working', () => {
+describe('tower/sessions: liveness', () => {
+  test('a marker whose assertion holds its own pid is live and working', () => {
     const w = mkWorld();
     mkMarker(w, 4001, { cwd: '/x/repo', session: 'abc-1' });
     mkTranscript(w, '/x/repo', 'abc-1', ['{"type":"user"}']);
     const [s] = list(w);
-    assertEq(s.claudePid, 4001, 'pid from the filename');
-    assertEq(s.cwd, '/x/repo', 'cwd from the marker');
-    assertEq(s.session, 'abc-1', 'session from the marker');
-    assertEq(s.state, 'working', 'fresh transcript');
+    expect(s.claudePid, 'pid from the filename').toBe(4001);
+    expect(s.cwd, 'cwd from the marker').toBe('/x/repo');
+    expect(s.session, 'session from the marker').toBe('abc-1');
+    expect(s.state, 'fresh transcript').toBe('working');
     cleanup(w.root);
   });
 
-  await test('a caffeinate pid that is gone reads stale', () => {
+  test('a caffeinate pid that is gone reads stale', () => {
     const w = mkWorld();
     mkMarker(w, 4002, { live: false });
-    assertEq(list(w)[0].state, 'stale', 'no such process');
+    expect(list(w)[0].state, 'no such process').toBe('stale');
     cleanup(w.root);
   });
 
-  await test('a recycled caffeinate pid holding someone else reads stale', () => {
+  test('a recycled caffeinate pid holding someone else reads stale', () => {
     const w = mkWorld();
     // Same shape of command, a different claude pid: the whole-string match is
     // what makes pid recycling detectable.
     mkMarker(w, 4003, { holds: 9999 });
-    assertEq(list(w)[0].state, 'stale', 'the assertion is not ours');
+    expect(list(w)[0].state, 'the assertion is not ours').toBe('stale');
     cleanup(w.root);
   });
 
-  await test('a stale session reads no transcript - chatName stays null', () => {
+  test('a stale session reads no transcript - chatName stays null', () => {
     const w = mkWorld();
     mkMarker(w, 4004, { session: 'abc-4', live: false });
     mkTranscript(w, '/x/repo', 'abc-4', ['{"customTitle":"Never read"}']);
-    assertEq(list(w)[0].chatName, null, 'lazy: live markers only');
+    expect(list(w)[0].chatName, 'lazy: live markers only').toBe(null);
     cleanup(w.root);
   });
+});
 
-  group('tower/sessions: working vs idle');
-
-  await test('a transcript quieter than the threshold is idle, and a fresh one is working', () => {
+describe('tower/sessions: working vs idle', () => {
+  test('a transcript quieter than the threshold is idle, and a fresh one is working', () => {
     const w = mkWorld();
     mkMarker(w, 4101, { cwd: '/x/a', session: 'quiet' });
     mkMarker(w, 4102, { cwd: '/x/b', session: 'busy' });
     mkTranscript(w, '/x/a', 'quiet', ['{}'], 90);
     mkTranscript(w, '/x/b', 'busy', ['{}']);
     const byPid = Object.fromEntries(list(w, { idleMinutes: 45 }).map((s) => [s.claudePid, s.state]));
-    assertEq(byPid[4101], 'idle', '90 minutes quiet, threshold 45');
-    assertEq(byPid[4102], 'working', 'just touched');
+    expect(byPid[4101], '90 minutes quiet, threshold 45').toBe('idle');
+    expect(byPid[4102], 'just touched').toBe('working');
     cleanup(w.root);
   });
 
-  await test('the threshold is honored - the same transcript flips with idleMinutes', () => {
+  test('the threshold is honored - the same transcript flips with idleMinutes', () => {
     const w = mkWorld();
     mkMarker(w, 4103, { cwd: '/x/a', session: 'q' });
     mkTranscript(w, '/x/a', 'q', ['{}'], 30);
-    assertEq(list(w, { idleMinutes: 45 })[0].state, 'working', 'inside 45');
-    assertEq(list(w, { idleMinutes: 10 })[0].state, 'idle', 'outside 10');
+    expect(list(w, { idleMinutes: 45 })[0].state, 'inside 45').toBe('working');
+    expect(list(w, { idleMinutes: 10 })[0].state, 'outside 10').toBe('idle');
     cleanup(w.root);
   });
 
-  await test('with no transcript the marker mtime is the fallback probe', () => {
+  test('with no transcript the marker mtime is the fallback probe', () => {
     const w = mkWorld();
     const file = mkMarker(w, 4104, { cwd: '/x/gone', session: 'nofile' });
     const when = (Date.now() - 120 * MINUTE) / 1000;
     fs.utimesSync(file, when, when);
-    assertEq(list(w, { idleMinutes: 45 })[0].state, 'idle', 'the assertion was taken two hours ago');
+    expect(list(w, { idleMinutes: 45 })[0].state, 'the assertion was taken two hours ago').toBe('idle');
     cleanup(w.root);
   });
 
-  await test('KEEP_AWAKE_IDLE_MINUTES sets the default, and a non-numeric one falls back to 45', () => {
+  test('KEEP_AWAKE_IDLE_MINUTES sets the default, and a non-numeric one falls back to 45', () => {
     const w = mkWorld();
     mkMarker(w, 4105, { cwd: '/x/env', session: 'e' });
     mkTranscript(w, '/x/env', 'e', ['{}'], 20);
     const before = process.env.KEEP_AWAKE_IDLE_MINUTES;
     try {
       process.env.KEEP_AWAKE_IDLE_MINUTES = '10';
-      assertEq(list(w)[0].state, 'idle', 'the env threshold is honored');
+      expect(list(w)[0].state, 'the env threshold is honored').toBe('idle');
       process.env.KEEP_AWAKE_IDLE_MINUTES = 'soon';
-      assertEq(list(w)[0].state, 'working', 'a typo cannot quietly disable the check');
+      expect(list(w)[0].state, 'a typo cannot quietly disable the check').toBe('working');
     } finally {
       if (before === undefined) delete process.env.KEEP_AWAKE_IDLE_MINUTES;
       else process.env.KEEP_AWAKE_IDLE_MINUTES = before;
     }
     cleanup(w.root);
   });
+});
 
-  group('tower/sessions: the times a page ages');
-
-  await test('a row carries its transcript path, when it last moved and when it began', () => {
+describe('tower/sessions: the times a page ages', () => {
+  test('a row carries its transcript path, when it last moved and when it began', () => {
     const w = mkWorld();
     mkMarker(w, 4106, { cwd: '/x/times', session: 'tick' });
     const file = mkTranscript(w, '/x/times', 'tick', ['{}'], 5);
     const [s] = list(w);
-    assertEq(s.transcript, file, 'the transcript the state was read from');
+    expect(s.transcript, 'the transcript the state was read from').toBe(file);
     const quiet = Date.now() - s.lastActivity;
-    assert(quiet > 4 * MINUTE && quiet < 6 * MINUTE, `lastActivity is the transcript mtime - five minutes ago, got ${Math.round(quiet / 1000)}s`);
+    expect(quiet > 4 * MINUTE && quiet < 6 * MINUTE, `lastActivity is the transcript mtime - five minutes ago, got ${Math.round(quiet / 1000)}s`).toBeTruthy();
     // The birth time is platform-shaped: APFS pulls it back to the aged mtime,
     // ext4 keeps creation time, which can round a moment past the Date.now()
     // sampled here. The window covers both ends instead of a one-sided <= now.
-    assert(
+    expect(
       typeof s.aliveSince === 'number'
         && s.aliveSince > Date.now() - 6 * MINUTE
         && s.aliveSince < Date.now() + 2000,
       'aliveSince is when the file was created - within the fixture\'s life',
-    );
+    ).toBeTruthy();
     cleanup(w.root);
   });
 
-  await test('with no transcript the times fall back to the marker, not to null', () => {
+  test('with no transcript the times fall back to the marker, not to null', () => {
     const w = mkWorld();
     const file = mkMarker(w, 4107, { cwd: '/x/gone', session: 'nofile' });
     const when = (Date.now() - 30 * MINUTE) / 1000;
     fs.utimesSync(file, when, when);
     const [s] = list(w);
     const quiet = Date.now() - s.lastActivity;
-    assert(quiet > 29 * MINUTE && quiet < 31 * MINUTE, 'the marker mtime is the fallback probe, and it travels');
-    assert(typeof s.aliveSince === 'number', 'so is its birth time');
+    expect(quiet > 29 * MINUTE && quiet < 31 * MINUTE, 'the marker mtime is the fallback probe, and it travels').toBeTruthy();
+    expect(typeof s.aliveSince === 'number', 'so is its birth time').toBeTruthy();
     cleanup(w.root);
   });
 
-  await test('the transcript path flattens every character outside [A-Za-z0-9]', () => {
-    assertEq(
-      transcriptPath('/home/alice', '/Users/alice/Repos/.dotfiles', 'sid'),
-      path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--dotfiles', 'sid.jsonl'),
-      'the slash and the dot',
-    );
+  test('the transcript path flattens every character outside [A-Za-z0-9]', () => {
+    expect(transcriptPath('/home/alice', '/Users/alice/Repos/.dotfiles', 'sid'), 'the slash and the dot').toBe(path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--dotfiles', 'sid.jsonl'));
     // The underscore and the space prove the rule is not just `/` and `.`: real
     // projects folders hold both, for an `_Claude/` path and for a directory name
     // carrying a space.
-    assertEq(
-      transcriptPath('/home/alice', '/Users/alice/Repos/_Claude/my app', 'sid'),
-      path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--Claude-my-app', 'sid.jsonl'),
-      'the underscore and the space too',
-    );
+    expect(transcriptPath('/home/alice', '/Users/alice/Repos/_Claude/my app', 'sid'), 'the underscore and the space too').toBe(path.join('/home/alice', '.claude', 'projects', '-Users-alice-Repos--Claude-my-app', 'sid.jsonl'));
   });
+});
 
-  group('tower/sessions: the Windows spelling');
-
-  await test('the cwd goes out in git\'s spelling and the transcript is derived from the native one', () => {
+describe('tower/sessions: the Windows spelling', () => {
+  test('the cwd goes out in git\'s spelling and the transcript is derived from the native one', () => {
     // Windows gives one directory two names, and the two readers want different
     // ones: the roster keys a repo the way git prints it (`C:/Users/x`), and
     // Claude Code names its project folder from the cwd a session was started
@@ -229,12 +219,12 @@ const cases = async () => {
     const native = 'C:\\Users\\x\\repo\\sub';
     mkMarker(w, 4501, { cwd: native, session: 'win-1' });
     const [s] = asWindows(() => list(w));
-    assertEq(s.cwd, 'C:/Users/x/repo/sub', 'the app compares this against a roster key');
-    assertEq(s.transcript, transcriptPath(w.home, native, 'win-1'), 'and the transcript is unfolded');
+    expect(s.cwd, 'the app compares this against a roster key').toBe('C:/Users/x/repo/sub');
+    expect(s.transcript, 'and the transcript is unfolded').toBe(transcriptPath(w.home, native, 'win-1'));
     cleanup(w.root);
   });
 
-  await test('a win.<session> marker is listed, placed by its folded cwd, with the transcript it names', () => {
+  test('a win.<session> marker is listed, placed by its folded cwd, with the transcript it names', () => {
     // The shape the hook's Windows branch writes: no caffeinate to record and
     // no claude pid in the name, so the file is keyed by the session and the
     // transcript is the path Claude Code itself handed the hook.
@@ -244,16 +234,16 @@ const cases = async () => {
     fs.writeFileSync(transcript, '{"customTitle":"Named on Windows"}');
     mkWinMarker(w, 'win-hold', { cwd: 'C:\\Users\\x\\repo', transcript });
     const [s] = asWindows(() => list(w));
-    assertEq(s.session, 'win-hold', 'the session from the marker');
-    assertEq(s.cwd, 'C:/Users/x/repo', 'placed by the cwd a roster key is written in');
-    assertEq(s.transcript, transcript, 'the marker names it, so nothing is derived');
-    assertEq(s.state, 'working', 'a beat this fresh is a live hold');
-    assertEq(s.chatName, 'Named on Windows', 'and its transcript is read');
-    assertEq(s.claudePid, null, 'the Windows marker carries no claude pid');
+    expect(s.session, 'the session from the marker').toBe('win-hold');
+    expect(s.cwd, 'placed by the cwd a roster key is written in').toBe('C:/Users/x/repo');
+    expect(s.transcript, 'the marker names it, so nothing is derived').toBe(transcript);
+    expect(s.state, 'a beat this fresh is a live hold').toBe('working');
+    expect(s.chatName, 'and its transcript is read').toBe('Named on Windows');
+    expect(s.claudePid, 'the Windows marker carries no claude pid').toBe(null);
     cleanup(w.root);
   });
 
-  await test('a Windows hold is alive by its heartbeat: three missed beats read stale', () => {
+  test('a Windows hold is alive by its heartbeat: three missed beats read stale', () => {
     // MSYS `ps` cannot see a native Windows process, so the holder says it is
     // alive by rewriting `beat=` every 30 seconds and the reader judges that,
     // exactly as the hook's own `held` does.
@@ -265,14 +255,14 @@ const cases = async () => {
     mkWinMarker(w, 'lastbeat', { beat: 89, cwd: 'C:\\Users\\x\\c' });
     mkWinMarker(w, 'onepast', { beat: 91, cwd: 'C:\\Users\\x\\d' });
     const bySession = Object.fromEntries(asWindows(() => list(w)).map((s) => [s.session, s.state]));
-    assertEq(bySession.fresh, 'working', 'one beat ago');
-    assertEq(bySession.gone, 'stale', 'ten minutes of silence');
-    assertEq(bySession.lastbeat, 'working', 'a second inside the three missed beats');
-    assertEq(bySession.onepast, 'stale', 'and a second outside them');
+    expect(bySession.fresh, 'one beat ago').toBe('working');
+    expect(bySession.gone, 'ten minutes of silence').toBe('stale');
+    expect(bySession.lastbeat, 'a second inside the three missed beats').toBe('working');
+    expect(bySession.onepast, 'and a second outside them').toBe('stale');
     cleanup(w.root);
   });
 
-  await test('a Windows marker whose beat is blank or not a number reads stale', () => {
+  test('a Windows marker whose beat is blank or not a number reads stale', () => {
     // The hook seeds an empty beat for a hold it armed and did not take, and
     // reads one itself only when it is digits. Anything else is not a time.
     const w = mkWorld();
@@ -285,27 +275,23 @@ const cases = async () => {
     mkWinMarker(w, 'exponent', { beat: 0, cwd: 'C:\\Users\\x\\g' });
     fs.writeFileSync(path.join(w.markerDir, 'win.exponent'), 'holder=1\nbeat=1e12\nfire=\ncron=\ncwd=C:\\Users\\x\\g\nsession=exponent\ntranscript=\n');
     const bySession = Object.fromEntries(asWindows(() => list(w)).map((s) => [s.session, s.state]));
-    assertEq(bySession.unarmed, 'stale', 'a blank beat is not a live hold');
-    assertEq(bySession.garbled, 'stale', 'and neither is a word');
-    assertEq(bySession.exponent, 'stale', 'nor a number spelled some other way');
+    expect(bySession.unarmed, 'a blank beat is not a live hold').toBe('stale');
+    expect(bySession.garbled, 'and neither is a word').toBe('stale');
+    expect(bySession.exponent, 'nor a number spelled some other way').toBe('stale');
     cleanup(w.root);
   });
 
-  await test('a Windows marker naming no transcript falls back to the derivation, in Claude Code\'s own spelling', () => {
+  test('a Windows marker naming no transcript falls back to the derivation, in Claude Code\'s own spelling', () => {
     // The hook writes an empty transcript line when the payload carried no
     // path, which is the only Windows case the derivation answers for.
     const w = mkWorld();
     mkWinMarker(w, 'win-2', { cwd: 'C:\\Users\\x\\repo', transcript: '' });
     const [s] = asWindows(() => list(w));
-    assertEq(
-      s.transcript,
-      path.join(w.home, '.claude', 'projects', 'C--Users-x-repo', 'win-2.jsonl'),
-      'the colon and the backslashes flatten like everything else',
-    );
+    expect(s.transcript, 'the colon and the backslashes flatten like everything else').toBe(path.join(w.home, '.claude', 'projects', 'C--Users-x-repo', 'win-2.jsonl'));
     cleanup(w.root);
   });
 
-  await test('the marker directory falls back to this machine\'s own temp dir, never to a literal /tmp', () => {
+  test('the marker directory falls back to this machine\'s own temp dir, never to a literal /tmp', () => {
     // Windows has no TMPDIR and no `getconf DARWIN_USER_TEMP_DIR`, and a Node
     // there reads `/tmp` as `C:\tmp`, a directory the hook never writes to.
     const w = mkWorld();
@@ -318,8 +304,8 @@ const cases = async () => {
       os.tmpdir = () => w.root;
       // No markerDir: the resolution under test is the one listSessions makes.
       const found = listSessions({ home: w.home, stateDir: w.stateDir, exec: w.exec });
-      assertEq(found.length, 1, 'the markers were found where this machine keeps its temp files');
-      assertEq(found[0].session, 'byfallback', 'the real one');
+      expect(found.length, 'the markers were found where this machine keeps its temp files').toBe(1);
+      expect(found[0].session, 'the real one').toBe('byfallback');
     } finally {
       os.tmpdir = realTmpdir;
       if (before === undefined) delete process.env.TMPDIR;
@@ -327,10 +313,10 @@ const cases = async () => {
     }
     cleanup(w.root);
   });
+});
 
-  group('tower/sessions: the chat name');
-
-  await test('the LAST customTitle wins, and it beats a later aiTitle', () => {
+describe('tower/sessions: the chat name', () => {
+  test('the LAST customTitle wins, and it beats a later aiTitle', () => {
     const w = mkWorld();
     mkMarker(w, 4201, { cwd: '/x/c', session: 'titled' });
     mkTranscript(w, '/x/c', 'titled', [
@@ -339,23 +325,23 @@ const cases = async () => {
       '{"customTitle":"Alice renamed it"}',
       '{"aiTitle":"Generated later"}',
     ]);
-    assertEq(list(w)[0].chatName, 'Alice renamed it', 'custom, last match');
+    expect(list(w)[0].chatName, 'custom, last match').toBe('Alice renamed it');
     cleanup(w.root);
   });
 
-  await test('with no custom title the last aiTitle is used, and with neither it is null', () => {
+  test('with no custom title the last aiTitle is used, and with neither it is null', () => {
     const w = mkWorld();
     mkMarker(w, 4202, { cwd: '/x/d', session: 'ai' });
     mkMarker(w, 4203, { cwd: '/x/e', session: 'untitled' });
     mkTranscript(w, '/x/d', 'ai', ['{"aiTitle":"First"}', '{"aiTitle":"Second"}']);
     mkTranscript(w, '/x/e', 'untitled', ['{"type":"user"}']);
     const byPid = Object.fromEntries(list(w).map((s) => [s.claudePid, s.chatName]));
-    assertEq(byPid[4202], 'Second', 'last aiTitle');
-    assertEq(byPid[4203], null, 'no title at all');
+    expect(byPid[4202], 'last aiTitle').toBe('Second');
+    expect(byPid[4203], 'no title at all').toBe(null);
     cleanup(w.root);
   });
 
-  await test('the title is found at the head of a transcript far larger than the read window', () => {
+  test('the title is found at the head of a transcript far larger than the read window', () => {
     const w = mkWorld();
     mkMarker(w, 4204, { cwd: '/x/big', session: 'big' });
     // The title is in the first line; everything after it is filler well past
@@ -365,11 +351,11 @@ const cases = async () => {
       `{"padding":"${'x'.repeat(4000)}"}`,
       `{"padding":"${'y'.repeat(4000)}"}`,
     ]);
-    assertEq(list(w, { nameReadBytes: 512 })[0].chatName, 'Written early', 'the head window carries it');
+    expect(list(w, { nameReadBytes: 512 })[0].chatName, 'the head window carries it').toBe('Written early');
     cleanup(w.root);
   });
 
-  await test('a title only in the middle is missed - the read is bounded, never whole', () => {
+  test('a title only in the middle is missed - the read is bounded, never whole', () => {
     const w = mkWorld();
     mkMarker(w, 4205, { cwd: '/x/mid', session: 'mid' });
     mkTranscript(w, '/x/mid', 'mid', [
@@ -377,11 +363,11 @@ const cases = async () => {
       '{"customTitle":"Buried in the middle"}',
       `{"padding":"${'b'.repeat(4000)}"}`,
     ]);
-    assertEq(list(w, { nameReadBytes: 512 })[0].chatName, null, 'outside both windows, so never read');
+    expect(list(w, { nameReadBytes: 512 })[0].chatName, 'outside both windows, so never read').toBe(null);
     cleanup(w.root);
   });
 
-  await test('a tail title wins over a head title, and the budget defaults to 256KB', () => {
+  test('a tail title wins over a head title, and the budget defaults to 256KB', () => {
     const w = mkWorld();
     mkMarker(w, 4206, { cwd: '/x/both', session: 'both' });
     const file = mkTranscript(w, '/x/both', 'both', [
@@ -389,24 +375,24 @@ const cases = async () => {
       `{"padding":"${'z'.repeat(4000)}"}`,
       '{"customTitle":"New name"}',
     ]);
-    assertEq(list(w, { nameReadBytes: 512 })[0].chatName, 'New name', 'the tail is read first');
-    assertEq(chatNameFrom(file), 'New name', 'and the default budget agrees');
-    assertEq(NAME_READ_BYTES, 262144, 'the default budget is 256KB');
+    expect(list(w, { nameReadBytes: 512 })[0].chatName, 'the tail is read first').toBe('New name');
+    expect(chatNameFrom(file), 'and the default budget agrees').toBe('New name');
+    expect(NAME_READ_BYTES, 'the default budget is 256KB').toBe(262144);
     cleanup(w.root);
   });
 
-  await test('a transcript smaller than the budget is read once, not twice', () => {
+  test('a transcript smaller than the budget is read once, not twice', () => {
     const w = mkWorld();
     mkMarker(w, 4207, { cwd: '/x/small', session: 'small' });
     const file = mkTranscript(w, '/x/small', 'small', ['{"customTitle":"Tiny"}']);
-    assertEq(chatNameFrom(file, 1024), 'Tiny', 'the tail covered the whole file');
-    assertEq(chatNameFrom(path.join(w.root, 'absent.jsonl'), 1024), null, 'a missing file is null');
+    expect(chatNameFrom(file, 1024), 'the tail covered the whole file').toBe('Tiny');
+    expect(chatNameFrom(path.join(w.root, 'absent.jsonl'), 1024), 'a missing file is null').toBe(null);
     cleanup(w.root);
   });
+});
 
-  group('tower/sessions: model and effort');
-
-  await test('the statusline cache supplies model and effort, keyed by the safe session id', () => {
+describe('tower/sessions: model and effort', () => {
+  test('the statusline cache supplies model and effort, keyed by the safe session id', () => {
     const w = mkWorld();
     mkMarker(w, 4301, { cwd: '/x/f', session: 'd931ba4c-4e3b' });
     mkTranscript(w, '/x/f', 'd931ba4c-4e3b', ['{}']);
@@ -415,12 +401,12 @@ const cases = async () => {
       effort: { level: 'high' },
     }));
     const [s] = list(w);
-    assertEq(s.model, 'claude-opus-5', 'model.id preferred');
-    assertEq(s.effort, 'high', 'effort.level');
+    expect(s.model, 'model.id preferred').toBe('claude-opus-5');
+    expect(s.effort, 'effort.level').toBe('high');
     cleanup(w.root);
   });
 
-  await test('a cache with only a display name falls back to it; no cache reads null', () => {
+  test('a cache with only a display name falls back to it; no cache reads null', () => {
     const w = mkWorld();
     mkMarker(w, 4302, { cwd: '/x/g', session: 'named' });
     mkMarker(w, 4303, { cwd: '/x/h', session: 'uncached' });
@@ -428,16 +414,16 @@ const cases = async () => {
     mkTranscript(w, '/x/h', 'uncached', ['{}']);
     fs.writeFileSync(path.join(w.stateDir, 'named.json'), JSON.stringify({ model: { display_name: 'Sonnet' } }));
     const byPid = Object.fromEntries(list(w).map((s) => [s.claudePid, s]));
-    assertEq(byPid[4302].model, 'Sonnet', 'display_name fallback');
-    assertEq(byPid[4302].effort, null, 'no effort in the cache');
-    assertEq(byPid[4303].model, null, 'a VS Code session never runs statusLine');
-    assertEq(byPid[4303].effort, null, 'and has no effort either');
+    expect(byPid[4302].model, 'display_name fallback').toBe('Sonnet');
+    expect(byPid[4302].effort, 'no effort in the cache').toBe(null);
+    expect(byPid[4303].model, 'a VS Code session never runs statusLine').toBe(null);
+    expect(byPid[4303].effort, 'and has no effort either').toBe(null);
     cleanup(w.root);
   });
+});
 
-  group('tower/sessions: what is skipped');
-
-  await test('only a name that is entirely digits is a marker - locks and stray files are not', () => {
+describe('tower/sessions: what is skipped', () => {
+  test('only a name that is entirely digits is a marker - locks and stray files are not', () => {
     const w = mkWorld();
     mkMarker(w, 4401, { cwd: '/x/i', session: 'ok' });
     mkTranscript(w, '/x/i', 'ok', ['{}']);
@@ -449,38 +435,32 @@ const cases = async () => {
     fs.writeFileSync(path.join(w.markerDir, 'README'), 'not a marker');
     fs.writeFileSync(path.join(w.markerDir, '4401.tmp'), 'caffeinate=1\ncwd=/x\nsession=s\n');
     const found = list(w);
-    assertEq(found.length, 1, 'only the marker');
-    assertEq(found[0].claudePid, 4401, 'the real one');
+    expect(found.length, 'only the marker').toBe(1);
+    expect(found[0].claudePid, 'the real one').toBe(4401);
     cleanup(w.root);
   });
 
-  await test('a marker missing any of its three fields is skipped', () => {
+  test('a marker missing any of its three fields is skipped', () => {
     const w = mkWorld();
     mkMarker(w, 4402, { body: 'cwd=/x/j\n' });
     mkMarker(w, 4403, { body: 'caffeinate=1\nsession=s\n' });
     mkMarker(w, 4404, { body: '' });
-    assertEq(list(w).length, 0, 'nothing usable');
+    expect(list(w).length, 'nothing usable').toBe(0);
     cleanup(w.root);
   });
 
-  await test('a value containing = survives the split on the first one', () => {
+  test('a value containing = survives the split on the first one', () => {
     const w = mkWorld();
     mkMarker(w, 4405, { cwd: '/x/a=b', session: 'eq' });
     mkTranscript(w, '/x/a=b', 'eq', ['{}']);
-    assertEq(list(w)[0].cwd, '/x/a=b', 'the whole remainder is the value');
+    expect(list(w)[0].cwd, 'the whole remainder is the value').toBe('/x/a=b');
     cleanup(w.root);
   });
 
-  await test('a missing marker directory is an empty crew, not an exception', () => {
+  test('a missing marker directory is an empty crew, not an exception', () => {
     const w = mkWorld();
     cleanup(w.markerDir);
-    assertEq(list(w).length, 0, 'nothing running');
+    expect(list(w).length, 'nothing running').toBe(0);
     cleanup(w.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

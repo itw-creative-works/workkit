@@ -4,7 +4,7 @@
 // checks the same convention per file.
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
 const AGENTS_DIR = path.join(REPO, 'agents');
@@ -42,31 +42,22 @@ const scan = (files) => {
   return bad;
 };
 
-const cases = async () => {
-  group('agents-lint: the shipped tree');
-
-  await test('no agent definition carries a machine-specific absolute path', () => {
+describe('agents-lint: the shipped tree', () => {
+  test('no agent definition carries a machine-specific absolute path', () => {
     const bad = scan(filesIn(AGENTS_DIR, (name) => name.endsWith('.md')));
-    assertEq(bad.join('\n'), '', `absolute paths in agent files:\n${bad.join('\n')}`);
+    expect(bad.join('\n'), `absolute paths in agent files:\n${bad.join('\n')}`).toBe('');
   });
 
   // The same convention, same sentence in AGENTS.md: hooks and skills ship on
   // the same terms as the agents do, so they are scanned by the same walk.
   for (const dir of ['hooks', 'skills']) {
-    await test(`nothing under ${dir}/ carries a machine-specific absolute path`, () => {
+    test(`nothing under ${dir}/ carries a machine-specific absolute path`, () => {
       const full = path.join(REPO, dir);
-      assert(fs.existsSync(full), `missing ${full}`);
+      expect(fs.existsSync(full), `missing ${full}`).toBeTruthy();
       const files = filesIn(full);
-      assert(files.length > 0, `no files found under ${dir}/`);
+      expect(files.length > 0, `no files found under ${dir}/`).toBeTruthy();
       const bad = scan(files);
-      assertEq(bad.join('\n'), '', `absolute paths under ${dir}/:\n${bad.join('\n')}`);
+      expect(bad.join('\n'), `absolute paths under ${dir}/:\n${bad.join('\n')}`).toBe('');
     });
   }
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

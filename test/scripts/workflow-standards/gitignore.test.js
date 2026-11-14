@@ -6,17 +6,15 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
+  describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
   SCRIPT, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION, cleanup, makeRepo, makeGhStub,
   readFile, runScript,
 } = require('./helpers');
 
-const cases = async () => {
-  group('standards.sh: .workkit/ in .gitignore');
-
-  await test('git honors the pattern: settings.json tracked, the rest ignored', () => {
+describe('standards.sh: .workkit/ in .gitignore', () => {
+  test('git honors the pattern: settings.json tracked, the rest ignored', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     runScript(repo, { pathPrefix: stub.binDir });
@@ -24,54 +22,54 @@ const cases = async () => {
     fs.writeFileSync(path.join(repo, W, 'settings.json'), '{ "version": 1 }\n');
     fs.writeFileSync(path.join(repo, W, 'capture.md'), '- a note\n');
     const ignored = (rel) => spawnSync('git', ['check-ignore', '-q', '--', rel], { cwd: repo }).status === 0;
-    assert(!ignored(`${W}/settings.json`), 'settings.json is committable');
-    assert(ignored(`${W}/capture.md`), 'the local capture file stays untracked');
+    expect(!ignored(`${W}/settings.json`), 'settings.json is committable').toBeTruthy();
+    expect(ignored(`${W}/capture.md`), 'the local capture file stays untracked').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('second run neither duplicates the lines nor reports a change', () => {
+  test('second run neither duplicates the lines nor reports a change', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     runScript(repo, { pathPrefix: stub.binDir });
     const first = readFile(path.join(repo, '.gitignore'));
     const { output: stdout } = runScript(repo, { pathPrefix: stub.binDir });
     const second = readFile(path.join(repo, '.gitignore'));
-    assertEq(second, first, 'file untouched on re-run');
-    assertEq((second.match(IGNORE_GLOB_ALL) || []).length, 1, `exactly one ${W}/* line`);
-    assert(stdout.includes('already ignored'), `reports the existing state, got: ${stdout}`);
+    expect(second, 'file untouched on re-run').toBe(first);
+    expect((second.match(IGNORE_GLOB_ALL) || []).length, `exactly one ${W}/* line`).toBe(1);
+    expect(stdout.includes('already ignored'), `reports the existing state, got: ${stdout}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('appending to a file with no trailing newline keeps the last line', () => {
+  test('appending to a file with no trailing newline keeps the last line', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/');
     runScript(repo, { pathPrefix: stub.binDir });
     const ignore = readFile(path.join(repo, '.gitignore'));
-    assert(/^node_modules\/$/m.test(ignore), `existing entry intact, got: ${ignore}`);
-    assert(IGNORE_GLOB.test(ignore), `${W}/* appended on its own line`);
+    expect(/^node_modules\/$/m.test(ignore), `existing entry intact, got: ${ignore}`).toBeTruthy();
+    expect(IGNORE_GLOB.test(ignore), `${W}/* appended on its own line`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
   // The heal is verified by outcome (git check-ignore), not by grepping for its
   // own block: both cases below can pass a string check while leaving
   // settings.json untrackable.
-  await test('a .gitignore with only .workkit/* gains the negation', () => {
+  test('a .gitignore with only .workkit/* gains the negation', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     fs.writeFileSync(path.join(repo, '.gitignore'), `node_modules\n${W}/*\n`);
     const { output: stdout } = runScript(repo, { pathPrefix: stub.binDir });
     const ignore = readFile(path.join(repo, '.gitignore'));
-    assert(IGNORE_NEGATION.test(ignore), `negation added, got: ${ignore}`);
-    assertEq((ignore.match(IGNORE_GLOB_ALL) || []).length, 1, `no duplicate ${W}/* line`);
+    expect(IGNORE_NEGATION.test(ignore), `negation added, got: ${ignore}`).toBeTruthy();
+    expect((ignore.match(IGNORE_GLOB_ALL) || []).length, `no duplicate ${W}/* line`).toBe(1);
     const ignored = (rel) => spawnSync('git', ['check-ignore', '-q', '--', rel], { cwd: repo }).status === 0;
-    assert(!ignored(`${W}/settings.json`), 'the opt-in file is committable');
-    assert(ignored(`${W}/capture.md`), 'session state still ignored');
-    assert(!stdout.includes('already ignored'), `the broken state is not reported as correct, got: ${stdout}`);
+    expect(!ignored(`${W}/settings.json`), 'the opt-in file is committable').toBeTruthy();
+    expect(ignored(`${W}/capture.md`), 'session state still ignored').toBeTruthy();
+    expect(!stdout.includes('already ignored'), `the broken state is not reported as correct, got: ${stdout}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('the DIRECTORY form .workkit/ is named as needing a human', () => {
+  test('the DIRECTORY form .workkit/ is named as needing a human', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     fs.writeFileSync(path.join(repo, '.gitignore'), `${W}/\n`);
@@ -79,17 +77,17 @@ const cases = async () => {
     // Non-zero means "not fully standardized", which is what lets the hook retry
     // next session instead of caching a half-heal. The hook handles it and still
     // exits 0, so a session start is never wedged.
-    assertEq(code, 1, 'a heal needing a human reports itself as unfinished');
+    expect(code, 'a heal needing a human reports itself as unfinished').toBe(1);
     const ignored = spawnSync('git', ['check-ignore', '-q', '--', `${W}/settings.json`], { cwd: repo }).status === 0;
-    assert(ignored, 'git cannot descend into an excluded directory, still ignored');
-    assert(stdout.includes('STILL ignored'), `the run says so plainly, got: ${stdout}`);
-    assert(stdout.includes(`.gitignore:1:${W}/`), `and names the offending line, got: ${stdout}`);
-    assert(stdout.includes('not fully standardized'), `the run reports the repo as needing attention, got: ${stdout}`);
+    expect(ignored, 'git cannot descend into an excluded directory, still ignored').toBeTruthy();
+    expect(stdout.includes('STILL ignored'), `the run says so plainly, got: ${stdout}`).toBeTruthy();
+    expect(stdout.includes(`.gitignore:1:${W}/`), `and names the offending line, got: ${stdout}`).toBeTruthy();
+    expect(stdout.includes('not fully standardized'), `the run reports the repo as needing attention, got: ${stdout}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
+});
 
-  group('standards.sh: the .gitignore basics');
-
+describe('standards.sh: the .gitignore basics', () => {
   // The two entries every repo needs, read from the engine so the suite asks
   // for whatever the engine actually heals.
   const BASICS = /^GITIGNORE_BASICS="([^"]+)"/m
@@ -97,34 +95,34 @@ const cases = async () => {
   const countLine = (text, entry) =>
     (text.match(new RegExp(`^${entry.replace(/\./g, '\\.')}$`, 'gm')) || []).length;
 
-  await test('a repo with no .gitignore gets both entries', () => {
+  test('a repo with no .gitignore gets both entries', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     const ignore = readFile(path.join(repo, '.gitignore'));
     for (const entry of BASICS) {
-      assertEq(countLine(ignore, entry), 1, `${entry} written once, got: ${ignore}`);
+      expect(countLine(ignore, entry), `${entry} written once, got: ${ignore}`).toBe(1);
     }
-    assert(output.includes(`gitignore: added ${BASICS.join(' ')}`),
-      `the run reports what it added, got: ${output}`);
+    expect(output.includes(`gitignore: added ${BASICS.join(' ')}`),
+      `the run reports what it added, got: ${output}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('a partial .gitignore gains only the missing entry', () => {
+  test('a partial .gitignore gains only the missing entry', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     fs.writeFileSync(path.join(repo, '.gitignore'), `node_modules\n${BASICS[0]}\n`);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     const ignore = readFile(path.join(repo, '.gitignore'));
-    assertEq(countLine(ignore, BASICS[0]), 1, `${BASICS[0]} not duplicated, got: ${ignore}`);
-    assertEq(countLine(ignore, BASICS[1]), 1, `${BASICS[1]} appended, got: ${ignore}`);
-    assert(output.includes(`gitignore: added ${BASICS[1]}`),
-      `only the missing one is reported, got: ${output}`);
-    assert(!output.includes(`added ${BASICS[0]}`), 'the present one is not claimed');
+    expect(countLine(ignore, BASICS[0]), `${BASICS[0]} not duplicated, got: ${ignore}`).toBe(1);
+    expect(countLine(ignore, BASICS[1]), `${BASICS[1]} appended, got: ${ignore}`).toBe(1);
+    expect(output.includes(`gitignore: added ${BASICS[1]}`),
+      `only the missing one is reported, got: ${output}`).toBeTruthy();
+    expect(!output.includes(`added ${BASICS[0]}`), 'the present one is not claimed').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('glob forms already covering them are left untouched, and a re-run changes nothing', () => {
+  test('glob forms already covering them are left untouched, and a re-run changes nothing', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const covered = `node_modules\n**/.DS_Store\n*.env\n`;
@@ -132,19 +130,13 @@ const cases = async () => {
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     const ignore = readFile(path.join(repo, '.gitignore'));
     for (const entry of BASICS) {
-      assertEq(countLine(ignore, entry), 0, `${entry} not appended over a covering glob, got: ${ignore}`);
+      expect(countLine(ignore, entry), `${entry} not appended over a covering glob, got: ${ignore}`).toBe(0);
     }
-    assert(output.includes(`${BASICS.join(' ')} already ignored`),
-      `the run reports the existing state, got: ${output}`);
+    expect(output.includes(`${BASICS.join(' ')} already ignored`),
+      `the run reports the existing state, got: ${output}`).toBeTruthy();
     const { output: second } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(path.join(repo, '.gitignore')), ignore, 'second run leaves the file alone');
-    assert(second.includes('already ignored'), `and says so, got: ${second}`);
+    expect(readFile(path.join(repo, '.gitignore')), 'second run leaves the file alone').toBe(ignore);
+    expect(second.includes('already ignored'), `and says so, got: ${second}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

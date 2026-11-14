@@ -12,7 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { assert, assertEq, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath, stubTool, joinPath } = require('../../lib/platform');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo, FIXTURE_ORIGIN, OPT_IN_SHAPES } = require('../../lib/git-repo');
@@ -214,7 +214,7 @@ const rewriteRoot = (branch) => {
   const bin = path.join(root, '.bin');
   fs.mkdirSync(bin);
   stubTool(bin, 'gh', ['#!/usr/bin/env bash', 'exit 1']);
-  const git = (...args) => assertEq(spawnSync('git', args, { cwd: root, encoding: 'utf8' }).status, 0, `git ${args.join(' ')}`);
+  const git = (...args) => expect(spawnSync('git', args, { cwd: root, encoding: 'utf8' }).status, `git ${args.join(' ')}`).toBe(0);
   git('init', '-q');
   if (branch !== null) git('symbolic-ref', 'refs/remotes/origin/HEAD', `refs/remotes/origin/${branch}`);
   return { root, PATH: joinPath(bin, process.env.PATH) };
@@ -369,7 +369,7 @@ const factsOf = (r) => {
     hashOf: async (p, text) => {
       scratch ??= materialize(r);
       const res = spawnSync('git', ['-c', `core.autocrlf=${r.autocrlf}`, 'hash-object', `--path=${relOf(p)}`, '--stdin'], { cwd: scratch, input: text, encoding: 'utf8' });
-      assertEq(res.status, 0, `git hash-object answers, stderr: ${res.stderr}`);
+      expect(res.status, `git hash-object answers, stderr: ${res.stderr}`).toBe(0);
       return res.stdout.trim();
     },
   };
@@ -396,16 +396,16 @@ const denyOf = (v) => (v && typeof v.deny === 'string' ? v.deny.replace(/\n$/, '
 const contextOf = (v) => (v && v.context !== undefined ? textOf(v.context) : '');
 
 /** The verdict denies with exactly PREFIX + `text`. */
-const blocks = (v, text, what) => assertEq(denyOf(v), `${PREFIX}${text}`, what || 'the block');
+const blocks = (v, text, what) => expect(denyOf(v), what || 'the block').toBe(`${PREFIX}${text}`);
 /** The verdict lets the commit through, saying `notice` (none by default). */
 const passes = (v, notice = '', what) => {
-  assertEq(denyOf(v), null, what || 'no block');
-  assertEq(contextOf(v), notice, `${what || 'the pass'}: its notice`);
+  expect(denyOf(v), what || 'no block').toBe(null);
+  expect(contextOf(v), `${what || 'the pass'}: its notice`).toBe(notice);
 };
 /** The record block, its log path anywhere in between. */
 const recordBlocks = (v) => {
   const deny = denyOf(v);
-  assert(deny !== null && deny.startsWith(`${PREFIX}${T.recordHead}`) && deny.endsWith(T.recordTail), `the record block, got: ${deny}`);
+  expect(deny !== null && deny.startsWith(`${PREFIX}${T.recordHead}`) && deny.endsWith(T.recordTail), `the record block, got: ${deny}`).toBeTruthy();
 };
 /** Whether the gate ran a suite: it never may. */
 const suiteRan = (r) => r.calls.run.some((c) => /^(npm|node)$/.test(path.basename(c.argv[0])) && c.argv.includes('test'));

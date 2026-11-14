@@ -1,7 +1,7 @@
 // Every doc that names the central address spells it the same way.
 const path = require('path');
 const fs = require('fs');
-const { group, test, assertEq, selfRun, summary } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
 const ADDRESS = 'https://itw-creative-works.github.io/workkit/';
@@ -14,17 +14,9 @@ const read = (rel) => fs.readFileSync(path.join(REPO, rel), 'utf8');
 const mentions = (text) => [...text.matchAll(/itw-creative-works\.github\.io\/workkit/gi)]
   .map((m) => text.slice(Math.max(0, m.index - 'https://'.length), m.index + m[0].length + 1));
 
-const cases = async () => {
-  group('docs: the central address');
-
-  await test(`every mention is spelled ${ADDRESS}`, () => {
+describe('docs: the central address', () => {
+  test(`every mention is spelled ${ADDRESS}`, () => {
     const odd = DOCS.flatMap((rel) => mentions(read(rel)).filter((m) => m !== ADDRESS).map((m) => `${rel}: ${m}`));
-    assertEq(odd.join('; '), '', 'mentions spelled another way');
+    expect(odd.join('; '), 'mentions spelled another way').toBe('');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

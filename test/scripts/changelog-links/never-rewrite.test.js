@@ -2,19 +2,16 @@
 // what it must never rewrite, and the refusals that stop it writing at all.
 // The shared prologue is ./helpers.js.
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
+const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
-  skipOnWindows, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
+  cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
 } = require('./helpers');
 
-const cases = async () => {
-  skipOnWindows();
-
-  group('changelog-links: what it must never rewrite');
-
+describe('changelog-links: what it must never rewrite', { skip: skipWithoutNodeStub() }, () => {
   // A wrong link written into the file is permanent, so each shape is pinned.
 
-  await test('an example bullet inside a fenced block is left alone', () => {
+  test('an example bullet inside a fenced block is left alone', () => {
     const fenced = '- [#4](https://github.com/o/r/issues/4) - What changed.';
     const { dir } = mkRepo([
       '# Changelog',
@@ -30,11 +27,11 @@ const cases = async () => {
     ].join('\n'), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     runScript(dir, stub);
-    assert(readLog(dir).includes(fenced), 'the documented example is not an entry');
+    expect(readLog(dir).includes(fenced), 'the documented example is not an entry').toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a Contributors heading inside a fenced example does not truncate the file', () => {
+  test('a Contributors heading inside a fenced example does not truncate the file', () => {
     // The rebuild cuts the file at the Contributors heading and re-emits the
     // tail, so the heading is only this section's when the whole remainder has
     // this section's shape; a fenced example above it is not.
@@ -64,13 +61,13 @@ const cases = async () => {
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const text = readLog(dir);
-    assert(text.includes('## [1.0.0] - 2020-01-01'), `the released section survives, got: ${text}`);
-    assert(text.includes('- (no issue) - The first release.'), 'its entry survives');
-    assertEq((text.match(/```/g) || []).length, 2, 'the fence is still closed');
+    expect(text.includes('## [1.0.0] - 2020-01-01'), `the released section survives, got: ${text}`).toBeTruthy();
+    expect(text.includes('- (no issue) - The first release.'), 'its entry survives').toBeTruthy();
+    expect((text.match(/```/g) || []).length, 'the fence is still closed').toBe(2);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a trailing rule that is not part of the section is kept', () => {
+  test('a trailing rule that is not part of the section is kept', () => {
     // `---` above the heading belongs to the rebuilt section. A CHANGELOG whose
     // last content line is its own rule must not lose it on the first backfill.
     const { dir } = mkRepo([
@@ -88,11 +85,11 @@ const cases = async () => {
     const stub = makeGhStub({ login: 'who' });
     runScript(dir, stub);
     const text = readLog(dir);
-    assertEq((text.match(/^---$/gm) || []).length, 2, `the original rule plus the section's, got: ${text}`);
+    expect((text.match(/^---$/gm) || []).length, `the original rule plus the section's, got: ${text}`).toBe(2);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('an entry in an already-released section is left alone', () => {
+  test('an entry in an already-released section is left alone', () => {
     // An old release whose issue number recurs in this range must not be
     // stamped with this release's sha.
     const old = '- [#4](https://github.com/o/r/issues/4) - The 2020 entry.';
@@ -112,44 +109,44 @@ const cases = async () => {
     ].join('\n'), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     runScript(dir, stub);
-    assert(readLog(dir).includes(old), 'history is not rewritten');
+    expect(readLog(dir).includes(old), 'history is not rewritten').toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('an entry whose issue has no closing commit is named, not passed in silence', () => {
+  test('an entry whose issue has no closing commit is named, not passed in silence', () => {
     const { dir } = mkRepo(
       CHANGELOG('- [#99](https://github.com/o/r/issues/99) - Nothing closes this one.'),
       ['feat: unrelated work with no trailer'],
     );
     const stub = makeGhStub();
     const { out } = runScript(dir, stub);
-    assert(out.includes('#99 has no closing commit'), `reports it, got: ${out}`);
-    assert(out.includes('Fixes #99'), `says how to fix it, got: ${out}`);
+    expect(out.includes('#99 has no closing commit'), `reports it, got: ${out}`).toBeTruthy();
+    expect(out.includes('Fixes #99'), `says how to fix it, got: ${out}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a flag with no value is a usage error, not a stack trace', () => {
+  test('a flag with no value is a usage error, not a stack trace', () => {
     const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     for (const flag of ['--file', '--range']) {
       const { code, out } = runScript(dir, stub, [flag]);
-      assertEq(code, 2, `${flag} exits 2`);
-      assert(out.includes(`${flag} needs a value`), `names the flag, got: ${out}`);
-      assert(!out.includes('TypeError'), `no stack trace, got: ${out}`);
+      expect(code, `${flag} exits 2`).toBe(2);
+      expect(out.includes(`${flag} needs a value`), `names the flag, got: ${out}`).toBeTruthy();
+      expect(!out.includes('TypeError'), `no stack trace, got: ${out}`).toBeTruthy();
     }
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a range git cannot read fails with a readable message', () => {
+  test('a range git cannot read fails with a readable message', () => {
     const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     const stub = makeGhStub();
     const { code, out } = runScript(dir, stub, ['--range', 'v9.9.9..HEAD']);
-    assertEq(code, 1, 'exit 1');
-    assert(out.includes('cannot read the range'), `says so, got: ${out}`);
+    expect(code, 'exit 1').toBe(1);
+    expect(out.includes('cannot read the range'), `says so, got: ${out}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('--dry-run reports the count and writes nothing', () => {
+  test('--dry-run reports the count and writes nothing', () => {
     const { dir } = mkRepo(
       CHANGELOG('- [#4](https://github.com/o/r/issues/4) - Plugins install from settings.json.'),
       ['refactor: x\n\nFixes #4'],
@@ -157,48 +154,42 @@ const cases = async () => {
     const before = readLog(dir);
     const stub = makeGhStub();
     const { out } = runScript(dir, stub, ['--dry-run']);
-    assert(out.includes('would fill 1'), `reports the count, got: ${out}`);
-    assertEq(readLog(dir), before, 'file untouched');
+    expect(out.includes('would fill 1'), `reports the count, got: ${out}`).toBeTruthy();
+    expect(readLog(dir), 'file untouched').toBe(before);
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('--range limits which commits are considered', () => {
+  test('--range limits which commits are considered', () => {
     const { dir } = mkRepo(
       CHANGELOG('- [#4](https://github.com/o/r/issues/4) - Plugins install from settings.json.'),
       ['refactor: x\n\nFixes #4', 'chore: later work'],
     );
     const stub = makeGhStub();
     const { out } = runScript(dir, stub, ['--range', 'HEAD~1..HEAD', '--dry-run']);
-    assert(out.includes('nothing to fill in'), `the closing commit is outside the range, got: ${out}`);
+    expect(out.includes('nothing to fill in'), `the closing commit is outside the range, got: ${out}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a repo with no GitHub remote exits non-zero instead of writing a broken link', () => {
+  test('a repo with no GitHub remote exits non-zero instead of writing a broken link', () => {
     const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     git(dir, 'remote', 'set-url', 'origin', 'https://gitlab.com/o/r.git');
     const stub = makeGhStub();
     const { code, out } = runScript(dir, stub);
-    assertEq(code, 1, 'exit 1');
-    assert(out.includes('not a GitHub remote'), `says why, got: ${out}`);
+    expect(code, 'exit 1').toBe(1);
+    expect(out.includes('not a GitHub remote'), `says why, got: ${out}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
 
-  await test('a repo with no origin remote gets its own message', () => {
+  test('a repo with no origin remote gets its own message', () => {
     // Distinct from "not a GitHub remote": the fix here is adding a remote,
     // not changing one.
     const { dir } = mkRepo(CHANGELOG('- [#4](x) - Text.'), ['feat: x\n\nFixes #4']);
     git(dir, 'remote', 'remove', 'origin');
     const stub = makeGhStub();
     const { code, out } = runScript(dir, stub);
-    assertEq(code, 1, 'exit 1');
-    assert(out.includes('no origin remote'), `says so, got: ${out}`);
-    assert(!out.includes('not a GitHub remote'), `not the wrong message, got: ${out}`);
+    expect(code, 'exit 1').toBe(1);
+    expect(out.includes('no origin remote'), `says so, got: ${out}`).toBeTruthy();
+    expect(!out.includes('not a GitHub remote'), `not the wrong message, got: ${out}`).toBeTruthy();
     cleanup(dir); cleanup(stub.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

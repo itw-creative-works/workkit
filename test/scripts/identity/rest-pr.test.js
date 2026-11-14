@@ -8,10 +8,10 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp, start, until,
+  describe, test, expect, mkTmp, start, until,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, IS_WINDOWS, NO_NODE_STUB, shellPath,
+  BASH, NO_RC, skipWithoutNodeStub, shellPath,
 } = require('../../lib/platform');
 const { makeGhStub, ghRequests } = require('../../lib/gh-stub');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
@@ -90,17 +90,13 @@ const checksApi = (runPages, statuses = []) => ({
 /** Each printed check line as `[name, bucket, url]`, sorted by name, every line four tab-separated fields. */
 const checkLines = (res) => lines(res.stdout).map((l) => {
   const f = l.split('\t');
-  assertEq(f.length, 4, `a check line is name, bucket, elapsed, url, got: ${JSON.stringify(l)}`);
+  expect(f.length, `a check line is name, bucket, elapsed, url, got: ${JSON.stringify(l)}`).toBe(4);
   return [f[0], f[1], f[3]];
 }).sort((a, b) => a[0].localeCompare(b[0]));
 
-const cases = async () => {
-  // The shim starts the stub `gh` from Node through rest.js, as rest.test.js does; on Windows these skip alike.
-  const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
-
-  group('identity/gh in a cloud session: pr create');
-
-  await runTest('pr create with no --head or --base posts the current branch against the repo\'s default branch and prints the PR\'s URL', async () => {
+// The shim starts the stub `gh` from Node through rest.js, as rest.test.js does; on Windows these skip alike.
+describe('identity/gh in a cloud session: pr create', () => {
+  test('pr create with no --head or --base posts the current branch against the repo\'s default branch and prints the PR\'s URL', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       'GET repos/acme/rostered': { body: { full_name: 'acme/rostered', default_branch: 'develop' } },
       [`POST ${PULLS}`]: { status: 201, body: restPull(42, { base: 'develop' }) },
@@ -110,11 +106,11 @@ const cases = async () => {
     assertSame(routes(writes(res)), [['POST', PULLS]], 'one POST to the pulls');
     const sent = writes(res)[0].body;
     assertSame([sent.title, sent.body, sent.base], ['feat: a thing', 'Fixes #7', 'develop'], 'title, body, and the default branch as base');
-    assert(['claude/work', 'acme:claude/work'].includes(sent.head), `the head is the current branch, got: ${sent.head}`);
-    assertEq(res.stdout, 'https://github.com/acme/rostered/pull/42\n', 'the PR\'s URL, as gh prints it');
+    expect(['claude/work', 'acme:claude/work'].includes(sent.head), `the head is the current branch, got: ${sent.head}`).toBeTruthy();
+    expect(res.stdout, 'the PR\'s URL, as gh prints it').toBe('https://github.com/acme/rostered/pull/42\n');
   });
 
-  await runTest('pr create -t -F -H -B posts the given title, the file\'s text as body, and the named head and base', async () => {
+  test('pr create -t -F -H -B posts the given title, the file\'s text as body, and the named head and base', { skip: skipWithoutNodeStub() }, async () => {
     const dir = mkTmp('wk-gh-rest-pr-body-');
     const file = path.join(dir, 'body.md');
     fs.writeFileSync(file, 'Fixes #7\nFixes #8\n');
@@ -124,30 +120,30 @@ const cases = async () => {
     assertSame(routes(writes(res)), [['POST', PULLS]], 'one POST to the pulls');
     const sent = writes(res)[0].body;
     assertSame([sent.title, sent.body, sent.base], ['fix: a bug', 'Fixes #7\nFixes #8\n', 'release'], 'title, the file\'s body, base');
-    assert(['feature/x', 'acme:feature/x'].includes(sent.head), `the named head, got: ${sent.head}`);
-    assertEq(res.stdout, 'https://github.com/acme/rostered/pull/43\n', 'the PR\'s URL');
+    expect(['feature/x', 'acme:feature/x'].includes(sent.head), `the named head, got: ${sent.head}`).toBeTruthy();
+    expect(res.stdout, 'the PR\'s URL').toBe('https://github.com/acme/rostered/pull/43\n');
   });
 
-  await runTest('pr create on a detached HEAD with no --head is refused with a line and opens no PR', async () => {
+  test('pr create on a detached HEAD with no --head is refused with a line and opens no PR', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       'GET repos/acme/rostered': { body: { full_name: 'acme/rostered', default_branch: 'main' } },
       [`POST ${PULLS}`]: { status: 201, body: restPull(44) },
     };
     const res = runCloud(['pr', 'create', '-t', 'x', '-b', 'y'], { api, prep: (w) => git(w.repo, w.home, 'checkout', '-q', '--detach') });
-    assert(res.code !== 0, `a refusal, got exit ${res.code}, stdout: ${res.stdout}`);
-    assertEq(lines(res.stderr).length, 1, `one line on stderr, got: ${JSON.stringify(res.stderr)}`);
+    expect(res.code !== 0, `a refusal, got exit ${res.code}, stdout: ${res.stdout}`).toBeTruthy();
+    expect(lines(res.stderr).length, `one line on stderr, got: ${JSON.stringify(res.stderr)}`).toBe(1);
     assertSame(writes(res), [], 'no PR is opened');
   });
+});
 
-  group('identity/gh in a cloud session: pr list');
-
-  await runTest('pr list --head --state open reads every page with head=<owner>:<branch> and prints gh\'s fields, an open PR\'s mergeCommit null', async () => {
+describe('identity/gh in a cloud session: pr list', () => {
+  test('pr list --head --state open reads every page with head=<owner>:<branch> and prints gh\'s fields, an open PR\'s mergeCommit null', { skip: skipWithoutNodeStub() }, async () => {
     const api = { [`GET ${PULLS}`]: { pages: [[restPull(12, { draft: true })], [restPull(9, { title: 'Older' })]] } };
     const fields = 'number,url,title,state,headRefName,headRefOid,baseRefName,isDraft,mergedAt,mergeCommit';
     const res = runCloud(['pr', 'list', '--head', 'claude/work', '--state', 'open', '--json', fields], { api });
     assertOk(res, 'pr list');
     const first = asked(res, PULLS)[0];
-    assert(first, `it read the pulls route, got: ${JSON.stringify(res.requests)}`);
+    expect(first, `it read the pulls route, got: ${JSON.stringify(res.requests)}`).toBeTruthy();
     assertSame([first.query.head, first.query.state], ['acme:claude/work', 'open'], `the head and state filters, got: ${JSON.stringify(first.query)}`);
     const printed = printedJson(res, 'pr list');
     assertSame(printed.map((p) => p.number), [12, 9], 'both pages, in order');
@@ -165,7 +161,7 @@ const cases = async () => {
     }, 'gh\'s fields for an open draft');
   });
 
-  await runTest('pr list --state merged reads the closed pulls and keeps only the merged, state MERGED with its merge commit', async () => {
+  test('pr list --state merged reads the closed pulls and keeps only the merged, state MERGED with its merge commit', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       [`GET ${PULLS}`]: {
         pages: [[restPull(12, { state: 'closed', mergedAt: '2026-11-05T11:00:00Z' }), restPull(11, { state: 'closed' })]],
@@ -173,13 +169,13 @@ const cases = async () => {
     };
     const res = runCloud(['pr', 'list', '--state', 'merged', '--json', 'number,state,mergedAt,mergeCommit'], { api });
     assertOk(res, 'pr list --state merged');
-    assertEq(asked(res, PULLS)[0].query.state, 'closed', 'REST has no merged state: it asks for closed');
+    expect(asked(res, PULLS)[0].query.state, 'REST has no merged state: it asks for closed').toBe('closed');
     assertSame(printedJson(res, '--state merged'), [{
       number: 12, state: 'MERGED', mergedAt: '2026-11-05T11:00:00Z', mergeCommit: { oid: MERGE_SHA },
     }], 'the merged one alone, the closed-unmerged dropped');
   });
 
-  await runTest('pr list with no --json prints one row per PR, number, title, head, STATE, createdAt; --limit caps it', async () => {
+  test('pr list with no --json prints one row per PR, number, title, head, STATE, createdAt; --limit caps it', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       [`GET ${PULLS}`]: {
         pages: [[
@@ -191,16 +187,16 @@ const cases = async () => {
     };
     const res = runCloud(['pr', 'list', '--limit', '2'], { api });
     assertOk(res, 'pr list');
-    assertEq(res.stdout, [
+    expect(res.stdout, 'gh\'s rows, two of three').toBe([
       '14\tThird\tclaude/c\tOPEN\t2026-10-20T08:00:00Z',
       '13\tSecond\tclaude/b\tOPEN\t2026-10-21T08:00:00Z',
       '',
-    ].join('\n'), 'gh\'s rows, two of three');
+    ].join('\n'));
   });
+});
 
-  group('identity/gh in a cloud session: pr view');
-
-  await runTest('pr view by number, by URL and by branch reads that PR, a merged one printing MERGED and its merge commit', async () => {
+describe('identity/gh in a cloud session: pr view', () => {
+  test('pr view by number, by URL and by branch reads that PR, a merged one printing MERGED and its merge commit', { skip: skipWithoutNodeStub() }, async () => {
     const merged = restPull(12, { state: 'closed', mergedAt: '2026-11-05T11:00:00Z' });
     const api = {
       [`GET ${PULLS}/12`]: { body: merged },
@@ -214,16 +210,16 @@ const cases = async () => {
 
     const byUrl = runCloud(['pr', 'view', 'https://github.com/acme/rostered/pull/12', '--json', 'number'], { api });
     assertOk(byUrl, 'pr view <url>');
-    assertEq(asked(byUrl, `${PULLS}/12`).length, 1, `the URL's number is read, got: ${JSON.stringify(byUrl.requests)}`);
+    expect(asked(byUrl, `${PULLS}/12`).length, `the URL's number is read, got: ${JSON.stringify(byUrl.requests)}`).toBe(1);
     assertSame(printedJson(byUrl, 'pr view <url>'), { number: 12 }, 'that PR');
 
     const byBranch = runCloud(['pr', 'view', 'claude/other', '--json', 'number,headRefName'], { api });
     assertOk(byBranch, 'pr view <branch>');
-    assertEq(asked(byBranch, PULLS)[0].query.head, 'acme:claude/other', 'the branch is the head filter');
+    expect(asked(byBranch, PULLS)[0].query.head, 'the branch is the head filter').toBe('acme:claude/other');
     assertSame(printedJson(byBranch, 'pr view <branch>'), { number: 15, headRefName: 'claude/other' }, 'that branch\'s PR');
   });
 
-  await runTest('pr view with no argument is the current branch\'s open PR; with none, gh\'s no-pull-requests line and exit 1', async () => {
+  test('pr view with no argument is the current branch\'s open PR; with none, gh\'s no-pull-requests line and exit 1', { skip: skipWithoutNodeStub() }, async () => {
     const found = runCloud(['pr', 'view', '--json', 'number'], { api: { [`GET ${PULLS}`]: { pages: [[restPull(12)]] } } });
     assertOk(found, 'pr view');
     const query = asked(found, PULLS)[0].query;
@@ -231,38 +227,38 @@ const cases = async () => {
     assertSame(printedJson(found, 'pr view'), { number: 12 }, 'that PR');
 
     const none = runCloud(['pr', 'view', '--json', 'number'], { api: { [`GET ${PULLS}`]: { pages: [[]] } } });
-    assertEq(none.code, 1, `exit 1, stdout: ${none.stdout}, stderr: ${none.stderr}`);
-    assert(none.stderr.includes('no pull requests found for branch "claude/work"'), `gh's line, got: ${none.stderr}`);
+    expect(none.code, `exit 1, stdout: ${none.stdout}, stderr: ${none.stderr}`).toBe(1);
+    expect(none.stderr.includes('no pull requests found for branch "claude/work"'), `gh's line, got: ${none.stderr}`).toBeTruthy();
   });
 
-  await runTest('pr view with no --json prints the title, state, number and url lines, then --, then the body', async () => {
+  test('pr view with no --json prints the title, state, number and url lines, then --, then the body', { skip: skipWithoutNodeStub() }, async () => {
     const api = { [`GET ${PULLS}/12`]: { body: restPull(12, { title: 'feat: a thing', body: 'Fixes #7\n\nThe change.' }) } };
     const res = runCloud(['pr', 'view', '12'], { api });
     assertOk(res, 'pr view 12');
     const head = 'title:\tfeat: a thing\nstate:\tOPEN\nnumber:\t12\nurl:\thttps://github.com/acme/rostered/pull/12\n--\nFixes #7\n\nThe change.';
-    assert(res.stdout.startsWith(head), `gh's header then the body, got: ${JSON.stringify(res.stdout)}`);
+    expect(res.stdout.startsWith(head), `gh's header then the body, got: ${JSON.stringify(res.stdout)}`).toBeTruthy();
   });
 
-  await test('pr view --json naming a field the shim does not serve exits 1 with one line naming it', async () => {
+  test('pr view --json naming a field the shim does not serve exits 1 with one line naming it', async () => {
     const res = runCloud(['pr', 'view', '12', '--json', 'number,reviews'], { api: { [`GET ${PULLS}/12`]: { body: restPull(12) } } });
-    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
+    expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
     const said = lines(`${res.stdout}${res.stderr}`);
-    assertEq(said.length, 1, `one line, got: ${JSON.stringify(said)}`);
-    assert(said[0].includes('reviews'), `the line names the field, got: ${said[0]}`);
+    expect(said.length, `one line, got: ${JSON.stringify(said)}`).toBe(1);
+    expect(said[0].includes('reviews'), `the line names the field, got: ${said[0]}`).toBeTruthy();
   });
+});
 
-  group('identity/gh in a cloud session: pr checks');
-
-  await runTest('pr checks reads the head sha\'s check runs on every page and its statuses, one line each, exit 0 when all pass or skip', async () => {
+describe('identity/gh in a cloud session: pr checks', () => {
+  test('pr checks reads the head sha\'s check runs on every page and its statuses, one line each, exit 0 when all pass or skip', { skip: skipWithoutNodeStub() }, async () => {
     const api = checksApi(
       [runsPage([checkRun('build', 'completed', 'success'), checkRun('lint', 'completed', 'skipped')], 3), runsPage([checkRun('deploy', 'completed', 'success')], 3)],
       [['ci/legacy', 'success']],
     );
     const res = runCloud(['pr', 'checks', '12'], { api });
     assertOk(res, 'pr checks');
-    assert(asked(res, `repos/acme/rostered/commits/${HEAD_SHA}/check-runs`).length > 0, `the head sha's check runs are read, got: ${JSON.stringify(res.requests)}`);
-    assert(asked(res, `repos/acme/rostered/commits/${HEAD_SHA}/status`).length > 0, `and its combined status, got: ${JSON.stringify(res.requests)}`);
-    assertEq(asked(res, `repos/acme/rostered/commits/${HEAD_SHA}/status`)[0].query.per_page, '100', 'up to 100 statuses, past the route\'s 30 default');
+    expect(asked(res, `repos/acme/rostered/commits/${HEAD_SHA}/check-runs`).length > 0, `the head sha's check runs are read, got: ${JSON.stringify(res.requests)}`).toBeTruthy();
+    expect(asked(res, `repos/acme/rostered/commits/${HEAD_SHA}/status`).length > 0, `and its combined status, got: ${JSON.stringify(res.requests)}`).toBeTruthy();
+    expect(asked(res, `repos/acme/rostered/commits/${HEAD_SHA}/status`)[0].query.per_page, 'up to 100 statuses, past the route\'s 30 default').toBe('100');
     assertSame(checkLines(res), [
       ['build', 'pass', 'https://github.com/acme/rostered/actions/runs/1/job/build'],
       ['ci/legacy', 'pass', 'https://ci.example.com/ci/legacy'],
@@ -271,38 +267,38 @@ const cases = async () => {
     ], 'every run on both pages and the status, each bucketed');
   });
 
-  await runTest('pr checks exits 1 when a run or a status fails, and 8 when one is pending and none fails', async () => {
+  test('pr checks exits 1 when a run or a status fails, and 8 when one is pending and none fails', { skip: skipWithoutNodeStub() }, async () => {
     const failed = runCloud(['pr', 'checks', '12'], {
       api: checksApi([runsPage([checkRun('build', 'completed', 'success'), checkRun('test', 'completed', 'failure')])]),
     });
-    assertEq(failed.code, 1, `a failed run exits 1, stdout: ${failed.stdout}, stderr: ${failed.stderr}`);
+    expect(failed.code, `a failed run exits 1, stdout: ${failed.stdout}, stderr: ${failed.stderr}`).toBe(1);
     assertSame(checkLines(failed).map((l) => l.slice(0, 2)), [['build', 'pass'], ['test', 'fail']], 'the failed run reads fail');
 
     const errored = runCloud(['pr', 'checks', '12'], {
       api: checksApi([runsPage([checkRun('build', 'completed', 'success')])], [['ci/legacy', 'error']]),
     });
-    assertEq(errored.code, 1, `an errored status exits 1, stdout: ${errored.stdout}, stderr: ${errored.stderr}`);
+    expect(errored.code, `an errored status exits 1, stdout: ${errored.stdout}, stderr: ${errored.stderr}`).toBe(1);
 
     const pending = runCloud(['pr', 'checks', '12'], {
       api: checksApi([runsPage([checkRun('build', 'completed', 'success'), checkRun('test', 'in_progress')])], [['ci/legacy', 'pending']]),
     });
-    assertEq(pending.code, 8, `a pending run exits 8, stdout: ${pending.stdout}, stderr: ${pending.stderr}`);
+    expect(pending.code, `a pending run exits 8, stdout: ${pending.stdout}, stderr: ${pending.stderr}`).toBe(8);
     assertSame(checkLines(pending).map((l) => l.slice(0, 2)), [['build', 'pass'], ['ci/legacy', 'pending'], ['test', 'pending']],
       'the run in progress and the pending status read pending');
   });
 
-  await runTest('pr checks with no argument on a branch whose PR has no checks prints gh\'s no-checks line, exit 1', async () => {
+  test('pr checks with no argument on a branch whose PR has no checks prints gh\'s no-checks line, exit 1', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       [`GET ${PULLS}`]: { pages: [[restPull(12)]] },
       [`GET repos/acme/rostered/commits/${HEAD_SHA}/check-runs`]: { pages: [runsPage([])] },
       [`GET repos/acme/rostered/commits/${HEAD_SHA}/status`]: { body: combined([]) },
     };
     const res = runCloud(['pr', 'checks'], { api });
-    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
-    assert(`${res.stdout}${res.stderr}`.includes('no checks reported on the \'claude/work\' branch'), `gh's line, got: ${res.stderr}`);
+    expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
+    expect(`${res.stdout}${res.stderr}`.includes('no checks reported on the \'claude/work\' branch'), `gh's line, got: ${res.stderr}`).toBeTruthy();
   });
 
-  await runTest('pr checks --watch reads again until no check is pending, then exits as the last read says', async () => {
+  test('pr checks --watch reads again until no check is pending, then exits as the last read says', { skip: skipWithoutNodeStub() }, async () => {
     const world = mkWorld();
     const stub = makeGhStub({ api: checksApi([runsPage([checkRun('build', 'in_progress')])]) });
     const runsRoute = `repos/acme/rostered/commits/${HEAD_SHA}/check-runs`;
@@ -310,23 +306,23 @@ const cases = async () => {
     const child = start(BASH, [...NO_RC, shellPath(world.shim), 'pr', 'checks', '12', '--watch', '--interval', '1'],
       { cwd: world.repo, env: cloudEnv(world, stub) });
     try {
-      assert(await until(() => runReads() >= 1), `the first read happens, stderr: ${child.stderr()}`);
+      expect(await until(() => runReads() >= 1), `the first read happens, stderr: ${child.stderr()}`).toBeTruthy();
       // The stub reads its fixture file on every call; swap it whole, so no read sees half of it.
       const fixture = path.join(stub.dir, 'api.json');
       fs.writeFileSync(`${fixture}.next`, JSON.stringify(checksApi([runsPage([checkRun('build', 'completed', 'success')])])));
       fs.renameSync(`${fixture}.next`, fixture);
       const done = await child.done;
-      assertEq(done.status, 0, `exit 0 once the run passed, stdout: ${child.stdout()}, stderr: ${child.stderr()}`);
-      assert(runReads() >= 2, `it read again after the pending read, got ${runReads()} reads`);
-      assert(lines(child.stdout()).some((l) => l.startsWith('build\tpass\t')), `the last read's line, got: ${child.stdout()}`);
+      expect(done.status, `exit 0 once the run passed, stdout: ${child.stdout()}, stderr: ${child.stderr()}`).toBe(0);
+      expect(runReads() >= 2, `it read again after the pending read, got ${runReads()} reads`).toBeTruthy();
+      expect(lines(child.stdout()).some((l) => l.startsWith('build\tpass\t')), `the last read's line, got: ${child.stdout()}`).toBeTruthy();
     } finally {
       await child.end('SIGKILL');
     }
   });
+});
 
-  group('identity/gh in a cloud session: pr merge');
-
-  await runTest('pr merge PUTs the method, subject and body, from -m/-s/-r, -t, -b or -F, and prints nothing', async () => {
+describe('identity/gh in a cloud session: pr merge', () => {
+  test('pr merge PUTs the method, subject and body, from -m/-s/-r, -t, -b or -F, and prints nothing', { skip: skipWithoutNodeStub() }, async () => {
     const dir = mkTmp('wk-gh-rest-pr-merge-');
     const file = path.join(dir, 'body.md');
     fs.writeFileSync(file, 'Fixes #7\n');
@@ -344,23 +340,23 @@ const cases = async () => {
       assertSame(routes(writes(res)), [['PUT', `${PULLS}/12/merge`]], `${method}: one PUT to the merge route`);
       const sent = writes(res)[0].body;
       assertSame([sent.merge_method, sent.commit_title, sent.commit_message], [method, 'feat: a thing (#12)', body], `${method}: method, title, message`);
-      assertEq(res.stdout, '', `${method}: success prints nothing`);
+      expect(res.stdout, `${method}: success prints nothing`).toBe('');
     }
   });
 
-  await runTest('pr merge with no method, or with two, exits 1 and merges nothing; with none, gh\'s required line', async () => {
+  test('pr merge with no method, or with two, exits 1 and merges nothing; with none, gh\'s required line', { skip: skipWithoutNodeStub() }, async () => {
     const api = { [`GET ${PULLS}/12`]: { body: restPull(12) }, [`PUT ${PULLS}/12/merge`]: { body: { merged: true } } };
     const none = runCloud(['pr', 'merge', '12', '--subject', 'x'], { api });
-    assertEq(none.code, 1, `exit 1, stdout: ${none.stdout}, stderr: ${none.stderr}`);
-    assert(none.stderr.includes('gh: --merge, --rebase, or --squash required when not running interactively'), `gh's line, got: ${none.stderr}`);
+    expect(none.code, `exit 1, stdout: ${none.stdout}, stderr: ${none.stderr}`).toBe(1);
+    expect(none.stderr.includes('gh: --merge, --rebase, or --squash required when not running interactively'), `gh's line, got: ${none.stderr}`).toBeTruthy();
     assertSame(writes(none), [], 'nothing merged');
 
     const two = runCloud(['pr', 'merge', '12', '--merge', '--squash'], { api });
-    assertEq(two.code, 1, `two methods exit 1, stdout: ${two.stdout}, stderr: ${two.stderr}`);
+    expect(two.code, `two methods exit 1, stdout: ${two.stdout}, stderr: ${two.stderr}`).toBe(1);
     assertSame(writes(two), [], 'nothing merged');
   });
 
-  await runTest('pr merge --delete-branch deletes the head branch after the merge; a refused delete leaves the merge standing with its line, exit 0', async () => {
+  test('pr merge --delete-branch deletes the head branch after the merge; a refused delete leaves the merge standing with its line, exit 0', { skip: skipWithoutNodeStub() }, async () => {
     const ref = 'repos/acme/rostered/git/refs/heads/claude/work';
     const base = {
       [`GET ${PULLS}/12`]: { body: restPull(12) },
@@ -375,10 +371,10 @@ const cases = async () => {
     const left = runCloud(['pr', 'merge', '--merge', '-d'], { api: { ...base, [`DELETE ${ref}`]: { status: 403, body: refusal } } });
     assertOk(left, 'pr merge -d, the delete refused');
     assertSame(routes(writes(left)), [['PUT', `${PULLS}/12/merge`], ['DELETE', ref]], 'the current branch\'s PR merged, then the delete tried');
-    assert(left.stderr.includes('gh: merged #12; branch claude/work left, this cloud session cannot delete branches'), `the left line, got: ${left.stderr}`);
+    expect(left.stderr.includes('gh: merged #12; branch claude/work left, this cloud session cannot delete branches'), `the left line, got: ${left.stderr}`).toBeTruthy();
   });
 
-  await runTest('pr merge --delete-branch on a fork\'s PR merges and deletes no branch: the same-named one in the base repo is not the fork\'s', async () => {
+  test('pr merge --delete-branch on a fork\'s PR merges and deletes no branch: the same-named one in the base repo is not the fork\'s', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       [`GET ${PULLS}/12`]: { body: restPull(12, { headRepo: 'fork/rostered' }) },
       [`PUT ${PULLS}/12/merge`]: { body: { sha: MERGE_SHA, merged: true, message: 'Pull Request successfully merged' } },
@@ -389,33 +385,26 @@ const cases = async () => {
     assertSame(routes(writes(res)), [['PUT', `${PULLS}/12/merge`]], 'the merge alone');
   });
 
-  await runTest('a merge GitHub refuses exits 1 with its message and deletes no branch', async () => {
+  test('a merge GitHub refuses exits 1 with its message and deletes no branch', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       [`GET ${PULLS}/12`]: { body: restPull(12) },
       [`PUT ${PULLS}/12/merge`]: { status: 405, body: { message: 'Pull Request is not mergeable' } },
       'DELETE repos/acme/rostered/git/refs/heads/claude/work': { status: 204 },
     };
     const res = runCloud(['pr', 'merge', '12', '--merge', '--delete-branch'], { api });
-    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
-    assert(res.stderr.includes('Pull Request is not mergeable'), `GitHub's message, got: ${res.stderr}`);
+    expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr.includes('Pull Request is not mergeable'), `GitHub's message, got: ${res.stderr}`).toBeTruthy();
     assertSame(writes(res).filter((r) => r.method === 'DELETE'), [], 'no branch is deleted');
   });
+});
 
-  group('identity/gh in a cloud session: pr subcommands REST does not serve');
-
-  await runTest('pr diff runs the real gh once, whole, with no gh api call', async () => {
+describe('identity/gh in a cloud session: pr subcommands REST does not serve', () => {
+  test('pr diff runs the real gh once, whole, with no gh api call', { skip: skipWithoutNodeStub() }, async () => {
     const argv = ['pr', 'diff', '12', '--name-only'];
     const res = runCloud(argv);
     assertOk(res, 'pr diff');
-    assertEq(res.calls.length, 1, `the real gh runs once, got ${fmtCalls(res.calls)}`);
-    assert(eqArgv(res.calls[0], argv), `every argument passed through, got ${fmtCalls(res.calls)}`);
-    assertEq(res.requests.length, 0, `no gh api call, got: ${JSON.stringify(res.requests)}`);
+    expect(res.calls.length, `the real gh runs once, got ${fmtCalls(res.calls)}`).toBe(1);
+    expect(eqArgv(res.calls[0], argv), `every argument passed through, got ${fmtCalls(res.calls)}`).toBeTruthy();
+    expect(res.requests.length, `no gh api call, got: ${JSON.stringify(res.requests)}`).toBe(0);
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

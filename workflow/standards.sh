@@ -223,7 +223,6 @@ sweep_public_mirror
 check_issue_labels
 check_hook_layer
 check_test_runner
-check_test_folder
 
 if [[ "$needs_attention" -eq 1 ]]; then
   wk_warn "standards: $root is not fully standardized; see the warning above"

@@ -34,8 +34,7 @@ user-invocable: true
 ## The kit's verbs run bare
 
 - Every allow-listed verb (each `workkit ship` verb but `deploy`, and `workkit review ...`) runs as its own Bash call from the repo root (`cd` there in a call of its own first).
-  - It runs as the bare command: no `cd <path> &&`, no pipe, no redirect, no trailing `; echo`, no variable prefix, since its allow rule matches the bare form only.
-  - `workflow:bare-call` names a verb it finds inside a compound or with a command substitution in an argument.
+  - It runs as the bare command: no `cd <path> &&`, no pipe, no redirect, no trailing `; echo`, no variable prefix, no command substitution in an argument, since its allow rule matches the bare form only.
 - A refused verb is first checked for its shape: one run in a compound, behind a prefix or with a redirect is retried bare. Only a refused BARE call is reported, with the allow line `workkit doctor` names; the command is never handed to the owner to run.
 
 ## Step 0: Resolve target project
@@ -267,7 +266,7 @@ user-invocable: true
   4. The tree's version is not yet on npm for the package. The run asks per package, and a version already out is a skip, never a failure: a version landed in an earlier session, or left after a crash mid-publish, is the normal rerun.
 - Then ONE command publishes the plan: `workkit ship publish`, prepare its own call before it. Per package, in plan order, it asks npm, skips a version already out, and runs `npm publish --workspace=<name>` (plain `npm publish` without `workspaces`; `--access public` when scoped). The first failure stops it, package named, non-zero; a rerun resumes. All out: one line.
 - A run that published at least one package then runs the repo's afterPublish hooks (`hooks.afterPublish`, the same rule as Step 4's), so it gets the same long timeout; report its `ship-hooks:` lines. A failed hook exits 1 with `publish-plan: <N> published; an afterPublish hook failed.`, and what published stands. A run that publishes nothing runs none.
-- The agent runs it; it never hands the command back to the owner. Never a shell loop or a compound with prepare: when `workkit ship publish` is unavailable, ONE plain `npm publish --workspace=<name> [--access public]` per Bash call, in plan order; `safety:release-taken` checks each one.
+- The agent runs it; it never hands the command back to the owner. Never a shell loop or a compound with prepare: when `workkit ship publish` is unavailable, ONE plain `npm publish --workspace=<name> [--access public]` per Bash call, in plan order, each after `npm view <name>@<version> version` shows the version not yet out.
 - `workkit setup` keeps the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) in the global `~/.claude/settings.json`, and `workkit doctor` names a missing one. A refused call follows § The kit's verbs run bare. A refused plan or failed check: print which and STOP.
 
 ## Step 6: Deploy (if applicable)

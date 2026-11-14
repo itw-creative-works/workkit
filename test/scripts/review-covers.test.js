@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, NO_RC, shellPath, which, toolStem, basePathWithout,
 } = require('../lib/platform');
@@ -47,12 +47,11 @@ const spawnIn = (w, script, cwd = w.repo, args = []) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(script), ...args], {
     cwd, env: w.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `the script finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-const writeMarker = (w, cwd = w.repo) => assertEq(spawnIn(w, MARKER_SCRIPT, cwd, ['full']).code, 0,
-  'mark.sh full wrote the markers');
+const writeMarker = (w, cwd = w.repo) => expect(spawnIn(w, MARKER_SCRIPT, cwd, ['full']).code, 'mark.sh full wrote the markers').toBe(0);
 
 /** The one full-panel marker the case's workflow home holds. */
 const fullMarker = (w) => {
@@ -61,10 +60,8 @@ const fullMarker = (w) => {
   return path.join(dir, only);
 };
 
-const cases = async () => {
-  group('review covers: the verdict');
-
-  await test('a marker newer than every edited, staged, deleted and untracked path: covered', () => {
+describe('review covers: the verdict', () => {
+  test('a marker newer than every edited, staged, deleted and untracked path: covered', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
     w.write('src/y.js', "module.exports = 'y2';\n");
@@ -75,144 +72,144 @@ const cases = async () => {
     fs.utimesSync(path.join(w.repo, 'src'), PAST, PAST);
     writeMarker(w);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 0, `exit 0: ${err}`);
-    assertEq(out, 'review-covers: covered\n', `the covered line: ${out}`);
+    expect(code, `exit 0: ${err}`).toBe(0);
+    expect(out, `the covered line: ${out}`).toBe('review-covers: covered\n');
     cleanup(w.dir);
   });
 
-  await test('a tracked file edited after the marker: stale, naming it', () => {
+  test('a tracked file edited after the marker: stale, naming it', () => {
     const w = mkWorld();
     w.write('src/y.js', "module.exports = 'y2';\n");
     writeMarker(w);
     w.write('src/x.js', "module.exports = 'x2';\n", FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: src/x.js\n', `the stale line: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the stale line: ${out}${err}`).toBe('review-covers: stale: src/x.js\n');
     cleanup(w.dir);
   });
 
-  await test('an untracked file newer than the marker: stale, naming it', () => {
+  test('an untracked file newer than the marker: stale, naming it', () => {
     const w = mkWorld();
     writeMarker(w);
     w.write('src/new.js', "module.exports = 'new';\n", FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: src/new.js\n', `the stale line: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the stale line: ${out}${err}`).toBe('review-covers: stale: src/new.js\n');
     cleanup(w.dir);
   });
 
-  await test('a tracked file deleted after the marker: stale, naming it', () => {
+  test('a tracked file deleted after the marker: stale, naming it', () => {
     const w = mkWorld();
     writeMarker(w);
     fs.rmSync(path.join(w.repo, 'src', 'gone.js'));
     // The deletion's own second can be the marker's, so the folder is dated past it.
     fs.utimesSync(path.join(w.repo, 'src'), FUTURE, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: src/gone.js\n', `the stale line: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the stale line: ${out}${err}`).toBe('review-covers: stale: src/gone.js\n');
     cleanup(w.dir);
   });
 
-  await test('an edit stamped the marker\'s own second: stale, naming it', () => {
+  test('an edit stamped the marker\'s own second: stale, naming it', () => {
     const w = mkWorld();
     writeMarker(w);
     const at = fs.statSync(fullMarker(w)).mtime;
     w.write('src/x.js', "module.exports = 'x2';\n", at);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: src/x.js\n', `the stale line: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the stale line: ${out}${err}`).toBe('review-covers: stale: src/x.js\n');
     cleanup(w.dir);
   });
 
-  await test('no marker: stale, no full-panel marker', () => {
+  test('no marker: stale, no full-panel marker', () => {
     const w = mkWorld();
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: no full-panel marker\n', `the no-marker line: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the no-marker line: ${out}${err}`).toBe('review-covers: stale: no full-panel marker\n');
     cleanup(w.dir);
   });
 
-  await test('only the plain review marker: stale, no full-panel marker', () => {
+  test('only the plain review marker: stale, no full-panel marker', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
-    assertEq(spawnIn(w, MARKER_SCRIPT).code, 0, 'mark.sh wrote the plain marker');
+    expect(spawnIn(w, MARKER_SCRIPT).code, 'mark.sh wrote the plain marker').toBe(0);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: no full-panel marker\n', `a lone lens covers nothing: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `a lone lens covers nothing: ${out}${err}`).toBe('review-covers: stale: no full-panel marker\n');
     cleanup(w.dir);
   });
 
-  await test('an empty working diff: stale, no working diff', () => {
+  test('an empty working diff: stale, no working diff', () => {
     const w = mkWorld();
     writeMarker(w);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: no working diff\n', `the script cannot see commits: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the script cannot see commits: ${out}${err}`).toBe('review-covers: stale: no working diff\n');
     cleanup(w.dir);
   });
+});
 
-  group('review covers: the heal\'s removal of the version key');
-
-  await test('a code edit before the marker, then only the settings version key removed: covered', () => {
+describe('review covers: the heal\'s removal of the version key', () => {
+  test('a code edit before the marker, then only the settings version key removed: covered', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
     writeMarker(w);
     w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(out, 'review-covers: covered\n', `the removal alone needs no review: ${out}${err}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(out, `the removal alone needs no review: ${out}${err}`).toBe('review-covers: covered\n');
     cleanup(w.dir);
   });
 
-  await test('the version key\'s removal the only change: stale, no working diff', () => {
+  test('the version key\'s removal the only change: stale, no working diff', () => {
     const w = mkWorld();
     writeMarker(w);
     w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: no working diff\n', `the removal is no diff to cover: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the removal is no diff to cover: ${out}${err}`).toBe('review-covers: stale: no working diff\n');
     cleanup(w.dir);
   });
 
-  await test('the version key removed and another settings key changed: stale, naming the settings', () => {
+  test('the version key removed and another settings key changed: stale, naming the settings', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
     writeMarker(w);
     w.write(SETTINGS, settingsJson({ enabled: false }), FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, `review-covers: stale: ${SETTINGS}\n`, `the stale line: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the stale line: ${out}${err}`).toBe(`review-covers: stale: ${SETTINGS}\n`);
     cleanup(w.dir);
   });
 
-  await test('the version key removed and a code file edited: stale, naming the code file only', () => {
+  test('the version key removed and a code file edited: stale, naming the code file only', () => {
     const w = mkWorld();
     writeMarker(w);
     w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     w.write('src/x.js', "module.exports = 'x2';\n", FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: src/x.js\n', `the settings path sorts first, so it is skipped: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the settings path sorts first, so it is skipped: ${out}${err}`).toBe('review-covers: stale: src/x.js\n');
     cleanup(w.dir);
   });
 
-  await test('settings not tracked in HEAD: stale, naming the settings', () => {
+  test('settings not tracked in HEAD: stale, naming the settings', () => {
     const w = mkWorld({ tracked: false });
     w.write('src/x.js', "module.exports = 'x2';\n");
     writeMarker(w);
     w.write(SETTINGS, OPT_IN_SHAPES.current, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, `review-covers: stale: ${SETTINGS}\n`, `no HEAD copy to diff against: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `no HEAD copy to diff against: ${out}${err}`).toBe(`review-covers: stale: ${SETTINGS}\n`);
     cleanup(w.dir);
   });
+});
 
-  group('review mark: the plain and the full-panel marker');
-
+describe('review mark: the plain and the full-panel marker', () => {
   // The markers mark.sh left under the case's workflow home, by folder.
   const markersAfter = (args) => {
     const w = mkWorld();
-    assertEq(spawnIn(w, MARKER_SCRIPT, w.repo, args).code, 0, `mark.sh ${args.join(' ')} exits 0`);
+    expect(spawnIn(w, MARKER_SCRIPT, w.repo, args).code, `mark.sh ${args.join(' ')} exits 0`).toBe(0);
     const markers = path.join(w.workflowHome, 'markers');
     const count = (dir) => (fs.existsSync(path.join(markers, dir)) ? fs.readdirSync(path.join(markers, dir)).length : 0);
     const found = { plain: count('claude-review-marker'), full: count('claude-review-full-marker') };
@@ -220,21 +217,21 @@ const cases = async () => {
     return found;
   };
 
-  await test('mark.sh full writes both review markers', () => {
-    assertEq(JSON.stringify(markersAfter(['full'])), JSON.stringify({ plain: 1, full: 1 }), 'the plain and the full-panel marker');
+  test('mark.sh full writes both review markers', () => {
+    expect(JSON.stringify(markersAfter(['full'])), 'the plain and the full-panel marker').toBe(JSON.stringify({ plain: 1, full: 1 }));
   });
 
-  await test('mark.sh with no argument writes the plain marker alone', () => {
-    assertEq(JSON.stringify(markersAfter([])), JSON.stringify({ plain: 1, full: 0 }), 'no full-panel marker');
+  test('mark.sh with no argument writes the plain marker alone', () => {
+    expect(JSON.stringify(markersAfter([])), 'no full-panel marker').toBe(JSON.stringify({ plain: 1, full: 0 }));
   });
+});
 
-  group('review covers: a repo with no commit yet');
-
+describe('review covers: a repo with no commit yet', () => {
   // A repo beside the world's with no commit, `a.js` staged and dated an hour back, the full-panel marker written.
   const unbornMarked = (w) => {
     const fresh = path.join(w.dir, 'fresh');
     fs.mkdirSync(fresh);
-    const git = (...args) => assertEq(spawnSync('git', args, { cwd: fresh, env: w.env }).status, 0, `git ${args[0]}`);
+    const git = (...args) => expect(spawnSync('git', args, { cwd: fresh, env: w.env }).status, `git ${args[0]}`).toBe(0);
     git('init', '-q', '-b', 'main');
     fs.writeFileSync(path.join(fresh, 'a.js'), 'a\n');
     fs.utimesSync(path.join(fresh, 'a.js'), PAST, PAST);
@@ -243,57 +240,51 @@ const cases = async () => {
     return fresh;
   };
 
-  await test('a staged file older than the marker: covered', () => {
+  test('a staged file older than the marker: covered', () => {
     const w = mkWorld();
     const fresh = unbornMarked(w);
     const { code, out, err } = spawnIn(w, SCRIPT, fresh);
-    assertEq(code, 0, `exit 0, the staged file is the diff: ${out}${err}`);
-    assertEq(out, 'review-covers: covered\n', `the covered line: ${out}${err}`);
+    expect(code, `exit 0, the staged file is the diff: ${out}${err}`).toBe(0);
+    expect(out, `the covered line: ${out}${err}`).toBe('review-covers: covered\n');
     cleanup(w.dir);
   });
 
-  await test('a staged file written after the marker: stale, naming it', () => {
+  test('a staged file written after the marker: stale, naming it', () => {
     const w = mkWorld();
     const fresh = unbornMarked(w);
     fs.writeFileSync(path.join(fresh, 'a.js'), 'a2\n');
     fs.utimesSync(path.join(fresh, 'a.js'), FUTURE, FUTURE);
     const { code, out, err } = spawnIn(w, SCRIPT, fresh);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(out, 'review-covers: stale: a.js\n', `the staged file is never dropped: ${out}${err}`);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, `the staged file is never dropped: ${out}${err}`).toBe('review-covers: stale: a.js\n');
     cleanup(w.dir);
   });
+});
 
-  group('review covers: usage');
-
-  await test('outside a git repo: exit 2 with one review-covers: line', () => {
+describe('review covers: usage', () => {
+  test('outside a git repo: exit 2 with one review-covers: line', () => {
     const w = mkWorld();
     const { code, out, err } = spawnIn(w, SCRIPT, w.tmp);
-    assertEq(code, 2, `exit 2: ${err}`);
-    assertEq(out, '', 'nothing on stdout');
-    assert(err.split('\n').filter(Boolean).length === 1 && err.startsWith('review-covers: '), `one line: ${err}`);
+    expect(code, `exit 2: ${err}`).toBe(2);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err.split('\n').filter(Boolean).length === 1 && err.startsWith('review-covers: '), `one line: ${err}`).toBeTruthy();
     cleanup(w.dir);
   });
 
-  await test('no shasum and no sha1sum on PATH: exit 2 with one review-covers: line', () => {
+  test('no shasum and no sha1sum on PATH: exit 2 with one review-covers: line', () => {
     const w = mkWorld();
     const bin = basePathWithout(mkTmp('review-covers-'), 'shasum');
     for (const name of fs.readdirSync(bin)) {
       if (toolStem(name) === 'sha1sum') fs.rmSync(path.join(bin, name));
     }
-    assert(!which('shasum', bin) && !which('sha1sum', bin), 'the PATH holds neither hash command');
+    expect(!which('shasum', bin) && !which('sha1sum', bin), 'the PATH holds neither hash command').toBeTruthy();
     const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
       cwd: w.repo, env: { ...w.env, PATH: bin }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
-    assertEq(res.status, 2, `exit 2: ${res.stdout}${res.stderr}`);
-    assertEq(res.stdout, '', 'nothing on stdout');
+    expect(res.status, `exit 2: ${res.stdout}${res.stderr}`).toBe(2);
+    expect(res.stdout, 'nothing on stdout').toBe('');
     const lines = res.stderr.split('\n').filter(Boolean);
-    assert(lines.length === 1 && lines[0].startsWith('review-covers: '), `one review-covers: line: ${res.stderr}`);
+    expect(lines.length === 1 && lines[0].startsWith('review-covers: '), `one review-covers: line: ${res.stderr}`).toBeTruthy();
     cleanup(w.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(module.exports);
+});

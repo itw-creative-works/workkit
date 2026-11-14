@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { assert, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
+const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { copyEngine, mkTowerRemote } = require('../publish/helpers');
 
@@ -125,7 +125,7 @@ const commitCheckout = (world, { app = true } = {}) => {
   git(checkout, 'add', ...(app ? ['-A'] : ['.gitignore']));
   const res = git(checkout, '-c', 'user.name=checkout', '-c', 'user.email=checkout@localhost',
     'commit', '-q', '-m', 'chore: the tower app');
-  assert(res.status === 0, `the fixture checkout committed: ${res.stdout}${res.stderr}`);
+  expect(res.status === 0, `the fixture checkout committed: ${res.stdout}${res.stderr}`).toBeTruthy();
   return checkout;
 };
 
@@ -144,7 +144,7 @@ const inHome = (world, script, { env = {} } = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
     env: { ...world.env, ...env }, input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -307,7 +307,7 @@ const publish = (world, args = []) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
     cwd: world.root, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `publish finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `publish finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 

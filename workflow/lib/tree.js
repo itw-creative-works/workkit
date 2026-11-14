@@ -3,17 +3,23 @@
  * processor time it has used, read from /proc on Linux and `ps` elsewhere, and
  * the end of that tree. A child in its own session is in the tree; one whose
  * parent was already gone is not.
- * Usage: const { treeOf, endTreeOf } = require('./tree');
+ * Usage: const { treeOf, endTreeOf } = require('./tree');   or   node tree.js end <pid>   (wk_end_run calls it)
  */
 
 const fs = require('fs');
+const path = require('path');
 const { spawnSync } = require('./run');
 
 const PLATFORM = process.platform;
 
+const USAGE = 'usage: tree.js end <pid>';
+
 // How long a terminated tree gets before its forced end, and again after it.
 const GRACE_MS = 10000;
 const POLL_MS = 200;
+
+// How long the Windows end waits on `taskkill` before it counts as not run.
+const TASKKILL_MS = 60000;
 
 // One `ps` row: pid, ppid, state, processor time, command.
 const ROW = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s?(.*)$/;
@@ -144,13 +150,19 @@ const goneWithin = async (left, ms) => {
  * end for what still lives GRACE_MS later. A process the tree held keeps
  * counting after its parent is gone, and so does any it starts meanwhile. A
  * refused signal is passed over, so every other process still gets its own,
- * and the end then rejects naming the refused pids. On Windows one `taskkill /T /F`.
+ * and the end then rejects naming the refused pids. On Windows one `taskkill /T /F`
+ * from System32 under SystemRoot, never through PATH; one that cannot start or runs past
+ * TASKKILL_MS rejects; a nonzero exit, `taskkill`'s for a tree already gone, is no failure.
  * @param {number} pid
- * @returns {Promise<void>} resolves when the tree is gone; rejects with `could not signal <pids> (<message>)`, or naming what outlived the forced end
+ * @param {{ platform?: string, run?: function, systemRoot?: string }} [seams] - the platform, the spawnSync and the SystemRoot the end is for
+ * @returns {Promise<void>} resolves when the tree is gone; rejects with `could not signal <pids> (<message>)`, `tree.js: SystemRoot is not set, so taskkill cannot be found`, `tree.js: taskkill could not run (<message>)`, or naming what outlived the forced end
  */
-const endTreeOf = async (pid) => {
-  if (PLATFORM === 'win32') {
-    spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true });
+const endTreeOf = async (pid, { platform = PLATFORM, run = spawnSync, systemRoot = process.env.SystemRoot } = {}) => {
+  if (platform === 'win32') {
+    if (!systemRoot) throw new Error('tree.js: SystemRoot is not set, so taskkill cannot be found');
+    const taskkill = path.win32.join(systemRoot, 'System32', 'taskkill.exe');
+    const ended = run(taskkill, ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true, timeout: TASKKILL_MS });
+    if (ended.error) throw new Error(`tree.js: taskkill could not run (${ended.error.message})`);
     return;
   }
   const tracked = new Set([pid]);
@@ -169,5 +181,30 @@ const endTreeOf = async (pid) => {
   if (refused.size > 0) throw new Error(`could not signal ${[...refused.keys()].join(', ')} (${[...refused.values()][0]})`);
   if (outlived.length > 0) throw new Error(`tree.js: pid ${outlived.join(', ')} still running after a forced end`);
 };
+
+/**
+ * The command: `end <pid>` ends that tree, 0 once it is gone and 1 with the
+ * rejection's line on stderr; any other argument list is the usage line and 2.
+ * @param {string[]} argv
+ * @returns {Promise<number>} the exit code
+ */
+const main = async (argv) => {
+  const [verb, pid, ...rest] = argv;
+  if (verb !== 'end' || !/^[1-9]\d*$/.test(pid ?? '') || rest.length > 0) {
+    console.error(USAGE);
+    return 2;
+  }
+  try {
+    await endTreeOf(Number(pid));
+    return 0;
+  } catch (err) {
+    console.error(err.message);
+    return 1;
+  }
+};
+
+if (require.main === module) {
+  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
+}
 
 module.exports = { treeOf, endTreeOf };

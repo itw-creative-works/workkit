@@ -4,71 +4,67 @@
 //
 
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, before, test, expect } = require('../../lib/harness');
 const { loadLibs, mkFetch, jsonResponse, SWEEP, SLUGS, CLOSED_NOW } = require('./helpers');
 
-const cases = async () => {
-  const { github } = await loadLibs();
-
-  group('tower/app: github - the sweep is the tower’s own');
+describe('tower/app: github - the sweep is the tower’s own', () => {
+  let github;
+  before(async () => { ({ github } = await loadLibs()); });
 
   const apiBoard = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'board.js'));
 
-  await test('every branch of what an issue waits on survives the browser’s normalization', () => {
+  test('every branch of what an issue waits on survives the browser’s normalization', () => {
     // The composition is one shared function, so this asks that the fixture
     // exercises every branch of it: two empty lists agreeing prove nothing.
     const keys = (issue) => issue.blockedBy.map((blocker) => `${blocker.repo}#${blocker.number}`).join(',');
     const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
-    assertEq(fromBrowser.issues[0].blockedBy.length, 0, 'an issue depending on nothing carries the empty list');
-    assertEq(keys(fromBrowser.issues[1]), 'owner/gone#7,ITW-Creative-Works/workkit#81',
-      'the unreadable-repo edge is carried whole, the closed one is satisfied, and the edge written both ways is one edge');
-    assertEq(keys(fromBrowser.issues[2]), 'Omega-JS-Stack/omega#144',
-      'a bulleted Depends on: line is the same line - issue bodies are markdown');
+    expect(fromBrowser.issues[0].blockedBy.length, 'an issue depending on nothing carries the empty list').toBe(0);
+    expect(keys(fromBrowser.issues[1]), 'the unreadable-repo edge is carried whole, the closed one is satisfied, and the edge written both ways is one edge').toBe('owner/gone#7,ITW-Creative-Works/workkit#81');
+    expect(keys(fromBrowser.issues[2]), 'a bulleted Depends on: line is the same line - issue bodies are markdown').toBe('Omega-JS-Stack/omega#144');
   });
 
-  await test('the day’s closed count rides the sweep, and no closed issue enters the board', () => {
+  test('the day’s closed count rides the sweep, and no closed issue enters the board', () => {
     const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
-    assertEq(fromBrowser.repos[0].closedDay, 2, 'two of the four closed inside the last 24 hours');
-    assertEq(fromBrowser.repos[1].closedDay, 0, 'a repo that did not resolve closed nothing');
-    assertEq(fromBrowser.issues.length, 3, 'the issue list is the OPEN board and nothing else');
-    assert(fromBrowser.issues.every((issue) => issue.status !== undefined), 'no closed issue rode in on the count');
+    expect(fromBrowser.repos[0].closedDay, 'two of the four closed inside the last 24 hours').toBe(2);
+    expect(fromBrowser.repos[1].closedDay, 'a repo that did not resolve closed nothing').toBe(0);
+    expect(fromBrowser.issues.length, 'the issue list is the OPEN board and nothing else').toBe(3);
+    expect(fromBrowser.issues.every((issue) => issue.status !== undefined), 'no closed issue rode in on the count').toBeTruthy();
   });
 
-  await test('a closed issue one minute past the window is not this day’s', () => {
+  test('a closed issue one minute past the window is not this day’s', () => {
     // The edge is stated on both sides of it rather than computed: 23h59 in,
     // 24h01 out, at an instant this suite names.
     const one = (closedAt) => github.normalizeBoard(['o/r'], { r0: { issues: { totalCount: 0, nodes: [] }, closed: { nodes: [{ closedAt }] } } }, [], CLOSED_NOW).repos[0].closedDay;
-    assertEq(one('2026-07-28T11:01:00Z'), 1, '23 hours 59 minutes ago counts');
-    assertEq(one('2026-07-28T10:59:00Z'), 0, '24 hours 1 minute ago does not');
-    assertEq(one('2026-07-30T11:00:00Z'), 0, 'and neither does a stamp from the future');
-    assertEq(one('not a date'), 0, 'nor one that is not a stamp');
+    expect(one('2026-07-28T11:01:00Z'), '23 hours 59 minutes ago counts').toBe(1);
+    expect(one('2026-07-28T10:59:00Z'), '24 hours 1 minute ago does not').toBe(0);
+    expect(one('2026-07-30T11:00:00Z'), 'and neither does a stamp from the future').toBe(0);
+    expect(one('not a date'), 'nor one that is not a stamp').toBe(0);
   });
 
-  await test('the newest comment rides the sweep folded to one line and cut where a card ends', () => {
+  test('the newest comment rides the sweep folded to one line and cut where a card ends', () => {
     // A blocked issue's open question is its last comment; the fold is the
     // shared module's, so this asks only that a browser board carries it.
     const one = (body) => ({ data: { r0: { issues: { totalCount: 1, nodes: [{ number: 1, labels: { nodes: [] }, assignees: { nodes: [] }, comments: { totalCount: 1, nodes: [{ body }] } }] } } } });
     const long = 'z'.repeat(300);
     const fromBrowser = github.normalizeBoard(['o/r'], one('Which one?\nSay the word.').data, []).issues[0];
-    assertEq(fromBrowser.lastComment, 'Which one? Say the word.', 'the comment as one line');
+    expect(fromBrowser.lastComment, 'the comment as one line').toBe('Which one? Say the word.');
     const cutBrowser = github.normalizeBoard(['o/r'], one(long).data, []).issues[0].lastComment;
-    assertEq(cutBrowser.length, 281, 'cut at the same 280 characters, plus the ellipsis that says it was');
-    assert(cutBrowser.endsWith('…'), 'never stopping mid-word in silence');
-    assertEq(github.normalizeBoard(['o/r'], one('').data, []).issues[0].lastComment, '',
-      'and an issue nobody has commented on carries the empty string');
+    expect(cutBrowser.length, 'cut at the same 280 characters, plus the ellipsis that says it was').toBe(281);
+    expect(cutBrowser.endsWith('…'), 'never stopping mid-word in silence').toBeTruthy();
+    expect(github.normalizeBoard(['o/r'], one('').data, []).issues[0].lastComment, 'and an issue nobody has commented on carries the empty string').toBe('');
   });
 
-  await test('a body over the limit is cut and flagged, the same as the tower’s', () => {
+  test('a body over the limit is cut and flagged, the same as the tower’s', () => {
     const long = { data: { r0: { issues: { totalCount: 1, nodes: [{ number: 1, body: 'x'.repeat(5000), labels: { nodes: [] }, assignees: { nodes: [] }, comments: { totalCount: 0 } }] } } } };
     const issue = github.normalizeBoard(['o/r'], long.data, []).issues[0];
-    assertEq(issue.body.length, 4000, 'cut at the same 4,000 characters');
-    assertEq(issue.bodyTruncated, true, 'and never cut silently');
+    expect(issue.body.length, 'cut at the same 4,000 characters').toBe(4000);
+    expect(issue.bodyTruncated, 'and never cut silently').toBe(true);
   });
 
   // GitHub refuses the whole roster in one request, so both halves ask a batch
   // at a time. The browser's batches go out together, and the aliases restart at
   // r0 in every one of them, which the merge has to get right.
-  await test('a roster longer than one batch goes out as one request per batch, merged in order', async () => {
+  test('a roster longer than one batch goes out as one request per batch, merged in order', async () => {
     const slugs = Array.from({ length: 13 }, (_, i) => `owner/repo${i}`);
     // Each request is answered only for the aliases it named, which makes a
     // merge that ignored the offset visible: the issue number is the repo's
@@ -85,14 +81,12 @@ const cases = async () => {
       return jsonResponse(200, { data });
     });
     const board = await github.fetchBoard(slugs, { token: 't', fetch: fetchImpl });
-    assertEq(fetchImpl.calls.length, 3, '13 repos at 6 a request is three requests, never one');
-    assertEq(board.repos.map((repo) => repo.slug).join(','), slugs.join(','), 'every repo once, in roster order');
-    assertEq(board.issues.map((issue) => `${issue.repo}#${issue.number}`).join(' '),
-      slugs.map((slug, i) => `${slug}#${i}`).join(' '),
-      'and each issue on the repo whose batch answered it');
+    expect(fetchImpl.calls.length, '13 repos at 6 a request is three requests, never one').toBe(3);
+    expect(board.repos.map((repo) => repo.slug).join(','), 'every repo once, in roster order').toBe(slugs.join(','));
+    expect(board.issues.map((issue) => `${issue.repo}#${issue.number}`).join(' '), 'and each issue on the repo whose batch answered it').toBe(slugs.map((slug, i) => `${slug}#${i}`).join(' '));
   });
 
-  await test('one refused request fails the sweep rather than half-drawing the board', async () => {
+  test('one refused request fails the sweep rather than half-drawing the board', async () => {
     const slugs = Array.from({ length: 13 }, (_, i) => `owner/repo${i}`);
     let sent = 0;
     const fetchImpl = mkFetch(() => {
@@ -100,8 +94,8 @@ const cases = async () => {
       return sent === 2 ? jsonResponse(401, { message: 'Bad credentials' }) : jsonResponse(200, { data: {} });
     });
     const board = await github.fetchBoard(slugs, { token: 't', fetch: fetchImpl });
-    assertEq(board.ok, false, 'a board missing a batch is not a board');
-    assertEq(board.status, 401, 'and the status survives, so Settings can say the token is the problem');
+    expect(board.ok, 'a board missing a batch is not a board').toBe(false);
+    expect(board.status, 'and the status survives, so Settings can say the token is the problem').toBe(401);
   });
 
   // GitHub caps a connection page at 100, so a repo past that is asked again
@@ -142,46 +136,44 @@ const cases = async () => {
     return { data };
   };
 
-  await test('a repo with another page is asked again with the cursor, and only that repo', async () => {
+  test('a repo with another page is asked again with the cursor, and only that repo', async () => {
     const script = pageScript();
     const fetchImpl = mkFetch((url, options) => jsonResponse(200, answerFor(script, JSON.parse(options.body).query)));
     const board = await github.fetchBoard(['owner/big', 'owner/small'], { token: 't', fetch: fetchImpl });
-    assertEq(fetchImpl.calls.length, 2, 'the batch, then one continuation');
+    expect(fetchImpl.calls.length, 'the batch, then one continuation').toBe(2);
     const second = JSON.parse(fetchImpl.calls[1].options.body).query;
-    assert(second.includes('after: "CUR1"'), 'the second ask carries the cursor the first page ended on');
-    assert(second.includes('name: "big"') && !second.includes('name: "small"'), 'and names only the repo that had more');
-    assertEq(board.repos[0].count, 3, 'both pages are on the board');
-    assertEq(board.repos[0].truncated, false, 'a repo swept to the end is not truncated');
-    assertEq(board.issues.map((issue) => `${issue.repo}#${issue.number}`).join(' '),
-      'owner/big#1 owner/big#2 owner/big#3 owner/small#9',
-      'a repo’s pages stay together, and the roster order is kept');
+    expect(second.includes('after: "CUR1"'), 'the second ask carries the cursor the first page ended on').toBeTruthy();
+    expect(second.includes('name: "big"') && !second.includes('name: "small"'), 'and names only the repo that had more').toBeTruthy();
+    expect(board.repos[0].count, 'both pages are on the board').toBe(3);
+    expect(board.repos[0].truncated, 'a repo swept to the end is not truncated').toBe(false);
+    expect(board.issues.map((issue) => `${issue.repo}#${issue.number}`).join(' '), 'a repo’s pages stay together, and the roster order is kept').toBe('owner/big#1 owner/big#2 owner/big#3 owner/small#9');
   });
 
-  await test('each page lands as it arrives, marked as still loading until the sweep is done', async () => {
+  test('each page lands as it arrives, marked as still loading until the sweep is done', async () => {
     const script = pageScript();
     const seen = [];
     const fetchImpl = mkFetch((url, options) => jsonResponse(200, answerFor(script, JSON.parse(options.body).query)));
     const board = await github.fetchBoard(['owner/big', 'owner/small'], {
       token: 't', fetch: fetchImpl, onPage: (partial) => seen.push(partial),
     });
-    assertEq(seen.length, 1, 'the first pages are handed over before the second is asked for');
-    assertEq(seen[0].issues.length, 3, 'with everything that had arrived by then');
-    assertEq(seen[0].repos[0].loading, true, 'the repo still being paged says so, which is what the progress line reads');
-    assertEq(seen[0].repos[0].count, 2, 'showing how many of');
-    assertEq(seen[0].repos[0].totalCount, 3, 'how many it is holding');
-    assert(!seen[0].repos[1].loading, 'a repo that was exhausted on its first page is not loading');
-    assert(board.repos.every((repo) => repo.loading === undefined),
-      'and the finished board carries no progress at all - the line clears by being absent');
+    expect(seen.length, 'the first pages are handed over before the second is asked for').toBe(1);
+    expect(seen[0].issues.length, 'with everything that had arrived by then').toBe(3);
+    expect(seen[0].repos[0].loading, 'the repo still being paged says so, which is what the progress line reads').toBe(true);
+    expect(seen[0].repos[0].count, 'showing how many of').toBe(2);
+    expect(seen[0].repos[0].totalCount, 'how many it is holding').toBe(3);
+    expect(!seen[0].repos[1].loading, 'a repo that was exhausted on its first page is not loading').toBeTruthy();
+    expect(board.repos.every((repo) => repo.loading === undefined),
+      'and the finished board carries no progress at all - the line clears by being absent').toBeTruthy();
   });
 
-  await test('a single-page sweep hands nothing over mid-flight - there is no progress to draw', async () => {
+  test('a single-page sweep hands nothing over mid-flight - there is no progress to draw', async () => {
     let handed = 0;
     const fetchImpl = mkFetch((url, options) => jsonResponse(200, answerFor(pageScript(), JSON.parse(options.body).query)));
     await github.fetchBoard(['owner/small'], { token: 't', fetch: fetchImpl, onPage: () => { handed += 1; } });
-    assertEq(handed, 0, 'a board that arrived whole is drawn once, by the read landing');
+    expect(handed, 'a board that arrived whole is drawn once, by the read landing').toBe(0);
   });
 
-  await test('the ceiling stops the browser’s sweep too, and the repo says it was cut', async () => {
+  test('the ceiling stops the browser’s sweep too, and the repo says it was cut', async () => {
     // Every page says another follows, so nothing but the ceiling can end it.
     const full = Array.from({ length: 100 }, (_, i) => i + 1);
     const fetchImpl = mkFetch((url, options) => {
@@ -192,12 +184,12 @@ const cases = async () => {
       return jsonResponse(200, { data });
     });
     const board = await github.fetchBoard(['owner/big'], { token: 't', fetch: fetchImpl });
-    assertEq(board.repos[0].count, github.MAX_OPEN_ISSUES, 'the sweep stops at the ceiling rather than paging forever');
-    assertEq(board.repos[0].truncated, true, 'and the repo says there is more it did not carry');
-    assertEq(fetchImpl.calls.length, github.MAX_OPEN_ISSUES / 100, 'no request past the ceiling');
+    expect(board.repos[0].count, 'the sweep stops at the ceiling rather than paging forever').toBe(github.MAX_OPEN_ISSUES);
+    expect(board.repos[0].truncated, 'and the repo says there is more it did not carry').toBe(true);
+    expect(fetchImpl.calls.length, 'no request past the ceiling').toBe(github.MAX_OPEN_ISSUES / 100);
   });
 
-  await test('a paged sweep ends in exactly the payload the tower serves', async () => {
+  test('a paged sweep ends in exactly the payload the tower serves', async () => {
     // The parity that matters most once there is more than one request per repo:
     // both halves have to merge the pages into the same list, in the same order.
     const browserScript = pageScript();
@@ -208,10 +200,10 @@ const cases = async () => {
       exec: (cmd, args) => (args[0] === '--version' ? 'gh version 2' : JSON.stringify(answerFor(towerScript, args[args.length - 1]))),
       now: CLOSED_NOW,
     });
-    assertEq(JSON.stringify(fromBrowser), JSON.stringify(fromTower), 'one payload shape, however many pages it took');
+    expect(JSON.stringify(fromBrowser), 'one payload shape, however many pages it took').toBe(JSON.stringify(fromTower));
   });
 
-  await test('a null issue node is skipped on both sides, and the repo says what was dropped', () => {
+  test('a null issue node is skipped on both sides, and the repo says what was dropped', () => {
     // GitHub can answer the board's shape with every issue node null, and
     // reading a field off one must not end the tower's API.
     const dropped = {
@@ -233,22 +225,15 @@ const cases = async () => {
       exec: (cmd, args) => (args[0] === '--version' ? 'gh version 2' : JSON.stringify(dropped)),
       now: CLOSED_NOW,
     });
-    assertEq(fromBrowser.issues.length, 1, 'the nulls are skipped rather than thrown on');
-    assertEq(fromBrowser.repos[0].error, 'GitHub dropped 2 of 3 issues: the query exceeded a limit',
-      'and the drop is on the repo entry, where the Overview’s warning reads it');
-    assertEq(JSON.stringify(fromBrowser), JSON.stringify(fromTower), 'the two halves drop it identically');
+    expect(fromBrowser.issues.length, 'the nulls are skipped rather than thrown on').toBe(1);
+    expect(fromBrowser.repos[0].error, 'and the drop is on the repo entry, where the Overview’s warning reads it').toBe('GitHub dropped 2 of 3 issues: the query exceeded a limit');
+    expect(JSON.stringify(fromBrowser), 'the two halves drop it identically').toBe(JSON.stringify(fromTower));
   });
 
-  await test('an empty roster is an empty board, not a request', async () => {
+  test('an empty roster is an empty board, not a request', async () => {
     const fetchImpl = mkFetch(() => { throw new Error('a request was made'); });
     const board = await github.fetchBoard([], { token: 't', fetch: fetchImpl });
-    assertEq(board.ok, true, 'a site that sweeps nothing is not a failure');
-    assertEq(fetchImpl.calls.length, 0, 'and nothing went out');
+    expect(board.ok, 'a site that sweeps nothing is not a failure').toBe(true);
+    expect(fetchImpl.calls.length, 'and nothing went out').toBe(0);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

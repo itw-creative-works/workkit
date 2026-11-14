@@ -15,9 +15,10 @@ const DEADLINE_HOME = new Set(['test/lib/process.js', 'tests/lib/process.js', 'p
 const HELPER_DIR = /(^|\/)tests?\/lib\//;
 
 const COMMENT = /^\s*(\/\/|\/\*|\*|#)/;
-const CASE_START = /^\s*(await\s+)?(test|it|testUnless\s*\([^)]*\))\s*\(/;
-const GROUP_START = /^\s*(group|describe)\s*\(/;
-const ASSERTION = /\b(assert(\.\w+|Eq\w*)?|expect)\s*\(/;
+const CASE_START = /^\s*(await\s+)?(test|it)(\.(skip|todo|only))?\s*\(/;
+const GROUP_START = /^\s*describe(\.(skip|todo|only))?\s*\(/;
+const HOOK_START = /^\s*(before|after|beforeEach|afterEach)\s*\(/;
+const ASSERTION = /\b(assert(\.\w+)?|expect)\s*\(/;
 const TMP_DIR = /\bmkdtempSync\s*\(|\btmpdir\s*\(/;
 const FIXED_PATH = /['"`]\/tmp\/[\w.-]/;
 const FIXED_PORT = /\b(localhost|127\.0\.0\.1|0\.0\.0\.0):[1-9]\d{1,4}\b|\bport\b['"]?\s*[:=]\s*[1-9]\d{1,4}\b|\.listen\(\s*[1-9]\d{1,4}\b/i;
@@ -32,7 +33,10 @@ const SOURCE_READ = /\breadFileSync\s*\((.*)/;
 // A read names the source tree by a repo-root anchor or a repo-relative literal.
 const SOURCE_ANCHOR = /__dirname|process\.cwd\(\)|\b[A-Z_]*(ROOT|KIT|REPO)[A-Z_]*\b|['"`][\w.-]+\/[\w./-]+['"`]|['"`][\w-]+\.(js|cjs|mjs|ts|md|json|sh|css|scss|html)['"`]/;
 const NAMED = /\b(?:const|let|var)\s+(\w+)\s*=/;
-const WEAK = [/\bexistsSync\s*\(/, /\bl?stat(Sync)?\s*\(.*\.mode\b|\b0o[0-7]{3,4}\b|\bX_OK\b|\baccessSync\s*\(/, /\bassert(\.ok)?\s*\(\s*true\s*[,)]/];
+const WEAK = [/\bexistsSync\s*\(/, /\bl?stat(Sync)?\s*\(.*\.mode\b|\b0o[0-7]{3,4}\b|\bX_OK\b|\baccessSync\s*\(/, /\b(assert(\.ok)?|expect)\s*\(\s*true\s*[,)]/];
+// A regex check whose subject starts with `subject`: `assert.match(` or `expect(...).toMatch(`.
+const regexCheck = (subject) => new RegExp(`\\bassert\\.match\\s*\\(\\s*${subject}|\\bexpect\\s*\\(\\s*${subject}.*\\)\\s*\\.toMatch\\s*\\(`);
+const REGEX_CHECK = regexCheck('');
 
 /**
  * The code of a template span's `${...}` expressions, space-joined, the literal
@@ -109,7 +113,10 @@ function lineFindings(lines, free, rel) {
 
 /**
  * The `[line, 'worth']` findings: a case whose every assertion is an
- * existence, mode or exec-bit check, or `assert.ok(true)`, named at its first.
+ * existence, mode or exec-bit check, `assert.ok(true)` or `expect(true)`,
+ * named at its first.
+ * A case ends at the next case, `describe` or hook (`before`, `after`,
+ * `beforeEach`, `afterEach`) line; a hook's assertions count to no case.
  * A case inside quoted text is a fixture's, so this reads the quote-free lines.
  * @param {string[]} lines the file's lines through `quoteFree`
  * @returns {Array<[number, string]>}
@@ -122,7 +129,7 @@ function worthFindings(lines) {
     asserts = null;
   };
   lines.forEach((line, i) => {
-    if (CASE_START.test(line) || GROUP_START.test(line)) close();
+    if (CASE_START.test(line) || GROUP_START.test(line) || HOOK_START.test(line)) close();
     if (CASE_START.test(line)) asserts = [];
     if (asserts && !COMMENT.test(line) && ASSERTION.test(line)) asserts.push([i + 1, line]);
   });
@@ -132,7 +139,8 @@ function worthFindings(lines) {
 
 /**
  * The `[line, 'source-regex']` findings: a `readFileSync` of a source path
- * whose text, by the name it is held under or inline, reaches `assert.match`.
+ * whose text, by the name it is held under or inline, reaches `assert.match`
+ * or `expect(...).toMatch`.
  * @param {string[]} lines the file's lines
  * @returns {Array<[number, string]>}
  */
@@ -141,12 +149,12 @@ function sourceRegexFindings(lines) {
   lines.forEach((line, i) => {
     const read = line.match(SOURCE_READ);
     if (!read || COMMENT.test(line) || /(^|[^\w-])tests?\//.test(read[1]) || !SOURCE_ANCHOR.test(read[1])) return;
-    if (/\bassert\.match\s*\(/.test(line)) {
+    if (REGEX_CHECK.test(line)) {
       found.push([i + 1, 'source-regex']);
       return;
     }
     const name = line.match(NAMED)?.[1];
-    const matched = name && new RegExp(`\\bassert\\.match\\s*\\(\\s*${escaped(name)}\\b`);
+    const matched = name && regexCheck(`${escaped(name)}\\b`);
     if (matched && lines.slice(i + 1).some((later) => matched.test(later))) found.push([i + 1, 'source-regex']);
   });
   return found;

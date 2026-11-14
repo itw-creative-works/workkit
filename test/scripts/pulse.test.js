@@ -4,7 +4,7 @@
 
 const path = require('path');
 const {
-  group, test, assertEq, summary, selfRun,
+  describe, test, expect,
 } = require('../lib/harness');
 
 const { judge } = require(path.join(__dirname, '..', '..', 'workflow', 'lib', 'pulse.js'));
@@ -27,35 +27,27 @@ const verdicts = (readings) => {
 const times = (n, reading) => new Array(n).fill(reading);
 const alive = (n) => times(n, 'alive').join(', ');
 
-const cases = async () => {
-  group('pulse: alive');
-
-  await test('output or work: alive, and a quiet reading after it counts from one again', () => {
+describe('pulse: alive', () => {
+  test('output or work: alive, and a quiet reading after it counts from one again', () => {
     for (const [name, reading] of [['output', OUTPUT], ['work', WORK], ['both', BOTH]]) {
-      assertEq(verdicts([QUIET, reading, QUIET]).join(', '), alive(3), `quiet, ${name}, quiet`);
+      expect(verdicts([QUIET, reading, QUIET]).join(', '), `quiet, ${name}, quiet`).toBe(alive(3));
     }
   });
 
-  await test('output starts the look count again: five checks of work, output, five more are all alive', () => {
-    assertEq(verdicts([...times(5, WORK), OUTPUT, ...times(5, WORK)]).join(', '), alive(11), 'eleven verdicts');
+  test('output starts the look count again: five checks of work, output, five more are all alive', () => {
+    expect(verdicts([...times(5, WORK), OUTPUT, ...times(5, WORK)]).join(', '), 'eleven verdicts').toBe(alive(11));
   });
+});
 
-  group('pulse: frozen');
-
-  await test('two quiet readings in a row: frozen; one, then work: alive', () => {
-    assertEq(verdicts([QUIET, QUIET]).join(', '), 'alive, frozen', 'quiet, quiet');
-    assertEq(verdicts([QUIET, WORK]).join(', '), 'alive, alive', 'quiet, work');
+describe('pulse: frozen', () => {
+  test('two quiet readings in a row: frozen; one, then work: alive', () => {
+    expect(verdicts([QUIET, QUIET]).join(', '), 'quiet, quiet').toBe('alive, frozen');
+    expect(verdicts([QUIET, WORK]).join(', '), 'quiet, work').toBe('alive, alive');
   });
+});
 
-  group('pulse: look');
-
-  await test('six readings of work with no output: look, then the count starts again; five: alive', () => {
-    assertEq(verdicts(times(12, WORK)).join(', '), `${alive(5)}, look, ${alive(5)}, look`, 'twelve readings of work');
+describe('pulse: look', () => {
+  test('six readings of work with no output: look, then the count starts again; five: alive', () => {
+    expect(verdicts(times(12, WORK)).join(', '), 'twelve readings of work').toBe(`${alive(5)}, look, ${alive(5)}, look`);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -2,52 +2,43 @@
 // reading the origin remote into the GitHub slug its links are built from.
 // The shared prologue is ./helpers.js.
 
-const { group, test, assertEq, summary, selfRun, mkTmp } = require('../../lib/harness');
+const { describe, test, expect, mkTmp } = require('../../lib/harness');
+const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
-  skipOnWindows, repoSlug, cleanup, git,
+  repoSlug, cleanup, git,
 } = require('./helpers');
 
-const cases = async () => {
-  skipOnWindows();
-
-  group('changelog-links: reading the remote');
-
-  await test('parses both GitHub remote URL forms, and rejects others', () => {
+describe('changelog-links: reading the remote', { skip: skipWithoutNodeStub() }, () => {
+  test('parses both GitHub remote URL forms, and rejects others', () => {
     const dir = mkTmp('cll-');
     git(dir, 'init', '-q', '-b', 'main');
     git(dir, 'remote', 'add', 'origin', 'git@github.com:alice/.dotfiles.git');
-    assertEq(repoSlug(dir), 'alice/.dotfiles', 'ssh form');
+    expect(repoSlug(dir), 'ssh form').toBe('alice/.dotfiles');
     git(dir, 'remote', 'set-url', 'origin', 'https://github.com/alice/.dotfiles.git');
-    assertEq(repoSlug(dir), 'alice/.dotfiles', 'https form');
+    expect(repoSlug(dir), 'https form').toBe('alice/.dotfiles');
     git(dir, 'remote', 'set-url', 'origin', 'https://gitlab.com/alice/x.git');
-    assertEq(repoSlug(dir), null, 'a non-GitHub remote has nothing to link to');
+    expect(repoSlug(dir), 'a non-GitHub remote has nothing to link to').toBe(null);
     git(dir, 'remote', 'set-url', 'origin', 'https://github.com/alice/.dotfiles/');
-    assertEq(repoSlug(dir), 'alice/.dotfiles', 'a trailing slash is tolerated');
+    expect(repoSlug(dir), 'a trailing slash is tolerated').toBe('alice/.dotfiles');
     git(dir, 'remote', 'remove', 'origin');
-    assertEq(repoSlug(dir), null, 'no origin remote resolves to no slug');
+    expect(repoSlug(dir), 'no origin remote resolves to no slug').toBe(null);
     cleanup(dir);
   });
 
-  await test('the slug comes from the engine rule, behind a GitHub-only gate', () => {
+  test('the slug comes from the engine rule, behind a GitHub-only gate', () => {
     // repoSlug reads `slugFromRemote` (workflow/slug.js), so every trailing
     // separator comes off, not one. The links are GitHub's, so a remote
     // anywhere else has nothing to link to.
     const dir = mkTmp('cll-');
     git(dir, 'init', '-q', '-b', 'main');
     git(dir, 'remote', 'add', 'origin', 'https://github.com/alice/.dotfiles//');
-    assertEq(repoSlug(dir), 'alice/.dotfiles', 'every trailing slash, not one');
+    expect(repoSlug(dir), 'every trailing slash, not one').toBe('alice/.dotfiles');
     git(dir, 'remote', 'set-url', 'origin', 'https://github.com/alice/.dotfiles/');
-    assertEq(repoSlug(dir), 'alice/.dotfiles', 'and one is still tolerated');
+    expect(repoSlug(dir), 'and one is still tolerated').toBe('alice/.dotfiles');
     git(dir, 'remote', 'set-url', 'origin', 'C:\\Users\\x\\theirs.git');
-    assertEq(repoSlug(dir), null, 'a local path names a repo, but not one on GitHub');
+    expect(repoSlug(dir), 'a local path names a repo, but not one on GitHub').toBe(null);
     git(dir, 'remote', 'set-url', 'origin', 'https://gitlab.com/alice/x.git');
-    assertEq(repoSlug(dir), null, 'and neither does another host');
+    expect(repoSlug(dir), 'and neither does another host').toBe(null);
     cleanup(dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

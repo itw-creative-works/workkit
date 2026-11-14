@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { test, assert, skip, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
+const { expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath, spawnSync: runSync,
 } = require('../../lib/platform');
@@ -226,11 +226,9 @@ const withNpm = (world) => {
 };
 
 // A mint needs a PTY tool the machine ships, `expect` or `script`; without one
-// the CLI refuses first (can_mint_claude_token), so those cases name their skip.
+// the CLI refuses first (can_mint_claude_token), so those cases take this skip value.
 const HAS_PTY = Boolean(which('expect', SYSTEM_PATH) || which('script', SYSTEM_PATH));
-const mintTest = (name, fn) => (HAS_PTY
-  ? test(name, fn)
-  : skip(name, 'this machine has neither expect nor script, so no mint can be given a terminal'));
+const skipWithoutPty = () => !HAS_PTY && 'this machine has neither expect nor script, so no mint can be given a terminal';
 
 // stdin is a pipe, never a terminal: a prompt that forgot to check hangs here
 // rather than in production. `script` runs another entry point (the world's
@@ -243,7 +241,7 @@ const runCli = (world, args, { cwd, script, env } = {}) => {
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `workkit ${args.join(' ')} finished (no timeout, no signal): ${res.error || ''}`);
+  expect(res.status !== null, `workkit ${args.join(' ')} finished (no timeout, no signal): ${res.error || ''}`).toBeTruthy();
   // Three views of one run: stdout, stderr, and `said`, the whole transcript in
   // terminal order. The level is the stream, so a check about what the user was
   // told reads `said` and a check about which stream reads `out` or `err`.
@@ -279,9 +277,9 @@ const mkRepo = ({ optIn = false } = {}) => {
 const rosterRepo = (world, repo, slug, { script, env } = {}) => {
   mkOriginRepo(repo, `https://github.com/${slug}.git`);
   const head = runSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], { cwd: repo, encoding: 'utf8' });
-  assert(head.status === 0, `origin/HEAD points at main, got: ${head.stderr}`);
+  expect(head.status === 0, `origin/HEAD points at main, got: ${head.stderr}`).toBeTruthy();
   const enabled = runCli(world, ['enable', repo], { script, env });
-  assert(enabled.code === 0, `${slug} joins the roster, got: ${enabled.said}`);
+  expect(enabled.code === 0, `${slug} joins the roster, got: ${enabled.said}`).toBeTruthy();
 };
 
 /**
@@ -333,7 +331,7 @@ const inCli = (world, script, { input = '', env, entry = CLI } = {}) => {
     timeout: SPAWN_DEADLINE,
   });
   fs.closeSync(fd);
-  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return {
     code: res.status,
     out: res.stdout || '',
@@ -426,7 +424,7 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, mintTest, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
+  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
   installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
   SLUG, HOME, mkHomeWorld,
 };

@@ -35,7 +35,7 @@ export function findingsVerdict({ steps, facts }) {
 /**
  * The findingsRoute answer for a folder: the merged settings of the repo at
  * its root (settingsOf).
- * @param {{cwd: string, env: object, top: function, read: function, pluginRoot: string}} facts the call's facts (guards.js bashFacts)
+ * @param {{cwd: string, env: object, top: function, read: function, pluginRoot: string}} facts the call's facts (facts.js bashFacts)
  * @returns {Promise<string>}
  */
 export async function findingsRouteOf(facts) {

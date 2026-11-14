@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath,
@@ -44,19 +44,16 @@ const settingsFile = (dir, body) => {
   return file;
 };
 
-const cases = async () => {
-  group('participation.sh: sourcing it');
-
-  await test('sourcing defines the nine functions', () => {
+describe('participation.sh: sourcing it', () => {
+  test('sourcing defines the nine functions', () => {
     // The contract this file shares with platform.sh: a caller sources it at
     // load time and gets functions, in a shell whose options are its own.
     const out = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
-    assertEq(out.code, 0, `it sources clean, stderr: ${out.err}`);
-    assertEq(out.out, 'wk_githooks_kit wk_githooks_kitlike wk_githooks_spelled wk_is_repo_root wk_opted_in wk_session_judges wk_setting wk_settings_declined wk_settings_enabled ',
-      `the nine, and nothing else named wk_*, got: ${out.out}`);
+    expect(out.code, `it sources clean, stderr: ${out.err}`).toBe(0);
+    expect(out.out, `the nine, and nothing else named wk_*, got: ${out.out}`).toBe('wk_githooks_kit wk_githooks_kitlike wk_githooks_spelled wk_is_repo_root wk_opted_in wk_session_judges wk_setting wk_settings_declined wk_settings_enabled ');
   });
 
-  await test('sourcing sets no variable and runs nothing', () => {
+  test('sourcing sets no variable and runs nothing', () => {
     // A seam that set something would change the shell of every caller. The
     // control runs `:` where the other sources the file, so the comparison is
     // against a command that does nothing (bash sets PIPESTATUS at the first).
@@ -67,25 +64,25 @@ const cases = async () => {
     );
     const before = vars(':');
     const after = vars(`. ${JSON.stringify(PARTICIPATION)}`);
-    assertEq(after.stdout, before.stdout, 'the same variables as a shell that sourced nothing');
-    assertEq(after.stderr, '', `and nothing printed at load, got: ${after.stderr}`);
+    expect(after.stdout, 'the same variables as a shell that sourced nothing').toBe(before.stdout);
+    expect(after.stderr, `and nothing printed at load, got: ${after.stderr}`).toBe('');
   });
+});
 
-  group('participation.sh: wk_is_repo_root');
-
-  await test('a checkout says yes and a plain directory says no', () => {
+describe('participation.sh: wk_is_repo_root', () => {
+  test('a checkout says yes and a plain directory says no', () => {
     const dir = mkTmp('wf-participation-');
     const repo = path.join(dir, 'repo');
     const plain = path.join(dir, 'plain');
     fs.mkdirSync(repo, { recursive: true });
     fs.mkdirSync(plain, { recursive: true });
     spawnSync('git', ['init', '-q', repo], { encoding: 'utf8' });
-    assertEq(ask('wk_is_repo_root', repo), 'yes', 'a `.git` directory is a repo root');
-    assertEq(ask('wk_is_repo_root', plain), 'no', 'a directory with no `.git` is not');
+    expect(ask('wk_is_repo_root', repo), 'a `.git` directory is a repo root').toBe('yes');
+    expect(ask('wk_is_repo_root', plain), 'a directory with no `.git` is not').toBe('no');
     cleanup(dir);
   });
 
-  await test('a worktree says yes: its `.git` is a FILE', () => {
+  test('a worktree says yes: its `.git` is a FILE', () => {
     // The whole reason the test is `-e` and never `-d`. A `-d` reading answers
     // no here, and every walk, guard and roster that asked would skip a
     // checkout that works perfectly.
@@ -97,58 +94,57 @@ const cases = async () => {
     git('-c', 'user.name=wk', '-c', 'user.email=wk@localhost', 'commit', '-q', '--allow-empty', '-m', 'chore: seed');
     const tree = path.join(dir, 'worktree');
     git('worktree', 'add', '-q', tree, '-b', 'side');
-    assertEq(fs.statSync(path.join(tree, '.git')).isFile(), true, 'the fixture carries a `.git` FILE');
-    assertEq(ask('wk_is_repo_root', tree), 'yes', 'a worktree is a repo root');
+    expect(fs.statSync(path.join(tree, '.git')).isFile(), 'the fixture carries a `.git` FILE').toBe(true);
+    expect(ask('wk_is_repo_root', tree), 'a worktree is a repo root').toBe('yes');
     cleanup(dir);
   });
 
-  await test('a directory that does not exist says no', () => {
+  test('a directory that does not exist says no', () => {
     const dir = mkTmp('wf-participation-');
-    assertEq(ask('wk_is_repo_root', path.join(dir, 'never-made')), 'no', 'nothing there is not a repo');
+    expect(ask('wk_is_repo_root', path.join(dir, 'never-made')), 'nothing there is not a repo').toBe('no');
     cleanup(dir);
   });
+});
 
-  group('participation.sh: wk_settings_declined and wk_settings_enabled');
-
+describe('participation.sh: wk_settings_declined and wk_settings_enabled', () => {
   const answers = (file) => `${ask('wk_settings_declined', file)}/${ask('wk_settings_enabled', file)}`;
 
-  await test('a declined file is declined, and an enabled file is enabled', () => {
+  test('a declined file is declined, and an enabled file is enabled', () => {
     const dir = mkTmp('wf-participation-');
-    assertEq(answers(settingsFile(dir, '{ "version": 1, "enabled": false }\n')), 'yes/no',
-      'the deliberate no');
+    expect(answers(settingsFile(dir, '{ "version": 1, "enabled": false }\n')), 'the deliberate no').toBe('yes/no');
     cleanup(dir);
     const other = mkTmp('wf-participation-');
-    assertEq(answers(settingsFile(other, OPT_IN_SHAPES.current)), 'no/yes', 'the yes');
+    expect(answers(settingsFile(other, OPT_IN_SHAPES.current)), 'the yes').toBe('no/yes');
     cleanup(other);
   });
 
-  await test('a file with no `enabled` key is neither', () => {
+  test('a file with no `enabled` key is neither', () => {
     // The two are not each other's negation, and this is the case that says so:
     // a file with no answer is no decline and no yes.
     const dir = mkTmp('wf-participation-');
-    assertEq(answers(settingsFile(dir, '{ "version": 1 }\n')), 'no/no', 'neither declined nor enabled');
+    expect(answers(settingsFile(dir, '{ "version": 1 }\n')), 'neither declined nor enabled').toBe('no/no');
     cleanup(dir);
   });
 
-  await test('the spacing of the key is not the answer', () => {
+  test('the spacing of the key is not the answer', () => {
     // The published file is jq's, which spaces the colon; a hand-edited one may
     // not, and the repo's answer cannot depend on that.
     const dir = mkTmp('wf-participation-');
-    assertEq(answers(settingsFile(dir, '{"enabled":false}\n')), 'yes/no', 'no space after the colon');
+    expect(answers(settingsFile(dir, '{"enabled":false}\n')), 'no space after the colon').toBe('yes/no');
     cleanup(dir);
     const spaced = mkTmp('wf-participation-');
-    assertEq(answers(settingsFile(spaced, '{ "enabled"  :   true }\n')), 'no/yes', 'and spaces around it');
+    expect(answers(settingsFile(spaced, '{ "enabled"  :   true }\n')), 'and spaces around it').toBe('no/yes');
     cleanup(spaced);
   });
 
-  await test('a missing file and an empty file are both no answer at all', () => {
+  test('a missing file and an empty file are both no answer at all', () => {
     const dir = mkTmp('wf-participation-');
-    assertEq(answers(path.join(dir, 'settings.json')), 'no/no', 'a file that is not there');
-    assertEq(answers(settingsFile(dir, '')), 'no/no', 'and one holding nothing');
+    expect(answers(path.join(dir, 'settings.json')), 'a file that is not there').toBe('no/no');
+    expect(answers(settingsFile(dir, '')), 'and one holding nothing').toBe('no/no');
     cleanup(dir);
   });
 
-  await test('under node, only the top-level enabled key declines, and text that does not parse is declined', () => {
+  test('under node, only the top-level enabled key declines, and text that does not parse is declined', () => {
     const declined = (body) => {
       const dir = mkTmp('wf-participation-');
       const file = settingsFile(dir, body);
@@ -157,10 +153,10 @@ const cases = async () => {
       cleanup(dir);
       return out.out;
     };
-    assertEq(declined('{"enabled": true, "manager": {"enabled": false}}'), 'no', 'a nested enabled: false leaves an opted-in repo in');
-    assertEq(declined('{"enabled": false}'), 'yes', 'the top-level decline');
-    assertEq(declined('{"manager": {"enabled": false}}'), 'no', 'a nested decline alone is no decline');
-    assertEq(declined('not json'), 'yes', 'text that does not parse');
+    expect(declined('{"enabled": true, "manager": {"enabled": false}}'), 'a nested enabled: false leaves an opted-in repo in').toBe('no');
+    expect(declined('{"enabled": false}'), 'the top-level decline').toBe('yes');
+    expect(declined('{"manager": {"enabled": false}}'), 'a nested decline alone is no decline').toBe('no');
+    expect(declined('not json'), 'text that does not parse').toBe('yes');
     const both = (body) => {
       const dir = mkTmp('wf-participation-');
       const file = JSON.stringify(shellPath(settingsFile(dir, body)));
@@ -169,11 +165,11 @@ const cases = async () => {
       cleanup(dir);
       return out.out;
     };
-    assertEq(both(''), 'nono', 'an empty file is no answer at all, neither declined nor enabled');
-    assertEq(both('  \n'), 'nono', 'and so is a whitespace-only one');
+    expect(both(''), 'an empty file is no answer at all, neither declined nor enabled').toBe('nono');
+    expect(both('  \n'), 'and so is a whitespace-only one').toBe('nono');
   });
 
-  await testUnless(IS_WINDOWS, NO_EXEC_BIT)('an unreadable file reads as declined, and says nothing on stderr', () => {
+  test('an unreadable file reads as declined, and says nothing on stderr', { skip: IS_WINDOWS && NO_EXEC_BIT }, () => {
     // A guard reading this must not print the shell's complaint into a session's
     // context, so the silencing lives in the seam rather than at each call. The
     // text says enabled, so only the unreadable read can make it a decline.
@@ -181,15 +177,15 @@ const cases = async () => {
     const file = settingsFile(dir, OPT_IN_SHAPES.current);
     fs.chmodSync(file, 0o000);
     const out = inSeam(`wk_settings_declined ${JSON.stringify(shellPath(file))}; printf 'rc=%s' "$?"`);
-    assertEq(out.out, 'rc=0', 'unreadable is a decline, as the hooks module reads it');
-    assertEq(out.err, '', `and nothing reaches stderr, got: ${out.err}`);
+    expect(out.out, 'unreadable is a decline, as the hooks module reads it').toBe('rc=0');
+    expect(out.err, `and nothing reaches stderr, got: ${out.err}`).toBe('');
     fs.chmodSync(file, 0o600);
     cleanup(dir);
   });
+});
 
-  group('participation.sh: wk_opted_in');
-
-  await test('a repo opts in only with a top-level "enabled": true, and a machine file saying true turns none on', () => {
+describe('participation.sh: wk_opted_in', () => {
+  test('a repo opts in only with a top-level "enabled": true, and a machine file saying true turns none on', () => {
     // Every row runs under a home whose own settings file says "enabled": true,
     // so a reader that let the machine file answer would turn the no rows on.
     const home = mkTmp('wf-participation-');
@@ -213,14 +209,14 @@ const cases = async () => {
       if (typeof body === 'object' && body !== null) fs.mkdirSync(settings);
       const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nif wk_opted_in ${JSON.stringify(shellPath(root))}; then printf yes; else printf no; fi`,
         { HOME: shellPath(home), WORKFLOW_HOME: shellPath(path.join(home, '.workkit')) });
-      assertEq(out.out, want, `${name}: ${want}, stderr: ${out.err}`);
+      expect(out.out, `${name}: ${want}, stderr: ${out.err}`).toBe(want);
       cleanup(root);
     }
     cleanup(home);
   });
+});
 
-  group('participation.sh: wk_setting');
-
+describe('participation.sh: wk_setting', () => {
   /**
    * What `wk_setting <root> <key>` prints, parsed as JSON, for a repo whose file
    * holds `repo` and a machine file holding `user` (each an object, undefined for no file).
@@ -236,28 +232,25 @@ const cases = async () => {
     const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nwk_setting ${JSON.stringify(shellPath(root))} ${key}`,
       { HOME: shellPath(home), WORKFLOW_HOME: shellPath(path.join(home, '.workkit')) });
     cleanup(dir);
-    assertEq(out.code, 0, `wk_setting ${key} answers, stderr: ${out.err}`);
+    expect(out.code, `wk_setting ${key} answers, stderr: ${out.err}`).toBe(0);
     return JSON.parse(out.out.trim());
   };
 
-  await test('a key set in neither file prints the kit default', () => {
-    assertEq(setting('findings.file'), false, 'findings.file');
+  test('a key set in neither file prints the kit default', () => {
+    expect(setting('findings.file'), 'findings.file').toBe(false);
   });
 
-  await test('the machine value where the repo sets none, the repo value where it does, false included', () => {
-    assertEq(setting('findings.file', { repo: { enabled: true }, user: { findings: { file: true } } }), true, 'the machine value');
-    assertEq(setting('findings.file', { repo: { enabled: true, findings: { file: false } }, user: { findings: { file: true } } }), false,
-      'the repo false');
+  test('the machine value where the repo sets none, the repo value where it does, false included', () => {
+    expect(setting('findings.file', { repo: { enabled: true }, user: { findings: { file: true } } }), 'the machine value').toBe(true);
+    expect(setting('findings.file', { repo: { enabled: true, findings: { file: false } }, user: { findings: { file: true } } }), 'the repo false').toBe(false);
   });
 
-  await test('a null leaves the lower layer\'s value, and an array replaces the lower one', () => {
-    assertEq(setting('tests.budget', { repo: { enabled: true, tests: { budget: null } }, user: { tests: { budget: 5 } } }), 5,
-      'a repo null leaves the machine budget');
-    assertEq(JSON.stringify(setting('proof.rootOnly', { repo: { enabled: true, proof: { rootOnly: ['c'] } }, user: { proof: { rootOnly: ['a', 'b'] } } })),
-      '["c"]', 'the repo list alone');
+  test('a null leaves the lower layer\'s value, and an array replaces the lower one', () => {
+    expect(setting('tests.budget', { repo: { enabled: true, tests: { budget: null } }, user: { tests: { budget: 5 } } }), 'a repo null leaves the machine budget').toBe(5);
+    expect(JSON.stringify(setting('proof.rootOnly', { repo: { enabled: true, proof: { rootOnly: ['c'] } }, user: { proof: { rootOnly: ['a', 'b'] } } })), 'the repo list alone').toBe('["c"]');
   });
 
-  await test('kit defaults missing or broken: a line naming the file, and 1', () => {
+  test('kit defaults missing or broken: a line naming the file, and 1', () => {
     // A scratch kit holding this file, its defaults two folders above it as it
     // finds them, so a case can take the defaults away or break them.
     for (const [what, body] of [['missing', null], ['broken', '{ "enabled": ']]) {
@@ -272,21 +265,15 @@ const cases = async () => {
         env: { PATH: SYSTEM_PATH, HOME: shellPath(kit), WORKFLOW_HOME: shellPath(kit) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const said = `${res.stdout || ''}${res.stderr || ''}`;
-      assertEq(res.status, 1, `${what}: 1, got: ${said}`);
-      assert(/defaults[\\/]settings\.json/.test(said), `${what}: the line names the file, got: ${said}`);
+      expect(res.status, `${what}: 1, got: ${said}`).toBe(1);
+      expect(/defaults[\\/]settings\.json/.test(said), `${what}: the line names the file, got: ${said}`).toBeTruthy();
       cleanup(kit);
     }
   });
 
-  await test('enabled is the repo file\'s alone: a machine true turns no repo on', () => {
-    assertEq(setting('enabled', { repo: {}, user: { enabled: true } }), false, 'a repo file with no key');
-    assertEq(setting('enabled', { user: { enabled: true } }), false, 'no repo file');
-    assertEq(setting('enabled', { repo: { enabled: true }, user: { enabled: false } }), true, 'the repo true');
+  test('enabled is the repo file\'s alone: a machine true turns no repo on', () => {
+    expect(setting('enabled', { repo: {}, user: { enabled: true } }), 'a repo file with no key').toBe(false);
+    expect(setting('enabled', { user: { enabled: true } }), 'no repo file').toBe(false);
+    expect(setting('enabled', { repo: { enabled: true }, user: { enabled: false } }), 'the repo true').toBe(true);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

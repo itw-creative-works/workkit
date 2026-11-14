@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
 
 const { briefSummaries, newestSummary, isMonday } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'summaries.js'));
@@ -48,22 +48,20 @@ const BOARD = [
   post('daily: 2026-08-01', '2026-08-01'),
 ];
 
-const cases = async () => {
-  group('tower/summaries: the newest of a cadence');
-
-  await test('the newest daily and the newest weekly are read off one board', () => {
+describe('tower/summaries: the newest of a cadence', () => {
+  test('the newest daily and the newest weekly are read off one board', () => {
     const home = mkHome();
     const daily = newestSummary('daily', { workflowHome: home, exec: mkExec(BOARD) }).summary;
-    assertEq(daily.title, 'daily: 2026-08-02', 'the newest daily, not the newest post');
-    assert(daily.url.startsWith('https://github.com/'), `and its link: ${daily.url}`);
-    assertEq(daily.createdAt, '2026-08-02T09:00:00Z', 'and when it was published');
+    expect(daily.title, 'the newest daily, not the newest post').toBe('daily: 2026-08-02');
+    expect(daily.url.startsWith('https://github.com/'), `and its link: ${daily.url}`).toBeTruthy();
+    expect(daily.createdAt, 'and when it was published').toBe('2026-08-02T09:00:00Z');
 
     const weekly = newestSummary('weekly', { workflowHome: home, exec: mkExec(BOARD) }).summary;
-    assertEq(weekly.title, 'weekly: 2026-08-02', 'the rollup is found by its own prefix');
+    expect(weekly.title, 'the rollup is found by its own prefix').toBe('weekly: 2026-08-02');
     cleanup(home);
   });
 
-  await test('the title is what says what a post is - a brief is never a summary', () => {
+  test('the title is what says what a post is - a brief is never a summary', () => {
     // The board is shared: the morning brief publishes beside the summaries, and
     // the category a summary lands in falls back on a repo that has no `Daily`.
     const home = mkHome();
@@ -71,65 +69,65 @@ const cases = async () => {
       workflowHome: home,
       exec: mkExec([post('brief: 2026-08-03', '2026-08-03'), post('a thread somebody opened', '2026-08-02')]),
     });
-    assertEq(out.summary, null, 'nothing on that board is a daily summary');
-    assertEq(out.reason, null, 'and nothing went wrong reading it');
+    expect(out.summary, 'nothing on that board is a daily summary').toBe(null);
+    expect(out.reason, 'and nothing went wrong reading it').toBe(null);
     cleanup(home);
   });
 
-  await test('the read asks the home repo the settings name', () => {
+  test('the read asks the home repo the settings name', () => {
     const home = mkHome('owner/other-home');
     const calls = [];
     newestSummary('daily', { workflowHome: home, exec: mkExec(BOARD, calls) });
-    assertEq(calls.length, 1, 'one round trip');
+    expect(calls.length, 'one round trip').toBe(1);
     const argv = calls[0].join(' ');
-    assert(argv.includes('owner=owner'), `the owner: ${argv}`);
-    assert(argv.includes('name=other-home'), `and the repo: ${argv}`);
+    expect(argv.includes('owner=owner'), `the owner: ${argv}`).toBeTruthy();
+    expect(argv.includes('name=other-home'), `and the repo: ${argv}`).toBeTruthy();
     cleanup(home);
   });
+});
 
-  group('tower/summaries: nothing to say is never a throw');
-
-  await test('an empty board, a machine with no home repo, and a gh that refuses all answer no summary', () => {
+describe('tower/summaries: nothing to say is never a throw', () => {
+  test('an empty board, a machine with no home repo, and a gh that refuses all answer no summary', () => {
     const home = mkHome();
-    assertEq(newestSummary('daily', { workflowHome: home, exec: mkExec([]) }).summary, null, 'a board with nothing on it');
-    assertEq(newestSummary('daily', {
+    expect(newestSummary('daily', { workflowHome: home, exec: mkExec([]) }).summary, 'a board with nothing on it').toBe(null);
+    expect(newestSummary('daily', {
       workflowHome: home,
       exec: () => { throw new Error('gh: not authenticated'); },
-    }).summary, null, 'a read that failed');
-    assertEq(newestSummary('daily', { workflowHome: home, exec: () => 'not json at all' }).summary, null, 'an answer of another shape');
+    }).summary, 'a read that failed').toBe(null);
+    expect(newestSummary('daily', { workflowHome: home, exec: () => 'not json at all' }).summary, 'an answer of another shape').toBe(null);
 
     const noHome = mkHome(null);
-    assertEq(newestSummary('daily', {
+    expect(newestSummary('daily', {
       workflowHome: noHome,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }).summary, null, 'a machine with nowhere to read from never asks');
+    }).summary, 'a machine with nowhere to read from never asks').toBe(null);
     cleanup(home); cleanup(noHome);
   });
 
-  await test('a cadence nobody publishes is no summary without a round trip', () => {
+  test('a cadence nobody publishes is no summary without a round trip', () => {
     const home = mkHome();
-    assertEq(newestSummary('yearly', {
+    expect(newestSummary('yearly', {
       workflowHome: home,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }).summary, null, 'there is no such summary to look for');
+    }).summary, 'there is no such summary to look for').toBe(null);
     cleanup(home);
   });
+});
 
-  group('tower/summaries: the keys a brief carries');
-
-  await test('every morning carries the findings; only Monday carries the week', () => {
+describe('tower/summaries: the keys a brief carries', () => {
+  test('every morning carries the findings; only Monday carries the week', () => {
     const home = mkHome();
     const monday = briefSummaries({ generatedAt: MONDAY, workflowHome: home, exec: mkExec(BOARD) });
-    assertEq(monday.findings.title, 'daily: 2026-08-02', 'yesterday, every day');
-    assertEq(monday.week.title, 'weekly: 2026-08-02', 'and the rollup on a Monday');
+    expect(monday.findings.title, 'yesterday, every day').toBe('daily: 2026-08-02');
+    expect(monday.week.title, 'and the rollup on a Monday').toBe('weekly: 2026-08-02');
 
     const tuesday = briefSummaries({ generatedAt: TUESDAY, workflowHome: home, exec: mkExec(BOARD) });
-    assertEq(tuesday.findings.title, 'daily: 2026-08-02', 'the findings still ride');
-    assert(!('week' in tuesday), 'and the week key is absent entirely, not null');
+    expect(tuesday.findings.title, 'the findings still ride').toBe('daily: 2026-08-02');
+    expect(!('week' in tuesday), 'and the week key is absent entirely, not null').toBeTruthy();
     cleanup(home);
   });
 
-  await test('a Monday reads the board ONCE and picks both cadences off it (#250)', () => {
+  test('a Monday reads the board ONCE and picks both cadences off it (#250)', () => {
     // Two reads of one board are two answers to the same question, and the
     // second one costs a round trip on the one morning of the week that is
     // already the busiest. Both summaries are on the array the first read
@@ -137,79 +135,72 @@ const cases = async () => {
     const home = mkHome();
     const calls = [];
     const out = briefSummaries({ generatedAt: MONDAY, workflowHome: home, exec: mkExec(BOARD, calls) });
-    assertEq(calls.length, 1, 'one round trip, on the day that used to take two');
-    assertEq(out.findings.title, 'daily: 2026-08-02', 'yesterday, off that read');
-    assertEq(out.week.title, 'weekly: 2026-08-02', 'and the rollup, off the same one');
-    assertEq(out.summariesReason, null, 'and a board that answered has nothing to explain');
+    expect(calls.length, 'one round trip, on the day that used to take two').toBe(1);
+    expect(out.findings.title, 'yesterday, off that read').toBe('daily: 2026-08-02');
+    expect(out.week.title, 'and the rollup, off the same one').toBe('weekly: 2026-08-02');
+    expect(out.summariesReason, 'and a board that answered has nothing to explain').toBe(null);
     cleanup(home);
   });
 
-  await test('an unreachable board still answers the keys, empty', () => {
+  test('an unreachable board still answers the keys, empty', () => {
     const home = mkHome();
     const out = briefSummaries({
       generatedAt: MONDAY,
       workflowHome: home,
       exec: () => { throw new Error('offline'); },
     });
-    assertEq(out.findings, null, 'nothing to say about yesterday');
-    assertEq(out.week, null, 'nor about the week');
+    expect(out.findings, 'nothing to say about yesterday').toBe(null);
+    expect(out.week, 'nor about the week').toBe(null);
     cleanup(home);
   });
+});
 
-  group('tower/summaries: why the board could not be read');
-
-  await test('a spent rate limit is the sentence the sweep says, not a bare null (#215)', () => {
+describe('tower/summaries: why the board could not be read', () => {
+  test('a spent rate limit is the sentence the sweep says, not a bare null (#215)', () => {
     const home = mkHome();
     const reset = resetIn(9);
     const out = newestSummary('daily', { workflowHome: home, exec: mkLimited(reset) });
-    assertEq(out.summary, null, 'there is nothing to say about yesterday');
-    assertEq(out.reason, `GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`,
-      'and the reason is the board\u2019s own sentence, said when it lifts');
+    expect(out.summary, 'there is nothing to say about yesterday').toBe(null);
+    expect(out.reason, 'and the reason is the board\u2019s own sentence, said when it lifts').toBe(`GitHub rate limit hit for this token; resets at ${clockAt(reset)} (in 9 min).`);
     cleanup(home);
   });
 
-  await test('a refused token wears the same 403 and is told apart from a limit', () => {
+  test('a refused token wears the same 403 and is told apart from a limit', () => {
     const home = mkHome();
     const out = newestSummary('daily', { workflowHome: home, exec: mkRefused() });
-    assertEq(out.summary, null, 'nothing was read');
-    assertEq(out.reason, 'gh not authenticated', 'and a new token, not a wait, is what fixes it');
+    expect(out.summary, 'nothing was read').toBe(null);
+    expect(out.reason, 'and a new token, not a wait, is what fixes it').toBe('gh not authenticated');
     cleanup(home);
   });
 
-  await test('the reason rides the keys a brief carries, both cadences over one board', () => {
+  test('the reason rides the keys a brief carries, both cadences over one board', () => {
     const home = mkHome();
     const reset = resetIn(9);
     const out = briefSummaries({ generatedAt: MONDAY, workflowHome: home, exec: mkLimited(reset) });
-    assertEq(out.findings, null, 'nothing to say about yesterday');
-    assertEq(out.week, null, 'nor about the week');
-    assert(/rate limit/.test(out.summariesReason), `and the payload carries why: ${out.summariesReason}`);
+    expect(out.findings, 'nothing to say about yesterday').toBe(null);
+    expect(out.week, 'nor about the week').toBe(null);
+    expect(/rate limit/.test(out.summariesReason), `and the payload carries why: ${out.summariesReason}`).toBeTruthy();
     cleanup(home);
   });
 
-  await test('a board that answered carries no reason at all', () => {
+  test('a board that answered carries no reason at all', () => {
     const home = mkHome();
     const out = briefSummaries({ generatedAt: TUESDAY, workflowHome: home, exec: mkExec(BOARD) });
-    assertEq(out.findings.title, 'daily: 2026-08-02', 'the summary is what it always was');
-    assertEq(out.summariesReason, null, 'and nothing went wrong to report');
+    expect(out.findings.title, 'the summary is what it always was').toBe('daily: 2026-08-02');
+    expect(out.summariesReason, 'and nothing went wrong to report').toBe(null);
 
     const noHome = mkHome(null);
-    assertEq(briefSummaries({
+    expect(briefSummaries({
       generatedAt: TUESDAY,
       workflowHome: noHome,
       exec: () => { throw new Error('gh must not be called at all'); },
-    }).summariesReason, null, 'a machine with no home repo has no board to have failed to read');
+    }).summariesReason, 'a machine with no home repo has no board to have failed to read').toBe(null);
     cleanup(home); cleanup(noHome);
   });
 
-  await test('Monday is read in the local morning the stamp belongs to', () => {
-    assert(isMonday(MONDAY), '2026-08-03 is a Monday');
-    assert(!isMonday(TUESDAY), 'the day after is not');
-    assert(!isMonday('not a date'), 'and an unparseable stamp is no day at all');
+  test('Monday is read in the local morning the stamp belongs to', () => {
+    expect(isMonday(MONDAY), '2026-08-03 is a Monday').toBeTruthy();
+    expect(!isMonday(TUESDAY), 'the day after is not').toBeTruthy();
+    expect(!isMonday('not a date'), 'and an unparseable stamp is no day at all').toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

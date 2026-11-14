@@ -4,16 +4,14 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, kitCommitted,
 } = require('./helpers');
 
-const cases = async () => {
-  group('workflow/home: the clone’s own heal');
-
+describe('workflow/home: the clone’s own heal', () => {
   // No session ever opens in the clone, so its heal is invoked here instead,
   // scoped to what makes a repo fileable into: labels and issue forms.
   const cloned = () => {
@@ -27,38 +25,38 @@ const cases = async () => {
   };
   const forms = ['bug', 'enhancement', 'idea', 'dump'];
 
-  await test('the home repo gets the labels and the forms, and they are pushed', () => {
+  test('the home repo gets the labels and the forms, and they are pushed', () => {
     const world = cloned();
     const { code, out, err } = inHome(world, 'wk_home_heal');
-    assertEq(code, 0, `exit 0: ${out}${err}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
 
     const names = world.labels().map((l) => l.name);
     for (const label of ['status:inbox', 'type:idea']) {
-      assert(names.includes(label), `${label} was created on the home repo, got: ${names.join(', ')}`);
+      expect(names.includes(label), `${label} was created on the home repo, got: ${names.join(', ')}`).toBeTruthy();
     }
     const manifest = JSON.parse(fs.readFileSync(path.join(WORKFLOW_DIR, 'labels.json'), 'utf8'));
     const wanted = Object.entries(manifest.groups)
       .flatMap(([group_, spec]) => Object.keys(spec.values).map((v) => `${group_}:${v}`));
-    assertEq(names.length, wanted.length, 'the whole manifest, not a subset');
+    expect(names.length, 'the whole manifest, not a subset').toBe(wanted.length);
     const inbox = world.labels().find((l) => l.name === 'status:inbox');
-    assertEq(inbox.description, manifest.groups.status.values.inbox.description, 'with the manifest’s own description');
+    expect(inbox.description, 'with the manifest’s own description').toBe(manifest.groups.status.values.inbox.description);
 
     for (const form of forms) {
-      assert(fs.existsSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE', `${form}.md`)),
-        `${form}.md landed in the clone`);
+      expect(fs.existsSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE', `${form}.md`)),
+        `${form}.md landed in the clone`).toBeTruthy();
     }
 
     // The forms are files, so they are committed and pushed: a template only
     // this machine can see applies to nothing filed from a phone.
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', world.env.WORKKIT_HOME_REMOTE, check], { encoding: 'utf8' });
-    assert(fs.existsSync(path.join(check, '.github', 'ISSUE_TEMPLATE', 'idea.md')), 'the push landed the forms');
+    expect(fs.existsSync(path.join(check, '.github', 'ISSUE_TEMPLATE', 'idea.md')), 'the push landed the forms').toBeTruthy();
     const subject = spawnSync('git', ['-C', world.tower, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim();
-    assertEq(subject, 'chore(home): install the issue templates', 'in a commit that says what it is');
+    expect(subject, 'in a commit that says what it is').toBe('chore(home): install the issue templates');
     cleanup(world.root);
   });
 
-  await test('a second heal writes nothing, commits nothing and pushes nothing', () => {
+  test('a second heal writes nothing, commits nothing and pushes nothing', () => {
     const world = cloned();
     inHome(world, 'wk_home_heal');
     const head = spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
@@ -69,21 +67,19 @@ const cases = async () => {
     // push with nothing to send both leave the same repo behind.
     const { code, out } = inHome(world,
       'wk_home_commit_push() { printf "COMMIT_PUSH %s\\n" "$1"; return 0; }\nwk_home_heal');
-    assertEq(code, 0, `exit 0: ${out}`);
-    assert(!/COMMIT_PUSH/.test(out), `nothing was committed or pushed, got: ${out}`);
-    assertEq(spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, head,
-      'the clone is exactly where the first run left it');
-    assertEq(fs.readFileSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE', 'bug.md'), 'utf8'), body,
-      'and an existing form is never rewritten');
+    expect(code, `exit 0: ${out}`).toBe(0);
+    expect(!/COMMIT_PUSH/.test(out), `nothing was committed or pushed, got: ${out}`).toBeTruthy();
+    expect(spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, 'the clone is exactly where the first run left it').toBe(head);
+    expect(fs.readFileSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE', 'bug.md'), 'utf8'), 'and an existing form is never rewritten').toBe(body);
 
     const second = world.ghCalls().slice(before).map((c) => c.join(' '));
-    assert(second.some((c) => c.startsWith('label list')), `it still diffs the labels: ${fmtCalls(world.ghCalls())}`);
-    assert(!second.some((c) => c.startsWith('label create') || c.startsWith('label edit')),
-      `and finds nothing to create or correct: ${second.join(' | ')}`);
+    expect(second.some((c) => c.startsWith('label list')), `it still diffs the labels: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
+    expect(!second.some((c) => c.startsWith('label create') || c.startsWith('label edit')),
+      `and finds nothing to create or correct: ${second.join(' | ')}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a commit stranded by a failed push is pushed by the next heal', () => {
+  test('a commit stranded by a failed push is pushed by the next heal', () => {
     // One morning the push fails: the commit stays local and the warning names
     // it. The next heal treats ahead-of-origin as a change, so the forms the
     // home repo needs are never stranded behind one bad morning.
@@ -91,34 +87,34 @@ const cases = async () => {
     const remote = world.env.WORKKIT_HOME_REMOTE;
     fs.renameSync(remote, `${remote}.away`);
     const first = inHome(world, 'wk_home_heal');
-    assertEq(first.code, 0, `the morning carries on: ${first.out}${first.err}`);
-    assert(/could not push/.test(`${first.out}${first.err}`), `the failed push is named, got: ${first.out}${first.err}`);
+    expect(first.code, `the morning carries on: ${first.out}${first.err}`).toBe(0);
+    expect(/could not push/.test(`${first.out}${first.err}`), `the failed push is named, got: ${first.out}${first.err}`).toBeTruthy();
     fs.renameSync(`${remote}.away`, remote);
 
     const { code, out, err } = inHome(world, 'wk_home_heal');
-    assertEq(code, 0, `exit 0: ${out}${err}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
     const check = path.join(world.root, 'check-stranded');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
-    assert(fs.existsSync(path.join(check, '.github', 'ISSUE_TEMPLATE', 'idea.md')),
-      'the stranded templates commit landed on the remote');
+    expect(fs.existsSync(path.join(check, '.github', 'ISSUE_TEMPLATE', 'idea.md')),
+      'the stranded templates commit landed on the remote').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('no clone is a named warning, and the morning carries on', () => {
+  test('no clone is a named warning, and the morning carries on', () => {
     const world = mkWorld({
       login: 'owner',
       settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } },
     });
     const { code, out } = inHome(world, 'wk_home_heal\nprintf "carried on\\n"');
-    assertEq(code, 0, 'exit 0: a heal that cannot run never stops its caller');
-    assert(/nothing is cloned at .*tower/.test(out), `it names the missing clone, got: ${out}`);
-    assert(/not healed/.test(out), 'and what went unhealed is named');
-    assert(/carried on/.test(out), 'the caller runs on');
-    assert(!world.ghCalls().some((c) => c[0] === 'label'), 'nothing was asked of GitHub');
+    expect(code, 'exit 0: a heal that cannot run never stops its caller').toBe(0);
+    expect(/nothing is cloned at .*tower/.test(out), `it names the missing clone, got: ${out}`).toBeTruthy();
+    expect(/not healed/.test(out), 'and what went unhealed is named').toBeTruthy();
+    expect(/carried on/.test(out), 'the caller runs on').toBeTruthy();
+    expect(!world.ghCalls().some((c) => c[0] === 'label'), 'nothing was asked of GitHub').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('an ordinary repo is refused: the mode heals the clone and nothing else', () => {
+  test('an ordinary repo is refused: the mode heals the clone and nothing else', () => {
     // The participation gate is not bypassed but inverted: --home writes into
     // the tower clone only, so it can never touch a repo that never said yes.
     const world = cloned();
@@ -128,9 +124,9 @@ const cases = async () => {
     const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--home', shellPath(other)], {
       env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
-    assertEq(res.status, 1, 'it refuses');
-    assert(/not the tower clone/.test(res.stderr || ''), `and says why, got: ${res.stderr}`);
-    assert(!fs.existsSync(path.join(other, '.github')), 'nothing was written into it');
+    expect(res.status, 'it refuses').toBe(1);
+    expect(/not the tower clone/.test(res.stderr || ''), `and says why, got: ${res.stderr}`).toBeTruthy();
+    expect(!fs.existsSync(path.join(other, '.github')), 'nothing was written into it').toBeTruthy();
     cleanup(world.root);
   });
 
@@ -140,29 +136,29 @@ const cases = async () => {
   const EDIT = '# an edit to the bug form not yet committed\n';
   const healedBug = (world) => path.join(world.tower, '.github', 'ISSUE_TEMPLATE', 'bug.md');
 
-  await test('a git-backed kit: an uncommitted form edit is not healed in, the committed form is', () => {
+  test('a git-backed kit: an uncommitted form edit is not healed in, the committed form is', () => {
     const world = cloned();
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, ...FORM.split('/')), EDIT);
     const { code, out } = inHome(world, 'wk_home_heal');
-    assertEq(code, 0, `exit 0: ${out}`);
+    expect(code, `exit 0: ${out}`).toBe(0);
     const body = fs.readFileSync(healedBug(world), 'utf8');
-    assertEq(body, kitCommitted(world, FORM), 'the clone holds the kit’s committed bug form, byte for byte');
-    assert(!body.includes('not yet committed'), 'and the edit stayed in the kit folder');
+    expect(body, 'the clone holds the kit’s committed bug form, byte for byte').toBe(kitCommitted(world, FORM));
+    expect(!body.includes('not yet committed'), 'and the edit stayed in the kit folder').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a kit copy no repo tracks: the folder is the source, its edit is healed in', () => {
+  test('a kit copy no repo tracks: the folder is the source, its edit is healed in', () => {
     const world = cloned();
     world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, ...FORM.split('/')), EDIT);
     const { code, out } = inHome(world, 'wk_home_heal');
-    assertEq(code, 0, `exit 0: ${out}`);
-    assert(fs.readFileSync(healedBug(world), 'utf8').includes('not yet committed'),
-      'the folder’s bug form, edit included, reached the clone');
+    expect(code, `exit 0: ${out}`).toBe(0);
+    expect(fs.readFileSync(healedBug(world), 'utf8').includes('not yet committed'),
+      'the folder’s bug form, edit included, reached the clone').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a kit a repo tracks but HEAD lacks heals nothing, says so, and carries on', () => {
+  test('a kit a repo tracks but HEAD lacks heals nothing, says so, and carries on', () => {
     // The kit folder is staged in a repo whose only commit holds none of it, so
     // the committed tree cannot be exported.
     const world = cloned();
@@ -172,26 +168,20 @@ const cases = async () => {
     git(holder, 'init', '-q', '-b', 'main');
     git(holder, 'add', 'README.md');
     const res = git(holder, '-c', 'user.name=kit', '-c', 'user.email=kit@localhost', 'commit', '-q', '-m', 'chore: a readme');
-    assertEq(res.status, 0, `the holder committed: ${res.stderr}`);
+    expect(res.status, `the holder committed: ${res.stderr}`).toBe(0);
     git(holder, 'add', 'kit');
     world.env.WORKKIT_KIT_DIR = kit;
     const head = git(world.tower, 'rev-parse', 'HEAD').stdout;
     const before = world.ghCalls().length;
 
     const { code, out } = inHome(world, 'wk_home_heal');
-    assertEq(code, 0, `a heal that cannot run never stops its caller: ${out}`);
-    assert(out.includes('labels and issue templates were not healed'), `it names what went unhealed, got: ${out}`);
-    assert(!fs.existsSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE')), 'no form was written');
-    assertEq(git(world.tower, 'rev-parse', 'HEAD').stdout, head, 'and nothing was committed');
+    expect(code, `a heal that cannot run never stops its caller: ${out}`).toBe(0);
+    expect(out.includes('labels and issue templates were not healed'), `it names what went unhealed, got: ${out}`).toBeTruthy();
+    expect(!fs.existsSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE')), 'no form was written').toBeTruthy();
+    expect(git(world.tower, 'rev-parse', 'HEAD').stdout, 'and nothing was committed').toBe(head);
     const calls = world.ghCalls().slice(before).map((c) => c.join(' '));
-    assert(!calls.some((c) => c.startsWith('label create') || c.startsWith('label edit')),
-      `and no label was written, got: ${calls.join(' | ')}`);
+    expect(!calls.some((c) => c.startsWith('label create') || c.startsWith('label edit')),
+      `and no label was written, got: ${calls.join(' | ')}`).toBeTruthy();
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

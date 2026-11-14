@@ -2,7 +2,7 @@
  * The world the `workkit supervise` and `workkit watch` suites share: a scratch
  * repo that ignores `.workkit/` on a scratch machine, the fake commands beyond
  * ./supervise.js's, and the one command called the way the workkit-cli suites do.
- * Consumers: test/scripts/supervise.test.js and watch.test.js.
+ * Consumers: test/scripts/supervise.test.js, watch.test.js and script-shell-detached.test.js.
  */
 
 const fs = require('fs');
@@ -11,9 +11,9 @@ const {
   mkTmp, seeded, run, start,
 } = require('./harness');
 const {
-  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, joinPath, homeEnv,
+  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, jsPath, joinPath, homeEnv,
 } = require('./platform');
-const { checkSettings, jsPath, writesPid } = require('./supervise');
+const { checkSettings, writesPid } = require('./supervise');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 

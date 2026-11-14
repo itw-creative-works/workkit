@@ -177,6 +177,8 @@ usage: workkit <command> [args]
                        so the script shell records the run
   tools                print each command this repo's suites name through
                        needs(), one per line, sorted, for a setup to install
+  convert [paths...]   rewrite this repo's old-shape suites in place onto
+                       Node's test functions, one line per file, from its root
   prove                run the root suite on exactly the staged tree, in a copy
                        outside the repo, and record it on green, so a commit
                        of it passes the gate while other work stays unstaged
@@ -184,10 +186,11 @@ usage: workkit <command> [args]
                        run the command detached under the supervisor, as the
                        root suite runs, its output tailed here and in the run
                        log; exit its code, 124 frozen and ended, 125 a look
-  watch [--end] [suite|run]
+  watch [--end] [suite|run|<pid>]
                        follow the live run again: the suite's, else the
-                       supervised one, or the one named; --end ends the named
-                       run, or the one live run
+                       supervised one, else the one live narrowed run, or the
+                       one named (a narrowed run by its pid); --end ends the
+                       named run, or the one live run
   public intake        take each new issue on the paired public repo into this
                        repo's inbox, linked, with the intake comment on it
   public mirror <N>... | --all
@@ -322,6 +325,7 @@ case "${1:-help}" in
   log)     shift; cmd_log "$@" ;;
   test)    shift; cmd_test "$@" ;;
   tools)   shift; cmd_tools "$@" ;;
+  convert) shift; cmd_convert "$@" ;;
   public)  shift; cmd_public "$@" ;;
   ship)    shift; cmd_ship "$@" ;;
   review)  shift; cmd_review "$@" ;;

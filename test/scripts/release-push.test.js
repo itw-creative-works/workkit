@@ -8,7 +8,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE,
+  describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
@@ -84,10 +84,10 @@ const run = (w, args) => {
 const answers = (w, before, line, what) => {
   const pushed = w.git('rev-parse', 'HEAD').trim();
   const out = run(w, [before]);
-  assertEq(out.code, 0, `${what}: exit code (stderr: ${out.stderr})`);
-  assertEq(out.stdout, `${line}\n`, `${what}: the printed line`);
-  assertEq(w.git('rev-parse', 'HEAD').trim(), pushed, `${what}: HEAD is back at the pushed commit`);
-  assertEq(w.git('status', '--porcelain'), '', `${what}: the tree is clean`);
+  expect(out.code, `${what}: exit code (stderr: ${out.stderr})`).toBe(0);
+  expect(out.stdout, `${what}: the printed line`).toBe(`${line}\n`);
+  expect(w.git('rev-parse', 'HEAD').trim(), `${what}: HEAD is back at the pushed commit`).toBe(pushed);
+  expect(w.git('status', '--porcelain'), `${what}: the tree is clean`).toBe('');
 };
 
 // The release stamp a ship commits beside its CHANGELOG move.
@@ -98,30 +98,28 @@ const STAMP = {
   'package-lock.json': lock('1.0.1', '2.0.0'),
 };
 
-const cases = async () => {
-  group('release-push.sh: a release stamp skips');
-
-  await test('a push changing CHANGELOG.md and the version in plugin.json, package.json and the lockfile prints run=false', () => {
+describe('release-push.sh: a release stamp skips', () => {
+  test('a push changing CHANGELOG.md and the version in plugin.json, package.json and the lockfile prints run=false', () => {
     const { w, before } = mkWorld();
     push(w, STAMP);
     answers(w, before, 'run=false', 'release stamp');
   });
 
-  await test('a push changing only CHANGELOG.md prints run=false', () => {
+  test('a push changing only CHANGELOG.md prints run=false', () => {
     const { w, before } = mkWorld();
     push(w, { 'CHANGELOG.md': STAMP['CHANGELOG.md'] });
     answers(w, before, 'run=false', 'changelog only');
   });
+});
 
-  group('release-push.sh: any other push runs');
-
-  await test('a push changing only a dependency version in package-lock.json prints run=true', () => {
+describe('release-push.sh: any other push runs', () => {
+  test('a push changing only a dependency version in package-lock.json prints run=true', () => {
     const { w, before } = mkWorld();
     push(w, { 'package-lock.json': lock('1.0.0', '2.0.1') });
     answers(w, before, 'run=true', 'dependency bump');
   });
 
-  await test('a push changing only the version of a JSON file the commit gate does not name prints run=true', () => {
+  test('a push changing only the version of a JSON file the commit gate does not name prints run=true', () => {
     const { w } = mkWorld();
     w.write('fixtures/app.json', json({ name: 'app', version: '1.0.0' }));
     push(w, {});
@@ -130,7 +128,7 @@ const cases = async () => {
     answers(w, after, 'run=true', 'fixture version');
   });
 
-  await test('a release stamp in a nested package.json and package-lock.json prints run=false', () => {
+  test('a release stamp in a nested package.json and package-lock.json prints run=false', () => {
     const { w } = mkWorld();
     w.write('packages/a/package.json', pkg('1.0.0'));
     w.write('packages/a/package-lock.json', lock('1.0.0', '2.0.0'));
@@ -140,7 +138,7 @@ const cases = async () => {
     answers(w, after, 'run=false', 'nested stamp');
   });
 
-  await test('a push changing a code file prints run=true, alone or beside a release stamp', () => {
+  test('a push changing a code file prints run=true, alone or beside a release stamp', () => {
     const alone = mkWorld();
     push(alone.w, { 'src/x.js': 'module.exports = 2;\n' });
     answers(alone.w, alone.before, 'run=true', 'code alone');
@@ -149,13 +147,13 @@ const cases = async () => {
     answers(stamped.w, stamped.before, 'run=true', 'code beside a stamp');
   });
 
-  await test('a push that changes no file prints run=true', () => {
+  test('a push that changes no file prints run=true', () => {
     const { w, before } = mkWorld();
     w.git('commit', '-q', '--allow-empty', '-m', 'empty');
     answers(w, before, 'run=true', 'empty push');
   });
 
-  await test('a before that is all zeros or empty prints run=true', () => {
+  test('a before that is all zeros or empty prints run=true', () => {
     for (const [before, what] of [
       ['0000000000000000000000000000000000000000', 'all zeros'],
       ['', 'empty'],
@@ -165,31 +163,25 @@ const cases = async () => {
       answers(w, before, 'run=true', what);
     }
   });
+});
 
-  group('release-push.sh: a <before> the shallow CI clone lacks');
-
-  await test('origin holds it: it is fetched, and a release-stamp push prints run=false', () => {
+describe('release-push.sh: a <before> the shallow CI clone lacks', () => {
+  test('origin holds it: it is fetched, and a release-stamp push prints run=false', () => {
     const { c, before } = mkShallow(STAMP);
     answers(c, before, 'run=false', 'shallow release stamp');
   });
 
-  await test('origin lacks it too: the failed fetch is passed over, run=true', () => {
+  test('origin lacks it too: the failed fetch is passed over, run=true', () => {
     const { c } = mkShallow(STAMP);
     answers(c, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', 'run=true', 'unknown everywhere');
   });
+});
 
-  group('release-push.sh: usage');
-
-  await test('no argument exits 64 and answers nothing', () => {
+describe('release-push.sh: usage', () => {
+  test('no argument exits 64 and answers nothing', () => {
     const { w } = mkWorld();
     const out = run(w, []);
-    assertEq(out.code, 64, `exit code (stderr: ${out.stderr})`);
-    assert(!/run=/.test(out.stdout), `no run= answer on stdout: ${out.stdout}`);
+    expect(out.code, `exit code (stderr: ${out.stderr})`).toBe(64);
+    expect(!/run=/.test(out.stdout), `no run= answer on stdout: ${out.stdout}`).toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

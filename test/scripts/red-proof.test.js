@@ -10,10 +10,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync, spawn } = require('child_process');
 const {
-  group, test, assert, assertEq, testUnless, summary, selfRun, SPAWN_DEADLINE,
+  describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, shellPath, gitPath,
+  IS_WINDOWS, BASH, NO_RC, shellPath, jsPath, gitPath,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
@@ -153,7 +153,7 @@ const runScript = (w, args, cwd = w.repo, env = w.env) => {
   const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
     cwd, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `the script finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -194,10 +194,10 @@ const field = (out, tag) => (lines(out).find((l) => l.startsWith(`${tag} `)) || 
 
 /** The worktree is gone: one `git worktree list` line, no run folder left, nothing in TMPDIR. */
 const assertNoWorktree = (w) => {
-  assertEq(lines(w.git('worktree', 'list')).length, 1, 'git worktree list is back to one entry');
-  assertEq(runFolders(homeOf(w)).join(', '), '', 'no run folder left under proof/');
+  expect(lines(w.git('worktree', 'list')).length, 'git worktree list is back to one entry').toBe(1);
+  expect(runFolders(homeOf(w)).join(', '), 'no run folder left under proof/').toBe('');
   const left = fs.readdirSync(w.tmp);
-  assertEq(left.length, 0, `nothing left in TMPDIR: ${left}`);
+  expect(left.length, `nothing left in TMPDIR: ${left}`).toBe(0);
 };
 
 // A command that prints its folder, the run folders under proof/ and the
@@ -205,59 +205,57 @@ const assertNoWorktree = (w) => {
 const WHERE = (w) => [
   "const fs = require('fs');",
   "console.log('cwd', fs.realpathSync(process.cwd()));",
-  `console.log('runs', JSON.stringify(fs.readdirSync(${JSON.stringify(proofBase(homeOf(w)))})));`,
-  `console.log('tmp', JSON.stringify(fs.readdirSync(${JSON.stringify(w.tmp)})));`,
+  `console.log('runs', JSON.stringify(fs.readdirSync(${jsPath(proofBase(homeOf(w)))})));`,
+  `console.log('tmp', JSON.stringify(fs.readdirSync(${jsPath(w.tmp)})));`,
 ].join(' ');
 
-const cases = async () => {
-  group('proof red: the verdict');
-
-  await test('an edited source the new test needs: red, exit 0, the shared tree untouched', () => {
+describe('proof red: the verdict', () => {
+  test('an edited source the new test needs: red, exit 0, the shared tree untouched', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const before = w.git('status', '--short');
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 0, `exit 0: ${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
-    assert(err.includes('x is 1'), `the command's own stderr passed through: ${err}`);
+    expect(code, `exit 0: ${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    expect(err.includes('x is 1'), `the command's own stderr passed through: ${err}`).toBeTruthy();
     assertNoWorktree(w);
-    assertEq(w.git('status', '--short'), before, 'git status --short is unchanged');
-    assertEq(fs.readFileSync(path.join(w.repo, 'src', 'x.js'), 'utf8'), 'module.exports = 2;\n', 'the edit is still there');
+    expect(w.git('status', '--short'), 'git status --short is unchanged').toBe(before);
+    expect(fs.readFileSync(path.join(w.repo, 'src', 'x.js'), 'utf8'), 'the edit is still there').toBe('module.exports = 2;\n');
     cleanup(w.dir);
   });
 
-  await test('a test tied to nothing the source changed: green, exit 1, naming the path', () => {
+  test('a test tied to nothing the source changed: green, exit 1, naming the path', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', "require('../src/x');\nconsole.log('always fine');\n");
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 1, `exit 1: ${err}`);
-    assert(out.includes('always fine'), `the command's stdout passed through: ${out}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    expect(code, `exit 1: ${err}`).toBe(1);
+    expect(out.includes('always fine'), `the command's stdout passed through: ${out}`).toBeTruthy();
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/x.js');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: no snapshot');
-
-  await test('a repo with no snapshot: exit 2 with the one line, never a verdict', () => {
+describe('proof red: no snapshot', () => {
+  test('a repo with no snapshot: exit 2 with the one line, never a verdict', () => {
     const w = mkWorld();
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
-    assertEq(lines(err).pop(), NO_SNAPSHOT, `the last stderr line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe(NO_SNAPSHOT);
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: the snapshot');
-
-  await test('a gitignored .env in a repo with one root package.json is in the copy', () => {
+describe('proof red: the snapshot', () => {
+  test('a gitignored .env in a repo with one root package.json is in the copy', () => {
     const w = mkRepo('red-proof-env-', {
       'package.json': `${JSON.stringify({ name: 'single', private: true })}\n`,
       '.gitignore': '.env\n',
@@ -269,56 +267,56 @@ const cases = async () => {
     const check = "const s = require('fs').readFileSync('.env', 'utf8'); console.log('env', s.trim());"
       + " process.exit(s === 'KEY=\"root-env\"\\n' ? 0 : 1);";
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assert(out.includes('env KEY="root-env"'), `the root .env read in the copy: ${out}${err}`);
-    assertEq(code, 1, `exit 1, the check passed: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    expect(out.includes('env KEY="root-env"'), `the root .env read in the copy: ${out}${err}`).toBeTruthy();
+    expect(code, `exit 1, the check passed: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/x.js');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a named path is as the snapshot holds it, not as HEAD or the live tree has it', () => {
+  test('a named path is as the snapshot holds it, not as HEAD or the live tree has it', () => {
     const w = mkWorld();
     w.write('src/x.js', 'module.exports = 3;\n');
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assert(err.includes('x is 3'), `the snapshot's version ran: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(err.includes('x is 3'), `the snapshot's version ran: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a named file created after the snapshot is absent: a test requiring it is red, exit 0', () => {
+  test('a named file created after the snapshot is absent: a test requiring it is red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/new.js', 'module.exports = 3;\n');
     w.write('tests/x.test.js', "if (require('../src/new') !== 3) throw new Error('new');\n");
     const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 0, `exit 0: ${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `red: ${out}`);
-    assert(err.includes('src/new'), `node could not find it: ${err}`);
-    assertEq(fs.existsSync(path.join(w.repo, 'src', 'new.js')), true, 'the shared tree keeps it');
+    expect(code, `exit 0: ${err}`).toBe(0);
+    expect(lines(out).pop(), `red: ${out}`).toBe('red-proof: red');
+    expect(err.includes('src/new'), `node could not find it: ${err}`).toBeTruthy();
+    expect(fs.existsSync(path.join(w.repo, 'src', 'new.js')), 'the shared tree keeps it').toBe(true);
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a tracked file the snapshot tree lacks is HEAD\'s in the copy: a test requiring it is green, exit 1', () => {
+  test('a tracked file the snapshot tree lacks is HEAD\'s in the copy: a test requiring it is green, exit 1', () => {
     const w = mkWorld();
     const snap = takeSnapshot(w);
     fs.rmSync(path.join(snap, 'tree', 'src', 'helper.js'));
     w.write('src/x.js', 'module.exports = 2;\n');
     const check = "console.log('helper', require('./src/helper'));";
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assertEq(field(out, 'helper'), '0', `HEAD's src/helper.js loaded in the copy: ${out}${err}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    expect(field(out, 'helper'), `HEAD's src/helper.js loaded in the copy: ${out}${err}`).toBe('0');
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/x.js');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('since the snapshot: a changed file is live, a deleted one absent, one dirty then and reverted since is HEAD\'s', () => {
+  test('since the snapshot: a changed file is live, a deleted one absent, one dirty then and reverted since is HEAD\'s', () => {
     const w = mkWorld();
     w.write('src/w.js', 'module.exports = 999;\n');
     takeSnapshot(w);
@@ -329,15 +327,15 @@ const cases = async () => {
       + " console.log('helper', require('fs').existsSync('src/helper.js'));"
       + " console.log('w', require('./src/w'));";
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assertEq(field(out, 'y'), '20', `the changed file is live: ${out}${err}`);
-    assertEq(field(out, 'helper'), 'false', `the deleted file is absent: ${out}${err}`);
-    assertEq(field(out, 'w'), '100', `the reverted file is HEAD's: ${out}${err}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
+    expect(field(out, 'y'), `the changed file is live: ${out}${err}`).toBe('20');
+    expect(field(out, 'helper'), `the deleted file is absent: ${out}${err}`).toBe('false');
+    expect(field(out, 'w'), `the reverted file is HEAD's: ${out}${err}`).toBe('100');
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a commit between the snapshot and the proof: the files it changed are live', () => {
+  test('a commit between the snapshot and the proof: the files it changed are live', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/y.js', 'module.exports = 30;\n');
@@ -349,15 +347,15 @@ const cases = async () => {
       + " console.log('added', require('./src/added'));"
       + " console.log('helper', require('fs').existsSync('src/helper.js'));";
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assertEq(field(out, 'y'), '30', `the committed change is live: ${out}${err}`);
-    assertEq(field(out, 'added'), '4', `the committed new file is there: ${out}${err}`);
-    assertEq(field(out, 'helper'), 'false', `the committed removal is absent: ${out}${err}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
+    expect(field(out, 'y'), `the committed change is live: ${out}${err}`).toBe('30');
+    expect(field(out, 'added'), `the committed new file is there: ${out}${err}`).toBe('4');
+    expect(field(out, 'helper'), `the committed removal is absent: ${out}${err}`).toBe('false');
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('the copy is a git repo; after the run the real tree and the snapshot are untouched and the worktree is gone', () => {
+  test('the copy is a git repo; after the run the real tree and the snapshot are untouched and the worktree is gone', () => {
     const w = mkWorld();
     w.write('node_modules/tiny/index.js', 'module.exports = 5;\n');
     const snap = takeSnapshot(w);
@@ -366,18 +364,18 @@ const cases = async () => {
     const status = w.git('status', '--short', '--ignored');
     const held = treeOf(snap);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'git', 'rev-parse', '--show-toplevel']);
-    assertEq(code, 1, `exit 1, git answered in the copy: ${out}${err}`);
+    expect(code, `exit 1, git answered in the copy: ${out}${err}`).toBe(1);
     const top = lines(out)[0] || '';
-    assert(top !== '' && top !== gitPath(w.repo) && !top.startsWith(`${gitPath(w.repo)}/`),
-      `the copy's own toplevel, not the live repo: ${out}`);
-    assertEq(JSON.stringify(treeOf(w.repo)), JSON.stringify(tree), 'no file in the real tree added, removed or altered');
-    assertEq(w.git('status', '--short', '--ignored'), status, 'git status --short --ignored is unchanged');
-    assertEq(JSON.stringify(treeOf(snap)), JSON.stringify(held), 'the snapshot is unchanged');
+    expect(top !== '' && top !== gitPath(w.repo) && !top.startsWith(`${gitPath(w.repo)}/`),
+      `the copy's own toplevel, not the live repo: ${out}`).toBeTruthy();
+    expect(JSON.stringify(treeOf(w.repo)), 'no file in the real tree added, removed or altered').toBe(JSON.stringify(tree));
+    expect(w.git('status', '--short', '--ignored'), 'git status --short --ignored is unchanged').toBe(status);
+    expect(JSON.stringify(treeOf(snap)), 'the snapshot is unchanged').toBe(JSON.stringify(held));
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a snapshot with no node_modules: the copy reaches the root\'s and a nested package\'s live one', () => {
+  test('a snapshot with no node_modules: the copy reaches the root\'s and a nested package\'s live one', () => {
     const w = mkWorld();
     w.write('package.json', `${JSON.stringify({ name: 'root', private: true })}\n`);
     w.write('pkg/package.json', `${JSON.stringify({ name: 'pkg' })}\n`);
@@ -390,20 +388,18 @@ const cases = async () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', `console.log('tiny', require('tiny'));\nconsole.log('dep', require('../pkg/use'));\n${TEST_OF(2)}`);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(field(out, 'tiny'), '5', `the root node_modules reached: ${out}${err}`);
-    assertEq(field(out, 'dep'), '7', `the nested node_modules reached: ${out}${err}`);
-    assert(err.includes('x is 1'), `the assertion ran: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
-    assertEq(Object.keys(treeOf(snap)).filter((k) => k.split(path.sep).includes('node_modules')).join(','), '',
-      'the snapshot still holds no node_modules');
-    assertEq(fs.readFileSync(path.join(w.repo, 'node_modules', 'tiny', 'index.js'), 'utf8'),
-      'module.exports = 5;\n', 'the real node_modules is intact');
+    expect(field(out, 'tiny'), `the root node_modules reached: ${out}${err}`).toBe('5');
+    expect(field(out, 'dep'), `the nested node_modules reached: ${out}${err}`).toBe('7');
+    expect(err.includes('x is 1'), `the assertion ran: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    expect(Object.keys(treeOf(snap)).filter((k) => k.split(path.sep).includes('node_modules')).join(','), 'the snapshot still holds no node_modules').toBe('');
+    expect(fs.readFileSync(path.join(w.repo, 'node_modules', 'tiny', 'index.js'), 'utf8'), 'the real node_modules is intact').toBe('module.exports = 5;\n');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a node_modules in an ignored folder: the copy holds its file as a regular file with the live content, the live folder untouched', () => {
+  test('a node_modules in an ignored folder: the copy holds its file as a regular file with the live content, the live folder untouched', () => {
     const w = mkWorld();
     w.write('.gitignore', 'node_modules/\ncache/\n');
     w.git('commit', '-q', '-am', 'ignore cache');
@@ -416,15 +412,15 @@ const cases = async () => {
       + " console.log('inside', fs.realpathSync(rel) === path.join(fs.realpathSync('.'), rel));"
       + " console.log('body', JSON.stringify(fs.readFileSync(rel, 'utf8')));";
     const { code, out, err } = runScript(w, ['src/y.js', '--', 'node', '-e', check]);
-    assertEq(field(out, 'inside'), 'true', `the file is the copy's own, through no link: ${out}${err}`);
-    assertEq(field(out, 'body'), JSON.stringify('module.exports = 9;\n'), `the live content: ${out}${err}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(JSON.stringify(treeOf(path.join(w.repo, 'cache'))), JSON.stringify(live), 'the live cache/ is untouched');
+    expect(field(out, 'inside'), `the file is the copy's own, through no link: ${out}${err}`).toBe('true');
+    expect(field(out, 'body'), `the live content: ${out}${err}`).toBe(JSON.stringify('module.exports = 9;\n'));
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(JSON.stringify(treeOf(path.join(w.repo, 'cache'))), 'the live cache/ is untouched').toBe(JSON.stringify(live));
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a workspace link reaches the copy\'s package, a plain and a scoped entry the live repo; rebuilt output is red', () => {
+  test('a workspace link reaches the copy\'s package, a plain and a scoped entry the live repo; rebuilt output is red', () => {
     const w = mkBuilt();
     w.write('node_modules/tiny/index.js', 'module.exports = 5;\n');
     w.write('node_modules/@scope/ext/index.js', 'module.exports = 6;\n');
@@ -440,27 +436,27 @@ const cases = async () => {
     const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/ab.test.js']);
     const live = fs.realpathSync(w.repo);
     const root = field(out, 'root');
-    assert(root !== '' && root !== live, `the test ran in a copy, not the live root: ${out}${err}`);
+    expect(root !== '' && root !== live, `the test ran in a copy, not the live root: ${out}${err}`).toBeTruthy();
     const [a, tiny, ext] = ['@scope/a', 'tiny', '@scope/ext'].map((name) => field(out, name).split(' '));
-    assert(a[0].startsWith(`${root}${path.sep}`), `the workspace link resolved inside the copy ${root}: ${a[0]}`);
-    assertEq(a[1], '1', `the copy's package loaded, not the live one: ${out}`);
-    assertEq(tiny[1], '5', `the plain entry reached: ${out}${err}`);
-    assert(tiny[0].startsWith(`${live}${path.sep}`), `the plain entry is the live repo's: ${tiny[0]}`);
-    assertEq(ext[1], '6', `the scoped entry reached: ${out}${err}`);
-    assert(ext[0].startsWith(`${live}${path.sep}`), `the scoped entry is the live repo's: ${ext[0]}`);
-    assert(out.includes('b old 1'), `the snapshot's build of @scope/b loaded the copy's @scope/a: ${out}${err}`);
-    assert(err.includes('a via b is 1'), `the assertion ran: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
-    assertEq(fs.readFileSync(path.join(w.repo, 'packages', 'b', 'dist', 'index.js'), 'utf8'), BUILT('new'), 'the live build is intact');
-    assert(fs.lstatSync(path.join(w.repo, 'node_modules', '@scope', 'a')).isSymbolicLink(), 'the live workspace link is intact');
+    expect(a[0].startsWith(`${root}${path.sep}`), `the workspace link resolved inside the copy ${root}: ${a[0]}`).toBeTruthy();
+    expect(a[1], `the copy's package loaded, not the live one: ${out}`).toBe('1');
+    expect(tiny[1], `the plain entry reached: ${out}${err}`).toBe('5');
+    expect(tiny[0].startsWith(`${live}${path.sep}`), `the plain entry is the live repo's: ${tiny[0]}`).toBeTruthy();
+    expect(ext[1], `the scoped entry reached: ${out}${err}`).toBe('6');
+    expect(ext[0].startsWith(`${live}${path.sep}`), `the scoped entry is the live repo's: ${ext[0]}`).toBeTruthy();
+    expect(out.includes('b old 1'), `the snapshot's build of @scope/b loaded the copy's @scope/a: ${out}${err}`).toBeTruthy();
+    expect(err.includes('a via b is 1'), `the assertion ran: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    expect(fs.readFileSync(path.join(w.repo, 'packages', 'b', 'dist', 'index.js'), 'utf8'), 'the live build is intact').toBe(BUILT('new'));
+    expect(fs.lstatSync(path.join(w.repo, 'node_modules', '@scope', 'a')).isSymbolicLink(), 'the live workspace link is intact').toBeTruthy();
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: the copy');
-
-  await test('a named directory: every file under it is the snapshot\'s in the copy', () => {
+describe('proof red: the copy', () => {
+  test('a named directory: every file under it is the snapshot\'s in the copy', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
@@ -468,13 +464,13 @@ const cases = async () => {
     const check = "const x = require('./src/x'), y = require('./src/y'); console.log('pair', x, y);"
       + ' process.exit(x === 1 && y === 10 ? 0 : 1);';
     const { code, out, err } = runScript(w, ['src/', '--', 'node', '-e', check]);
-    assertEq(code, 1, `exit 1, the check passed on the snapshot's values: ${out}${err}`);
-    assert(out.includes('pair 1 10'), `both the snapshot's: ${out}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/', `the last stdout line: ${out}`);
+    expect(code, `exit 1, the check passed on the snapshot's values: ${out}${err}`).toBe(1);
+    expect(out.includes('pair 1 10'), `both the snapshot's: ${out}`).toBeTruthy();
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/');
     cleanup(w.dir);
   });
 
-  await test('a file HEAD holds under a named folder the snapshot lacks is absent in the copy, the snapshot\'s own files there: red, exit 0', () => {
+  test('a file HEAD holds under a named folder the snapshot lacks is absent in the copy, the snapshot\'s own files there: red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/extra.js', 'module.exports = 5;\n');
@@ -484,11 +480,11 @@ const cases = async () => {
     const check = "const fs = require('fs'); console.log('extra', fs.existsSync('src/extra.js'));"
       + " console.log('pair', require('./src/x'), require('./src/y')); require('./src/extra');";
     const { code, out, err } = runScript(w, ['src', '--', 'node', '-e', check]);
-    assertEq(field(out, 'extra'), 'false', `HEAD's src/extra.js is absent in the copy: ${out}${err}`);
-    assertEq(field(out, 'pair'), '1 10', `the snapshot's own files under src are there: ${out}${err}`);
-    assert(err.includes('src/extra'), `the require saw it missing: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(field(out, 'extra'), `HEAD's src/extra.js is absent in the copy: ${out}${err}`).toBe('false');
+    expect(field(out, 'pair'), `the snapshot's own files under src are there: ${out}${err}`).toBe('1 10');
+    expect(err.includes('src/extra'), `the require saw it missing: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
@@ -502,7 +498,7 @@ const cases = async () => {
       "const fs = require('fs'); console.log('kind', fs.statSync('cfg').isFile(), fs.readFileSync('cfg', 'utf8').trim());",
       'true flat'],
   ]) {
-    await test(`${label}: the copy holds the claim's kind, the command runs, green, exit 1`, () => {
+    test(`${label}: the copy holds the claim's kind, the command runs, green, exit 1`, () => {
       const w = mkWorld();
       for (const [rel, body] of Object.entries(head)) w.write(rel, body);
       w.git('add', '-A');
@@ -512,15 +508,15 @@ const cases = async () => {
       takeSnapshot(w);
       w.write('src/x.js', 'module.exports = 2;\n');
       const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-      assertEq(field(out, 'kind'), want, `the command saw the claim's kind: ${out}${err}`);
-      assertEq(code, 1, `exit 1, never a stop from the fill: ${out}${err}`);
-      assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+      expect(field(out, 'kind'), `the command saw the claim's kind: ${out}${err}`).toBe(want);
+      expect(code, `exit 1, never a stop from the fill: ${out}${err}`).toBe(1);
+      expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/x.js');
       assertNoWorktree(w);
       cleanup(w.dir);
     });
   }
 
-  await test('a file at the claim committed as a folder since: the copy holds the folder, a verdict, never a stop from the fill', () => {
+  test('a file at the claim committed as a folder since: the copy holds the folder, a verdict, never a stop from the fill', () => {
     const w = mkWorld();
     w.write('src/a', 'file\n');
     w.git('add', '-A');
@@ -533,13 +529,13 @@ const cases = async () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     const check = "const fs = require('fs'); console.log('kind', fs.statSync('src/a').isDirectory(), require('./src/a/inner'));";
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assertEq(field(out, 'kind'), 'true 3', `the copy holds the committed folder: ${out}${err}`);
-    assert(code === 0 || code === 1, `a verdict, exit 0 or 1: ${code} ${out}${err}`);
+    expect(field(out, 'kind'), `the copy holds the committed folder: ${out}${err}`).toBe('true 3');
+    expect(code === 0 || code === 1, `a verdict, exit 0 or 1: ${code} ${out}${err}`).toBeTruthy();
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('an edited path with a space in its name, not named, reaches the copy', () => {
+  test('an edited path with a space in its name, not named, reaches the copy', () => {
     const w = mkWorld();
     w.write('src/a b.txt', 'old\n');
     w.git('add', '-A');
@@ -548,61 +544,61 @@ const cases = async () => {
     w.write('src/a b.txt', 'new\n');
     const check = "process.exit(require('fs').readFileSync('src/a b.txt', 'utf8') === 'new\\n' ? 0 : 1)";
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assertEq(code, 1, `exit 1, the copy holds the edit: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    expect(code, `exit 1, the copy holds the edit: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/x.js');
     cleanup(w.dir);
   });
 
-  await test('a renamed file, not named: the copy has the new name and lacks the old', () => {
+  test('a renamed file, not named: the copy has the new name and lacks the old', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.git('mv', 'src/helper.js', 'src/moved.js');
     const check = "const fs = require('fs'); process.exit(fs.existsSync('src/moved.js') && !fs.existsSync('src/helper.js') ? 0 : 1)";
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', check]);
-    assertEq(code, 1, `exit 1, the copy holds the rename whole: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    expect(code, `exit 1, the copy holds the rename whole: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/x.js');
     cleanup(w.dir);
   });
 
-  await test('a live symlink in the working diff arrives as a symlink', () => {
+  test('a live symlink in the working diff arrives as a symlink', () => {
     const w = mkWorld();
     takeSnapshot(w);
     fs.symlinkSync('x.js', path.join(w.repo, 'src', 'link.js'));
     const check = "process.exit(require('fs').lstatSync('src/link.js').isSymbolicLink() ? 0 : 1)";
     const { code, out, err } = runScript(w, ['src/y.js', '--', 'node', '-e', check]);
-    assertEq(code, 1, `exit 1, the copy holds the link: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/y.js', `the last stdout line: ${out}`);
+    expect(code, `exit 1, the copy holds the link: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/y.js');
     cleanup(w.dir);
   });
 
-  await test('a dangling symlink in the working diff arrives as one, never a stop', () => {
+  test('a dangling symlink in the working diff arrives as one, never a stop', () => {
     const w = mkWorld();
     takeSnapshot(w);
     fs.symlinkSync('nowhere.js', path.join(w.repo, 'src', 'dead.js'));
     const check = "process.exit(require('fs').lstatSync('src/dead.js').isSymbolicLink() ? 0 : 1)";
     const { code, out, err } = runScript(w, ['src/y.js', '--', 'node', '-e', check]);
-    assertEq(code, 1, `exit 1, the copy holds the dangling link: ${out}${err}`);
+    expect(code, `exit 1, the copy holds the dangling link: ${out}${err}`).toBe(1);
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: workspaces');
-
-  await test('a package\'s own node_modules is reachable from the copy: dep resolves, green, exit 1', () => {
+describe('proof red: workspaces', () => {
+  test('a package\'s own node_modules is reachable from the copy: dep resolves, green, exit 1', () => {
     const w = mkWorkspaces();
     takeSnapshot(w);
     w.write('packages/a/index.js', 'module.exports = 2;\n');
     const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'packages/a/dep.test.js']);
-    assert(out.includes('dep 7 '), `dep resolved through packages/a/node_modules: ${out}${err}`);
-    assert(field(out, 'dep').endsWith(path.join('packages', 'a', 'node_modules', 'dep', 'index.js')),
-      `the nested package's file: ${out}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without packages/a/index.js', `the last stdout line: ${out}`);
+    expect(out.includes('dep 7 '), `dep resolved through packages/a/node_modules: ${out}${err}`).toBeTruthy();
+    expect(field(out, 'dep').endsWith(path.join('packages', 'a', 'node_modules', 'dep', 'index.js')),
+      `the nested package's file: ${out}`).toBeTruthy();
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without packages/a/index.js');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a workspace package\'s bin runs the copy\'s code: red on its named source, exit 0', () => {
+  test('a workspace package\'s bin runs the copy\'s code: red on its named source, exit 0', () => {
     const w = mkRepo('red-proof-bin-', {
       'package.json': ROOT_WS,
       '.gitignore': 'node_modules/\n',
@@ -622,139 +618,139 @@ const cases = async () => {
     takeSnapshot(w);
     w.write('packages/cli/lib.js', 'module.exports = 2;\n');
     const { code, out, err } = runScript(w, ['packages/cli/lib.js', '--', 'node', 'node_modules/.bin/cli']);
-    assertEq(field(out, 'lib'), '1', `the bin loaded the snapshot's lib: ${out}${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
-    assertEq(fs.readFileSync(path.join(w.repo, 'packages', 'cli', 'lib.js'), 'utf8'), 'module.exports = 2;\n', 'the live lib is intact');
+    expect(field(out, 'lib'), `the bin loaded the snapshot's lib: ${out}${err}`).toBe('1');
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    expect(fs.readFileSync(path.join(w.repo, 'packages', 'cli', 'lib.js'), 'utf8'), 'the live lib is intact').toBe('module.exports = 2;\n');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: a command that cannot run');
-
-  await test('a command not on PATH: exit 2, never red', () => {
+describe('proof red: a command that cannot run', () => {
+  test('a command not on PATH: exit 2, never red', () => {
     const w = mkWorld();
     takeSnapshot(w);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'definitely-not-a-command']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
-    assertEq(lines(err).pop(), 'red-proof: command not runnable: definitely-not-a-command', `the last stderr line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: command not runnable: definitely-not-a-command');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a node test file the copy lacks: exit 2, naming it, never red', () => {
+  test('a node test file the copy lacks: exit 2, naming it, never red', () => {
     const w = mkWorld();
     takeSnapshot(w);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '--test', 'nope.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red'), `no verdict: ${out}`);
-    assertEq(lines(err).pop(), 'red-proof: test file not in the copy: nope.test.js', `the last stderr line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: test file not in the copy: nope.test.js');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: naming a path');
-
-  await test('an absolute path to the source: red, exit 0', () => {
+describe('proof red: naming a path', () => {
+  test('an absolute path to the source: red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const abs = shellPath(path.join(w.repo, 'src', 'x.js'));
     const { code, out, err } = runScript(w, [abs, '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a ../ path from a nested directory: red, exit 0', () => {
+  test('a ../ path from a nested directory: red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const { code, out, err } = runScript(w, ['../src/x.js', '--', 'node', 'x.test.js'], path.join(w.repo, 'tests'));
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a path in neither the tree nor the working diff: exit 2, naming it', () => {
+  test('a path in neither the tree nor the working diff: exit 2, naming it', () => {
     const w = mkWorld();
     takeSnapshot(w);
     const { code, out, err } = runScript(w, ['src/typo.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assertEq(out, '', 'nothing on stdout, the command never ran');
-    assertEq(err, "red-proof: src/typo.js is not in this repo's tree or working diff\n", `the one line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(out, 'nothing on stdout, the command never ran').toBe('');
+    expect(err, `the one line: ${err}`).toBe("red-proof: src/typo.js is not in this repo's tree or working diff\n");
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a path outside the repo: exit 2, naming it', () => {
+  test('a path outside the repo: exit 2, naming it', () => {
     const w = mkWorld();
     takeSnapshot(w);
     const outside = shellPath(w.tmp);
     const { code, out, err } = runScript(w, [outside, '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assertEq(err, `red-proof: ${outside} is not in this repo's tree or working diff\n`, `the one line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(err, `the one line: ${err}`).toBe(`red-proof: ${outside} is not in this repo's tree or working diff\n`);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: usage');
-
-  await test('no --, no path, no command: exit 2 with one red-proof: line', () => {
+describe('proof red: usage', () => {
+  test('no --, no path, no command: exit 2 with one red-proof: line', () => {
     const w = mkWorld();
     takeSnapshot(w);
     for (const args of [['src/x.js', 'node', 'tests/x.test.js'], ['--', 'node', 'tests/x.test.js'], ['src/x.js', '--']]) {
       const { code, out, err } = runScript(w, args);
-      assertEq(code, 2, `exit 2 for ${args.join(' ')}: ${err}`);
-      assertEq(out, '', `nothing on stdout for ${args.join(' ')}`);
-      assertEq(lines(err).length, 1, `one stderr line for ${args.join(' ')}: ${err}`);
-      assert(err.startsWith('red-proof: '), `a red-proof: line: ${err}`);
+      expect(code, `exit 2 for ${args.join(' ')}: ${err}`).toBe(2);
+      expect(out, `nothing on stdout for ${args.join(' ')}`).toBe('');
+      expect(lines(err).length, `one stderr line for ${args.join(' ')}: ${err}`).toBe(1);
+      expect(err.startsWith('red-proof: '), `a red-proof: line: ${err}`).toBeTruthy();
     }
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('outside a git repo: exit 2 with a red-proof: line', () => {
+  test('outside a git repo: exit 2 with a red-proof: line', () => {
     const w = mkWorld();
     const { code, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js'], w.tmp);
-    assertEq(code, 2, `exit 2: ${err}`);
-    assert(lines(err).length === 1 && err.startsWith('red-proof: '), `one red-proof: line: ${err}`);
+    expect(code, `exit 2: ${err}`).toBe(2);
+    expect(lines(err).length === 1 && err.startsWith('red-proof: '), `one red-proof: line: ${err}`).toBeTruthy();
     cleanup(w.dir);
   });
 
-  await test('a directory the copy cannot enter: exit 2 with a red-proof: line, never a verdict', () => {
+  test('a directory the copy cannot enter: exit 2 with a red-proof: line, never a verdict', () => {
     const w = mkWorld();
     takeSnapshot(w);
     const only = path.join(w.repo, 'new');
     fs.mkdirSync(only);
     const { code, out, err } = runScript(w, ['../src/x.js', '--', 'false'], only);
-    assertEq(code, 2, `exit 2, an internal failure: ${out}${err}`);
-    assert(!out.includes('red-proof: green') && !out.includes('red-proof: red'), `no verdict: ${out}`);
-    assert(lines(err).pop().startsWith('red-proof: '), `a red-proof: line last: ${err}`);
+    expect(code, `exit 2, an internal failure: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: green') && !out.includes('red-proof: red'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop().startsWith('red-proof: '), `a red-proof: line last: ${err}`).toBeTruthy();
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: a module that fails to load');
-
-  await test('a test failing on Cannot find module: exit 2 naming the module, never red', () => {
+describe('proof red: a module that fails to load', () => {
+  test('a test failing on Cannot find module: exit 2 naming the module, never red', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('tests/x.test.js', `require('nope-missing');\n${TEST_OF(1)}`);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
-    assert(err.includes("Cannot find module 'nope-missing'"), `the command's output still printed: ${err}`);
-    assertEq(lines(err).pop(), 'red-proof: not runnable: a module failed to load: nope-missing', `the last stderr line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(err.includes("Cannot find module 'nope-missing'"), `the command's output still printed: ${err}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: not runnable: a module failed to load: nope-missing');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('load-error text naming paths outside the copy, beside a real assertion failure: red, exit 0', () => {
+  test('load-error text naming paths outside the copy, beside a real assertion failure: red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     const elsewhere = path.join(w.dir, 'elsewhere');
@@ -767,52 +763,52 @@ const cases = async () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', `console.error(${JSON.stringify(quoted)});\n${TEST_OF(2)}`);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assert(err.includes('MODULE_NOT_FOUND') && err.includes('x is 1'), `both the quoted text and the assertion printed: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(err.includes('MODULE_NOT_FOUND') && err.includes('x is 1'), `both the quoted text and the assertion printed: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('an ESM import failing with ERR_MODULE_NOT_FOUND: exit 2, never red', () => {
+  test('an ESM import failing with ERR_MODULE_NOT_FOUND: exit 2, never red', () => {
     const w = mkWorld();
     w.write('tests/esm.test.mjs', "import '../src/gone.mjs';\n");
     w.git('add', '-A');
     w.git('commit', '-q', '-m', 'esm');
     takeSnapshot(w);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/esm.test.mjs']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
-    assert(err.includes('ERR_MODULE_NOT_FOUND'), `the command's output still printed: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(err.includes('ERR_MODULE_NOT_FOUND'), `the command's output still printed: ${err}`).toBeTruthy();
     const last = lines(err).pop();
-    assert(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith('gone.mjs'),
-      `the last stderr line names the module: ${err}`);
+    expect(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith('gone.mjs'),
+      `the last stderr line names the module: ${err}`).toBeTruthy();
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a named new file a test loads through a workspace package\'s exports map: red, exit 0', () => {
+  test('a named new file a test loads through a workspace package\'s exports map: red, exit 0', () => {
     const w = mkExports();
     takeSnapshot(w);
     w.write('packages/a/src/new.js', 'module.exports = 3;\n');
     w.write('tests/new.test.js', LOADS('@scope/a/new'));
     const { code, out, err } = runScript(w, ['packages/a/src/new.js', '--', 'node', 'tests/new.test.js']);
-    assert(err.includes(path.join('node_modules', '@scope', 'a', 'src', 'new.js')), `node named it through the workspace link: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(err.includes(path.join('node_modules', '@scope', 'a', 'src', 'new.js')), `node named it through the workspace link: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a named new file a test loads as a bare specifier from a package with no exports map: red, exit 0', () => {
+  test('a named new file a test loads as a bare specifier from a package with no exports map: red, exit 0', () => {
     const w = mkWorkspaces();
     takeSnapshot(w);
     w.write('packages/a/new.js', 'module.exports = 3;\n');
     w.write('tests/new.test.js', LOADS('@scope/a/new'));
     const { code, out, err } = runScript(w, ['packages/a/new.js', '--', 'node', 'tests/new.test.js']);
-    assert(err.includes("Cannot find module '@scope/a/new'"), `node named the bare specifier: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(err.includes("Cannot find module '@scope/a/new'"), `node named the bare specifier: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
@@ -822,87 +818,87 @@ const cases = async () => {
     ['through the exports map', mkExports, path.join('node_modules', '@scope', 'a', 'src', 'gone.js')],
     ['as a bare specifier', mkWorkspaces, ': @scope/a/gone'],
   ]) {
-    await test(`a missing file loaded ${label}, not a named path: exit 2 naming the module, never red`, () => {
+    test(`a missing file loaded ${label}, not a named path: exit 2 naming the module, never red`, () => {
       const w = world();
       takeSnapshot(w);
       w.write('packages/a/index.js', 'module.exports = 2;\n');
       w.write('tests/gone.test.js', LOADS('@scope/a/gone'));
       const { code, out, err } = runScript(w, ['packages/a/index.js', '--', 'node', 'tests/gone.test.js']);
-      assertEq(code, 2, `exit 2: ${out}${err}`);
-      assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+      expect(code, `exit 2: ${out}${err}`).toBe(2);
+      expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
       const last = lines(err).pop() || '';
-      assert(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(module),
-        `the last stderr line names the module: ${err}`);
+      expect(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(module),
+        `the last stderr line names the module: ${err}`).toBeTruthy();
       assertNoWorktree(w);
       cleanup(w.dir);
     });
   }
+});
 
-  group('proof red: the test summary');
-
-  await test('a node --test glob matching nothing: exit 2, no test ran, never a verdict', () => {
+describe('proof red: the test summary', () => {
+  test('a node --test glob matching nothing: exit 2, no test ran, never a verdict', () => {
     const w = mkWorld();
     takeSnapshot(w);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '--test', '--test-reporter=spec', 'tests/none/*.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
-    assertEq(lines(err).pop(), 'red-proof: not runnable: no test ran', `the last stderr line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: not runnable: no test ran');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a wrapper that runs a green node --test, then exits 3: exit 2, no test failed, never red', () => {
+  test('a wrapper that runs a green node --test, then exits 3: exit 2, no test failed, never red', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('tests/x.test.js', NODE_TEST_OF(1));
     const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', 'node --test tests/x.test.js; exit 3']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
-    assertEq(lines(err).pop(), 'red-proof: not runnable: no test failed; the command stopped another way', `the last stderr line: ${err}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: not runnable: no test failed; the command stopped another way');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('an edited source the new node --test case needs, its summary failing one: red, exit 0', () => {
+  test('an edited source the new node --test case needs, its summary failing one: red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', NODE_TEST_OF(2));
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '--test', 'tests/x.test.js']);
-    assert(/^# fail 1$|^\u2139 fail 1$/m.test(out), `the summary counted one failed test: ${out}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(/^# fail 1$|^ℹ fail 1$/m.test(out), `the summary counted one failed test: ${out}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a real red whose test first prints # tests 1 and # fail 0 at column zero, no whole block: red, exit 0', () => {
+  test('a real red whose test first prints # tests 1 and # fail 0 at column zero, no whole block: red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', `${PRINTS(['# tests 1', '# fail 0'])}${TEST_OF(2)}`);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assert(/^# tests 1$/m.test(out) && /^# fail 0$/m.test(out), `the fragment printed at column zero: ${out}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(/^# tests 1$/m.test(out) && /^# fail 0$/m.test(out), `the fragment printed at column zero: ${out}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test("a real red whose test first prints node's whole tap block indented by two spaces: red, exit 0", () => {
+  test("a real red whose test first prints node's whole tap block indented by two spaces: red, exit 0", () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', `${PRINTS(TAP_BLOCK.map((l) => `  ${l}`))}${TEST_OF(2)}`);
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assert(/^  # fail 0$/m.test(out), `the indented block printed: ${out}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(/^  # fail 0$/m.test(out), `the indented block printed: ${out}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
 
-  await test('a node --test case whose promise never settles, its summary failing none and cancelling one: red, exit 0', () => {
+  test('a node --test case whose promise never settles, its summary failing none and cancelling one: red, exit 0', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('tests/x.test.js', [
@@ -912,16 +908,16 @@ const cases = async () => {
       '',
     ].join('\n'));
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '--test', 'tests/x.test.js']);
-    assert(/^# fail 0$|^\u2139 fail 0$/m.test(out), `the summary counted no failed test: ${out}`);
-    assert(/^# cancelled 1$|^\u2139 cancelled 1$/m.test(out), `the summary counted one cancelled test: ${out}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(/^# fail 0$|^ℹ fail 0$/m.test(out), `the summary counted no failed test: ${out}`).toBeTruthy();
+    expect(/^# cancelled 1$|^ℹ cancelled 1$/m.test(out), `the summary counted one cancelled test: ${out}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
+});
 
-  group('proof red --live');
-
+describe('proof red --live', () => {
   // The live state a --live run must hand back: the named file's bytes, the
   // working status and the worktree list.
   const liveState = (w, rel) => ({
@@ -930,100 +926,100 @@ const cases = async () => {
     worktrees: w.git('worktree', 'list'),
   });
   const assertRestored = (w, rel, before) => {
-    assert(fs.existsSync(path.join(w.repo, rel)), `${rel} is back in the live tree`);
-    assert(fs.readFileSync(path.join(w.repo, rel)).equals(before.bytes), `${rel} is back byte for byte`);
-    assertEq(w.git('status', '--short'), before.status, 'git status --short is unchanged');
-    assertEq(w.git('worktree', 'list'), before.worktrees, 'git worktree list is unchanged');
+    expect(fs.existsSync(path.join(w.repo, rel)), `${rel} is back in the live tree`).toBeTruthy();
+    expect(fs.readFileSync(path.join(w.repo, rel)).equals(before.bytes), `${rel} is back byte for byte`).toBeTruthy();
+    expect(w.git('status', '--short'), 'git status --short is unchanged').toBe(before.status);
+    expect(w.git('worktree', 'list'), 'git worktree list is unchanged').toBe(before.worktrees);
   };
   const LIVE_TEST_OF = (value) => `console.log('cwd', require('fs').realpathSync(process.cwd()));\n${TEST_OF(value)}`;
 
-  await test('--live on an edited source the new test needs: red, exit 0, run in the live tree, the file back byte for byte', () => {
+  test('--live on an edited source the new test needs: red, exit 0, run in the live tree, the file back byte for byte', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', LIVE_TEST_OF(2));
     const before = liveState(w, 'src/x.js');
     const { code, out, err } = runScript(w, ['--live', 'src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(field(out, 'cwd'), fs.realpathSync(w.repo), `the command ran where the caller stands: ${out}${err}`);
-    assert(err.includes('x is 1'), `the snapshot's version ran in the live tree: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(field(out, 'cwd'), `the command ran where the caller stands: ${out}${err}`).toBe(fs.realpathSync(w.repo));
+    expect(err.includes('x is 1'), `the snapshot's version ran in the live tree: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertRestored(w, 'src/x.js', before);
     cleanup(w.dir);
   });
 
-  await test('--live, a test tied to nothing the source changed: green, exit 1, the file back', () => {
+  test('--live, a test tied to nothing the source changed: green, exit 1, the file back', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', "console.log('x', require('../src/x'));\n");
     const before = liveState(w, 'src/x.js');
     const { code, out, err } = runScript(w, ['--live', 'src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(field(out, 'x'), '1', `the snapshot's version was in the live tree for the run: ${out}${err}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: green: the tests pass without src/x.js', `the last stdout line: ${out}`);
+    expect(field(out, 'x'), `the snapshot's version was in the live tree for the run: ${out}${err}`).toBe('1');
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: green: the tests pass without src/x.js');
     assertRestored(w, 'src/x.js', before);
     cleanup(w.dir);
   });
 
-  await test('--live naming a file the snapshot lacks: absent from the live tree for the run, back after', () => {
+  test('--live naming a file the snapshot lacks: absent from the live tree for the run, back after', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/new.js', 'module.exports = 3;\n');
     const before = liveState(w, 'src/new.js');
     const check = "console.log('new', require('fs').existsSync('src/new.js'));";
     const { code, out, err } = runScript(w, ['--live', 'src/new.js', '--', 'node', '-e', check]);
-    assertEq(field(out, 'new'), 'false', `the command saw it absent: ${out}${err}`);
-    assertEq(code, 1, `exit 1: ${out}${err}`);
+    expect(field(out, 'new'), `the command saw it absent: ${out}${err}`).toBe('false');
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
     assertRestored(w, 'src/new.js', before);
     cleanup(w.dir);
   });
 
-  await test('--live, a named new file a test loads through a workspace package\'s exports map: red, exit 0, the file back', () => {
+  test('--live, a named new file a test loads through a workspace package\'s exports map: red, exit 0, the file back', () => {
     const w = mkExports();
     takeSnapshot(w);
     w.write('packages/a/src/new.js', 'module.exports = 3;\n');
     w.write('tests/new.test.js', LOADS('@scope/a/new'));
     const before = liveState(w, 'packages/a/src/new.js');
     const { code, out, err } = runScript(w, ['--live', 'packages/a/src/new.js', '--', 'node', 'tests/new.test.js']);
-    assert(err.includes(path.join('node_modules', '@scope', 'a', 'src', 'new.js')), `node named it through the workspace link: ${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(err.includes(path.join('node_modules', '@scope', 'a', 'src', 'new.js')), `node named it through the workspace link: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertRestored(w, 'packages/a/src/new.js', before);
     cleanup(w.dir);
   });
 
-  await test('--live with a command not on PATH: exit 2, never a verdict, the file back', () => {
+  test('--live with a command not on PATH: exit 2, never a verdict, the file back', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     const before = liveState(w, 'src/x.js');
     const { code, out, err } = runScript(w, ['--live', 'src/x.js', '--', 'definitely-not-a-command']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
     const last = lines(err).pop() || '';
-    assert(last.startsWith('red-proof: ') && last.includes('definitely-not-a-command'), `a red-proof: line naming the command last: ${err}`);
+    expect(last.startsWith('red-proof: ') && last.includes('definitely-not-a-command'), `a red-proof: line naming the command last: ${err}`).toBeTruthy();
     assertRestored(w, 'src/x.js', before);
     cleanup(w.dir);
   });
 
-  await test('--live naming a folder holding node_modules: exit 2, never a verdict, the live tree unchanged', () => {
+  test('--live naming a folder holding node_modules: exit 2, never a verdict, the live tree unchanged', () => {
     const w = mkWorkspaces();
     takeSnapshot(w);
     w.write('packages/a/index.js', 'module.exports = 2;\n');
     const tree = treeOf(w.repo);
     const status = w.git('status', '--short');
     const { code, out, err } = runScript(w, ['--live', 'packages/a', '--', 'node', 'tests/a.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
-    assert((lines(err).pop() || '').startsWith('red-proof: --live cannot name a folder holding node_modules'),
-      `the last stderr line: ${err}`);
-    assertEq(JSON.stringify(treeOf(w.repo)), JSON.stringify(tree), 'no file in the live tree added, removed or altered');
-    assertEq(w.git('status', '--short'), status, 'git status --short is unchanged');
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect((lines(err).pop() || '').startsWith('red-proof: --live cannot name a folder holding node_modules'),
+      `the last stderr line: ${err}`).toBeTruthy();
+    expect(JSON.stringify(treeOf(w.repo)), 'no file in the live tree added, removed or altered').toBe(JSON.stringify(tree));
+    expect(w.git('status', '--short'), 'git status --short is unchanged').toBe(status);
     cleanup(w.dir);
   });
 
-  await test('--live naming a folder whose only node_modules is no package\'s: accepted, the swap made, the folder back', () => {
+  test('--live naming a folder whose only node_modules is no package\'s: accepted, the swap made, the folder back', () => {
     const w = mkWorld();
     w.write('tools/run.js', 'module.exports = 1;\n');
     w.git('add', '-A');
@@ -1034,55 +1030,55 @@ const cases = async () => {
     const before = liveState(w, 'tools/run.js');
     const check = "const v = require('./tools/run'); console.log('run', v); if (v !== 2) process.exit(1);";
     const { code, out, err } = runScript(w, ['--live', 'tools', '--', 'node', '-e', check]);
-    assertEq(field(out, 'run'), '1', `the snapshot's tools/ was in the live tree for the run: ${out}${err}`);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
+    expect(field(out, 'run'), `the snapshot's tools/ was in the live tree for the run: ${out}${err}`).toBe('1');
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertRestored(w, 'tools/run.js', before);
-    assertEq(fs.readFileSync(path.join(w.repo, 'tools', 'node_modules', 'x', 'index.js'), 'utf8'),
-      'module.exports = 9;\n', 'the live node_modules under tools/ is intact');
+    expect(fs.readFileSync(path.join(w.repo, 'tools', 'node_modules', 'x', 'index.js'), 'utf8'), 'the live node_modules under tools/ is intact').toBe('module.exports = 9;\n');
     cleanup(w.dir);
   });
 
-  const signalTest = testUnless(IS_WINDOWS, 'Node ends a Windows process outright, with no signal a trap can catch');
-  await signalTest('--live and a TERM to the script mid-run: the file back', async () => {
+  test('--live and a TERM to the script mid-run: the file back', {
+    skip: IS_WINDOWS && 'Node ends a Windows process outright, with no signal a trap can catch',
+  }, async () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     const before = liveState(w, 'src/x.js');
     const marker = path.join(w.dir, 'running');
     // The command records the file it sees, then sleeps past the TERM.
-    const command = `require('fs').writeFileSync(${JSON.stringify(marker)}, require('fs').readFileSync('src/x.js'));`
+    const command = `require('fs').writeFileSync(${jsPath(marker)}, require('fs').readFileSync('src/x.js'));`
       + ' setTimeout(() => {}, 5000);';
     const res = await termMidRun(w, ['--live', 'src/x.js', '--', 'node', '-e', command], marker);
-    assert(res.marked, `the command started and wrote its marker: ${res.said}`);
-    assertEq(fs.readFileSync(marker, 'utf8'), 'module.exports = 1;\n', 'the snapshot\'s version was live when TERM came');
+    expect(res.marked, `the command started and wrote its marker: ${res.said}`).toBeTruthy();
+    expect(fs.readFileSync(marker, 'utf8'), 'the snapshot\'s version was live when TERM came').toBe('module.exports = 1;\n');
     assertRestored(w, 'src/x.js', before);
     cleanup(w.dir);
   });
+});
 
-  group('proof red: the run folder');
-
+describe('proof red: the run folder', () => {
   for (const [mode, flags] of [['the copy mode', []], ['--live', ['--live']]]) {
-    await test(`${mode}: the run folder is one folder under <HOME>/.cache/workkit/proof, no red-proof.* in TMPDIR, gone after`, () => {
+    test(`${mode}: the run folder is one folder under <HOME>/.cache/workkit/proof, no red-proof.* in TMPDIR, gone after`, () => {
       const w = mkWorld();
       takeSnapshot(w);
       w.write('src/x.js', 'module.exports = 2;\n');
       const { out, err } = runScript(w, [...flags, 'src/x.js', '--', 'node', '-e', WHERE(w)]);
       const runs = JSON.parse(field(out, 'runs') || 'null');
-      assert(Array.isArray(runs) && runs.length === 1 && /^[^/\\]{6}$/.test(runs[0]),
-        `one six-character run folder under proof/ while the command ran: ${out}${err}`);
+      expect(Array.isArray(runs) && runs.length === 1 && /^[^/\\]{6}$/.test(runs[0]),
+        `one six-character run folder under proof/ while the command ran: ${out}${err}`).toBeTruthy();
       const tmp = JSON.parse(field(out, 'tmp') || 'null');
-      assert(Array.isArray(tmp) && !tmp.some((name) => name.startsWith('red-proof.')), `no red-proof.* in TMPDIR while the command ran: ${out}`);
+      expect(Array.isArray(tmp) && !tmp.some((name) => name.startsWith('red-proof.')), `no red-proof.* in TMPDIR while the command ran: ${out}`).toBeTruthy();
       if (!flags.length) {
         const rel = path.relative(path.join(fs.realpathSync(proofBase(homeOf(w))), runs[0]), field(out, 'cwd'));
-        assert(rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel), `the command ran in a copy inside the run folder: ${out}`);
+        expect(rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel), `the command ran in a copy inside the run folder: ${out}`).toBeTruthy();
       }
       assertNoWorktree(w);
       cleanup(w.dir);
     });
   }
 
-  await test('a run folder under proof/ changed over a day ago is removed by the next run, one changed within the day is left', () => {
+  test('a run folder under proof/ changed over a day ago is removed by the next run, one changed within the day is left', () => {
     const w = mkWorld();
     takeSnapshot(w);
     plantRun(homeOf(w), 'stale1', 2);
@@ -1090,13 +1086,13 @@ const cases = async () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(lines(out).pop(), 'red-proof: red', `the last stdout line: ${out}`);
-    assertEq(runFolders(homeOf(w)).join(', '), 'fresh1', 'the stale folder removed, the fresh one and nothing else left');
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    expect(runFolders(homeOf(w)).join(', '), 'the stale folder removed, the fresh one and nothing else left').toBe('fresh1');
     cleanup(w.dir);
   });
 
-  await test('a run folder changed two days ago holding live/ (a --live run it could not restore) survives the next run, one without it is removed', () => {
+  test('a run folder changed two days ago holding live/ (a --live run it could not restore) survives the next run, one without it is removed', () => {
     const w = mkWorld();
     takeSnapshot(w);
     plantRun(homeOf(w), 'kept1', 2, 'live/x');
@@ -1104,13 +1100,13 @@ const cases = async () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 0, `exit 0: ${out}${err}`);
-    assertEq(runFolders(homeOf(w)).join(', '), 'kept1', 'the folder holding live/ left, the other stale one removed');
-    assert(fs.existsSync(path.join(proofBase(homeOf(w)), 'kept1', 'live', 'x')), 'the kept live file is still there');
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(runFolders(homeOf(w)).join(', '), 'the folder holding live/ left, the other stale one removed').toBe('kept1');
+    expect(fs.existsSync(path.join(proofBase(homeOf(w)), 'kept1', 'live', 'x')), 'the kept live file is still there').toBeTruthy();
     cleanup(w.dir);
   });
 
-  await test('a proof/ no run folder can be made in: exit 2 with the could-not-make line, never a verdict', () => {
+  test('a proof/ no run folder can be made in: exit 2 with the could-not-make line, never a verdict', () => {
     const w = mkWorld();
     takeSnapshot(w);
     fs.mkdirSync(path.dirname(proofBase(homeOf(w))), { recursive: true });
@@ -1118,17 +1114,11 @@ const cases = async () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
     const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
-    assertEq(code, 2, `exit 2: ${out}${err}`);
-    assert(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
     const last = lines(err).pop() || '';
-    assert(last.startsWith('red-proof: could not make a run folder under ') && last.endsWith('.cache/workkit/proof'),
-      `the last stderr line names the folder: ${err}`);
+    expect(last.startsWith('red-proof: could not make a run folder under ') && last.endsWith('.cache/workkit/proof'),
+      `the last stderr line names the folder: ${err}`).toBeTruthy();
     cleanup(w.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -104,6 +104,8 @@ main() {
   fi
   [ $# -eq 0 ] || { printf 'prove: takes no arguments (usage: workkit prove)\n' >&2; exit 2; }
   load_libs
+  # Its only product is the record, and a run with CI set writes none.
+  ! wk_ci_set || fail "CI is set, so no record would be written; run workkit prove again without CI"
   root=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not inside a git repository"
   wk_has_test_script "$root" || fail "$root declares no test script, so there is no suite to prove"
   command -v npm >/dev/null 2>&1 || fail "npm is not on PATH"

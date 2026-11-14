@@ -4,7 +4,7 @@
 
 const os = require('os');
 const path = require('path');
-const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 
 const { userDir, homeUserDir } = require(path.join(__dirname, '..', '..', 'workflow', 'user-dir.js'));
 
@@ -21,24 +21,16 @@ const withWorkflowHome = (value, fn) => {
   }
 };
 
-const cases = async () => {
-  group('user-dir: the machine folder');
-
-  await test('userDir: WORKFLOW_HOME wins, else .workkit under the home, else under os.homedir()', () => {
-    assertEq(withWorkflowHome('/w/kit', () => userDir('/h')), '/w/kit', 'the override');
-    assertEq(withWorkflowHome(undefined, () => userDir('/h')), path.join('/h', '.workkit'), 'the home given');
-    assertEq(withWorkflowHome(undefined, () => userDir()), path.join(os.homedir(), '.workkit'), 'the real home');
-    assertEq(withWorkflowHome('', () => userDir('/h')), path.join('/h', '.workkit'), 'an empty override is none');
+describe('user-dir: the machine folder', () => {
+  test('userDir: WORKFLOW_HOME wins, else .workkit under the home, else under os.homedir()', () => {
+    expect(withWorkflowHome('/w/kit', () => userDir('/h')), 'the override').toBe('/w/kit');
+    expect(withWorkflowHome(undefined, () => userDir('/h')), 'the home given').toBe(path.join('/h', '.workkit'));
+    expect(withWorkflowHome(undefined, () => userDir()), 'the real home').toBe(path.join(os.homedir(), '.workkit'));
+    expect(withWorkflowHome('', () => userDir('/h')), 'an empty override is none').toBe(path.join('/h', '.workkit'));
   });
 
-  await test('homeUserDir: .workkit under the home, and WORKFLOW_HOME never read', () => {
-    assertEq(withWorkflowHome('/w/kit', () => homeUserDir('/h')), path.join('/h', '.workkit'), 'the override ignored');
-    assertEq(withWorkflowHome('/w/kit', () => homeUserDir()), path.join(os.homedir(), '.workkit'), 'the real home');
+  test('homeUserDir: .workkit under the home, and WORKFLOW_HOME never read', () => {
+    expect(withWorkflowHome('/w/kit', () => homeUserDir('/h')), 'the override ignored').toBe(path.join('/h', '.workkit'));
+    expect(withWorkflowHome('/w/kit', () => homeUserDir()), 'the real home').toBe(path.join(os.homedir(), '.workkit'));
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

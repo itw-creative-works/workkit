@@ -34,21 +34,26 @@
 - A wait bound is the runner's shared deadline, or a short bound for a negative case.
   - The shared deadline is `SPAWN_DEADLINE`: the default bound of `until` and `elapsedUntil`, and the default `deadline` of `run` and `start`.
   - A short bound is passed to `until`, or as `deadline` to `run` or `start`.
+  - A case's own limit is `CASE_DEADLINE`, the door's default; a `timeout: <n>` it states is a literal bound like any other.
   - `safety:test-bar` names a literal bound on write.
     - A literal inside quoted text (a fixture's or a child program's) is excepted.
 - A timing case asserts order, never a measured duration.
-- A live probe sits behind a named flag and skips with its reason.
+- A live probe sits behind a named flag, its `skip` value naming the flag while it is unset.
 
 ## The shape
 
 - What a repo's root runner does, whichever runner it is.
   - The kit ships one that keeps it (below).
   - A repo on another runner (a framework's own devkit runner, say) keeps the shape with its own.
-- A suite is written on the kit harness, the preferred shape and the one a new repo uses.
-  - The harness is `test/lib/harness.js`. Its async case runner is named `cases`.
-  - The file exports it, or a wrapper calling it, returning `{passed, failed, failures, skips}`.
-  - A suite on `node:test`, Node's built-in test library, is the second shape.
-    - It is carried for a repo that already has it, as the kit's runner does (below).
+- A suite has one shape: Node's own test functions, `describe`, `test` (or `it`) and the hooks (`before`, `after`, `beforeEach`, `afterEach`), with `expect` to assert.
+  - On the kit's runner they all come from `workkit-core/test` (below).
+  - The file holds its cases and nothing that runs them: no export, no runner function, no closing line.
+  - So a file runs alone with `node <file>`, and exits 1 when a case fails.
+- A `describe` body runs when the file is collected, before any case runs.
+  - So a constant written between two cases is evaluated before the first case.
+  - Setup that must run between cases lives in a hook or in the case that needs it.
+- A resource a case opens (a server, a watcher, a child that stays) is closed in `t.after` or an `after` hook, never after the assertions.
+  - A failed assertion throws, so a close below it never runs, and a suite whose own process stays alive waits out its deadline.
 - Each suite file runs in its own process, as many at once as the machine has cores less one.
   - Its output prints whole, in sorted order, so two suites never interleave.
 - A suite that touches a shared path (a fixed folder, a port) is named in the repo's serial list.
@@ -57,19 +62,29 @@
   - An entry that matches no suite fails the run, naming it, before any suite starts.
 - A world is seeded once per process (`seeded()`) and copied per case.
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
-- A suite or a case that cannot run here skips by name with its reason, and the run lists every skip after the totals.
+- A suite or a case that cannot run here states a `skip` value, its reason, and the run lists every skip after the totals.
+  - A whole file skips through its outer `describe`'s `skip` option: `describe('supervise', { skip: skipOnWindows() }, () => { ... })`, the kit's helper in `test/lib/supervise.js`. A suite that needs a tool states `needs` there (its bullets below).
+  - A skip value is `false` or the reason text, never another falsy value: `false` and `undefined` run the case, and `true` or a reason skips it.
+    - For `''`, `0` or `null`, Node runs a case's body anyway and labels it skipped, and on a `describe` it cancels the children, which fails the run.
+  - A helper that decides a skip (the kit's, a repo's own) returns `false` or the reason. `needs` alone also throws for a missing tool outside a cloud session (its bullets below).
 - The run ends with one totals line, `N passed, M failed (Ns, K suites)`, with `, S suites skipped` and `, C cases skipped` after the failed count when there are any.
+  - A skipped `describe` counts as one case skipped. A suite skip is the mod half's alone, with no `claude` on PATH.
 - The kit's runner then prints one more line, `slowest: <suite> <s>s, ...`, naming the five slowest suites of the run by wall time, slowest first.
-- Under a failing case's message the kit's harness prints two things:
-  - the first stack frame outside the harness (the suite's line, or the seam's when the assert sits in one);
-  - the lines the case wrote through `log()`.
-- With `TEST_LOG=1` a passing case's `log()` lines print too.
-- A `log()` line written with no case running prints at once.
-- A case's own prints (`console.log`, `console.error`, `process.stdout.write`, `process.stderr.write`) sit at the case indent.
-- Any failure exits 1.
-  - A suite that fails to load is one failure, named `load <suite>`.
-  - So is one that exports no runner (and is no `node:test` file), named `export <suite>`.
-  - So is one that dies without a result, named `run <suite>`.
+- Under a failing case's message the runner prints the first stack frame that names the suite file: the suite's line, the one calling the seam when the assertion sits in one.
+- A case's `t.diagnostic()` lines and its own prints (`console.log`, `console.error`, `process.stdout.write`, `process.stderr.write`) sit at the case indent in the suite's block.
+  - A diagnostic line prints under its case's mark. Node's own totals lines never print.
+- Any failure exits 1. A suite that fails whole is one failure, named by how:
+  - `load <suite>`: the file died of an uncaught error, or would not parse, before any case ran, with the error's message.
+    - Only Node's own uncaught-error report counts, never an error line the suite printed.
+  - `run <suite>`: anything else that ends a suite without its result.
+    - A late failure after the cases (a timer's throw, an unhandled rejection), with the thrown message.
+    - A suite process that exits or is killed, with the code or signal and its last output.
+    - A suite process that exits before its cases are reported (a `process.exit(0)` partway through): `exited with code 0 without a result; last output: ...`, the cases already counted kept.
+    - A suite that exits with its output held open by a process it started, and no result of its own.
+    - The suite deadline: `timed out after <n>s without a result; last output: ...`.
+  - `empty <suite>`, `registered no test`: a file that registered no case, so it proves nothing.
+    - So is a suite whose process exits before Node reports any case (a first case calling `process.exit(0)`): it sends the events of a file with none, and still fails the run.
+  - A suite in the old shape (a runner function it exports) fails as `load` or `empty` and counts no pass.
 
 ### The kit's runner
 
@@ -77,16 +92,22 @@
   - It is a workspace member released at the kit's version.
 - The package holds:
   - `test/run.js`;
-  - `test/tools.js` (the `tools` verb);
-  - its library beside them in `test/lib/` (`harness.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`);
-  - the export `workkit-core/test`, the entry that carries the exports of every file but `node-test.js` and `lexer.js`;
+  - `test/tools.js` (the `tools` verb) and `test/convert.js` (the `convert` verb);
+  - its library beside them in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `convert-read.js`, `convert-map.js`);
+  - the export `workkit-core/test`, the entry `harness.js` builds: Node's case functions, its own `test`, `it`, `needs`, `hasLaunchd` and `WORKKIT_DIR`, and every export of `process.js`, `scratch.js`, `seed.js`, `suites.js`, `log.js`, `spawn.js` and `expect.js`;
   - plus `workkit-core/run`, the kit's `workflow/lib/run.js` its prepack copies in as `run.cjs`.
 - It is ES, and a CommonJS suite `require()`s it alike.
 - Its README (`packages/core/README.md`) lists the exports.
+- The door, `workkit-core/test`, hands out Node's own `describe`, `before`, `after`, `beforeEach`, `afterEach` and `mock`, untouched.
+  - Its `test` and `it` are Node's behind one thin wrap: a case that states no `timeout` gets `CASE_DEADLINE`, 120000 ms.
+  - The wrap carries every property Node's word carries (`skip`, `todo`, `only`, `mock` and the rest), each Node's own.
+  - Its limits: a case marked `.only` or `.todo`, and one stating `timeout: null`, get no default; a subtest inherits its parent's limit.
+  - Under `node <file>`, Node's own reporter names the wrap's file as a case's location; the kit runner's failure frame names the suite's line.
+  - A suite that takes `test` from `node:test` itself runs too, with Node's own default, no limit.
 - A repo installs it with `npm i -D workkit-core` and sets `"test": "workkit test"`.
   - Inside `npm test`, npm puts `node_modules/.bin` first on PATH, so `workkit` is the package's bin.
   - The bin runs the runner over the repo with the arguments npm passes on.
-  - The bin runs `test` and `tools`; any other verb exits 2, naming the global `workkit` command.
+  - The bin runs `test`, `tools` and `convert`; any other verb exits 2, naming the global `workkit` command.
 - `workkit test [paths]` in a terminal is the global command.
   - It hands its arguments to the repo's own `npm test`, run at the repo root, and does nothing else.
   - So the one recorder, npm's script shell, sees the run.
@@ -97,38 +118,87 @@
   - A repo whose package.json has no `test` script gets one error line and exit 1.
   - The global verb started inside an `npm test` means the package is missing.
     - It exits 1 with `workkit-core is not installed here: run npm install` rather than loop.
-- A suite that runs a command a cloud session may lack names it at its top: `needs('hugo', 'ffmpeg')`.
-  - Each is a command name looked up on PATH.
-  - All found, it returns and prints nothing.
-  - A missing one skips the suite in a cloud session (`CLAUDE_CODE_REMOTE=true`).
-    - The run's skip line: `⊘ skipped: needs hugo, not installed in this cloud session`.
-  - On a machine and in CI a missing one fails the suite, `needs hugo, not installed`.
-    - So a missing tool is never a silent pass there.
-  - A call with no argument or a non-string one fails the suite everywhere.
+- `needs(...tools)` names the commands a suite or a case runs, as its `skip` value: `describe('render', { skip: needs('hugo', 'ffmpeg') }, () => { ... })`.
+  - Each is a command name looked up on PATH (on Windows, with each `PATHEXT` extension).
+  - All found, it is `false`, and the cases run.
+  - With one missing, in a cloud session (`CLAUDE_CODE_REMOTE` is `true`), which may lack it, it is the reason, `needs <tool>`, each missing one named (`needs hugo, ffmpeg`), and the run lists the skip with it.
+  - Anywhere else, CI included, it throws `needs hugo, ffmpeg, not installed`.
+    - A call at the top level (an outer `describe`'s `skip`, or a bare statement) stops the file while it is collected: `node <file>` exits 1 with the message, and the runner reports `load <suite>` with it.
+    - In a case's `skip` inside a `describe`, the throw fails that `describe`, and its other cases are cancelled with it.
+    - So a missing tool on a developer's machine or in CI is loud, never a quiet skip.
+  - A bare `needs('hugo');` statement throws the same way outside a cloud session, failing the file; in one it does nothing, so the value goes in a `skip` option.
+  - A call with no argument, or with one that is no string or an empty one, throws `needs() takes one or more command names`.
 - `workkit tools` prints every command the repo's suites name through `needs()`.
   - It prints one per line, sorted and unique, for a cloud setup to install before the run.
+  - It reads each `needs(` call, a `skip` value's among them.
   - It reads the suites the runner would run, never loads one.
+    - So a nested folder's suites are in its list unless that folder holds its own `package.json`.
   - A `needs()` argument that is not a string literal is one line, exit 1: `✖ tools: <file>:<line>: needs() takes string literals only`.
   - The global verb runs the kit's own copy of this bin at the repo root, so it answers before `npm install`.
+- `workkit convert [paths...]` rewrites a suite in the old shape in place onto Node's test functions through the door.
+  - The old shape: a runner function the file exports, its cases on the removed words (`group`, the harness `test`, `assertEq`), a `selfRun` line last.
+  - No path means every suite the runner finds. A path is read as the runner reads one: from the start folder, a `\` in it as `/`.
+    - Anything that names no suite is `No suite matches <arg>`, exit 1, before any file is touched.
+  - It rewrites a file only when every statement of its runner is a label, a case or a constant, and maps each one for one:
+    - a `group('x')` and the cases under it to `describe('x', () => { ... })`, and `await test(name, fn)` to `test(name, fn)`;
+    - `assert(value, message)` to `expect(value, message).toBeTruthy()`, and `assertEq(actual, wanted, message)` to `expect(actual, message).toBe(wanted)`;
+    - `skip(name, reason)` to `test(name, { skip: reason })`;
+    - `testUnless(condition, reason)(name, fn)` to `test(name, { skip: condition ? reason : false }, fn)`, so a falsy condition never skips;
+    - a same-file alias (`const onMac = testUnless(...)`) the same way at each case through it, when cases are its only reads: its line goes, the comment above it stays;
+    - the harness `require` line to the door's names the file uses; and it drops the export, the `summary()` return and the `selfRun` line.
+  - A file whose every line ends in CRLF keeps CRLF, the lines it writes included.
+  - It prints one line per file: `converted <path> (<n> cases)` (`(1 case)` for one), or `left <path>:<line> <why>` with the file left byte for byte.
+    - A file already on Node's functions is left, never listed as converted, so a second run changes no file.
+  - It exits 0 once it ran, whatever it left.
+  - What it leaves, for a person to convert, each with the why its line gives:
+    - a removed word with no mapped form (`failureOf`, `stripAnsi`, the harness `log`), or a local variable named like one: `uses <word>, which has no mapped form here`, the likeliest in another repo;
+      - `failureOf` becomes `expect(fn).toThrow(...)` or `await expect(promise).rejects...` from the door, `stripAnsi` Node's `util.stripVTControlCharacters`;
+    - cases made in a loop: `cases made in a loop`;
+    - an awaited line or a helper call between cases: `an awaited constant between cases, a setup`, `a call to <name>, no label, case or constant`;
+    - a whole-file skip: `a whole-file skip`;
+    - a backtick inside a template's placeholder: `a template literal nested in another template's placeholder`;
+    - a constant or a same-file alias one group declares and a later group reads: `<name>, a constant of an earlier group, read in a later one`;
+    - as a last guard, a file whose converted text would hold an `expect` with no matcher: `the converted text would hold an expect with no matcher`.
+  - A repo on the package runs it, then converts by hand each file it lists.
+  - The global verb runs the kit's own copy of this bin at the repo root, as `workkit tools` does.
 - `start()`'s `end(signal)` climbs the shell's ladder (`wk_end_run`): `SIGINT` then `SIGTERM` then `SIGKILL`.
   - It starts from the rung named, and the rungs are 1.5 s apart.
   - Each rung is sent only while the child (a detached child's whole process group) still lives.
     - So `end('SIGKILL')` is one send.
-  - On Windows it is one `taskkill` tree end.
+  - On Windows it is one `taskkill` tree end, `endTree`'s.
+    - `endTree` runs `taskkill.exe` from `System32` under `SystemRoot`, never through PATH, with `/T /F /PID <pid>`. A nonzero exit is no failure.
+    - One that cannot start throws `endTree: taskkill could not run (<message>)`, and an unset `SystemRoot` throws naming it.
+    - It takes the platform, the program runner and `SystemRoot` as seams (`endTree(pid, signal, seams)`), so a case reaches that arm on any machine.
+    - The kit's own end, `endTreeOf` in `workflow/lib/tree.js`, runs the same program with the same arguments, held so by a parity case in `test/scripts/tree.test.js`. The package cannot require it, since it is published alone.
+  - `alive(pid)` is false for anything but a positive integer, since 0 or a negative pid reaches a whole group.
   - A real signal the system refuses for the pid itself rejects `end()` (and throws from `endTree`), naming the pid and `EPERM`.
     - A refused group falls through to the pid, since a leader that exited unreaped refuses its group.
     - The zero probe reads a refused group as gone.
   - A target still alive one grace after `SIGKILL` rejects, naming it, so `end()` never waits unbounded.
   - On Windows, once a detached leader has exited, `end()` reaches no grandchild.
     - `taskkill /T` finds a tree only through a living root.
-- It reads the repo's `test/` folder, Node's convention.
-  - It reads `tests/` when the repo has no `test/`, so a repo not yet moved keeps running.
-  - The standards heal names a `tests/` folder as drift, with `git mv tests test` as the fix.
-- A run covers every `test/**/*.test.js`.
+- It reads every suite under the folder it starts in, the package root under `npm test`.
+  - A suite is a file named `*.test.js`, `*.test.mjs` or `*.test.cjs`, in any folder.
+  - It never reads:
+    - `node_modules`;
+    - a file or folder whose name starts with `.` or `_`;
+    - a folder below the start folder that holds its own `package.json`, a nested package that runs its own suites;
+    - a file git ignores.
+  - A start folder inside a git-ignored folder, at any depth, holds no suite.
+  - Outside a git work tree, or with no `git` on the PATH, the ignore rule skips nothing.
+    - Any other git failure inside a work tree stops the run with git's own message.
+  - No folder name is special: `test/`, `tests/` and `lib/` are read like any other.
+  - Every printed suite name is its path from the start folder, with `/` on every platform (`test/hooks/x.test.js`).
+    - The `▶` heading, a failure, a skip and the `slowest:` line all print that name.
+  - A run that finds no suite exits 1: `No test file found (*.test.js, *.test.mjs, *.test.cjs)`.
+- A run covers every suite.
   - First the parallel wave, then the serial tail `test/lib/serial.js` names (none without the file).
+    - Its entries are paths from the start folder, with either separator (`['test/z.test.js']`).
+    - An entry naming no suite exits 1: `No suite matches <entry> (test/lib/serial.js)`.
   - Then the mod half, when `test/mods/` holds `*.test.ts` suites.
   - Suite paths narrow the run.
-  - A path matching no suite exits 1, naming it and the folder read.
+    - Each is a path from the start folder, a `\` in it read as `/`.
+  - A path matching no suite exits 1 with `No suite matches <arg>`, the argument as typed, and runs nothing.
 - Each suite file has a deadline, `SUITE_DEADLINE` (600 seconds).
   - `TEST_DEADLINE=<seconds>` in the environment sets it for one run.
     - A value that is no positive number, or above 2147483 (more than node's timer holds), exits 1 before any suite runs: `TEST_DEADLINE must be a positive number of seconds, got <value>`.
@@ -137,22 +207,59 @@
     - A child the suite starts detached leads its own group, so it is the suite's own to end.
     - Its file is one failure, `run <suite>`: `timed out after <n>s without a result; last output: ...`.
     - The run goes on to the next file and exits 1.
+  - Once the suite's own process exits, the worker waits one grace (`PIPE_GRACE_MS`, one second) for its output to close, then reports what it counted.
+    - So a child the suite left running, still holding that output, never holds the run, and is left alive.
+  - A suite whose own process stays alive (an open server, a live timer) waits for the deadline and fails as timed out.
   - Off Windows a signal to the runner's group reaches no worker, so on `SIGINT`, `SIGTERM` or `SIGHUP` the runner ends every live worker's group the same way, then exits 128 plus the signal's number.
     - A second of the three while it is ending sends `SIGKILL` at once, before anything else runs, to every group the first began to end that still lives, its worker exited or not, then exits 128 plus that second signal's number.
       - So `workkit prove`'s ladder on the runner (`wk_end_run`) leaves no worker behind: its `SIGTERM` has the runner KILL every worker before its own `SIGKILL` comes.
     - A runner ended by `SIGKILL` cannot; a worker then ends its own tree only once its event loop notices the parent gone.
-- It carries a second shape for a repo that already has suites on `node:test`.
-  - A file that binds a runner from `node:test` runs through Node's own `run()` in the same worker.
-    - A default, namespace or bare import binds one, as does a `require('node:test')` not destructured.
-    - So does a named import or a destructure holding `test`, `it`, `describe` or `suite`, renamed or not.
-    - A file whose every binding is another name (`mock`, `before`, `snapshot`) is a kit-harness suite.
-    - A comment, a quoted string or a template literal never counts; an import over several lines reads as one.
-    - The text is read, never required, since requiring it runs its tests.
-  - Its pass, fail, skip and todo events fill the harness's result object.
-  - So every line above prints for it unchanged.
+- Every suite runs on Node's own runner, its `run()` in the suite's worker. No file's text is read to pick a shape.
+  - Its pass, fail, skip and todo events are counted into the totals and the lists.
+    - Node's own pass for the file is not a case, so a file that registered none is `empty <suite>`.
+  - A test holding a failing subtest counts one failure, the subtest's; a passing one counts beside its subtests, as Node counts it.
+  - Its block:
+    - A heading `[outer › inner]` prints before a case whose `describe` path differs from the case before it.
+    - A case with no `describe` after a headed one is set apart by a blank line.
+    - A test that holds subtests heads them the same way.
+    - Each case prints one mark line: `✓ name`, `✗ name`, or `⊘ name: reason` for a skip or a todo.
+    - Under a failed case, at the case indent: its message, then the first stack frame that names the suite file.
+    - A failed hook prints Node's line, then the thrown error's message.
+    - A skipped `describe` prints one `⊘` line with its reason, for all its cases.
+  - In the failure list and the skip list after the totals, a case is named `<suite> › <describe path> › <case>`.
+    - A case under no `describe` is `<suite> › <case>`.
+  - What the suite itself prints arrives in its own order, at the case indent.
+    - Node's runner hands it over before the case's result, so it can land above that case's heading.
+- A run a case starts (`workkit test` in a scratch folder) is a run of its own.
+  - Node's runner runs nothing under `NODE_TEST_CONTEXT`, the variable its own test files inherit, so the runner drops it from its environment as it starts.
+  - A case that starts a suite file with `node <file>` passes an env without that variable.
 - The repo's `test/lib/harness.js` is the one re-export: `module.exports = require('workkit-core/test')`.
   - So every suite's `require('../lib/harness')` stands as it is and reaches the whole library.
-  - `test/lib/` otherwise holds only the repo's own seams and its `serial.js`.
+  - `test/lib/` otherwise holds the repo's own seams and its `serial.js`.
+  - A `*.test.js` file there is a suite like any other, so the runner runs it.
+    - `safety:test-bar` still names it at the write as a test of a test helper (its `helper-test` line, `docs/hooks.md` § `safety:test-bar`).
+    - The first rule is about finding, the second about worth.
+- The library exports `expect(actual, message?)`, the assertion form of Jest.
+  - Its names and behaviour are Jest's (its `expect` 29.7), so a reader needs no kit doc.
+    - `toBeTypeOf` is the one name from Vitest.
+  - The matchers:
+    - `toBe`, `toEqual`, `toStrictEqual`, `toMatchObject`;
+    - `toBeTruthy`, `toBeFalsy`, `toBeDefined`, `toBeUndefined`, `toBeNull`, `toBeNaN`;
+    - `toContain`, `toHaveLength`, `toHaveProperty`, `toMatch`, `toBeInstanceOf`, `toBeTypeOf`;
+    - `toBeGreaterThan`, `toBeGreaterThanOrEqual`, `toBeLessThan`, `toBeLessThanOrEqual`, `toBeCloseTo`;
+    - `toThrow`.
+  - The forms are `.not`, `.resolves` and `.rejects`, and `.not` after either of the last two.
+  - A failed matcher throws an `Error` named `AssertionError` that carries `actual` and `expected`.
+    - Its message is `expected <actual> to <verb> <expected>`, with `not to` under `.not`.
+    - With a `message` given, `<message>: ` leads it.
+  - A misused matcher throws an `AssertionError` saying what it expected, under `.not` too.
+    - Examples: a length that is no whole number, a path that is no string or array, a value of the wrong kind.
+  - `expect.fail(message)` throws the `AssertionError` with that message.
+  - `expect.extend(matchers)` is the one way a repo or a framework adds its own matchers.
+    - Each matcher is `(actual, ...args) => ({ pass, message })`, `message` a function returning the failure text.
+    - Inside it, `this.isNot` and `this.promise` (`''`, `'resolves'` or `'rejects'`) say how it was called.
+    - A name a built-in matcher holds throws.
+  - It deliberately lacks Jest's asymmetric matchers (`expect.any`), snapshots and mocks.
 - CI fetches the runner like any dependency.
   - The install brings the package, so no step clones the kit for it.
   - The heal's rewrite of `checks.yml` to the kit's caller drops the one an older copy carries.
@@ -175,7 +282,7 @@
 
 ### The checks
 
-- The supervisor of a root `npm test`, of `workkit prove` and of a `workkit supervise` run reads its run at every check and judges it by evidence. The CI watch is not read: it waits on GitHub and ends by itself.
+- The supervisor of an `npm test` (the root's or a narrowed one), of `workkit prove` and of a `workkit supervise` run reads its run at every check and judges it by evidence. The CI watch is not read: it waits on GitHub and ends by itself.
 - `tests.check` is the minutes between checks, default 5, set where `tests.budget` is.
   - A value that is not a finite number above 0 stops the run before it starts: `detach: tests.check must be a number of minutes above 0 (got <value>)`, exit 2.
 - Each check reads two things:
@@ -207,4 +314,5 @@
 - A busy run is never ended, however long it takes.
 - On macOS every supervised run holds the machine awake (`caffeinate -i`), so idle sleep does not pause it.
 - On Windows no process is read, so there is no frozen and no look.
+  - An end there is one `taskkill /T /F` from `System32` under `SystemRoot`, never through PATH (`endTreeOf` in `workflow/lib/tree.js`), given 60 seconds. One that cannot start or runs past them fails the end as above.
 - The mechanics: `workflow/README.md` § `lib/detach.js`.

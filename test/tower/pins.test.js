@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 
 const app = path.join(__dirname, '..', '..', 'tower', 'app');
 const EXACT = /^\d+\.\d+\.\d+$/;
@@ -22,29 +22,21 @@ const specOf = (manifest, name) => {
   return { ...pkg.dependencies, ...pkg.devDependencies }[name];
 };
 
-const cases = async () => {
-  group('tower/pins: the framework packages come from npm');
-
+describe('tower/pins: the framework packages come from npm', () => {
   for (const { name, manifest } of PINS) {
     const rel = path.relative(path.join(app, '..', '..'), manifest);
-    await test(`${name} in ${rel} pins an exact registry version`, () => {
+    test(`${name} in ${rel} pins an exact registry version`, () => {
       const spec = specOf(manifest, name);
-      assert(spec !== undefined, `${rel} declares ${name}`);
-      assert(
+      expect(spec !== undefined, `${rel} declares ${name}`).toBeTruthy();
+      expect(
         EXACT.test(spec),
         `${name} in ${rel} is "${spec}", not an exact npm version; run \`omega i live\` at tower/app before committing`,
-      );
+      ).toBeTruthy();
     });
   }
 
-  await test('both packages pin the same version: the omega family ships in lockstep', () => {
+  test('both packages pin the same version: the omega family ships in lockstep', () => {
     const [manager, web] = PINS.map(({ name, manifest }) => specOf(manifest, name));
-    assert(manager === web, `@omega.js/manager is "${manager}" and @omega.js/web is "${web}"; run \`omega i live\` at tower/app`);
+    expect(manager === web, `@omega.js/manager is "${manager}" and @omega.js/web is "${web}"; run \`omega i live\` at tower/app`).toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

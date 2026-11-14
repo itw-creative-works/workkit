@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# workflow/watch.sh: `workkit watch [--end] [suite|run]`, the call attached
+# workflow/watch.sh: `workkit watch [--end] [suite|run|<pid>]`, the call attached
 # again to the repo's live run, or one that ended with no call attached: the
-# one named, else the suite's, else the supervised one. It follows the log to
-# the run's end, a frozen end or the next look (wk_attach_run); --end asks the
-# supervisor to end the run instead.
+# one named, else the suite's, else the supervised one, else the one live
+# narrowed run. It follows the log to the run's end, a frozen end or the next
+# look (wk_attach_run); --end asks the supervisor to end the run instead.
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
 
-USAGE='usage: workkit watch [--end] [suite|run]'
+USAGE='usage: workkit watch [--end] [suite|run|<pid>]'
 
 fail() {
   printf 'watch: %s\n' "$1" >&2
@@ -39,13 +39,75 @@ end_run() {
   wk_ask_end "$lock" "$pid" || fail "the run did not end; its supervisor is pid $pid"
   [ ! -f "$lock/done" ] || collect "$log" "$lock" "$pid"
   tail -n 1 "$log"
-  exit 0
+}
+
+# drop_slot <root> <slot>: a narrowed run's slot cleared once its end is read,
+# unless its wrapper (the pid naming the slot, kill -0 in Git Bash too) still
+# runs: that call is attached, needs the record, and clears the slot itself.
+drop_slot() {
+  [ -n "$2" ] || return 0
+  if kill -0 "$2" 2>/dev/null; then return 0; fi
+  wk_test_slot_clear "$1" "$2"
+}
+
+# refuse_foreground <root> <lock> <name>: --end <name> on a run held in the
+# foreground (_wk_run_foreground), whose end file no supervisor reads. It names
+# the call that ends the enclosing run its marker holds; exit 1.
+refuse_foreground() {
+  local enclosing how='end the run that started it'
+  enclosing=$(cat "$2/foreground" 2>/dev/null) || enclosing=""
+  if [ -n "$enclosing" ] && [ "$enclosing" = "$(wk_run_lock_path "$1")" ]; then
+    how='workkit watch --end run ends it'
+  elif [ -n "$enclosing" ] && [ "$enclosing" = "$(wk_suite_lock_path "$1")" ]; then
+    how='workkit watch --end suite ends it'
+  fi
+  fail "workkit watch --end $3 cannot end a run held in the foreground inside another run; $how"
+}
+
+no_run() {
+  fail "no run is live in $(wk_native_path "$1")"
+}
+
+# lock_of <root> <run>: the lock of suite, run, or a narrowed run's slot.
+lock_of() {
+  case "$2" in
+    suite) wk_suite_lock_path "$1" ;;
+    run) wk_run_lock_path "$1" ;;
+    *) wk_test_lock_path "$1" "$2" ;;
+  esac
+}
+
+# runs_where <root> <check>: each run whose lock <check> (wk_run_held or
+# wk_run_live) passes, one per line: suite, run, then each narrowed run's slot.
+runs_where() {
+  local run
+  while IFS= read -r run; do
+    if [ -n "$run" ] && "$2" "$(lock_of "$1" "$run")" >/dev/null; then printf '%s\n' "$run"; fi
+  done < <(printf 'suite\nrun\n'; wk_test_pids "$1")
+}
+
+# name_one <verb> <name>...: the refusal that never guesses between live runs,
+# each named in the call that picks it; exit 2.
+name_one() {
+  local verb="$1" words=([2]=two three four five six seven eight nine) sep=' ' name
+  shift
+  printf 'watch: %s runs are live; name one:' "${words[$#]:-$#}" >&2
+  for name in "$@"; do
+    printf '%s%s %s' "$sep" "$verb" "$name" >&2
+    sep=', or '
+  done
+  printf '\n' >&2
+  exit 2
 }
 
 main() {
-  local end=0 name="" root which log lock pid size rc=0 suite_pid="" run_pid=""
-  if [ "${1:-}" = --end ]; then end=1; shift; fi
-  case "${1:-}" in suite|run) name="$1"; shift ;; esac
+  local end=0 name="" slot="" root which log lock pid size rc=0 verb="workkit watch" run live=() running=()
+  if [ "${1:-}" = --end ]; then end=1 verb="workkit watch --end"; shift; fi
+  case "${1:-}" in
+    suite|run) name="$1"; shift ;;
+    ''|*[!0-9]*) ;;
+    *) name='test' slot="$1"; shift ;;
+  esac
   if [ $# -gt 0 ]; then
     printf '%s\n' "$USAGE" >&2
     exit 2
@@ -54,34 +116,57 @@ main() {
   root=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not inside a git repository"
 
   # A run that ended after a look counts as live here: its answer waits in its lock.
-  [ "$name" = run ] || suite_pid=$(wk_run_held "$(wk_suite_lock_path "$root")") || suite_pid=""
-  [ "$name" = suite ] || run_pid=$(wk_run_held "$(wk_run_lock_path "$root")") || run_pid=""
-  # An end with no name never guesses between two live runs.
-  if [ "$end" -eq 1 ] && [ -n "$suite_pid" ] && [ -n "$run_pid" ]; then
-    printf 'watch: two runs are live; name one: workkit watch --end suite, or workkit watch --end run\n' >&2
-    exit 2
-  fi
-  if [ -n "$suite_pid" ]; then
-    which=suite pid="$suite_pid"
-  elif [ -n "$run_pid" ]; then
-    which=run pid="$run_pid"
+  if [ -n "$name" ]; then
+    which="$name"
   else
-    fail "no run is live in $(wk_native_path "$root")"
+    while IFS= read -r run; do live+=("$run"); done < <(runs_where "$root" wk_run_held)
+    [ "${#live[@]}" -gt 0 ] || no_run "$root"
+    if [ "$end" -eq 1 ]; then
+      # An end never guesses between running runs; one that finished, its answer
+      # uncollected, cannot be ended and is taken only when none runs. Nor can
+      # one held in the foreground, which ends with the run that holds it.
+      while IFS= read -r run; do
+        [ -f "$(lock_of "$root" "$run")/foreground" ] || running+=("$run")
+      done < <(runs_where "$root" wk_run_live)
+      [ "${#running[@]}" -le 1 ] || name_one "$verb" "${running[@]}"
+      [ "${#running[@]}" -eq 0 ] || live=("${running[0]}")
+    else
+      # A follow takes the suite's, then the supervised one, then the one narrowed run.
+      case "${live[0]}" in
+        suite|run) ;;
+        *) [ "${#live[@]}" -eq 1 ] || name_one "$verb" "${live[@]}" ;;
+      esac
+    fi
+    case "${live[0]}" in
+      suite|run) which="${live[0]}" slot="" ;;
+      *) which='test' slot="${live[0]}" ;;
+    esac
   fi
-  log=$("wk_${which}_log_path" "$root") || exit 1
-  lock=$("wk_${which}_lock_path" "$root") || exit 1
+  lock=$("wk_${which}_lock_path" "$root" "$slot") || exit 1
+  pid=$(wk_run_held "$lock") || no_run "$root"
+  log=$("wk_${which}_log_path" "$root" "$slot") || exit 1
+  # shellcheck disable=SC2034  # read by wk_attach_run's look line
+  WK_WATCH_NAME="$slot"
 
   if [ "$end" -eq 1 ] && [ -f "$lock/done" ]; then
     collect "$log" "$lock" "$pid"
+    drop_slot "$root" "$slot"
     [ -n "$WK_RAN_CODE" ] || exit 1
     printf 'watch: the run ended already (exit %s)\n' "$WK_RAN_CODE"
     exit 0
   fi
-  [ "$end" -eq 0 ] || end_run "$log" "$lock" "$pid"
+  if [ "$end" -eq 1 ]; then
+    [ ! -f "$lock/foreground" ] || refuse_foreground "$root" "$lock" "${slot:-$which}"
+    end_run "$log" "$lock" "$pid"
+    drop_slot "$root" "$slot"
+    exit 0
+  fi
   # The size first, so the last lines and the tail from it never overlap.
   size=$(( $(wc -c < "$log") ))
   head -c "$size" "$log" | tail -n 20
   wk_attach_run "$log" "$lock" "$pid" "$size" || rc=$?
+  # A narrowed run's slot goes once its end is read; a look keeps it.
+  [ "$WK_RAN_LOOK" = 1 ] || drop_slot "$root" "$slot"
   exit "$rc"
 }
 

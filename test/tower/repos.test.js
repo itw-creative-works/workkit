@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { asWindows, gitPath: rosterKey } = require('../lib/platform');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
@@ -80,46 +80,44 @@ const mkWorkflowHome = (root, repos, { homeSlug = null, roster } = {}) => {
 
 const names = (found) => found.map((r) => r.name).sort().join(',');
 
-const cases = async () => {
-  group('tower/repos: which repos are in');
-
-  await test('a registered, opted-in repo is on the roster', () => {
+describe('tower/repos: which repos are in', () => {
+  test('a registered, opted-in repo is on the roster', () => {
     const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/alpha');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
-    assertEq(names(found), 'alpha', 'alpha listed');
-    assertEq(found[0].path, rosterKey(repo), 'path is the repo dir');
+    expect(names(found), 'alpha listed').toBe('alpha');
+    expect(found[0].path, 'path is the repo dir').toBe(rosterKey(repo));
     cleanup(tmp);
   });
 
-  await test('the roster is read from .repos.json - a `repos` key in settings.json is not one', () => {
+  test('the roster is read from .repos.json - a `repos` key in settings.json is not one', () => {
     // The machine writes `.repos.json` and a human writes `settings.json`, and the
     // roster comes from the file its writer maintains: a leftover `repos` block in
     // the hand-edited file must not put a repo on the dashboard.
     const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/alpha');
     const home = mkWorkflowHome(tmp, [repo]);
-    assertEq(names(discoverRepos({ workflowHome: home })), 'alpha', 'the roster file is what is read');
+    expect(names(discoverRepos({ workflowHome: home })), 'the roster file is what is read').toBe('alpha');
 
     fs.writeFileSync(path.join(home, '.repos.json'), `${JSON.stringify({ version: 1, repos: {} }, null, 2)}\n`);
     fs.writeFileSync(
       path.join(home, 'settings.json'),
       `${JSON.stringify({ version: 1, repos: { [repo]: 'enabled' }, site: { repo: null } }, null, 2)}\n`,
     );
-    assertEq(names(discoverRepos({ workflowHome: home })), '', 'and settings.json is not a second roster');
+    expect(names(discoverRepos({ workflowHome: home })), 'and settings.json is not a second roster').toBe('');
     cleanup(tmp);
   });
 
-  await test('a repo nobody registered is NOT found, however opted in it is', () => {
+  test('a repo nobody registered is NOT found, however opted in it is', () => {
     const tmp = mkTmp('tower-repos-');
     const listed = mkRepo(tmp, 'Owner/listed');
     mkRepo(tmp, 'Owner/unlisted');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [listed]) });
-    assertEq(names(found), 'listed', 'the roster is the whole list - nothing is walked');
+    expect(names(found), 'the roster is the whole list - nothing is walked').toBe('listed');
     cleanup(tmp);
   });
 
-  await test('a registered repo that lost its opt-in is dropped silently', () => {
+  test('a registered repo that lost its opt-in is dropped silently', () => {
     const tmp = mkTmp('tower-repos-');
     const yes = mkRepo(tmp, 'Owner/yes');
     const no = mkRepo(tmp, 'Owner/no', { settings: { version: 7, enabled: false } });
@@ -127,13 +125,12 @@ const cases = async () => {
     const none = mkRepo(tmp, 'Owner/none', { settings: null });
     const gone = path.join(tmp, 'Owner', 'gone');
     const home = mkWorkflowHome(tmp, [yes, no, broken, none, gone]);
-    assertEq(names(discoverRepos({ workflowHome: home })), 'yes', 'only the repo whose committed file still says yes');
-    assertEq(fs.readFileSync(path.join(home, '.repos.json'), 'utf8').includes('gone'), true,
-      'and the reader never rewrites the index - pruning is the engine\'s');
+    expect(names(discoverRepos({ workflowHome: home })), 'only the repo whose committed file still says yes').toBe('yes');
+    expect(fs.readFileSync(path.join(home, '.repos.json'), 'utf8').includes('gone'), 'and the reader never rewrites the index - pruning is the engine\'s').toBe(true);
     cleanup(tmp);
   });
 
-  await test('the opt-in is "enabled": true alone, and a machine file saying true turns no repo on', () => {
+  test('the opt-in is "enabled": true alone, and a machine file saying true turns no repo on', () => {
     // The engine's resolve_state is the SSOT of what enabled means: a committed
     // file with no answer is no member, whatever the roster or the machine file says.
     const tmp = mkTmp('tower-repos-');
@@ -144,11 +141,11 @@ const cases = async () => {
     const others = Object.entries(shapes).map(([name, settings]) => mkRepo(tmp, `Owner/${name}`, { settings }));
     const workflowHome = mkWorkflowHome(tmp, [yes, ...others]);
     fs.writeFileSync(path.join(workflowHome, 'settings.json'), '{ "enabled": true }\n');
-    assertEq(names(discoverRepos({ workflowHome })), 'yes', 'only the repo whose own file says true');
+    expect(names(discoverRepos({ workflowHome })), 'only the repo whose own file says true').toBe('yes');
     cleanup(tmp);
   });
 
-  await test('a declined entry is skipped, and the enabled ones beside it are not', () => {
+  test('a declined entry is skipped, and the enabled ones beside it are not', () => {
     const tmp = mkTmp('tower-repos-');
     const kept = mkRepo(tmp, 'Owner/kept');
     const declined = mkRepo(tmp, 'Owner/declined');
@@ -156,18 +153,18 @@ const cases = async () => {
       [rosterKey(declined)]: 'declined',
       [rosterKey(kept)]: 'enabled',
     });
-    assertEq(names(discoverRepos({ workflowHome })), 'kept', 'the declined repo is not listed');
+    expect(names(discoverRepos({ workflowHome })), 'the declined repo is not listed').toBe('kept');
     cleanup(tmp);
   });
 
-  await test('a hidden repo directory is listed - .dotfiles is a real repo', () => {
+  test('a hidden repo directory is listed - .dotfiles is a real repo', () => {
     const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/.dotfiles');
-    assertEq(names(discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) })), '.dotfiles', 'dot names are ordinary');
+    expect(names(discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) })), 'dot names are ordinary').toBe('.dotfiles');
     cleanup(tmp);
   });
 
-  await test('the tower clone is discovered by path, though no roster lists it', () => {
+  test('the tower clone is discovered by path, though no roster lists it', () => {
     // The home repo carries no committed opt-in of its own: the engine knows it
     // by path and so does the board, which exists to show exactly the
     // cross-project issues it holds.
@@ -180,12 +177,12 @@ const cases = async () => {
     git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
 
     const found = discoverRepos({ workflowHome: home });
-    assertEq(names(found), 'listed,tower', 'the clone joins the roster entries');
-    assertEq(found.find((r) => r.name === 'tower').slug, 'owner/workkit', 'named from its origin like any other');
+    expect(names(found), 'the clone joins the roster entries').toBe('listed,tower');
+    expect(found.find((r) => r.name === 'tower').slug, 'named from its origin like any other').toBe('owner/workkit');
     cleanup(tmp);
   });
 
-  await test('a tower path this user declined is not listed', () => {
+  test('a tower path this user declined is not listed', () => {
     // By-path discovery has no committed file to read, so the decline in the
     // roster is the only record of the answer - and it is an answer.
     const tmp = mkTmp('tower-repos-');
@@ -202,11 +199,11 @@ const cases = async () => {
       path.join(home, '.repos.json'),
       `${JSON.stringify({ version: 1, repos: { [rosterKey(tower)]: 'declined' } }, null, 2)}\n`,
     );
-    assertEq(names(discoverRepos({ workflowHome: home })), '', 'a declined clone stays off the board');
+    expect(names(discoverRepos({ workflowHome: home })), 'a declined clone stays off the board').toBe('');
     cleanup(tmp);
   });
 
-  await test('a foreign repo parked at the tower path is not listed', () => {
+  test('a foreign repo parked at the tower path is not listed', () => {
     // The origin slug is the only proof by-path discovery has that this is the
     // home repo: no origin, no recorded home slug, or a mismatch means someone
     // else's checkout is sitting at that name.
@@ -215,38 +212,38 @@ const cases = async () => {
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
-    assertEq(names(discoverRepos({ workflowHome: home })), '', 'no origin at all proves nothing');
+    expect(names(discoverRepos({ workflowHome: home })), 'no origin at all proves nothing').toBe('');
 
     git(tower, 'remote', 'add', 'origin', 'https://github.com/someone/else.git');
-    assertEq(names(discoverRepos({ workflowHome: home })), '', 'a different slug is a different repo');
+    expect(names(discoverRepos({ workflowHome: home })), 'a different slug is a different repo').toBe('');
 
     git(tower, 'remote', 'set-url', 'origin', 'https://github.com/owner/workkit.git');
-    assertEq(names(discoverRepos({ workflowHome: home })), 'tower', 'the matching clone still is');
+    expect(names(discoverRepos({ workflowHome: home })), 'the matching clone still is').toBe('tower');
     cleanup(tmp);
   });
 
-  await test('the tower clone is skipped when the settings file records no home slug', () => {
+  test('the tower clone is skipped when the settings file records no home slug', () => {
     const tmp = mkTmp('tower-repos-');
     const home = mkWorkflowHome(tmp, {});
     const tower = path.join(home, 'tower');
     fs.mkdirSync(tower, { recursive: true });
     git(tower, 'init', '-q', '-b', 'main');
     git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
-    assertEq(names(discoverRepos({ workflowHome: home })), '', 'nothing to match against, nothing listed');
+    expect(names(discoverRepos({ workflowHome: home })), 'nothing to match against, nothing listed').toBe('');
     cleanup(tmp);
   });
 
-  await test('a tower path that is not a git repo, or absent, adds nothing', () => {
+  test('a tower path that is not a git repo, or absent, adds nothing', () => {
     const tmp = mkTmp('tower-repos-');
     const listed = mkRepo(tmp, 'Owner/listed');
     const home = mkWorkflowHome(tmp, [listed]);
-    assertEq(names(discoverRepos({ workflowHome: home })), 'listed', 'nothing cloned yet');
+    expect(names(discoverRepos({ workflowHome: home })), 'nothing cloned yet').toBe('listed');
     fs.mkdirSync(path.join(home, 'tower'), { recursive: true });
-    assertEq(names(discoverRepos({ workflowHome: home })), 'listed', 'a plain folder is not the home repo');
+    expect(names(discoverRepos({ workflowHome: home })), 'a plain folder is not the home repo').toBe('listed');
     cleanup(tmp);
   });
 
-  await test('a tower clone the roster also lists is one entry, not two', () => {
+  test('a tower clone the roster also lists is one entry, not two', () => {
     const tmp = mkTmp('tower-repos-');
     const home = mkWorkflowHome(tmp, []);
     const tower = path.join(home, 'tower');
@@ -258,23 +255,23 @@ const cases = async () => {
       `${JSON.stringify({ version: 1, repos: { [rosterKey(tower)]: 'enabled' } }, null, 2)}\n`,
     );
     const found = discoverRepos({ workflowHome: home });
-    assertEq(found.length, 1, `deduplicated by path: ${found.map((r) => r.path).join(', ')}`);
+    expect(found.length, `deduplicated by path: ${found.map((r) => r.path).join(', ')}`).toBe(1);
     cleanup(tmp);
   });
+});
 
-  group('tower/repos: git\'s spelling of a path');
-
-  await test('gitPath folds a path into the spelling git prints, and leaves that one alone', () => {
+describe('tower/repos: git\'s spelling of a path', () => {
+  test('gitPath folds a path into the spelling git prints, and leaves that one alone', () => {
     // Every roster key is written by the engine from
     // `git rev-parse --show-toplevel`, which on Windows answers the mixed form
     // (`C:/Users/x`). A reader that compares in any other spelling compares
     // against nothing.
-    assertEq(gitPath('/Users/x/tower'), '/Users/x/tower', 'one spelling here, so nothing to fold');
-    assertEq(asWindows(() => gitPath('C:\\Users\\x\\tower')), 'C:/Users/x/tower', 'the native spelling folds');
-    assertEq(asWindows(() => gitPath('C:/Users/x/tower')), 'C:/Users/x/tower', 'and git\'s own is already it');
+    expect(gitPath('/Users/x/tower'), 'one spelling here, so nothing to fold').toBe('/Users/x/tower');
+    expect(asWindows(() => gitPath('C:\\Users\\x\\tower')), 'the native spelling folds').toBe('C:/Users/x/tower');
+    expect(asWindows(() => gitPath('C:/Users/x/tower')), 'and git\'s own is already it').toBe('C:/Users/x/tower');
   });
 
-  await test('on Windows the tower clone the roster lists is still one entry, not two', () => {
+  test('on Windows the tower clone the roster lists is still one entry, not two', () => {
     // `path.join` spells the tower path with backslashes on Windows while the
     // roster holds git's slashes, so an unfolded dedup lists the clone twice. Off
     // Windows the fixture builds the two names as two directories, folded through
@@ -284,7 +281,7 @@ const cases = async () => {
     const twinKey = asWindows(() => rosterKey(twin));
     const home = mkWorkflowHome(path.join(tmp, 'win\\x'), [twinKey], { homeSlug: 'owner/workkit' });
     const tower = path.join(home, 'tower');
-    assertEq(asWindows(() => rosterKey(tower)), twinKey, 'the fixture is one folder git and Node spell differently');
+    expect(asWindows(() => rosterKey(tower)), 'the fixture is one folder git and Node spell differently').toBe(twinKey);
     // On Windows the two names are one folder, the repo `mkRepo` just made; only
     // off Windows is the joined spelling a second directory that needs a repo.
     if (!fs.existsSync(path.join(tower, '.git'))) {
@@ -294,12 +291,12 @@ const cases = async () => {
     }
 
     const found = asWindows(() => discoverRepos({ workflowHome: home }));
-    assertEq(found.length, 1, `deduplicated across the spellings: ${found.map((r) => r.path).join(', ')}`);
-    assertEq(found[0].path, twinKey, 'and the entry wears the spelling every roster key is in');
+    expect(found.length, `deduplicated across the spellings: ${found.map((r) => r.path).join(', ')}`).toBe(1);
+    expect(found[0].path, 'and the entry wears the spelling every roster key is in').toBe(twinKey);
     cleanup(tmp);
   });
 
-  await test('on Windows a decline recorded in git\'s spelling still answers the lookup', () => {
+  test('on Windows a decline recorded in git\'s spelling still answers the lookup', () => {
     // The other compare the same fold serves: the decline is the
     // only record there is of that answer, and a lookup in the joined spelling
     // reads a declined clone as one nobody has been asked about.
@@ -318,13 +315,13 @@ const cases = async () => {
       path.join(home, '.repos.json'),
       `${JSON.stringify({ version: 1, repos: { [asWindows(() => rosterKey(tower))]: 'declined' } }, null, 2)}\n`,
     );
-    assertEq(names(asWindows(() => discoverRepos({ workflowHome: home }))), '', 'a declined clone stays off the board');
+    expect(names(asWindows(() => discoverRepos({ workflowHome: home }))), 'a declined clone stays off the board').toBe('');
     cleanup(tmp);
   });
+});
 
-  group('tower/repos: the origin slug');
-
-  await test('ssh, ssh-URL and https remotes all parse to owner/repo', () => {
+describe('tower/repos: the origin slug', () => {
+  test('ssh, ssh-URL and https remotes all parse to owner/repo', () => {
     const tmp = mkTmp('tower-repos-');
     const repos = [
       mkRepo(tmp, 'Owner/ssh', { origin: 'git@github.com:ITW-Creative-Works/workkit.git' }),
@@ -334,38 +331,38 @@ const cases = async () => {
     const bySlug = Object.fromEntries(
       discoverRepos({ workflowHome: mkWorkflowHome(tmp, repos) }).map((r) => [r.name, r.slug]),
     );
-    assertEq(bySlug.ssh, 'ITW-Creative-Works/workkit', 'ssh shorthand');
-    assertEq(bySlug.sshurl, 'ITW-Creative-Works/workkit', 'ssh URL');
-    assertEq(bySlug.https, 'alice/.dotfiles', 'https, dot in the repo name kept');
+    expect(bySlug.ssh, 'ssh shorthand').toBe('ITW-Creative-Works/workkit');
+    expect(bySlug.sshurl, 'ssh URL').toBe('ITW-Creative-Works/workkit');
+    expect(bySlug.https, 'https, dot in the repo name kept').toBe('alice/.dotfiles');
     cleanup(tmp);
   });
 
-  await test('a repo with no origin is still listed, with slug null', () => {
+  test('a repo with no origin is still listed, with slug null', () => {
     const tmp = mkTmp('tower-repos-');
     const repo = mkRepo(tmp, 'Owner/local');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [repo]) });
-    assertEq(found.length, 1, 'still listed - health works locally');
-    assertEq(found[0].slug, null, 'no slug');
+    expect(found.length, 'still listed - health works locally').toBe(1);
+    expect(found[0].slug, 'no slug').toBe(null);
     cleanup(tmp);
   });
 
-  await test('slugFromRemote handles trailing slashes and bare paths', () => {
-    assertEq(slugFromRemote('https://github.com/o/r/'), 'o/r', 'trailing slash');
-    assertEq(slugFromRemote('https://github.com/o/r//'), 'o/r', 'every trailing slash, not one');
-    assertEq(slugFromRemote(''), null, 'empty');
-    assertEq(slugFromRemote('notaremote'), null, 'no owner segment');
+  test('slugFromRemote handles trailing slashes and bare paths', () => {
+    expect(slugFromRemote('https://github.com/o/r/'), 'trailing slash').toBe('o/r');
+    expect(slugFromRemote('https://github.com/o/r//'), 'every trailing slash, not one').toBe('o/r');
+    expect(slugFromRemote(''), 'empty').toBe(null);
+    expect(slugFromRemote('notaremote'), 'no owner segment').toBe(null);
   });
 
-  await test('slugFromRemote reads a local path in either separator', () => {
-    assertEq(slugFromRemote('/Users/x/theirs.git'), 'x/theirs', 'a POSIX path');
-    assertEq(slugFromRemote('C:/Users/x/theirs.git'), 'x/theirs', 'the mixed form Git Bash prints');
-    assertEq(slugFromRemote('C:\\Users\\x\\theirs.git'), 'x/theirs', 'the native form git stores verbatim');
-    assertEq(slugFromRemote('C:\\Users\\x\\theirs.git\\'), 'x/theirs', 'and a trailing backslash comes off like a trailing slash');
+  test('slugFromRemote reads a local path in either separator', () => {
+    expect(slugFromRemote('/Users/x/theirs.git'), 'a POSIX path').toBe('x/theirs');
+    expect(slugFromRemote('C:/Users/x/theirs.git'), 'the mixed form Git Bash prints').toBe('x/theirs');
+    expect(slugFromRemote('C:\\Users\\x\\theirs.git'), 'the native form git stores verbatim').toBe('x/theirs');
+    expect(slugFromRemote('C:\\Users\\x\\theirs.git\\'), 'and a trailing backslash comes off like a trailing slash').toBe('x/theirs');
   });
+});
 
-  group('tower/repos: this machine\'s temp root');
-
-  await test('on Windows a POSIX temp answer is refused for the directory Git Bash means by it', () => {
+describe('tower/repos: this machine\'s temp root', () => {
+  test('on Windows a POSIX temp answer is refused for the directory Git Bash means by it', () => {
     // Git for Windows exports `TMP=/tmp` to every login shell, so `os.tmpdir()`
     // hands back that string and `path.join` turns it into `C:\tmp`, a
     // directory nothing writes to. Git Bash's `/tmp` is the Windows temp folder:
@@ -376,26 +373,17 @@ const cases = async () => {
       process.env.TEMP = '/tmp';
       process.env.TMP = '/tmp';
       process.env.LOCALAPPDATA = 'C:\\Users\\x\\AppData\\Local';
-      assertEq(
-        asWindows(() => tempRoot(noGetconf)),
-        'C:/Users/x/AppData/Local/Temp',
-        'the directory Git Bash calls /tmp, in forward slashes',
-      );
+      expect(asWindows(() => tempRoot(noGetconf)), 'the directory Git Bash calls /tmp, in forward slashes').toBe('C:/Users/x/AppData/Local/Temp');
       // A native answer is already the right one and is left alone.
       process.env.TEMP = 'C:\\Users\\x\\AppData\\Local\\Temp';
       process.env.TMP = process.env.TEMP;
-      assertEq(asWindows(() => tempRoot(noGetconf)), 'C:\\Users\\x\\AppData\\Local\\Temp', 'nothing to refuse');
+      expect(asWindows(() => tempRoot(noGetconf)), 'nothing to refuse').toBe('C:\\Users\\x\\AppData\\Local\\Temp');
     } finally {
       restoreEnv(saved, ['TMPDIR', 'TEMP', 'TMP', 'LOCALAPPDATA']);
     }
   });
 
-  // The per-user temp dir a launchd job has no TMPDIR for is a Darwin
-  // question, and this is the platform that can answer it. Read here rather
-  // than through the platform seam, which names the Windows fork only.
-  const darwinTest = testUnless(process.platform !== 'darwin', 'DARWIN_USER_TEMP_DIR is a macOS question');
-
-  await darwinTest('with no TMPDIR the Darwin per-user temp dir answers, and TMPDIR outranks it', () => {
+  test('with no TMPDIR the Darwin per-user temp dir answers, and TMPDIR outranks it', { skip: process.platform !== 'darwin' && 'DARWIN_USER_TEMP_DIR is a macOS question' }, () => {
     const saved = { ...process.env };
     const asked = [];
     const stub = (cmd, args) => {
@@ -406,56 +394,50 @@ const cases = async () => {
       delete process.env.TMPDIR;
       // The real tool prints a trailing slash, which only the newline is taken
       // off: a join past it normalizes, so nothing downstream sees it.
-      assertEq(tempRoot(stub), '/var/folders/gx/T/', 'the getconf answer, its newline trimmed');
-      assertEq(path.join(tempRoot(stub), 'claude-keep-awake'), '/var/folders/gx/T/claude-keep-awake', 'and a marker dir off it is ordinary');
-      assertEq(asked.join(' '), 'getconf DARWIN_USER_TEMP_DIR getconf DARWIN_USER_TEMP_DIR', 'getconf is the one question asked');
+      expect(tempRoot(stub), 'the getconf answer, its newline trimmed').toBe('/var/folders/gx/T/');
+      expect(path.join(tempRoot(stub), 'claude-keep-awake'), 'and a marker dir off it is ordinary').toBe('/var/folders/gx/T/claude-keep-awake');
+      expect(asked.join(' '), 'getconf is the one question asked').toBe('getconf DARWIN_USER_TEMP_DIR getconf DARWIN_USER_TEMP_DIR');
       process.env.TMPDIR = '/var/folders/gx/mine';
-      assertEq(tempRoot(stub), '/var/folders/gx/mine', 'what the shell was handed wins');
-      assertEq(asked.length, 2, 'and with a TMPDIR set getconf is not asked at all');
+      expect(tempRoot(stub), 'what the shell was handed wins').toBe('/var/folders/gx/mine');
+      expect(asked.length, 'and with a TMPDIR set getconf is not asked at all').toBe(2);
     } finally {
       restoreEnv(saved, ['TMPDIR']);
     }
   });
+});
 
-  group('tower/repos: a roster that says nothing');
-
-  await test('no settings file, no repos key, and an unparseable file are all empty', () => {
+describe('tower/repos: a roster that says nothing', () => {
+  test('no settings file, no repos key, and an unparseable file are all empty', () => {
     const tmp = mkTmp('tower-repos-');
     const absent = discoverRepos({ workflowHome: path.join(tmp, 'nope') });
-    assert(Array.isArray(absent) && absent.length === 0, 'a machine that has healed nothing yet');
-    assertEq(discoverRepos({ workflowHome: mkWorkflowHome(tmp, null, { version: 1 }) }).length, 0, 'no repos key');
+    expect(Array.isArray(absent) && absent.length === 0, 'a machine that has healed nothing yet').toBeTruthy();
+    expect(discoverRepos({ workflowHome: mkWorkflowHome(tmp, null, { version: 1 }) }).length, 'no repos key').toBe(0);
     cleanup(tmp);
 
     const tmp2 = mkTmp('tower-repos-');
-    assertEq(discoverRepos({ workflowHome: mkWorkflowHome(tmp2, null, '{ not json') }).length, 0, 'unparseable');
+    expect(discoverRepos({ workflowHome: mkWorkflowHome(tmp2, null, '{ not json') }).length, 'unparseable').toBe(0);
     cleanup(tmp2);
   });
 
-  await test('a reader cannot tell the three apart, and readRoster can', () => {
+  test('a reader cannot tell the three apart, and readRoster can', () => {
     // Absent and unparseable are the same empty board to a reader and two
     // different things to a writer, so the file read says which.
     const tmp = mkTmp('tower-repos-');
-    assertEq(readRoster(path.join(tmp, 'nope')).status, 'missing', 'nothing registered yet');
-    assertEq(readRoster(mkWorkflowHome(tmp, null, { roster: { version: 1 } })).status, 'ok', 'a file that parses');
+    expect(readRoster(path.join(tmp, 'nope')).status, 'nothing registered yet').toBe('missing');
+    expect(readRoster(mkWorkflowHome(tmp, null, { roster: { version: 1 } })).status, 'a file that parses').toBe('ok');
     cleanup(tmp);
 
     const tmp2 = mkTmp('tower-repos-');
-    assertEq(readRoster(mkWorkflowHome(tmp2, null, { roster: '{ not json' })).status, 'unreadable', 'a file that does not');
+    expect(readRoster(mkWorkflowHome(tmp2, null, { roster: '{ not json' })).status, 'a file that does not').toBe('unreadable');
     cleanup(tmp2);
   });
 
-  await test('the sort is by path, so the answer is stable however the map was written', () => {
+  test('the sort is by path, so the answer is stable however the map was written', () => {
     const tmp = mkTmp('tower-repos-');
     const b = mkRepo(tmp, 'Owner/b');
     const a = mkRepo(tmp, 'Owner/a');
     const found = discoverRepos({ workflowHome: mkWorkflowHome(tmp, [b, a]) });
-    assertEq(found.map((r) => r.name).join(','), 'a,b', 'insertion order is not the answer');
+    expect(found.map((r) => r.name).join(','), 'insertion order is not the answer').toBe('a,b');
     cleanup(tmp);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -3,7 +3,7 @@
 // nothing that ships still points at the dotfiles they came from.
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
 const SKILLS_DIR = path.join(REPO, 'skills');
@@ -15,9 +15,9 @@ const SKILLS = ['feature', 'interview', 'diagnose', 'review', 'triage', 'status'
 const frontmatterField = (file, field) => {
   const text = fs.readFileSync(file, 'utf8');
   const match = text.match(/^---\n([\s\S]*?)\n---/);
-  assert(match, `${file} has no frontmatter`);
+  expect(match, `${file} has no frontmatter`).toBeTruthy();
   const value = match[1].match(new RegExp(`^${field}:\\s*(.+)$`, 'm'));
-  assert(value, `${file} frontmatter has no ${field}`);
+  expect(value, `${file} frontmatter has no ${field}`).toBeTruthy();
   return value[1].trim();
 };
 
@@ -34,19 +34,18 @@ const skillFolders = () =>
     .map((e) => e.name)
     .sort();
 
-const cases = async () => {
-  group('skills: the nine folders');
+describe('skills: the nine folders', () => {
   for (const name of SKILLS) {
-    await test(`${name}/SKILL.md exists and its frontmatter name matches the folder`, () => {
+    test(`${name}/SKILL.md exists and its frontmatter name matches the folder`, () => {
       const file = path.join(SKILLS_DIR, name, 'SKILL.md');
-      assert(fs.existsSync(file), `missing ${file}`);
-      assertEq(frontmatterField(file, 'name'), name, `${name} frontmatter name`);
+      expect(fs.existsSync(file), `missing ${file}`).toBeTruthy();
+      expect(frontmatterField(file, 'name'), `${name} frontmatter name`).toBe(name);
     });
   }
+});
 
-  group('skills: frontmatter is strict YAML');
-
-  await test('no plain frontmatter scalar carries a bare `: `, ` #`, or an opening `[` or `{`', () => {
+describe('skills: frontmatter is strict YAML', () => {
+  test('no plain frontmatter scalar carries a bare `: `, ` #`, or an opening `[` or `{`', () => {
     // A strict loader refuses a plain (unquoted) scalar holding `: ` or ` #`
     // and reads one opening with `[` or `{` as a list or a map. Claude Code
     // tolerates all of it, so the drift is invisible in use; checked here
@@ -55,7 +54,7 @@ const cases = async () => {
     for (const name of skillFolders()) {
       const file = path.join(SKILLS_DIR, name, 'SKILL.md');
       const block = fs.readFileSync(file, 'utf8').match(/^---\n([\s\S]*?)\n---/);
-      assert(block, `${file} has no frontmatter`);
+      expect(block, `${file} has no frontmatter`).toBeTruthy();
       for (const line of block[1].split('\n')) {
         const field = line.match(/^([\w-]+):\s*(.*)$/);
         if (!field) continue;
@@ -64,11 +63,11 @@ const cases = async () => {
         if (/^[[{]/.test(value) || value.includes(': ') || value.includes(' #')) bad.push(`${name} ${field[1]}`);
       }
     }
-    assertEq(bad.join(', '), '', 'plain scalars a strict YAML loader refuses');
+    expect(bad.join(', '), 'plain scalars a strict YAML loader refuses').toBe('');
   });
+});
 
-  group('skills + agents + docs: portability');
-
+describe('skills + agents + docs: portability', () => {
   const shippedDocs = () => [
     ...markdownIn(path.join(REPO, 'docs')),
     path.join(REPO, 'README.md'),
@@ -91,13 +90,13 @@ const cases = async () => {
   const MACHINE_SPECIFIC = [/\.dotfiles\b/, /(?<![A-Za-z]:|\/[a-z])\/Users\//, /~\/Developer\//, /\bthe dotfiles repo\b/i];
   const machineSpecific = (text) => MACHINE_SPECIFIC.some((pattern) => pattern.test(text));
 
-  await test('no machine-specific path appears in shipped content', () => {
+  test('no machine-specific path appears in shipped content', () => {
     const bad = portable().filter((file) => machineSpecific(fs.readFileSync(file, 'utf8')))
       .map((file) => path.relative(REPO, file));
-    assertEq(bad.join(', '), '', 'files carrying a machine-specific path');
+    expect(bad.join(', '), 'files carrying a machine-specific path').toBe('');
   });
 
-  await test('no shipped agent or skill reaches into a personal ~/.claude directory', () => {
+  test('no shipped agent or skill reaches into a personal ~/.claude directory', () => {
     // The spec may point at the surrounding harness (`~/.claude/hooks/README.md`
     // is a real neighbouring document); an agent or a skill, which runs
     // anywhere, may not depend on one.
@@ -106,13 +105,6 @@ const cases = async () => {
       const text = fs.readFileSync(file, 'utf8');
       if (/~\/\.claude\/(agents|skills|hooks)\b/.test(text)) bad.push(path.relative(REPO, file));
     }
-    assertEq(bad.join(', '), '', 'files reaching into a personal ~/.claude directory');
+    expect(bad.join(', '), 'files reaching into a personal ~/.claude directory').toBe('');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

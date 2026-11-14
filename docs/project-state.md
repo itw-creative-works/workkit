@@ -20,13 +20,14 @@
   - Every kit query reads up to 1,000 issues (`--limit 1000`).
   - A filter is applied before the cap, and `gh` never says when a cap cut the answer.
 - **Promotion rule**: anything durable (a finding, a decision, a blocker) is promoted to its issue as a comment the moment it exists. `.workkit/` holds only in-flight session state; it is private per developer, so nobody else ever reads it. It is a routing stop, never a destination.
-- **`.workkit/` splits by owner**. Three things live there, beside three logs, and nothing else:
+- **`.workkit/` splits by owner**. Three things live there, beside four kinds of log, and nothing else:
   - `settings.json`, the tracked opt-in;
   - `capture.md`, the ONE owner-editable file (§ Capture);
   - `agents/`, everything the agents maintain: `session.md`, the `docs:change-tracker` fingerprint, anything future.
   - The logs are the kit's detached runs' own, the owner's and the agents' alike to read and neither's to write:
     - `suite.log`, a root `npm test`'s output;
     - `run.log`, a `workkit supervise` run's;
+    - `test.log.<pid>`, a narrowed `npm test`'s, one per run, named by its wrapper's pid;
     - `ci.log`, the ship's CI watch's.
     - Each is truncated per run and written there only where git ignores it.
   - The boundary is structural rather than a convention: the owner writes above `agents/`, the agents write inside it.
@@ -48,11 +49,13 @@
     - `workflow:standards`, the source of the setup reminder and the offer line above (its own gate keeps the heal to a yes);
     - `workflow:reload-guard`, the restart notice;
     - `safety:issue-guard`, which the `gh` shim runs on every `gh` call, the owner's own included, to keep the machine's secrets out of every `gh` write.
-  - The guards that judge a commit or a `gh` write run where the real action is visible:
+  - The guards that judge a commit, a `gh` write or a discarding `git` call run where the real action is visible:
     - the commit's in git's own `pre-commit` and `commit-msg` hooks, on the staged tree and the message;
-    - the `gh` write's in the `gh` shim, on the expanded argv.
-    - Both sit behind one gate, a Claude session in a repo that is a yes (`wk_session_judges`: `workflow/README.md`, the `lib/participation.sh` row).
-  - Only six still read a command's text: `safety:tree-guard`, `safety:capture-guard`, `safety:script-write`, `safety:release-taken`'s `npm publish` half and the `workflow:bare-call` and `workflow:unwatched` notices.
+    - the `gh` write's in the `gh` shim, on the expanded argv;
+    - the shared-tree guard's in the `git` shim, on git's real arguments.
+    - All three sit behind one gate, a Claude session in a repo that is a yes (`wk_session_judges`: `workflow/README.md`, the `lib/participation.sh` row).
+  - Every Bash call's changed files are checked on disk after it runs.
+  - No guard reads a command's text. The one match left is whether a Bash command names `.workkit/capture.md`, handed to `safety:capture-guard` as a yes or no.
   - How a hook in the hooks module finds the repo it acts on: [`hooks.md`](hooks.md) § Where every hook stands down.
 
 - **Every heal runs.** Nothing in a repo records which heals it has had.
@@ -237,12 +240,15 @@ flowchart TB
     - Bare, it is that package's whole suite.
     - With arguments (`npm test -- <what>`) it is narrowed, and the package's runner decides what the arguments mean.
     - A repo's root `test` script is the whole definition of its tests; a nested package's suite is that script's job.
-  - A tree is proved by running `npm test` at the repo root, by anyone (the owner in a terminal, the agent, a background run).
+  - A tree is proved by running `npm test` at the repo root, by anyone (the owner in a terminal, the agent, a background run), with `CI` unset or empty.
     - The shell records the tree it proved, and the gate checks the record.
+    - A run with `CI` set to any other value (`false` and `0` included) writes no record: a repo's root script may run only part of its suite under `CI`, so such a run cannot stand for the whole.
+      - The run itself goes as always, `CI` left in its environment as it came; a green one says so in one `script-shell:` line and exits 0.
+      - Nothing else reads `CI`, so a tree only a `CI` run proved is refused at the commit for a missing record.
     - Every tree id a record is keyed to (the working tree's, a package's own, the index's) is the tree with `.workkit/` left out.
     - So a write there (the suite log, a marker, `settings.json`) never re-keys a green record.
   - The shell is npm's `script-shell`, which `workkit setup` points at the kit's wrapper.
-    - A green root run records the tree it started on, and a run that changed the tree records nothing.
+    - A green root run records the tree it started on; a run that changed the tree, or one with `CI` set, records nothing.
     - The wrapper first runs the gate's cheap check, the CHANGELOG format over every modified `CHANGELOG.md`. So a bad entry stops the run before the suite starts.
     - The suite then runs in its own session, its output written to `.workkit/suite.log` as well as the terminal.
     - A kill of the shell that started it (an agent tool's time limit) leaves it running to its record.
@@ -275,6 +281,7 @@ flowchart TB
     - A verifier runs the narrowest command that checks the claim.
   - When the folder holds work the commit leaves out, `workkit prove` proves the staged tree instead.
     - It runs the root suite in a throwaway copy of the index outside the repo and, on green, records the index's tree.
+    - With `CI` set it refuses before the copy, exit 1, since the record is its only product.
     - So held work stays in the folder, and neither the folder nor the index changes.
     - The commit gate's bounce names it for exactly that state.
     - The ship picks it after staging when the index differs from the disk, untracked files included. So the whole-folder run never starts there.
@@ -299,7 +306,7 @@ flowchart TB
       - Every other green `test` run (narrowed anywhere, or a nested package's bare run) writes the package record.
       - That is one line per package folder, on that package's own id: the code it can see.
       - The rule: [`hooks.md`](hooks.md) § `safety:proof-guard`, the package id bullet.
-    - A run that changed its id records nothing.
+    - A run that changed its id, or one with `CI` set, records nothing.
       - So the packages a batch touched are run on the tree it parks, and an edit reruns only the packages that can see it.
 - **The drift questions**. The blind verification that precedes the park asks three questions past the brief it verified:
   - parity: the changed files' siblings on the other surfaces;
@@ -359,9 +366,9 @@ flowchart TB
    - It is the OWNER'S CAPTURE SURFACE: the owner adds to it freely from any shell, and the AGENT'S ONE SANCTIONED TOUCH IS THE TRIAGE DRAIN.
      - During a triage run its contents are read and the entries that landed somewhere are deleted.
    - The `safety:capture-guard` hook holds both directions:
-     - the marker the `workkit:triage` skill records opens a read and a rewrite;
-     - nothing opens an APPEND (`>>`, `tee -a`, the capture CLI run by an agent), since adding to it is never the agent's;
-     - counting the entries is always free.
+     - the marker the `workkit:triage` skill records opens a Read, an Edit or Write, and a Bash command naming the file's path;
+     - outside a triage run a Bash command naming the path is refused, a count included, since the session-start line already says whether it has entries;
+     - outside a triage run every write a Bash call makes there, `workkit note` included, is reported after the call (`safety:script-write`), since adding to it is never the agent's.
    - A finding an agent cannot file as an issue goes in chat, never here.
    - The engine's capture CLI (`workkit note "the thought"`) appends here from any shell.
      - Standing outside every participating repo, it files a `status:inbox` issue on the home repo instead, since there is no capture file out there.
@@ -797,7 +804,7 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
 - What is left on disk is scratch (the capture inbox, session state, caches, logs), and none of it is a source of truth.
 - Two surfaces, both generic.
   - There is no assumed folder layout anywhere, and no path outside them but one.
-  - The one is the kit's cache folder, `~/.cache/workkit/proof`: scratch, the run folders of `workkit prove` and `workkit proof red` (`workflow/README.md`, `wk_proof_base`).
+  - The one is the kit's cache folder, `~/.cache/workkit`: scratch, the run folders of `workkit prove` and `workkit proof red` under `proof/`, and the red-proof snapshots under `snapshot/` (`workflow/README.md`, `wk_cache_dir`).
 - **1. `~/.workkit`**: workkit's user-level home on any machine (`$WORKFLOW_HOME` overrides it).
   - It is a PLAIN FOLDER and never a git repo.
   - Nothing in it is versioned, so nothing in it has to be kept out of a commit.

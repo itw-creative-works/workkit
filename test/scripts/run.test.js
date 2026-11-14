@@ -4,9 +4,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { IS_WINDOWS, NODE_DIR, SYSTEM_PATH, joinPath, asWindows } = require('../lib/platform');
 const { launchOf, windowsQuoted, spawnSync, execFileSync } = require('../../workflow/lib/run');
+const { caught } = require('../lib/caught');
 
 // A Windows parent's env: what a child of it needs to start cmd.exe and keep a temp folder.
 const WIN_PARENT = {
@@ -56,73 +57,60 @@ const gitBash = (root) => {
 /** Every value `env` holds under `key`, matched without case as Windows does. */
 const valuesOf = (env, key) => Object.keys(env).filter((k) => k.toLowerCase() === key.toLowerCase()).map((k) => env[k]);
 
-/** The error `fn` throws, or null when it returns. */
-const thrownBy = (fn) => {
-  try {
-    fn();
-    return null;
-  } catch (err) {
-    return err;
-  }
-};
-
 const ARGS = ['api', 'labels[]=x', 'a b'];
 const QUOTED = ['"api"', '"labels[]=x"', '"a b"'];
 
-const cases = async () => {
-  group('run.js: launchOf off Windows');
-
-  await test('on darwin and linux the launch is the input, args and options unchanged', () => {
+describe('run.js: launchOf off Windows', () => {
+  test('on darwin and linux the launch is the input, args and options unchanged', () => {
     const dir = mkTmp('wk-run-');
     put(dir, 'gh', SH_SCRIPT);
     for (const platform of ['darwin', 'linux']) {
       const options = { env: { PATH: dir }, cwd: dir };
       const launch = launchOf('gh', [...ARGS], options, { platform, parentEnv: WIN_PARENT });
-      assertEq(JSON.stringify(launch), JSON.stringify({ file: 'gh', args: ARGS, options: { env: { PATH: dir }, cwd: dir } }),
-        `${platform}: untouched`);
+      expect(JSON.stringify(launch), `${platform}: untouched`).toBe(JSON.stringify({ file: 'gh', args: ARGS, options: { env: { PATH: dir }, cwd: dir } }));
     }
   });
+});
 
-  group('run.js: launchOf on win32');
-
-  await test('a #! script first on PATH runs through Git Bash, ahead of a later gh.exe', () => {
+describe('run.js: launchOf on win32', () => {
+  test('a #! script first on PATH runs through Git Bash, ahead of a later gh.exe', () => {
     const root = mkTmp('wk-run-');
     const script = put(path.join(root, 'shim'), 'gh', SH_SCRIPT);
     put(path.join(root, 'gh-cli'), 'gh.exe');
     const { dir, bash } = gitBash(root);
     const launch = onWin32('gh', ARGS, { env: { PATH: [path.join(root, 'shim'), path.join(root, 'gh-cli'), dir].join(';') } });
-    assertEq(launch.file, bash, 'Git Bash starts the shim');
-    assertEq(JSON.stringify(launch.args), JSON.stringify([`"${script}"`, ...QUOTED]), 'the script path first, every argument quoted');
-    assertEq(launch.options.windowsVerbatimArguments, true, 'handed over verbatim');
+    expect(launch.file, 'Git Bash starts the shim').toBe(bash);
+    expect(JSON.stringify(launch.args), 'the script path first, every argument quoted').toBe(JSON.stringify([`"${script}"`, ...QUOTED]));
+    expect(launch.options.windowsVerbatimArguments, 'handed over verbatim').toBe(true);
   });
 
-  await test('a dir holding only gh.exe: that file, every argument quoted, verbatim', () => {
+  test('a dir holding only gh.exe: that file, every argument quoted, verbatim', () => {
     const root = mkTmp('wk-run-');
     const exe = put(path.join(root, 'gh-cli'), 'gh.exe');
     const launch = onWin32('gh', ARGS, { env: { PATH: path.join(root, 'gh-cli') } });
-    assertEq(launch.file, exe, 'the exe itself');
-    assertEq(JSON.stringify(launch.args), JSON.stringify(QUOTED), 'every argument quoted');
-    assertEq(launch.options.windowsVerbatimArguments, true, 'handed over verbatim');
+    expect(launch.file, 'the exe itself').toBe(exe);
+    expect(JSON.stringify(launch.args), 'every argument quoted').toBe(JSON.stringify(QUOTED));
+    expect(launch.options.windowsVerbatimArguments, 'handed over verbatim').toBe(true);
   });
 
-  await test('npm: a #! npm beside npm.cmd runs through Git Bash; npm.cmd alone runs through ComSpec', () => {
+  test('npm: a #! npm beside npm.cmd runs through Git Bash; npm.cmd alone runs through ComSpec', () => {
     const root = mkTmp('wk-run-');
     const { dir, bash } = gitBash(root);
     const both = path.join(root, 'both');
     const script = put(both, 'npm', SH_SCRIPT);
     put(both, 'npm.cmd');
     const shim = onWin32('npm', ['--version'], { env: { PATH: [both, dir].join(';') } });
-    assertEq(shim.file, bash, 'the bare name wins its folder, so Git Bash starts it');
-    assertEq(JSON.stringify(shim.args), JSON.stringify([`"${script}"`, '"--version"']), 'the script, then its argument');
+    expect(shim.file, 'the bare name wins its folder, so Git Bash starts it').toBe(bash);
+    expect(JSON.stringify(shim.args), 'the script, then its argument').toBe(JSON.stringify([`"${script}"`, '"--version"']));
 
     const cmd = put(path.join(root, 'cmd-only'), 'npm.cmd');
     const batch = onWin32('npm', ['--version'], { env: { PATH: path.join(root, 'cmd-only') } });
-    assertEq(batch.file, 'C:\\Windows\\system32\\cmd.exe', "the parent's ComSpec");
-    assertEq(batch.args.join(' '), `/d /s /c "${cmd} ^"--version^""`, 'one quoted line for cmd.exe');
-    assertEq(batch.options.windowsVerbatimArguments, true, 'handed over verbatim');
+    expect(batch.file, "the parent's ComSpec").toBe('C:\\Windows\\system32\\cmd.exe');
+    expect(batch.args.join(' '), 'one quoted line for cmd.exe').toBe(`/d /s /c "${cmd} ^"--version^""`);
+    expect(batch.options.windowsVerbatimArguments, 'handed over verbatim').toBe(true);
   });
 
-  await test("bash is Git Bash: System32's and a WindowsApps bash.exe are passed over", () => {
+  test("bash is Git Bash: System32's and a WindowsApps bash.exe are passed over", () => {
     const root = mkTmp('wk-run-');
     const systemRoot = path.join(root, 'Windows');
     const system32 = path.join(systemRoot, 'System32');
@@ -132,10 +120,10 @@ const cases = async () => {
     const { dir, bash } = gitBash(root);
     const launch = onWin32('bash', ['-c', 'true'], { env: { PATH: [system32, apps, dir].join(';') } },
       { ...WIN_PARENT, SystemRoot: systemRoot, LOCALAPPDATA: path.join(root, 'Users', 'x', 'AppData', 'Local') });
-    assertEq(launch.file, bash, 'the later Git Bash, never WSL');
+    expect(launch.file, 'the later Git Bash, never WSL').toBe(bash);
   });
 
-  await test('a folder is passed over by its SystemRoot prefix, without case, never by its name', () => {
+  test('a folder is passed over by its SystemRoot prefix, without case, never by its name', () => {
     const root = mkTmp('wk-run-');
     const systemRoot = path.join(root, 'Windows');
     const wsl = path.join(systemRoot, 'Sysnative');
@@ -144,66 +132,66 @@ const cases = async () => {
     const bash = put(lookalike, 'bash.exe');
     const launch = onWin32('bash', [], { env: { PATH: [wsl, lookalike].join(';') } },
       { ...WIN_PARENT, SystemRoot: systemRoot.toUpperCase() });
-    assertEq(launch.file, bash, 'a System32 outside SystemRoot is Git Bash; a folder under it of any name is not');
+    expect(launch.file, 'a System32 outside SystemRoot is Git Bash; a folder under it of any name is not').toBe(bash);
   });
 
-  await test('a PATH entry in quotes is read without them', () => {
+  test('a PATH entry in quotes is read without them', () => {
     const root = mkTmp('wk-run-');
     const { dir, bash } = gitBash(root);
-    assertEq(onWin32('bash', [], { env: { PATH: `"${dir}"` } }).file, bash, 'Git Bash in a quoted entry');
+    expect(onWin32('bash', [], { env: { PATH: `"${dir}"` } }).file, 'Git Bash in a quoted entry').toBe(bash);
     const exe = put(path.join(root, 'gh-cli'), 'gh.exe');
-    assertEq(onWin32('gh', [], { env: { PATH: `"${path.dirname(exe)}"` } }).file, exe, 'a program in a quoted entry');
+    expect(onWin32('gh', [], { env: { PATH: `"${path.dirname(exe)}"` } }).file, 'a program in a quoted entry').toBe(exe);
   });
 
-  await test('with no bash.exe on PATH, the bash.exe in bin beside git.exe is Git Bash', () => {
+  test('with no bash.exe on PATH, the bash.exe in bin beside git.exe is Git Bash', () => {
     const root = mkTmp('wk-run-');
     const cmdDir = path.join(root, 'Git', 'cmd');
     put(cmdDir, 'git.exe');
     const bash = put(path.join(root, 'Git', 'bin'), 'bash.exe');
-    assertEq(onWin32('bash', ['-c', 'true'], { env: { PATH: cmdDir } }).file, bash, 'Git\\cmd gives Git\\bin\\bash.exe');
+    expect(onWin32('bash', ['-c', 'true'], { env: { PATH: cmdDir } }).file, 'Git\\cmd gives Git\\bin\\bash.exe').toBe(bash);
   });
 
-  await test('with Git Bash nowhere, a #! npm is passed over for the npm.cmd beside it', () => {
+  test('with Git Bash nowhere, a #! npm is passed over for the npm.cmd beside it', () => {
     const root = mkTmp('wk-run-');
     const both = path.join(root, 'both');
     put(both, 'npm', SH_SCRIPT);
     const cmd = put(both, 'npm.cmd');
     const launch = onWin32('npm', ['--version'], { env: { PATH: both } });
-    assertEq(launch.file, WIN_PARENT.ComSpec, 'cmd.exe starts the npm.cmd');
-    assertEq(launch.args[3], `"${cmd} ^"--version^""`, 'the npm.cmd line');
+    expect(launch.file, 'cmd.exe starts the npm.cmd').toBe(WIN_PARENT.ComSpec);
+    expect(launch.args[3], 'the npm.cmd line').toBe(`"${cmd} ^"--version^""`);
   });
 
-  await test('with Git Bash nowhere, bash by name and a #! file by path fail loudly, naming Git Bash', () => {
+  test('with Git Bash nowhere, bash by name and a #! file by path fail loudly, naming Git Bash', async () => {
     const root = mkTmp('wk-run-');
     const empty = path.join(root, 'empty');
     fs.mkdirSync(empty);
-    const byName = thrownBy(() => onWin32('bash', ['-c', 'true'], { env: { PATH: empty } }));
-    assert(byName && /Git Bash not found/.test(byName.message), `bash by name throws, got: ${byName}`);
+    const byName = await caught(() => onWin32('bash', ['-c', 'true'], { env: { PATH: empty } }));
+    expect(byName && /Git Bash not found/.test(byName.message), `bash by name throws, got: ${byName}`).toBeTruthy();
     const script = put(path.join(root, 'kit', 'bin'), 'workkit', SH_SCRIPT);
-    const byPath = thrownBy(() => onWin32(script, ['test'], { env: { PATH: empty } }));
-    assert(byPath && /Git Bash not found/.test(byPath.message), `a #! file by path throws, got: ${byPath}`);
+    const byPath = await caught(() => onWin32(script, ['test'], { env: { PATH: empty } }));
+    expect(byPath && /Git Bash not found/.test(byPath.message), `a #! file by path throws, got: ${byPath}`).toBeTruthy();
   });
 
-  await test('an extensionless file with no #! line is passed over for the gh.exe beside it', () => {
+  test('an extensionless file with no #! line is passed over for the gh.exe beside it', () => {
     const root = mkTmp('wk-run-');
     const dir = path.join(root, 'gh-cli');
     put(dir, 'gh', 'not a script\n');
     const exe = put(dir, 'gh.exe');
-    assertEq(onWin32('gh', ARGS, { env: { PATH: dir } }).file, exe, 'the exe, not the plain file');
+    expect(onWin32('gh', ARGS, { env: { PATH: dir } }).file, 'the exe, not the plain file').toBe(exe);
   });
 
-  await test('a #! script and gh.exe in one folder: the bare name wins, through Git Bash', () => {
+  test('a #! script and gh.exe in one folder: the bare name wins, through Git Bash', () => {
     const root = mkTmp('wk-run-');
     const dir = path.join(root, 'shim');
     const script = put(dir, 'gh', SH_SCRIPT);
     put(dir, 'gh.exe');
     const { dir: bashDir, bash } = gitBash(root);
     const launch = onWin32('gh', ARGS, { env: { PATH: [dir, bashDir].join(';') } });
-    assertEq(launch.file, bash, 'Git Bash starts the bare name');
-    assertEq(launch.args[0], `"${script}"`, 'the script first');
+    expect(launch.file, 'Git Bash starts the bare name').toBe(bash);
+    expect(launch.args[0], 'the script first').toBe(`"${script}"`);
   });
 
-  await test('a node #! line launches through this node, script first; any other #! through Git Bash', () => {
+  test('a node #! line launches through this node, script first; any other #! through Git Bash', () => {
     const root = mkTmp('wk-run-');
     const envDir = path.join(root, 'env-node');
     const viaEnv = put(envDir, 'tool', NODE_SCRIPT);
@@ -211,132 +199,130 @@ const cases = async () => {
     const other = put(path.join(root, 'other'), 'tool', '#!/usr/bin/env nodejs\n');
     const { dir, bash } = gitBash(root);
     const byEnv = onWin32('tool', ARGS, { env: { PATH: [envDir, dir].join(';') } });
-    assertEq(byEnv.file, process.execPath, '#!/usr/bin/env node runs under this node');
-    assertEq(JSON.stringify(byEnv.args), JSON.stringify([`"${viaEnv}"`, ...QUOTED]), 'the script first, every argument quoted');
-    assertEq(onWin32(viaPath, [], { env: { PATH: dir } }).file, process.execPath, 'a path ending /node runs under this node');
-    assertEq(onWin32(other, [], { env: { PATH: dir } }).file, bash, 'any other #! line runs through Git Bash');
-    assertEq(onWin32('tool', [], { env: { PATH: envDir } }).file, process.execPath, 'a node script needs no Git Bash');
+    expect(byEnv.file, '#!/usr/bin/env node runs under this node').toBe(process.execPath);
+    expect(JSON.stringify(byEnv.args), 'the script first, every argument quoted').toBe(JSON.stringify([`"${viaEnv}"`, ...QUOTED]));
+    expect(onWin32(viaPath, [], { env: { PATH: dir } }).file, 'a path ending /node runs under this node').toBe(process.execPath);
+    expect(onWin32(other, [], { env: { PATH: dir } }).file, 'any other #! line runs through Git Bash').toBe(bash);
+    expect(onWin32('tool', [], { env: { PATH: envDir } }).file, 'a node script needs no Git Bash').toBe(process.execPath);
   });
 
-  await test('an env of only PATH takes what a Windows child needs from the parent; a given value wins', () => {
+  test('an env of only PATH takes what a Windows child needs from the parent; a given value wins', () => {
     const root = mkTmp('wk-run-');
     const ghDir = path.join(root, 'gh-cli');
     const exe = put(ghDir, 'gh.exe');
     const bare = onWin32('gh', [], { env: { PATH: ghDir } });
     for (const key of ['ComSpec', 'SystemRoot', 'PATHEXT', 'TEMP', 'TMP']) {
-      assertEq(JSON.stringify(valuesOf(bare.options.env, key)), JSON.stringify([WIN_PARENT[key]]), `${key} from the parent`);
+      expect(JSON.stringify(valuesOf(bare.options.env, key)), `${key} from the parent`).toBe(JSON.stringify([WIN_PARENT[key]]));
     }
-    assertEq(JSON.stringify(valuesOf(bare.options.env, 'PATH')), JSON.stringify([ghDir]), 'the given PATH kept');
+    expect(JSON.stringify(valuesOf(bare.options.env, 'PATH')), 'the given PATH kept').toBe(JSON.stringify([ghDir]));
 
     const given = onWin32('gh', [], { env: { PATH: ghDir, comspec: 'D:\\mine\\cmd.exe' } });
-    assertEq(JSON.stringify(valuesOf(given.options.env, 'ComSpec')), JSON.stringify(['D:\\mine\\cmd.exe']),
-      'the given ComSpec, matched without case, wins');
+    expect(JSON.stringify(valuesOf(given.options.env, 'ComSpec')), 'the given ComSpec, matched without case, wins').toBe(JSON.stringify(['D:\\mine\\cmd.exe']));
 
     const fromParent = onWin32('gh', [], { env: { FOO: '1' } }, { ...WIN_PARENT, Path: ghDir });
-    assertEq(fromParent.file, exe, "with no PATH given, the parent's Path is searched");
+    expect(fromParent.file, "with no PATH given, the parent's Path is searched").toBe(exe);
   });
 
-  await test('a name given in two cases is read as Node hands it the child: the first in sorted order', () => {
+  test('a name given in two cases is read as Node hands it the child: the first in sorted order', () => {
     const root = mkTmp('wk-run-');
     const lower = path.join(root, 'lower');
     put(lower, 'gh.exe');
     const upper = path.join(root, 'upper');
     const exe = put(upper, 'gh.exe');
-    assertEq(onWin32('gh', [], { env: { Path: lower, PATH: upper } }).file, exe, 'PATH sorts before Path');
-    assertEq(onWin32('gh', [], { env: { FOO: '1' } }, { ...WIN_PARENT, Path: lower, PATH: upper }).file, exe,
-      "the parent's PATH the same way");
+    expect(onWin32('gh', [], { env: { Path: lower, PATH: upper } }).file, 'PATH sorts before Path').toBe(exe);
+    expect(onWin32('gh', [], { env: { FOO: '1' } }, { ...WIN_PARENT, Path: lower, PATH: upper }).file, "the parent's PATH the same way").toBe(exe);
     const tool = path.join(root, 'tool');
     put(tool, 'tool.cmd');
     const batch = onWin32('tool', [], { env: { PATH: tool, comspec: 'D:\\b\\cmd.exe', ComSpec: 'D:\\a\\cmd.exe' } });
-    assertEq(batch.file, 'D:\\a\\cmd.exe', 'ComSpec sorts before comspec');
+    expect(batch.file, 'ComSpec sorts before comspec').toBe('D:\\a\\cmd.exe');
   });
 
-  await test('a .cmd line escapes every cmd.exe metacharacter, so no argument ends early or chains a command', () => {
+  test('a .cmd line escapes every cmd.exe metacharacter, so no argument ends early or chains a command', () => {
     const root = mkTmp('wk-run-');
     const cmd = put(root, 'tool.cmd');
     const line = onWin32('tool', ['a"b & calc'], { env: { PATH: root } }).args[3];
-    assertEq(line, `"${cmd} ^"a\\^"b ^& calc^""`, 'quoted, then each metacharacter escaped');
-    assert(!/[^^]"/.test(line.slice(1, -1)), `no unescaped quote inside the line, got: ${line}`);
+    expect(line, 'quoted, then each metacharacter escaped').toBe(`"${cmd} ^"a\\^"b ^& calc^""`);
+    expect(!/[^^]"/.test(line.slice(1, -1)), `no unescaped quote inside the line, got: ${line}`).toBeTruthy();
   });
 
-  await test("an npm cmd-shim's argument is escaped twice, since the shim's %* parses the line again", () => {
+  test("an npm cmd-shim's argument is escaped twice, since the shim's %* parses the line again", () => {
     const line = onWin32('C:\\p\\node_modules\\.bin\\tool.cmd', ['a"b & calc'], {}).args[3];
-    assertEq(line, '"C:\\p\\node_modules\\.bin\\tool.cmd ^^^"a\\^^^"b ^^^& calc^^^""', 'each metacharacter carries a doubled caret escape');
+    expect(line, 'each metacharacter carries a doubled caret escape').toBe('"C:\\p\\node_modules\\.bin\\tool.cmd ^^^"a\\^^^"b ^^^& calc^^^""');
   });
 
-  await test('a .cmd in a folder with a space stays one command word: each space and metacharacter escaped, no quotes', () => {
+  test('a .cmd in a folder with a space stays one command word: each space and metacharacter escaped, no quotes', () => {
     const line = onWin32('C:\\Program Files (x86)\\nodejs\\npm.cmd', ['a b'], {}).args[3];
-    assertEq(line, '"C:\\Program^ Files^ ^(x86^)\\nodejs\\npm.cmd ^"a b^""', 'the command escaped, the argument quoted');
+    expect(line, 'the command escaped, the argument quoted').toBe('"C:\\Program^ Files^ ^(x86^)\\nodejs\\npm.cmd ^"a b^""');
   });
 
-  await test('argv0 is the quoted program unless the caller passes one', () => {
+  test('argv0 is the quoted program unless the caller passes one', () => {
     const root = mkTmp('wk-run-');
     const exe = put(root, 'gh.exe');
-    assertEq(onWin32('gh', [], { env: { PATH: root } }).options.argv0, `"${exe}"`, 'the program, quoted');
-    assertEq(onWin32('gh', [], { env: { PATH: root }, argv0: 'gh' }).options.argv0, 'gh', "the caller's own");
+    expect(onWin32('gh', [], { env: { PATH: root } }).options.argv0, 'the program, quoted').toBe(`"${exe}"`);
+    expect(onWin32('gh', [], { env: { PATH: root }, argv0: 'gh' }).options.argv0, "the caller's own").toBe('gh');
   });
 
-  await test('a name found on no PATH dir is left as given', () => {
+  test('a name found on no PATH dir is left as given', () => {
     const root = mkTmp('wk-run-');
     put(path.join(root, 'gh-cli'), 'gh.exe');
     const launch = onWin32('no-such-tool', ['x'], { env: { PATH: path.join(root, 'gh-cli') } });
-    assertEq(launch.file, 'no-such-tool', 'the start fails as it would have');
+    expect(launch.file, 'the start fails as it would have').toBe('no-such-tool');
   });
 
-  await test('a bare name PATH lacks is never read as a #! script in the current folder', () => {
+  test('a bare name PATH lacks is never read as a #! script in the current folder', () => {
     const root = mkTmp('wk-run-');
     put(root, 'no-such-tool', NODE_SCRIPT);
     const was = process.cwd();
     process.chdir(root);
     try {
       const launch = onWin32('no-such-tool', ['x'], { env: { PATH: path.join(root, 'empty') } });
-      assertEq(launch.file, 'no-such-tool', 'the bare name, so the start fails as it would have');
-      assertEq(JSON.stringify(launch.args), JSON.stringify(['"x"']), 'its arguments alone');
+      expect(launch.file, 'the bare name, so the start fails as it would have').toBe('no-such-tool');
+      expect(JSON.stringify(launch.args), 'its arguments alone').toBe(JSON.stringify(['"x"']));
     } finally {
       process.chdir(was);
     }
   });
 
-  await test('an absolute path to an extensionless #! file runs through Git Bash', () => {
+  test('an absolute path to an extensionless #! file runs through Git Bash', () => {
     const root = mkTmp('wk-run-');
     const script = put(path.join(root, 'kit', 'bin'), 'workkit', SH_SCRIPT);
     const { dir, bash } = gitBash(root);
     const launch = onWin32(script, ['test'], { env: { PATH: dir } });
-    assertEq(launch.file, bash, 'Git Bash starts it');
-    assertEq(JSON.stringify(launch.args), JSON.stringify([`"${script}"`, '"test"']), 'the script path first');
+    expect(launch.file, 'Git Bash starts it').toBe(bash);
+    expect(JSON.stringify(launch.args), 'the script path first').toBe(JSON.stringify([`"${script}"`, '"test"']));
   });
+});
 
-  group('run.js: windowsQuoted');
-
-  await test('a value comes back one quoted argument, its quotes and trailing backslashes escaped', () => {
-    assertEq(windowsQuoted('labels[]=x'), '"labels[]=x"', 'brackets kept whole');
-    assertEq(windowsQuoted('a"b'), '"a\\"b"', 'an inner quote escaped');
-    assertEq(windowsQuoted('C:\\dir\\'), '"C:\\dir\\\\"', 'a trailing backslash doubled');
+describe('run.js: windowsQuoted', () => {
+  test('a value comes back one quoted argument, its quotes and trailing backslashes escaped', () => {
+    expect(windowsQuoted('labels[]=x'), 'brackets kept whole').toBe('"labels[]=x"');
+    expect(windowsQuoted('a"b'), 'an inner quote escaped').toBe('"a\\"b"');
+    expect(windowsQuoted('C:\\dir\\'), 'a trailing backslash doubled').toBe('"C:\\dir\\\\"');
   });
+});
 
-  group('run.js: the three calls on a Windows launch with no Git Bash');
-
-  await test('spawnSync answers a failed start, execFileSync throws it and spawn errors, each naming Git Bash', async () => {
+describe('run.js: the three calls on a Windows launch with no Git Bash', () => {
+  test('spawnSync answers a failed start, execFileSync throws it and spawn errors, each naming Git Bash', async () => {
     // Nothing starts: with no Git Bash on the child PATH, launchOf refuses before any start.
     const run = win32Run();
     const options = { env: { PATH: mkTmp('wk-run-') } };
     const res = run.spawnSync('bash', ['-c', 'true'], options);
-    assert(res.error && /Git Bash not found/.test(res.error.message), `the refusal in error, got: ${res.error}`);
-    assertEq(res.error.code, 'ENOENT', 'its code');
+    expect(res.error && /Git Bash not found/.test(res.error.message), `the refusal in error, got: ${res.error}`).toBeTruthy();
+    expect(res.error.code, 'its code').toBe('ENOENT');
     for (const [key, want] of [['pid', 0], ['status', null], ['signal', null], ['output', null], ['stdout', undefined], ['stderr', undefined]]) {
-      assertEq(res[key], want, `${key} as child_process answers a failed start`);
+      expect(res[key], `${key} as child_process answers a failed start`).toBe(want);
     }
-    const thrown = thrownBy(() => run.execFileSync('bash', ['-c', 'true'], options));
-    assert(thrown && /Git Bash not found/.test(thrown.message), `execFileSync throws, got: ${thrown}`);
-    assertEq(thrown.code, 'ENOENT', 'the thrown code');
-    assertEq(thrown.status, null, 'the result rides the error, as child_process puts it');
+    const thrown = await caught(() => run.execFileSync('bash', ['-c', 'true'], options));
+    expect(thrown && /Git Bash not found/.test(thrown.message), `execFileSync throws, got: ${thrown}`).toBeTruthy();
+    expect(thrown.code, 'the thrown code').toBe('ENOENT');
+    expect(thrown.status, 'the result rides the error, as child_process puts it').toBe(null);
     const err = await new Promise((resolve) => run.spawn('bash', ['-c', 'true'], options).on('error', resolve));
-    assert(/Git Bash not found/.test(err.message), `the child errors, got: ${err.message}`);
+    expect(/Git Bash not found/.test(err.message), `the child errors, got: ${err.message}`).toBeTruthy();
   });
+});
 
-  group('run.js: real starts on this machine');
-
-  await test('the platform is read once at load: faking process.platform later changes no start', () => {
+describe('run.js: real starts on this machine', () => {
+  test('the platform is read once at load: faking process.platform later changes no start', async () => {
     // npm is a #! script beside a .cmd on Windows: the other platform's launch fails it.
     const options = { env: { PATH: joinPath(NODE_DIR, SYSTEM_PATH) }, encoding: 'utf8', timeout: SPAWN_DEADLINE };
     const real = Object.getOwnPropertyDescriptor(process, 'platform');
@@ -345,35 +331,29 @@ const cases = async () => {
     let out;
     try {
       res = spawnSync('npm', ['--version'], options);
-      out = thrownBy(() => execFileSync('npm', ['--version'], options)) || 'ran';
+      out = (await caught(() => execFileSync('npm', ['--version'], options))) || 'ran';
     } finally {
       Object.defineProperty(process, 'platform', real);
     }
-    assertEq(res.status, 0, `spawnSync took the load-time launch, error: ${res.error || ''} stderr: ${res.stderr}`);
-    assertEq(String(out), 'ran', 'execFileSync took the load-time launch');
+    expect(res.status, `spawnSync took the load-time launch, error: ${res.error || ''} stderr: ${res.stderr}`).toBe(0);
+    expect(String(out), 'execFileSync took the load-time launch').toBe('ran');
   });
 
-  await test('an argument reaches node whole, never globbed', () => {
+  test('an argument reaches node whole, never globbed', () => {
     // A file the glob would match, so a shell in the way would show.
     const dir = mkTmp('wk-run-');
     put(dir, 'aXb');
     const res = spawnSync('node', ['-e', 'console.log(process.argv[1])', 'a*b'], { cwd: dir, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    assertEq(res.status, 0, `node ran, error: ${res.error || ''} stderr: ${res.stderr}`);
-    assertEq(res.stdout.trim(), 'a*b', 'the argument as given');
+    expect(res.status, `node ran, error: ${res.error || ''} stderr: ${res.stderr}`).toBe(0);
+    expect(res.stdout.trim(), 'the argument as given').toBe('a*b');
   });
 
-  await test('npm starts from an env holding only PATH', () => {
+  test('npm starts from an env holding only PATH', () => {
     // npm's own folder and the system tools: no machine shim that needs more env.
     const res = spawnSync('npm', ['--version'], {
       env: { PATH: joinPath(NODE_DIR, SYSTEM_PATH) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
-    assertEq(res.status, 0, `npm answered, error: ${res.error || ''} stderr: ${res.stderr}`);
-    assert(/^\d+\.\d+\.\d+/.test(res.stdout.trim()), `a version, got: ${JSON.stringify(res.stdout)}`);
+    expect(res.status, `npm answered, error: ${res.error || ''} stderr: ${res.stderr}`).toBe(0);
+    expect(/^\d+\.\d+\.\d+/.test(res.stdout.trim()), `a version, got: ${JSON.stringify(res.stdout)}`).toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

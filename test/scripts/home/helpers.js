@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 // Aliased: `seeded` here is the runner-seeded world below.
-const { assert, mkTmp, seeded: seedOnce, SPAWN_DEADLINE } = require('../../lib/harness');
+const { expect, mkTmp, seeded: seedOnce, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { STAMP } = require('../../lib/version-stamp');
@@ -295,7 +295,7 @@ const inHome = (world, script, { input = '' } = {}) => {
   const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
     cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
   // `out` is both streams in the order a terminal shows them, since what these
   // tests read is what the user was told; `err` stays separate for the checks
   // about the stream.
@@ -355,7 +355,7 @@ const mkKitCopy = (root, name = 'kit-copy') => {
 const commitKit = (kit, subject) => {
   git(kit, 'add', '-A');
   const res = git(kit, '-c', 'user.name=kit', '-c', 'user.email=kit@localhost', 'commit', '-q', '-m', subject);
-  assert(res.status === 0, `the kit copy committed: ${res.stdout}${res.stderr}`);
+  expect(res.status === 0, `the kit copy committed: ${res.stdout}${res.stderr}`).toBeTruthy();
 };
 
 // The folder a world's committed kit sits in, under the world's root.
@@ -388,7 +388,7 @@ const mkKitRepo = (root) => {
 /** A file as the world's kit committed it: what the runner is read from. */
 const kitCommitted = (world, src) => {
   const res = git(world.env.WORKKIT_KIT_DIR, 'show', `HEAD:${src}`);
-  assert(res.status === 0, `${src} is in the kit's HEAD: ${res.stderr}`);
+  expect(res.status === 0, `${src} is in the kit's HEAD: ${res.stderr}`).toBeTruthy();
   return res.stdout;
 };
 
@@ -397,7 +397,7 @@ const dropRunnerLine = (kit, src) => {
   const file = path.join(kit, 'workflow', 'home.sh');
   const lines = fs.readFileSync(file, 'utf8').split('\n');
   const kept = lines.filter((l) => !l.trim().startsWith(`'${src}:`));
-  assert(kept.length === lines.length - 1, `the kit's list named ${src} once`);
+  expect(kept.length === lines.length - 1, `the kit's list named ${src} once`).toBeTruthy();
   fs.writeFileSync(file, kept.join('\n'));
 };
 

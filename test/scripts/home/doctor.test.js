@@ -4,32 +4,30 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const {
   cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, commitKit, dropRunnerLine, STAMP,
 } = require('./helpers');
 
-const cases = async () => {
-  group('workflow/home: doctor');
-
-  await test('no home configured is a notice naming the command', () => {
+describe('workflow/home: doctor', () => {
+  test('no home configured is a notice naming the command', () => {
     const world = mkWorld();
     const { code, out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
-    assertEq(code, 0, 'exit 0');
-    assert(/home: not set/.test(out), `it says so, got: ${out}`);
-    assert(/rc=0/.test(out), 'and counts as nothing needing attention');
+    expect(code, 'exit 0').toBe(0);
+    expect(/home: not set/.test(out), `it says so, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), 'and counts as nothing needing attention').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a home named but nothing cloned needs attention', () => {
+  test('a home named but nothing cloned needs attention', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
-    assert(/nothing is cloned at/.test(out), `it names the state, got: ${out}`);
-    assert(/rc=1/.test(out), 'and counts');
+    expect(/nothing is cloned at/.test(out), `it names the state, got: ${out}`).toBeTruthy();
+    expect(/rc=1/.test(out), 'and counts').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a repo pointing at another remote is reported, never adopted', () => {
+  test('a repo pointing at another remote is reported, never adopted', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     const theirs = path.join(world.root, 'theirs.git');
     spawnSync('git', ['init', '-q', '--bare', '-b', 'main', theirs], { encoding: 'utf8' });
@@ -37,31 +35,31 @@ const cases = async () => {
     git(world.tower, 'init', '-q', '-b', 'main');
     git(world.tower, 'remote', 'add', 'origin', theirs);
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
-    assert(/pointing at/.test(out) && /move it aside/.test(out), `it says what is in the way, got: ${out}`);
-    assert(/rc=1/.test(out), 'and counts');
+    expect(/pointing at/.test(out) && /move it aside/.test(out), `it says what is in the way, got: ${out}`).toBeTruthy();
+    expect(/rc=1/.test(out), 'and counts').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a plain folder in the way is reported for what it is', () => {
+  test('a plain folder in the way is reported for what it is', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     fs.mkdirSync(world.tower, { recursive: true });
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
-    assert(/exists and is not a clone/.test(out), `it does not call a folder a repo, got: ${out}`);
-    assert(/rc=1/.test(out), 'and counts');
+    expect(/exists and is not a clone/.test(out), `it does not call a folder a repo, got: ${out}`).toBeTruthy();
+    expect(/rc=1/.test(out), 'and counts').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a clone in step with its upstream is green', () => {
+  test('a clone in step with its upstream is green', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
-    assert(/is its clone/.test(out), `it reports the clone, got: ${out}`);
-    assert(/rc=0/.test(out), 'and nothing needs attention');
+    expect(/is its clone/.test(out), `it reports the clone, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), 'and nothing needs attention').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a clone with unpushed commits says the daily publish will push them', () => {
+  test('a clone with unpushed commits says the daily publish will push them', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
@@ -70,12 +68,12 @@ const cases = async () => {
     git(world.tower, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): a project edit');
 
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
-    assert(/unpushed commits/.test(out), `it says what is waiting, got: ${out}`);
-    assert(/rc=0/.test(out), 'which is not a problem to fix');
+    expect(/unpushed commits/.test(out), `it says what is waiting, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), 'which is not a problem to fix').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a clone behind its upstream is told which command catches it up', () => {
+  test('a clone behind its upstream is told which command catches it up', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     const remote = mkRemote(world.root);
     world.env.WORKKIT_HOME_REMOTE = remote;
@@ -91,12 +89,12 @@ const cases = async () => {
     git(world.tower, 'fetch', '-q');
 
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
-    assert(/is behind/.test(out) && /pull --rebase/.test(out), `it names the fix, got: ${out}`);
-    assert(/rc=1/.test(out), 'and counts');
+    expect(/is behind/.test(out) && /pull --rebase/.test(out), `it names the fix, got: ${out}`).toBeTruthy();
+    expect(/rc=1/.test(out), 'and counts').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a checkout older than the clone’s stamp is a finding naming the update', () => {
+  test('a checkout older than the clone’s stamp is a finding naming the update', () => {
     // The same refusal the seed makes, reported by the one command
     // whose job is to say what needs attention.
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
@@ -106,9 +104,9 @@ const cases = async () => {
 
     const { out, err } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
     const said = out + err;
-    assert(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`);
-    assert(/workkit update/.test(said), `and the command that fixes it: ${said}`);
-    assert(/rc=1/.test(said), `and counts as something needing attention: ${said}`);
+    expect(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`).toBeTruthy();
+    expect(/workkit update/.test(said), `and the command that fixes it: ${said}`).toBeTruthy();
+    expect(/rc=1/.test(said), `and counts as something needing attention: ${said}`).toBeTruthy();
     cleanup(world.root);
   });
 
@@ -129,60 +127,60 @@ const cases = async () => {
     return world;
   };
 
-  await test('a seeded runner in step with the checkout is green', () => {
+  test('a seeded runner in step with the checkout is green', () => {
     const world = withRunner();
     const { out } = runnerDoctor(world);
-    assert(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`);
-    assert(/rc=0/.test(out), 'and nothing needs attention');
+    expect(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), 'and nothing needs attention').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a seeded file the checkout has moved past is reported as behind', () => {
+  test('a seeded file the checkout has moved past is reported as behind', () => {
     const world = withRunner();
     // The checkout moved on: a `git pull` since the last setup.
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a later change\n');
     const { out } = runnerDoctor(world);
-    assert(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`);
-    assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
-    assert(/workkit setup/.test(out), 'and the command that heals it');
-    assert(/rc=1/.test(out), 'and counts');
+    expect(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`).toBeTruthy();
+    expect(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`).toBeTruthy();
+    expect(/workkit setup/.test(out), 'and the command that heals it').toBeTruthy();
+    expect(/rc=1/.test(out), 'and counts').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a git-backed kit: an uncommitted edit is not drift, the runner is current', () => {
+  test('a git-backed kit: an uncommitted edit is not drift, the runner is current', () => {
     const world = withRunner({ repo: true });
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# an edit not yet committed\n');
     const { out } = runnerDoctor(world);
-    assert(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`);
-    assert(/rc=0/.test(out), `and nothing needs attention, got: ${out}`);
+    expect(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), `and nothing needs attention, got: ${out}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a git-backed kit: a commit the clone lacks is reported as behind', () => {
+  test('a git-backed kit: a commit the clone lacks is reported as behind', () => {
     const world = withRunner({ repo: true });
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a committed change\n');
     commitKit(world.env.WORKKIT_KIT_DIR, 'fix: a later runner');
     const { out } = runnerDoctor(world);
-    assert(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`);
-    assert(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`);
-    assert(/rc=1/.test(out), `and counts, got: ${out}`);
+    expect(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`).toBeTruthy();
+    expect(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`).toBeTruthy();
+    expect(/rc=1/.test(out), `and counts, got: ${out}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a retired file awaiting the prune is drift, not current', () => {
+  test('a retired file awaiting the prune is drift, not current', () => {
     // The seed removes what the manifest stopped naming, so a clone holding
     // such a file is one setup would still change: doctor must not call it current.
     const world = withRunner();
     const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
     fs.writeFileSync(retired, '# last month’s runner\n');
     const { out } = runnerDoctor(world);
-    assert(/1 retired file\(s\) await pruning/.test(out), `it names the leftover, got: ${out}`);
-    assert(/workkit setup/.test(out) && /rc=1/.test(out), `and warns, got: ${out}`);
-    assert(fs.existsSync(retired), 'doctor only reads: the file is still there');
+    expect(/1 retired file\(s\) await pruning/.test(out), `it names the leftover, got: ${out}`).toBeTruthy();
+    expect(/workkit setup/.test(out) && /rc=1/.test(out), `and warns, got: ${out}`).toBeTruthy();
+    expect(fs.existsSync(retired), 'doctor only reads: the file is still there').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a committed list naming a file HEAD lacks: the missing file is named, the prune waits', () => {
+  test('a committed list naming a file HEAD lacks: the missing file is named, the prune waits', () => {
     // setup cannot remove the retired file while the kit is incomplete, so the
     // doctor names what the kit lacks instead of advising setup.
     const world = withRunner({ repo: true });
@@ -193,55 +191,47 @@ const cases = async () => {
     commitKit(kit, 'chore: a kit missing a file');
 
     const { out } = runnerDoctor(world);
-    assert(out.includes('is missing') && out.includes('stats.js'), `it names the missing file, got: ${out}`);
-    assert(out.includes('retired files wait until the kit is whole'), `and says the prune waits, got: ${out}`);
-    assert(!out.includes('await pruning'), `with no retired count, got: ${out}`);
-    assert(!out.includes('workkit setup'), `and no setup advice, got: ${out}`);
-    assert(/rc=1/.test(out), `and counts, got: ${out}`);
-    assert(fs.existsSync(retired), 'doctor only reads: the file is still there');
+    expect(out.includes('is missing') && out.includes('stats.js'), `it names the missing file, got: ${out}`).toBeTruthy();
+    expect(out.includes('retired files wait until the kit is whole'), `and says the prune waits, got: ${out}`).toBeTruthy();
+    expect(!out.includes('await pruning'), `with no retired count, got: ${out}`).toBeTruthy();
+    expect(!out.includes('workkit setup'), `and no setup advice, got: ${out}`).toBeTruthy();
+    expect(/rc=1/.test(out), `and counts, got: ${out}`).toBeTruthy();
+    expect(fs.existsSync(retired), 'doctor only reads: the file is still there').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a git-backed kit: a list line dropped but not committed is not drift', () => {
+  test('a git-backed kit: a list line dropped but not committed is not drift', () => {
     const world = withRunner({ repo: true });
     dropRunnerLine(world.env.WORKKIT_KIT_DIR, 'jobs/morning/brief/stats.js');
     const { out } = runnerDoctor(world);
-    assert(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`);
-    assert(/rc=0/.test(out), `and nothing needs attention, got: ${out}`);
+    expect(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), `and nothing needs attention, got: ${out}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('doctor only reads: it never writes the runner back or pushes', () => {
+  test('doctor only reads: it never writes the runner back or pushes', () => {
     const world = withRunner();
     const file = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
     fs.writeFileSync(file, '# an old copy\n');
     runnerDoctor(world);
-    assertEq(fs.readFileSync(file, 'utf8'), '# an old copy\n', 'the clone is untouched: the writers are setup and the morning run');
+    expect(fs.readFileSync(file, 'utf8'), 'the clone is untouched: the writers are setup and the morning run').toBe('# an old copy\n');
     cleanup(world.root);
   });
 
-  await test('no clone is a named skip, not a warning', () => {
+  test('no clone is a named skip, not a warning', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     const { out } = runnerDoctor(world);
-    assert(/runner: no home clone at/.test(out), `it names what is missing, got: ${out}`);
-    assert(/rc=0/.test(out), 'and nothing to fix here: the home line already said it');
+    expect(/runner: no home clone at/.test(out), `it names what is missing, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), 'and nothing to fix here: the home line already said it').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('an unreadable checkout is a named skip', () => {
+  test('an unreadable checkout is a named skip', () => {
     const world = withRunner();
     world.env.WORKKIT_KIT_DIR = path.join(world.root, 'not-a-checkout');
     const { out } = runnerDoctor(world);
-    assert(/the kit could not be resolved/.test(out), `it says why it cannot compare, got: ${out}`);
-    assert(/rc=0/.test(out), 'and counts as nothing needing attention');
+    expect(/the kit could not be resolved/.test(out), `it says why it cannot compare, got: ${out}`).toBeTruthy();
+    expect(/rc=0/.test(out), 'and counts as nothing needing attention').toBeTruthy();
     cleanup(world.root);
   });
-
-  return summary();
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

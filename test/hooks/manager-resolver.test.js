@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods, mergedSettings } = require('../lib/mods-inputs');
 
 const DEFAULTS_PATH = path.join(__dirname, '..', '..', 'defaults', 'settings.json');
@@ -21,63 +21,59 @@ const config = (user, repo) => mods('manager').managerConfig(ladder, mergedSetti
 const resolve = (type, parent, cfg = config()) => mods('resolver').resolverModel(cfg, type, parent, undefined);
 const settings = (manager) => ({ enabled: true, manager });
 
-const cases = async () => {
-  group('manager-resolver: ladder manifest shape');
-  await test('ladder.json carries note and the two maps', () => {
-    assert(typeof ladder.note === 'string' && ladder.note.length > 0, 'note missing');
-    assert(ladder.ladder && ladder.classes, 'a map is missing');
+describe('manager-resolver: ladder manifest shape', () => {
+  test('ladder.json carries note and the two maps', () => {
+    expect(typeof ladder.note === 'string' && ladder.note.length > 0, 'note missing').toBeTruthy();
+    expect(ladder.ladder && ladder.classes, 'a map is missing').toBeTruthy();
   });
-  await test('ladder is ordered strongest first (fable at the top)', () => {
-    assertEq(Object.keys(ladder.ladder)[0], 'fable');
+  test('ladder is ordered strongest first (fable at the top)', () => {
+    expect(Object.keys(ladder.ladder)[0]).toBe('fable');
   });
+});
 
-  group('manager-resolver: the family matcher');
-  await test('modelTier reads the rung off a session model id, a [1m] suffix included', () => {
-    assertEq(mods('manager').modelTier(MODELS.fable), 'fable');
-    assertEq(mods('manager').modelTier(MODELS.opus), 'opus');
-    assertEq(mods('manager').modelTier(MODELS.sonnet), 'sonnet');
-    assertEq(mods('manager').modelTier(MODELS.haiku), 'haiku');
-    assert(!mods('manager').modelTier('gpt-4o'), 'an unknown family has no rung');
+describe('manager-resolver: the family matcher', () => {
+  test('modelTier reads the rung off a session model id, a [1m] suffix included', () => {
+    expect(mods('manager').modelTier(MODELS.fable)).toBe('fable');
+    expect(mods('manager').modelTier(MODELS.opus)).toBe('opus');
+    expect(mods('manager').modelTier(MODELS.sonnet)).toBe('sonnet');
+    expect(mods('manager').modelTier(MODELS.haiku)).toBe('haiku');
+    expect(!mods('manager').modelTier('gpt-4o'), 'an unknown family has no rung').toBeTruthy();
   });
+});
 
-  group('manager-resolver: decision table (rewrite)');
+describe('manager-resolver: decision table (rewrite)', () => {
   for (const [cls, sessionRung, expected] of [
     ['advisor', 'fable', 'fable'], ['advisor', 'sonnet', 'fable'], ['scout', 'fable', FAST], ['scout', 'sonnet', FAST],
     ['worker', 'fable', 'opus'], ['worker', 'opus', 'opus'], ['worker', 'sonnet', 'sonnet'], ['worker', 'haiku', 'haiku'],
     ['verifier', 'sonnet', 'sonnet'], ['verifier', 'fable', 'opus'],
   ]) {
-    await test(`${cls} under a ${sessionRung} session → ${expected}`, () => {
-      assertEq(resolve(`workkit:${cls}`, MODELS[sessionRung]), id(expected));
+    test(`${cls} under a ${sessionRung} session → ${expected}`, () => {
+      expect(resolve(`workkit:${cls}`, MODELS[sessionRung])).toBe(id(expected));
     });
   }
-  await test('unknown session (no cache, no transcript) → worker gets the workhorse default', () => {
-    assertEq(resolve('workkit:worker', ''), id('opus'));
+  test('unknown session (no cache, no transcript) → worker gets the workhorse default', () => {
+    expect(resolve('workkit:worker', '')).toBe(id('opus'));
   });
+});
 
-  group('manager-resolver: both class spellings');
+describe('manager-resolver: both class spellings', () => {
   for (const [cls, expected] of [['advisor', 'fable'], ['scout', FAST], ['worker', 'opus']]) {
-    await test(`workkit:${cls} resolves like ${cls}`, () => {
-      assertEq(resolve(cls, MODELS.fable), id(expected), 'the bare name');
-      assertEq(resolve(`workkit:${cls}`, MODELS.fable), id(expected), 'the prefixed name');
+    test(`workkit:${cls} resolves like ${cls}`, () => {
+      expect(resolve(cls, MODELS.fable), 'the bare name').toBe(id(expected));
+      expect(resolve(`workkit:${cls}`, MODELS.fable), 'the prefixed name').toBe(id(expected));
     });
   }
-  await test('a workkit: prefix on a non-class type still passes through', () => {
-    assert(!resolve('workkit:reviewer', MODELS.fable), 'no model for a non-class type');
+  test('a workkit: prefix on a non-class type still passes through', () => {
+    expect(!resolve('workkit:reviewer', MODELS.fable), 'no model for a non-class type').toBeTruthy();
   });
+});
 
-  group('manager-resolver: layered overrides (repo > user > ladder)');
-  await test('an override of one tier leaves the others alone', () => {
-    assertEq(resolve('workkit:scout', MODELS.fable, config(undefined, settings({ tiers: { workhorse: 'haiku' } }))), id(FAST));
+describe('manager-resolver: layered overrides (repo > user > ladder)', () => {
+  test('an override of one tier leaves the others alone', () => {
+    expect(resolve('workkit:scout', MODELS.fable, config(undefined, settings({ tiers: { workhorse: 'haiku' } })))).toBe(id(FAST));
   });
-  await test('a repo cannot redefine the ladder or the class map', () => {
+  test('a repo cannot redefine the ladder or the class map', () => {
     const cfg = config(undefined, settings({ classes: { worker: 'fast' }, ladder: { opus: 'haiku' } }));
-    assertEq(resolve('workkit:worker', MODELS.fable, cfg), id('opus'));
+    expect(resolve('workkit:worker', MODELS.fable, cfg)).toBe(id('opus'));
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

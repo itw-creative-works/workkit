@@ -9,9 +9,11 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 // The kit's one Node home for starting a program, which this seam re-exports.
 const run = require('../../workflow/lib/run');
-const { SPAWN_DEADLINE } = require('./harness');
+const { SPAWN_DEADLINE, mkTmp } = require('./harness');
 
 const IS_WINDOWS = process.platform === 'win32';
+// Any checkout's shim folder, whatever spelling of its path a session put on PATH.
+const isGitShimDir = (dir) => path.basename(dir) === 'gitshim' && path.basename(path.dirname(dir)) === 'workflow';
 
 /** The first PATH entry holding every named file, or a loud failure. */
 const findDir = (...names) => {
@@ -126,6 +128,15 @@ const shellPath = (p) => {
 };
 
 /**
+ * A path as a JavaScript string literal with forward slashes, the one form a
+ * `node -e` snippet carries across Git Bash, which halves a Windows path's
+ * backslashes on the way to node. Node opens either slash on Windows.
+ * @param {string} p
+ * @returns {string}
+ */
+const jsPath = (p) => JSON.stringify(p.replace(/\\/g, '/'));
+
+/**
  * A path as git prints it, and as `wk_native_path` prints one for a person:
  * under Git for Windows a drive letter with forward slashes (`C:/Users/x`).
  * Anything keyed off `git rev-parse --show-toplevel`, and any path a kit shell
@@ -148,7 +159,9 @@ const gitPath = (p) => (onWindows() ? p.replace(/\\/g, '/') : p);
 const which = (name, searchPath = process.env.PATH) => {
   const candidates = IS_WINDOWS ? [`${name}.exe`, name] : [name];
   for (const dir of (searchPath || '').split(path.delimiter)) {
-    if (!dir) continue;
+    // A session puts the kit's git shim first on PATH. It is no real tool: a stub
+    // that execs it on a PATH lacking the shim's folder is found again, forever.
+    if (!dir || isGitShimDir(dir)) continue;
     for (const candidate of candidates) {
       const full = path.join(dir, candidate);
       if (fs.existsSync(full)) return full;
@@ -249,6 +262,32 @@ const stubTool = (dir, name, lines) => {
 
 /** The skip reason for the stubTool rule above, stated once. */
 const NO_NODE_STUB = 'this case still skips on Windows: its stub predates the launcher';
+
+/**
+ * The skip value of a case or suite resting on a stub Node finds by name.
+ * @returns {false|string} false, or on Windows NO_NODE_STUB
+ */
+const skipWithoutNodeStub = () => IS_WINDOWS && NO_NODE_STUB;
+
+let fileLinkSkip;
+
+/**
+ * The skip value of a case that makes a file symlink, probed once per process:
+ * Windows without developer mode refuses one, and a copy is not the case under test.
+ * @returns {false|string} false, or the reason naming the refusal's code
+ */
+const skipWithoutFileLink = () => {
+  if (fileLinkSkip !== undefined) return fileLinkSkip;
+  const dir = mkTmp('wk-file-link-');
+  fs.writeFileSync(path.join(dir, 'target'), '');
+  try {
+    fs.symlinkSync(path.join(dir, 'target'), path.join(dir, 'link'), 'file');
+    fileLinkSkip = false;
+  } catch (err) {
+    fileLinkSkip = `this machine refuses a file symlink (${err.code})`;
+  }
+  return fileLinkSkip;
+};
 
 /**
  * A `node` stub at `<dir>/node` answering `--version` (and `-v`) with
@@ -453,11 +492,52 @@ const asWindows = (fn) => {
   }
 };
 
+/**
+ * A `run` seam in spawnSync's call form and result that starts nothing: it
+ * records each program, its arguments and its options, and the program exits
+ * with `status`, cannot start (ENOENT, child_process's own result) when `status`
+ * is null, or hangs when it is 'hang': ended at the call's `timeout` (ETIMEDOUT,
+ * spawnSync's result), and with no timeout a throw, since it would never return.
+ * @param {number|null|'hang'} [status]
+ * @returns {{ run: Function, calls: { file: string, args: string[], options: object }[] }}
+ */
+const recordingRun = (status = 0) => {
+  const calls = [];
+  const recorded = (file, args, options = {}) => {
+    calls.push({ file, args: (args || []).map(String), options });
+    if (status === 'hang') {
+      if (!(options.timeout > 0)) throw new Error(`recordingRun: ${file} hangs, and with no timeout it never returns`);
+      const error = Object.assign(new Error(`spawnSync ${file} ETIMEDOUT`), { code: 'ETIMEDOUT', errno: -60, syscall: `spawnSync ${file}`, path: file });
+      return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status: null, signal: 'SIGTERM', error };
+    }
+    if (status !== null) return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status, signal: null };
+    const error = Object.assign(new Error(`spawnSync ${file} ENOENT`), { code: 'ENOENT', errno: -2, syscall: `spawnSync ${file}`, path: file });
+    return { pid: 0, output: null, stdout: null, stderr: null, status: null, signal: null, error };
+  };
+  return { run: recorded, calls };
+};
+
+/**
+ * Run `fn` with `process.kill` answering every pid as gone (ESRCH), restored
+ * after, so a Windows arm answered off Windows signals no process here.
+ * @param {Function} fn
+ * @returns {Promise<*>} whatever `fn` resolved to
+ */
+const signalsRefused = async (fn) => {
+  const real = process.kill;
+  process.kill = () => { throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH', errno: -3, syscall: 'kill' }); };
+  try {
+    return await fn();
+  } finally {
+    process.kill = real;
+  }
+};
+
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, gitPath, which, spawnBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
+  shellPath, jsPath, gitPath, which, spawnBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
-  NO_EXEC_BIT, NO_NODE_STUB, asWindows, samePath,
+  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
   // run.js's own three, so a suite starts its children where the kit does.
   spawnSync: run.spawnSync,
   spawn: run.spawn,

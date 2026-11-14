@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# workflow/gitshim/git: the git shim, first on PATH in a Claude session alone
+# (the hooks module's SessionStart puts its folder there). Every call but one of
+# checkout, switch, restore, stash, clean or reset runs the real git at once; one
+# of those, in a repo where wk_session_judges holds, is ruled on first by
+# safety:tree-guard (judge.js tree-guard) over git's real arguments.
+
+set -uo pipefail
+
+# The verbs tree-guard judges, and git's own verbs, which are never looked up as an alias.
+JUDGED=(checkout switch restore stash clean reset)
+GIT_VERBS=(add am annotate apply archive bisect blame branch bundle cat-file check-attr check-ignore
+  check-mailmap check-ref-format cherry cherry-pick clone column commit commit-graph commit-tree config
+  count-objects credential describe diff diff-files diff-index diff-tree difftool fetch fetch-pack
+  filter-branch for-each-ref format-patch fsck gc grep hash-object help init interpret-trailers lfs log
+  ls-files ls-remote ls-tree maintenance merge merge-base merge-file merge-tree mktag mktree mv name-rev
+  notes pack-objects pack-refs prune pull push range-diff read-tree rebase reflog remote repack replace
+  rerere rev-list rev-parse revert rm shortlog show show-branch show-ref sparse-checkout status
+  submodule symbolic-ref tag update-index update-ref var verify-commit verify-tag version worktree write-tree)
+# git's global options whose value is the next argument: GIT_VALUE_FLAGS in hooks/mods/tree-guard.js, its twin.
+VALUE_FLAGS=(-C -c --git-dir --work-tree --namespace --config-env)
+
+# norm_dir <dir>: NORM becomes <dir> as a PATH entry means it, an empty entry
+# the cwd and a trailing slash dropped.
+norm_dir() {
+  NORM="${1:-.}"
+  if [[ "$NORM" == ?*/ ]]; then NORM="${NORM%/}"; fi
+}
+
+# The folder PATH found this shim through, as PATH spells it.
+OWN_DIR=.
+if [[ "${BASH_SOURCE[0]}" == */* ]]; then OWN_DIR="${BASH_SOURCE[0]%/*}"; OWN_DIR="${OWN_DIR:-/}"; fi
+norm_dir "$OWN_DIR"
+OWN_DIR="$NORM"
+
+# The real git: the first git on PATH after the shim's own folder, skipping every
+# folder already met at or before it, as the gh shim's real_gh finds gh.
+real_git() {
+  local i own=-1 met=$'\n' dirs=()
+  IFS=: read -r -a dirs <<<"${PATH:-}"
+  for ((i = 0; i < ${#dirs[@]}; i++)); do
+    norm_dir "${dirs[i]}"
+    if [[ "$NORM" == "$OWN_DIR" ]]; then own=$i; break; fi
+  done
+  for ((i = 0; i <= own; i++)); do
+    norm_dir "${dirs[i]}"
+    met+="$NORM"$'\n'
+  done
+  for ((i = own + 1; i < ${#dirs[@]}; i++)); do
+    norm_dir "${dirs[i]}"
+    case "$met" in *$'\n'"$NORM"$'\n'*) continue ;; esac
+    if [[ -f "$NORM/git" && -x "$NORM/git" ]]; then
+      GIT="$NORM/git"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# in_list <word> <list...>: whether <word> is one of the list.
+in_list() {
+  local word="$1" item
+  shift
+  for item in "$@"; do
+    [[ "$item" == "$word" ]] && return 0
+  done
+  return 1
+}
+
+if ! real_git; then
+  printf 'git: no git on PATH after the workkit shim at %s\n' "$OWN_DIR/git" >&2
+  exit 127
+fi
+
+# The global options before the verb, the verb, and whether any argument is a judged verb.
+GLOBALS=()
+VERB=''
+VERB_AT=-1
+NAMES_JUDGED=0
+ARGS=("$@")
+for ((i = 0; i < ${#ARGS[@]}; i++)); do
+  if in_list "${ARGS[i]}" "${JUDGED[@]}"; then NAMES_JUDGED=1; fi
+  [[ "$VERB_AT" -lt 0 ]] || continue
+  if in_list "${ARGS[i]}" "${VALUE_FLAGS[@]}"; then
+    GLOBALS+=("${ARGS[i]}" "${ARGS[i + 1]:-}")
+    i=$((i + 1))
+  elif [[ "${ARGS[i]}" == -* ]]; then
+    GLOBALS+=("${ARGS[i]}")
+  else
+    VERB="${ARGS[i]}"
+    VERB_AT=$i
+  fi
+done
+
+if [[ "$NAMES_JUDGED" -eq 0 ]] && { [[ -z "$VERB" ]] || in_list "$VERB" "${GIT_VERBS[@]}"; }; then
+  exec "$GIT" "$@"
+fi
+
+# expand_alias: CALL and OPTS become the call as git runs an alias chain of up to
+# 5 hops from VERB, each value's leading global options kept in OPTS, when the
+# chain reaches a judged verb (0); a `!` alias, a git verb or no alias ends it
+# unjudged (1); a fifth hop still landing on an alias is 2, too deep to judge.
+expand_alias() {
+  local word="$VERB" hop j value
+  local rest=("${ARGS[@]:VERB_AT+1}") tail=()
+  for ((hop = 0; hop < 5; hop++)); do
+    value="$("$GIT" ${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} config --get "alias.$word" 2>/dev/null)" || return 1
+    WORDS=()
+    read -r -a WORDS <<<"$value"
+    [[ ${#WORDS[@]} -gt 0 && "${WORDS[0]}" != '!'* ]] || return 1
+    for ((j = 0; j < ${#WORDS[@]}; j++)); do
+      [[ "${WORDS[j]}" == -* ]] || break
+      if in_list "${WORDS[j]}" "${VALUE_FLAGS[@]}"; then OPTS+=("${WORDS[j]}" "${WORDS[j + 1]:-}"); j=$((j + 1)); else OPTS+=("${WORDS[j]}"); fi
+    done
+    [[ $j -lt ${#WORDS[@]} ]] || return 1
+    word="${WORDS[j]}"
+    tail=("${WORDS[@]:j+1}")
+    rest=(${tail[@]+"${tail[@]}"} ${rest[@]+"${rest[@]}"})
+    if in_list "$word" "${JUDGED[@]}"; then
+      CALL=(${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} "$word" ${rest[@]+"${rest[@]}"})
+      return 0
+    fi
+    ! in_list "$word" "${GIT_VERBS[@]}" || return 1
+  done
+  "$GIT" ${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} config --get "alias.$word" >/dev/null 2>&1 && return 2
+  return 1
+}
+
+# The call as tree-guard judges it, an alias for a judged verb read as that verb.
+# Each `${a[@]+...}` keeps an empty list empty under set -u, which bash 3.2 reads as unbound.
+CALL=("$@")
+OPTS=()
+TOO_DEEP=0
+if [[ -n "$VERB" ]] && ! in_list "$VERB" "${JUDGED[@]}" && ! in_list "$VERB" "${GIT_VERBS[@]}"; then
+  expand_alias
+  case $? in
+    0) NAMES_JUDGED=1 ;;
+    2) NAMES_JUDGED=1; TOO_DEEP=1 ;;
+    *) OPTS=() ;;
+  esac
+fi
+[[ "$NAMES_JUDGED" -eq 1 ]] || exec "$GIT" "$@"
+
+ROOT="$("$GIT" ${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} rev-parse --show-toplevel 2>/dev/null)" || exec "$GIT" "$@"
+
+# real_path <path>: <path> with every link in its chain walked; macOS has no
+# `readlink -f`, so each hop is read and joined by hand.
+real_path() {
+  local source="$1" target
+  while [[ -L "$source" ]]; do
+    target="$(readlink "$source")"
+    case "$target" in
+      /*) source="$target" ;;
+      *)  source="$(cd "$(dirname "$source")" && pwd -P)/$target" ;;
+    esac
+  done
+  printf '%s/%s\n' "$(cd "$(dirname "$source")" && pwd -P)" "${source##*/}"
+}
+
+SHIM="$(real_path "${BASH_SOURCE[0]}")"
+KIT_DIR="$(cd "${SHIM%/*}/../.." && pwd -P)"
+# shellcheck source=../lib/platform.sh
+. "$KIT_DIR/workflow/lib/platform.sh"
+# shellcheck source=../lib/participation.sh
+. "$KIT_DIR/workflow/lib/participation.sh"
+
+wk_session_judges "$ROOT" || exec "$GIT" "$@"
+
+# A chain the shim cannot follow to its verb fails closed.
+if [[ "$TOO_DEEP" -eq 1 ]]; then
+  printf 'tree-guard: BLOCKED this command: the git alias %s is a chain deeper than five hops, so the verb it runs cannot be judged.\nRun the git command itself, spelled out, instead of the alias.\n' "$VERB" >&2
+  exit 1
+fi
+
+if ! NODE="$(wk_node)"; then
+  printf 'git: the workkit tree-guard did not run (no node %s or newer found)\n' "$WK_NODE_FLOOR" >&2
+  exec "$GIT" "$@"
+fi
+
+# Exit 0 runs git, a stand-aside line already on stderr; any other code is a
+# refusal whose text the judge already put there, and git does not run.
+"$NODE" "$KIT_DIR/workflow/githooks/judge.js" tree-guard -- ${CALL[@]+"${CALL[@]}"} || exit $?
+exec "$GIT" "$@"

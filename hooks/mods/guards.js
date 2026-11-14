@@ -8,28 +8,22 @@
  * plain functions.
  */
 
-import { bareCallGuard } from './bare-call.js';
 import { captureGuardGuard } from './capture-guard.js';
+import { bashFacts, guardEnv } from './facts.js';
 import { rootOptedIn } from './gate.js';
-import { journalSizes, journalTail, journalsGrown, shellEnvOf, windowsKit } from './markers.js';
-import { optinRepo, originless, rootOf } from './optin.js';
+import { userDirOf } from './log.js';
+import {
+  callStartOf, callStartPath, callStartText, journalMarkPath, journalMarkText, journalMarks, journalSizes, journalTail, journalsGrown,
+} from './markers.js';
+import { rootOf } from './optin.js';
 import { publicMirrorGuard } from './public-mirror.js';
-import { releaseTakenGuard } from './release-taken.js';
-import { scriptWriteGuard } from './script-write.js';
-import { repoSettingsFile } from './settings.js';
+import { dirOf, scriptWriteGuard } from './script-write.js';
 import { snapshotGuard } from './snapshot.js';
-import { treeGuardGuard } from './tree-guard.js';
-import { unwatchedGuard } from './unwatched.js';
 import { vendorGuardGuard } from './vendor-guard.js';
 
-/** The Bash guards on `tool.call`, run in the order listed here. */
+/** The Bash guards on `tool.call`. */
 export const BASH_GUARDS = [
-  { hook: 'safety:release-taken', run: releaseTakenGuard },
-  { hook: 'safety:tree-guard', run: treeGuardGuard },
-  { hook: 'workflow:bare-call', run: bareCallGuard },
-  { hook: 'workflow:unwatched', run: unwatchedGuard },
   { hook: 'safety:capture-guard', run: captureGuardGuard },
-  { hook: 'safety:script-write', run: scriptWriteGuard },
 ];
 
 /** The guards on `tool.call` for Edit and Write. */
@@ -47,22 +41,11 @@ export const READ_GUARDS = [
 export const POST_BASH_GUARDS = [
   { hook: 'workflow:snapshot', run: snapshotGuard },
   { hook: 'workflow:public-mirror', run: publicMirrorGuard },
+  { hook: 'safety:script-write', run: scriptWriteGuard },
 ];
 
 /** The refusal a chain that failed before its answer leads with; the failure's kind follows. */
 export const GUARDS_FAILED = 'workkit: the guards failed before they could judge this call, so it did not run: ';
-
-// The opt-in gate for a Bash command (optin.js), its reads made through io.
-async function bashOpted(io, { command, cwd }) {
-  const { opted } = await optinRepo({
-    command,
-    cwd,
-    toplevel: io.top,
-    settingsText: (root) => io.read(repoSettingsFile(root)),
-    exists: io.exists,
-  });
-  return opted;
-}
 
 /**
  * The opt-in gate for a folder: the repo holding it, climbed to the nearest
@@ -103,63 +86,111 @@ export async function grownLines(io, home, marks, size) {
   return lines.filter((_, i) => keep[i]);
 }
 
-// The variables as a guard reads them: each folder the one Git Bash means, so
-// every marker read and every machine-folder read lands where the shell wrote.
-const guardEnv = (io, env) => shellEnvOf(env, windowsKit(io.pluginRoot) ? 'win32' : 'posix');
-
 /**
- * The Bash guards' facts: the command and its folder, whether it runs in the
- * background, the gh journal lines the call left, the variables, the reads, a
- * scratch write and the kit's folder; the origin is asked once, and only by a
- * guard that needs it. The gh shim's gate and the git hooks' judge build theirs here too.
- * @param {object} io the engine calls register.js hands over (`ioOf`), or the real machine's (workflow/lib/io.js)
- * @param {object} env the variables the module read
- * @param {{command?: string, cwd: string, background?: boolean, lines?: object[]}} call the command, none after
- *   the call ran, its folder, true for a call's `run_in_background`, and the journal lines (journalLines in
- *   markers.js) a call that already ran wrote, none before it runs
- * @returns {object}
+ * A gh journal's length in bytes, measured and never read: the stat's size,
+ * else `wc -c`; an absent journal is 0.
+ * @param {object} io the engine calls register.js hands over (`ioOf`)
+ * @param {string} journal the journal's path
+ * @returns {Promise<number>}
  */
-export function bashFacts(io, env, { command, cwd, background = false, lines = [] }) {
-  let origin = null;
-  return {
-    command,
-    cwd,
-    background,
-    lines,
-    env: guardEnv(io, env),
-    originless: () => (origin ??= originless(cwd, io.run)),
-    exists: (rel) => io.exists(`${cwd}/${rel}`),
-    top: io.top,
-    read: io.read,
-    list: io.list,
-    run: io.run,
-    pluginRoot: io.pluginRoot,
-    stat: io.stat,
-    real: io.real,
-    write: io.write,
-    now: io.now,
-  };
+export async function journalSize(io, journal) {
+  const stat = await io.stat(journal);
+  if (!stat) return 0;
+  if (typeof stat.size === 'number') return stat.size;
+  const counted = await io.run(['wc', '-c', journal]);
+  return counted.exitCode === 0 ? Number.parseInt(counted.stdout.trim(), 10) || 0 : 0;
+}
+
+// A marker file written, its folder made first where it is missing; a folder
+// still missing shows as the write's own throw.
+async function writeMarker(io, path, text) {
+  const dir = dirOf(path);
+  if ((await io.stat(dir))?.kind !== 'dir') await io.run(['mkdir', '-p', dir]);
+  await io.write(path, text);
 }
 
 /**
- * Runs one chain. Facts carrying `lines` are the Bash chain after a call: they
- * get bashFacts and no gate, since grownLines kept only opted-in lines. Before
- * a call, a Bash chain is gated by optinRepo, a file chain by `facts.gateDir`'s
- * repo (rootOf); a guard outside it stands down. A throw ends the chain, for the handler to rethrow.
+ * Before a Bash call runs: its journal mark holds every gh journal on the
+ * machine and its length (journalSizes), written before any git call; then
+ * its start (callStartText) holds the time taken first and its folder's repo root.
+ * @param {object} io the engine calls register.js hands over (`ioOf`), its `write` one that throws on a failure
+ * @param {object} env the variables the module read
+ * @param {string|undefined} id the call's tool_use_id; none leaves no mark
+ * @param {string} cwd the call's folder
+ * @returns {Promise<void>} rejected when a mark could not be written
+ */
+export async function markCall(io, env, id, cwd) {
+  if (!id) return;
+  const home = userDirOf(env);
+  const ms = await io.now();
+  const [sized, mark, start] = await Promise.all([
+    journalSizes(io.list, (journal) => journalSize(io, journal), home), journalMarkPath(id, home), callStartPath(id, home),
+  ]);
+  await writeMarker(io, mark, journalMarkText(sized));
+  await writeMarker(io, start, callStartText({ ms, root: cwd ? await io.top(cwd) : null }));
+}
+
+/**
+ * After it ran: the call's mark and start read and removed, and the opted-in
+ * lines of each journal the call changed, oldest first (grownLines); no mark,
+ * no lines, and no start, no start time.
+ * @param {object} io the engine calls register.js hands over (`ioOf`)
+ * @param {object} env the variables the module read
+ * @param {string|undefined} id the call's tool_use_id
+ * @returns {Promise<{lines: object[], since: number|null, began: string|null}>}
+ */
+export async function callSince(io, env, id) {
+  if (!id) return { lines: [], since: null, began: null };
+  const home = userDirOf(env);
+  const [mark, startPath] = await Promise.all([journalMarkPath(id, home), callStartPath(id, home)]);
+  const [held, started] = await Promise.all([io.read(mark), io.read(startPath)]);
+  if (started !== null) await io.run(['rm', '-f', startPath]);
+  const { ms, root } = started === null ? { ms: null, root: null } : callStartOf(started);
+  if (held === null) return { lines: [], since: ms, began: root };
+  await io.run(['rm', '-f', mark]);
+  const lines = await grownLines(io, home, journalMarks(held), (journal) => journalSize(io, journal));
+  return { lines, since: ms, began: root };
+}
+
+/**
+ * The repo roots of a Bash call that already ran: the root it began in and
+ * the root of the folder it ended in, each once; runChain keeps those that
+ * opted in.
+ * @param {object} io the engine calls register.js hands over (`ioOf`)
+ * @param {string|null} began the root the call's mark recorded, null outside a repo
+ * @param {string} ended the folder the call ended in, the event's `cwd`
+ * @returns {Promise<string[]>}
+ */
+export async function callRoots(io, began, ended) {
+  return [...new Set([began, ended ? await io.top(ended) : null].filter(Boolean))];
+}
+
+// The roots that opted in, each asked once: the after-call gate's one opt-in filter.
+async function optedRoots(io, roots) {
+  const opted = await Promise.all(roots.map((root) => rootOptedIn(root, io.read)));
+  return roots.filter((_, i) => opted[i]);
+}
+
+/**
+ * Runs one chain. Facts carrying `lines` are the Bash chain after a call: its
+ * `roots` (callRoots) are cut to those that opted in, and it runs when any did
+ * or when the call left a journal line (grownLines kept only opted-in ones).
+ * Before a call a Bash chain is gated by its real folder's repo, a file
+ * chain by `gateDir`'s (folderOpted); a guard outside it stands down. A throw ends the chain, for the handler to rethrow.
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {object} env the variables the module read
  * @param {Array<{hook: string, run: function}>} guards the chain, in order
- * @param {object} facts `{ command, cwd, background }` before a Bash call, `{ cwd, lines }` after it, `{ tool, input, cwd, file, typed, dir, gateDir }` for a file
+ * @param {object} facts `{ cwd, background, namesCapture }` before a Bash call, `{ cwd, lines, since, roots }` after, or a file's
  * @returns {Promise<{fires: Array<[string, string]>, deny: string|null, notice: string|null, error: *}>}
- *   each fire's hook and verdict for the hooks log, the first deny, the notices as one entry, a throw
  */
 export async function runChain(io, env, guards, facts) {
   const chain = { fires: [], deny: null, notice: null, error: null };
   if (guards.length === 0) return chain;
   const after = Array.isArray(facts.lines);
-  const isBash = after || typeof facts.command === 'string';
-  const opted = after || (isBash ? await bashOpted(io, facts) : await folderOpted(io, facts.gateDir));
-  const gathered = isBash ? bashFacts(io, env, facts) : {
+  const isBash = after || typeof facts.tool !== 'string';
+  const roots = after ? await optedRoots(io, facts.roots ?? []) : [];
+  const opted = after ? roots.length > 0 || facts.lines.length > 0 : await folderOpted(io, isBash ? facts.cwd : facts.gateDir);
+  const gathered = isBash ? bashFacts(io, env, after ? { ...facts, roots } : facts) : {
     ...facts, env: guardEnv(io, env), read: io.read, run: io.run, top: io.top, stat: io.stat, now: io.now, pluginRoot: io.pluginRoot,
   };
   const notices = [];

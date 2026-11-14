@@ -5,17 +5,14 @@
 // test/scripts/public/helpers.js.
 
 const {
-  group, test: testEverywhere, testUnless, assert, assertEq, until, summary, selfRun,
+  describe, test, expect, until,
 } = require('../lib/harness');
-const { IS_WINDOWS, NO_NODE_STUB } = require('../lib/platform');
+const { skipWithoutNodeStub } = require('../lib/platform');
 const { mods, ghEntry } = require('../lib/mods-inputs');
 const { ioIn } = require('../../workflow/lib/io');
 const { mkPublicWorld, publicLine, PUBLIC, PRIVATE } = require('../scripts/public/helpers');
 
 const HOOK = 'workflow:public-mirror';
-
-// The mirror the hook starts runs gh by name from Node; written before the stub launcher, it still skips on Windows.
-const test = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 /** The journal line of a gh issue edit of #12 in the private repo, adding and removing those labels. */
 const edit = (world, add, remove = []) => ghEntry({
@@ -26,9 +23,9 @@ const edit = (world, add, remove = []) => ghEntry({
 const posted = async (world, lines) => {
   const { POST_BASH_GUARDS, runChain } = mods('guards');
   const entry = POST_BASH_GUARDS.filter((g) => g.hook === HOOK);
-  assertEq(entry.length, 1, `${HOOK} is on the post-Bash chain once`);
+  expect(entry.length, `${HOOK} is on the post-Bash chain once`).toBe(1);
   const chain = await runChain(ioIn(world.env), world.env, entry, { lines, cwd: world.repo });
-  assert(!chain.error && !chain.deny, `the hook neither crashed nor denied, got: ${chain.error || chain.deny}`);
+  expect(!chain.error && !chain.deny, `the hook neither crashed nor denied, got: ${chain.error || chain.deny}`).toBeTruthy();
   return chain;
 };
 
@@ -48,24 +45,22 @@ const BUILDING = JSON.stringify(['status:building']);
 // A negative case waits this long for a mirror that must not come.
 const QUIET_MS = 1500;
 
-const cases = async () => {
-  group('workflow:public-mirror');
-
-  await test('case 2: a journal line adding status:qa to #12 in a paired repo runs the mirror for #12', async () => {
+describe('workflow:public-mirror', () => {
+  test('case 2: a journal line adding status:qa to #12 in a paired repo runs the mirror for #12', { skip: skipWithoutNodeStub() }, async () => {
     const world = linkedWorld();
     await posted(world, [edit(world, ['status:qa'])]);
-    assert(await until(() => publicLabels(world) === QA), `the public issue took status:qa, got: ${publicLabels(world)}`);
+    expect(await until(() => publicLabels(world) === QA), `the public issue took status:qa, got: ${publicLabels(world)}`).toBeTruthy();
   });
 
-  await test('case 2: a journal line adding no status: label runs nothing', async () => {
+  test('case 2: a journal line adding no status: label runs nothing', { skip: skipWithoutNodeStub() }, async () => {
     const world = linkedWorld();
     await posted(world, [edit(world, ['priority:high'])]);
-    assert(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),
-      `the public issue kept status:building, got: ${publicLabels(world)}`);
-    assertEq(JSON.stringify(world.gh.writes()), '[]', 'nothing was written');
+    expect(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),
+      `the public issue kept status:building, got: ${publicLabels(world)}`).toBeTruthy();
+    expect(JSON.stringify(world.gh.writes()), 'nothing was written').toBe('[]');
   });
 
-  await testEverywhere('a line adding no status: label returns before the hook reads anything', async () => {
+  test('a line adding no status: label returns before the hook reads anything', async () => {
     const { publicMirrorGuard } = mods('public-mirror');
     const touched = [];
     const record = (what) => async (arg) => {
@@ -80,24 +75,17 @@ const cases = async () => {
       top: record('top'),
       run: record('run'),
     });
-    assertEq(verdict, null, 'no notice');
-    assertEq(JSON.stringify(touched), '[]', 'no read, git root or program run');
+    expect(verdict, 'no notice').toBe(null);
+    expect(JSON.stringify(touched), 'no read, git root or program run').toBe('[]');
   });
+});
 
-  group('workflow:public-mirror: a repo with no public key');
-
-  await test('a repo with no public key: the hook does nothing', async () => {
+describe('workflow:public-mirror: a repo with no public key', () => {
+  test('a repo with no public key: the hook does nothing', { skip: skipWithoutNodeStub() }, async () => {
     const world = linkedWorld({ paired: false });
     await posted(world, [edit(world, ['status:qa'])]);
-    assert(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),
-      `the public issue kept status:building, got: ${publicLabels(world)}`);
-    assertEq(JSON.stringify(world.gh.writes()), '[]', 'nothing was written');
+    expect(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),
+      `the public issue kept status:building, got: ${publicLabels(world)}`).toBeTruthy();
+    expect(JSON.stringify(world.gh.writes()), 'nothing was written').toBe('[]');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

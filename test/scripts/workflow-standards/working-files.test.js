@@ -4,63 +4,55 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W,
+  describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const { cleanup, makeRepo, readFile, runScript } = require('./helpers');
 
-const cases = async () => {
-  group('standards.sh: local working files');
-
-  await test('creates .workkit/capture.md with the capture header', () => {
+describe('standards.sh: local working files', () => {
+  test('creates .workkit/capture.md with the capture header', () => {
     const repo = makeRepo();
     runScript(repo);
     const capture = path.join(repo, W, 'capture.md');
-    assert(fs.existsSync(capture), 'the capture file is created');
+    expect(fs.existsSync(capture), 'the capture file is created').toBeTruthy();
     const text = fs.readFileSync(capture, 'utf8');
-    assert(text.includes('Triage drains every entry'), 'header explains the drain');
+    expect(text.includes('Triage drains every entry'), 'header explains the drain').toBeTruthy();
     cleanup(repo);
   });
 
-  await test('never overwrites a capture file that has entries', () => {
+  test('never overwrites a capture file that has entries', () => {
     const repo = makeRepo();
     fs.writeFileSync(path.join(repo, W, 'capture.md'), 'my precious note\n');
     const { output: stdout } = runScript(repo);
-    assertEq(fs.readFileSync(path.join(repo, W, 'capture.md'), 'utf8'), 'my precious note\n', 'existing content untouched');
-    assert(stdout.includes('already exists'), 'reported as a skip');
+    expect(fs.readFileSync(path.join(repo, W, 'capture.md'), 'utf8'), 'existing content untouched').toBe('my precious note\n');
+    expect(stdout.includes('already exists'), 'reported as a skip').toBeTruthy();
     cleanup(repo);
   });
 
-  await test('creates .workkit/agents/session.md with its three fixed sections', () => {
+  test('creates .workkit/agents/session.md with its three fixed sections', () => {
     const repo = makeRepo();
     runScript(repo);
     const text = readFile(path.join(repo, W, 'agents', 'session.md'));
-    assert(text.startsWith('# Session'), `titled Session, got: ${text.slice(0, 20)}`);
+    expect(text.startsWith('# Session'), `titled Session, got: ${text.slice(0, 20)}`).toBeTruthy();
     for (const section of ['## Active', '## Queue', '## Notes']) {
-      assert(text.includes(section), `${section} present`);
+      expect(text.includes(section), `${section} present`).toBeTruthy();
     }
     // Fixed shape: the three sections and nothing else.
-    assertEq((text.match(/^## /gm) || []).length, 3, 'exactly three sections');
-    assert(/priority.*high/i.test(text) && /low/i.test(text), 'Queue states the order rule');
-    assert(/promoted/i.test(text), 'Notes states the promotion rule');
+    expect((text.match(/^## /gm) || []).length, 'exactly three sections').toBe(3);
+    expect(/priority.*high/i.test(text) && /low/i.test(text), 'Queue states the order rule').toBeTruthy();
+    expect(/promoted/i.test(text), 'Notes states the promotion rule').toBeTruthy();
     cleanup(repo);
   });
 
-  await test('never overwrites a session file that has content', () => {
+  test('never overwrites a session file that has content', () => {
     const repo = makeRepo();
     fs.mkdirSync(path.join(repo, W, 'agents'), { recursive: true });
     fs.writeFileSync(path.join(repo, W, 'agents', 'session.md'), '# Session\n\n## Active\n#42: mid-flight\n');
     const { output: stdout } = runScript(repo);
-    assert(
+    expect(
       readFile(path.join(repo, W, 'agents', 'session.md')).includes('#42: mid-flight'),
       'the session in progress is never clobbered',
-    );
-    assert(stdout.includes(`session: ${W}/agents/session.md already exists`), `reported as a skip, got: ${stdout}`);
+    ).toBeTruthy();
+    expect(stdout.includes(`session: ${W}/agents/session.md already exists`), `reported as a skip, got: ${stdout}`).toBeTruthy();
     cleanup(repo);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

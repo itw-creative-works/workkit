@@ -1,9 +1,10 @@
 /**
  * workflow/githooks/judge.js: `node judge.js <pre-commit|commit-msg> <root>
  * [<message file>]`, the git hooks' ruling on the commit git is making in
- * <root>. Its facts come from the real machine (workflow/lib/io.js) in the
- * hook's own environment, so git answers from the commit's index. A deny goes
- * to stderr and exits 1; notices go to stderr and exit 0.
+ * <root>, and `node judge.js tree-guard -- <argv...>`, the `git` shim's ruling
+ * on one git call (workflow/gitshim/git). Its facts come from the real machine
+ * (workflow/lib/io.js) in the caller's own environment, so git answers from the
+ * commit's index. A deny goes to stderr and exits 1; notices go to stderr and exit 0.
  */
 
 const fs = require('fs');
@@ -50,19 +51,52 @@ async function commitMsg(g, root, file) {
 }
 
 /**
- * The hook's ruling, said on stderr.
- * @param {string[]} argv the hook, the repo root, and commit-msg's message file
+ * The folder git acts in: each `-C <dir>` before the subcommand folded onto
+ * `cwd` in order, each relative to the one before, an empty one no move.
+ * @param {string[]} argv git's arguments
+ * @param {string} cwd the folder git was started in
+ * @returns {string}
+ */
+function gitFolder(argv, cwd) {
+  const { GIT_VALUE_FLAGS } = mod('tree-guard');
+  let dir = cwd;
+  for (let i = 0; i < argv.length && argv[i][0] === '-'; i += 1) {
+    if (argv[i] === '-C' && argv[i + 1]) dir = path.resolve(dir, argv[i + 1]);
+    if (GIT_VALUE_FLAGS.has(argv[i])) i += 1;
+  }
+  return dir;
+}
+
+// tree-guard's ruling on git's real argument list, `exists` asked in the folder git acts in.
+function treeGuard(argv) {
+  const io = ioIn(process.env);
+  const dir = gitFolder(argv, process.cwd());
+  return mod('tree-guard').treeGuardVerdict({
+    argv,
+    exists: (rel) => io.exists(path.resolve(dir, rel)),
+    allow: process.env.WORKKIT_ALLOW_DISCARD === '1',
+  });
+}
+
+const USAGE = 'usage: judge.js <pre-commit|commit-msg> <root> [<message file>] | judge.js tree-guard -- <argv...>\n';
+
+/**
+ * The ruling, said on stderr.
+ * @param {string[]} argv the hook, the repo root, and commit-msg's message
+ *   file; or `tree-guard`, `--` and git's arguments
  * @returns {Promise<number>} the exit code: 1 for a deny, 2 for a usage error
  */
-async function main([hook, root, file]) {
-  if (!root || !['pre-commit', 'commit-msg'].includes(hook) || (hook === 'commit-msg' && !file)) {
-    process.stderr.write('usage: judge.js <pre-commit|commit-msg> <root> [<message file>]\n');
+async function main([hook, root, file, ...more]) {
+  const isTree = hook === 'tree-guard' && root === '--';
+  if (!isTree && (!root || !['pre-commit', 'commit-msg'].includes(hook) || (hook === 'commit-msg' && !file))) {
+    process.stderr.write(USAGE);
     return 2;
   }
-  const g = mod('guards').bashFacts(ioIn(process.env), process.env, { command: '', cwd: root });
-  const verdict = hook === 'pre-commit'
-    ? await mod('commit-gate').preCommitVerdict(mod('commit-gate').commitFacts(g, root))
-    : await commitMsg(g, root, file);
+  const g = isTree ? null : mod('facts').bashFacts(ioIn(process.env), process.env, { cwd: root });
+  let verdict;
+  if (isTree) verdict = await treeGuard([file, ...more].filter((a) => a !== undefined));
+  else if (hook === 'pre-commit') verdict = await mod('commit-gate').preCommitVerdict(mod('commit-gate').commitFacts(g, root));
+  else verdict = await commitMsg(g, root, file);
   if (verdict?.deny) {
     process.stderr.write(`${verdict.deny}\n`);
     return 1;
@@ -73,7 +107,8 @@ async function main([hook, root, file]) {
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (err) => {
-    process.stderr.write(`${process.argv[2]}: the workkit judge failed before it could judge this commit, so the commit did not land: ${err.message}\n`);
+    const what = process.argv[2] === 'tree-guard' ? 'this git call, so git did not run' : 'this commit, so the commit did not land';
+    process.stderr.write(`${process.argv[2]}: the workkit judge failed before it could judge ${what}: ${err.message}\n`);
     process.exitCode = 1;
   });
 }

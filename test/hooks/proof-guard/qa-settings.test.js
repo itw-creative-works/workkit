@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { mkRepo } = require('../../lib/script-shell');
 const {
   ROOT, packagesOf, pkgRecord, judge, denyOf, QA, QA_BLOCK, assertBlocks, passText, flip: realFlip, sessionOf,
@@ -38,48 +38,39 @@ const flip = (settingsFaults, proved) => judge(QA, {
   settingsFaults,
 });
 
-const cases = async () => {
-  group('proof-guard: a settings value the merge set aside rides the qa flip');
-
-  await test('case 8: every package proved and a fault on the repo file or the proof key: the flip passes, its context carrying the line', async () => {
+describe('proof-guard: a settings value the merge set aside rides the qa flip', () => {
+  test('case 8: every package proved and a fault on the repo file or the proof key: the flip passes, its context carrying the line', async () => {
     for (const fault of [PROOF_FAULT, REPO_BROKEN, MACHINE_PROOF]) {
       const msg = passText(await flip([fault], true), fault.line);
-      assert(msg.includes(fault.line), `the context carries the line, got: ${msg}`);
+      expect(msg.includes(fault.line), `the context carries the line, got: ${msg}`).toBeTruthy();
     }
   });
 
-  await test('case 9: the same fault on a flip that blocks: the deny is the block, the line beside it', async () => {
+  test('case 9: the same fault on a flip that blocks: the deny is the block, the line beside it', async () => {
     const deny = denyOf(await flip([PROOF_FAULT], false)) || '';
-    assert(deny.startsWith(`${BLOCKED}\n`), `the block first, got: ${deny}`);
-    assert(deny.includes(PROOF_FAULT.line), `the deny carries the line, got: ${deny}`);
+    expect(deny.startsWith(`${BLOCKED}\n`), `the block first, got: ${deny}`).toBeTruthy();
+    expect(deny.includes(PROOF_FAULT.line), `the deny carries the line, got: ${deny}`).toBeTruthy();
   });
 
-  await test('case 10: a fault on manager from the machine file alone: neither the pass nor the block carries it', async () => {
+  test('case 10: a fault on manager from the machine file alone: neither the pass nor the block carries it', async () => {
     const msg = passText(await flip([MACHINE_MANAGER], true), 'proved');
-    assert(!msg.includes(MACHINE_MANAGER.line), `the context leaves it out, got: ${msg}`);
+    expect(!msg.includes(MACHINE_MANAGER.line), `the context leaves it out, got: ${msg}`).toBeTruthy();
     assertBlocks(await flip([MACHINE_MANAGER], false), BLOCKED, 'the block alone');
   });
+});
 
-  group('proof-guard: a repo file the merge set aside, through the real facts');
-
-  await test('a repo file whose proof is a list: the blocked flip names the file and proof, a sentence beside the block', async () => {
+describe('proof-guard: a repo file the merge set aside, through the real facts', () => {
+  test('a repo file whose proof is a list: the blocked flip names the file and proof, a sentence beside the block', async () => {
     const { dir, env, root } = settingsWorld('qa-settings-list-', '{"enabled": true, "proof": ["backend"]}');
     assertBlocks(await realFlip(dir, env),
       QA_BLOCK(1, 'the repo root: test/a.test.js', `${root}/.workkit/settings.json: proof is not an object, so the value below it stands.`),
       'the proof fault rides the deny');
   });
 
-  await test('a repo file that does not parse: the blocked flip says it adds nothing, a sentence beside the block', async () => {
+  test('a repo file that does not parse: the blocked flip says it adds nothing, a sentence beside the block', async () => {
     const { dir, env, root } = settingsWorld('qa-settings-broken-', '{ not json');
     assertBlocks(await realFlip(dir, env),
       QA_BLOCK(1, 'the repo root: test/a.test.js', `${root}/.workkit/settings.json is not a JSON object, so it adds nothing.`),
       'the broken file rides the deny');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

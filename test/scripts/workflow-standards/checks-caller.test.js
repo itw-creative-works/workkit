@@ -7,7 +7,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('../../lib/platform');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { block, inlineValue, listValue, isContent } = require('../../lib/workflow-yaml');
 const { OLD_CHECKS, withSteps, withCloneStep } = require('../../lib/checks-template');
 const { cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
@@ -25,7 +25,7 @@ const trunkWorld = () => {
   const stub = makeGhStub({ repoRead: true, defaultBranch: 'trunk' });
   for (const args of [['symbolic-ref', 'HEAD', 'refs/heads/trunk'], ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk']]) {
     const res = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
-    assertEq(res.status, 0, `git ${args.join(' ')}: ${res.stderr}`);
+    expect(res.status, `git ${args.join(' ')}: ${res.stderr}`).toBe(0);
   }
   const file = path.join(repo, '.github', 'workflows', 'checks.yml');
   const write = (body) => {
@@ -46,58 +46,56 @@ const trunkWorld = () => {
 const assertCaller = (body, output) => {
   const lines = body.split(/\r?\n/);
   const on = block(lines, 'on', 0);
-  assert(on, `a top-level on:, got: ${body}\n${output}`);
-  assert(block(on, 'pull_request', 2), `on: lists pull_request:, got: ${on.join('\n')}`);
+  expect(on, `a top-level on:, got: ${body}\n${output}`).toBeTruthy();
+  expect(block(on, 'pull_request', 2), `on: lists pull_request:, got: ${on.join('\n')}`).toBeTruthy();
   const push = block(on, 'push', 2);
-  assert(push, `on: lists push:, got: ${on.join('\n')}`);
+  expect(push, `on: lists push:, got: ${on.join('\n')}`).toBeTruthy();
   const branches = block(push, 'branches', 4);
-  assert(branches, `on.push carries branches, got: ${push.join('\n')}`);
-  assertEq(listValue(branches).join(','), 'trunk', 'the push runs on the repo\'s default branch');
-  assertEq(block(push, 'paths-ignore', 4), null, 'and every push runs, the release commit\'s included');
+  expect(branches, `on.push carries branches, got: ${push.join('\n')}`).toBeTruthy();
+  expect(listValue(branches).join(','), 'the push runs on the repo\'s default branch').toBe('trunk');
+  expect(block(push, 'paths-ignore', 4), 'and every push runs, the release commit\'s included').toBe(null);
   const jobs = block(lines, 'jobs', 0);
-  assert(jobs, `a top-level jobs:, got: ${body}`);
+  expect(jobs, `a top-level jobs:, got: ${body}`).toBeTruthy();
   const names = jobs.slice(1).filter((l) => isContent(l) && /^ {2}\S/.test(l)).map((l) => l.trim().replace(/:.*$/, ''));
-  assertEq(names.join(','), 'checks,release', 'two jobs, checks and release');
+  expect(names.join(','), 'two jobs, checks and release').toBe('checks,release');
   const job = block(jobs, 'checks', 2);
   const uses = block(job, 'uses', 4);
   const secrets = block(job, 'secrets', 4);
-  assert(uses && secrets, `the job carries uses: and secrets:, got: ${job.join('\n')}`);
-  assertEq(inlineValue(uses), USES, 'it calls the kit\'s ci.yml at main');
-  assertEq(inlineValue(secrets), 'inherit', 'with the caller\'s secrets');
+  expect(uses && secrets, `the job carries uses: and secrets:, got: ${job.join('\n')}`).toBeTruthy();
+  expect(inlineValue(uses), 'it calls the kit\'s ci.yml at main').toBe(USES);
+  expect(inlineValue(secrets), 'with the caller\'s secrets').toBe('inherit');
   const release = block(jobs, 'release', 2);
   const gate = block(release, 'if', 4);
   const perms = block(release, 'permissions', 4);
   const releaseUses = block(release, 'uses', 4);
-  assert(gate && perms && releaseUses, `the release job carries if:, permissions: and uses:, got: ${release.join('\n')}`);
-  assertEq(inlineValue(gate), "github.event_name == 'push'", 'the release job runs on a push alone');
+  expect(gate && perms && releaseUses, `the release job carries if:, permissions: and uses:, got: ${release.join('\n')}`).toBeTruthy();
+  expect(inlineValue(gate), 'the release job runs on a push alone').toBe("github.event_name == 'push'");
   const granted = perms.slice(1).filter(isContent).map((l) => l.trim()).sort().join(',');
-  assertEq(granted, 'actions: write,contents: write', 'its token writes contents and actions, nothing else');
-  assertEq(inlineValue(releaseUses), RELEASE_USES, 'it calls the kit\'s release.yml at main');
-  assertEq(block(release, 'secrets', 4), null, 'and hands it no secrets, since it runs on the job\'s token alone');
+  expect(granted, 'its token writes contents and actions, nothing else').toBe('actions: write,contents: write');
+  expect(inlineValue(releaseUses), 'it calls the kit\'s release.yml at main').toBe(RELEASE_USES);
+  expect(block(release, 'secrets', 4), 'and hands it no secrets, since it runs on the job\'s token alone').toBe(null);
 };
 
 const warnings = (output) => output.split('\n').filter((l) => l.includes(WARNED));
 
-const cases = async () => {
-  group('standards.sh: the checks.yml caller');
-
-  await test('a repo with no checks.yml gets the caller, its push on the repo\'s default branch', () => {
+describe('standards.sh: the checks.yml caller', () => {
+  test('a repo with no checks.yml gets the caller, its push on the repo\'s default branch', () => {
     const w = trunkWorld();
     const output = w.heal();
     assertCaller(w.read(), output);
     w.done();
   });
 
-  await test('a copy identical to the old template is replaced by the caller, with no step warning', () => {
+  test('a copy identical to the old template is replaced by the caller, with no step warning', () => {
     const w = trunkWorld();
     w.write(OLD_CHECKS);
     const output = w.heal();
     assertCaller(w.read(), output);
-    assertEq(warnings(output).length, 0, `no step to move, got: ${warnings(output).join('\n')}`);
+    expect(warnings(output).length, `no step to move, got: ${warnings(output).join('\n')}`).toBe(0);
     w.done();
   });
 
-  await test('a customized copy is replaced by the caller, one warning per step the old template lacks', () => {
+  test('a customized copy is replaced by the caller, one warning per step the old template lacks', () => {
     const w = trunkWorld();
     w.write(withSteps(OLD_CHECKS, [
       '      - name: Install Hugo',
@@ -108,47 +106,47 @@ const cases = async () => {
     const output = w.heal();
     assertCaller(w.read(), output);
     const got = warnings(output);
-    assertEq(got.length, 2, `one line per extra step, got: ${got.join('\n')}`);
+    expect(got.length, `one line per extra step, got: ${got.join('\n')}`).toBe(2);
     const line = (step) => `checks.yml: replaced by the kit's caller; move this step into hooks.ciSetup: ${step}`;
-    assert(got[0].endsWith(line('Install Hugo: sudo snap install hugo')), `the Hugo step, got: ${got[0]}`);
-    assert(got[1].endsWith(line('Install ffmpeg: sudo apt-get install -y ffmpeg')), `the ffmpeg step, got: ${got[1]}`);
+    expect(got[0].endsWith(line('Install Hugo: sudo snap install hugo')), `the Hugo step, got: ${got[0]}`).toBeTruthy();
+    expect(got[1].endsWith(line('Install ffmpeg: sudo apt-get install -y ffmpeg')), `the ffmpeg step, got: ${got[1]}`).toBeTruthy();
     w.done();
   });
 
-  await test('a caller that already matches is not written', () => {
+  test('a caller that already matches is not written', () => {
     const w = trunkWorld();
     w.heal();
     const once = w.read();
     const past = new Date('2001-01-01T00:00:00Z');
     fs.utimesSync(w.file, past, past);
     const output = w.heal();
-    assertEq(w.read(), once, 'the same bytes');
-    assertEq(fs.statSync(w.file).mtimeMs, past.getTime(), `the file was never rewritten, got: ${output}`);
-    assertEq(warnings(output).length, 0, 'and nothing to move');
+    expect(w.read(), 'the same bytes').toBe(once);
+    expect(fs.statSync(w.file).mtimeMs, `the file was never rewritten, got: ${output}`).toBe(past.getTime());
+    expect(warnings(output).length, 'and nothing to move').toBe(0);
     w.done();
   });
 
-  await test('a hand edit to the caller is overwritten by the next run', () => {
+  test('a hand edit to the caller is overwritten by the next run', () => {
     const w = trunkWorld();
     w.heal();
     const once = w.read();
     const edited = once.replace('ci.yml@main', 'ci.yml@v9');
-    assert(edited !== once, `the caller names ci.yml@main to edit, got: ${once}`);
+    expect(edited !== once, `the caller names ci.yml@main to edit, got: ${once}`).toBeTruthy();
     w.write(edited);
     w.heal();
-    assertEq(w.read(), once, 'the caller as the kit wrote it');
+    expect(w.read(), 'the caller as the kit wrote it').toBe(once);
     w.done();
   });
+});
 
-  group('standards.sh: every other customization a replaced copy held is named');
-
+describe('standards.sh: every other customization a replaced copy held is named', () => {
   // The old template as a trunk repo held it, its push on its own default branch.
   const ON_TRUNK = OLD_CHECKS.replace('    branches: [main]\n', '    branches: [trunk]\n');
   // ON_TRUNK with `lines` put in after the first line equal to `anchor`.
   const after = (anchor, lines) => {
     const all = ON_TRUNK.split('\n');
     const at = all.indexOf(anchor);
-    assert(at >= 0, `the old template carries ${JSON.stringify(anchor)}`);
+    expect(at >= 0, `the old template carries ${JSON.stringify(anchor)}`).toBeTruthy();
     return [...all.slice(0, at + 1), ...lines, ...all.slice(at + 1)].join('\n');
   };
   // ON_TRUNK with the line equal to `from` swapped for `lines`.
@@ -191,32 +189,32 @@ const cases = async () => {
   ];
 
   for (const [kind, body, line] of KINDS) {
-    await test(`${kind}: the caller replaces the copy, and one line names it`, () => {
+    test(`${kind}: the caller replaces the copy, and one line names it`, () => {
       const w = trunkWorld();
       w.write(body);
       const output = w.heal();
       assertCaller(w.read(), output);
       const got = output.split('\n').filter((l) => l.includes('checks.yml: replaced by the kit\'s caller; '));
-      assertEq(got.length, 1, `one line, got: ${got.join('\n')}`);
-      assert(got[0].endsWith(`checks.yml: replaced by the kit's caller; ${line}`), `the line, got: ${got[0]}`);
+      expect(got.length, `one line, got: ${got.join('\n')}`).toBe(1);
+      expect(got[0].endsWith(`checks.yml: replaced by the kit's caller; ${line}`), `the line, got: ${got[0]}`).toBeTruthy();
       w.done();
     });
   }
 
-  await test('a push on exactly the default branch, as a flow list or one item, is no customization', () => {
+  test('a push on exactly the default branch, as a flow list or one item, is no customization', () => {
     for (const body of [ON_TRUNK, swapped('    branches: [trunk]', ['    branches:', '      - trunk'])]) {
       const w = trunkWorld();
       w.write(body);
       const output = w.heal();
       assertCaller(w.read(), output);
-      assert(!output.includes('checks.yml: replaced by the kit\'s caller; '), `nothing named, got: ${output}`);
+      expect(!output.includes('checks.yml: replaced by the kit\'s caller; '), `nothing named, got: ${output}`).toBeTruthy();
       w.done();
     }
   });
+});
 
-  group('standards.sh: a default branch nothing names');
-
-  await test('no answer from GitHub and no origin/HEAD: the copy stays, one warning names the fix, the run is flagged', () => {
+describe('standards.sh: a default branch nothing names', () => {
+  test('no answer from GitHub and no origin/HEAD: the copy stays, one warning names the fix, the run is flagged', () => {
     const repo = makeRepo();
     spawnSync('git', ['symbolic-ref', '--delete', 'refs/remotes/origin/HEAD'], { cwd: repo });
     const stub = makeGhStub();
@@ -224,41 +222,35 @@ const cases = async () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, OLD_CHECKS);
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(readFile(file), OLD_CHECKS, 'the copy as it was');
+    expect(readFile(file), 'the copy as it was').toBe(OLD_CHECKS);
     const said = output.split('\n').filter((l) => l.includes('cannot tell the default branch'));
-    assertEq(said.length, 1, `one warning, got: ${output}`);
-    assert(said[0].includes('git remote set-head origin -a'), `it names the fix, got: ${said[0]}`);
-    assert(output.includes('not fully standardized'), 'the run is flagged');
+    expect(said.length, `one warning, got: ${output}`).toBe(1);
+    expect(said[0].includes('git remote set-head origin -a'), `it names the fix, got: ${said[0]}`).toBeTruthy();
+    expect(output.includes('not fully standardized'), 'the run is flagged').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('no origin remote: no caller and no warning, since there is no CI to call', () => {
+  test('no origin remote: no caller and no warning, since there is no CI to call', () => {
     const repo = makeRepo({ remote: false });
     const stub = makeGhStub();
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
-    assert(!fs.existsSync(path.join(repo, '.github', 'workflows', 'checks.yml')), 'no checks.yml');
-    assert(output.includes('checks: no origin remote'), `a skip, got: ${output}`);
-    assert(!output.includes('cannot tell the default branch'), 'no warning');
+    expect(!fs.existsSync(path.join(repo, '.github', 'workflows', 'checks.yml')), 'no checks.yml').toBeTruthy();
+    expect(output.includes('checks: no origin remote'), `a skip, got: ${output}`).toBeTruthy();
+    expect(!output.includes('cannot tell the default branch'), 'no warning').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
+});
 
-  group('standards.sh: the kit\'s own checkout');
-
-  await test('the kit\'s own checks.yml is never rewritten to the caller', () => {
+describe('standards.sh: the kit\'s own checkout', () => {
+  test('the kit\'s own checks.yml is never rewritten to the caller', () => {
     const w = trunkWorld();
     spawnSync('git', ['remote', 'set-url', 'origin', 'https://example.invalid/acme/workkit.git'], { cwd: path.dirname(path.dirname(path.dirname(w.file))) });
     const own = withSteps(OLD_CHECKS, ['      - name: Windows leg', '        run: echo win']);
     w.write(own);
     const output = w.heal();
-    assertEq(w.read(), own, 'the file as it was');
-    assert(output.includes('checks: this is the workkit kit'), `a skip naming why, got: ${output}`);
-    assertEq(warnings(output).length, 0, 'and nothing to move');
+    expect(w.read(), 'the file as it was').toBe(own);
+    expect(output.includes('checks: this is the workkit kit'), `a skip naming why, got: ${output}`).toBeTruthy();
+    expect(warnings(output).length, 'and nothing to move').toBe(0);
     w.done();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

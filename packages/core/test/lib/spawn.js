@@ -5,6 +5,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { inspect } from 'node:util';
 import { SPAWN_DEADLINE, PIPE_GRACE_MS, until } from './process.js';
 
@@ -78,16 +79,23 @@ export const groupLives = (pid) => trySignal(-pid, 0) === 'sent';
 
 /**
  * End the tree a raw <pid> heads: the group it leads, else the pid; on Windows
- * `taskkill /T /F` ends its whole tree. A pid that is not a positive integer
- * throws, since 0 or a negative one signals the caller's own group or another;
- * a refused signal throws `endTree: signal refused for pid <N> (EPERM)`.
+ * `taskkill /T /F` from System32 under SystemRoot, never through PATH. A pid
+ * that is not a positive integer throws, since 0 or a negative one signals the
+ * caller's own group or another; a refused signal throws `endTree: signal
+ * refused for pid <N> (EPERM)`. A taskkill that cannot start throws `endTree:
+ * taskkill could not run (<message>)`, an unset SystemRoot `endTree: SystemRoot
+ * is not set, so taskkill cannot be found`; a nonzero exit is no failure.
  * @param {number} pid
  * @param {string} [signal]
+ * @param {{ platform?: string, run?: Function, systemRoot?: string }} [seams] - the platform, the spawnSync and the SystemRoot the end is for
  */
-export const endTree = (pid, signal = 'SIGTERM') => {
+export const endTree = (pid, signal = 'SIGTERM', { platform = process.platform, run = spawnSync, systemRoot = process.env.SystemRoot } = {}) => {
   checkPid('endTree', pid);
-  if (IS_WINDOWS) {
-    spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', timeout: SPAWN_DEADLINE });
+  if (platform === 'win32') {
+    if (!systemRoot) throw new Error('endTree: SystemRoot is not set, so taskkill cannot be found');
+    const taskkill = path.win32.join(systemRoot, 'System32', 'taskkill.exe');
+    const ended = run(taskkill, ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', timeout: SPAWN_DEADLINE });
+    if (ended.error) throw new Error(`endTree: taskkill could not run (${ended.error.message})`);
     return;
   }
   signalTree('endTree', pid, signal);

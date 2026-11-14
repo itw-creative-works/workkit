@@ -30,7 +30,7 @@
 | `lib/detach.sh` | A command that outlives the shell that started it, one per lock |
 | `lib/detach.js` | The detached runner's Node half: the supervisor, its checks and its ends, requiring `lib/run.js`, `lib/pulse.js` and `lib/tree.js`, and `lib/settings.js` only with `--root` |
 | `lib/pulse.js` | The supervisor's verdict on a run from one reading per check, CJS, requiring nothing: `judge`, and the counts, the work floor and the two codes |
-| `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`), CJS, requiring only `lib/run.js` |
+| `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`), CJS, requiring only `lib/run.js`; `node tree.js end <pid>` is the end as a command, which `wk_end_run` runs on Windows |
 | `lib/discussions.sh` | Sourced: the home repo's Discussions API (GraphQL through `gh`), enabling, resolving and caching the repo and category ids, posting a summary or a brief, reading prior posts back |
 | `lib/git.js` | The git reads the kit's Node scripts share, CJS, requiring only `lib/run.js` |
 | `lib/pause.js` | The one blocking wait the kit's synchronous Node commands share, CJS, requiring nothing beyond Node: `pause(seconds)` blocks the process through `Atomics.wait`, a fraction allowed, so a poll loop sleeps with no child process (`identity/rest-pr.js`'s `pr checks --watch`, `ship/cut.js`'s release wait) |
@@ -47,6 +47,7 @@
 | `identity/token.js` | The client of the hosted token service |
 | `identity/gh` | The `gh` shim, linked to `~/.local/bin/gh` beside the `workkit` link so it outranks the real `gh` |
 | `identity/gate.js` | The shim's gate, `node gate.js <cwd> <gh argv...>`, CJS |
+| `gitshim/` | `git`, the `git` shim, put first on a Claude session's PATH by the hooks module and never linked, so `safety:tree-guard` judges git's real arguments |
 | `identity/rest.js` | The shim's cloud half |
 | `identity/rest-pr.js` | The REST forms of `pr create`, `pr list`, `pr view`, `pr checks` and `pr merge` |
 | `identity/rest-release.js` | The REST form of `release view`, built on `rest.js`'s helpers as `rest-pr.js` is |
@@ -59,7 +60,7 @@
 | `script-shell.cs` | npm's script shell on Windows, a C# 5 console program |
 | `prove.sh` | `workkit prove`, the root suite on exactly the staged tree, the suite record's second writer |
 | `supervise.sh` | `workkit supervise -- <command>`, any command run detached under the supervisor, as the root suite runs |
-| `watch.sh` | `workkit watch [--end] [suite\|run]`, the call attached again to the repo's live run, given the code of one that ended with no call attached, or that run ended on request |
+| `watch.sh` | `workkit watch [--end] [suite\|run\|<pid>]`, the call attached again to the repo's live run, given the code of one that ended with no call attached, or that run ended on request |
 | `githooks/` | Git's own hooks, set as a repo's `core.hooksPath` by the heal |
 | `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right capture file |
 | `changelog/lint.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call (`linterPath` in `hooks/mods/changelog-guard.js`) and the npm wrapper calls through `lib/changelog.sh`: `workkit changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]` |
@@ -163,7 +164,6 @@
     - A test script passes when its devDependencies name `workkit-core` (`wk_has_core_package`), whatever the script, since one may wrap `workkit test`.
     - Any other test script warns once, naming `npm i -D workkit-core` and `"test": "workkit test"`. It never marks the run unfinished.
     - The shape it stands for: `docs/tests.md` § The shape.
-    - It also checks whether the suites sit under `test/` (`docs/tests.md` § The kit's runner).
 - `templates/github-workflows/`:
   - `brief.yml` is the cloud morning brief, seeded onto the HOME repo by `home.sh` and nowhere else.
   - `checks.yml` is the CI caller written into a repo's `.github/workflows/`, the kit's and never the repo's.
@@ -201,7 +201,7 @@
     - It names a workflow on `release` alone in a `ci-release: warning:` line.
   - The heal rewrites the caller whenever it differs, so a hand edit lasts until the next heal (`standards/checks.sh`).
 - `workkit.sh`:
-  - Its verbs: `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `state` · `note` · `test [paths]` · `tools` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run]`.
+  - Its verbs: `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `state` · `note` · `test [paths]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`.
   - And: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
   - It keeps the map, the constants and the dispatch, and sources its commands from `workkit/`.
   - A verb with subcommands follows one rule: `workkit <verb> <sub>` runs `<verb>/<sub>.sh` or `.js` (`run_verb`).
@@ -220,7 +220,7 @@
   - `identity.sh`: the bot identity's sign-in and install steps and doctor lines.
     - It asks through `wk_ask_yes` and opens the install page through `wk_open_url`.
   - `setup.sh`: the wizard, its `--cloud` form and the `cloud_na` lines doctor shares, the roster report, the home steps.
-  - `commands.sh`: `update`, `publish`, `brief`, `doctor`, `test`, `tools`.
+  - `commands.sh`: `update`, `publish`, `brief`, `doctor`, `test`, `tools`, `convert`; the last two through one helper, `run_core_bin <verb>`.
   - `log.sh`: `log`, the hooks log's last 40 lines, or `-n N`, `--follow` tailing it.
     - It prints one skip line when there is no log yet.
   - `public.sh`: `public`, each subcommand handed to its `public/` script.
@@ -265,9 +265,11 @@
     - `wk_end_pid [-9] <pid>`: ending one of them (`kill`, and `env kill -f -W` for a Windows pid).
     - There `env` is load bearing: bash's builtin shadows the `kill.exe` that takes a Windows pid.
     - That path is forceful whatever signal it is handed.
-  - `wk_end_run <pid>`, beside them: a detached run's supervisor ended with its process group (on Windows its process tree), always 0.
-    - On Windows it ends its process tree (`taskkill //T //F`), or uses `wk_end_pid` where there is none.
-    - Elsewhere it ends its process group: INT so the body logs its own code, then TERM and KILL.
+  - `wk_end_run <pid>`, beside them: a detached run's supervisor ended with its process group (on Windows its process tree).
+    - On Windows it runs `node lib/tree.js end <pid>` under `wk_node`, the one home of a tree's end (`endTreeOf`), and returns that command's code.
+    - There a `taskkill` that cannot start or runs past 60 seconds, or an unset `SystemRoot`, is the command's one stderr line and 1.
+    - Where no node fits it prints `wk_end_run: no node at or above <floor> is installed, so the tree of <pid> was not ended` and returns 1.
+    - Elsewhere it ends its process group, and returns 0: INT so the body logs its own code, then TERM and KILL.
     - Each comes 1.5 seconds after the last, while the group lives.
   - `wk_pid_alive <pid>`: whether a pid still runs (`kill -0`).
     - On Windows it asks Node, where a pid Node printed is a Windows pid bash's kill cannot see.
@@ -275,7 +277,8 @@
     - `wk_link` in `lib/flows.sh` renames a fresh link through it, so an address is replaced atomically.
   - `wk_sha1`: the one digest (`shasum` or `sha1sum`).
     - A machine with neither is refused loudly, rather than keyed to an empty string.
-  - `wk_marker_path <dir> <anchor>`, beside it: the one derivation of a marker's path, `<markers dir>/<dir>/<sha1 of anchor>`.
+  - `wk_keyed_path <folder> <anchor>`, beside it: the path `<folder>/<sha1 of anchor>`, 1 when no digest comes out: the keyed-name step that `wk_marker_path` and the red-proof snapshot's folder share.
+  - `wk_marker_path <dir> <anchor>`: the one derivation of a marker's path, `<markers dir>/<dir>/<sha1 of anchor>`, through `wk_keyed_path`.
     - It serves the suite and package records here, and the hooks' review and triage markers alike.
     - The hooks reach the digest as `hook_sha1`.
   - `wk_markers_dir`: that base, `markers/` in `wk_user_dir`'s folder, out of reach of a system temp cleaner.
@@ -287,8 +290,9 @@
   - `wk_hooks_log`, beside it: it sets `WK_HOOKS_LOG` to the hooks log in that folder.
     - That is `hooks.log`, the one path `workkit log` reads.
     - The hooks module writes it, and spells the same path in `hooks/mods/log.js`.
-  - `wk_proof_base`: the kit's cache folder, `~/.cache/workkit/proof`, where every proof run folder lives.
+  - `wk_cache_dir`: the kit's cache folder, `~/.cache/workkit`, the base of the proof run folders and the red-proof snapshots (`snapshot/<sha1 of the repo root>`, `hook_snapshot_dir`).
     - `HOME` moves it; `WORKFLOW_HOME` does not, since on a machine where `~/.workkit` is a link into a repo a copy under it would sit inside that repo.
+  - `wk_proof_base`: `proof/` in that folder, `~/.cache/workkit/proof`, where every proof run folder lives.
   - `wk_proof_dir`: a new run folder, `<wk_proof_base>/<id>` with `<id>` six random characters, printed; 1 when none can be made.
     - `workkit prove` and `workkit proof red` each make theirs through it, so `HOME` moves the copy and `TMPDIR` does not.
     - The copy's path stays short (43 bytes under a default macOS home) and has no crowded parent.
@@ -385,7 +389,7 @@
     - The site options are read through it with an empty root (`home/options.sh`, `publish.sh`, `workkit/site.sh`, `jobs/morning.sh`).
   - `wk_session_judges <root>`: 0 when a Claude session's checks rule in that root.
     - That is `CLAUDECODE=1`, `HOOK_DISABLE` not `1`, and `wk_opted_in`.
-    - It is the one gate of the full-suite hold (`lib/hold.sh`), the git hooks (`githooks/hook.sh`) and the `gh` shim's session gates (`identity/gh`).
+    - It is the one gate of the full-suite hold (`lib/hold.sh`), the git hooks (`githooks/hook.sh`), the `git` shim (`gitshim/git`) and the `gh` shim's session gates (`identity/gh`).
   - What the kit means by its own hooks folder, for the heal (`standards/githooks.sh`) and the hooks' chain alike.
     - So a hook loads nothing of the heal's.
     - `wk_githooks_kit <root> <folder>`: 0 and the kit root printed when the folder's physical path ends `/workflow/githooks` and holds executable `pre-commit` and `commit-msg` and a `judge.js`.
@@ -403,7 +407,7 @@
     - The trims and the regex are `slugFromRemote` in `../slug.js`, shape for shape.
     - So the roster and the home repo's project list can never disagree about what a repo is called.
   - `wk_repo_slug <dir>` is that rule over a working tree's origin.
-    - The hooks module reads it as `repoSlug` in `hooks/mods/optin.js`, over `hooks/mods/command.js`'s copy of `slugFromRemote`.
+    - The hooks module reads it as `repoSlug` in `hooks/mods/optin.js`, over `hooks/mods/slug.js`'s copy of `slugFromRemote`.
     - That copy is the one `safety:release-taken` names the repo in its github-release bounce through.
     - `wk_is_kit_checkout <dir>` asks it whether a tree is a clone of workkit itself.
     - That is the rule the engine's address and `wk_clone_outranks` both read.
@@ -417,8 +421,11 @@
   - The suite record is the engine-agnostic contract between whatever runs a repo's root suite and the gate.
     - It has two writers. `script-shell.sh` is npm's adapter, recording the working tree a root run started on.
     - `prove.sh` records the index's tree, proved in a copy.
+    - Neither writes a record for a run with `CI` set (`wk_ci_set`), since a repo's root script may run only part of its suite then.
     - Its readers are `safety:commit-gate`, through `suiteProved` in `hooks/mods/suite.js` (`wk_suite_proved`'s read).
     - And the full-suite hold (`lib/hold.sh`), through `wk_suite_proved` itself.
+  - `wk_ci_set` is the one test of `CI`: it succeeds when `CI` holds any value but the empty string, `CI=false` and `CI=0` included.
+    - The kit leaves `CI` in the suite's environment as it came, and nothing else reads it: the gate, the hold and `safety:proof-guard` read records alone.
   - The record's first line is the `git write-tree` id of the tree its writer proved, less `.workkit/`.
   - Its second line is `ms=<n>`, the wall time in milliseconds of the run that wrote it. The gate holds it against `tests.budget`.
   - Every read matches the first line alone, so a record with no second line still proves its tree.
@@ -432,7 +439,7 @@
   - `wk_suite_index_tree <root>` is the real index's id the same way: a scratch copy of the index, through the same helper.
     - The copy is `wk_index_copy <root> <dir>`, which honours `$GIT_INDEX_FILE` in a commit hook and prints the copy.
     - `prove.sh` shares that step.
-  - `wk_suite_marker_write` writes the id its writer hashed BEFORE the run, and only when the tree hashed after it is the same.
+  - `wk_suite_marker_write` writes the id its writer hashed BEFORE the run. It checks nothing itself: its two writers call it only when the tree hashed after the run is the same and `CI` is not set.
     - So an edit made while it runs is never proved.
   - `wk_suite_proved` compares a tree id with it: the hold the working tree's, or the real index's for `workkit prove`.
     - What the gate compares is `docs/hooks.md` § `safety:commit-gate`'s.
@@ -456,11 +463,18 @@
   - The two records share the marker path rule (`wk_marker_path`), and the sweep each of their two writers runs first (`wk_sweep_markers`).
   - The package record's locked line write and its read (`wk_pkg_proved`) are its own, here in `lib/suite.sh`.
   - `wk_has_test_script` is the one has-a-test-script predicate (a non-empty string `scripts.test`).
-  - `wk_log_path <root> <name>` is where a detached run logs.
+  - `wk_log_path <root> <name> [<id>]` is where a detached run logs.
     - That is `<root>/.workkit/<name>` when git ignores it there, else `~/.workkit/markers/claude-<name>/<sha1 of the repo root>`.
+    - An `<id>` keeps one of several runs apart: `.<id>` ends the name in both places.
     - So a log never changes the tree hash.
     - `wk_suite_log_path`, `wk_run_log_path` and `wk_ci_log_path` are it for `suite.log`, `run.log` and `ci.log`.
   - `wk_suite_lock_path`, `wk_run_lock_path` and `wk_ci_lock_path` are the three run locks, the `claude-suite-lock`, `claude-run-lock` and `claude-ci-watch-lock` marker paths.
+  - A narrowed run's slot is named by its wrapper's pid, so several run at once in one repo:
+    - `wk_test_log_path <root> <pid>` is `test.log` with that id (`wk_log_path`);
+    - `wk_test_lock_path <root> <pid>` is the `claude-test-lock` marker path with `.<pid>` after it, one folder down where `wk_sweep_markers` reaches a leftover file;
+    - `wk_test_pids <root>` prints the pid of each slot whose lock folder stands, live or not;
+    - `wk_test_slot_clear <root> <pid>` removes a slot's log and its lock's record once a call has read its end.
+    - `wk_test_slots_sweep <root>` removes each slot (lock folder, log, record) whose done file is older than one day (`TEST_SLOT_KEEP_DAYS`): a run whose answer no call collected. Every narrowed run runs it at its start.
   - The hook library's scripts call these by their engine names.
   - The hooks module reads the records through `hooks/mods/suite.js`.
     - It takes a tree id through `tree-hash.sh`, the index's with `-i` as its only flag.
@@ -536,15 +550,25 @@
   - Sourced by `script-shell.sh`, by `prove.sh`, by `supervise.sh`, by `watch.sh` and by `ship/watch.sh`.
   - `wk_run_detached <log> <lock> [--root <root>] -- <cmd> [args...]` takes `<lock>`.
     - The lock is a directory made by `mkdir`, with the supervisor's pid written inside as `pid`.
+    - Until the supervisor's pid is written, a HUP, INT or TERM removes the empty lock and exits 129, 130 or 143 (an INT also sets `WK_RAN_INT`), so the next call takes it at once. On a failed launch the caller's own traps come back. Once the pid is written its HUP and TERM traps come back, and its INT trap once the attached call returns.
     - It launches through `detach.js`, passing `--root` on, so the run is checked.
     - With `--root` that is the first node `wk_node` finds at the kit's floor, which the settings loader needs; without it, plain `node`.
     - A launcher that fails (a bad `tests.check` is 2) drops the lock, prints `detach: could not start <cmd> (log <log>)` and returns the launcher's code.
     - Then it attaches through `wk_attach_run <log> <lock> <pid>`, whose answer is its own.
+    - The launcher is started with `WK_RUN_LOCK` set to `<lock>`, so the run's own command inherits it.
+  - Under a supervisor already (`wk_supervised`: `WORKKIT_SUPERVISED=1`, which `detach.js` sets), `wk_run_detached` starts no second supervisor.
+    - It runs `<cmd>` in the foreground instead (`_wk_run_foreground`), its output on stdout and in `<log>`, and returns the command's code.
+    - It holds `<lock>` for the command's length, unless `<lock>` is the enclosing run's own (`WK_RUN_LOCK`). A lock another live run holds is 3, as ever.
+    - Under the enclosing run's own lock it runs bare, without `tee`: that run's log is already its stdout, so a doubly supervised run writes its log once.
+    - When it took `<lock>` itself, at the end it writes the done file and the record, as a detached run ends, so a watch attached to `<lock>` gets the code.
+    - Under the enclosing run's own lock it writes neither: that run's supervisor writes them.
+    - So `workkit prove`, a narrowed `npm test` or a second `workkit supervise` inside a supervised run runs in that run, within the outer supervisor's reach.
   - `wk_attach_run <log> <lock> <pid> [<offset>]` tails `<log>` to stdout from byte `<offset>` (0), so a later verb attaches to a run already going.
     - It drops the lock and returns the code the command recorded.
     - That code is read once, from the done file, in the poll that first finds it.
     - A `look` file beside the done file, with no done file yet, is the supervisor asking for a look.
       - It prints the look's evidence, then `detach: the run goes on; read <log>, then run workkit watch to keep waiting or workkit watch --end to end it (exit 125)`.
+      - With `WK_WATCH_NAME` set by the caller (a narrowed run's pid), both calls in that line carry it: `workkit watch <pid>`, `workkit watch --end <pid>`.
       - It removes the look file, keeps the lock, sets `WK_RAN_LOOK` to 1 and returns 125, with the run still going.
     - Before it drops the lock it leaves `<supervisor pid> <code>` in `<lock>.done`, a file beside the lock folder, written whole and renamed.
     - A call that finds the lock or the done file gone, its supervisor's pid gone too, returns the code that record holds for its own pid.
@@ -560,12 +584,13 @@
   - A lock a live run holds answers 3 with nothing run.
     - Since a command may return 3 itself, `WK_HELD_PID` is set, to the holder's pid, only then.
   - A lock whose run is over is taken over: its done file written, its pid gone, or no pid five seconds after the `mkdir`.
+    - So a KILL before the supervisor's pid is written, which no trap sees, leaves an empty lock that the next call takes after those five seconds.
     - With a done file, it waits up to two seconds for the directory to go, since its own foreground is collecting it.
   - INT, a human's Ctrl-C on the call that started the run, ends the whole run and exits 130.
     - It writes the end request and waits through `wk_ask_end`, so the supervisor ends the run's processes, a child in its own session included, and the log ends with its request line.
     - Once the done file holds a code, it leaves the record, so a second call attached to the run gets 143.
     - A run still going when the wait runs out is ended by process group (`wk_end_run` in `platform.sh`).
-    - Then it drops the lock.
+    - Then it drops the lock, unless that end by process group failed (`wk_end_run` returns 1): the run still goes, so its lock stays. Either way it sets `WK_RAN_INT` to 1, for the caller's EXIT trap, and exits 130.
   - `wk_ask_end <lock> <pid>` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>`, then waits up to `WK_END_WAIT` seconds (30).
     - With another pid or none there it is 0 at once, nothing written.
     - It is 0 once the done file is written or `<lock>/pid` holds another pid or none, 1 when the wait runs out. It prints nothing.
@@ -588,7 +613,8 @@
     - It prints its pid and exits 0. A bad argument list is 2.
   - The supervisor leads its own session (the Mac has no `setsid`), so the death of whatever started it changes nothing.
   - On macOS it starts `caffeinate -i -w <its own pid>` (`awakeCommand`). Other platforms start nothing.
-  - It runs the command with stdout and stderr written to `<log>`.
+  - It runs the command with stdout and stderr written to `<log>`, and `WORKKIT_SUPERVISED=1` set on it.
+    - That mark is what a `test` event and `wk_run_detached` read, so nothing under a supervisor detaches again.
     - The log is opened for writing, never append-only: a Git Bash child cannot write to the append-only handle Node makes on Windows.
     - The supervisor's own lines go through that same handle, at the command's offset.
   - Then it writes `<code>` to `<done>` through a temp file and a rename.
@@ -601,7 +627,8 @@
   - An `end` file beside `<done>` is read every second (`END_POLL_MS`) and ends the run's tree; `<done>` gets 143.
     - Without `--root` too, so every supervised run can be ended so.
   - An end that rejects with the command alive writes no `<done>`, removes the `end` file, and leaves the end poll and the checks running.
-  - On Windows `treeOf` is null, so nothing is checked; `endTreeOf` is one `taskkill /T /F`.
+  - On Windows `treeOf` is null, so nothing is checked; `endTreeOf` is one `taskkill /T /F`, run from `System32` under `SystemRoot`, never through PATH.
+    - A `taskkill` that cannot start, or runs past 60 seconds (`TASKKILL_MS`), rejects the end. A nonzero exit code is not read as a failure, because `taskkill` gives one for a tree that is already gone.
 - `lib/git.js`:
   - `repoRoot(cwd)` is the git top level of `cwd`, trimmed. It is null outside a repo, or for a folder that is not there.
   - `headSha(cwd)` is HEAD's full sha, or null outside a repo or before its first commit.
@@ -870,16 +897,23 @@
     - the package npm is running (`npm_package_json`) sits at the git root of the run's folder.
   - npm hands a narrowed run (`npm test -- <file>`) its script text with the arguments appended.
     - So only the bare `npm_lifecycle_script` is the whole suite.
-  - Every other `test` event is a package run, in the foreground.
+  - Every other `test` event is a package run.
     - That is a narrowed run anywhere, or a nested package's or workspace member's (`-w`) bare run.
+    - It runs detached under the supervisor (`lib/detach.sh`), as this file again with `--test-body <root> <pkg>` ahead of npm's arguments, passed `--root <root>`.
+    - Its slot is its own, named by this wrapper's pid (`wk_test_log_path`, `wk_test_lock_path` in `lib/suite.sh`), so several run at once in one repo.
+    - Its stdout and stderr both reach the call on stdout, tailed from the log, and its stdin is closed. The last line is `script-shell: exit <code>`, and the call exits with the script's own code.
+    - The slot's log and lock go once the call reads the end, and when Ctrl-C ends the run (exit 130), unless that end failed: then the lock stays, and the log with it.
+    - A look (exit 125) leaves them, and its line names the run's pid: `workkit watch <pid>` follows it again.
+    - Under a supervisor already (`WORKKIT_SUPERVISED=1`), the package run runs here in the foreground instead, never detached again.
     - It hashes the package's own id, the code it can see, as `wk_tree_hash <root> <pkg>`.
     - The rule: `docs/hooks.md` § `safety:proof-guard`, the package id bullet.
     - `<pkg>` is the package's folder relative to the root, `.` for the root and its whole tree.
     - It runs the script with `sh`, and on exit 0 hashes the same id again.
     - An unchanged id writes the package's line `<id> <pkg>` to the package record (`wk_pkg_marker_write` in `lib/suite.sh`).
     - A changed one writes nothing, said in one `script-shell:` line.
+    - With `CI` set, a green run writes nothing and exits 0: `script-shell: the run passed, but CI is set, so no record was written; run it again without CI`.
     - So a narrowed root run records `.` on the whole tree, and a `-w` or nested run records the member on its own id.
-    - A package run skips the hold, the CHANGELOG lint and the detach. All three belong to the bare root run only.
+    - A package run skips the hold and the CHANGELOG lint. Both belong to the bare root run only.
   - That run is first judged by the full-suite hold (`wk_suite_hold` in `lib/hold.sh`, with the working tree's hash).
     - A refusal exits 1 with no suite run and no record written. A root `pretest` has already run.
   - Then it takes the commit gate's cheap check.
@@ -890,15 +924,19 @@
     - With no node or no linter the check stands aside, as the gate's does.
   - The root suite then runs detached (`lib/detach.sh`), in its own session.
     - It runs as this file again, with `--suite-body <root>` ahead of npm's arguments.
+    - Under a supervisor already (`WORKKIT_SUPERVISED=1`) it runs in the foreground, the suite's one slot (`wk_suite_lock_path`) still held for its length.
     - That body hashes the tree, runs the script with `sh`, and on exit 0 hashes again.
     - An unchanged tree writes the proved-tree record (`lib/suite.sh`); a changed one writes nothing.
+    - With `CI` set, a green run writes nothing and exits 0: `script-shell: the suite passed, but CI is set, so no record was written; run npm test again without CI`.
+    - When `CI` is set and the tree changed too, only the `CI` line prints. A red run prints no `CI` line.
   - Its stdout and stderr go to the suite log, truncated per run, which the foreground tails to stdout.
     - The log is `wk_suite_log_path`: `.workkit/suite.log` where git ignores it, else under `~/.workkit/markers`.
     - The body's last line is always `script-shell: exit <code>`.
     - The suite writes to that file, never to a terminal. So a colour or reporter choice that looks for a terminal sees none.
   - npm's exit code is the script's, with one exception.
     - A green run exits 1 when its tree cannot be hashed (on either side of the run), or its record cannot be written.
-    - A changed tree, an unhashable one and an unwritable record are each one `script-shell:` line in the log.
+    - A changed tree, a green run with `CI` set, an unhashable tree and an unwritable record are each one `script-shell:` line in the log.
+    - A green run with `CI` set asks for no record, so it prints only the `CI` line and exits 0, also when its tree changed during it or could not be hashed.
     - That line reaches the terminal on stdout through the tail, like every body line.
   - A kill of the shell that ran `npm test` leaves the suite running to its record.
     - So a cut-off agent reads the log for the result.
@@ -927,6 +965,8 @@
 - `prove.sh`:
   - The ship runs it instead of the root `npm test` when the folder holds work the commit leaves out.
     - That is when, after staging, `git diff --quiet` fails or `git ls-files --others --exclude-standard` prints a file.
+  - With `CI` set it stops before the copy, since its only product is the record and a run with `CI` set writes none.
+    - It prints `prove: CI is set, so no record would be written; run workkit prove again without CI` on stderr, exit 1, and runs no suite.
   - Run at the repo root with no arguments, it adds a detached worktree of HEAD outside the repo, at `copy` in a run folder of its own (`wk_proof_dir`, `~/.cache/workkit/proof/<id>`).
     - The add goes through `hook_snapshot_worktree_add`, the shared add in `hooks/lib/snapshot.sh` that tries three times against a racing one.
   - It checks the whole index's tree out into it.
@@ -948,20 +988,19 @@
     - It is passed `--root <root>` too: a frozen run exits 124 with no record and its run folder gone, the frozen line after its `prove: exit 143`, and a look exits 125 with the run going on.
   - A red run prints so, and exits with the suite's code.
   - Every other way no record is written exits 1 with one `prove:` line:
-    - no test script, no npm, an unwritable index tree;
+    - `CI` set, no test script, no npm, an unwritable index tree;
     - a failed add or fill, a changed copy, an unwritable record.
   - Before the detach, the full-suite hold (`wk_suite_hold` in `lib/hold.sh`) judges it against the index's tree.
     - A refusal exits 1 with nothing run.
 - `supervise.sh`:
   - `workkit supervise -- <command> [args...]` runs any command the way the root `npm test` runs: detached, read by the supervisor, its output tailed to the call.
-    - A narrowed `npm test -- <files>`, a lane or a build started in the background goes through it (`../docs/agents.md` § Watching a run).
+    - A lane or a build started in the background goes through it (`../docs/agents.md` § Watching a run).
   - A call with no `--` or no command prints `usage: workkit supervise -- <command> [args...]`, exit 2.
   - Outside a git repo it prints `supervise: not inside a git repository`, exit 1.
-  - A command the supervisor reads already is refused before anything starts, since its own supervisor would leave the outer one's reach.
-    - Those are the bare `npm test` or `npm run test` in the repo root, the bare `workkit test`, and `workkit prove` and `workkit supervise` with any arguments.
-    - It prints `supervise: the supervisor reads <command> already; run it without workkit supervise`, `<command>` as the call spelled it, exit 2.
-    - A narrowed `npm test -- <files>` at the root, and a bare `npm test` in a folder under it, still run.
-    - The JS twin of the test is `bareNpm` and `bareWorkkit` in `hooks/mods/unwatched.js`.
+  - A command that is supervised itself (an `npm test`, `workkit test`, `workkit prove`, another `workkit supervise`) still runs under it.
+    - The command sees `WORKKIT_SUPERVISED=1`, so it runs in the foreground inside this run and starts no second supervisor (`lib/detach.sh`).
+    - So `workkit supervise -- npm test -- <files>` is one supervised run, and `workkit supervise -- workkit supervise -- <command>` exits with the command's code.
+    - A root `npm test` under it still holds the suite's one slot.
   - It runs `supervise.sh --body -- <command> [args...]` through `wk_run_detached` (`lib/detach.sh`), passed `--root <root>`.
     - The body runs the command in the folder the call was made in, and exits with its code.
     - The body's last line is always `supervise: exit <code>`.
@@ -973,16 +1012,24 @@
   - An INT ends the whole run, a child in its own session included, and exits 130 (`lib/detach.sh`); a kill of the calling shell leaves it running to its end.
   - No allow rule ships for it: it runs any command, so it is permitted the way that command is.
 - `watch.sh`:
-  - `workkit watch [--end] [suite|run]` attaches the call again to the repo's live run.
-    - Any other argument prints `usage: workkit watch [--end] [suite|run]`, exit 2.
+  - `workkit watch [--end] [suite|run|<pid>]` attaches the call again to the repo's live run.
+    - Any other argument prints `usage: workkit watch [--end] [suite|run|<pid>]`, exit 2.
     - Outside a git repo it prints `watch: not inside a git repository`, exit 1.
-  - With no name it follows the suite's run (`wk_suite_log_path`, `wk_suite_lock_path`) when that run is live, else the supervised one.
-    - `suite` names the suite's run, `run` the supervised one.
+  - With no name it follows the suite's run (`wk_suite_log_path`, `wk_suite_lock_path`) when that run is live, else the supervised one, else the one live narrowed run.
+    - `suite` names the suite's run, `run` the supervised one, and a pid a narrowed run (`wk_test_log_path`, `wk_test_lock_path`), the pid its look line names.
     - Live is `wk_run_held` (`lib/detach.sh`): a pid file in the lock, and the pid alive or the done file written.
     - So a run that ended with no call attached, after a look, still counts as live until a call collects its answer.
     - With no live run, or the named one not live, it prints `watch: no run is live in <root>`, exit 1.
-  - `--end` with no name while both runs are live ends neither.
-    - It prints `watch: two runs are live; name one: workkit watch --end suite, or workkit watch --end run`, exit 2.
+  - It never guesses between live runs.
+    - A follow with no name, no suite run and no supervised run, but several live narrowed runs, follows none.
+    - `--end` with no name counts only the runs still running (`wk_run_live`), the suite's, the supervised one and each narrowed one, but a run held in the foreground (below), which ends with the run that holds it. With more than one it ends none.
+    - With none still running, it takes a run that finished with its answer uncollected.
+    - Each refusal prints `watch: <count> runs are live; name one:` and the call for each, `workkit watch [--end] <name>` joined by `, or `, exit 2.
+  - A run inside another run's supervisor holds its slot in the foreground, with no supervisor of its own: a root `npm test` inside `workkit supervise` holds the suite's, a `workkit supervise` inside a root `npm test` or `workkit prove` the supervised one's.
+    - `_wk_run_foreground` marks its lock so: a `foreground` file holding the enclosing run's lock path (`WK_RUN_LOCK`).
+    - `--end <name>` on a lock so marked writes no `end` file and waits on nothing: it prints `watch: workkit watch --end <name> cannot end a run held in the foreground inside another run; <how>`, exit 1.
+    - `<how>` is `workkit watch --end run ends it` when the marker names the supervised run's lock, `workkit watch --end suite ends it` when it names the suite's, and otherwise `end the run that started it`.
+  - A narrowed run's slot is cleared (`drop_slot`) once the call reads its end or ends it, and only when the slot's wrapper is gone. A look keeps it.
   - It prints the log's last 20 lines, then tails it from there through `wk_attach_run`.
     - It ends at the run's end, a frozen end or the next look, with the same exit codes as the call that started the run.
     - A run that ended already gets its answer at once: the last 20 lines, the run's code as the exit, and the lock dropped, so a second `workkit watch` prints the no-run line.
@@ -992,7 +1039,8 @@
     - When it finds the done file it collects the answer through `wk_attach_run` too, so the lock drops, and a call still attached reads the code from its record.
     - A run that ended already prints `watch: the run ended already (exit <code>)`, drops the lock and exits 0.
     - A run that has not ended 30 seconds later prints `watch: the run did not end; its supervisor is pid <N>`, exit 1.
-  - An allow rule ships for the verb, `Bash(workkit watch:*)` (`ALLOW_RULES` in `workkit/allow.sh`), so it runs as its own Bash call (`../docs/hooks.md` § `workflow:bare-call`).
+    - On a narrowed run it clears the slot only when the slot's wrapper is gone (`drop_slot`); a call still attached to the run clears its own slot and exits 143.
+  - An allow rule ships for the verb, `Bash(workkit watch:*)` (`ALLOW_RULES` in `workkit/allow.sh`), so it runs as its own Bash call: the rule matches the bare call alone.
 - `githooks/`:
   - The heal (`standards/githooks.sh`) sets them as `~/.claude/workkit/githooks`, through the engine link.
     - Where the link is missing, it sets this folder itself.
@@ -1034,6 +1082,20 @@
   - `git lfs update --force` would overwrite the kit's shared folder for every repo.
   - A repo turning lfs on after the heal runs `git lfs update --manual`.
     - That prints the hook lines to put into its own `.git/hooks`, where the chain runs them.
+  - `judge.js tree-guard -- <argv...>` is the `git` shim's ruling on one git call (`gitshim/` below), from the same file.
+- `gitshim/`:
+  - `git` is the `git` shim, bash, the one file in the folder.
+  - It is never linked. The hooks module's `classic.SessionStart` puts the folder first on a Claude session's PATH (`../docs/hooks.md` § `safety:tree-guard`).
+  - It finds the real `git` as `identity/gh` finds the real `gh`: the first on PATH after its own folder, every folder met at or before it skipped.
+  - A call naming none of `checkout`, `switch`, `restore`, `stash`, `clean` and `reset`, whose verb is one of git's own, is an `exec` of the real git with nothing started first.
+  - Any other verb is followed as an alias chain (`expand_alias`), up to five hops, the global options leading each alias skipped.
+    - A chain that reaches a judged verb is judged as that verb. A `!` alias, a git verb or no alias ends it, and git runs.
+    - A chain deeper than five hops is refused where the shim judges: `tree-guard: BLOCKED this command: the git alias <name> is a chain deeper than five hops ...`, exit 1, git not run.
+    - The limits: `../docs/hooks.md` § `safety:tree-guard`.
+  - For a judged verb it asks the real git for the root, git's global options kept, then `wk_session_judges` (`lib/participation.sh`).
+  - Where that holds it runs `githooks/judge.js tree-guard -- <argv...>` under `wk_node`: exit 0 runs git, any other code is the refusal, its text on stderr.
+  - Everywhere else, and with no node to run the judge (one stderr line), it runs git.
+  - `WORKKIT_ALLOW_DISCARD=1` in its environment is the owner's escape, said on stderr.
 - `changelog/changelog-job.sh`:
   - Sourced by `standards.sh`, functions only.
   - `safety:commit-gate` runs it as a program through its entry (`rewrite`, `copies`, `names`).
@@ -1324,9 +1386,10 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 | `workkit log [-n N] [--follow]` | the hooks log (`docs/hooks.md` § The hooks log): the last 40 lines, `-n <N>` that many, `--follow` keeps printing new ones |
 | `workkit test [paths]` | hands its arguments to this repo's `npm test`, run at the repo root, so the one recorder, npm's script shell, sees the run |
 | `workkit tools` | prints every command this repo's suites name through `needs()`, one per line, sorted and unique, for a setup to install |
-| `workkit prove` | `prove.sh`: the root suite on exactly the staged tree, in a copy outside the repo, recorded on green, so a commit of it passes the gate while other work stays in the folder unstaged |
+| `workkit convert [paths...]` | rewrites this repo's suites in the old shape in place onto Node's test functions, one `converted` or `left` line per file (`docs/tests.md` § The kit's runner) |
+| `workkit prove` | `prove.sh`: the root suite on exactly the staged tree, in a copy outside the repo, recorded on green (refused with `CI` set), so a commit of it passes the gate while other work stays in the folder unstaged |
 | `workkit supervise -- <command> [args...]` | `supervise.sh`: the command run detached under the supervisor, as the root suite runs, its output tailed to the call and kept in the run log; it exits with the command's code, 124 after a frozen end, 125 on a look |
-| `workkit watch [--end] [suite\|run]` | `watch.sh`: the call attached again to the live run, the suite's before the supervised one, or the one named; `--end` asks the supervisor to end it, and with both runs live and no name it refuses, exit 2 |
+| `workkit watch [--end] [suite\|run\|<pid>]` | `watch.sh`: the call attached again to the live run, the suite's before the supervised one before the one narrowed run, or the one named (a narrowed run by its pid); `--end` asks the supervisor to end it, and with several runs live and no name it refuses, exit 2 |
 | `workkit public intake` · `mirror <N>... \| --all` · `close <version> <N>...` | the public pairing, run from the private repo: `public/intake.js`, `public/mirror.js`, `public/close.js` (the `public/` row above); the triage drain runs the intake, `workflow:public-mirror` and the daily heal the mirror, the ship's close step the close |
 | `workkit ship items` · `release <x.y.z> [--keep N,M]` · `watch <sha>` · `cut <x.y.z>` · `plan` · `publish` · `deploy` | the ship's steps, run by `workkit:ship`: `ship/items.sh`, `ship/release.js`, `ship/watch.sh`, `ship/cut.js`, `ship/plan.js`, `ship/publish.js`, `ship/deploy.js` (their rows above) |
 | `workkit review covers` · `mark [full]` | the review tier and the review marker: `review/covers.sh`, `review/mark.sh` |
@@ -1363,6 +1426,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 - `workkit doctor`:
   - It reports on:
     - plugin, gh, the three links (the engine's address, the `workkit` command, the `gh` shim), npm's `script-shell`;
+    - the `git` shim: present and executable in the kit, and in a session the `git` the PATH finds first;
     - each of the kit's allow rules missing from `~/.claude/settings.json`, and each retired one still in it;
     - schedule vintage, the roster count;
     - the tower clone's state (unset · absent · clone · other, plus ahead/behind/diverged);
@@ -1385,6 +1449,10 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - It runs the kit's own `packages/core/bin/workkit.js` with `node` at the repo root, never the repo's installed package.
     - So it answers before `npm install`.
   - No `workkit-core` beside the engine, or no `node` on PATH, is one error line and exit 1 (`docs/tests.md` § The kit's runner).
+- `workkit convert [paths...]`:
+  - It runs the kit's own `packages/core/bin/workkit.js` with `node` at the repo root through `run_core_bin convert`, the helper `workkit tools` runs through too, its paths read from there.
+  - A path naming no suite is `No suite matches <arg>`, exit 1, before any file is touched.
+  - No `workkit-core` beside the engine, or no `node` on PATH, is one error line and exit 1.
 - **Upkeep is automatic.** Claude Code has no plugin-install hook, so the trigger is the one this kit owns.
   - The `workflow:standards` SessionStart hook's once-per-day run calls `workkit update --auto`.
   - It is resolved beside the engine, never through the PATH or the symlink, which are exactly what may not exist yet.
@@ -2054,6 +2122,9 @@ workkit note fix the tower poller
     - So a machine set up before the identity shipped hears at session start that it must sign in.
   - Doctor also checks that the shim is the `gh` the PATH finds first.
     - A real `gh` ahead of it would post every call as the owner.
+  - Doctor checks the `git` shim right after: `gitshim/git` present and executable in the kit, and, in a session (`CLAUDECODE=1`), the `git` the PATH finds first.
+    - Any kit copy's `workflow/gitshim/git` there is ok. Another `git` first leaves `safety:tree-guard` off in that session, until a restart.
+    - A missing or not executable shim is a warning in a session or out of one. Outside a session the PATH line is a skip. Doctor sees only the PATH it inherited, so it speaks for the shell that ran it.
   - A hand-made `~/.local/bin/gh` link (one not naming a workkit kit's `identity/gh`) is reported by setup, update and doctor.
     - It is left as it is, never repointed.
   - Each warning counts toward the attention total.

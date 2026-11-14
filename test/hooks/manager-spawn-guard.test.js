@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods, textOf, mergedSettings } = require('../lib/mods-inputs');
 
 const ladder = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'manager', 'resources', 'ladder.json'), 'utf8'));
@@ -14,55 +14,49 @@ const MODELS = { fable: 'claude-fable-5[1m]', opus: 'claude-opus-4-7', sonnet: '
 const config = (user) => mods('manager').managerConfig(ladder, mergedSettings({ user }));
 const warn = (type, given, parent = MODELS.opus, cfg = config()) => textOf(mods('spawn-guard').spawnGuardWarning(cfg, type, given, parent));
 
-const cases = async () => {
-  group('manager-spawn-guard: rule 1, a hand-passed model on a class spawn');
+describe('manager-spawn-guard: rule 1, a hand-passed model on a class spawn', () => {
   for (const cls of ['scout', 'worker', 'verifier', 'advisor']) {
     for (const name of cls === 'advisor' ? [cls, `workkit:${cls}`] : [cls]) {
-      await test(`${name} with model: haiku warns`, () => {
+      test(`${name} with model: haiku warns`, () => {
         const msg = warn(name, 'haiku');
-        assert(msg.includes('manager:resolver'), `warning lacks the rule: ${msg}`);
-        assert(msg.includes(cls), `warning lacks the class: ${msg}`);
+        expect(msg.includes('manager:resolver'), `warning lacks the rule: ${msg}`).toBeTruthy();
+        expect(msg.includes(cls), `warning lacks the class: ${msg}`).toBeTruthy();
       });
     }
   }
-  await test('advise mode asks for the model param, so it does not warn', () => {
-    assertEq(warn('workkit:worker', 'opus', MODELS.opus, config({ version: 1, manager: { mode: 'advise' } })), '', 'silent');
+  test('advise mode asks for the model param, so it does not warn', () => {
+    expect(warn('workkit:worker', 'opus', MODELS.opus, config({ version: 1, manager: { mode: 'advise' } })), 'silent').toBe('');
   });
+});
 
-  group('manager-spawn-guard: rule 2, the advisor in a frontier session');
-  await test('workkit:advisor from a frontier session warns the same', () => {
-    assert(warn('workkit:advisor', undefined, MODELS.fable).includes('redundant'), 'warns');
+describe('manager-spawn-guard: rule 2, the advisor in a frontier session', () => {
+  test('workkit:advisor from a frontier session warns the same', () => {
+    expect(warn('workkit:advisor', undefined, MODELS.fable).includes('redundant'), 'warns').toBeTruthy();
   });
-  await test('an advisor spawn from an opus session is silent', () => {
-    assertEq(warn('advisor', undefined, MODELS.opus), '', 'silent');
+  test('an advisor spawn from an opus session is silent', () => {
+    expect(warn('advisor', undefined, MODELS.opus), 'silent').toBe('');
   });
-  await test('an unknown session model is silent (no cache, no transcript)', () => {
-    assertEq(warn('advisor', undefined, ''), '', 'silent');
+  test('an unknown session model is silent (no cache, no transcript)', () => {
+    expect(warn('advisor', undefined, ''), 'silent').toBe('');
   });
-  await test('a worker spawn from a frontier session is silent', () => {
-    assertEq(warn('worker', undefined, MODELS.fable), '', 'silent');
+  test('a worker spawn from a frontier session is silent', () => {
+    expect(warn('worker', undefined, MODELS.fable), 'silent').toBe('');
   });
-  await test('both rules at once produce one combined warning', () => {
+  test('both rules at once produce one combined warning', () => {
     const msg = warn('advisor', 'haiku', MODELS.fable);
-    assert(msg.includes('manager:resolver'), msg);
-    assert(msg.includes('redundant'), msg);
-    assertEq(msg.split('manager:spawn-guard').length, 2, 'the prefix appears once');
+    expect(msg.includes('manager:resolver'), msg).toBeTruthy();
+    expect(msg.includes('redundant'), msg).toBeTruthy();
+    expect(msg.split('manager:spawn-guard').length, 'the prefix appears once').toBe(2);
   });
+});
 
-  group('manager-spawn-guard: silence everywhere else');
+describe('manager-spawn-guard: silence everywhere else', () => {
   for (const type of ['Explore', 'workkit:reviewer']) {
-    await test(`subagent_type ${type} (with a model param) is silent`, () => {
-      assertEq(warn(type, 'haiku'), '', 'silent');
+    test(`subagent_type ${type} (with a model param) is silent`, () => {
+      expect(warn(type, 'haiku'), 'silent').toBe('');
     });
   }
-  await test('enabled: false silences the guard', () => {
-    assertEq(warn('worker', 'haiku', MODELS.opus, config({ version: 1, manager: { enabled: false } })), '', 'silent');
+  test('enabled: false silences the guard', () => {
+    expect(warn('worker', 'haiku', MODELS.opus, config({ version: 1, manager: { enabled: false } })), 'silent').toBe('');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

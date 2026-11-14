@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const { shellPath } = require('../lib/platform');
 const { mkRepo } = require('../lib/script-shell');
@@ -42,32 +42,30 @@ const runCli = (root, pkg) => {
 
 const sorted = (list) => JSON.stringify([...list].sort());
 
-const cases = async () => {
-  const FAMILY = mkPackages({ workspaces: ['packages/*'] }, MEMBERS);
+const FAMILY = mkPackages({ workspaces: ['packages/*'] }, MEMBERS);
 
-  group('workspaces.js: the members a package neither is nor depends on');
-
-  await test('excludedFor: a member drops the members it does not depend on, `.` drops none', () => {
+describe('workspaces.js: the members a package neither is nor depends on', () => {
+  test('excludedFor: a member drops the members it does not depend on, `.` drops none', () => {
     const { excludedFor } = workspaces();
-    assertEq(sorted(excludedFor(FAMILY, 'packages/a')), sorted(['packages/b', 'packages/c']), 'a depends on no member');
-    assertEq(sorted(excludedFor(FAMILY, 'packages/c')), sorted(['packages/b']), 'c keeps a, the member it depends on');
-    assertEq(sorted(excludedFor(FAMILY, '.')), '[]', 'the root sees every member');
+    expect(sorted(excludedFor(FAMILY, 'packages/a')), 'a depends on no member').toBe(sorted(['packages/b', 'packages/c']));
+    expect(sorted(excludedFor(FAMILY, 'packages/c')), 'c keeps a, the member it depends on').toBe(sorted(['packages/b']));
+    expect(sorted(excludedFor(FAMILY, '.')), 'the root sees every member').toBe('[]');
   });
 
-  await test('excludedFor: a dependency through another member is still one the package sees', () => {
+  test('excludedFor: a dependency through another member is still one the package sees', () => {
     const { excludedFor } = workspaces();
     const chain = mkPackages({ workspaces: ['packages/*'] }, {
       ...MEMBERS, 'packages/d': { name: 'd', dependencies: { c: '1.0.0' } },
     });
-    assertEq(sorted(excludedFor(chain, 'packages/d')), sorted(['packages/b']), 'd sees c and, through c, a');
+    expect(sorted(excludedFor(chain, 'packages/d')), 'd sees c and, through c, a').toBe(sorted(['packages/b']));
   });
 
-  await test('excludedFor: an optional dependency on a member keeps that member in the id', () => {
+  test('excludedFor: an optional dependency on a member keeps that member in the id', () => {
     const { excludedFor } = workspaces();
     const optional = mkPackages({ workspaces: ['packages/*'] }, {
       ...MEMBERS, 'packages/a': { name: 'a', optionalDependencies: { b: '*' } },
     });
-    assertEq(sorted(excludedFor(optional, 'packages/a')), sorted(['packages/c']), 'a keeps b, its optional dependency');
+    expect(sorted(excludedFor(optional, 'packages/a')), 'a keeps b, its optional dependency').toBe(sorted(['packages/c']));
   });
 
   // A committed repo with members packages/a and packages/a/sub, and b depending on <bDeps>.
@@ -81,75 +79,68 @@ const cases = async () => {
     const out = runLib(`wk_tree_hash "${shellPath(dir)}" packages/b`,
       { TMPDIR: shellPath(mkTmp('workspaces-tmp-')), WORKKIT_NODE: shellPath(process.execPath) });
     const id = out.stdout.trim();
-    assert(/^[0-9a-f]{40,64}$/.test(id), `a tree id for packages/b, got: ${out.stdout}|${out.stderr}`);
+    expect(/^[0-9a-f]{40,64}$/.test(id), `a tree id for packages/b, got: ${out.stdout}|${out.stderr}`).toBeTruthy();
     return id;
   };
   const editSub = (dir) => fs.writeFileSync(path.join(dir, 'packages', 'a', 'sub', 'index.js'), 'module.exports = 2;\n');
 
-  await test('excludedFor: a nested member a package depends on keeps its parent member in the id; one it does not, both drop', () => {
+  test('excludedFor: a nested member a package depends on keeps its parent member in the id; one it does not, both drop', () => {
     const { excludedFor } = workspaces();
     const kept = mkNested({ sub: '1.0.0' });
-    assertEq(sorted(excludedFor(kept, 'packages/b')), '[]', 'b depends on sub, so neither sub nor a, its parent, drops');
+    expect(sorted(excludedFor(kept, 'packages/b')), 'b depends on sub, so neither sub nor a, its parent, drops').toBe('[]');
     const keptId = bId(kept);
     editSub(kept);
-    assert(bId(kept) !== keptId, "an edit under packages/a/sub changes b's id");
+    expect(bId(kept) !== keptId, "an edit under packages/a/sub changes b's id").toBeTruthy();
 
     const dropped = mkNested({});
-    assertEq(sorted(excludedFor(dropped, 'packages/b')), sorted(['packages/a', 'packages/a/sub']), 'b depends on neither');
+    expect(sorted(excludedFor(dropped, 'packages/b')), 'b depends on neither').toBe(sorted(['packages/a', 'packages/a/sub']));
     const droppedId = bId(dropped);
     editSub(dropped);
-    assertEq(bId(dropped), droppedId, "and the edit under packages/a/sub leaves b's id");
+    expect(bId(dropped), "and the edit under packages/a/sub leaves b's id").toBe(droppedId);
   });
 
-  await test('excludedFor: a folder that is no member drops every member it does not depend on', () => {
+  test('excludedFor: a folder that is no member drops every member it does not depend on', () => {
     const { excludedFor } = workspaces();
     const withFunctions = mkPackages({ workspaces: ['packages/*'] }, MEMBERS);
     fs.mkdirSync(path.join(withFunctions, 'functions'));
     fs.writeFileSync(path.join(withFunctions, 'functions', 'package.json'), JSON.stringify({ name: 'functions' }));
-    assertEq(sorted(excludedFor(withFunctions, 'functions')), sorted(['packages/a', 'packages/b', 'packages/c']), 'every member');
+    expect(sorted(excludedFor(withFunctions, 'functions')), 'every member').toBe(sorted(['packages/a', 'packages/b', 'packages/c']));
   });
 
-  await test('excludedFor: a repo with no workspaces field drops nothing', () => {
+  test('excludedFor: a repo with no workspaces field drops nothing', () => {
     const { excludedFor } = workspaces();
     const plain = mkPackages({}, MEMBERS);
-    assertEq(sorted(excludedFor(plain, 'packages/a')), '[]', 'no members, nothing to drop');
+    expect(sorted(excludedFor(plain, 'packages/a')), 'no members, nothing to drop').toBe('[]');
   });
+});
 
-  group('workspaces.js: the CLI wk_tree_hash calls');
-
-  await test('node workspaces.js <root> <pkg> prints one folder a line, nothing for `.`', () => {
+describe('workspaces.js: the CLI wk_tree_hash calls', () => {
+  test('node workspaces.js <root> <pkg> prints one folder a line, nothing for `.`', () => {
     const a = runCli(FAMILY, 'packages/a');
-    assertEq(a.code, 0, `exit 0, stderr: ${a.stderr}`);
-    assertEq(sorted(a.stdout.split('\n').filter(Boolean)), sorted(['packages/b', 'packages/c']), 'a line per folder');
-    assertEq(a.stdout.endsWith('\n'), true, 'each line ends');
-    assertEq(runCli(FAMILY, 'packages/c').stdout, 'packages/b\n', 'c prints b alone');
-    assertEq(runCli(FAMILY, '.').stdout, '', 'the root prints nothing');
-    assertEq(runCli(mkPackages({}, MEMBERS), 'packages/a').stdout, '', 'a repo with no workspaces prints nothing');
+    expect(a.code, `exit 0, stderr: ${a.stderr}`).toBe(0);
+    expect(sorted(a.stdout.split('\n').filter(Boolean)), 'a line per folder').toBe(sorted(['packages/b', 'packages/c']));
+    expect(a.stdout.endsWith('\n'), 'each line ends').toBe(true);
+    expect(runCli(FAMILY, 'packages/c').stdout, 'c prints b alone').toBe('packages/b\n');
+    expect(runCli(FAMILY, '.').stdout, 'the root prints nothing').toBe('');
+    expect(runCli(mkPackages({}, MEMBERS), 'packages/a').stdout, 'a repo with no workspaces prints nothing').toBe('');
   });
 
-  await test('an unexpandable pattern prints no folder and one stderr line naming it and the package', () => {
+  test('an unexpandable pattern prints no folder and one stderr line naming it and the package', () => {
     const deep = mkPackages({ workspaces: ['packages/**'] }, MEMBERS);
     const res = runCli(deep, 'packages/a');
-    assertEq(res.stdout, '', 'no folder: the package keeps the whole tree');
+    expect(res.stdout, 'no folder: the package keeps the whole tree').toBe('');
     const said = res.stderr.split('\n').filter(Boolean);
-    assertEq(said.length, 1, `one stderr line, got: ${res.stderr}`);
-    assert(said[0].startsWith('workspaces: ') && said[0].endsWith('; packages/a keyed to the whole tree'),
-      `the line speaks as workspaces: and keys the package to the whole tree, got: ${said[0]}`);
-    assert(said[0].slice('workspaces: '.length).includes('packages/**'), `and names the pattern, got: ${said[0]}`);
+    expect(said.length, `one stderr line, got: ${res.stderr}`).toBe(1);
+    expect(said[0].startsWith('workspaces: ') && said[0].endsWith('; packages/a keyed to the whole tree'),
+      `the line speaks as workspaces: and keys the package to the whole tree, got: ${said[0]}`).toBeTruthy();
+    expect(said[0].slice('workspaces: '.length).includes('packages/**'), `and names the pattern, got: ${said[0]}`).toBeTruthy();
   });
 
-  await test('a member with a malformed package.json prints no folder and a line naming that file', () => {
+  test('a member with a malformed package.json prints no folder and a line naming that file', () => {
     const broken = mkPackages({ workspaces: ['packages/*'] }, MEMBERS);
     fs.writeFileSync(path.join(broken, 'packages', 'b', 'package.json'), '{bad');
     const res = runCli(broken, 'packages/a');
-    assertEq(res.stdout, '', 'no folder: the package keeps the whole tree');
-    assert(/packages[\\/]b[\\/]package\.json/.test(res.stderr), `stderr names the malformed file, got: ${res.stderr}`);
+    expect(res.stdout, 'no folder: the package keeps the whole tree').toBe('');
+    expect(/packages[\\/]b[\\/]package\.json/.test(res.stderr), `stderr names the malformed file, got: ${res.stderr}`).toBeTruthy();
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

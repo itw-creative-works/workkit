@@ -4,22 +4,19 @@
 // verb whole against the fake GitHub in ./helpers.js.
 
 const {
-  group, testUnless, assertEq, summary, selfRun,
+  describe, test, expect,
 } = require('../../lib/harness');
-const { IS_WINDOWS, NO_NODE_STUB } = require('../../lib/platform');
+const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   mkPublicWorld, publicLine, said, PRIVATE, PUBLIC,
 } = require('./helpers');
 
 // The verb's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
-const test = testUnless(IS_WINDOWS, NO_NODE_STUB);
 
 const sorted = (labels) => JSON.stringify([...labels].sort());
 
-const cases = async () => {
-  group('workkit public mirror');
-
-  await test('mirror sets the public label to the private one\'s and removes any other status: label, posting no comment', () => {
+describe('workkit public mirror', () => {
+  test('mirror sets the public label to the private one\'s and removes any other status: label, posting no comment', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({
       issues: {
         private: [{
@@ -31,15 +28,15 @@ const cases = async () => {
       },
     });
     const res = world.run(['mirror', '12']);
-    assertEq(res.code, 0, `mirror exits 0 (${said(res)})`);
+    expect(res.code, `mirror exits 0 (${said(res)})`).toBe(0);
     const pub = world.gh.issue(PUBLIC, 44);
-    assertEq(sorted(pub.labels), sorted(['bug', 'status:qa']), 'the public issue carries the private status alone, its own label kept');
-    assertEq(pub.comments.length, 0, `no comment is posted, got: ${JSON.stringify(pub.comments)}`);
-    assertEq(pub.state, 'open', 'the public issue stays open');
-    assertEq(sorted(world.gh.issue(PRIVATE, 12).labels), sorted(['status:qa', 'type:bug']), 'the private issue is untouched');
+    expect(sorted(pub.labels), 'the public issue carries the private status alone, its own label kept').toBe(sorted(['bug', 'status:qa']));
+    expect(pub.comments.length, `no comment is posted, got: ${JSON.stringify(pub.comments)}`).toBe(0);
+    expect(pub.state, 'the public issue stays open').toBe('open');
+    expect(sorted(world.gh.issue(PRIVATE, 12).labels), 'the private issue is untouched').toBe(sorted(['status:qa', 'type:bug']));
   });
 
-  await test('mirror --all mirrors every open linked issue and skips unlinked and closed ones', () => {
+  test('mirror --all mirrors every open linked issue and skips unlinked and closed ones', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({
       issues: {
         private: [
@@ -56,13 +53,12 @@ const cases = async () => {
       },
     });
     const res = world.run(['mirror', '--all']);
-    assertEq(res.code, 0, `mirror --all exits 0 (${said(res)})`);
-    assertEq(sorted(world.gh.issue(PUBLIC, 44).labels), sorted(['status:qa']), 'the open linked issue\'s status reached its public issue');
-    assertEq(JSON.stringify(world.gh.writes()), JSON.stringify([{ slug: PUBLIC, number: 44, op: 'labels' }]),
-      'the one write is that label edit: the unlinked and the closed issues are skipped');
+    expect(res.code, `mirror --all exits 0 (${said(res)})`).toBe(0);
+    expect(sorted(world.gh.issue(PUBLIC, 44).labels), 'the open linked issue\'s status reached its public issue').toBe(sorted(['status:qa']));
+    expect(JSON.stringify(world.gh.writes()), 'the one write is that label edit: the unlinked and the closed issues are skipped').toBe(JSON.stringify([{ slug: PUBLIC, number: 44, op: 'labels' }]));
   });
 
-  await test('mirror --all reads each public repo once, never one view per linked issue', () => {
+  test('mirror --all reads each public repo once, never one view per linked issue', { skip: skipWithoutNodeStub() }, () => {
     const world = mkPublicWorld({
       issues: {
         private: [44, 45, 46].map((n) => ({
@@ -72,15 +68,15 @@ const cases = async () => {
       },
     });
     const res = world.run(['mirror', '--all']);
-    assertEq(res.code, 0, `mirror --all exits 0 (${said(res)})`);
+    expect(res.code, `mirror --all exits 0 (${said(res)})`).toBe(0);
     const reads = world.gh.calls().filter((a) => a.includes(PUBLIC) && (a[1] === 'view' || a[1] === 'list')).map((a) => a[1]);
-    assertEq(JSON.stringify(reads), JSON.stringify(['list']), 'the public repo is read by one list call');
-    for (const n of [44, 45, 46]) assertEq(sorted(world.gh.issue(PUBLIC, n).labels), sorted(['status:qa']), `#${n} carries the private status`);
+    expect(JSON.stringify(reads), 'the public repo is read by one list call').toBe(JSON.stringify(['list']));
+    for (const n of [44, 45, 46]) expect(sorted(world.gh.issue(PUBLIC, n).labels), `#${n} carries the private status`).toBe(sorted(['status:qa']));
   });
+});
 
-  group('workkit public: the Public: line is the link');
-
-  await test('a private issue with no Public: line: mirror and close skip it', () => {
+describe('workkit public: the Public: line is the link', () => {
+  test('a private issue with no Public: line: mirror and close skip it', { skip: skipWithoutNodeStub() }, () => {
     // The public URL in the prose is no link: only a first-line `Public:` is.
     const world = mkPublicWorld({
       issues: {
@@ -91,16 +87,9 @@ const cases = async () => {
       },
     });
     const mirror = world.run(['mirror', '13']);
-    assertEq(mirror.code, 0, `mirror exits 0 (${said(mirror)})`);
+    expect(mirror.code, `mirror exits 0 (${said(mirror)})`).toBe(0);
     const close = world.run(['close', '1.4.0', '13']);
-    assertEq(close.code, 0, `close exits 0 (${said(close)})`);
-    assertEq(JSON.stringify(world.gh.writes()), '[]', 'nothing was written on either repo');
+    expect(close.code, `close exits 0 (${said(close)})`).toBe(0);
+    expect(JSON.stringify(world.gh.writes()), 'nothing was written on either repo').toBe('[]');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -11,6 +11,7 @@
  */
 
 const path = require('path');
+const { parseEnv } = require('util');
 const { ioIn } = require('../lib/io');
 const { slugFromRemote } = require('../slug');
 const { isCloud } = require('../lib/cloud');
@@ -245,7 +246,7 @@ function factsIn(cwd, env) {
     const handed = { WORKKIT_REAL_GH: gh, GH_REPO: (flag >= 0 && argv[flag + 1]) || env.WORKKIT_GATE_REPO || '' };
     return io.run([process.execPath, REST, ...argv.slice(1)], { ...init, env: { ...init.env, ...handed } });
   };
-  return mod('guards').bashFacts({ ...io, run }, env, { command: '', cwd });
+  return mod('facts').bashFacts({ ...io, run }, env, { cwd });
 }
 
 // A call whose whole job is sending a value to GitHub's encrypted store, which
@@ -265,7 +266,7 @@ async function leakOf(argv, call, facts, platform) {
     const text = await facts.read(file.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file) ? shellDirOf(file, facts.env, platform) : `${facts.cwd}/${file}`);
     if (text !== null) bodies.push(text);
   }
-  return leakVerdict({ text: argv.join('\n'), bodies, ...(await leakFacts(facts)) });
+  return leakVerdict({ text: argv.join('\n'), bodies, parseEnv, ...(await leakFacts(facts)) });
 }
 
 // The Claude session's gates, in the Bash chain's order: proof, spec, findings.

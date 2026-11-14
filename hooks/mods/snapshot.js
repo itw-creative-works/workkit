@@ -9,14 +9,23 @@
  */
 
 import { stageList } from './gh.js';
-import { userDirOf } from './log.js';
-import { onIssue, snapshotMarkerPath } from './markers.js';
+import { cacheDirOf } from './log.js';
+import { onIssue, sha1Hex } from './markers.js';
 import { placeLine, repoSlug, rosterOf } from './optin.js';
 import { issuesAt } from './proof.js';
 import { LONG_RUN_MS } from './suite.js';
 
 // The stages that hold the snapshot: a release leaving an issue at either keeps it.
 const HOLDING = ['status:building', 'status:qa'];
+
+/**
+ * The snapshot folder of a repo root, hook_snapshot_dir's rule: snapshot/ in
+ * the kit's cache folder (cacheDirOf), keyed by the root's SHA-1.
+ * @param {string} root the repo root, spelled by pwd -P
+ * @param {object} env the variables the module read
+ * @returns {Promise<string>}
+ */
+export const snapshotPath = async (root, env) => `${cacheDirOf(env)}/snapshot/${await sha1Hex(root)}`;
 
 // A journal line that claims its issues: an edit adding status:building.
 const claims = (line) => onIssue(line) && line.sub === 'edit' && line.add.includes('status:building');
@@ -106,7 +115,7 @@ async function runStep(step, facts, snapOf) {
  */
 export async function snapshotGuard(facts) {
   if (!facts.lines.some((line) => claims(line) || releases(line))) return null;
-  const snapOf = (root) => snapshotMarkerPath(root, userDirOf(facts.env));
+  const snapOf = (root) => snapshotPath(root, facts.env);
   const steps = await snapshotPlan({
     lines: facts.lines,
     cwd: facts.cwd,

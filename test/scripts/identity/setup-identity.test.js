@@ -9,10 +9,10 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  group, test, assert, assertEq, skip, summary, selfRun, WORKKIT_DIR: W, until,
+  describe, test, expect, WORKKIT_DIR: W, until,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NO_NODE_STUB, shellPath,
+  skipWithoutNodeStub, shellPath,
 } = require('../../lib/platform');
 const {
   INSTALL_FIX, PRESELECTED, UNREADABLE, hostsOf, deviceFlowRoutes, repoRoute, writeLogin, readWrittenLogin, useTokenService, startServer,
@@ -46,17 +46,18 @@ const withSetupScene = async (routes, fn, worldOpts = {}) => {
  * Asserts login.js opened the device page once with the world's opener. It
  * runs the opener detached, so a first call is awaited for until's own default,
  * the budget the login suite gives the same opener, then a moment more for a
- * second. Written before the stub launcher, it still skips on Windows.
+ * second. Written before the stub launcher, it still skips on Windows, as a
+ * skipped subcase of the case `t` runs.
  */
-const assertDevicePageOpened = async (world, label) => {
-  if (IS_WINDOWS) {
-    skip(`${label}: the world's opener records the device page`, NO_NODE_STUB);
+const assertDevicePageOpened = async (t, world, label) => {
+  const skip = skipWithoutNodeStub();
+  if (skip) {
+    await t.test(`${label}: the world's opener records the device page`, { skip });
     return;
   }
   await until(() => world.openerCalls().length > 0);
   await until(() => world.openerCalls().length > 1, 300);
-  assertEq(JSON.stringify(world.openerCalls()), JSON.stringify([['https://github.com/login/device']]),
-    `${label}: the opener ran once, on the device page`);
+  expect(JSON.stringify(world.openerCalls()), `${label}: the opener ran once, on the device page`).toBe(JSON.stringify([['https://github.com/login/device']]));
 };
 
 /** `cmd_setup <args>` at the terminal seam from `repo`, the answers on stdin. */
@@ -138,87 +139,85 @@ const installSetup = ({
   };
 });
 
-const cases = async () => {
-  group('workkit setup: identity');
-
-  await test('case 18: not signed in with no keyboard warns naming workkit setup --login and starts no device flow; signed in says so; no node is the named skip; no .env is made', async () => {
+describe('workkit setup: identity', () => {
+  test('case 18: not signed in with no keyboard warns naming workkit setup --login and starts no device flow; signed in says so; no node is the named skip; no .env is made', async () => {
     const bare = await setup();
-    assertEq(bare.device.length, 0, `no keyboard: no device flow started, got: ${JSON.stringify(bare.device)}`);
-    assert(bare.said.includes('workkit setup --login'), `the warning names workkit setup --login, got: ${bare.said}`);
-    assert(!bare.said.includes('workkit login'), `and no longer workkit login, got: ${bare.said}`);
-    assert(!bare.said.includes('signed in as @'), `and names no login, got: ${bare.said}`);
-    assertEq(bare.envMade, false, 'not signed in: no .env at the kit root');
-    assert(!bare.said.includes(SIGN_IN_QUESTION), `no keyboard: no sign-in question, got: ${bare.said}`);
-    assertEq(JSON.stringify(bare.opened), '[]', 'no keyboard: no browser opened');
+    expect(bare.device.length, `no keyboard: no device flow started, got: ${JSON.stringify(bare.device)}`).toBe(0);
+    expect(bare.said.includes('workkit setup --login'), `the warning names workkit setup --login, got: ${bare.said}`).toBeTruthy();
+    expect(!bare.said.includes('workkit login'), `and no longer workkit login, got: ${bare.said}`).toBeTruthy();
+    expect(!bare.said.includes('signed in as @'), `and names no login, got: ${bare.said}`).toBeTruthy();
+    expect(bare.envMade, 'not signed in: no .env at the kit root').toBe(false);
+    expect(!bare.said.includes(SIGN_IN_QUESTION), `no keyboard: no sign-in question, got: ${bare.said}`).toBeTruthy();
+    expect(JSON.stringify(bare.opened), 'no keyboard: no browser opened').toBe('[]');
 
     const signed = await setup({ before: (world) => writeLogin(world.home, { token: 'ghu_setupuser', login: 'octocat' }) });
-    assert(signed.said.includes('identity: signed in as @octocat'), `it names the login, got: ${signed.said}`);
-    assertEq(signed.envMade, false, 'signed in: no .env at the kit root');
+    expect(signed.said.includes('identity: signed in as @octocat'), `it names the login, got: ${signed.said}`).toBeTruthy();
+    expect(signed.envMade, 'signed in: no .env at the kit root').toBe(false);
 
     const noNode = await setup({ node: false });
-    assert(/identity: [^\n]*needs node/.test(noNode.said), `the step is the named node skip, got: ${noNode.said}`);
-    assert(!noNode.said.includes('signed in as @'), `and reads no sign-in, got: ${noNode.said}`);
-    assertEq(noNode.envMade, false, 'no node: no .env at the kit root');
+    expect(/identity: [^\n]*needs node/.test(noNode.said), `the step is the named node skip, got: ${noNode.said}`).toBeTruthy();
+    expect(!noNode.said.includes('signed in as @'), `and reads no sign-in, got: ${noNode.said}`).toBeTruthy();
+    expect(noNode.envMade, 'no node: no .env at the kit root').toBe(false);
   });
 
-  await test('case 22: not signed in at a keyboard, Enter, y or YES answers the sign-in question by signing in with the device page opened', async () => {
+  test('case 22: not signed in at a keyboard, Enter, y or YES answers the sign-in question by signing in with the device page opened', async (t) => {
     for (const input of ['\n', 'y\n', 'YES\n']) {
       const label = JSON.stringify(input);
       await withSetupScene(SIGN_IN_ROUTES, async ({
         world, script, repo, server,
       }) => {
         const res = setupAtTerminal(world, { repo, script, input, env: signInEnv(world, { extra: hostsOf(server) }) });
-        assert(res.said.includes(SIGN_IN_QUESTION), `${label}: setup puts the sign-in question, got: ${res.said}`);
-        assert(res.said.includes('CLIX-0020'), `${label}: the sign-in prints the user code, got: ${res.said}`);
-        assertEq(deviceRequests(server).length, 1, `${label}: one device-code request, got: ${JSON.stringify(server.requests())}`);
-        assertEq(JSON.stringify(readWrittenLogin(world.home)), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }), `${label}: the login file holds the stand-in's sign-in`);
-        assert(res.said.includes('identity: signed in as @hubot'), `${label}: the step then says who is signed in, got: ${res.said}`);
-        await assertDevicePageOpened(world, `case 22 ${label}`);
+        expect(res.said.includes(SIGN_IN_QUESTION), `${label}: setup puts the sign-in question, got: ${res.said}`).toBeTruthy();
+        expect(res.said.includes('CLIX-0020'), `${label}: the sign-in prints the user code, got: ${res.said}`).toBeTruthy();
+        expect(deviceRequests(server).length, `${label}: one device-code request, got: ${JSON.stringify(server.requests())}`).toBe(1);
+        expect(JSON.stringify(readWrittenLogin(world.home)), `${label}: the login file holds the stand-in's sign-in`).toBe(JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }));
+        expect(res.said.includes('identity: signed in as @hubot'), `${label}: the step then says who is signed in, got: ${res.said}`).toBeTruthy();
+        await assertDevicePageOpened(t, world, `case 22 ${label}`);
       });
     }
   });
 
-  await test('case 22: not signed in at a keyboard, n, no, or stdin ending at the question (Ctrl-D) warns naming workkit setup --login and starts no device flow', async () => {
+  test('case 22: not signed in at a keyboard, n, no, or stdin ending at the question (Ctrl-D) warns naming workkit setup --login and starts no device flow', async () => {
     for (const input of ['n\n', 'no\n', '']) {
       const label = JSON.stringify(input);
       await withSetupScene(SIGN_IN_ROUTES, async ({
         world, script, repo, server,
       }) => {
         const res = setupAtTerminal(world, { repo, script, input, env: signInEnv(world, { extra: hostsOf(server) }) });
-        assert(res.said.includes(SIGN_IN_QUESTION), `${label}: setup puts the sign-in question, got: ${res.said}`);
-        assert(/not signed in[^\n]*workkit setup --login/.test(res.said), `${label}: the warning naming workkit setup --login, got: ${res.said}`);
-        assertEq(server.requests().length, 0, `${label}: no device-code request, got: ${JSON.stringify(server.requests())}`);
-        assertEq(fs.existsSync(path.join(world.home, '.workkit', 'identity', 'login.json')), false, `${label}: no login file`);
-        assertEq(JSON.stringify(world.openerCalls()), '[]', `${label}: no browser opened`);
+        expect(res.said.includes(SIGN_IN_QUESTION), `${label}: setup puts the sign-in question, got: ${res.said}`).toBeTruthy();
+        expect(/not signed in[^\n]*workkit setup --login/.test(res.said), `${label}: the warning naming workkit setup --login, got: ${res.said}`).toBeTruthy();
+        expect(server.requests().length, `${label}: no device-code request, got: ${JSON.stringify(server.requests())}`).toBe(0);
+        expect(fs.existsSync(path.join(world.home, '.workkit', 'identity', 'login.json')), `${label}: no login file`).toBe(false);
+        expect(JSON.stringify(world.openerCalls()), `${label}: no browser opened`).toBe('[]');
       });
     }
   });
+});
 
-  group('workkit setup --login');
-
-  await test('case 20, 22: setup --login at a terminal asks nothing, opens the device page and runs the device flow into the login file, replacing the sign-in already there, and nothing else of setup', async () => {
+describe('workkit setup --login', () => {
+  test('case 20, 22: setup --login at a terminal asks nothing, opens the device page and runs the device flow into the login file, replacing the sign-in already there, and nothing else of setup', async (t) => {
     await withSetupScene(SIGN_IN_ROUTES, async ({ world, script, server }) => {
       writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
       const res = inCli(world, `${AT_TERMINAL}\ncmd_setup --login`, {
         entry: script,
         env: signInEnv(world, { extra: hostsOf(server) }),
       });
-      assertEq(res.code, 0, `setup --login exits 0, got: ${res.said}`);
-      assert(res.said.includes('CLIX-0020'), `it prints the user code, got: ${res.said}`);
-      assertEq(deviceRequests(server).length, 1, `one device-code request although already signed in, got: ${JSON.stringify(server.requests())}`);
-      assertEq(JSON.stringify(readWrittenLogin(world.home)), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }), 'the new sign-in replaces the old');
+      expect(res.code, `setup --login exits 0, got: ${res.said}`).toBe(0);
+      expect(res.said.includes('CLIX-0020'), `it prints the user code, got: ${res.said}`).toBeTruthy();
+      expect(deviceRequests(server).length, `one device-code request although already signed in, got: ${JSON.stringify(server.requests())}`).toBe(1);
+      expect(JSON.stringify(readWrittenLogin(world.home)), 'the new sign-in replaces the old').toBe(JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }));
 
-      assert(!fs.existsSync(world.link), 'no workkit symlink written');
-      assert(!world.claudeCalls().some((c) => c.includes('install')), 'no plugin install');
+      expect(!fs.existsSync(world.link), 'no workkit symlink written').toBeTruthy();
+      expect(!world.claudeCalls().some((c) => c.includes('install')), 'no plugin install').toBeTruthy();
       for (const title of ['Home repo', 'Dashboard site', 'This repo']) {
-        assert(!res.said.includes(title), `no "${title}" section, got: ${res.said}`);
+        expect(!res.said.includes(title), `no "${title}" section, got: ${res.said}`).toBeTruthy();
       }
-      assert(!res.said.includes(SIGN_IN_QUESTION), `setup --login puts no question, got: ${res.said}`);
-      await assertDevicePageOpened(world, 'case 22: setup --login');
+      expect(!res.said.includes(SIGN_IN_QUESTION), `setup --login puts no question, got: ${res.said}`).toBeTruthy();
+      await assertDevicePageOpened(t, world, 'case 22: setup --login');
     });
   });
 
-  await test('case 20: setup --login without a terminal runs the device flow into the login file, prints the code and opens the device page', async () => {
+  test('case 20: setup --login without a terminal runs the device flow into the login file, prints the code and opens the device page', async (t) => {
     await withSetupScene(SIGN_IN_ROUTES, async ({
       world, script, repo, server,
     }) => {
@@ -226,17 +225,16 @@ const cases = async () => {
       const res = runCli(world, ['setup', '--login'], {
         cwd: repo, script, env: signInEnv(world, { extra: hostsOf(server) }),
       });
-      assertEq(res.code, 0, `exit 0, got: ${res.said}`);
-      assert(res.said.includes('CLIX-0020'), `it prints the user code, got: ${res.said}`);
-      assertEq(deviceRequests(server).length, 1, `one device-code request, got: ${JSON.stringify(server.requests())}`);
-      assertEq(JSON.stringify(readWrittenLogin(world.home)), JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }),
-        'the new sign-in replaces the old');
-      assert(!/needs a terminal/.test(res.said), `it names no terminal, got: ${res.said}`);
-      await assertDevicePageOpened(world, 'case 20: no terminal');
+      expect(res.code, `exit 0, got: ${res.said}`).toBe(0);
+      expect(res.said.includes('CLIX-0020'), `it prints the user code, got: ${res.said}`).toBeTruthy();
+      expect(deviceRequests(server).length, `one device-code request, got: ${JSON.stringify(server.requests())}`).toBe(1);
+      expect(JSON.stringify(readWrittenLogin(world.home)), 'the new sign-in replaces the old').toBe(JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }));
+      expect(!/needs a terminal/.test(res.said), `it names no terminal, got: ${res.said}`).toBeTruthy();
+      await assertDevicePageOpened(t, world, 'case 20: no terminal');
     });
   });
 
-  await test('case 20: setup --login without a terminal whose code is declined exits 1 saying the sign-in did not finish, the sign-in already there kept', async () => {
+  test('case 20: setup --login without a terminal whose code is declined exits 1 saying the sign-in did not finish, the sign-in already there kept', async () => {
     const declined = SIGN_IN_ROUTES.map((r) => (r.url === '/login/oauth/access_token'
       ? { ...r, body: JSON.stringify({ error: 'access_denied' }) }
       : r));
@@ -248,56 +246,56 @@ const cases = async () => {
       const res = runCli(world, ['setup', '--login'], {
         cwd: repo, script, env: signInEnv(world, { extra: hostsOf(server) }),
       });
-      assertEq(res.code, 1, `exit 1, got: ${res.said}`);
-      assert(res.said.includes('the sign-in did not finish'), `it says the sign-in did not finish, got: ${res.said}`);
-      assertEq(fs.readFileSync(loginFile, 'utf8'), before, 'the sign-in already there is unchanged');
+      expect(res.code, `exit 1, got: ${res.said}`).toBe(1);
+      expect(res.said.includes('the sign-in did not finish'), `it says the sign-in did not finish, got: ${res.said}`).toBeTruthy();
+      expect(fs.readFileSync(loginFile, 'utf8'), 'the sign-in already there is unchanged').toBe(before);
     });
   });
+});
 
-  group('workkit setup: the App install, This repo');
-
-  await test('case 23: signed in in an opted-in repo off the roster, a 200 says installed with no question; not signed in, or an undecided repo on the roster, no line and no ask', async () => {
+describe('workkit setup: the App install, This repo', () => {
+  test('case 23: signed in in an opted-in repo off the roster, a 200 says installed with no question; not signed in, or an undecided repo on the roster, no line and no ask', async () => {
     const installed = await installSetup({ answers: [MINTED], input: '' });
-    assert(installed.said.includes(INSTALLED), `the ok line names the repo, got: ${installed.said}`);
-    assert(!installed.said.includes(INSTALL_QUESTION), `no install question, got: ${installed.said}`);
-    assertEq(installed.asked.length, 1, `the service was asked once, got: ${JSON.stringify(installed.asked)}`);
-    assert(installed.asked.every((r) => r.auth === 'Bearer ghu_setupuser' && JSON.parse(r.body).repo === 'acme/rostered'),
-      `with the login's bearer, for acme/rostered, got: ${JSON.stringify(installed.asked)}`);
-    assertEq(JSON.stringify(installed.opened), '[]', 'nothing opened');
+    expect(installed.said.includes(INSTALLED), `the ok line names the repo, got: ${installed.said}`).toBeTruthy();
+    expect(!installed.said.includes(INSTALL_QUESTION), `no install question, got: ${installed.said}`).toBeTruthy();
+    expect(installed.asked.length, `the service was asked once, got: ${JSON.stringify(installed.asked)}`).toBe(1);
+    expect(installed.asked.every((r) => r.auth === 'Bearer ghu_setupuser' && JSON.parse(r.body).repo === 'acme/rostered'),
+      `with the login's bearer, for acme/rostered, got: ${JSON.stringify(installed.asked)}`).toBeTruthy();
+    expect(JSON.stringify(installed.opened), 'nothing opened').toBe('[]');
 
     for (const [label, scene] of [
       ['not signed in', { signedIn: false }],
       ['an undecided repo on the roster', { optIn: false, rostered: true }],
     ]) {
       const res = await installSetup({ ...scene, answers: [NOT_INSTALLED] });
-      assert(!/installed on acme\/rostered|not installed/.test(res.said), `${label}: no installation line, got: ${res.said}`);
-      assert(!res.said.includes(INSTALL_QUESTION), `${label}: no install question, got: ${res.said}`);
-      assertEq(res.asked.length, 0, `${label}: the service is never asked, got: ${JSON.stringify(res.asked)}`);
-      assertEq(JSON.stringify(res.opened), '[]', `${label}: nothing opened`);
+      expect(!/installed on acme\/rostered|not installed/.test(res.said), `${label}: no installation line, got: ${res.said}`).toBeTruthy();
+      expect(!res.said.includes(INSTALL_QUESTION), `${label}: no install question, got: ${res.said}`).toBeTruthy();
+      expect(res.asked.length, `${label}: the service is never asked, got: ${JSON.stringify(res.asked)}`).toBe(0);
+      expect(JSON.stringify(res.opened), `${label}: nothing opened`).toBe('[]');
     }
   });
 
-  await test('case 23: a 412 at a keyboard, y opens the install page once and polls; Enter checks now, and its 200 is the ok line', async () => {
+  test('case 23: a 412 at a keyboard, y opens the install page once and polls; Enter checks now, and its 200 is the ok line', async () => {
     const res = await installSetup({ answers: [NOT_INSTALLED, NOT_INSTALLED, MINTED], input: 'y\n\n' });
-    assert(res.said.includes(INSTALL_QUESTION), `setup puts the install question, got: ${res.said}`);
-    assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_NEW]]), 'the opener ran once, on the install page');
-    assert(res.said.includes(POLL_KEYS), `the poll names its keys, got: ${res.said}`);
-    assertEq(res.asked.length, 3, `the step's lookup, the poll's first check, then the one Enter asked for, got: ${JSON.stringify(res.asked)}`);
-    assert(res.said.includes(INSTALLED), `the third answer is the ok line, got: ${res.said}`);
-    assertEq(installWarnings(res.said).length, 0, `and no not-installed warning, got: ${res.said}`);
+    expect(res.said.includes(INSTALL_QUESTION), `setup puts the install question, got: ${res.said}`).toBeTruthy();
+    expect(JSON.stringify(res.opened), 'the opener ran once, on the install page').toBe(JSON.stringify([[INSTALL_NEW]]));
+    expect(res.said.includes(POLL_KEYS), `the poll names its keys, got: ${res.said}`).toBeTruthy();
+    expect(res.asked.length, `the step's lookup, the poll's first check, then the one Enter asked for, got: ${JSON.stringify(res.asked)}`).toBe(3);
+    expect(res.said.includes(INSTALLED), `the third answer is the ok line, got: ${res.said}`).toBeTruthy();
+    expect(installWarnings(res.said).length, `and no not-installed warning, got: ${res.said}`).toBe(0);
   });
 
-  await test('a 412 at a keyboard whose owner id GitHub cannot give, answered y, warns with the unreadable line, opens nothing and never polls', async () => {
+  test('a 412 at a keyboard whose owner id GitHub cannot give, answered y, warns with the unreadable line, opens nothing and never polls', async () => {
     const res = await installSetup({
       answers: [NOT_INSTALLED, MINTED], input: 'y\n', remote: RENAMED.remote, github: null,
     });
-    assert(res.said.includes(UNREADABLE), `the warning carries the line as said, got: ${res.said}`);
-    assert(!res.said.includes('installations/new'), `no install page anywhere, got: ${res.said}`);
-    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
-    assert(!res.said.includes(POLL_KEYS), `no poll, got: ${res.said}`);
+    expect(res.said.includes(UNREADABLE), `the warning carries the line as said, got: ${res.said}`).toBeTruthy();
+    expect(!res.said.includes('installations/new'), `no install page anywhere, got: ${res.said}`).toBeTruthy();
+    expect(JSON.stringify(res.opened), 'nothing opened').toBe('[]');
+    expect(!res.said.includes(POLL_KEYS), `no poll, got: ${res.said}`).toBeTruthy();
   });
 
-  await test('case 23: a 412 throughout, after a yes the poll skips on s, on stdin closing, or on stdin closing after an Enter, and the warning carries the install page', async () => {
+  test('case 23: a 412 throughout, after a yes the poll skips on s, on stdin closing, or on stdin closing after an Enter, and the warning carries the install page', async () => {
     for (const [input, asks, why] of [
       ['y\ns', 2, 'the step\'s lookup and the poll\'s first check; s skips'],
       ['y\n', 2, 'the step\'s lookup and the poll\'s first check; the closed stdin skips'],
@@ -305,106 +303,100 @@ const cases = async () => {
     ]) {
       const label = JSON.stringify(input);
       const res = await installSetup({ answers: [NOT_INSTALLED], input });
-      assert(res.said.includes(INSTALL_QUESTION), `${label}: setup puts the install question, got: ${res.said}`);
-      assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_NEW]]), `${label}: the opener ran once, on the install page`);
-      assert(res.said.includes(POLL_KEYS), `${label}: the poll names its keys, got: ${res.said}`);
-      assertEq(res.asked.length, asks, `${label}: ${why}, got: ${JSON.stringify(res.asked)}`);
-      assert(!res.said.includes(INSTALLED), `${label}: no ok line, got: ${res.said}`);
-      assert(installWarnings(res.said).length > 0, `${label}: the warning carries the install page, got: ${res.said}`);
+      expect(res.said.includes(INSTALL_QUESTION), `${label}: setup puts the install question, got: ${res.said}`).toBeTruthy();
+      expect(JSON.stringify(res.opened), `${label}: the opener ran once, on the install page`).toBe(JSON.stringify([[INSTALL_NEW]]));
+      expect(res.said.includes(POLL_KEYS), `${label}: the poll names its keys, got: ${res.said}`).toBeTruthy();
+      expect(res.asked.length, `${label}: ${why}, got: ${JSON.stringify(res.asked)}`).toBe(asks);
+      expect(!res.said.includes(INSTALLED), `${label}: no ok line, got: ${res.said}`).toBeTruthy();
+      expect(installWarnings(res.said).length > 0, `${label}: the warning carries the install page, got: ${res.said}`).toBeTruthy();
     }
   });
 
-  await test('case 23: a 412 answered n, no, or with stdin ending at the question (Ctrl-D), or with no keyboard, is the warning with the install page and nothing opened', async () => {
+  test('case 23: a 412 answered n, no, or with stdin ending at the question (Ctrl-D), or with no keyboard, is the warning with the install page and nothing opened', async () => {
     for (const input of ['n\n', 'no\n', '']) {
       const label = JSON.stringify(input);
       const declined = await installSetup({ answers: [NOT_INSTALLED], input });
-      assert(declined.said.includes(INSTALL_QUESTION), `${label}: setup puts the install question, got: ${declined.said}`);
-      assert(installWarnings(declined.said).length > 0, `${label}: the warning carries the pre-selected install page, got: ${declined.said}`);
-      assertEq(declined.idReads.length, 1, `${label}: the owner's id was read once, got: ${JSON.stringify(declined.idReads)}`);
-      assertEq(JSON.stringify(declined.opened), '[]', `${label}: nothing opened`);
-      assertEq(declined.asked.length, 1, `${label}: the service was asked once, got: ${JSON.stringify(declined.asked)}`);
+      expect(declined.said.includes(INSTALL_QUESTION), `${label}: setup puts the install question, got: ${declined.said}`).toBeTruthy();
+      expect(installWarnings(declined.said).length > 0, `${label}: the warning carries the pre-selected install page, got: ${declined.said}`).toBeTruthy();
+      expect(declined.idReads.length, `${label}: the owner's id was read once, got: ${JSON.stringify(declined.idReads)}`).toBe(1);
+      expect(JSON.stringify(declined.opened), `${label}: nothing opened`).toBe('[]');
+      expect(declined.asked.length, `${label}: the service was asked once, got: ${JSON.stringify(declined.asked)}`).toBe(1);
     }
 
     const away = await installSetup({ answers: [NOT_INSTALLED] });
-    assert(!away.said.includes(INSTALL_QUESTION), `no keyboard: no install question, got: ${away.said}`);
-    assert(installWarnings(away.said).length > 0, `no keyboard: the warning carries the pre-selected install page, got: ${away.said}`);
-    assertEq(away.idReads.length, 1, `no keyboard: the owner's id was read once, got: ${JSON.stringify(away.idReads)}`);
-    assertEq(JSON.stringify(away.opened), '[]', 'no keyboard: nothing opened');
-    assertEq(away.asked.length, 1, `no keyboard: the service was asked once, got: ${JSON.stringify(away.asked)}`);
+    expect(!away.said.includes(INSTALL_QUESTION), `no keyboard: no install question, got: ${away.said}`).toBeTruthy();
+    expect(installWarnings(away.said).length > 0, `no keyboard: the warning carries the pre-selected install page, got: ${away.said}`).toBeTruthy();
+    expect(away.idReads.length, `no keyboard: the owner's id was read once, got: ${JSON.stringify(away.idReads)}`).toBe(1);
+    expect(JSON.stringify(away.opened), 'no keyboard: nothing opened').toBe('[]');
+    expect(away.asked.length, `no keyboard: the service was asked once, got: ${JSON.stringify(away.asked)}`).toBe(1);
   });
+});
 
-  group('workkit setup --bot');
-
-  await test('setup --bot in an enabled repo whose owner lacks the App asks, opens the pre-selected page and polls; the 200 is the ok line, exit 0, and nothing else of setup runs', async () => {
+describe('workkit setup --bot', () => {
+  test('setup --bot in an enabled repo whose owner lacks the App asks, opens the pre-selected page and polls; the 200 is the ok line, exit 0, and nothing else of setup runs', async () => {
     const res = await installSetup({ answers: [NOT_INSTALLED, NOT_INSTALLED, MINTED], input: 'y\n\n', bot: true });
-    assertEq(res.code, 0, `exit 0, got: ${res.said}`);
-    assert(res.said.includes(INSTALL_QUESTION), `it puts the install question, got: ${res.said}`);
-    assertEq(JSON.stringify(res.opened), JSON.stringify([[INSTALL_NEW]]), 'the opener ran once, on the pre-selected install page');
-    assert(res.said.includes(POLL_KEYS), `it polls, got: ${res.said}`);
-    assert(res.said.includes(INSTALLED), `the poll's 200 is the ok line, got: ${res.said}`);
-    assert(!res.claudeCalls.some((c) => c.includes('install')), 'no plugin install');
+    expect(res.code, `exit 0, got: ${res.said}`).toBe(0);
+    expect(res.said.includes(INSTALL_QUESTION), `it puts the install question, got: ${res.said}`).toBeTruthy();
+    expect(JSON.stringify(res.opened), 'the opener ran once, on the pre-selected install page').toBe(JSON.stringify([[INSTALL_NEW]]));
+    expect(res.said.includes(POLL_KEYS), `it polls, got: ${res.said}`).toBeTruthy();
+    expect(res.said.includes(INSTALLED), `the poll's 200 is the ok line, got: ${res.said}`).toBeTruthy();
+    expect(!res.claudeCalls.some((c) => c.includes('install')), 'no plugin install').toBeTruthy();
     for (const title of ['This machine', 'Home repo', 'Dashboard site']) {
-      assert(!res.said.includes(title), `no "${title}" section, got: ${res.said}`);
+      expect(!res.said.includes(title), `no "${title}" section, got: ${res.said}`).toBeTruthy();
     }
   });
 
-  await test('setup --bot when not signed in exits 1 naming workkit setup --login, asks the service nothing and opens nothing', async () => {
+  test('setup --bot when not signed in exits 1 naming workkit setup --login, asks the service nothing and opens nothing', async () => {
     const res = await installSetup({ signedIn: false, answers: [NOT_INSTALLED], bot: true });
-    assertEq(res.code, 1, `exit 1, got: ${res.said}`);
-    assert(/not signed in[^\n]*workkit setup --login/.test(res.said), `it says to run workkit setup --login first, got: ${res.said}`);
-    assertEq(res.asked.length, 0, `the service is never asked, got: ${JSON.stringify(res.asked)}`);
-    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+    expect(res.code, `exit 1, got: ${res.said}`).toBe(1);
+    expect(/not signed in[^\n]*workkit setup --login/.test(res.said), `it says to run workkit setup --login first, got: ${res.said}`).toBeTruthy();
+    expect(res.asked.length, `the service is never asked, got: ${JSON.stringify(res.asked)}`).toBe(0);
+    expect(JSON.stringify(res.opened), 'nothing opened').toBe('[]');
   });
 
-  await test('setup --bot with the App not installed and no keyboard exits 1, its warning naming the pre-selected install page, nothing opened', async () => {
+  test('setup --bot with the App not installed and no keyboard exits 1, its warning naming the pre-selected install page, nothing opened', async () => {
     const res = await installSetup({ answers: [NOT_INSTALLED], bot: true });
-    assertEq(res.code, 1, `exit 1, got: ${res.said}`);
-    assert(installWarnings(res.said).length > 0, `the warning names the pre-selected install page, got: ${res.said}`);
-    assertEq(res.idReads.length, 1, `the owner's id was read once, got: ${JSON.stringify(res.idReads)}`);
-    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+    expect(res.code, `exit 1, got: ${res.said}`).toBe(1);
+    expect(installWarnings(res.said).length > 0, `the warning names the pre-selected install page, got: ${res.said}`).toBeTruthy();
+    expect(res.idReads.length, `the owner's id was read once, got: ${JSON.stringify(res.idReads)}`).toBe(1);
+    expect(JSON.stringify(res.opened), 'nothing opened').toBe('[]');
   });
 
-  await test('case 6: setup --bot in a clone whose remote spells the old owner offers and warns on New with New\'s pre-selected page, and the opener gets that page', async () => {
+  test('case 6: setup --bot in a clone whose remote spells the old owner offers and warns on New with New\'s pre-selected page, and the opener gets that page', async () => {
     const page = `${PRESELECTED}7`;
     const res = await installSetup({
       answers: [NOT_INSTALLED], input: 'y\n', bot: true, ...RENAMED,
     });
-    assert(res.said.includes('Install workkit-agent[bot] on New now? [Y/n]'), `the offer names New, got: ${res.said}`);
-    assert(!res.said.includes('workkit-agent[bot] on Old'), `the old spelling is never the owner named, got: ${res.said}`);
-    assertEq(JSON.stringify(res.opened), JSON.stringify([[page]]), 'the opener ran once, on New\'s pre-selected page');
-    assert(res.said.split('\n').some((l) => l.includes('is not installed on') && l.includes('on New') && l.includes(page)),
-      `the not-installed warning names New and its pre-selected page, got: ${res.said}`);
-    assert(res.asked.length > 0 && res.asked.every((r) => JSON.parse(r.body).repo === 'New/rostered'),
-      `the service was asked only under the canonical name, got: ${JSON.stringify(res.asked)}`);
+    expect(res.said.includes('Install workkit-agent[bot] on New now? [Y/n]'), `the offer names New, got: ${res.said}`).toBeTruthy();
+    expect(!res.said.includes('workkit-agent[bot] on Old'), `the old spelling is never the owner named, got: ${res.said}`).toBeTruthy();
+    expect(JSON.stringify(res.opened), 'the opener ran once, on New\'s pre-selected page').toBe(JSON.stringify([[page]]));
+    expect(res.said.split('\n').some((l) => l.includes('is not installed on') && l.includes('on New') && l.includes(page)),
+      `the not-installed warning names New and its pre-selected page, got: ${res.said}`).toBeTruthy();
+    expect(res.asked.length > 0 && res.asked.every((r) => JSON.parse(r.body).repo === 'New/rostered'),
+      `the service was asked only under the canonical name, got: ${JSON.stringify(res.asked)}`).toBeTruthy();
   });
 
-  await test('case 6: setup --bot in a clone whose remote spells the old owner, with the repo unreadable from GitHub: the warning carries the unreadable line and nothing opens', async () => {
+  test('case 6: setup --bot in a clone whose remote spells the old owner, with the repo unreadable from GitHub: the warning carries the unreadable line and nothing opens', async () => {
     const res = await installSetup({
       answers: [NOT_INSTALLED], bot: true, remote: RENAMED.remote, github: null,
     });
-    assert(res.said.includes(UNREADABLE), `the warning carries the line as said, got: ${res.said}`);
-    assert(!res.said.includes('installations/new'), `no install page anywhere, got: ${res.said}`);
-    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+    expect(res.said.includes(UNREADABLE), `the warning carries the line as said, got: ${res.said}`).toBeTruthy();
+    expect(!res.said.includes('installations/new'), `no install page anywhere, got: ${res.said}`).toBeTruthy();
+    expect(JSON.stringify(res.opened), 'nothing opened').toBe('[]');
   });
 
-  await test('setup --bot in a repo with no GitHub origin exits 1 saying so, and asks the service nothing', async () => {
+  test('setup --bot in a repo with no GitHub origin exits 1 saying so, and asks the service nothing', async () => {
     const res = await installSetup({ answers: [NOT_INSTALLED], bot: true, origin: false });
-    assertEq(res.code, 1, `exit 1, got: ${res.said}`);
-    assert(res.said.includes('has no GitHub origin to install workkit-agent[bot] for'), `the warning says there is no origin, got: ${res.said}`);
-    assertEq(res.asked.length, 0, `the service is never asked, got: ${JSON.stringify(res.asked)}`);
+    expect(res.code, `exit 1, got: ${res.said}`).toBe(1);
+    expect(res.said.includes('has no GitHub origin to install workkit-agent[bot] for'), `the warning says there is no origin, got: ${res.said}`).toBeTruthy();
+    expect(res.asked.length, `the service is never asked, got: ${JSON.stringify(res.asked)}`).toBe(0);
   });
 
-  await test('setup --bot where the App is already installed prints the installed line, exit 0, and asks nothing', async () => {
+  test('setup --bot where the App is already installed prints the installed line, exit 0, and asks nothing', async () => {
     const res = await installSetup({ answers: [MINTED], input: '', bot: true });
-    assertEq(res.code, 0, `exit 0, got: ${res.said}`);
-    assert(res.said.includes(INSTALLED), `the ok line names the repo, got: ${res.said}`);
-    assert(!res.said.includes(INSTALL_QUESTION), `no install question, got: ${res.said}`);
-    assertEq(JSON.stringify(res.opened), '[]', 'nothing opened');
+    expect(res.code, `exit 0, got: ${res.said}`).toBe(0);
+    expect(res.said.includes(INSTALLED), `the ok line names the repo, got: ${res.said}`).toBeTruthy();
+    expect(!res.said.includes(INSTALL_QUESTION), `no install question, got: ${res.said}`).toBeTruthy();
+    expect(JSON.stringify(res.opened), 'nothing opened').toBe('[]');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

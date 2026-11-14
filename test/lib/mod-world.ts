@@ -86,7 +86,7 @@ const touchedGit = (args: string[], branch: any, status: string | undefined) => 
 const commitGit = (args: string[], git: any) => {
   let sub = args
   while (sub[0] === '-c') sub = sub.slice(2)
-  const lines = (paths: string[]) => ok(paths.map((p) => `${p}\n`).join(''))
+  const lines = (paths: string[]) => ok(paths.map((p) => `${p}${sub.includes('-z') ? '\0' : '\n'}`).join(''))
   const spec = sub.slice(1).filter((a) => !a.startsWith('-')).pop() ?? ''
   if (sub[0] === 'diff' && sub.includes('--name-only') && spec === '') {
     const cached = sub.includes('--cached') || sub.includes('--staged')
@@ -126,6 +126,8 @@ export const mkWorld = (on: any, opts: any = {}) => {
   const kit = new Map<string, string>(Object.entries({ ...KIT_DEFAULT, ...(opts.kit || {}) }).filter(([, v]) => v !== null) as [string, string][])
   const kitMtimes = new Map<string, number>()
   const unreadable = new Set<string>(opts.unreadable || [])
+  // `opts.unwritable`: folders a write under is refused, as a full or read-only disk answers.
+  const unwritable = (opts.unwritable || []).map((d: string) => norm(d, '/'))
   const links = new Map<string, string>(Object.entries(opts.links || {}).map(([a, b]) => [norm(a, '/'), norm(b as string, '/')]))
   const through = (p: string) => {
     if (links.has(p)) return links.get(p) as string
@@ -213,6 +215,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
   on('fs.write', ($: any, e: any) => {
     const p = norm(e.path, world.cwd)
     world.fsOps.push({ op: 'write', path: p, runs: world.calls.length })
+    if (unwritable.some((d: string) => p.startsWith(`${d}/`))) return { deny: `EACCES: permission denied, open '${p}'` }
     files.set(p, e.text)
     mtimes.set(p, Date.now())
     return { value: undefined }
@@ -263,7 +266,10 @@ export const mkWorld = (on: any, opts: any = {}) => {
     if (cmd === 'git') {
       let dir = init.cwd ? norm(init.cwd, world.cwd) : world.cwd
       const rest = argv.slice(1)
-      while (rest[0] === '-C') { dir = norm(rest[1], dir); rest.splice(0, 2) }
+      while (rest[0] === '-C' || rest[0] === '-c') {
+        if (rest[0] === '-C') dir = norm(rest[1], dir)
+        rest.splice(0, 2)
+      }
       const root = rootOf(dir)
       if (!root) return ok('', 'fatal: not a git repository (or any of the parent directories): .git\n', 128)
       const touched = touchedGit(rest, opts.branch?.[root], world.status[root])
@@ -301,9 +307,13 @@ export const mkWorld = (on: any, opts: any = {}) => {
         if ((world.git.conflicts || []).includes(rel)) return ok([1, 2, 3].map(entry).join(''))
         return ok(`:${rel}` in world.git.blobs ? entry(0) : '')
       }
-      // The untracked files are the status's `??` lines, each a file.
-      if (rest[0] === 'ls-files' && rest.includes('--others') && !rest.includes('--cached')) {
-        const list = (world.status[root] ?? '').split('\n').filter((l: string) => l.startsWith('?? ')).map((l: string) => l.slice(3)).sort()
+      // The untracked files are the status's `??` lines, each a file; `-m` adds the tracked lines whose working
+      // copy differs from the index (a second column M), as git's does, so a change staged whole is not among them.
+      const others = rest.includes('--others') || rest.includes('-o')
+      if (rest[0] === 'ls-files' && others && !rest.includes('--cached')) {
+        const modified = rest.includes('--modified') || rest.includes('-m')
+        const listed = (l: string) => l.startsWith('?? ') || (modified && /^.M /.test(l))
+        const list = (world.status[root] ?? '').split('\n').filter(listed).map((l: string) => l.slice(3)).sort()
         return rest.includes('-z') ? ok(list.map((f: string) => `${f}\0`).join('')) : ok(list.map((f: string) => `${f}\n`).join(''))
       }
       if (rest[0] === 'ls-files') {
@@ -382,6 +392,9 @@ export const mkWorld = (on: any, opts: any = {}) => {
   })
 
   mock.env(on, env)
+  // `envSets`: each $.env.set as `{ name, value }`, in order; the value lands in `env` too.
+  world.envSets = [] as any[]
+  on('env.set', ($: any, e: any) => { world.envSets.push({ name: e.name, value: e.value }); env[e.name] = e.value; return { value: undefined } })
   mock.clock(on, { now })
   on('store.get', ($: any, e: any) => ({ value: world.store.get(e.key) }))
   on('store.set', ($: any, e: any) => { world.store.set(e.key, e.value); return { value: undefined } })

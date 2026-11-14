@@ -6,7 +6,7 @@
 const path = require('path');
 const { isDeepStrictEqual } = require('util');
 const {
-  group, test, assert, summary, selfRun,
+  describe, test, expect,
 } = require('../../lib/harness');
 
 const GATE = path.join(__dirname, '..', '..', '..', 'workflow', 'identity', 'gate.js');
@@ -32,10 +32,8 @@ const step = (sub, number, add = [], remove = []) => ({
   sub, number: String(number), add, remove,
 });
 
-const cases = async () => {
-  group('identity/gate: the classifier');
-
-  await test('case 10: every argv maps to its steps, its write or read kind, and its repo', async () => {
+describe('identity/gate: the classifier', () => {
+  test('case 10: every argv maps to its steps, its write or read kind, and its repo', async () => {
     const table = [
       [['issue', 'edit', '7', '8', '--add-label', 'a,b', '--remove-label', 'c'],
         { kind: 'write', repo: CWD_REPO, steps: [step('edit', 7, ['a', 'b'], ['c']), step('edit', 8, ['a', 'b'], ['c'])] }],
@@ -56,13 +54,6 @@ const cases = async () => {
       .map(([argv, expected, got]) => [argv, expected, expected.steps ? got : { kind: got.kind, repo: got.repo }])
       .filter(([, expected, got]) => !isDeepStrictEqual(got, expected))
       .map(([argv, expected, got]) => `gh ${argv.join(' ')}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`);
-    assert(misses.length === 0, misses.join('\n'));
+    expect(misses.length === 0, misses.join('\n')).toBeTruthy();
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

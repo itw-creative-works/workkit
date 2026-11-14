@@ -5,27 +5,39 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { BASH, NO_RC, shellPath } = require('./platform');
-
-const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
+const { homeOf, cacheBase } = require('./workflow-home');
 
 /**
- * The snapshot folder of the repo at `root`, under the scratch workflow `home`:
- * `wk_marker_path claude-red-snapshot <root>` with WORKFLOW_HOME at `home` and
- * the root spelled as `pwd -P` prints it there.
- * @param {string} home - the case's own workflow home, native
+ * The folder every snapshot lives under, `<home>/.cache/workkit/snapshot`.
+ * @param {string} home - the HOME, native
+ * @returns {string}
+ */
+const snapshotBase = (home) => path.join(cacheBase(home), 'snapshot');
+
+/**
+ * The name of the snapshot folder of the repo at `root`: the SHA-1 of the root
+ * spelled as `pwd -P` prints it in the shell.
+ * @param {string} root - the repo root, native
+ * @returns {string}
+ */
+const snapshotKey = (root) => {
+  const res = spawnSync(BASH, [...NO_RC, '-c', 'cd -P "$1" && pwd -P', '_', shellPath(root)], {
+    env: { PATH: process.env.PATH }, encoding: 'utf8',
+  });
+  if (res.status !== 0 || !res.stdout.trim()) throw new Error(`pwd -P failed: ${res.stderr}`);
+  return crypto.createHash('sha1').update(res.stdout.replace(/\n$/, '')).digest('hex');
+};
+
+/**
+ * The snapshot folder of the repo at `root` under the scratch HOME `home`.
+ * @param {string} home - the case's own HOME, native
  * @param {string} root - the repo root, native
  * @returns {string} the folder, native
  */
-const snapshotDir = (home, root) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c',
-    'cd "$1" && . "$2" && wk_marker_path claude-red-snapshot "$(pwd -P)"', '_', shellPath(root), PLATFORM], {
-    env: { PATH: process.env.PATH, WORKFLOW_HOME: shellPath(home) }, encoding: 'utf8',
-  });
-  if (res.status !== 0 || !res.stdout.trim()) throw new Error(`wk_marker_path failed: ${res.stderr}`);
-  return path.join(home, 'markers', 'claude-red-snapshot', path.basename(res.stdout.trim()));
-};
+const snapshotDir = (home, root) => path.join(snapshotBase(home), snapshotKey(root));
 
 /**
  * The folders under `root` holding a package.json git sees (tracked, or
@@ -76,13 +88,14 @@ const treeOf = (root, { skipModules = false } = {}) => {
  * Take the snapshot of a `mkRepo` world by hand, as the claim would: the repo
  * folder without `.git` or any package's `node_modules` as `tree/`, HEAD's sha, the
  * working-change list (NUL-separated: the diff against HEAD, then the
- * untracked files) and the issue numbers, one a line.
+ * untracked files) and the issue numbers, one a line; in the repo's snapshot
+ * folder under the world's HOME.
  * @param {{repo: string, workflowHome: string, git: Function}} w
  * @param {{issues?: string[]}} [opts]
  * @returns {string} the snapshot folder
  */
 const takeSnapshot = (w, { issues = ['5'] } = {}) => {
-  const dir = snapshotDir(w.workflowHome, w.repo);
+  const dir = snapshotDir(homeOf(w), w.repo);
   fs.mkdirSync(dir, { recursive: true });
   const pkgs = packageDirs(w.repo);
   fs.cpSync(w.repo, path.join(dir, 'tree'), {
@@ -98,4 +111,6 @@ const takeSnapshot = (w, { issues = ['5'] } = {}) => {
   return dir;
 };
 
-module.exports = { snapshotDir, treeOf, takeSnapshot };
+module.exports = {
+  snapshotBase, snapshotKey, snapshotDir, treeOf, takeSnapshot,
+};

@@ -1,42 +1,40 @@
 // Tests for jobs/morning.sh as a GitHub Actions runner runs it: the steps a
 // runner skips, and the cloud steps that run on a runner only.
-// The shared prologue (world factory, no-jq PATH, job runner, case gates) is ./helpers.js.
+// The shared prologue (world factory, no-jq PATH, job runner) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const {
   SCRIPT, HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');
 
-const cases = async () => {
-  group('jobs/morning (cloud): the steps a runner skips');
-
-  await test('a runner runs the brief alone: every other step names its skip', () => {
+describe('jobs/morning (cloud): the steps a runner skips', () => {
+  test('a runner runs the brief alone: every other step names its skip', () => {
     // The capability gates from the cloud side: the summaries read a machine's
     // transcripts and git history, the publish builds the home clone, and a
     // runner has neither. A named skip tells that from a step that did nothing.
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(/summaries: a GitHub Actions runner has no session transcripts/.test(res.stdout),
-      `the summaries step names its skip: ${res.stdout}`);
-    assert(!fs.existsSync(world.nightlyLog), 'and never started: there is no day here to write up');
-    assert(/publish: the site is built from the home clone/.test(res.stdout),
-      `the publish names its skip: ${res.stdout}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(/summaries: a GitHub Actions runner has no session transcripts/.test(res.stdout),
+      `the summaries step names its skip: ${res.stdout}`).toBeTruthy();
+    expect(!fs.existsSync(world.nightlyLog), 'and never started: there is no day here to write up').toBeTruthy();
+    expect(/publish: the site is built from the home clone/.test(res.stdout),
+      `the publish names its skip: ${res.stdout}`).toBeTruthy();
     // The stale-brief marker is read at session start on a machine, and a
     // runner's home dies with the job, so a marker there would go unread.
-    assert(/marker: the brief marker is read at session start on a machine/.test(res.stdout),
-      `the marker step names its skip: ${res.stdout}`);
-    assert(!fs.existsSync(path.join(world.workflowHome, 'brief-status.json')),
-      'and nothing was written into the runner’s home');
-    assertEq(world.notifs().length, 0, 'and nothing was notified: there is no desktop');
+    expect(/marker: the brief marker is read at session start on a machine/.test(res.stdout),
+      `the marker step names its skip: ${res.stdout}`).toBeTruthy();
+    expect(!fs.existsSync(path.join(world.workflowHome, 'brief-status.json')),
+      'and nothing was written into the runner’s home').toBeTruthy();
+    expect(world.notifs().length, 'and nothing was notified: there is no desktop').toBe(0);
     cleanup(world.root);
   });
 
-  await test('a runner never reconciles the seeded copy it is running', () => {
+  test('a runner never reconciles the seeded copy it is running', () => {
     // On a runner the home repo's `brief/` copies are what is executing and
     // there is no checkout to seed them from, so the step is a named skip and
     // a home clone sitting where the machine's would be is left untouched.
@@ -53,17 +51,16 @@ const cases = async () => {
     world.env.WORKKIT_HOME_REMOTE = remote;
 
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(/runner: a runner IS the seeded copy of the cloud brief/.test(res.stdout),
-      `the step names its skip: ${res.stdout}`);
-    assertEq(fs.readFileSync(seeded, 'utf8'), '# last month’s runner\n',
-      'and nothing was seeded over the scripts this run is made of');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(/runner: a runner IS the seeded copy of the cloud brief/.test(res.stdout),
+      `the step names its skip: ${res.stdout}`).toBeTruthy();
+    expect(fs.readFileSync(seeded, 'utf8'), 'and nothing was seeded over the scripts this run is made of').toBe('# last month’s runner\n');
     cleanup(world.root);
   });
+});
 
-  group('jobs/morning (cloud): a runner only');
-
-  await test('off a runner the cloud steps never run, and the machine’s roster is untouched', () => {
+describe('jobs/morning (cloud): a runner only', () => {
+  test('off a runner the cloud steps never run, and the machine’s roster is untouched', () => {
     // The synthetic machine replaces what is in ~/.workkit: on a laptop that is
     // every registered repo and decline, swapped for synthetic cloud paths.
     // GITHUB_ACTIONS is the gate on all of it.
@@ -86,15 +83,9 @@ const cases = async () => {
     delete env.GITHUB_ACTIONS;
     spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
 
-    assertEq(fs.readFileSync(roster, 'utf8'), before, 'the roster is byte-identical: nothing was registered or dropped');
-    assertEq(world.calls().length, 0, 'and nothing was sent: the day is dispatched from a machine, never composed on it');
-    assertEq(world.created().length, 0, 'nor published');
+    expect(fs.readFileSync(roster, 'utf8'), 'the roster is byte-identical: nothing was registered or dropped').toBe(before);
+    expect(world.calls().length, 'and nothing was sent: the day is dispatched from a machine, never composed on it').toBe(0);
+    expect(world.created().length, 'nor published').toBe(0);
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

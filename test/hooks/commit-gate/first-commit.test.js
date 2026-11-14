@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
 const { gateOn } = require('../../lib/real-gate');
 const { PREFIX, T, NOTICE, pkg } = require('./helpers');
@@ -21,48 +21,46 @@ const mkUnbornRepo = () => {
 
 const commitOn = (world) => gateOn(world.repo, world.env);
 
-const cases = async () => {
-  group('commit-gate: a repo with no HEAD');
-
-  await test('staged code, no review marker, no suite record, no HEAD: the stand-down line, never a deny', async () => {
+describe('commit-gate: a repo with no HEAD', () => {
+  test('staged code, no review marker, no suite record, no HEAD: the stand-down line, never a deny', async () => {
     const world = mkUnbornRepo();
     const out = await commitOn(world);
-    assertEq(out.deny, null, 'the first commit is never blocked');
-    assertEq(out.context, NOTICE.firstCommit, 'it passes saying the gate stood down');
+    expect(out.deny, 'the first commit is never blocked').toBe(null);
+    expect(out.context, 'it passes saying the gate stood down').toBe(NOTICE.firstCommit);
   });
 
-  await test('after that first commit, the next code commit is judged again: the review is asked for', async () => {
+  test('after that first commit, the next code commit is judged again: the review is asked for', async () => {
     const world = mkUnbornRepo();
     world.git('commit', '-q', '-m', 'feat: first');
     world.write('app.js', 'const x = 2;\n');
     world.git('add', 'app.js');
     const out = await commitOn(world);
-    assertEq(out.deny, `${PREFIX}${T.noReview}`, 'a repo with a HEAD gets the full gate');
+    expect(out.deny, 'a repo with a HEAD gets the full gate').toBe(`${PREFIX}${T.noReview}`);
   });
 
-  await test('a HEAD git cannot read (its commit object gone): the commit is held naming the read, never a stand-down', async () => {
+  test('a HEAD git cannot read (its commit object gone): the commit is held naming the read, never a stand-down', async () => {
     const world = mkGitRepo('cg-first-', { 'package.json': pkg('1.0.0'), 'app.js': 'const x = 1;\n' });
     const sha = world.git('rev-parse', 'HEAD').trim();
     fs.rmSync(path.join(world.repo, '.git', 'objects', sha.slice(0, 2), sha.slice(2)));
     world.write('app.js', 'const x = 2;\n');
     world.git('add', 'app.js');
     const out = await commitOn(world);
-    assert(out.deny?.startsWith(PREFIX), `the commit is blocked, got: ${out.deny}`);
-    assert(out.deny.includes('the HEAD time check could not run: `git log -1 --format=%ct` exited 128 (fatal: bad object HEAD)'), `naming the failed read, got: ${out.deny}`);
+    expect(out.deny?.startsWith(PREFIX), `the commit is blocked, got: ${out.deny}`).toBeTruthy();
+    expect(out.deny.includes('the HEAD time check could not run: `git log -1 --format=%ct` exited 128 (fatal: bad object HEAD)'), `naming the failed read, got: ${out.deny}`).toBeTruthy();
   });
 
-  await test('a staged list git cannot read (the HEAD tree object gone): the commit is held naming the read, never "nothing staged"', async () => {
+  test('a staged list git cannot read (the HEAD tree object gone): the commit is held naming the read, never "nothing staged"', async () => {
     const world = mkGitRepo('cg-first-', { 'package.json': pkg('1.0.0'), 'app.js': 'const x = 1;\n' });
     const tree = world.git('rev-parse', 'HEAD^{tree}').trim();
     fs.rmSync(path.join(world.repo, '.git', 'objects', tree.slice(0, 2), tree.slice(2)));
     world.write('app.js', 'const x = 2;\n');
     world.git('add', 'app.js');
     const out = await commitOn(world);
-    assert(out.deny?.startsWith(PREFIX), `the commit is blocked, got: ${out.deny}`);
-    assert(out.deny.includes('the staged files check could not run: `git -c core.quotePath=false diff --cached --name-only` exited 128 (error: bad tree object HEAD)'), `naming the failed read, got: ${out.deny}`);
+    expect(out.deny?.startsWith(PREFIX), `the commit is blocked, got: ${out.deny}`).toBeTruthy();
+    expect(out.deny.includes('the staged files check could not run: `git -c core.quotePath=false diff --cached --name-only` exited 128 (error: bad tree object HEAD)'), `naming the failed read, got: ${out.deny}`).toBeTruthy();
   });
 
-  await test('a HEAD time read or a staged list read that did not start: the commit is held naming the read and did not start', async () => {
+  test('a HEAD time read or a staged list read that did not start: the commit is held naming the read and did not start', async () => {
     const reads = [
       ['the HEAD time check', (argv) => argv.includes('log') && argv.includes('--format=%ct')],
       ['the staged files check', (argv) => argv.includes('diff') && argv.includes('--cached') && argv.includes('--name-only') && !argv.some((a) => a.startsWith('--diff-filter'))],
@@ -72,15 +70,8 @@ const cases = async () => {
       world.write('app.js', 'const x = 2;\n');
       world.git('add', 'app.js');
       const out = await gateOn(world.repo, world.env, { unstarted: (argv) => path.basename(argv[0]) === 'git' && unstarted(argv) });
-      assert(out.deny?.startsWith(PREFIX), `${check}: the commit is blocked, got: ${out.deny}`);
-      assert(new RegExp(`${check} could not run: \`git [^\`]+\` did not start`).test(out.deny), `${check}: naming the read and did not start, got: ${out.deny}`);
+      expect(out.deny?.startsWith(PREFIX), `${check}: the commit is blocked, got: ${out.deny}`).toBeTruthy();
+      expect(new RegExp(`${check} could not run: \`git [^\`]+\` did not start`).test(out.deny), `${check}: naming the read and did not start, got: ${out.deny}`).toBeTruthy();
     }
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

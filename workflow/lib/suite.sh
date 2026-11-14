@@ -23,14 +23,17 @@ wk_suite_marker_path() { wk_marker_path claude-suite-marker "$1"; }
 # a green whole suite and a green package run answer different questions.
 wk_pkg_marker_path() { wk_marker_path claude-package-marker "$1"; }
 
-# wk_log_path <repo_root> <name>: where a detached run logs. Inside .workkit/
-# only when git ignores it there, else a marker file, so a log never changes
-# the tree hash.
+# wk_log_path <repo_root> <name> [<id>]: where a detached run logs. Inside
+# .workkit/ only when git ignores it there, else a marker file, so a log never
+# changes the tree hash. An <id> keeps one of several runs apart: `.<id>` ends
+# the name in both places.
 wk_log_path() {
-  if git -C "$1" check-ignore -q ".workkit/$2" 2>/dev/null; then
-    printf '%s\n' "$1/.workkit/$2"
+  local marker suffix="${3:+.$3}"
+  if git -C "$1" check-ignore -q ".workkit/$2$suffix" 2>/dev/null; then
+    printf '%s\n' "$1/.workkit/$2$suffix"
   else
-    wk_marker_path "claude-$2" "$1"
+    marker=$(wk_marker_path "claude-$2" "$1") || return 1
+    printf '%s\n' "$marker$suffix"
   fi
 }
 
@@ -42,6 +45,53 @@ wk_run_log_path() { wk_log_path "$1" run.log; }
 wk_run_lock_path() { wk_marker_path claude-run-lock "$1"; }
 wk_ci_log_path() { wk_log_path "$1" ci.log; }
 wk_ci_lock_path() { wk_marker_path claude-ci-watch-lock "$1"; }
+
+# The days a narrowed run's slot outlives its done file, beside the markers'
+# MARKER_KEEP_DAYS (platform.sh); wk_test_slots_sweep removes older.
+TEST_SLOT_KEEP_DAYS=1
+
+# wk_test_log_path <repo_root> <pid> and wk_test_lock_path <repo_root> <pid>: a
+# narrowed run's slot, named by its wrapper's pid, so several run at once in one
+# repo. A slot no call collected is removed by a later run's wk_test_slots_sweep.
+wk_test_log_path() { wk_log_path "$1" test.log "$2"; }
+wk_test_lock_path() {
+  local lock
+  lock=$(wk_marker_path claude-test-lock "$1") || return 1
+  printf '%s.%s\n' "$lock" "$2"
+}
+
+# wk_test_pids <repo_root>: the pid of each narrowed run whose lock folder
+# stands, one per line, live or not.
+wk_test_pids() {
+  local base lock
+  base=$(wk_test_lock_path "$1" "") || return 1
+  for lock in "$base"*; do
+    [ -d "$lock" ] && printf '%s\n' "${lock#"$base"}"
+  done
+  return 0
+}
+
+# wk_test_slot_clear <repo_root> <pid>: a narrowed run's log and its lock's
+# record removed, once a call has read its end (the lock is dropped already).
+wk_test_slot_clear() {
+  local log lock
+  log=$(wk_test_log_path "$1" "$2") && lock=$(wk_test_lock_path "$1" "$2") || return 1
+  rm -f "$log" "$lock.done"
+}
+
+# wk_test_slots_sweep <repo_root>: remove the repo's narrowed-run slots (lock
+# folder, log, done record) whose done file is over TEST_SLOT_KEEP_DAYS old: a
+# run whose wrapper was cut off, its answer never collected.
+wk_test_slots_sweep() {
+  local slot lock
+  while IFS= read -r slot; do
+    lock=$(wk_test_lock_path "$1" "$slot") || return 1
+    if [ -n "$(find "$lock/done" -mmin "+$((TEST_SLOT_KEEP_DAYS * 1440))" 2>/dev/null)" ]; then
+      wk_test_slot_clear "$1" "$slot"
+      rm -rf "$lock"
+    fi
+  done < <(wk_test_pids "$1")
+}
 
 # wk_index_write_tree <repo_root> <index> [<path>...]: drop `.workkit` and each
 # <path> from the scratch <index>, then print its `git write-tree` id. `-f`,
@@ -111,6 +161,11 @@ _wk_record_holds() {
 # in whole seconds (bash 3.2 has no finer clock), ample for a budget in
 # minutes. Consumers: the suite record's two writers, timing their run.
 wk_elapsed_ms() { printf '%s\n' "$(( (SECONDS - $1) * 1000 ))"; }
+
+# wk_ci_set: CI holds any value but the empty string. A root script may run only
+# part of its suite under CI, so a run with it set writes no record. Consumers:
+# script-shell.sh (both records) and prove.sh.
+wk_ci_set() { [ -n "${CI:-}" ]; }
 
 # wk_suite_marker_write <repo_root> <tree> <ms>: sweep the markers, then record
 # <tree>, the id hashed BEFORE the green run (an edit made while it ran is never

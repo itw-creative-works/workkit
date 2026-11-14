@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, summary, selfRun, mkTmp } = require('../../lib/harness');
+const { describe, test, expect, mkTmp } = require('../../lib/harness');
 const {
   T, NOTICE, stage, write, commit, touchMarker, proveTree, judge, denyOf, blocks, passes, recordBlocks,
   suiteRan, pkg, mkReleaseRepo,
@@ -14,19 +14,19 @@ const {
 // A no-code commit passes with the stand-down line and no suite.
 const recordNotRequired = (v, r) => {
   passes(v, NOTICE.noCode, 'the no-code stand-down');
-  assert(!suiteRan(r), 'the gate never runs the suite');
+  expect(!suiteRan(r), 'the gate never runs the suite').toBeTruthy();
 };
 
 // The record block, and proof the gate ran nothing on the way.
 const recordRequired = (v, r) => {
   recordBlocks(v);
-  assert(!suiteRan(r), 'the gate never runs the suite');
+  expect(!suiteRan(r), 'the gate never runs the suite').toBeTruthy();
 };
 
 // The block when the record proves the disk tree and the commit carries another.
 const diskProved = (v, r) => {
   blocks(v, T.disk, 'the disk tree is not the commit\'s');
-  assert(!suiteRan(r), 'the gate never runs the suite');
+  expect(!suiteRan(r), 'the gate never runs the suite').toBeTruthy();
 };
 
 // A plugin repo's manifest, the other file a repo keeps its version in.
@@ -91,22 +91,20 @@ const codeCommit = () => {
   return r;
 };
 
-const cases = async () => {
-  group('commit-gate: the record is required only for commits carrying code');
-
-  await test('docs-only commit: no record required', async () => {
+describe('commit-gate: the record is required only for commits carrying code', () => {
+  test('docs-only commit: no record required', async () => {
     const r = mkReleaseRepo();
     stage(r, 'README.md', '# docs\n');
     recordNotRequired(await judge(r, 'docs: readme'), r);
   });
 
-  await test('version-only root package.json bump: no record required', async () => {
+  test('version-only root package.json bump: no record required', async () => {
     const r = mkReleaseRepo();
     stage(r, 'package.json', pkg('1.0.1'));
     recordNotRequired(await judge(r, 'chore(release): 1.0.1'), r);
   });
 
-  await test('version bump plus a second changed key: gates as code', async () => {
+  test('version bump plus a second changed key: gates as code', async () => {
     const r = mkReleaseRepo();
     stage(r, 'package.json', pkg('1.0.1', { description: 'now with a second change' }));
     blocks(await judge(r, 'chore: bump'), T.noReview, 'any second change restores code classification');
@@ -114,7 +112,7 @@ const cases = async () => {
     recordRequired(await judge(r, 'chore: bump'), r);
   });
 
-  await test('a code file alongside the version bump: record required', async () => {
+  test('a code file alongside the version bump: record required', async () => {
     const r = mkReleaseRepo();
     stage(r, 'package.json', pkg('1.0.1'));
     stage(r, 'app.js', 'const x = 2;\n');
@@ -122,14 +120,14 @@ const cases = async () => {
     recordRequired(await judge(r, 'feat: thing'), r);
   });
 
-  await test('version-only plugin.json bump: no record required', async () => {
+  test('version-only plugin.json bump: no record required', async () => {
     const r = mkPluginRepo();
     stage(r, 'package.json', pkg('1.0.1'));
     stage(r, '.claude-plugin/plugin.json', manifest('1.0.1'));
     recordNotRequired(await judge(r, 'chore(release): 1.0.1'), r);
   });
 
-  await test('plugin.json version bump plus a second changed key: gates as code', async () => {
+  test('plugin.json version bump plus a second changed key: gates as code', async () => {
     const r = mkPluginRepo();
     stage(r, '.claude-plugin/plugin.json', manifest('1.0.1', { description: 'reworded' }));
     blocks(await judge(r, 'chore: bump'), T.noReview, 'any second change restores code classification');
@@ -137,7 +135,7 @@ const cases = async () => {
     recordRequired(await judge(r, 'chore: bump'), r);
   });
 
-  await test('a script under a docs PATH is code: record required', async () => {
+  test('a script under a docs PATH is code: record required', async () => {
     const r = mkReleaseRepo();
     stage(r, 'hooks/docs/x/run.sh', '#!/bin/bash\necho hi\n');
     commit(r);
@@ -147,75 +145,75 @@ const cases = async () => {
     recordRequired(await judge(r, 'fix: the hook'), r);
   });
 
-  await test('a .md under a docs path is still docs: no record required', async () => {
+  test('a .md under a docs path is still docs: no record required', async () => {
     const r = mkReleaseRepo();
     stage(r, 'docs/notes.md', '# notes\n');
     recordNotRequired(await judge(r, 'docs: notes'), r);
   });
 
-  await test('a nested package.json version bump is a version stamp: no record required', async () => {
+  test('a nested package.json version bump is a version stamp: no record required', async () => {
     const r = mkWorkspaceRepo(pkg('1.0.0'));
     stage(r, 'sub/package.json', pkg('1.0.1'));
     recordNotRequired(await judge(r, 'chore: bump sub'), r);
   });
 
-  await test('a nested package.json lockstep bump moves version and exact pins together: no record required', async () => {
+  test('a nested package.json lockstep bump moves version and exact pins together: no record required', async () => {
     const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
     stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
     recordNotRequired(await judge(r, 'chore: bump sub'), r);
   });
 
-  await test('a version bumped alone past a pin equal to the old version: no record required', async () => {
+  test('a version bumped alone past a pin equal to the old version: no record required', async () => {
     const r = mkReleaseRepo(pkg('1.0.0', { dependencies: { foo: '1.0.0' } }));
     stage(r, 'package.json', pkg('1.0.1', { dependencies: { foo: '1.0.0' } }));
     recordNotRequired(await judge(r, 'chore(release): 1.0.1'), r);
   });
 
-  await test('a nested package.json lockstep bump moves a devDependencies pin too: no record required', async () => {
+  test('a nested package.json lockstep bump moves a devDependencies pin too: no record required', async () => {
     const r = mkWorkspaceRepo(pkg('1.0.0', { devDependencies: DEPS }));
     stage(r, 'sub/package.json', pkg('1.0.1', { devDependencies: { ...DEPS, '@fixture/other': '1.0.1' } }));
     recordNotRequired(await judge(r, 'chore: bump sub'), r);
   });
 
-  await test('a range pin moved with the version gates as code: only exact pins are lockstep', async () => {
+  test('a range pin moved with the version gates as code: only exact pins are lockstep', async () => {
     const range = { ...DEPS, '@fixture/other': '^1.0.0' };
     const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: range }));
     stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...range, '@fixture/other': '^1.0.1' } }));
     await gatesAsCode(r);
   });
 
-  await test('a pin moved to a value other than the version gates as code', async () => {
+  test('a pin moved to a value other than the version gates as code', async () => {
     const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
     stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.2' } }));
     await gatesAsCode(r);
   });
 
-  await test('a dependency added beside the bump gates as code', async () => {
+  test('a dependency added beside the bump gates as code', async () => {
     const r = mkWorkspaceRepo(pkg('1.0.0', { dependencies: DEPS }));
     stage(r, 'sub/package.json', pkg('1.0.1', { dependencies: { ...DEPS, '@fixture/other': '1.0.1', '@fixture/third': '1.0.1' } }));
     await gatesAsCode(r);
   });
 
-  await test('a nested plugin.json version-only bump is a version stamp: no record required', async () => {
+  test('a nested plugin.json version-only bump is a version stamp: no record required', async () => {
     const r = mkNestedPluginRepo();
     stage(r, NESTED_MANIFEST, manifest('1.0.1'));
     recordNotRequired(await judge(r, 'chore(release): 1.0.1'), r);
   });
 
-  await test('a nested plugin.json bump with an added key gates as code', async () => {
+  test('a nested plugin.json bump with an added key gates as code', async () => {
     const r = mkNestedPluginRepo();
     stage(r, NESTED_MANIFEST, manifest('1.0.1', { homepage: 'https://example.com' }));
     await gatesAsCode(r);
   });
 
-  await test('a release commit whose lockfile moves only its version spots: no record required', async () => {
+  test('a release commit whose lockfile moves only its version spots: no record required', async () => {
     const r = mkLockRepo();
     stage(r, 'package.json', pkg('1.0.1'));
     stage(r, 'package-lock.json', lockfile('1.0.1'));
     recordNotRequired(await judge(r, 'chore(release): 1.0.1'), r);
   });
 
-  await test('a lockfile whose dependency entry moves beside the version spots gates as code', async () => {
+  test('a lockfile whose dependency entry moves beside the version spots gates as code', async () => {
     const r = mkLockRepo();
     stage(r, 'package.json', pkg('1.0.1'));
     stage(r, 'package-lock.json', lockfile('1.0.1', '4.17.22'));
@@ -223,34 +221,34 @@ const cases = async () => {
     touchMarker(r);
     recordRequired(await judge(r, 'chore(release): 1.0.1'), r);
   });
+});
 
-  group('commit-gate: the suite record');
-
-  await test('a record holding the index tree: exit 0 and the stand-down line', async () => {
+describe('commit-gate: the suite record', () => {
+  test('a record holding the index tree: exit 0 and the stand-down line', async () => {
     const r = codeCommit();
     proveTree(r);
     passes(await judge(r, 'feat: thing'), NOTICE.proved, 'a proved tree passes');
-    assert(!suiteRan(r), 'the gate never runs the suite');
+    expect(!suiteRan(r), 'the gate never runs the suite').toBeTruthy();
   });
 
-  await test('no record: blocked, naming npm test at the repo root', async () => {
+  test('no record: blocked, naming npm test at the repo root', async () => {
     const r = codeCommit();
     recordRequired(await judge(r, 'feat: thing'), r);
   });
 
-  await test('no record and npm\'s script-shell unset: blocked, naming workkit setup', async () => {
+  test('no record and npm\'s script-shell unset: blocked, naming workkit setup', async () => {
     const r = codeCommit();
     r.scriptShell = '';
     blocks(await judge(r, 'feat: thing'), T.unwired, 'the cause and its fix');
-    assert(!suiteRan(r), 'the gate never runs the suite');
+    expect(!suiteRan(r), 'the gate never runs the suite').toBeTruthy();
   });
 
-  await test('no record, the wrapper wired: the bounce names the suite log', async () => {
+  test('no record, the wrapper wired: the bounce names the suite log', async () => {
     const r = codeCommit();
     const deny = denyOf(await judge(r, 'feat: thing'));
     recordBlocks({ deny });
     const logFile = deny.slice(deny.indexOf('writes its output to ') + 'writes its output to '.length, deny.length - T.recordTail.length);
-    assert(logFile.includes('suite.log'), `the bounce names the suite log, got: ${logFile}`);
+    expect(logFile.includes('suite.log'), `the bounce names the suite log, got: ${logFile}`).toBeTruthy();
   });
 
   // The Windows compare: npm's value spelled with a drive, read through cygpath,
@@ -266,18 +264,18 @@ const cases = async () => {
     return r;
   };
 
-  await test('Windows, npm\'s script-shell naming the built executable: the plain block', async () => {
+  test('Windows, npm\'s script-shell naming the built executable: the plain block', async () => {
     const r = onWindows((exe) => exe);
     const v = await judge(r, 'feat: thing');
     recordRequired(v, r);
-    assert(!denyOf(v).includes('workkit setup'), `no setup hint, got: ${denyOf(v)}`);
+    expect(!denyOf(v).includes('workkit setup'), `no setup hint, got: ${denyOf(v)}`).toBeTruthy();
   });
 
-  await test('Windows, npm\'s script-shell naming the executable, deleted: blocked, naming workkit setup', async () => {
+  test('Windows, npm\'s script-shell naming the executable, deleted: blocked, naming workkit setup', async () => {
     blocks(await judge(onWindows((exe) => exe, { built: false }), 'feat: thing'), T.unwired, 'a deleted executable is not the wrapper');
   });
 
-  await test('Windows, npm\'s script-shell naming another program: blocked, naming workkit setup', async () => {
+  test('Windows, npm\'s script-shell naming another program: blocked, naming workkit setup', async () => {
     const r = onWindows((exe) => {
       const other = path.join(path.dirname(exe), 'other.exe');
       fs.writeFileSync(other, '');
@@ -286,30 +284,23 @@ const cases = async () => {
     blocks(await judge(r, 'feat: thing'), T.unwired, 'another program is not the wrapper');
   });
 
-  await test('a stale record, holding another tree: blocked', async () => {
+  test('a stale record, holding another tree: blocked', async () => {
     const r = codeCommit();
     proveTree(r, '0000000000000000000000000000000000000000');
     recordRequired(await judge(r, 'feat: thing'), r);
   });
 
-  await test('a record holding the disk tree while the index holds another: blocked, naming the gap', async () => {
+  test('a record holding the disk tree while the index holds another: blocked, naming the gap', async () => {
     const r = codeCommit();
     write(r, 'app.js', 'const x = 3;\n');
     proveTree(r);
     diskProved(await judge(r, 'feat: thing'), r);
   });
 
-  await test('a repo with no root test script: code commits need no record', async () => {
+  test('a repo with no root test script: code commits need no record', async () => {
     const r = mkReleaseRepo(`${JSON.stringify({ name: 'fixture', version: '1.0.0' }, null, 2)}\n`);
     stage(r, 'app.js', 'const x = 2;\n');
     touchMarker(r);
     passes(await judge(r, 'feat: thing'), '', 'there is no suite to prove, and nothing said about one');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

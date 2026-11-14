@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith,
 } = require('../lib/platform');
@@ -59,25 +59,23 @@ const runScript = (w, args = []) => {
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `the script finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
 const lines = (out) => out.split('\n').filter(Boolean);
 
 // The harness compares with `===`, so a list is compared in its JSON form.
-const assertList = (actual, expected, msg) => assertEq(JSON.stringify(actual), JSON.stringify(expected), msg);
+const assertList = (actual, expected, msg) => expect(JSON.stringify(actual), msg).toBe(JSON.stringify(expected));
 
-const cases = async () => {
-  group('ship items: the lines');
-
-  await test('qa lines first, then complete, each by number ascending', () => {
+describe('ship items: the lines', () => {
+  test('qa lines first, then complete, each by number ascending', () => {
     const w = mkWorld({
       qa: [issue(12, 'qa twelve', 'Proof: unit'), issue(3, 'qa three', 'Proof: unit')],
       complete: [issue(40, 'complete forty', 'Proof: unit'), issue(7, 'complete seven', 'Proof: unit')],
     });
     const { code, out, err } = runScript(w);
-    assertEq(code, 0, `exit 0: ${err}`);
+    expect(code, `exit 0: ${err}`).toBe(0);
     assertList(lines(out), [
       'qa #3 proved qa three',
       'qa #12 proved qa twelve',
@@ -87,24 +85,24 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  await test('a title prints verbatim after the third field', () => {
+  test('a title prints verbatim after the third field', () => {
     const title = 'ship:  two  spaces, a "quote", $HOME and a `tick`';
     const w = mkWorld({ complete: [issue(5, title, 'Proof: unit')] });
     const { code, out } = runScript(w);
-    assertEq(code, 0, 'exit 0');
-    assertEq(out, `complete #5 proved ${title}\n`, 'the title untouched');
+    expect(code, 'exit 0').toBe(0);
+    expect(out, 'the title untouched').toBe(`complete #5 proved ${title}\n`);
     cleanup(w.dir);
   });
+});
 
-  group('ship items: the proof call');
-
-  await test('a comment opening with Proof: is proved', () => {
+describe('ship items: the proof call', () => {
+  test('a comment opening with Proof: is proved', () => {
     const w = mkWorld({ complete: [issue(1, 'one', 'looks good', 'Proof: unit: node tests/x.test.js')] });
-    assertEq(runScript(w).out, 'complete #1 proved one\n', 'proved');
+    expect(runScript(w).out, 'proved').toBe('complete #1 proved one\n');
     cleanup(w.dir);
   });
 
-  await test('a Proof: line mid-comment counts, leading blanks tolerated', () => {
+  test('a Proof: line mid-comment counts, leading blanks tolerated', () => {
     const w = mkWorld({
       complete: [
         issue(1, 'mid', 'what to check: the board page\n\nProof: unit: node tests/x.js'),
@@ -115,7 +113,7 @@ const cases = async () => {
     cleanup(w.dir);
   });
 
-  await test('lowercase proof:, "Proof of", Proof: mid-line and no comments are unproved', () => {
+  test('lowercase proof:, "Proof of", Proof: mid-line and no comments are unproved', () => {
     const w = mkWorld({
       qa: [issue(4, 'no comments')],
       complete: [
@@ -132,51 +130,51 @@ const cases = async () => {
     ], 'every one unproved');
     cleanup(w.dir);
   });
+});
 
-  group('ship items: nothing, a failure, and the repo');
-
-  await test('nothing at either stage prints the one line and exits 0', () => {
+describe('ship items: nothing, a failure, and the repo', () => {
+  test('nothing at either stage prints the one line and exits 0', () => {
     const w = mkWorld();
     const { code, out, err } = runScript(w);
-    assertEq(code, 0, 'exit 0');
-    assertEq(out, 'ship-items: nothing at qa or complete\n', 'the empty line');
-    assertEq(err, '', 'nothing on stderr');
+    expect(code, 'exit 0').toBe(0);
+    expect(out, 'the empty line').toBe('ship-items: nothing at qa or complete\n');
+    expect(err, 'nothing on stderr').toBe('');
     cleanup(w.dir);
   });
 
-  await test('a failing gh gives one ship-items: stderr line and exit 1', () => {
+  test('a failing gh gives one ship-items: stderr line and exit 1', () => {
     const w = mkWorld({ fail: true });
     const { code, out, err } = runScript(w);
-    assertEq(code, 1, 'exit 1');
-    assertEq(out, '', 'nothing on stdout');
-    assertEq(lines(err).length, 1, `one stderr line, got: ${err}`);
-    assert(err.startsWith('ship-items: '), `the line is the script's: ${err}`);
-    assert(err.includes('error connecting to api.github.com'), `gh's reason rides along: ${err}`);
+    expect(code, 'exit 1').toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(lines(err).length, `one stderr line, got: ${err}`).toBe(1);
+    expect(err.startsWith('ship-items: '), `the line is the script's: ${err}`).toBeTruthy();
+    expect(err.includes('error connecting to api.github.com'), `gh's reason rides along: ${err}`).toBeTruthy();
     cleanup(w.dir);
   });
 
-  await test('a failure on the second call leaves stdout empty and exits 1', () => {
+  test('a failure on the second call leaves stdout empty and exits 1', () => {
     const w = mkWorld({ qa: [issue(3, 'qa three', 'Proof: unit')], fail: 'complete' });
     const { code, out, err } = runScript(w);
-    assertEq(code, 1, 'exit 1');
-    assertEq(out, '', 'no half list: the qa line is not printed');
-    assertEq(lines(err).length, 1, `one stderr line, got: ${err}`);
-    assert(err.startsWith('ship-items: ') && err.includes('status:complete'), `the line names the stage: ${err}`);
-    assertEq(w.calls().length, 2, `both calls were made: ${fmtCalls(w.calls())}`);
+    expect(code, 'exit 1').toBe(1);
+    expect(out, 'no half list: the qa line is not printed').toBe('');
+    expect(lines(err).length, `one stderr line, got: ${err}`).toBe(1);
+    expect(err.startsWith('ship-items: ') && err.includes('status:complete'), `the line names the stage: ${err}`).toBeTruthy();
+    expect(w.calls().length, `both calls were made: ${fmtCalls(w.calls())}`).toBe(2);
     cleanup(w.dir);
   });
 
-  await test('a gh answer that is not JSON gives one ship-items: stderr line and exit 1', () => {
+  test('a gh answer that is not JSON gives one ship-items: stderr line and exit 1', () => {
     const w = mkWorld({ qa: '<html>rate limited</html>' });
     const { code, out, err } = runScript(w);
-    assertEq(code, 1, 'exit 1');
-    assertEq(out, '', 'nothing on stdout');
-    assertEq(lines(err).length, 1, `one stderr line, got: ${err}`);
-    assert(err.startsWith('ship-items: ') && err.includes('status:qa'), `the line names the stage: ${err}`);
+    expect(code, 'exit 1').toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(lines(err).length, `one stderr line, got: ${err}`).toBe(1);
+    expect(err.startsWith('ship-items: ') && err.includes('status:qa'), `the line names the stage: ${err}`).toBeTruthy();
     cleanup(w.dir);
   });
 
-  await test('the two list calls, with --repo passed through when given', () => {
+  test('the two list calls, with --repo passed through when given', () => {
     const w = mkWorld();
     runScript(w);
     const listArgs = (stage) => ['issue', 'list', '--state', 'open', '--label', `status:${stage}`,
@@ -186,39 +184,33 @@ const cases = async () => {
 
     runScript(w, ['--repo', 'owner/name']);
     const calls = w.calls();
-    assertEq(calls.length, 2, `two calls: ${fmtCalls(calls)}`);
+    expect(calls.length, `two calls: ${fmtCalls(calls)}`).toBe(2);
     for (const call of calls) {
-      assert(isCall(call, 'issue', 'list'), `an issue list: ${fmtCalls([call])}`);
+      expect(isCall(call, 'issue', 'list'), `an issue list: ${fmtCalls([call])}`).toBeTruthy();
       const at = call.indexOf('--repo');
-      assert(at !== -1 && call[at + 1] === 'owner/name', `--repo owner/name reached gh: ${fmtCalls([call])}`);
+      expect(at !== -1 && call[at + 1] === 'owner/name', `--repo owner/name reached gh: ${fmtCalls([call])}`).toBeTruthy();
     }
     cleanup(w.dir);
   });
 
-  await test('an unknown argument is refused with a ship-items: line and exit 2, the usage code', () => {
+  test('an unknown argument is refused with a ship-items: line and exit 2, the usage code', () => {
     const w = mkWorld();
     const { code, err } = runScript(w, ['--nope']);
-    assertEq(code, 2, 'exit 2');
-    assert(err.startsWith('ship-items: '), `the line is the script's: ${err}`);
+    expect(code, 'exit 2').toBe(2);
+    expect(err.startsWith('ship-items: '), `the line is the script's: ${err}`).toBeTruthy();
     assertList(w.calls(), [], 'gh was never asked');
     cleanup(w.dir);
   });
 
-  await test('--repo with no value is refused with a ship-items: line and exit 2', () => {
+  test('--repo with no value is refused with a ship-items: line and exit 2', () => {
     const w = mkWorld();
     for (const args of [['--repo'], ['--repo', '']]) {
       const { code, out, err } = runScript(w, args);
-      assertEq(code, 2, `exit 2 for ${JSON.stringify(args)}`);
-      assertEq(out, '', 'nothing on stdout');
-      assert(err.startsWith('ship-items: '), `the line is the script's: ${err}`);
+      expect(code, `exit 2 for ${JSON.stringify(args)}`).toBe(2);
+      expect(out, 'nothing on stdout').toBe('');
+      expect(err.startsWith('ship-items: '), `the line is the script's: ${err}`).toBeTruthy();
     }
     assertList(w.calls(), [], 'gh was never asked');
     cleanup(w.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(module.exports);
+});

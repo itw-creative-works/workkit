@@ -5,7 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv,
 } = require('../../lib/platform');
@@ -44,55 +44,47 @@ const runCommandLink = (machine) => {
   return { code: res.status, output: `${res.stdout || ''}${res.stderr || ''}` };
 };
 
-const cases = async () => {
-  group('standards.sh: --command-link');
-
-  await test('links ~/.local/bin/workkit at the kit command, outside any repo', () => {
+describe('standards.sh: --command-link', () => {
+  test('links ~/.local/bin/workkit at the kit command, outside any repo', () => {
     const machine = mkMachine();
     const { code, output } = runCommandLink(machine);
-    assertEq(code, 0, `exits 0, got: ${output}`);
-    assert(fs.lstatSync(machine.link, { throwIfNoEntry: false })?.isSymbolicLink(),
-      `the command is a symlink, got: ${output}`);
-    assertEq(fs.realpathSync(machine.link), fs.realpathSync(COMMAND), 'and it resolves to workflow/workkit.sh');
+    expect(code, `exits 0, got: ${output}`).toBe(0);
+    expect(fs.lstatSync(machine.link, { throwIfNoEntry: false })?.isSymbolicLink(),
+      `the command is a symlink, got: ${output}`).toBeTruthy();
+    expect(fs.realpathSync(machine.link), 'and it resolves to workflow/workkit.sh').toBe(fs.realpathSync(COMMAND));
     cleanup(machine.root);
   });
 
-  await test('a second run exits 0 and leaves the link as it was', () => {
+  test('a second run exits 0 and leaves the link as it was', () => {
     const machine = mkMachine();
     runCommandLink(machine);
     const first = fs.readlinkSync(machine.link);
     const { code, output } = runCommandLink(machine);
-    assertEq(code, 0, `the second run exits 0, got: ${output}`);
-    assertEq(fs.readlinkSync(machine.link), first, 'the link is unchanged');
+    expect(code, `the second run exits 0, got: ${output}`).toBe(0);
+    expect(fs.readlinkSync(machine.link), 'the link is unchanged').toBe(first);
     cleanup(machine.root);
   });
 
   // A fresh cloud HOME has no ~/.local/bin at all.
-  await test('a HOME with no ~/.local/bin gets the folder and the link', () => {
+  test('a HOME with no ~/.local/bin gets the folder and the link', () => {
     const machine = mkMachine({ localBin: false });
     const { code, output } = runCommandLink(machine);
-    assertEq(code, 0, `exits 0, got: ${output}`);
-    assert(fs.lstatSync(machine.link, { throwIfNoEntry: false })?.isSymbolicLink(),
-      `the folder is made and the command linked in it, got: ${output}`);
-    assertEq(fs.realpathSync(machine.link), fs.realpathSync(COMMAND), 'resolving to workflow/workkit.sh');
+    expect(code, `exits 0, got: ${output}`).toBe(0);
+    expect(fs.lstatSync(machine.link, { throwIfNoEntry: false })?.isSymbolicLink(),
+      `the folder is made and the command linked in it, got: ${output}`).toBeTruthy();
+    expect(fs.realpathSync(machine.link), 'resolving to workflow/workkit.sh').toBe(fs.realpathSync(COMMAND));
     cleanup(machine.root);
   });
 
   // The engine address and the gh shim have their own steps; this mode is the
   // command link alone.
-  await test('heals nothing else: no engine address, no gh shim', () => {
+  test('heals nothing else: no engine address, no gh shim', () => {
     const machine = mkMachine();
     const { code, output } = runCommandLink(machine);
-    assertEq(code, 0, `exits 0, got: ${output}`);
-    assert(!fs.existsSync(path.join(machine.claude, 'workkit')),
-      `no ~/.claude/workkit engine link appears, got: ${output}`);
-    assertEq(fs.readdirSync(path.dirname(machine.link)).join(' '), 'workkit', 'and ~/.local/bin holds the command only');
+    expect(code, `exits 0, got: ${output}`).toBe(0);
+    expect(!fs.existsSync(path.join(machine.claude, 'workkit')),
+      `no ~/.claude/workkit engine link appears, got: ${output}`).toBeTruthy();
+    expect(fs.readdirSync(path.dirname(machine.link)).join(' '), 'and ~/.local/bin holds the command only').toBe('workkit');
     cleanup(machine.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

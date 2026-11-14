@@ -3,7 +3,7 @@
 // status:specced needs a `## Spec` that is the small-item line or carries a `### Contract`, and no body edit beside it;
 // an unreadable view fails open. In test/scripts/identity/: argv spelling, gate.test.js; a real gh call, gh-shim.test.js.
 
-const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
 
 const CWD = '/w/repo';
@@ -47,86 +47,77 @@ const judged = async (steps, { fails = false, repo = null } = {}) => {
 
 const passes = async (steps, what = JSON.stringify(steps)) => {
   const out = await judged(steps);
-  assertEq(out.deny, null, `must pass: ${what}`);
+  expect(out.deny, `must pass: ${what}`).toBe(null);
   return out;
 };
 
-const cases = async () => {
-  group('spec-guard: the flip to status:specced');
-
-  await test('the small-item Spec passes, silently: one body read of #12', async () => {
+describe('spec-guard: the flip to status:specced', () => {
+  test('the small-item Spec passes, silently: one body read of #12', async () => {
     const { r, calls } = await passes(FLIP(12));
-    assertEq(textOf(r), '', 'nothing said on a pass');
-    assertEq(JSON.stringify(calls), JSON.stringify([['12', null]]), 'exactly one read, of #12');
+    expect(textOf(r), 'nothing said on a pass').toBe('');
+    expect(JSON.stringify(calls), 'exactly one read, of #12').toBe(JSON.stringify([['12', null]]));
   });
 
-  await test('a Spec carrying ### Contract passes', async () => {
+  test('a Spec carrying ### Contract passes', async () => {
     await passes(FLIP(13));
   });
 
-  await test('a written Spec with no ### Contract blocks, with the exact line', async () => {
-    assertEq((await judged(FLIP(14))).deny, BLOCK(14), 'the block line');
+  test('a written Spec with no ### Contract blocks, with the exact line', async () => {
+    expect((await judged(FLIP(14))).deny, 'the block line').toBe(BLOCK(14));
   });
 
-  await test('a body with no ## Spec section blocks', async () => {
-    assertEq((await judged(FLIP(15))).deny, BLOCK(15), 'no Spec reads as a written Spec with no Contract');
+  test('a body with no ## Spec section blocks', async () => {
+    expect((await judged(FLIP(15))).deny, 'no Spec reads as a written Spec with no Contract').toBe(BLOCK(15));
   });
 
-  await test('a ### Contract outside the Spec section does not count', async () => {
-    assertEq((await judged(FLIP(16))).deny, BLOCK(16), 'only the Spec section is read');
+  test('a ### Contract outside the Spec section does not count', async () => {
+    expect((await judged(FLIP(16))).deny, 'only the Spec section is read').toBe(BLOCK(16));
   });
 
-  await test('a CRLF body reads like an LF one', async () => {
+  test('a CRLF body reads like an LF one', async () => {
     await passes(FLIP(17));
   });
 
-  await test('a fenced ## line inside the Spec does not end it', async () => {
+  test('a fenced ## line inside the Spec does not end it', async () => {
     await passes(FLIP(18));
   });
 
-  await test('a body edit in the flipping clause blocks, reading no issue: a step carrying body: true', async () => {
+  test('a body edit in the flipping clause blocks, reading no issue: a step carrying body: true', async () => {
     const { deny, calls } = await judged([{ ...step(12, ['status:specced'], []), body: true }]);
-    assertEq(deny, BODY_EDIT(12), 'the body-edit line, though #12 holds a passing small-item Spec');
-    assertEq(calls.length, 0, 'reads no issue');
+    expect(deny, 'the body-edit line, though #12 holds a passing small-item Spec').toBe(BODY_EDIT(12));
+    expect(calls.length, 'reads no issue').toBe(0);
   });
 
-  await test('the listed label spellings are judged the same: status:specced among other added labels', async () => {
-    assertEq((await judged([step(14, ['priority:high', 'status:specced'], [])])).deny, BLOCK(14), 'the uncontracted flip blocks');
+  test('the listed label spellings are judged the same: status:specced among other added labels', async () => {
+    expect((await judged([step(14, ['priority:high', 'status:specced'], [])])).deny, 'the uncontracted flip blocks').toBe(BLOCK(14));
     await passes([step(13, ['priority:high', 'status:specced'], [])], 'the contracted flip still passes');
   });
 
-  await test('an edit that adds no status:specced passes untouched, reading nothing', async () => {
+  test('an edit that adds no status:specced passes untouched, reading nothing', async () => {
     for (const s of [step(14, ['priority:high'], []), step(14, ['status:building'], ['status:specced'])]) {
       const { r, calls } = await passes([s]);
-      assertEq(textOf(r), '', `nothing said: ${JSON.stringify(s)}`);
-      assertEq(calls.length, 0, `no issue is read: ${JSON.stringify(s)}`);
+      expect(textOf(r), `nothing said: ${JSON.stringify(s)}`).toBe('');
+      expect(calls.length, `no issue is read: ${JSON.stringify(s)}`).toBe(0);
     }
   });
+});
 
-  group('spec-guard: repo and compound');
-
-  await test("an issue URL's repo rides the read, never the session's", async () => {
+describe('spec-guard: repo and compound', () => {
+  test("an issue URL's repo rides the read, never the session's", async () => {
     const { deny, calls } = await judged(FLIP(14), { repo: 'owner/name' });
-    assertEq(deny, BLOCK(14), 'the issue still has no Contract');
-    assertEq(JSON.stringify(calls), JSON.stringify([['14', 'owner/name']]), 'the repo is forwarded');
+    expect(deny, 'the issue still has no Contract').toBe(BLOCK(14));
+    expect(JSON.stringify(calls), 'the repo is forwarded').toBe(JSON.stringify([['14', 'owner/name']]));
   });
 
-  await test('every issue in a compound is judged', async () => {
-    assertEq((await judged([step(12), step(14)])).deny, BLOCK(14), 'names the uncontracted one');
+  test('every issue in a compound is judged', async () => {
+    expect((await judged([step(12), step(14)])).deny, 'names the uncontracted one').toBe(BLOCK(14));
   });
+});
 
-  group('spec-guard: wiring and fail-open');
-
-  await test('a gh view that fails: exit 0, one line saying the gate did not run', async () => {
+describe('spec-guard: wiring and fail-open', () => {
+  test('a gh view that fails: exit 0, one line saying the gate did not run', async () => {
     const { r, deny } = await judged(FLIP(14), { fails: true });
-    assertEq(deny, null, 'a failing view fails open');
-    assertEq(textOf(r), SKIPPED(14, 'gh could not answer'), 'the one stand-down line');
+    expect(deny, 'a failing view fails open').toBe(null);
+    expect(textOf(r), 'the one stand-down line').toBe(SKIPPED(14, 'gh could not answer'));
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

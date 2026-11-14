@@ -7,9 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, mkTmp,
+  describe, test, expect, mkTmp,
 } = require('../../lib/harness');
-const { IS_WINDOWS, NO_NODE_STUB } = require('../../lib/platform');
+const { skipWithoutNodeStub } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
   cloudWorld, assertSame, assertOk, printedJson, writes, routes,
@@ -99,28 +99,25 @@ const LISTED = [...Array.from({ length: 100 }, (_, i) => 300 - i).filter((n) => 
 const REPO_LABELS = { 'GET repos/acme/rostered/labels': { pages: [['status:qa', 'status:building', 'agent:claimed', 'status:inbox', 'type:feature'].map(restLabel)] } };
 const NO_LABEL = "could not add label: 'status:qq' not found";
 
-const cases = async () => {
-  // rest.js starts the stub `gh` from Node; written before the stub launcher, these still skip on Windows.
-  const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
-  group('identity/gh in a cloud session: auth');
-
-  await runTest('case 1: auth status names the login gh api user answers, exit 0; an empty login exits 1 with gh\'s not-logged-in line', async () => {
+// rest.js starts the stub `gh` from Node; written before the stub launcher, these still skip on Windows.
+describe('identity/gh in a cloud session: auth', () => {
+  test('case 1: auth status names the login gh api user answers, exit 0; an empty login exits 1 with gh\'s not-logged-in line', { skip: skipWithoutNodeStub() }, async () => {
     const res = runCloud(['auth', 'status'], { api: { 'GET user': { body: { login: 'octocat', id: 583231, type: 'User' } } } });
     assertOk(res, 'auth status with a login');
     const lines = `${res.stdout}${res.stderr}`.split('\n').filter((l) => l.trim());
-    assertEq(lines.length, 1, `one line, got: ${JSON.stringify(lines)}`);
-    assert(lines[0].includes('octocat'), `the line names the login, got: ${lines[0]}`);
-    assert(res.requests.some((r) => r.method === 'GET' && r.path === 'user'), `it asked gh api user, got: ${JSON.stringify(res.requests)}`);
+    expect(lines.length, `one line, got: ${JSON.stringify(lines)}`).toBe(1);
+    expect(lines[0].includes('octocat'), `the line names the login, got: ${lines[0]}`).toBeTruthy();
+    expect(res.requests.some((r) => r.method === 'GET' && r.path === 'user'), `it asked gh api user, got: ${JSON.stringify(res.requests)}`).toBeTruthy();
 
     const none = runCloud(['auth', 'status'], { api: { 'GET user': { body: { login: '' } } } });
-    assertEq(none.code, 1, `an empty login exits 1, stdout: ${none.stdout}, stderr: ${none.stderr}`);
-    assert(none.stderr.includes('You are not logged into any GitHub hosts. To log in, run: gh auth login'),
-      `with gh's not-logged-in line, got: ${none.stderr}`);
+    expect(none.code, `an empty login exits 1, stdout: ${none.stdout}, stderr: ${none.stderr}`).toBe(1);
+    expect(none.stderr.includes('You are not logged into any GitHub hosts. To log in, run: gh auth login'),
+      `with gh's not-logged-in line, got: ${none.stderr}`).toBeTruthy();
   });
+});
 
-  group('identity/gh in a cloud session: issue reads');
-
-  await runTest('case 2: issue list reads every page of open issues with the label, drops the pull request, and prints gh\'s array', async () => {
+describe('identity/gh in a cloud session: issue reads', () => {
+  test('case 2: issue list reads every page of open issues with the label, drops the pull request, and prints gh\'s array', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       'GET repos/acme/rostered/issues': { pages: LIST_PAGES },
       'GET repos/other/rostered/issues': { pages: [[restIssue('other/rostered', 12, { labels: ['status:building'] })]] },
@@ -129,7 +126,7 @@ const cases = async () => {
 
     const res = runCloud(list('1000'), { api });
     assertOk(res, 'issue list');
-    assert(res.requests.length > 0, 'it asked gh api');
+    expect(res.requests.length > 0, 'it asked gh api').toBeTruthy();
     const first = res.requests[0];
     assertSame([first.method, first.path], ['GET', 'repos/acme/rostered/issues'], 'the issues route of the cwd\'s repo');
     assertSame([first.query.state, first.query.labels, first.query.per_page], ['open', 'status:building', '100'],
@@ -137,8 +134,8 @@ const cases = async () => {
     const printed = printedJson(res, 'issue list');
     assertSame(printed.map((i) => i.number), LISTED, 'every issue on both pages, in order, #250 the pull request dropped');
     assertSame(printed[0].labels.map((l) => l.name), ['status:building', 'agent:claimed'], 'labels[].name');
-    assertEq(printed[0].updatedAt, '2026-10-27T09:15:00Z', 'updatedAt is the issue\'s updated_at');
-    assertEq(printed[101].updatedAt, UPDATED, 'and on the second page too');
+    expect(printed[0].updatedAt, 'updatedAt is the issue\'s updated_at').toBe('2026-10-27T09:15:00Z');
+    expect(printed[101].updatedAt, 'and on the second page too').toBe(UPDATED);
 
     const capped = runCloud(list('5'), { api });
     assertOk(capped, 'issue list --limit 5');
@@ -155,7 +152,7 @@ const cases = async () => {
     }
   });
 
-  await runTest('case 2: issue list --search sends the search to search/issues scoped to the repo\'s open issues, and prints every page\'s items', async () => {
+  test('case 2: issue list --search sends the search to search/issues scoped to the repo\'s open issues, and prints every page\'s items', { skip: skipWithoutNodeStub() }, async () => {
     const page = (numbers) => ({
       total_count: 3, incomplete_results: false, items: numbers.map((n) => restIssue('acme/rostered', n, { labels: ['status:qa'] })),
     });
@@ -165,14 +162,14 @@ const cases = async () => {
     assertSame(res.requests.map((r) => [r.method, r.path]), [['GET', 'search/issues']], 'one search request');
     const terms = res.requests[0].query.q.split(/\s+/);
     for (const term of ['repo:acme/rostered', 'is:issue', 'state:open', 'no:assignee', 'sort:created-asc']) {
-      assert(terms.includes(term), `the query carries ${term}, got: ${res.requests[0].query.q}`);
+      expect(terms.includes(term), `the query carries ${term}, got: ${res.requests[0].query.q}`).toBeTruthy();
     }
     const printed = printedJson(res, 'issue list --search');
     assertSame(printed.map((i) => i.number), [12, 11, 10], 'every page\'s items, in order');
     assertSame(printed[0].labels.map((l) => l.name), ['status:qa'], 'labels[].name');
   });
 
-  await runTest('case 2: issue list with no --json prints gh\'s plain rows: number, state, title, labels in their order, updatedAt', async () => {
+  test('case 2: issue list with no --json prints gh\'s plain rows: number, state, title, labels in their order, updatedAt', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       'GET repos/acme/rostered/issues': {
         pages: [[
@@ -184,14 +181,14 @@ const cases = async () => {
     };
     const res = runCloud(['issue', 'list'], { api });
     assertOk(res, 'issue list');
-    assertEq(res.stdout, [
+    expect(res.stdout, 'gh\'s rows, the pull request dropped').toBe([
       '9\tOPEN\tItem 9\ttype:bug, status:qa\t2026-10-28T21:38:46Z',
       '8\tOPEN\tItem 8\tstatus:building\t2026-10-27T09:15:00Z',
       '',
-    ].join('\n'), 'gh\'s rows, the pull request dropped');
+    ].join('\n'));
   });
 
-  await runTest('case 3: issue view reads the issue and its comments and prints them with gh\'s field names, state upper-cased', async () => {
+  test('case 3: issue view reads the issue and its comments and prints them with gh\'s field names, state upper-cased', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       'GET repos/acme/rostered/issues/7': {
         body: restIssue('acme/rostered', 7, { labels: ['status:qa', 'type:bug'], body: 'The body of #7.\n\n## Spec\nIt works.' }),
@@ -206,9 +203,9 @@ const cases = async () => {
     const res = runCloud(['issue', 'view', '7', '--json', 'state,labels,comments,url,body'], { api });
     assertOk(res, 'issue view');
     const view = printedJson(res, 'issue view');
-    assertEq(view.state, 'OPEN', 'state as gh prints it');
-    assertEq(view.url, 'https://github.com/acme/rostered/issues/7', 'url is the issue\'s page');
-    assertEq(view.body, 'The body of #7.\n\n## Spec\nIt works.', 'body');
+    expect(view.state, 'state as gh prints it').toBe('OPEN');
+    expect(view.url, 'url is the issue\'s page').toBe('https://github.com/acme/rostered/issues/7');
+    expect(view.body, 'body').toBe('The body of #7.\n\n## Spec\nIt works.');
     assertSame(view.labels.map((l) => l.name), ['status:qa', 'type:bug'], 'labels[].name');
     assertSame(view.comments.map((c) => [c.body, c.author.login, c.createdAt]), [
       ['Claimed.', 'octocat', '2026-10-28T20:00:00Z'],
@@ -220,7 +217,7 @@ const cases = async () => {
     assertSame(bare.requests.map((r) => r.path), ['repos/acme/rostered/issues/7'], 'no comments asked, no /comments request');
   });
 
-  await runTest('case 3: issue view and issue view --comments with no --json print gh\'s plain text', async () => {
+  test('case 3: issue view and issue view --comments with no --json print gh\'s plain text', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       'GET repos/acme/rostered/issues/7': {
         body: restIssue('acme/rostered', 7, { labels: ['type:bug', 'status:qa'], comments: 2, body: 'The body of #7.\n' }),
@@ -236,23 +233,23 @@ const cases = async () => {
     };
     const view = runCloud(['issue', 'view', '7'], { api });
     assertOk(view, 'issue view');
-    assertEq(view.stdout, [
+    expect(view.stdout, 'gh\'s header, labels sorted, then the body').toBe([
       'title:\tItem 7', 'state:\tOPEN', 'author:\toctocat', 'labels:\tstatus:qa, type:bug', 'comments:\t2',
       'assignees:\t', 'projects:\t', 'milestone:\t', 'issue-type:\t', 'parent:\t', 'sub-issues:\t',
       'sub-issues-completed:\t', 'blocked-by:\t', 'blocking:\t', 'number:\t7', '--', 'The body of #7.', '', '',
-    ].join('\n'), 'gh\'s header, labels sorted, then the body');
+    ].join('\n'));
 
     const comments = runCloud(['issue', 'view', '7', '--comments'], { api });
     assertOk(comments, 'issue view --comments');
-    assertEq(comments.stdout, [
+    expect(comments.stdout, 'each comment\'s header, its body, and the rule').toBe([
       'author:\toctocat', 'association:\towner', 'edited:\tfalse', 'status:\tnone', '--', 'Claimed.', '--',
       'author:\thubot', 'association:\tnone', 'edited:\tfalse', 'status:\tnone', '--', 'Parked.', 'Proof: green.', '--', '',
-    ].join('\n'), 'each comment\'s header, its body, and the rule');
+    ].join('\n'));
   });
+});
 
-  group('identity/gh in a cloud session: issue writes');
-
-  await runTest('case 4: issue edit adds labels with one POST then one DELETE per removed label; a title and body become one PATCH', async () => {
+describe('identity/gh in a cloud session: issue writes', () => {
+  test('case 4: issue edit adds labels with one POST then one DELETE per removed label; a title and body become one PATCH', { skip: skipWithoutNodeStub() }, async () => {
     const base = 'repos/acme/rostered/issues/7';
     const api = {
       ...REPO_LABELS,
@@ -281,15 +278,15 @@ const cases = async () => {
     const fromFile = runCloud(['issue', 'edit', '7', '--body-file', file], { api });
     assertOk(fromFile, 'issue edit --body-file');
     assertSame(routes(writes(fromFile)), [['PATCH', base]], 'one PATCH');
-    assertEq(writes(fromFile)[0].body.body, '## Spec\n\nFrom a file.\n', 'carrying the file\'s text as the body');
+    expect(writes(fromFile)[0].body.body, 'carrying the file\'s text as the body').toBe('## Spec\n\nFrom a file.\n');
   });
 
-  await runTest('case 4: issue edit --add-label naming a label the repo lacks exits 1 with gh\'s not-found line and writes nothing; case differs, still found', async () => {
+  test('case 4: issue edit --add-label naming a label the repo lacks exits 1 with gh\'s not-found line and writes nothing; case differs, still found', { skip: skipWithoutNodeStub() }, async () => {
     const base = 'repos/acme/rostered/issues/7';
     const api = { ...REPO_LABELS, [`POST ${base}/labels`]: { body: [restLabel('status:qa')] } };
     const res = runCloud(['issue', 'edit', '7', '--add-label', 'status:qa,status:qq'], { api });
-    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
-    assert(res.stderr.split('\n').includes(NO_LABEL), `stderr carries gh's not-found line, got: ${res.stderr}`);
+    expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr.split('\n').includes(NO_LABEL), `stderr carries gh's not-found line, got: ${res.stderr}`).toBeTruthy();
     assertSame(writes(res), [], 'no label is added');
 
     const cased = runCloud(['issue', 'edit', '7', '--add-label', 'Status:QA'], { api });
@@ -297,7 +294,7 @@ const cases = async () => {
     assertSame(routes(writes(cased)), [['POST', `${base}/labels`]], 'the add goes through, as gh matches a label by name in any case');
   });
 
-  await runTest('case 5: issue comment posts the body, from --body or --body-file, and prints the comment\'s URL', async () => {
+  test('case 5: issue comment posts the body, from --body or --body-file, and prints the comment\'s URL', { skip: skipWithoutNodeStub() }, async () => {
     const url = 'https://github.com/acme/rostered/issues/7#issuecomment-2002';
     const api = {
       'POST repos/acme/rostered/issues/7/comments': { status: 201, body: restComment(7, 2002, { body: 'x', login: 'octocat', createdAt: UPDATED }) },
@@ -305,19 +302,19 @@ const cases = async () => {
     const res = runCloud(['issue', 'comment', '7', '--body', 'Parked at status:qa.'], { api });
     assertOk(res, 'issue comment --body');
     assertSame(routes(writes(res)), [['POST', 'repos/acme/rostered/issues/7/comments']], 'one POST to the comments');
-    assertEq(writes(res)[0].body.body, 'Parked at status:qa.', 'carrying the body');
-    assertEq(res.stdout, `${url}\n`, 'the comment URL, as gh prints it');
+    expect(writes(res)[0].body.body, 'carrying the body').toBe('Parked at status:qa.');
+    expect(res.stdout, 'the comment URL, as gh prints it').toBe(`${url}\n`);
 
     const dir = mkTmp('wk-gh-rest-comment-');
     const file = path.join(dir, 'comment.md');
     fs.writeFileSync(file, 'Line one.\nProof: green.\n');
     const fromFile = runCloud(['issue', 'comment', '7', '--body-file', file], { api });
     assertOk(fromFile, 'issue comment --body-file');
-    assertEq(writes(fromFile)[0].body.body, 'Line one.\nProof: green.\n', 'the file\'s text is the body');
-    assertEq(fromFile.stdout, `${url}\n`, 'and the comment URL prints');
+    expect(writes(fromFile)[0].body.body, 'the file\'s text is the body').toBe('Line one.\nProof: green.\n');
+    expect(fromFile.stdout, 'and the comment URL prints').toBe(`${url}\n`);
   });
 
-  await runTest('case 6: issue close --comment posts the comment, then PATCHes the issue closed', async () => {
+  test('case 6: issue close --comment posts the comment, then PATCHes the issue closed', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       'POST repos/acme/rostered/issues/7/comments': { status: 201, body: restComment(7, 2003, { body: 'x', login: 'octocat', createdAt: UPDATED }) },
       'PATCH repos/acme/rostered/issues/7': { body: restIssue('acme/rostered', 7, { state: 'closed' }) },
@@ -326,11 +323,11 @@ const cases = async () => {
     assertOk(res, 'issue close --comment');
     assertSame(routes(writes(res)), [['POST', 'repos/acme/rostered/issues/7/comments'], ['PATCH', 'repos/acme/rostered/issues/7']],
       'the comment, then the close');
-    assertEq(writes(res)[0].body.body, 'Shipped in 1.2.0.', 'the comment\'s body');
-    assertEq(writes(res)[1].body.state, 'closed', 'the PATCH closes it');
+    expect(writes(res)[0].body.body, 'the comment\'s body').toBe('Shipped in 1.2.0.');
+    expect(writes(res)[1].body.state, 'the PATCH closes it').toBe('closed');
   });
 
-  await runTest('case 6: issue close --reason "not planned" PATCHes the issue closed with REST\'s not_planned reason', async () => {
+  test('case 6: issue close --reason "not planned" PATCHes the issue closed with REST\'s not_planned reason', { skip: skipWithoutNodeStub() }, async () => {
     const api = { 'PATCH repos/acme/rostered/issues/7': { body: restIssue('acme/rostered', 7, { state: 'closed', state_reason: 'not_planned' }) } };
     const res = runCloud(['issue', 'close', '7', '--reason', 'not planned'], { api });
     assertOk(res, 'issue close --reason');
@@ -338,7 +335,7 @@ const cases = async () => {
     assertSame([writes(res)[0].body.state, writes(res)[0].body.state_reason], ['closed', 'not_planned'], 'closed, with the reason');
   });
 
-  await runTest('case 7: issue create posts the title, body and labels and prints the new issue\'s URL', async () => {
+  test('case 7: issue create posts the title, body and labels and prints the new issue\'s URL', { skip: skipWithoutNodeStub() }, async () => {
     const api = {
       ...REPO_LABELS,
       'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 475, { labels: ['status:inbox', 'type:feature'] }) },
@@ -349,20 +346,20 @@ const cases = async () => {
       'the repo\'s labels read, then one POST to the issues');
     const sent = writes(res)[0].body;
     assertSame([sent.title, sent.body, sent.labels], ['A note', 'Noted.', ['status:inbox', 'type:feature']], 'title, body and labels');
-    assertEq(res.stdout, 'https://github.com/acme/rostered/issues/475\n', 'the issue URL, as gh prints it');
+    expect(res.stdout, 'the issue URL, as gh prints it').toBe('https://github.com/acme/rostered/issues/475\n');
   });
 
-  await runTest('case 7: issue create --label naming a label the repo lacks exits 1 with gh\'s not-found line and creates no issue', async () => {
+  test('case 7: issue create --label naming a label the repo lacks exits 1 with gh\'s not-found line and creates no issue', { skip: skipWithoutNodeStub() }, async () => {
     const api = { ...REPO_LABELS, 'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 476) } };
     const res = runCloud(['issue', 'create', '--title', 'A note', '--body', 'Noted.', '--label', 'status:qq,type:feature'], { api });
-    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
-    assertEq(res.stderr, `${NO_LABEL}\n`, 'gh\'s not-found line');
+    expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr, 'gh\'s not-found line').toBe(`${NO_LABEL}\n`);
     assertSame(writes(res), [], 'no issue is created');
   });
+});
 
-  group('identity/gh in a cloud session: labels');
-
-  await runTest('case 8: label list reads every page; label create POSTs and label edit PATCHes the named label', async () => {
+describe('identity/gh in a cloud session: labels', () => {
+  test('case 8: label list reads every page; label create POSTs and label edit PATCHes the named label', { skip: skipWithoutNodeStub() }, async () => {
     const names = [...Array.from({ length: 100 }, (_, i) => `area:${String(i).padStart(3, '0')}`), 'status:qa', 'type:bug'];
     const api = {
       'GET repos/acme/rostered/labels': { pages: [names.slice(0, 100).map(restLabel), names.slice(100).map(restLabel)] },
@@ -388,23 +385,23 @@ const cases = async () => {
     assertSame([patch.description, patch.color], ['Built, checking.', 'FBCA04'], 'description and color');
   });
 
-  await runTest('case 8: label edit --name PATCHes the old label with the new name', async () => {
+  test('case 8: label edit --name PATCHes the old label with the new name', { skip: skipWithoutNodeStub() }, async () => {
     const api = { 'PATCH repos/acme/rostered/labels/status:qa': { body: restLabel('status:check') } };
     const res = runCloud(['label', 'edit', 'status:qa', '--name', 'status:check'], { api });
     assertOk(res, 'label edit --name');
     assertSame(routes(writes(res)), [['PATCH', 'repos/acme/rostered/labels/status:qa']], 'one PATCH to the old label');
-    assertEq(writes(res)[0].body.new_name, 'status:check', 'carrying the new name');
+    expect(writes(res)[0].body.new_name, 'carrying the new name').toBe('status:check');
   });
+});
 
-  group('identity/gh in a cloud session: the gate runs first');
-
-  await runTest('case 9: a planted .env value in a comment bounces before rest.js runs; a flip to status:qa the gate passes reaches rest.js as off the gate', async () => {
+describe('identity/gh in a cloud session: the gate runs first', () => {
+  test('case 9: a planted .env value in a comment bounces before rest.js runs; a flip to status:qa the gate passes reaches rest.js as off the gate', { skip: skipWithoutNodeStub() }, async () => {
     const secret = 'sup3rSecretValue_9f2a';
     const files = { '.env': `API_SECRET=${secret}\n` };
     const leak = runCloud(['issue', 'comment', '1', '--body', `the key is ${secret}`], { files });
-    assertEq(leak.code, 1, `exit 1, stdout: ${leak.stdout}, stderr: ${leak.stderr}`);
-    assert(leak.stderr.includes('issue-guard: BLOCKED this gh command: the outbound text carries the value of API_SECRET from a local .env file.'),
-      `stderr carries the issue-guard bounce, got: ${leak.stderr}`);
+    expect(leak.code, `exit 1, stdout: ${leak.stdout}, stderr: ${leak.stderr}`).toBe(1);
+    expect(leak.stderr.includes('issue-guard: BLOCKED this gh command: the outbound text carries the value of API_SECRET from a local .env file.'),
+      `stderr carries the issue-guard bounce, got: ${leak.stderr}`).toBeTruthy();
     assertSame([leak.calls, leak.requests], [[], []], 'rest.js never ran: no gh call, no request');
 
     const base = 'repos/acme/rostered/issues/7';
@@ -414,50 +411,43 @@ const cases = async () => {
     assertSame(routes(flip.requests), [['GET', 'repos/acme/rostered/labels'], ['POST', `${base}/labels`]],
       'the repo\'s labels read, then the add');
   });
+});
 
-  group('identity/gh in a cloud session: the proxy\'s refusal');
-
-  await runTest('case 11: a repo the session has not attached answers the proxy\'s 403, relayed with its message, exit 1', async () => {
+describe('identity/gh in a cloud session: the proxy\'s refusal', () => {
+  test('case 11: a repo the session has not attached answers the proxy\'s 403, relayed with its message, exit 1', { skip: skipWithoutNodeStub() }, async () => {
     const api = { 'GET repos/other/unattached/issues': { status: 403, body: { message: NOT_ATTACHED } } };
     const res = runCloud(['issue', 'list', '--state', 'open', '--json', 'number', '--repo', 'other/unattached'], { api });
-    assertEq(res.code, 1, `gh's exit 1, stderr: ${res.stderr}`);
-    assert(res.stderr.includes(NOT_ATTACHED), `stderr carries the proxy's message, got: ${res.stderr}`);
-    assert(res.stderr.includes('HTTP 403'), `and its code, got: ${res.stderr}`);
+    expect(res.code, `gh's exit 1, stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr.includes(NOT_ATTACHED), `stderr carries the proxy's message, got: ${res.stderr}`).toBeTruthy();
+    expect(res.stderr.includes('HTTP 403'), `and its code, got: ${res.stderr}`).toBeTruthy();
   });
+});
 
-  group('identity/gh in a cloud session: what REST does not serve');
-
-  await test('a --json field the shim does not serve (blockedBy) exits 1 with one line naming it', async () => {
+describe('identity/gh in a cloud session: what REST does not serve', () => {
+  test('a --json field the shim does not serve (blockedBy) exits 1 with one line naming it', async () => {
     const res = runCloud(['issue', 'view', '7', '--json', 'state,blockedBy'], { api: {} });
-    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
+    expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
     const lines = `${res.stdout}${res.stderr}`.split('\n').filter((l) => l.trim());
-    assertEq(lines.length, 1, `one line, got: ${JSON.stringify(lines)}`);
-    assert(lines[0].includes('blockedBy'), `the line names the field, got: ${lines[0]}`);
+    expect(lines.length, `one line, got: ${JSON.stringify(lines)}`).toBe(1);
+    expect(lines[0].includes('blockedBy'), `the line names the field, got: ${lines[0]}`).toBeTruthy();
   });
 
-  await test('issue create --assignee is an unserved flag: exit 1 with one line naming it, and no issue is created', async () => {
+  test('issue create --assignee is an unserved flag: exit 1 with one line naming it, and no issue is created', async () => {
     const api = { 'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 476) } };
     const res = runCloud(['issue', 'create', '--title', 'A note', '--body', 'Noted.', '--assignee', 'x'], { api });
-    assertEq(res.code, 1, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`);
+    expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
     const lines = `${res.stdout}${res.stderr}`.split('\n').filter((l) => l.trim());
-    assertEq(lines.length, 1, `one line, got: ${JSON.stringify(lines)}`);
-    assert(lines[0].includes('--assignee'), `the line names the flag, got: ${lines[0]}`);
+    expect(lines.length, `one line, got: ${JSON.stringify(lines)}`).toBe(1);
+    expect(lines[0].includes('--assignee'), `the line names the flag, got: ${lines[0]}`).toBeTruthy();
     assertSame(writes(res), [], 'no issue is created');
   });
 
-  await runTest('a subcommand REST does not serve (issue develop) runs the real gh once, whole, with no gh api call', async () => {
+  test('a subcommand REST does not serve (issue develop) runs the real gh once, whole, with no gh api call', { skip: skipWithoutNodeStub() }, async () => {
     const argv = ['issue', 'develop', '7', '--name', 'fix-7'];
     const res = runCloud(argv, { api: {} });
     assertOk(res, 'issue develop');
-    assertEq(res.calls.length, 1, `the real gh runs once, got ${fmtCalls(res.calls)}`);
-    assert(eqArgv(res.calls[0], argv), `every argument passed through, got ${fmtCalls(res.calls)}`);
-    assertEq(res.requests.length, 0, `no gh api call, got: ${JSON.stringify(res.requests)}`);
+    expect(res.calls.length, `the real gh runs once, got ${fmtCalls(res.calls)}`).toBe(1);
+    expect(eqArgv(res.calls[0], argv), `every argument passed through, got ${fmtCalls(res.calls)}`).toBeTruthy();
+    expect(res.requests.length, `no gh api call, got: ${JSON.stringify(res.requests)}`).toBe(0);
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -29,7 +29,7 @@ effort: xhigh
 - Read the framework guides the brief names BEFORE the first edit.
   - Record that read the way the owning plugin documents, never by touching a hook's marker directory by hand.
 - A commit is never made with `--no-verify`, `-c core.hooksPath=` or `HOOK_DISABLE=1`: a git hook's bounce is fixed, never skipped.
-- A file edit goes through the Edit or Write tool, never a script run from Bash (`sed -i`, `perl -i`, a python or node write): the write hooks see only those tools, and `safety:script-write` bounces the rest.
+- A file edit goes through the Edit or Write tool, never a script run from Bash (`sed -i`, `perl -i`, a python or node write): the write hooks judge only those tools, and `safety:script-write` names each file a Bash call changed that a write check flags.
   - A write hook's bounce is fixed, or reported to the manager. It is never worked around.
 - The tree is shared: touch only the paths your brief names, and never commit unless the brief says. `safety:tree-guard` bounces `git stash`, `git checkout <path>`, `git restore` and the rest `docs/hooks.md` § `safety:tree-guard` lists; undo your own work by reverse-editing your own hunks, never by resetting a file to HEAD.
 - A brief may cast you as a pair's role (`docs/agents.md` § Crew sizing).

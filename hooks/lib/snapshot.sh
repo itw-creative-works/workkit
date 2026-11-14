@@ -17,10 +17,15 @@ hook_snapshot_root() {
   (cd -P "$1" 2>/dev/null && cd -P "./$cdup" 2>/dev/null && pwd -P)
 }
 
-# hook_snapshot_dir <root>: the snapshot folder of that root, holding `tree/`,
-# `head` (one sha line), `paths` (NUL-separated, as hook_working_paths prints)
-# and `issues` (one number a line). A snapshot is live while `tree` exists.
-hook_snapshot_dir() { wk_marker_path claude-red-snapshot "$1"; }
+# _hook_snapshot_home: the folder every snapshot lives in, snapshot/ in the
+# kit's cache folder (wk_cache_dir), never the kit home a repo may hold.
+_hook_snapshot_home() { printf '%s\n' "$(wk_cache_dir)/snapshot"; }
+
+# hook_snapshot_dir <root>: the snapshot folder of that root, keyed by its sha1
+# in the snapshot home, holding `tree/`, `head` (one sha line), `paths`
+# (NUL-separated, as hook_working_paths prints) and `issues` (one number a
+# line). A snapshot is live while `tree` exists.
+hook_snapshot_dir() { wk_keyed_path "$(_hook_snapshot_home)" "$1"; }
 
 # _hook_snapshot_modules_list <dir>: each package's node_modules folder in
 # <dir>, one ./-led path a line: beside every package.json git lists there,
@@ -47,12 +52,14 @@ _hook_snapshot_rel_in() {
   case "$real" in "$1"/*) printf '%s\n' "${real#"$1"/}" ;; *) return 1 ;; esac
 }
 
-# _hook_snapshot_kit_rels <dir>: the kit's paths lying inside <dir>, a ./-led
-# path a line: the markers folder (wk_markers_dir), where the snapshot itself
-# is built, and every path in the kit home (wk_user_dir) that git ignores there.
+# _hook_snapshot_kit_rels <dir>: the kit's paths inside <dir> by real path, a
+# ./-led path a line: the snapshot home (_hook_snapshot_home), where the copy is
+# built; the markers folder (wk_markers_dir), the kit's live state (the gh journal,
+# review and suite markers, test locks); each wk_user_dir path git ignores there.
 _hook_snapshot_kit_rels() {
   local root rel
   root=$(cd -P "$1" 2>/dev/null && pwd -P) || return 0
+  ! rel=$(_hook_snapshot_rel_in "$root" "$(_hook_snapshot_home)") || printf './%s\n' "$rel"
   ! rel=$(_hook_snapshot_rel_in "$root" "$(wk_markers_dir)") || printf './%s\n' "$rel"
   rel=$(_hook_snapshot_rel_in "$root" "$(wk_user_dir)") || return 0
   (
@@ -143,17 +150,36 @@ _hook_snapshot_put() {
 }
 
 # hook_snapshot_take <root> [issue]...: a fresh snapshot of <root>, replacing
-# any there. The whole folder (head, paths, issues, then the tree) is built in a
-# sibling <dir>.XXXXXX and moved into place last, so a half snapshot is never
-# found. 1 with the error on stderr, the sibling gone and any snapshot kept.
+# any there, built in a sibling <dir>.XXXXXX moved into place last. 1 with the
+# error on stderr, the sibling gone and any snapshot kept; a HUP, INT or TERM
+# removes the sibling and exits 129, 130 or 143. The caller's traps come back.
 hook_snapshot_take() {
-  local root="$1" dir head part aside
+  local root="$1" dir part saved rc=0
   shift
   dir=$(hook_snapshot_dir "$root") || { echo "could not name the snapshot folder" >&2; return 1; }
   mkdir -p "${dir%/*}" || { echo "could not make ${dir%/*}" >&2; return 1; }
   # A sibling older than the hook's 600s timeout is a killed take's, never a live one.
   find "${dir%/*}" -maxdepth 1 -name "${dir##*/}.??????" -mmin +10 -exec rm -rf {} + 2>/dev/null || true
   part=$(mktemp -d "$dir.XXXXXX") || { echo "could not make a folder beside $dir" >&2; return 1; }
+  saved=$(trap -p HUP INT TERM)
+  # shellcheck disable=SC2064  # the sibling is fixed for this take
+  trap "rm -rf $(printf '%q' "$part"); exit 129" HUP
+  # shellcheck disable=SC2064
+  trap "rm -rf $(printf '%q' "$part"); exit 130" INT
+  # shellcheck disable=SC2064
+  trap "rm -rf $(printf '%q' "$part"); exit 143" TERM
+  _hook_snapshot_build "$root" "$dir" "$part" "$@" || rc=$?
+  trap - HUP INT TERM
+  eval "$saved"
+  return "$rc"
+}
+
+# _hook_snapshot_build <root> <dir> <part> [issue]...: hook_snapshot_take's
+# body: the sibling <part> filled (head, paths, issues, then the tree) and
+# moved into place at <dir>, so a half snapshot is never found.
+_hook_snapshot_build() {
+  local root="$1" dir="$2" part="$3" head aside
+  shift 3
   if ! head=$(git -C "$root" rev-parse --verify -q HEAD) || [ -z "$head" ]; then
     echo "$root has no HEAD commit" >&2
   elif ! printf '%s\n' "$head" >"$part/head" || ! : >"$part/issues"; then
@@ -164,7 +190,7 @@ hook_snapshot_take() {
     echo "could not record the issues in $part" >&2
   elif mkdir "$part/tree" && _hook_snapshot_copy "$root" "$part/tree"; then
     # What a failed remove leaves goes aside under a stale take's name, which the
-    # sweep above clears at a later take.
+    # take's sweep clears at a later take.
     if ! rm -rf "$dir" 2>/dev/null; then
       if aside=$(mktemp -u "$dir.XXXXXX") && mv "$dir" "$aside"; then
         echo "the old snapshot at $dir could not be removed and was moved aside to $aside" >&2

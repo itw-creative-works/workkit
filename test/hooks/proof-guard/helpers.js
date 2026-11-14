@@ -5,7 +5,7 @@
 // roster, rootOnly, settingsFaults }: the steps, the issue-view stub, the facts' defaults, the
 // package lookup, the real-facts flip and its session, and the hook's exact texts.
 
-const { assertEq } = require('../../lib/harness');
+const { expect } = require('../../lib/harness');
 const { mods, textOf } = require('../../lib/mods-inputs');
 const { shellPath, spawnSync } = require('../../lib/platform');
 const { scratchWorkflowHome } = require('../../lib/workflow-home');
@@ -105,7 +105,7 @@ const flip = async (dir, env, answer = () => undefined) => {
     return stood ? Promise.resolve(stood) : io.run(argv, init);
   };
   const { proofVerdict, proofFacts } = mods('proof-guard');
-  const facts = await proofFacts(mods('guards').bashFacts({ ...io, run }, env, { command: '', cwd: dir }));
+  const facts = await proofFacts(mods('facts').bashFacts({ ...io, run }, env, { cwd: dir }));
   return proofVerdict({ steps: QA, cwd: dir, repo: null, facts });
 };
 
@@ -127,11 +127,11 @@ const HASH_BLOCK = (root) => `proof-guard: BLOCKED this flip to status:qa: the w
 const ROOT_ONLY = 'proved by the root run alone (settings proof.rootOnly)';
 
 /** The verdict blocked with exactly `text`. */
-const assertBlocks = (r, text, what) => assertEq(denyOf(r), text, what);
+const assertBlocks = (r, text, what) => expect(denyOf(r), what).toBe(text);
 
 /** The verdict passed, and its one notice (empty when silent) is handed back. */
 const passText = (r, what) => {
-  assertEq(denyOf(r), null, `must pass: ${what}`);
+  expect(denyOf(r), `must pass: ${what}`).toBe(null);
   return textOf(r);
 };
 

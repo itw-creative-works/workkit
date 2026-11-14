@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const { BASH, SYSTEM_BASH, NO_RC, shellPath, systemPathWith } = require('../../lib/platform');
 const { isCall } = require('../../lib/argv-log');
@@ -14,10 +14,8 @@ const {
   runScript,
 } = require('./helpers');
 
-const cases = async () => {
-  group('standards.sh: offline and unauthenticated');
-
-  await test('no gh on PATH: clean exit, local heals still applied', () => {
+describe('standards.sh: offline and unauthenticated', () => {
+  test('no gh on PATH: clean exit, local heals still applied', () => {
     const repo = makeRepo();
     // Hand-built PATH, like the jq test below: `command -v gh` searches every
     // PATH entry, and a machine that keeps gh in /usr/bin (a CI runner does)
@@ -30,15 +28,15 @@ const cases = async () => {
     });
     const code = res.status;
     const stdout = (res.stdout || '') + (res.stderr || '');
-    assertEq(code, 0, 'exit 0');
-    assert(!stdout.includes('⚠'), `announces nothing broken, got: ${stdout}`);
-    assert(stdout.includes('gh not installed'), `says why the label step was skipped, got: ${stdout}`);
-    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'templates still installed');
-    assert(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed');
+    expect(code, 'exit 0').toBe(0);
+    expect(!stdout.includes('⚠'), `announces nothing broken, got: ${stdout}`).toBeTruthy();
+    expect(stdout.includes('gh not installed'), `says why the label step was skipped, got: ${stdout}`).toBeTruthy();
+    expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'templates still installed').toBeTruthy();
+    expect(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed').toBeTruthy();
     cleanup(repo); cleanup(binDir);
   });
 
-  await test('no jq on PATH: only the label step is skipped, local heals run', () => {
+  test('no jq on PATH: only the label step is skipped, local heals run', () => {
     const repo = makeRepo();
     const binDir = binDirWithout('jq');
     const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
@@ -47,38 +45,38 @@ const cases = async () => {
       timeout: SPAWN_DEADLINE,
     });
     const stdout = (res.stdout || '') + (res.stderr || '');
-    assertEq(res.status, 0, 'exit 0');
-    assert(stdout.includes('jq not installed'), `says why the label step was skipped, got: ${stdout}`);
-    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'templates still installed');
-    assert(fs.existsSync(path.join(repo, W, 'capture.md')), 'the capture file is still created');
-    assert(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed');
+    expect(res.status, 'exit 0').toBe(0);
+    expect(stdout.includes('jq not installed'), `says why the label step was skipped, got: ${stdout}`).toBeTruthy();
+    expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'templates still installed').toBeTruthy();
+    expect(fs.existsSync(path.join(repo, W, 'capture.md')), 'the capture file is still created').toBeTruthy();
+    expect(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed').toBeTruthy();
     cleanup(repo); cleanup(binDir);
   });
 
-  await test('gh present but unauthenticated: skipped without any label call', () => {
+  test('gh present but unauthenticated: skipped without any label call', () => {
     const repo = makeRepo();
     const stub = makeGhStub({ authed: false });
     const { code, output: stdout } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0');
-    assert(!stdout.includes('⚠'), `announces nothing broken, got: ${stdout}`);
-    assert(stdout.includes('not authenticated'), `says why, got: ${stdout}`);
-    assert(!ghCalls(stub).some((c) => isCall(c, 'label')), 'never reaches the label API');
+    expect(code, 'exit 0').toBe(0);
+    expect(!stdout.includes('⚠'), `announces nothing broken, got: ${stdout}`).toBeTruthy();
+    expect(stdout.includes('not authenticated'), `says why, got: ${stdout}`).toBeTruthy();
+    expect(!ghCalls(stub).some((c) => isCall(c, 'label')), 'never reaches the label API').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('no origin remote: labels skipped, exit 0', () => {
+  test('no origin remote: labels skipped, exit 0', () => {
     const repo = makeRepo({ remote: false });
     const stub = makeGhStub();
     const { code, output: stdout } = runScript(repo, { pathPrefix: stub.binDir });
-    assertEq(code, 0, 'exit 0');
-    assert(stdout.includes('no origin remote'), `says why, got: ${stdout}`);
-    assert(!ghCalls(stub).some((c) => isCall(c, 'label', 'list')), 'never queries labels');
+    expect(code, 'exit 0').toBe(0);
+    expect(stdout.includes('no origin remote'), `says why, got: ${stdout}`).toBeTruthy();
+    expect(!ghCalls(stub).some((c) => isCall(c, 'label', 'list')), 'never queries labels').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
+});
 
-  group('standards.sh: runs from anywhere');
-
-  await test('defaults to the current directory when given no argument', () => {
+describe('standards.sh: runs from anywhere', () => {
+  test('defaults to the current directory when given no argument', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
@@ -92,25 +90,19 @@ const cases = async () => {
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
     });
-    assertEq(res.status, 0, 'exit 0');
-    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'dump.md')), 'healed the cwd repo');
+    expect(res.status, 'exit 0').toBe(0);
+    expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'dump.md')), 'healed the cwd repo').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
 
-  await test('a subdirectory resolves to the repo root', () => {
+  test('a subdirectory resolves to the repo root', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const nested = path.join(repo, 'src', 'deep');
     fs.mkdirSync(nested, { recursive: true });
     runScript(nested, { pathPrefix: stub.binDir });
-    assert(fs.existsSync(path.join(repo, '.gitignore')), 'root .gitignore healed, not the subdir');
-    assert(!fs.existsSync(path.join(nested, '.gitignore')), 'nothing written in the subdirectory');
+    expect(fs.existsSync(path.join(repo, '.gitignore')), 'root .gitignore healed, not the subdir').toBeTruthy();
+    expect(!fs.existsSync(path.join(nested, '.gitignore')), 'nothing written in the subdirectory').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

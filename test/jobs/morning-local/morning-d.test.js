@@ -5,14 +5,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, testUnless, assert, assertEq, summary, selfRun, alive, readPid } = require('../../lib/harness');
+const { describe, test, expect, alive, pidIn } = require('../../lib/harness');
 const { stubTool, which } = require('../../lib/platform');
 const { skipUnlessDarwin, cleanup, mkWorld, runJob } = require('./helpers');
 
 // The job bounds a step only where a `timeout` exists, so the timeout case
 // needs a real one to hand the short bound to.
 const REAL_TIMEOUT = which('timeout') || which('gtimeout');
-const timeoutTest = testUnless(!REAL_TIMEOUT, 'no timeout or gtimeout on this machine to bound a script with');
 
 // A script in <dir>/morning.d that appends its name to `order` and prints a
 // line the log can be searched for; `body` replaces that, `mode` its bits.
@@ -39,34 +38,30 @@ const allLines = (world, res) => [world.log(), res.stdout, res.stderr].join('\n'
 const warnedAbout = (world, res, name) => allLines(world, res)
   .filter((l) => l.includes(name) && !/^--- .+ ---$/.test(l));
 
-const cases = async () => {
-  skipUnlessDarwin();
-
-  group('jobs/morning (local): the morning.d folder');
-
-  await test('two executable scripts run in name order after the brief status, each under its own header', () => {
+describe('jobs/morning (local): the morning.d folder', { skip: skipUnlessDarwin() }, () => {
+  test('two executable scripts run in name order after the brief status, each under its own header', () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
     // Written out of order, so the run order is the names', not the files'.
     plant(world.workflowHome, '20-b.sh', { order });
     plant(world.workflowHome, '10-a.sh', { order });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(ran(order).join(','), '10-a.sh,20-b.sh', 'both ran, in name order');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(ran(order).join(','), 'both ran, in name order').toBe('10-a.sh,20-b.sh');
 
     const logText = world.log();
     const a = headerAt(logText, '10-a.sh');
     const b = headerAt(logText, '20-b.sh');
-    assert(a >= 0 && b >= 0, `each script has its own header: ${logText}`);
+    expect(a >= 0 && b >= 0, `each script has its own header: ${logText}`).toBeTruthy();
     const outA = logText.indexOf('output of 10-a.sh');
     const outB = logText.indexOf('output of 20-b.sh');
-    assert(a < outA && outA < b && b < outB, `each output sits under its own header: ${logText}`);
+    expect(a < outA && outA < b && b < outB, `each output sits under its own header: ${logText}`).toBeTruthy();
     const status = logText.indexOf('marker: ');
-    assert(status >= 0 && status < a, `the brief status comes first: ${logText}`);
+    expect(status >= 0 && status < a, `the brief status comes first: ${logText}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a failing script is warned about by name, the next still runs, the exit code unchanged', () => {
+  test('a failing script is warned about by name, the next still runs, the exit code unchanged', () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
     plant(world.workflowHome, '10-a.sh', {
@@ -74,13 +69,13 @@ const cases = async () => {
     });
     plant(world.workflowHome, '20-b.sh', { order });
     const res = runJob(world);
-    assertEq(res.status, 0, `a script's failure is not the morning's: ${res.stderr}`);
-    assertEq(ran(order).join(','), '10-a.sh,20-b.sh', 'the next script still ran');
-    assert(warnedAbout(world, res, '10-a.sh').length > 0, `a warn line names it: ${world.log()}\n${res.stderr}`);
+    expect(res.status, `a script's failure is not the morning's: ${res.stderr}`).toBe(0);
+    expect(ran(order).join(','), 'the next script still ran').toBe('10-a.sh,20-b.sh');
+    expect(warnedAbout(world, res, '10-a.sh').length > 0, `a warn line names it: ${world.log()}\n${res.stderr}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await timeoutTest('a script past the timeout is ended and warned about, and the next still runs', () => {
+  test('a script past the timeout is ended and warned about, and the next still runs', { skip: !REAL_TIMEOUT && 'no timeout or gtimeout on this machine to bound a script with' }, () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
     // The job's own bound is minutes; this `timeout` hands the slow script two
@@ -98,55 +93,49 @@ const cases = async () => {
     plant(world.workflowHome, '20-b.sh', { order });
 
     const res = runJob(world);
-    assertEq(res.status, 0, `a script's timeout is not the morning's failure: ${res.stderr}`);
-    assertEq(ran(order).join(','), '20-b.sh', 'the next script still ran');
-    assert(warnedAbout(world, res, '10-slow.sh').length > 0, `a warn line names it: ${world.log()}\n${res.stderr}`);
+    expect(res.status, `a script's timeout is not the morning's failure: ${res.stderr}`).toBe(0);
+    expect(ran(order).join(','), 'the next script still ran').toBe('20-b.sh');
+    expect(warnedAbout(world, res, '10-slow.sh').length > 0, `a warn line names it: ${world.log()}\n${res.stderr}`).toBeTruthy();
     // A loaded machine can end the script before it records its pid: ended either way.
-    const pid = fs.existsSync(pidFile) ? readPid(pidFile) : null;
-    if (pid !== null) assert(!alive(pid), `the slow script ${pid} was ended, not waited out`);
+    const pid = pidIn(pidFile);
+    if (pid > 0) expect(!alive(pid), `the slow script ${pid} was ended, not waited out`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a non-executable file in the folder is skipped without a line', () => {
+  test('a non-executable file in the folder is skipped without a line', () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
     plant(world.workflowHome, '10-a.sh', { order, mode: 0o644 });
     plant(world.workflowHome, '20-b.sh', { order });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(ran(order).join(','), '20-b.sh', 'only the executable one ran');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(ran(order).join(','), 'only the executable one ran').toBe('20-b.sh');
     const named = allLines(world, res).filter((l) => l.includes('10-a.sh'));
-    assertEq(named.length, 0, `no line names the skipped file: ${named.join('\n')}`);
+    expect(named.length, `no line names the skipped file: ${named.join('\n')}`).toBe(0);
     cleanup(world.root);
   });
 
-  await test('no folder: no line and no error', () => {
+  test('no folder: no line and no error', () => {
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
     const named = allLines(world, res).filter((l) => l.includes('morning.d'));
-    assertEq(named.length, 0, `nothing mentions the folder: ${named.join('\n')}`);
+    expect(named.length, `nothing mentions the folder: ${named.join('\n')}`).toBe(0);
     cleanup(world.root);
   });
 
-  await test('a <message> run does not read the folder', () => {
+  test('a <message> run does not read the folder', () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
     plant(world.workflowHome, '10-a.sh', { order });
     const res = runJob(world, ['hello']);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(ran(order).length, 0, 'the script did not run');
-    assertEq(headerAt(world.log(), '10-a.sh'), -1, `and no header was logged: ${world.log()}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(ran(order).length, 'the script did not run').toBe(0);
+    expect(headerAt(world.log(), '10-a.sh'), `and no header was logged: ${world.log()}`).toBe(-1);
     // The same world on a scheduled run does run it, so the skip is the
     // message's doing and not the fixture's.
     runJob(world);
-    assertEq(ran(order).join(','), '10-a.sh', 'a scheduled run of the same world runs it');
+    expect(ran(order).join(','), 'a scheduled run of the same world runs it').toBe('10-a.sh');
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

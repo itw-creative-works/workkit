@@ -20,6 +20,9 @@ const NAME_TAIL = /[.,;:)\]>`"']$/;
 // The committed example and template variants hold public placeholders.
 const ENV_SKIP = new Set(['.env.example', '.env.sample', '.env.template', '.env.defaults']);
 
+// A .env key holding one of these pieces, in any case, names a secret.
+const SECRET_KEY_PIECES = ['PASS', 'PWD', 'SECRET', 'TOKEN', 'KEY', 'CREDENTIAL'];
+
 // The token shapes, in the order they are tried; the KIND is named, never the match.
 const TOKENS = [
   [/(^|[^A-Za-z0-9_])(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/m, 'a GitHub token-shaped string'],
@@ -31,24 +34,31 @@ const TOKENS = [
   [/[-]{5}BEGIN/, 'a private key block'],
 ];
 
-// A .env line's key and value, or null for a comment, a blank or no `=`.
+// A .env line's key and its value readings, or null for a comment, a blank or
+// no `=`: the whole tail (one outer quote pair stripped), and the value with a
+// trailing comment cut (a quoted one ends at its closing quote, a bare one
+// before the first `#` after whitespace).
 function envPair(line) {
   if (line === '' || line.startsWith('#') || !line.includes('=')) return null;
   const cut = line.indexOf('=');
   const key = line.slice(0, cut).replace(/^export /, '').replace(/\s/g, '');
   if (!key) return null;
-  let value = line.slice(cut + 1).trim();
-  if (/^".*"$/s.test(value) || /^'.*'$/s.test(value)) value = value.slice(1, -1);
-  return { key, value };
+  const tail = line.slice(cut + 1).trim();
+  let whole = tail;
+  if (/^".*"$/s.test(whole) || /^'.*'$/s.test(whole)) whole = whole.slice(1, -1);
+  const quoted = tail.match(/^(["'])(.*?)\1(?:\s*#.*)?$/s);
+  const bare = quoted ? quoted[2] : tail.split(/\s#/)[0].trim();
+  return { key, values: whole === bare ? [whole] : [whole, bare] };
 }
 
-// An obviously non-secret value: too short to be a key, one lowercase word
-// (prose uses it by chance), a boolean, a bare number or version, or a local
-// URL carrying no credentials.
-function isPlain(value) {
+// An obviously non-secret value: too short to be a key, as every boolean is;
+// under a key naming no secret also one lowercase word (prose uses it by
+// chance), a bare number or version, or a local URL carrying no credentials.
+function isPlain(key, value) {
   if ([...value].length < 8) return true;
+  const upper = key.toUpperCase();
+  if (SECRET_KEY_PIECES.some((piece) => upper.includes(piece))) return false;
   if (/^[a-z]+$/.test(value)) return true;
-  if (/^([Tt]rue|[Ff]alse|TRUE|FALSE)$/.test(value)) return true;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(value) && !value.includes('@')) return true;
   return /^[0-9.]*$/.test(value);
 }
@@ -75,14 +85,21 @@ export function publicNames(text, slug) {
 }
 
 // The key of the first local .env value the text carries and `names` does
-// not hold (lowercase), or null.
-function envLeak(envFiles, text, names) {
+// not hold (lowercase), or null. Each file is read by Node's reader and line
+// by line, which keeps what Node drops: an earlier line of a repeated key, a
+// bare value holding `#`, a line under an unclosed quote.
+function envLeak(envFiles, text, names, parseEnv) {
   for (const { path, text: env } of envFiles) {
     if (ENV_SKIP.has(path.split('/').pop())) continue;
-    for (const line of env.split('\n')) {
-      const pair = envPair(line);
-      if (!pair || isPlain(pair.value) || names.has(pair.value.toLowerCase())) continue;
-      if (text.includes(pair.value)) return pair.key;
+    const pairs = [
+      ...Object.entries(parseEnv(env)).map(([key, value]) => ({ key, values: [value] })),
+      ...env.split('\n').map(envPair).filter(Boolean),
+    ];
+    for (const { key, values } of pairs) {
+      for (const value of values) {
+        if (isPlain(key, value) || names.has(value.toLowerCase())) continue;
+        if (text.includes(value)) return key;
+      }
     }
   }
   return null;
@@ -101,16 +118,17 @@ function tokenLeak(text) {
  * issue-guard's scan of one outbound action: the block naming the key or the
  * kind its text or a body file carries, else null. It judges whatever it is
  * handed; which calls are outbound is the caller's to decide.
- * @param {{text: string, bodies?: string[], envFiles: Array<{path: string, text: string}>, slug: string|null}} facts
+ * @param {{text: string, bodies?: string[], envFiles: Array<{path: string, text: string}>, slug: string|null, parseEnv: function(string): Object<string, string>}} facts
  *   the action's own text (the gh argv joined by newlines);
  *   each body file's text it sends, none when omitted; the local .env files,
  *   the session folder's then the repo root's; the origin's `owner/name`,
- *   null for none
+ *   null for none; Node's `.env` reader (`util.parseEnv`, the gate's), required
  * @returns {{deny: string}|null}
  */
-export function leakVerdict({ text, bodies = [], envFiles, slug }) {
+export function leakVerdict({ text, bodies = [], envFiles, slug, parseEnv }) {
+  if (typeof parseEnv !== 'function') throw new TypeError('leakVerdict: no parseEnv; the gate hands in util.parseEnv');
   const all = [text, ...bodies.map((body) => body.replace(/\n+$/, ''))].join('\n');
-  const key = envLeak(envFiles, all, publicNames(all, slug));
+  const key = envLeak(envFiles, all, publicNames(all, slug), parseEnv);
   const found = key ? `the value of ${key} from a local .env file` : tokenLeak(all);
   if (!found) return null;
   return {

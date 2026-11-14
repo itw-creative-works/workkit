@@ -5,7 +5,7 @@
 
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, before, test, expect } = require('../lib/harness');
 
 const libs = path.join(__dirname, '..', '..', 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower');
 const load = (name) => import(pathToFileURL(path.join(libs, name)).href);
@@ -23,133 +23,124 @@ const issue = (repo, number, extra = {}) => ({
 /** A blocker reference: the shape `blockedBy` carries. */
 const ref = (repo, number) => ({ repo, number });
 
-const cases = async () => {
-  const { boardGraph, nodeId, MAX_TITLE } = await load('graphdef.js');
+let boardGraph, nodeId, MAX_TITLE;
+before(async () => { ({ boardGraph, nodeId, MAX_TITLE } = await load('graphdef.js')); });
 
-  group('tower/graphdef: who is on the picture');
-
-  await test('only the issues in a dependency are drawn', () => {
+describe('tower/graphdef: who is on the picture', () => {
+  test('only the issues in a dependency are drawn', () => {
     const blocked = issue('o/r', 2, { blockedBy: [ref('o/r', 1)] });
     const alone = issue('o/r', 9);
     const def = boardGraph([issue('o/r', 1), blocked, alone], []);
-    assert(def.startsWith('flowchart TD'), 'a flowchart, top down');
-    assert(def.includes(nodeId(ref('o/r', 1))), 'the blocker is a node');
-    assert(def.includes(nodeId(ref('o/r', 2))), 'so is what it blocks');
-    assert(!def.includes(nodeId(ref('o/r', 9))), 'an issue waiting on nothing and blocking nothing is not a box');
+    expect(def.startsWith('flowchart TD'), 'a flowchart, top down').toBeTruthy();
+    expect(def.includes(nodeId(ref('o/r', 1))), 'the blocker is a node').toBeTruthy();
+    expect(def.includes(nodeId(ref('o/r', 2))), 'so is what it blocks').toBeTruthy();
+    expect(!def.includes(nodeId(ref('o/r', 9))), 'an issue waiting on nothing and blocking nothing is not a box').toBeTruthy();
   });
 
-  await test('a board with no edges at all composes nothing', () => {
-    assertEq(boardGraph([issue('o/r', 1), issue('o/r', 2)], []), '',
-      'the page says so in a line rather than drawing an empty diagram');
-    assertEq(boardGraph([], []), '', 'and an empty board the same way');
-    assertEq(boardGraph(null, null), '', 'a page that has not read anything yet does not throw');
+  test('a board with no edges at all composes nothing', () => {
+    expect(boardGraph([issue('o/r', 1), issue('o/r', 2)], []), 'the page says so in a line rather than drawing an empty diagram').toBe('');
+    expect(boardGraph([], []), 'and an empty board the same way').toBe('');
+    expect(boardGraph(null, null), 'a page that has not read anything yet does not throw').toBe('');
   });
 
-  await test('the arrow runs blocker → dependent, one per pair however it arrived', () => {
+  test('the arrow runs blocker → dependent, one per pair however it arrived', () => {
     const def = boardGraph([issue('o/r', 1), issue('o/r', 2, { blockedBy: [ref('o/r', 1), ref('O/R', 1)] })], []);
     const edge = `${nodeId(ref('o/r', 1))} --> ${nodeId(ref('o/r', 2))}`;
-    assert(def.includes(edge), 'the blocker unblocks the dependent');
-    assertEq(def.split(edge).length - 1, 1, 'and the same pair spelled twice is one arrow');
-    assert(!def.includes(`${nodeId(ref('o/r', 2))} --> ${nodeId(ref('o/r', 1))}`), 'never the other way round');
+    expect(def.includes(edge), 'the blocker unblocks the dependent').toBeTruthy();
+    expect(def.split(edge).length - 1, 'and the same pair spelled twice is one arrow').toBe(1);
+    expect(!def.includes(`${nodeId(ref('o/r', 2))} --> ${nodeId(ref('o/r', 1))}`), 'never the other way round').toBeTruthy();
   });
 
-  await test('the sweep supplies the downstream the board is not showing', () => {
+  test('the sweep supplies the downstream the board is not showing', () => {
     // The drawn issue blocks something in a repo the scope hides. Without the
     // sweep it looks free; with it, the arrow out of it is the picture.
     const drawn = issue('o/r', 1);
     const elsewhere = issue('other/repo', 7, { blockedBy: [ref('o/r', 1)] });
     const def = boardGraph([drawn], [drawn, elsewhere]);
-    assert(def.includes(`${nodeId(ref('o/r', 1))} --> ${nodeId(ref('other/repo', 7))}`), 'the edge is found from the far end');
-    assert(def.includes('"other/repo#7"'), 'and the far end is a stub carrying its reference alone');
-    assertEq(def.split(`--> ${nodeId(ref('other/repo', 7))}`).length - 1, 1,
-      'an edge both lists is still one arrow');
+    expect(def.includes(`${nodeId(ref('o/r', 1))} --> ${nodeId(ref('other/repo', 7))}`), 'the edge is found from the far end').toBeTruthy();
+    expect(def.includes('"other/repo#7"'), 'and the far end is a stub carrying its reference alone').toBeTruthy();
+    expect(def.split(`--> ${nodeId(ref('other/repo', 7))}`).length - 1, 'an edge both lists is still one arrow').toBe(1);
   });
+});
 
-  group('tower/graphdef: what a node says');
-
-  await test('a node is its reference, its title and where it stands', () => {
+describe('tower/graphdef: what a node says', () => {
+  test('a node is its reference, its title and where it stands', () => {
     const def = boardGraph([issue('o/r', 1, { title: 'seed the runner', status: 'blocked' }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(def.includes('"#1 seed the runner - blocked"'), 'the status word rides the label line');
-    assert(!def.includes('o/r#1'), 'a single-repo board says it the short way, as its cards do');
+    expect(def.includes('"#1 seed the runner - blocked"'), 'the status word rides the label line').toBeTruthy();
+    expect(!def.includes('o/r#1'), 'a single-repo board says it the short way, as its cards do').toBeTruthy();
   });
 
-  await test('a board showing several repos qualifies every node by repo', () => {
+  test('a board showing several repos qualifies every node by repo', () => {
     const def = boardGraph([issue('o/r', 1), issue('other/repo', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(def.includes('"o/r#1 issue 1 - specced"'), 'the blocker carries its slug');
-    assert(def.includes('"other/repo#2 issue 2 - specced"'), 'and so does what it blocks');
+    expect(def.includes('"o/r#1 issue 1 - specced"'), 'the blocker carries its slug').toBeTruthy();
+    expect(def.includes('"other/repo#2 issue 2 - specced"'), 'and so does what it blocks').toBeTruthy();
   });
 
-  await test('a long title is cut where a node stops being readable', () => {
+  test('a long title is cut where a node stops being readable', () => {
     const long = 'a'.repeat(MAX_TITLE + 20);
     const def = boardGraph([issue('o/r', 1, { title: long }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(def.includes(`"#1 ${'a'.repeat(MAX_TITLE)}… - specced`), 'the tail becomes an ellipsis, and what follows the title still follows it');
-    assert(!def.includes('a'.repeat(MAX_TITLE + 1)), 'and nothing longer survives');
+    expect(def.includes(`"#1 ${'a'.repeat(MAX_TITLE)}… - specced`), 'the tail becomes an ellipsis, and what follows the title still follows it').toBeTruthy();
+    expect(!def.includes('a'.repeat(MAX_TITLE + 1)), 'and nothing longer survives').toBeTruthy();
   });
 
-  await test('an issue with no status word says only what it is', () => {
+  test('an issue with no status word says only what it is', () => {
     const def = boardGraph([issue('o/r', 1, { status: '' }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(def.includes('"#1 issue 1"'), 'no dangling separator where a status would be');
+    expect(def.includes('"#1 issue 1"'), 'no dangling separator where a status would be').toBeTruthy();
   });
+});
 
-  group('tower/graphdef: remote text cannot break out of its label');
-
-  await test('a hostile title is one label and nothing else', () => {
+describe('tower/graphdef: remote text cannot break out of its label', () => {
+  test('a hostile title is one label and nothing else', () => {
     const hostile = 'it "quoted" a]["thing" and #35; too';
     const def = boardGraph([issue('o/r', 1, { title: hostile }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
     const label = def.split('\n').find((line) => line.includes(nodeId(ref('o/r', 1))) && line.includes('"'));
-    assertEq((label.match(/"/g) || []).length, 2, 'the label opens and closes exactly once');
-    assert(!/[[\]{}<>|]/.test(label.slice(label.indexOf('"') + 1, label.lastIndexOf('"'))),
-      'no node-shape character is left inside it');
-    assert(!label.includes('#35;'), 'and no mermaid entity escape either');
-    assert(label.includes('it \'quoted\''), 'what it said is still readable, in apostrophes');
+    expect((label.match(/"/g) || []).length, 'the label opens and closes exactly once').toBe(2);
+    expect(!/[[\]{}<>|]/.test(label.slice(label.indexOf('"') + 1, label.lastIndexOf('"'))),
+      'no node-shape character is left inside it').toBeTruthy();
+    expect(!label.includes('#35;'), 'and no mermaid entity escape either').toBeTruthy();
+    expect(label.includes('it \'quoted\''), 'what it said is still readable, in apostrophes').toBeTruthy();
   });
 
-  await test('a hostile repo slug is escaped in the label but not in the id', () => {
+  test('a hostile repo slug is escaped in the label but not in the id', () => {
     const def = boardGraph([issue('o/r', 1), issue('<img src=x>/repo', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(!def.includes('<img'), 'the slug is sanitized where it is drawn');
-    assert(def.includes(nodeId(ref('<img src=x>/repo', 2))), 'and the id is the sanitized-to-safe one either way');
-    assert(/^[a-z0-9_]+$/.test(nodeId(ref('<img src=x>/repo', 2))), 'which carries word characters only');
+    expect(!def.includes('<img'), 'the slug is sanitized where it is drawn').toBeTruthy();
+    expect(def.includes(nodeId(ref('<img src=x>/repo', 2))), 'and the id is the sanitized-to-safe one either way').toBeTruthy();
+    expect(/^[a-z0-9_]+$/.test(nodeId(ref('<img src=x>/repo', 2))), 'which carries word characters only').toBeTruthy();
   });
 
-  await test('a title carrying a newline stays on its own statement', () => {
+  test('a title carrying a newline stays on its own statement', () => {
     const def = boardGraph([issue('o/r', 1, { title: 'first\nflowchart TD\nsecond' }), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
     const lines = def.split('\n');
-    assertEq(lines.filter((line) => line.startsWith('flowchart')).length, 1, 'there is exactly one header statement');
-    assert(lines.some((line) => line.includes('"#1 first flowchart TD second - specced"')),
-      'the break folded into the one label instead of opening a statement of its own');
+    expect(lines.filter((line) => line.startsWith('flowchart')).length, 'there is exactly one header statement').toBe(1);
+    expect(lines.some((line) => line.includes('"#1 first flowchart TD second - specced"')),
+      'the break folded into the one label instead of opening a statement of its own').toBeTruthy();
   });
+});
 
-  group('tower/graphdef: the edges that leave the board');
-
-  await test('an edge pointing off the board still renders, as a dashed stub', () => {
+describe('tower/graphdef: the edges that leave the board', () => {
+  test('an edge pointing off the board still renders, as a dashed stub', () => {
     const def = boardGraph([issue('o/r', 2, { blockedBy: [ref('o/r', 1), ref('far/away', 5)] })], []);
-    assert(def.includes(`${nodeId(ref('o/r', 1))}["#1"]`), 'a blocker the board is not showing is its reference alone');
-    assert(def.includes(`${nodeId(ref('far/away', 5))}["far/away#5"]`), 'and one in another repo carries its slug');
-    assert(def.includes('classDef stub stroke-dasharray'), 'the stubs are styled by a class');
-    assert(!/#[0-9a-f]{3,6}\b/i.test(def), 'and nothing in the definition names a colour');
+    expect(def.includes(`${nodeId(ref('o/r', 1))}["#1"]`), 'a blocker the board is not showing is its reference alone').toBeTruthy();
+    expect(def.includes(`${nodeId(ref('far/away', 5))}["far/away#5"]`), 'and one in another repo carries its slug').toBeTruthy();
+    expect(def.includes('classDef stub stroke-dasharray'), 'the stubs are styled by a class').toBeTruthy();
+    expect(!/#[0-9a-f]{3,6}\b/i.test(def), 'and nothing in the definition names a colour').toBeTruthy();
     const applied = def.split('\n').find((line) => line.startsWith('  class '));
-    assert(applied.includes(nodeId(ref('o/r', 1))) && applied.includes(nodeId(ref('far/away', 5))), 'both stubs wear it');
+    expect(applied.includes(nodeId(ref('o/r', 1))) && applied.includes(nodeId(ref('far/away', 5))), 'both stubs wear it').toBeTruthy();
   });
 
-  await test('a board with no stubs carries no class lines at all', () => {
+  test('a board with no stubs carries no class lines at all', () => {
     const def = boardGraph([issue('o/r', 1), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
-    assert(!def.includes('classDef'), 'nothing to mark, nothing written');
+    expect(!def.includes('classDef'), 'nothing to mark, nothing written').toBeTruthy();
   });
+});
 
-  group('tower/graphdef: ids');
-
-  await test('an id is derived from the reference, never from where it sits', () => {
+describe('tower/graphdef: ids', () => {
+  test('an id is derived from the reference, never from where it sits', () => {
     const first = boardGraph([issue('o/r', 1), issue('o/r', 2, { blockedBy: [ref('o/r', 1)] })], []);
     const second = boardGraph([issue('o/r', 2, { blockedBy: [ref('o/r', 1)] }), issue('o/r', 1)], []);
-    assert(first.includes(nodeId(ref('o/r', 1))) && second.includes(nodeId(ref('o/r', 1))),
-      'the same issue is the same node whichever order it arrived in');
-    assertEq(nodeId(ref('O/R', 1)), nodeId(ref('o/r', 1)), 'and case is not a second issue');
-    assert(/^n_/.test(nodeId(ref('o/r', 1))), 'an id never starts with a digit');
+    expect(first.includes(nodeId(ref('o/r', 1))) && second.includes(nodeId(ref('o/r', 1))),
+      'the same issue is the same node whichever order it arrived in').toBeTruthy();
+    expect(nodeId(ref('O/R', 1)), 'and case is not a second issue').toBe(nodeId(ref('o/r', 1)));
+    expect(/^n_/.test(nodeId(ref('o/r', 1))), 'an id never starts with a digit').toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

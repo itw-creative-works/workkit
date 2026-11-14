@@ -5,8 +5,7 @@
 
 # The commands a ship or review runs, and the manager's workkit watch, that auto mode may block,
 # kept in the global settings: every ship verb (ship.sh's SHIP_VERBS, sourced first) but
-# deploy, which prompts outside a ship. The workkit rules twin ALLOWED_SHIP_VERBS and ALLOWED_VERBS
-# in hooks/mods/bare-call.js, pinned by test/hooks/twins.test.js: change one and change the other.
+# deploy, which prompts outside a ship.
 ALLOW_RULES=()
 for _wk_verb in "${SHIP_VERBS[@]}"; do
   [[ "$_wk_verb" == deploy ]] || ALLOW_RULES+=("Bash(workkit ship $_wk_verb:*)")

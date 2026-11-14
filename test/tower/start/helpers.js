@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  testUnless, mkTmp, SPAWN_DEADLINE, alive, until, elapsedUntil, readPid, start: startHandle,
+  mkTmp, SPAWN_DEADLINE, alive, until, elapsedUntil, pidIn, start: startHandle,
 } = require('../../lib/harness');
 const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
 
@@ -18,14 +18,6 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
 // SIGKILL skips the trap that removes it, so every run is handed a tracked one.
 const TMP = mkTmp('tower-start-tmp-');
 const TMP_ENV = { TMPDIR: shellPath(TMP) };
-
-// The pid a script wrote to <file> once the whole line is there, else 0: the
-// file exists, empty, between the shell opening it and writing to it.
-const pidIn = (file) => {
-  let text = '';
-  try { text = fs.readFileSync(file, 'utf8'); } catch {}
-  return /^\d+\n$/.test(text) ? Number(text.trim()) : 0;
-};
 
 // The pid in <file> the moment it is written, so a signal sent on sight lands
 // right after the writer spawned. 0 if never.
@@ -254,18 +246,18 @@ const ptyRun = (dir, app, exports = []) => {
 
 // The pty case needs a real terminal to send a real Ctrl-C down; expect is the
 // only portable way to get one, and a machine without it says so rather than
-// pretending the case ran.
-const hasExpect = () => Boolean(which('expect'));
+// pretending the case ran. A skip value: false, or the reason.
+const skipWithoutExpect = () => !which('expect') && 'expect is not installed';
 
-// A case that asks whether a half is still running. The stub records itself
-// with the shell's `$$`, which under Git Bash is an MSYS id Node cannot ask
-// about: process.kill() throws for a shell that is demonstrably alive, so the
-// question answers about nothing on that machine.
-const pidTest = testUnless(IS_WINDOWS, 'a Git Bash $$ is an MSYS id, not a pid Node can query');
+// The skip value of a case that asks whether a half is still running. The stub
+// records itself with the shell's `$$`, which under Git Bash is an MSYS id Node
+// cannot ask about: process.kill() throws for a shell that is demonstrably
+// alive, so the question answers about nothing on that machine.
+const skipOnMsysPid = () => IS_WINDOWS && 'a Git Bash $$ is an MSYS id, not a pid Node can query';
 
 module.exports = {
-  SCRIPT, TMP_ENV, cleanup, alive, until, readPid, pidIn, pidOnSight, start, standIn, QUIET_PORTS,
+  SCRIPT, TMP_ENV, cleanup, alive, until, pidIn, pidOnSight, start, standIn, QUIET_PORTS,
   NOISY_APP, FAILURE_SHAPES, FAILING_APP, REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP,
   BENIGN_APP, WEB_APP, PHASED_APP, CHATTY_API, BUMPED_APP, STARTING, RED, CYAN, OFF, COLORED_APP,
-  probeStub, ptyRun, hasExpect, pidTest,
+  probeStub, ptyRun, skipWithoutExpect, skipOnMsysPid,
 };

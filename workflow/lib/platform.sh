@@ -95,11 +95,17 @@ wk_user_dir() {
   printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}"
 }
 
-# wk_proof_base: the folder every proof run folder lives under, the kit's cache
-# folder ~/.cache/workkit/proof, short and with no crowded parent. HOME moves it;
-# WORKFLOW_HOME does not, since ~/.workkit can be a link into a repo.
+# wk_cache_dir: the kit's cache folder, ~/.cache/workkit, short and with no
+# crowded parent, home of the proof run folders and the red-proof snapshots.
+# HOME moves it; WORKFLOW_HOME does not, since ~/.workkit can be a link into a repo.
+wk_cache_dir() {
+  printf '%s\n' "${HOME:-}/.cache/workkit"
+}
+
+# wk_proof_base: the folder every proof run folder lives under, proof/ in
+# wk_cache_dir's folder.
 wk_proof_base() {
-  printf '%s\n' "${HOME:-}/.cache/workkit/proof"
+  printf '%s\n' "$(wk_cache_dir)/proof"
 }
 
 # wk_proof_dir: a new run folder, <wk_proof_base>/<id>, printed. Each run folder
@@ -240,18 +246,19 @@ _wk_group_gone() {
 }
 
 # wk_end_run <pid>: end a detached run's supervisor <pid> and its process group.
-# Windows ends its process tree (taskkill /T; wk_end_pid where there is none).
-# Elsewhere the supervisor leads its own process group: INT first, so the body
-# logs its own code, then TERM, then KILL, 1.5s apart. Always 0.
+# Windows ends its process tree through `tree.js end` under wk_node, returning
+# its code, or 1 where no node fits. Elsewhere the supervisor leads its own group:
+# INT first, so the body logs its own code, then TERM, then KILL, 1.5s apart; 0.
 wk_end_run() {
+  local node
   case "${OSTYPE:-}" in
     msys*|cygwin*)
-      if command -v taskkill >/dev/null 2>&1; then
-        taskkill //T //F //PID "$1" >/dev/null 2>&1 || true
-      else
-        wk_end_pid "$1" || true
+      if ! node=$(wk_node); then
+        printf 'wk_end_run: no node at or above %s is installed, so the tree of %s was not ended\n' "$WK_NODE_FLOOR" "$1" >&2
+        return 1
       fi
-      return 0
+      "$node" "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/tree.js" end "$1"
+      return
       ;;
   esac
   kill -INT -- "-$1" 2>/dev/null || return 0
@@ -323,19 +330,25 @@ wk_tower_dir() {
   printf '%s\n' "$(wk_user_dir)/tower"
 }
 
-# wk_marker_path <dir> <anchor>: the marker file <markers dir>/<dir> holds for
-# <anchor>, keyed by its wk_sha1. Every marker name is derived here, so a
-# writer and its readers never drift apart.
-wk_marker_path() {
+# wk_keyed_path <folder> <anchor>: the path <folder> holds for <anchor>, keyed
+# by its wk_sha1; 1 when no digest comes out.
+wk_keyed_path() {
   local key
   key=$(printf '%s' "$2" | wk_sha1) || return 1
   [ -n "$key" ] || return 1
-  printf '%s\n' "$(wk_markers_dir)/$1/$key"
+  printf '%s\n' "$1/$key"
+}
+
+# wk_marker_path <dir> <anchor>: the marker file <markers dir>/<dir> holds for
+# <anchor> (wk_keyed_path). Every marker name is derived here, so a writer and
+# its readers never drift apart.
+wk_marker_path() {
+  wk_keyed_path "$(wk_markers_dir)/$1" "$2"
 }
 
 # wk_sweep_markers: remove each regular file one folder under the markers dir
-# whose mtime is older than MARKER_KEEP_DAYS. A folder there (a run lock, a red
-# snapshot) is never entered. Every marker writer calls it; it never fails one.
+# whose mtime is older than MARKER_KEEP_DAYS. A folder there (a run lock) is
+# never entered. Every marker writer calls it; it never fails one.
 wk_sweep_markers() {
   local dir
   dir=$(wk_markers_dir)

@@ -5,13 +5,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { cleanup, write, mkSyncWorld, sync, mkPublishWorld, publish } = require('./helpers');
 
-const cases = async () => {
-  group('workflow/publish: a partial write');
-
-  await test('a partial write is its own failure, and the publish aborts before committing it', () => {
+describe('workflow/publish: a partial write', () => {
+  test('a partial write is its own failure, and the publish aborts before committing it', () => {
     // Library layer: a dest path the copy cannot write (the clone holds a file
     // where the app now has a directory) must come back as its own code, not
     // as the "nothing to sync from" skip.
@@ -20,7 +18,7 @@ const cases = async () => {
     fs.rmSync(path.join(world.app, 'targets', 'web', 'src', 'index.html'));
     write(path.join(world.app, 'targets', 'web', 'src', 'index.html', 'a.txt'), 'now a dir\n');
     const { rc, out, err } = sync(world);
-    assertEq(rc, 3, `a partial write is rc=3, distinct from the skip: ${out}${err}`);
+    expect(rc, `a partial write is rc=3, distinct from the skip: ${out}${err}`).toBe(3);
     cleanup(world.root);
 
     // Wiring layer: publish stops on it, and the half-copied tree is never
@@ -31,15 +29,9 @@ const cases = async () => {
     fs.rmSync(path.join(pworld.app, 'targets', 'web', 'src', 'index.html'));
     write(path.join(pworld.app, 'targets', 'web', 'src', 'index.html', 'a.txt'), 'now a dir\n');
     const aborted = publish(pworld);
-    assert(aborted.code !== 0, `the publish aborts on a part-refreshed clone, got exit ${aborted.code}`);
+    expect(aborted.code !== 0, `the publish aborts on a part-refreshed clone, got exit ${aborted.code}`).toBeTruthy();
     const mainAfter = spawnSync('git', ['ls-remote', pworld.bare, 'main'], { encoding: 'utf8' }).stdout;
-    assertEq(mainAfter, mainBefore, 'and the partial tree was never committed');
+    expect(mainAfter, 'and the partial tree was never committed').toBe(mainBefore);
     cleanup(pworld.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

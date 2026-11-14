@@ -3,7 +3,7 @@
 // between two repaints. The lib loader is ../app/helpers.js.
 //
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, before, test, expect } = require('../../lib/harness');
 const { load } = require('../app/helpers');
 
 /** A map of `data-issue` to the card's on-screen spot, as the page measures it. */
@@ -11,56 +11,49 @@ const spots = (entries) => new Map(Object.entries(entries));
 
 const sorted = (keys) => [...keys].sort();
 
-const cases = async () => {
-  const { motionPlan } = await load('board-motion.js');
+describe('tower/board: motion - where each card moves between repaints', () => {
+  let motionPlan;
+  before(async () => { ({ motionPlan } = await load('board-motion.js')); });
 
-  group('tower/board: motion - where each card moves between repaints');
-
-  await test('a card at the same spot is not in moved', () => {
+  test('a card at the same spot is not in moved', () => {
     const plan = motionPlan(
       spots({ 'workkit#1': { x: 10, y: 20 }, 'workkit#2': { x: 300, y: 40 } }),
       spots({ 'workkit#1': { x: 10, y: 20 }, 'workkit#2': { x: 300, y: 140 } }),
     );
-    assert(!plan.moved.some((move) => move.key === 'workkit#1'), 'a card that stayed put does not slide');
-    assertEq(plan.moved.length, 1, 'only the card whose spot changed is in moved');
-    assertEq(plan.entered.length, 0, 'a card on both sides never enters');
-    assertEq(plan.left.length, 0, 'and never leaves');
+    expect(!plan.moved.some((move) => move.key === 'workkit#1'), 'a card that stayed put does not slide').toBeTruthy();
+    expect(plan.moved.length, 'only the card whose spot changed is in moved').toBe(1);
+    expect(plan.entered.length, 'a card on both sides never enters').toBe(0);
+    expect(plan.left.length, 'and never leaves').toBe(0);
   });
 
-  await test('a moved card\'s dx and dy are its old spot minus its new one', () => {
+  test('a moved card\'s dx and dy are its old spot minus its new one', () => {
     const plan = motionPlan(
       spots({ 'workkit#7': { x: 40, y: 500 }, 'omega#3': { x: 900, y: 60 } }),
       spots({ 'workkit#7': { x: 340, y: 120 }, 'omega#3': { x: 100, y: 60 } }),
     );
     const right = plan.moved.find((move) => move.key === 'workkit#7');
-    assert(right, 'the card that changed column is in moved');
-    assertEq(right.dx, -300, 'dx is old x minus new x, so the card starts back where it was');
-    assertEq(right.dy, 380, 'dy is old y minus new y');
+    expect(right, 'the card that changed column is in moved').toBeTruthy();
+    expect(right.dx, 'dx is old x minus new x, so the card starts back where it was').toBe(-300);
+    expect(right.dy, 'dy is old y minus new y').toBe(380);
     const left = plan.moved.find((move) => move.key === 'omega#3');
-    assert(left, 'a move to the left is a move too');
-    assertEq(left.dx, 800, 'old x minus new x, positive for a leftward move');
-    assertEq(left.dy, 0, 'and a spot unchanged on one axis is zero on that axis');
+    expect(left, 'a move to the left is a move too').toBeTruthy();
+    expect(left.dx, 'old x minus new x, positive for a leftward move').toBe(800);
+    expect(left.dy, 'and a spot unchanged on one axis is zero on that axis').toBe(0);
   });
 
-  await test('a key only in after is entered, a key only in before is left', () => {
+  test('a key only in after is entered, a key only in before is left', () => {
     const plan = motionPlan(
       spots({ 'workkit#1': { x: 0, y: 0 }, 'workkit#2': { x: 0, y: 100 } }),
       spots({ 'workkit#1': { x: 0, y: 0 }, 'workkit#9': { x: 200, y: 0 }, 'omega#4': { x: 400, y: 0 } }),
     );
-    assertEq(JSON.stringify(sorted(plan.entered)), JSON.stringify(['omega#4', 'workkit#9']), 'the cards new to the board fade in');
-    assertEq(JSON.stringify(plan.left), JSON.stringify(['workkit#2']), 'the card that left fades out');
-    assert(!plan.moved.some((move) => ['workkit#2', 'workkit#9', 'omega#4'].includes(move.key)),
-      'a card on one side only has no old or new spot to slide between');
+    expect(JSON.stringify(sorted(plan.entered)), 'the cards new to the board fade in').toBe(JSON.stringify(['omega#4', 'workkit#9']));
+    expect(JSON.stringify(plan.left), 'the card that left fades out').toBe(JSON.stringify(['workkit#2']));
+    expect(!plan.moved.some((move) => ['workkit#2', 'workkit#9', 'omega#4'].includes(move.key)),
+      'a card on one side only has no old or new spot to slide between').toBeTruthy();
   });
 
-  await test('empty maps give an empty plan', () => {
+  test('empty maps give an empty plan', () => {
     const plan = motionPlan(new Map(), new Map());
-    assertEq(JSON.stringify(plan), JSON.stringify({ moved: [], entered: [], left: [] }), 'nothing moves, enters or leaves');
+    expect(JSON.stringify(plan), 'nothing moves, enters or leaves').toBe(JSON.stringify({ moved: [], entered: [], left: [] }));
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

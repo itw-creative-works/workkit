@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, skipSuite, selfRun, summary, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
@@ -56,36 +56,29 @@ const runMint = (root, { child, send = '' }) => {
   };
 };
 
-const cases = async () => {
-  if (!hasExpect()) skipSuite('expect is not installed: only the script fallback can run here');
-
-  group('workflow: mint-pty: Ctrl-C ends a mint whose child ignores it (#187)');
-
-  await test('one ^C ends an INT-ignoring child and answers 130', () => {
+describe('workflow: mint-pty: Ctrl-C ends a mint whose child ignores it (#187)', {
+  skip: !hasExpect() && 'expect is not installed: only the script fallback can run here',
+}, () => {
+  test('one ^C ends an INT-ignoring child and answers 130', () => {
     const root = mkTmp('workkit-mintpty-');
     try {
       const out = runMint(root, {
         child: '#!/bin/bash\ntrap "" INT\necho CHILD-UP\nsleep 60\necho CHILD-DONE\n',
         send: '\x03',
       });
-      assertEq(out.result, 'exit=130', 'the outer binding ends the run the CLI would sit through');
-      assert(!out.capture.includes('CHILD-DONE'), 'and the child never reached its own end');
+      expect(out.result, 'the outer binding ends the run the CLI would sit through').toBe('exit=130');
+      expect(!out.capture.includes('CHILD-DONE'), 'and the child never reached its own end').toBeTruthy();
     } finally { cleanup(root); }
   });
 
-  await test('a child that finishes passes its screen and its exit status through', () => {
+  test('a child that finishes passes its screen and its exit status through', () => {
     const root = mkTmp('workkit-mintpty-');
     try {
       const out = runMint(root, {
         child: '#!/bin/bash\necho CHILD-UP\necho FAKE-TOKEN-LINE\nexit 3\n',
       });
-      assertEq(out.result, 'exit=3', 'the child’s own status is the wrapper’s answer');
-      assert(out.capture.includes('FAKE-TOKEN-LINE'), 'and the screen the token rides on is in the capture');
+      expect(out.result, 'the child’s own status is the wrapper’s answer').toBe('exit=3');
+      expect(out.capture.includes('FAKE-TOKEN-LINE'), 'and the screen the token rides on is in the capture').toBeTruthy();
     } finally { cleanup(root); }
   });
-
-  return summary();
-};
-
-module.exports = cases;
-if (require.main === module) selfRun(cases);
+});

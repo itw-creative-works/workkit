@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const {
   IDENTITY_NA, INSTALL_FIX, BOT_HINT, repoRoute, writeLogin, useTokenService, startServer, startService, attentionCount,
 } = require('../../lib/identity');
@@ -44,7 +44,7 @@ const doctor = ({ world, script, repo }, extra = {}) => runCli(world, ['doctor']
 const section = (said, title) => {
   const lines = said.split('\n');
   const start = lines.findIndex((l) => !/^\s/.test(l) && l.includes(title));
-  assert(start >= 0, `the doctor prints a ${title} section, got: ${said}`);
+  expect(start >= 0, `the doctor prints a ${title} section, got: ${said}`).toBeTruthy();
   const rest = lines.slice(start + 1);
   const end = rest.findIndex((l) => l.trim() && !/^\s/.test(l));
   return (end < 0 ? rest : rest.slice(0, end)).join('\n');
@@ -79,33 +79,31 @@ const machineDoctor = (world, remote) => runCli(world, ['doctor'], {
 /** The doctor's indented lines about the home repo itself. */
 const homeLines = (said) => said.split('\n').filter((l) => /^ +\S+ home:/.test(l));
 
-const cases = async () => {
-  group('workkit doctor: identity');
-
-  await test('case 19: This machine says signed in as @<login>, or not signed in; run workkit setup --login as one attention item', async () => {
+describe('workkit doctor: identity', () => {
+  test('case 19: This machine says signed in as @<login>, or not signed in; run workkit setup --login as one attention item', async () => {
     const scene = mkScene();
     const service = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
     try {
       useTokenService(scene.world.home, `${service.url}/token`);
       const bare = doctor(scene);
-      assert(NOT_SIGNED_IN.test(bare.err), `the warning on stderr says how to sign in, got: ${bare.err}`);
-      assert(!bare.said.includes('workkit login'), `and no longer names workkit login, got: ${bare.said}`);
-      assert(!bare.said.includes('signed in as @'), `and never names a login, got: ${bare.said}`);
+      expect(NOT_SIGNED_IN.test(bare.err), `the warning on stderr says how to sign in, got: ${bare.err}`).toBeTruthy();
+      expect(!bare.said.includes('workkit login'), `and no longer names workkit login, got: ${bare.said}`).toBeTruthy();
+      expect(!bare.said.includes('signed in as @'), `and never names a login, got: ${bare.said}`).toBeTruthy();
 
       // The same scene signed in, the App installed: the one difference in the
       // count is the sign-in line.
       writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
       const set = doctor(scene);
-      assert(section(set.said, 'This machine').includes('signed in as @octocat'), `This machine names the login, got: ${set.said}`);
-      assert(!set.said.includes('not signed in'), `and not the opposite, got: ${set.said}`);
-      assertEq(attentionCount(bare.said) - attentionCount(set.said), 1, 'not signed in is one attention item');
+      expect(section(set.said, 'This machine').includes('signed in as @octocat'), `This machine names the login, got: ${set.said}`).toBeTruthy();
+      expect(!set.said.includes('not signed in'), `and not the opposite, got: ${set.said}`).toBeTruthy();
+      expect(attentionCount(bare.said) - attentionCount(set.said), 'not signed in is one attention item').toBe(1);
     } finally {
       await service.close();
       cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
     }
   });
 
-  await test('This machine: a client whose --status fails with a two-line message is two indented identity warnings, none at column 0 and none blank', () => {
+  test('This machine: a client whose --status fails with a two-line message is two indented identity warnings, none at column 0 and none blank', () => {
     const scene = mkScene();
     // The scene's kit holds its own client; this one refuses --status in two lines
     // with a blank line between them.
@@ -116,18 +114,18 @@ const cases = async () => {
     try {
       const res = doctor(scene);
       const lines = res.err.split('\n');
-      assert(lines.some((l) => /^ +⚠ identity: the client could not report its state: settings\.json does not parse$/.test(l)),
-        `the first line is an indented identity warning, got: ${res.said}`);
-      assert(lines.some((l) => /^ +⚠ identity: fix it, then run workkit doctor again$/.test(l)),
-        `the second line is an indented identity warning of its own, got: ${res.said}`);
-      assert(!res.said.split('\n').some((l) => /^fix it, then run/.test(l)), `no line lands at column 0, got: ${res.said}`);
-      assert(!lines.some((l) => /⚠ identity: ?$/.test(l)), `the blank line is no empty warning, got: ${res.said}`);
+      expect(lines.some((l) => /^ +⚠ identity: the client could not report its state: settings\.json does not parse$/.test(l)),
+        `the first line is an indented identity warning, got: ${res.said}`).toBeTruthy();
+      expect(lines.some((l) => /^ +⚠ identity: fix it, then run workkit doctor again$/.test(l)),
+        `the second line is an indented identity warning of its own, got: ${res.said}`).toBeTruthy();
+      expect(!res.said.split('\n').some((l) => /^fix it, then run/.test(l)), `no line lands at column 0, got: ${res.said}`).toBeTruthy();
+      expect(!lines.some((l) => /⚠ identity: ?$/.test(l)), `the blank line is no empty warning, got: ${res.said}`).toBeTruthy();
     } finally {
       cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
     }
   });
 
-  await test('case 19: This repo, signed in with the origin on the roster: a 200 is installed and ok, a 412 a warning carrying the install page, then or run: workkit setup --bot as its own indented warning', async () => {
+  test('case 19: This repo, signed in with the origin on the roster: a 200 is installed and ok, a 412 a warning carrying the install page, then or run: workkit setup --bot as its own indented warning', async () => {
     const scene = mkScene();
     writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
     const installed = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
@@ -140,19 +138,19 @@ const cases = async () => {
       useTokenService(scene.world.home, `${installed.url}/token`);
       const ok = doctor(scene);
       const okLines = repoLines(ok.said);
-      assert(okLines.length > 0 && okLines.every((l) => !l.includes('not installed')), `it says the App is installed on acme/rostered, got: ${ok.said}`);
+      expect(okLines.length > 0 && okLines.every((l) => !l.includes('not installed')), `it says the App is installed on acme/rostered, got: ${ok.said}`).toBeTruthy();
       const asked = installed.requests().filter((r) => r.method === 'POST' && r.url === '/token');
-      assert(asked.length > 0, `the doctor asked the stand-in, got: ${JSON.stringify(installed.requests())}`);
-      assert(asked.every((r) => r.auth === 'Bearer ghu_doctoruser' && JSON.parse(r.body).repo === 'acme/rostered'),
-        `with the login's bearer, for acme/rostered, got: ${JSON.stringify(asked)}`);
+      expect(asked.length > 0, `the doctor asked the stand-in, got: ${JSON.stringify(installed.requests())}`).toBeTruthy();
+      expect(asked.every((r) => r.auth === 'Bearer ghu_doctoruser' && JSON.parse(r.body).repo === 'acme/rostered'),
+        `with the login's bearer, for acme/rostered, got: ${JSON.stringify(asked)}`).toBeTruthy();
 
       useTokenService(scene.world.home, `${missing.url}/token`);
       const warn = doctor(scene, { GITHUB_API_URL: missing.url });
-      assert(repoLines(warn.said).some((l) => l.includes('not installed')), `it says the App is not installed on acme/rostered, got: ${warn.said}`);
-      assert(warn.said.includes('https://github.com/apps/workkit-agent'), `and carries the install page, got: ${warn.said}`);
-      assert(section(warn.said, 'This repo').split('\n').some((l) => /^ +⚠ identity: /.test(l) && l.endsWith(`identity: ${BOT_HINT}`)),
-        `the refusal's next line is a warning of its own under This repo, got: ${warn.said}`);
-      assertEq(attentionCount(warn.said) - attentionCount(ok.said), 1, 'not installed is one attention item');
+      expect(repoLines(warn.said).some((l) => l.includes('not installed')), `it says the App is not installed on acme/rostered, got: ${warn.said}`).toBeTruthy();
+      expect(warn.said.includes('https://github.com/apps/workkit-agent'), `and carries the install page, got: ${warn.said}`).toBeTruthy();
+      expect(section(warn.said, 'This repo').split('\n').some((l) => /^ +⚠ identity: /.test(l) && l.endsWith(`identity: ${BOT_HINT}`)),
+        `the refusal's next line is a warning of its own under This repo, got: ${warn.said}`).toBeTruthy();
+      expect(attentionCount(warn.said) - attentionCount(ok.said), 'not installed is one attention item').toBe(1);
     } finally {
       await installed.close();
       await missing.close();
@@ -160,74 +158,72 @@ const cases = async () => {
     }
   });
 
-  await test('case 19: This repo keeps the shim\'s rule: an opted-in repo off the roster gets no installation line and no ask', async () => {
+  test('case 19: This repo keeps the shim\'s rule: an opted-in repo off the roster gets no installation line and no ask', async () => {
     const scene = mkScene({ rostered: false });
     writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
     const service = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
     try {
       useTokenService(scene.world.home, `${service.url}/token`);
       const res = doctor(scene);
-      assertEq(repoLines(res.said).length, 0, `no installation line for acme/rostered, got: ${res.said}`);
-      assertEq(service.requests().length, 0, `the service is never asked, got: ${JSON.stringify(service.requests())}`);
+      expect(repoLines(res.said).length, `no installation line for acme/rostered, got: ${res.said}`).toBe(0);
+      expect(service.requests().length, `the service is never asked, got: ${JSON.stringify(service.requests())}`).toBe(0);
     } finally {
       await service.close();
       cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
     }
   });
+});
 
-  group('workkit doctor: in a cloud session and off it');
-
-  await test('case 4: in a cloud session, a home repo named with nothing cloned is a not-applicable home line the tally does not count', () => {
+describe('workkit doctor: in a cloud session and off it', () => {
+  test('case 4: in a cloud session, a home repo named with nothing cloned is a not-applicable home line the tally does not count', () => {
     const named = mkMachine({ repo: 'owner/workkit' });
     const unnamed = mkMachine();
     try {
       const withRepo = machineDoctor(named, 'true');
       const lines = homeLines(withRepo.said);
-      assert(lines.length > 0, `a home line prints, got: ${withRepo.said}`);
-      assert(lines.every((l) => !l.includes('⚠')), `and it is no warning, got: ${lines.join(' | ')}`);
-      assert(lines.every((l) => l.includes('not applicable')), `and it says not applicable, got: ${lines.join(' | ')}`);
-      assertEq(attentionCount(withRepo.said), attentionCount(machineDoctor(unnamed, 'true').said),
-        'a named home with nothing cloned counts nothing more than no home at all');
+      expect(lines.length > 0, `a home line prints, got: ${withRepo.said}`).toBeTruthy();
+      expect(lines.every((l) => !l.includes('⚠')), `and it is no warning, got: ${lines.join(' | ')}`).toBeTruthy();
+      expect(lines.every((l) => l.includes('not applicable')), `and it says not applicable, got: ${lines.join(' | ')}`).toBeTruthy();
+      expect(attentionCount(withRepo.said), 'a named home with nothing cloned counts nothing more than no home at all').toBe(attentionCount(machineDoctor(unnamed, 'true').said));
     } finally {
       cleanup(named.root); cleanup(unnamed.root);
     }
   });
 
-  await test('case 5: gh not authenticated is one more item in the tally, on a machine and in a cloud session', () => {
+  test('case 5: gh not authenticated is one more item in the tally, on a machine and in a cloud session', () => {
     const authed = mkMachine();
     const unauthed = mkMachine({ ghAuthed: false });
     try {
       for (const remote of [undefined, 'true']) {
         const label = remote ? 'in a cloud session' : 'on a machine';
         const without = machineDoctor(unauthed, remote);
-        assert(/^ +⚠ gh: [^\n]*not authenticated/m.test(without.err), `${label}: the gh warning prints, got: ${without.said}`);
-        assertEq(attentionCount(without.said) - attentionCount(machineDoctor(authed, remote).said), 1, `${label}: it is one attention item`);
+        expect(/^ +⚠ gh: [^\n]*not authenticated/m.test(without.err), `${label}: the gh warning prints, got: ${without.said}`).toBeTruthy();
+        expect(attentionCount(without.said) - attentionCount(machineDoctor(authed, remote).said), `${label}: it is one attention item`).toBe(1);
       }
     } finally {
       cleanup(authed.root); cleanup(unauthed.root);
     }
   });
 
-  await test('case 12: in a cloud session gh api user is the gh check: a login is authenticated though gh auth status fails, no login warns as today', () => {
+  test('case 12: in a cloud session gh api user is the gh check: a login is authenticated though gh auth status fails, no login warns as today', () => {
     const viaRest = mkMachine({ ghAuthed: false, login: 'octocat' });
     const noLogin = mkMachine({ ghAuthed: true, login: '' });
     const authed = mkMachine();
     try {
       const cloud = machineDoctor(viaRest, 'true');
-      assert(cloud.said.includes('gh: installed and authenticated') && !/⚠ gh:/.test(cloud.said),
-        `a login answered: gh is installed and authenticated, got: ${cloud.said}`);
-      assertEq(attentionCount(cloud.said), attentionCount(machineDoctor(authed, 'true').said),
-        'and no more attention than a machine gh fully signs in');
-      assert(/⚠ gh: installed but not authenticated; run `gh auth login`/.test(machineDoctor(viaRest).err),
-        'on a machine the check is still gh auth status');
-      assert(/⚠ gh: installed but not authenticated; run `gh auth login`/.test(machineDoctor(noLogin, 'true').err),
-        'in a cloud session no login warns with the text it always had');
+      expect(cloud.said.includes('gh: installed and authenticated') && !/⚠ gh:/.test(cloud.said),
+        `a login answered: gh is installed and authenticated, got: ${cloud.said}`).toBeTruthy();
+      expect(attentionCount(cloud.said), 'and no more attention than a machine gh fully signs in').toBe(attentionCount(machineDoctor(authed, 'true').said));
+      expect(/⚠ gh: installed but not authenticated; run `gh auth login`/.test(machineDoctor(viaRest).err),
+        'on a machine the check is still gh auth status').toBeTruthy();
+      expect(/⚠ gh: installed but not authenticated; run `gh auth login`/.test(machineDoctor(noLogin, 'true').err),
+        'in a cloud session no login warns with the text it always had').toBeTruthy();
     } finally {
       cleanup(viaRest.root); cleanup(noLogin.root); cleanup(authed.root);
     }
   });
 
-  await test('in a cloud session the identity line is one not-applicable line on stdout, signed in or not, and the tally counts nothing for it', () => {
+  test('in a cloud session the identity line is one not-applicable line on stdout, signed in or not, and the tally counts nothing for it', () => {
     const bare = mkMachine();
     const signed = mkMachine();
     writeLogin(signed.home, { token: 'ghu_doctoruser', login: 'octocat' });
@@ -235,31 +231,25 @@ const cases = async () => {
       const unsigned = machineDoctor(bare, 'true');
       const set = machineDoctor(signed, 'true');
       for (const [label, res] of [['not signed in', unsigned], ['signed in', set]]) {
-        assert(res.out.includes(IDENTITY_NA), `${label}: the not-applicable line prints on stdout, got: ${res.said}`);
-        assert(!/⚠ identity:|signed in as @|not signed in/.test(res.said), `${label}: and no sign-in line beside it, got: ${res.said}`);
+        expect(res.out.includes(IDENTITY_NA), `${label}: the not-applicable line prints on stdout, got: ${res.said}`).toBeTruthy();
+        expect(!/⚠ identity:|signed in as @|not signed in/.test(res.said), `${label}: and no sign-in line beside it, got: ${res.said}`).toBeTruthy();
       }
-      assertEq(attentionCount(unsigned.said), attentionCount(set.said), 'no login.json counts nothing more than a login');
+      expect(attentionCount(unsigned.said), 'no login.json counts nothing more than a login').toBe(attentionCount(set.said));
     } finally {
       cleanup(bare.root); cleanup(signed.root);
     }
   });
 
-  await test('case 6: off the cloud the doctor is unchanged: CLAUDE_CODE_REMOTE unset or not true reads the same, and a home named with nothing cloned stays a counted warning', () => {
+  test('case 6: off the cloud the doctor is unchanged: CLAUDE_CODE_REMOTE unset or not true reads the same, and a home named with nothing cloned stays a counted warning', () => {
     const named = mkMachine({ repo: 'owner/workkit' });
     const unnamed = mkMachine();
     try {
       const off = machineDoctor(named);
-      assertEq(machineDoctor(named, 'false').said, off.said, 'CLAUDE_CODE_REMOTE=false is off the cloud');
-      assert(homeLines(off.said).some((l) => /⚠ home:[^\n]*nothing is cloned/.test(l)), `the home warning prints, got: ${off.said}`);
-      assertEq(attentionCount(off.said) - attentionCount(machineDoctor(unnamed).said), 1, 'and it is one attention item');
+      expect(machineDoctor(named, 'false').said, 'CLAUDE_CODE_REMOTE=false is off the cloud').toBe(off.said);
+      expect(homeLines(off.said).some((l) => /⚠ home:[^\n]*nothing is cloned/.test(l)), `the home warning prints, got: ${off.said}`).toBeTruthy();
+      expect(attentionCount(off.said) - attentionCount(machineDoctor(unnamed).said), 'and it is one attention item').toBe(1);
     } finally {
       cleanup(named.root); cleanup(unnamed.root);
     }
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const {
   mods, textOf, MODELS, row,
 } = require('../lib/mods-inputs');
@@ -26,96 +26,93 @@ const warn = (rows, { model = FRONTIER_MODEL, closeEdits = 5 } = {}) => {
   return textOf(mods('close-guard').closeGuardWarning(facts, { tier, frontier: FRONTIER, closeEdits }));
 };
 
-const cases = async () => {
-  group('manager-close-guard: rule 3, the frontier model implementing itself');
-
-  await test('6 edits and no worker in a frontier session warns', () => {
+describe('manager-close-guard: rule 3, the frontier model implementing itself', () => {
+  test('6 edits and no worker in a frontier session warns', () => {
     const msg = warn([row.user(), ...edits(6)]);
     const rule3 = 'the frontier model made 6 edits itself this turn with no worker spawn: implementation belongs with workkit:worker';
-    assert(msg.includes(rule3), `rule 3, in its own words: ${msg}`);
+    expect(msg.includes(rule3), `rule 3, in its own words: ${msg}`).toBeTruthy();
   });
 
-  await test('6 edits WITH a worker spawn is silent on rule 3', () => {
+  test('6 edits WITH a worker spawn is silent on rule 3', () => {
     const rows = [row.user(), ...edits(6), spawn('worker'), row.result(), spawn('verifier'), row.result()];
-    assertEq(warn(rows), '', 'a worker spawn clears rule 3, a verifier clears rule 4');
+    expect(warn(rows), 'a worker spawn clears rule 3, a verifier clears rule 4').toBe('');
   });
 
-  await test('4 edits stays under the default threshold', () => {
-    assertEq(warn([row.user(), ...edits(4)]), '', 'four is under five');
+  test('4 edits stays under the default threshold', () => {
+    expect(warn([row.user(), ...edits(4)]), 'four is under five').toBe('');
   });
 
-  await test('five edits is the default threshold', () => {
-    assert(warn([row.user(), ...edits(5)]).includes('made 5 edits'), 'five warns');
+  test('five edits is the default threshold', () => {
+    expect(warn([row.user(), ...edits(5)]).includes('made 5 edits'), 'five warns').toBeTruthy();
   });
 
-  await test('a sonnet session doing the same editing is silent', () => {
-    assertEq(warn([row.user(), ...edits(6)], { model: MODELS.sonnet }), '', 'rule 3 is the frontier model\'s');
+  test('a sonnet session doing the same editing is silent', () => {
+    expect(warn([row.user(), ...edits(6)], { model: MODELS.sonnet }), 'rule 3 is the frontier model\'s').toBe('');
   });
 
-  await test('MANAGER_CLOSE_EDITS lowers the threshold', () => {
+  test('MANAGER_CLOSE_EDITS lowers the threshold', () => {
     const rows = [row.user(), ...edits(2)];
-    assertEq(warn(rows), '', 'two is under the default');
-    assert(warn(rows, { closeEdits: 2 }).includes('2 edits'), 'and at a threshold of two it warns');
+    expect(warn(rows), 'two is under the default').toBe('');
+    expect(warn(rows, { closeEdits: 2 }).includes('2 edits'), 'and at a threshold of two it warns').toBeTruthy();
   });
 
-  await test('a Write call counts as an edit', () => {
+  test('a Write call counts as an edit', () => {
     const rows = [row.user(), row.tool('Write', { file_path: '/x', content: 'y' })];
-    assert(warn(rows, { closeEdits: 1 }).includes('1 edits'), 'a Write is an edit');
+    expect(warn(rows, { closeEdits: 1 }).includes('1 edits'), 'a Write is an edit').toBeTruthy();
   });
 
-  await test('a Read call does not', () => {
-    assertEq(warn([row.user(), row.tool('Read', { file_path: '/x' })], { closeEdits: 1 }), '', 'a Read is no edit');
+  test('a Read call does not', () => {
+    expect(warn([row.user(), row.tool('Read', { file_path: '/x' })], { closeEdits: 1 }), 'a Read is no edit').toBe('');
   });
 
-  await test('a spawn naming no subagent_type is no worker: rule 3 still warns', () => {
-    assert(warn([row.user(), ...edits(6), spawn(undefined), row.result()]).includes('6 edits'), 'an untyped spawn clears nothing');
+  test('a spawn naming no subagent_type is no worker: rule 3 still warns', () => {
+    expect(warn([row.user(), ...edits(6), spawn(undefined), row.result()]).includes('6 edits'), 'an untyped spawn clears nothing').toBeTruthy();
   });
+});
 
-  group('manager-close-guard: rule 4, built work ending unreviewed');
-
-  await test('a worker with no verifier warns', () => {
+describe('manager-close-guard: rule 4, built work ending unreviewed', () => {
+  test('a worker with no verifier warns', () => {
     const msg = warn([row.user(), spawn('worker'), row.result()]);
-    assert(msg.includes('verifier'), msg);
-    assert(msg.includes('consider'), `the wording should suggest, not scold: ${msg}`);
+    expect(msg.includes('verifier'), msg).toBeTruthy();
+    expect(msg.includes('consider'), `the wording should suggest, not scold: ${msg}`).toBeTruthy();
   });
 
-  await test('workkit:worker (the prefixed spelling) reads the same', () => {
-    assert(warn([row.user(), spawn('workkit:worker'), row.result()]).includes('verifier'), 'the prefix is stripped');
+  test('workkit:worker (the prefixed spelling) reads the same', () => {
+    expect(warn([row.user(), spawn('workkit:worker'), row.result()]).includes('verifier'), 'the prefix is stripped').toBeTruthy();
   });
 
-  await test('an Agent tool use is a spawn as a Task one is', () => {
-    assert(warn([row.user(), spawn('workkit:worker', 'Agent'), row.result()]).includes('verifier'), 'an Agent worker arms rule 4');
-    assertEq(warn([row.user(), spawn('worker', 'Agent'), row.result(), spawn('workkit:verifier', 'Agent'), row.result()]), '',
-      'and an Agent verifier clears it');
+  test('an Agent tool use is a spawn as a Task one is', () => {
+    expect(warn([row.user(), spawn('workkit:worker', 'Agent'), row.result()]).includes('verifier'), 'an Agent worker arms rule 4').toBeTruthy();
+    expect(warn([row.user(), spawn('worker', 'Agent'), row.result(), spawn('workkit:verifier', 'Agent'), row.result()]), 'and an Agent verifier clears it').toBe('');
   });
 
-  await test('a worker followed by a verifier is silent', () => {
-    assertEq(warn([row.user(), spawn('worker'), row.result(), spawn('workkit:verifier'), row.result()]), '', 'reviewed');
+  test('a worker followed by a verifier is silent', () => {
+    expect(warn([row.user(), spawn('worker'), row.result(), spawn('workkit:verifier'), row.result()]), 'reviewed').toBe('');
   });
 
-  await test('a scout alone is silent', () => {
-    assertEq(warn([row.user(), spawn('scout'), row.result()]), '', 'a scout builds nothing');
+  test('a scout alone is silent', () => {
+    expect(warn([row.user(), spawn('scout'), row.result()]), 'a scout builds nothing').toBe('');
   });
 
-  await test('rule 4 fires in a sonnet session too', () => {
-    assert(warn([row.user(), spawn('worker'), row.result()], { model: MODELS.sonnet }).includes('verifier'), 'any tier');
+  test('rule 4 fires in a sonnet session too', () => {
+    expect(warn([row.user(), spawn('worker'), row.result()], { model: MODELS.sonnet }).includes('verifier'), 'any tier').toBeTruthy();
   });
 
-  await test('a heavy-editing turn that DID spawn a worker warns once, on rule 4', () => {
+  test('a heavy-editing turn that DID spawn a worker warns once, on rule 4', () => {
     const msg = warn([row.user(), ...edits(6), spawn('worker'), row.result()]);
-    assertEq(msg.split('\n').length, 1, `one line per stop: ${msg}`);
-    assert(msg.includes('verifier'), msg);
-    assert(!msg.includes('6 edits'), msg);
+    expect(msg.split('\n').length, `one line per stop: ${msg}`).toBe(1);
+    expect(msg.includes('verifier'), msg).toBeTruthy();
+    expect(!msg.includes('6 edits'), msg).toBeTruthy();
+  });
+});
+
+describe('manager-close-guard: the turn window', () => {
+  test('a previous turn\'s edits do not count', () => {
+    expect(warn([row.user(), ...edits(6), row.user('and now something else'), ...edits(1)]), 'the window opens at the last prompt').toBe('');
   });
 
-  group('manager-close-guard: the turn window');
-
-  await test('a previous turn\'s edits do not count', () => {
-    assertEq(warn([row.user(), ...edits(6), row.user('and now something else'), ...edits(1)]), '', 'the window opens at the last prompt');
-  });
-
-  await test('a previous turn\'s worker does not count', () => {
-    assertEq(warn([row.user(), spawn('worker'), row.result(), row.user('next'), ...edits(1)]), '', 'the worker was last turn\'s');
+  test('a previous turn\'s worker does not count', () => {
+    expect(warn([row.user(), spawn('worker'), row.result(), row.user('next'), ...edits(1)]), 'the worker was last turn\'s').toBe('');
   });
 
   // The IDE injects these constantly mid-turn; counting one as a prompt would
@@ -130,52 +127,45 @@ const cases = async () => {
     '<local-command-stdout>Compacted the conversation</local-command-stdout>',
     '<system-reminder>keep the issue true</system-reminder>',
   ];
-  await test('<tag> mid-turn does not reset the window, each of the eight tags', () => {
+  test('<tag> mid-turn does not reset the window, each of the eight tags', () => {
     for (const text of PSEUDO) {
       const tag = text.slice(0, text.indexOf('>') + 1);
-      assert(warn([row.user(), ...edits(3), row.user(text), ...edits(3)]).includes('6 edits'), `window was reset by ${tag}`);
+      expect(warn([row.user(), ...edits(3), row.user(text), ...edits(3)]).includes('6 edits'), `window was reset by ${tag}`).toBeTruthy();
     }
   });
 
-  await test('a pseudo-prompt between a worker and the stop still leaves rule 4 armed', () => {
-    assert(warn([row.user(), spawn('worker'), row.result(), row.user(PSEUDO[2])]).includes('verifier'), 'the notification is no prompt');
+  test('a pseudo-prompt between a worker and the stop still leaves rule 4 armed', () => {
+    expect(warn([row.user(), spawn('worker'), row.result(), row.user(PSEUDO[2])]).includes('verifier'), 'the notification is no prompt').toBeTruthy();
   });
 
-  await test('a subagent hand-back after the edits does not reset the window', () => {
+  test('a subagent hand-back after the edits does not reset the window', () => {
     const handBack = row.user('[Subagent hand-back]\nDONE: the brief is built.');
-    assert(warn([row.user(), ...edits(5), handBack]).includes('5 edits'), 'the hand-back started a new turn');
+    expect(warn([row.user(), ...edits(5), handBack]).includes('5 edits'), 'the hand-back started a new turn').toBeTruthy();
   });
 
-  await test('an owner paste opening with <pasted_content counts as the turn\'s prompt', () => {
+  test('an owner paste opening with <pasted_content counts as the turn\'s prompt', () => {
     for (const open of ['<pasted_content>', '<pasted_content lines="2">']) {
       const paste = row.user(`${open}\nline one\nline two\n</pasted_content>\nwhat does this do?`);
-      assert(warn([paste, ...edits(6)]).includes('6 edits'), `${open}: the paste was read as no prompt`);
+      expect(warn([paste, ...edits(6)]).includes('6 edits'), `${open}: the paste was read as no prompt`).toBeTruthy();
     }
   });
 
-  await test('a real prompt that merely MENTIONS a tag still resets the window', () => {
-    assertEq(warn([row.user(), ...edits(6), row.user('why does <ide_opened_file> show up?'), ...edits(1)]), '', 'a new turn');
+  test('a real prompt that merely MENTIONS a tag still resets the window', () => {
+    expect(warn([row.user(), ...edits(6), row.user('why does <ide_opened_file> show up?'), ...edits(1)]), 'a new turn').toBe('');
   });
 
-  await test('a user row answering a tool is no prompt, whatever its text', () => {
+  test('a user row answering a tool is no prompt, whatever its text', () => {
     const answered = { ...row.result(), text: 'tool output that reads like a prompt' };
-    assert(warn([row.user(), ...edits(3), answered, ...edits(3)]).includes('6 edits'), 'the window stays open');
+    expect(warn([row.user(), ...edits(3), answered, ...edits(3)]).includes('6 edits'), 'the window stays open').toBeTruthy();
   });
 
-  await test('a transcript with no user prompt in view is silent', () => {
-    assertEq(warn(edits(6)), '', 'no owner prompt, no turn');
+  test('a transcript with no user prompt in view is silent', () => {
+    expect(warn(edits(6)), 'no owner prompt, no turn').toBe('');
   });
+});
 
-  group('manager-close-guard: the session model');
-
-  await test('no model anywhere is silent on rule 3', () => {
-    assertEq(warn([row.user(), ...edits(6)], { model: '' }), '', 'an unknown model is no frontier model');
+describe('manager-close-guard: the session model', () => {
+  test('no model anywhere is silent on rule 3', () => {
+    expect(warn([row.user(), ...edits(6)], { model: '' }), 'an unknown model is no frontier model').toBe('');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

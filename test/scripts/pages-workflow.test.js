@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { indentOf, isComment, isContent, childrenOf } = require('../lib/workflow-yaml');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -36,51 +36,42 @@ const runLines = (all) => {
   return out;
 };
 
-const cases = async () => {
-  group('pages.yml: when it runs and what it may touch');
-
-  await test('it runs on a published release and on a manual dispatch, nothing else, with no tabs', () => {
-    assert(fs.existsSync(PAGES), '.github/workflows/pages.yml exists');
+describe('pages.yml: when it runs and what it may touch', () => {
+  test('it runs on a published release and on a manual dispatch, nothing else, with no tabs', () => {
+    expect(fs.existsSync(PAGES), '.github/workflows/pages.yml exists').toBeTruthy();
     const all = lines();
-    assert(!all.some((l) => l.includes('\t')), 'no tab characters, which YAML rejects');
+    expect(!all.some((l) => l.includes('\t')), 'no tab characters, which YAML rejects').toBeTruthy();
     const on = topLevel(all, 'on');
-    assert(on !== -1, 'a top-level on: key');
+    expect(on !== -1, 'a top-level on: key').toBeTruthy();
     const triggers = entriesOf(childrenOf(all, on)).map((e) => e.replace(/:.*$/, ''));
-    assertEq(triggers.sort().join(','), 'release,workflow_dispatch', 'the two triggers');
+    expect(triggers.sort().join(','), 'the two triggers').toBe('release,workflow_dispatch');
     const release = all.findIndex((l, i) => i > on && /^\s+release:\s*$/.test(l));
-    assertEq(entriesOf(childrenOf(all, release)).join(','), 'types: [published]', 'a release only once it is published');
+    expect(entriesOf(childrenOf(all, release)).join(','), 'a release only once it is published').toBe('types: [published]');
   });
 
-  await test('its permissions are contents read, pages write and id-token write', () => {
+  test('its permissions are contents read, pages write and id-token write', () => {
     const all = lines();
     const blocks = all.map((l, i) => (/^\s*permissions:\s*$/.test(l) ? i : -1)).filter((i) => i !== -1);
-    assertEq(blocks.length, 1, 'one permissions: block');
-    assertEq(entriesOf(childrenOf(all, blocks[0])).sort().join(','),
-      'contents: read,id-token: write,pages: write', 'exactly the three a Pages deploy needs');
+    expect(blocks.length, 'one permissions: block').toBe(1);
+    expect(entriesOf(childrenOf(all, blocks[0])).sort().join(','), 'exactly the three a Pages deploy needs').toBe('contents: read,id-token: write,pages: write');
   });
 
-  await test('one concurrency group, which never cancels a deploy in flight', () => {
+  test('one concurrency group, which never cancels a deploy in flight', () => {
     const all = lines();
     const at = all.map((l, i) => (/^\s*concurrency:/.test(l) && !isComment(l) ? i : -1)).filter((i) => i !== -1);
-    assertEq(at.length, 1, 'one concurrency: key');
+    expect(at.length, 'one concurrency: key').toBe(1);
     // A bare `concurrency: <group>` cancels nothing; a block says so itself.
     if (/^\s*concurrency:\s*\S/.test(all[at[0]])) return;
     const block = entriesOf(childrenOf(all, at[0]));
-    assert(block.some((e) => /^group: \S/.test(e)), `the key names a group, got: ${block.join(', ')}`);
+    expect(block.some((e) => /^group: \S/.test(e)), `the key names a group, got: ${block.join(', ')}`).toBeTruthy();
     const cancel = block.filter((e) => /^cancel-in-progress:/.test(e));
-    assert(cancel.every((e) => e === 'cancel-in-progress: false'), `a run in flight is never cancelled, got: ${cancel}`);
+    expect(cancel.every((e) => e === 'cancel-in-progress: false'), `a run in flight is never cancelled, got: ${cancel}`).toBeTruthy();
   });
+});
 
-  group('pages.yml: the deploy');
-
-  await test('no run: line writes a home.json, a repos.json or a CNAME', () => {
+describe('pages.yml: the deploy', () => {
+  test('no run: line writes a home.json, a repos.json or a CNAME', () => {
     const named = runLines(lines()).filter((l) => /home\.json|repos\.json|CNAME/.test(l));
-    assertEq(named.join('\n'), '', 'the central copy carries no home pointer, no repo list and no domain');
+    expect(named.join('\n'), 'the central copy carries no home pointer, no repo list and no domain').toBe('');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

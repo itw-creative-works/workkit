@@ -8,10 +8,10 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun, SPAWN_DEADLINE, WORKKIT_DIR,
+  describe, test, expect, SPAWN_DEADLINE, WORKKIT_DIR,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, NO_NODE_STUB, pathWith, shellPath,
+  skipWithoutNodeStub, pathWith, shellPath,
 } = require('../lib/platform');
 const { fmtCalls } = require('../lib/argv-log');
 const { enabledWith } = require('../lib/ship-world');
@@ -56,37 +56,35 @@ const runPublish = (dir, stub) => {
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
 
-const cases = async () => {
-  group('ship plan: which packages, in which order');
-
-  await test('the CLI prints the publish lines in order, then the skips, and exits 0', () => {
+describe('ship plan: which packages, in which order', () => {
+  test('the CLI prints the publish lines in order, then the skips, and exits 0', () => {
     const dir = SPEC_FIXTURE();
     const { code, stdout, stderr } = runPlan(dir);
-    assertEq(code, 0, `a plan is exit 0, stderr: ${stderr}`);
-    assertEq(stdout, [
+    expect(code, `a plan is exit 0, stderr: ${stderr}`).toBe(0);
+    expect(stdout, 'the printed plan').toBe([
       'publish @s/a 0.5.0 scoped',
       'publish @s/b 0.5.0 scoped',
       'publish @s/c 0.5.0 scoped',
       'skip @s/app 0.5.0 no publish signal',
       'skip @s/secret 0.5.0 private',
       '',
-    ].join('\n'), 'the printed plan');
-    assertEq(stderr, '', 'nothing on stderr');
+    ].join('\n'));
+    expect(stderr, 'nothing on stderr').toBe('');
     cleanup(dir);
   });
 
-  await test('a workspace with no private key is skipped as private absent', () => {
+  test('a workspace with no private key is skipped as private absent', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
       members: { 'packages/loose': { name: 'loose', version: '1.0.0', files: ['dist'] } },
     });
     const { code, stdout } = runPlan(dir);
-    assertEq(code, 0, 'a skip is not a refusal');
-    assertEq(stdout, 'skip loose 1.0.0 private absent\n', 'the reason names the missing key');
+    expect(code, 'a skip is not a refusal').toBe(0);
+    expect(stdout, 'the reason names the missing key').toBe('skip loose 1.0.0 private absent\n');
     cleanup(dir);
   });
 
-  await test('a devDependency, a peerDependency and an optionalDependency order the publish too', () => {
+  test('a devDependency, a peerDependency and an optionalDependency order the publish too', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
       members: {
@@ -97,11 +95,11 @@ const cases = async () => {
       },
     });
     // By name alone c would go before d; the optional dependency puts d first.
-    assertEq(plan(dir).publish.map((p) => p.name).join(','), 'd,c,b,a', 'every dependency field orders');
+    expect(plan(dir).publish.map((p) => p.name).join(','), 'every dependency field orders').toBe('d,c,b,a');
     cleanup(dir);
   });
 
-  await test('independent candidates break their tie by name', () => {
+  test('independent candidates break their tie by name', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
       members: {
@@ -110,19 +108,19 @@ const cases = async () => {
         'packages/q': pub('mid', '1.0.0', { dependencies: { zeta: '1.0.0' } }),
       },
     });
-    assertEq(plan(dir).publish.map((p) => p.name).join(','), 'alpha,zeta,mid', 'name order among the ready');
+    expect(plan(dir).publish.map((p) => p.name).join(','), 'name order among the ready').toBe('alpha,zeta,mid');
     cleanup(dir);
   });
 
-  await test('a single-package repo is its own one candidate', () => {
+  test('a single-package repo is its own one candidate', () => {
     const dir = mkPackages({ root: pub('widget', '2.1.0') });
     const { code, stdout } = runPlan(dir);
-    assertEq(code, 0, 'exit 0');
-    assertEq(stdout, 'publish widget 2.1.0 unscoped\n', 'the root publishes, unscoped');
+    expect(code, 'exit 0').toBe(0);
+    expect(stdout, 'the root publishes, unscoped').toBe('publish widget 2.1.0 unscoped\n');
     cleanup(dir);
   });
 
-  await test('a literal member and a dir/* pattern in the same array are both read, the root never', () => {
+  test('a literal member and a dir/* pattern in the same array are both read, the root never', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: false, files: ['x'], workspaces: ['tools/cli', 'packages/*'] },
       members: {
@@ -131,32 +129,32 @@ const cases = async () => {
       },
     });
     const result = plan(dir);
-    assertEq(result.publish.map((p) => p.name).join(','), 'core,cli', 'both members, in order');
-    assertEq(result.skip.length, 0, 'the root is not a candidate, not even a skipped one');
+    expect(result.publish.map((p) => p.name).join(','), 'both members, in order').toBe('core,cli');
+    expect(result.skip.length, 'the root is not a candidate, not even a skipped one').toBe(0);
     cleanup(dir);
   });
 
-  await test('the object form of workspaces reads its packages', () => {
+  test('the object form of workspaces reads its packages', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: { packages: ['packages/*'] } },
       members: { 'packages/core': pub('core', '1.0.0') },
     });
-    assertEq(plan(dir).publish.map((p) => p.name).join(','), 'core', 'the packages key');
+    expect(plan(dir).publish.map((p) => p.name).join(','), 'the packages key').toBe('core');
     cleanup(dir);
   });
 
   // The kit read as it stands: its one member publishes at the plugin's version.
-  await test('on the kit itself: publish workkit-core at the kit\'s version, unscoped, and never the root', () => {
+  test('on the kit itself: publish workkit-core at the kit\'s version, unscoped, and never the root', () => {
     const kit = path.join(__dirname, '..', '..');
     const { version } = JSON.parse(fs.readFileSync(path.join(kit, '.claude-plugin', 'plugin.json'), 'utf8'));
     const { code, stdout, stderr } = runPlan(kit);
-    assertEq(code, 0, `a plan is exit 0, stderr: ${stderr}`);
+    expect(code, `a plan is exit 0, stderr: ${stderr}`).toBe(0);
     const lines = stdout.split('\n').filter(Boolean);
-    assertEq(lines.filter((l) => l.startsWith('publish ')).join('\n'), `publish workkit-core ${version} unscoped`, `the one publish line, got: ${stdout}`);
-    assert(!lines.some((l) => l.split(' ')[1] === 'workkit'), `the root is in no line, got: ${stdout}`);
+    expect(lines.filter((l) => l.startsWith('publish ')).join('\n'), `the one publish line, got: ${stdout}`).toBe(`publish workkit-core ${version} unscoped`);
+    expect(!lines.some((l) => l.split(' ')[1] === 'workkit'), `the root is in no line, got: ${stdout}`).toBeTruthy();
   });
 
-  await test('a dependency on a skipped member orders nothing, and a loop through one is no cycle', () => {
+  test('a dependency on a skipped member orders nothing, and a loop through one is no cycle', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
       members: {
@@ -167,38 +165,38 @@ const cases = async () => {
       },
     });
     const { code, stdout, stderr } = runPlan(dir);
-    assertEq(code, 0, `a loop through a private member is not a cycle, stderr: ${stderr}`);
-    assertEq(stdout, [
+    expect(code, `a loop through a private member is not a cycle, stderr: ${stderr}`).toBe(0);
+    expect(stdout, 'the skipped members order nothing: a and b fall back to name order').toBe([
       'publish a 1.0.0 unscoped',
       'publish b 1.0.0 unscoped',
       'skip app 1.0.0 no publish signal',
       'skip secret 1.0.0 private',
       '',
-    ].join('\n'), 'the skipped members order nothing: a and b fall back to name order');
+    ].join('\n'));
     cleanup(dir);
   });
+});
 
-  group('ship plan: refusals');
-
-  await test('an argument the plan does not take, such as --run, is refused with exit 2, naming it', () => {
+describe('ship plan: refusals', () => {
+  test('an argument the plan does not take, such as --run, is refused with exit 2, naming it', () => {
     const dir = mkPackages({ root: pub('widget', '1.0.0') });
     const { code, stdout, stderr } = runPlan(dir, '--run');
-    assertEq(code, 2, `refused as usage, stderr: ${stderr}`);
-    assertEq(stdout, '', 'no plan printed');
-    assert(/^publish-plan: .*--run.*\n$/.test(stderr), `one publish-plan line naming --run, got: ${stderr}`);
+    expect(code, `refused as usage, stderr: ${stderr}`).toBe(2);
+    expect(stdout, 'no plan printed').toBe('');
+    expect(/^publish-plan: .*--run.*\n$/.test(stderr), `one publish-plan line naming --run, got: ${stderr}`).toBeTruthy();
     cleanup(dir);
   });
 
-  await test('a candidate whose version is not semver refuses, naming the package', () => {
+  test('a candidate whose version is not semver refuses, naming the package', () => {
     const dir = mkPackages({ root: pub('widget', '1.0') });
     const { code, stdout, stderr } = runPlan(dir);
-    assertEq(code, 1, 'refused');
-    assertEq(stdout, '', 'no plan printed');
-    assertEq(stderr, 'publish-plan: widget has the version 1.0, which is not a semver version.\n', 'the line names the package');
+    expect(code, 'refused').toBe(1);
+    expect(stdout, 'no plan printed').toBe('');
+    expect(stderr, 'the line names the package').toBe('publish-plan: widget has the version 1.0, which is not a semver version.\n');
     cleanup(dir);
   });
 
-  await test('a root package.json that is not a JSON object refuses, never a stack trace', () => {
+  test('a root package.json that is not a JSON object refuses, never a stack trace', () => {
     for (const [what, repo] of [
       ['a null root', () => {
         const dir = mkPackages({ root: pub('widget', '1.0.0') });
@@ -213,14 +211,14 @@ const cases = async () => {
     ]) {
       const dir = repo();
       const { code, stdout, stderr } = runPlan(dir);
-      assertEq(code, 1, `${what} is refused, stderr: ${stderr}`);
-      assertEq(stdout, '', `${what}: no plan printed`);
-      assert(/^publish-plan: .*\n$/.test(stderr), `${what}: one publish-plan line, got: ${stderr}`);
+      expect(code, `${what} is refused, stderr: ${stderr}`).toBe(1);
+      expect(stdout, `${what}: no plan printed`).toBe('');
+      expect(/^publish-plan: .*\n$/.test(stderr), `${what}: one publish-plan line, got: ${stderr}`).toBeTruthy();
       cleanup(dir);
     }
   });
 
-  await test('a cycle refuses with the cycle spelled, and nothing on stdout', () => {
+  test('a cycle refuses with the cycle spelled, and nothing on stdout', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
       members: {
@@ -229,58 +227,52 @@ const cases = async () => {
       },
     });
     const { code, stdout, stderr } = runPlan(dir);
-    assertEq(code, 1, 'a cycle has no order');
-    assertEq(stdout, '', 'no plan printed');
-    assert(stderr.startsWith('publish-plan: '), `speaks as itself, got: ${stderr}`);
-    assert(stderr.includes('a -> b -> a'), `spells the cycle, got: ${stderr}`);
+    expect(code, 'a cycle has no order').toBe(1);
+    expect(stdout, 'no plan printed').toBe('');
+    expect(stderr.startsWith('publish-plan: '), `speaks as itself, got: ${stderr}`).toBeTruthy();
+    expect(stderr.includes('a -> b -> a'), `spells the cycle, got: ${stderr}`).toBeTruthy();
     cleanup(dir);
   });
 
-  await test('an unexpanded pattern refuses, naming the pattern', () => {
+  test('an unexpanded pattern refuses, naming the pattern', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/**'] },
       members: { 'packages/deep/core': pub('core', '1.0.0') },
     });
     const { code, stdout, stderr } = runPlan(dir);
-    assertEq(code, 1, 'a plan that leaves packages out is refused');
-    assertEq(stdout, '', 'no plan printed');
-    assert(stderr.includes('packages/**'), `names the pattern, got: ${stderr}`);
+    expect(code, 'a plan that leaves packages out is refused').toBe(1);
+    expect(stdout, 'no plan printed').toBe('');
+    expect(stderr.includes('packages/**'), `names the pattern, got: ${stderr}`).toBeTruthy();
     cleanup(dir);
   });
 
-  await test('a dir/* pattern that matches no package says so on stderr, and the plan stands', () => {
+  test('a dir/* pattern that matches no package says so on stderr, and the plan stands', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packges/*', 'packages/*'] },
       members: { 'packages/a': pub('a', '1.0.0') },
     });
     const { code, stdout, stderr } = runPlan(dir);
-    assertEq(code, 0, 'a pattern matching nothing is not a refusal');
-    assertEq(stdout, 'publish a 1.0.0 unscoped\n', 'the members that were found are still planned');
-    assert(stderr.includes('packges/*'), `names the pattern, got: ${stderr}`);
-    assertEq(plan(dir).notes.length, 1, 'the module returns the note too');
+    expect(code, 'a pattern matching nothing is not a refusal').toBe(0);
+    expect(stdout, 'the members that were found are still planned').toBe('publish a 1.0.0 unscoped\n');
+    expect(stderr.includes('packges/*'), `names the pattern, got: ${stderr}`).toBeTruthy();
+    expect(plan(dir).notes.length, 'the module returns the note too').toBe(1);
     cleanup(dir);
   });
 
-  await test('a literal member with no package.json refuses, naming it', () => {
+  test('a literal member with no package.json refuses, naming it', () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/gone'] },
     });
     const { code, stdout, stderr } = runPlan(dir);
-    assertEq(code, 1, 'refused');
-    assertEq(stdout, '', 'no plan printed');
-    assert(stderr.includes('packages/gone'), `names the member, got: ${stderr}`);
+    expect(code, 'refused').toBe(1);
+    expect(stdout, 'no plan printed').toBe('');
+    expect(stderr.includes('packages/gone'), `names the member, got: ${stderr}`).toBeTruthy();
     cleanup(dir);
   });
+});
 
-  group('ship publish');
-
-  // Every case here puts a fake `npm` in front of the script under test, which
-  // spawns it directly. Each still skips on Windows (test/lib/platform.js,
-  // `stubTool`, `NO_NODE_STUB`): its stub predates the launcher, and a case that
-  // missed it would ask the machine's own npm and publish for real.
-  const runTest = testUnless(IS_WINDOWS, NO_NODE_STUB);
-
-  await runTest('publishes in plan order, asking the registry first, with --workspace and --access public only when scoped', () => {
+describe('ship publish', () => {
+  test('publishes in plan order, asking the registry first, with --workspace and --access public only when scoped', { skip: skipWithoutNodeStub() }, () => {
     const dir = mkPackages({
       root: { name: 'family', version: '1.0.0', private: true, workspaces: ['packages/*'] },
       members: {
@@ -290,122 +282,121 @@ const cases = async () => {
     });
     const stub = makeNpmStub();
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 0, `a clean run is exit 0, stderr: ${stderr}`);
-    assertEq(stdout, [
+    expect(code, `a clean run is exit 0, stderr: ${stderr}`).toBe(0);
+    expect(stdout, 'the plan, then one line per package published').toBe([
       'publish core 1.0.0 unscoped',
       'publish @s/ui 1.0.0 scoped',
       'published core 1.0.0',
       'published @s/ui 1.0.0',
       '',
-    ].join('\n'), 'the plan, then one line per package published');
+    ].join('\n'));
     const want = [
       view('core@1.0.0'),
       ['publish', '--workspace=core'],
       view('@s/ui@1.0.0'),
       ['publish', '--workspace=@s/ui', '--access', 'public'],
     ];
-    assertEq(fmtCalls(stub.calls()), fmtCalls(want), 'every npm call, in order');
+    expect(fmtCalls(stub.calls()), 'every npm call, in order').toBe(fmtCalls(want));
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a single root package gets a plain npm publish', () => {
+  test('a single root package gets a plain npm publish', { skip: skipWithoutNodeStub() }, () => {
     const dir = mkPackages({ root: pub('widget', '2.1.0') });
     const stub = makeNpmStub();
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 0, `exit 0, stderr: ${stderr}`);
-    assertEq(stdout, 'publish widget 2.1.0 unscoped\npublished widget 2.1.0\n', 'the plan and the publish');
-    assertEq(fmtCalls(stub.calls()), fmtCalls([view('widget@2.1.0'), ['publish']]), 'no --workspace at a root with no workspaces');
+    expect(code, `exit 0, stderr: ${stderr}`).toBe(0);
+    expect(stdout, 'the plan and the publish').toBe('publish widget 2.1.0 unscoped\npublished widget 2.1.0\n');
+    expect(fmtCalls(stub.calls()), 'no --workspace at a root with no workspaces').toBe(fmtCalls([view('widget@2.1.0'), ['publish']]));
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a package already on npm is skipped and the rest publish', () => {
+  test('a package already on npm is skipped and the rest publish', { skip: skipWithoutNodeStub() }, () => {
     const dir = SPEC_FIXTURE();
     const stub = makeNpmStub({ taken: ['@s/a@0.5.0'] });
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 0, `a skip is not a failure, stderr: ${stderr}`);
-    assert(stdout.endsWith([
+    expect(code, `a skip is not a failure, stderr: ${stderr}`).toBe(0);
+    expect(stdout.endsWith([
       'skipped @s/a 0.5.0 already on npm',
       'published @s/b 0.5.0',
       'published @s/c 0.5.0',
       '',
-    ].join('\n')), `the skip, then the publishes, got: ${stdout}`);
+    ].join('\n')), `the skip, then the publishes, got: ${stdout}`).toBeTruthy();
     const published = stub.calls().filter((c) => c[0] === 'publish').map((c) => c[1]);
-    assertEq(published.join(','), '--workspace=@s/b,--workspace=@s/c', 'the taken one is never published');
+    expect(published.join(','), 'the taken one is never published').toBe('--workspace=@s/b,--workspace=@s/c');
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('every package already on npm is one line and exit 0', () => {
+  test('every package already on npm is one line and exit 0', { skip: skipWithoutNodeStub() }, () => {
     const dir = SPEC_FIXTURE();
     const stub = makeNpmStub({ taken: ['@s/a@0.5.0', '@s/b@0.5.0', '@s/c@0.5.0'] });
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 0, `nothing to do is not a failure, stderr: ${stderr}`);
-    assert(stdout.endsWith([
+    expect(code, `nothing to do is not a failure, stderr: ${stderr}`).toBe(0);
+    expect(stdout.endsWith([
       'skipped @s/c 0.5.0 already on npm',
       'nothing to publish: every package is already on npm at its version',
       '',
-    ].join('\n')), `the closing line, got: ${stdout}`);
-    assertEq(stub.calls().filter((c) => c[0] === 'publish').length, 0, 'nothing published');
+    ].join('\n')), `the closing line, got: ${stdout}`).toBeTruthy();
+    expect(stub.calls().filter((c) => c[0] === 'publish').length, 'nothing published').toBe(0);
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a failed publish stops the run, names what was and was not done, and exits 1', () => {
+  test('a failed publish stops the run, names what was and was not done, and exits 1', { skip: skipWithoutNodeStub() }, () => {
     const dir = SPEC_FIXTURE();
     const stub = makeNpmStub({ failPublish: '@s/b' });
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 1, 'a failed publish is exit 1');
-    assert(stdout.endsWith('published @s/a 0.5.0\n'), `only a published, got: ${stdout}`);
-    assert(stderr.includes('npm error code E403\n'), `npm's own output reaches the terminal, got: ${stderr}`);
-    assert(stderr.endsWith('publish-plan: npm publish failed for @s/b@0.5.0 (npm exited 1); 1 published, 1 not attempted: @s/c.\n'),
-      `the stop line, got: ${stderr}`);
-    assert(!stub.calls().some((c) => c.some((arg) => arg.includes('@s/c'))), `c is never asked about, got: ${fmtCalls(stub.calls())}`);
+    expect(code, 'a failed publish is exit 1').toBe(1);
+    expect(stdout.endsWith('published @s/a 0.5.0\n'), `only a published, got: ${stdout}`).toBeTruthy();
+    expect(stderr.includes('npm error code E403\n'), `npm's own output reaches the terminal, got: ${stderr}`).toBeTruthy();
+    expect(stderr.endsWith('publish-plan: npm publish failed for @s/b@0.5.0 (npm exited 1); 1 published, 1 not attempted: @s/c.\n'),
+      `the stop line, got: ${stderr}`).toBeTruthy();
+    expect(!stub.calls().some((c) => c.some((arg) => arg.includes('@s/c'))), `c is never asked about, got: ${fmtCalls(stub.calls())}`).toBeTruthy();
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a registry check that cannot be made says so and still publishes', () => {
+  test('a registry check that cannot be made says so and still publishes', { skip: skipWithoutNodeStub() }, () => {
     const dir = mkPackages({ root: pub('widget', '2.1.0') });
     const stub = makeNpmStub({ viewBreaks: true });
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 0, `a stand-down is not a failure, stderr: ${stderr}`);
-    assertEq(stderr, 'publish-plan: the npm check stood down for widget@2.1.0: npm error code ETIMEDOUT; publishing anyway, npm refuses a taken version.\n',
-      'the stand-down line, first stderr line only');
-    assert(stdout.endsWith('published widget 2.1.0\n'), `the publish went ahead, got: ${stdout}`);
-    assertEq(fmtCalls(stub.calls()), fmtCalls([view('widget@2.1.0'), ['publish']]), 'asked, then published');
+    expect(code, `a stand-down is not a failure, stderr: ${stderr}`).toBe(0);
+    expect(stderr, 'the stand-down line, first stderr line only').toBe('publish-plan: the npm check stood down for widget@2.1.0: npm error code ETIMEDOUT; publishing anyway, npm refuses a taken version.\n');
+    expect(stdout.endsWith('published widget 2.1.0\n'), `the publish went ahead, got: ${stdout}`).toBeTruthy();
+    expect(fmtCalls(stub.calls()), 'asked, then published').toBe(fmtCalls([view('widget@2.1.0'), ['publish']]));
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a refused plan publishes nothing', () => {
+  test('a refused plan publishes nothing', { skip: skipWithoutNodeStub() }, () => {
     const dir = mkPackages({ root: pub('widget', '1.0') });
     const stub = makeNpmStub();
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 1, 'refused');
-    assertEq(stdout, '', 'no plan printed');
-    assertEq(stderr, 'publish-plan: widget has the version 1.0, which is not a semver version.\n', 'the refusal, alone');
-    assertEq(stub.calls().length, 0, 'npm never spawned');
+    expect(code, 'refused').toBe(1);
+    expect(stdout, 'no plan printed').toBe('');
+    expect(stderr, 'the refusal, alone').toBe('publish-plan: widget has the version 1.0, which is not a semver version.\n');
+    expect(stub.calls().length, 'npm never spawned').toBe(0);
     cleanup(dir);
     cleanup(stub.dir);
   });
+});
 
-  group('ship publish: the afterPublish hooks');
-
-  await runTest('a run that publishes a package runs the afterPublish hooks, exit 0', () => {
+describe('ship publish: the afterPublish hooks', () => {
+  test('a run that publishes a package runs the afterPublish hooks, exit 0', { skip: skipWithoutNodeStub() }, () => {
     const dir = mkPackages({ root: pub('widget', '2.1.0') });
     const ran = withAfterPublish(dir);
     const stub = makeNpmStub();
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 0, `exit 0, stderr: ${stderr}`);
-    assert(stdout.includes('published widget 2.1.0\n'), `the publish ran, got: ${stdout}`);
-    assertEq(ran(), 'hook\n', 'the hook ran once');
+    expect(code, `exit 0, stderr: ${stderr}`).toBe(0);
+    expect(stdout.includes('published widget 2.1.0\n'), `the publish ran, got: ${stdout}`).toBeTruthy();
+    expect(ran(), 'the hook ran once').toBe('hook\n');
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a run from a workspace member folder runs the afterPublish hooks the repo root declares', () => {
+  test('a run from a workspace member folder runs the afterPublish hooks the repo root declares', { skip: skipWithoutNodeStub() }, () => {
     const dir = mkPackages({
       root: { name: 'family', version: '2.1.0', private: true, workspaces: ['packages/*'] },
       members: { 'packages/widget': pub('widget', '2.1.0') },
@@ -413,26 +404,26 @@ const cases = async () => {
     const ran = withAfterPublish(dir);
     const stub = makeNpmStub();
     const { code, stdout, stderr } = runPublish(path.join(dir, 'packages', 'widget'), stub);
-    assertEq(code, 0, `exit 0, stderr: ${stderr}`);
-    assert(stdout.includes('published widget 2.1.0\n'), `the member published, got: ${stdout}`);
-    assertEq(ran(), 'hook\n', 'the root hook ran once');
+    expect(code, `exit 0, stderr: ${stderr}`).toBe(0);
+    expect(stdout.includes('published widget 2.1.0\n'), `the member published, got: ${stdout}`).toBeTruthy();
+    expect(ran(), 'the root hook ran once').toBe('hook\n');
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a run that publishes a package and then fails an afterPublish hook names the count and exits 1', () => {
+  test('a run that publishes a package and then fails an afterPublish hook names the count and exits 1', { skip: skipWithoutNodeStub() }, () => {
     const dir = mkPackages({ root: pub('widget', '2.1.0') });
     withAfterPublish(dir, 'exit 4');
     const stub = makeNpmStub();
     const { code, stdout, stderr } = runPublish(dir, stub);
-    assertEq(code, 1, `exit 1, stderr: ${stderr}`);
-    assert(stdout.includes('published widget 2.1.0\n'), `the publish ran, got: ${stdout}`);
-    assert(stderr.endsWith('publish-plan: 1 published; an afterPublish hook failed.\n'), `the published-but line, got: ${stderr}`);
+    expect(code, `exit 1, stderr: ${stderr}`).toBe(1);
+    expect(stdout.includes('published widget 2.1.0\n'), `the publish ran, got: ${stdout}`).toBeTruthy();
+    expect(stderr.endsWith('publish-plan: 1 published; an afterPublish hook failed.\n'), `the published-but line, got: ${stderr}`).toBeTruthy();
     cleanup(dir);
     cleanup(stub.dir);
   });
 
-  await runTest('a run that publishes nothing, or fails, runs no afterPublish hook', () => {
+  test('a run that publishes nothing, or fails, runs no afterPublish hook', { skip: skipWithoutNodeStub() }, () => {
     const runs = {
       'every package already on npm': [0, { taken: ['@s/a@0.5.0', '@s/b@0.5.0', '@s/c@0.5.0'] }],
       'a publish failing after one published': [1, { failPublish: '@s/b' }],
@@ -442,17 +433,10 @@ const cases = async () => {
       const ran = withAfterPublish(dir);
       const stub = makeNpmStub(opts);
       const { code, stderr } = runPublish(dir, stub);
-      assertEq(code, exit, `${name}: the run's own exit, stderr: ${stderr}`);
-      assertEq(ran(), null, `${name}: no hook ran, stderr: ${stderr}`);
+      expect(code, `${name}: the run's own exit, stderr: ${stderr}`).toBe(exit);
+      expect(ran(), `${name}: no hook ran, stderr: ${stderr}`).toBe(null);
       cleanup(dir);
       cleanup(stub.dir);
     }
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -6,35 +6,33 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { shellPath } = require('../../lib/platform');
 const { cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
 
-const cases = async () => {
-  group('workflow/home: the seed');
-
-  await test('the tower app becomes the project, minus everything a checkout accretes', () => {
+describe('workflow/home: the seed', () => {
+  test('the tower app becomes the project, minus everything a checkout accretes', () => {
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     const { code, out } = inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
-    assertEq(code, 0, `exit 0: ${out}`);
+    expect(code, `exit 0: ${out}`).toBe(0);
 
-    assert(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'the app travels');
-    assert(fs.existsSync(path.join(world.tower, 'config', 'omega.json5')), 'and the brand config');
-    assert(fs.existsSync(path.join(world.tower, 'README.md')), 'the project’s README is its own doc, so it travels too');
-    assert(fs.existsSync(path.join(world.tower, 'AGENTS.md')), 'and its AGENTS.md');
+    expect(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'the app travels').toBeTruthy();
+    expect(fs.existsSync(path.join(world.tower, 'config', 'omega.json5')), 'and the brand config').toBeTruthy();
+    expect(fs.existsSync(path.join(world.tower, 'README.md')), 'the project’s README is its own doc, so it travels too').toBeTruthy();
+    expect(fs.existsSync(path.join(world.tower, 'AGENTS.md')), 'and its AGENTS.md').toBeTruthy();
 
-    assert(!fs.existsSync(path.join(world.tower, 'node_modules')), 'the installed dependencies do not');
-    assert(!fs.existsSync(path.join(world.tower, 'targets', 'web', 'node_modules')), 'at any depth');
-    assert(!fs.existsSync(path.join(world.tower, 'package-lock.json')), 'nor the lockfile');
-    assert(!fs.existsSync(path.join(world.tower, '.omega')), 'nor the omega run machinery');
-    assert(!fs.existsSync(path.join(world.tower, 'targets', 'web', 'dist')), 'nor a stale build');
-    assert(!fs.existsSync(path.join(world.tower, '.claude')), 'nor the checkout’s .claude folder');
-    assert(/seeded the tower project/.test(out), `and it says what it did, got: ${out}`);
+    expect(!fs.existsSync(path.join(world.tower, 'node_modules')), 'the installed dependencies do not').toBeTruthy();
+    expect(!fs.existsSync(path.join(world.tower, 'targets', 'web', 'node_modules')), 'at any depth').toBeTruthy();
+    expect(!fs.existsSync(path.join(world.tower, 'package-lock.json')), 'nor the lockfile').toBeTruthy();
+    expect(!fs.existsSync(path.join(world.tower, '.omega')), 'nor the omega run machinery').toBeTruthy();
+    expect(!fs.existsSync(path.join(world.tower, 'targets', 'web', 'dist')), 'nor a stale build').toBeTruthy();
+    expect(!fs.existsSync(path.join(world.tower, '.claude')), 'nor the checkout’s .claude folder').toBeTruthy();
+    expect(/seeded the tower project/.test(out), `and it says what it did, got: ${out}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('every file: spec is rewritten to the absolute path it resolved to', () => {
+  test('every file: spec is rewritten to the absolute path it resolved to', () => {
     // The relative spec counts directories up from tower/app and is nonsense
     // from ~/.workkit/tower. Committing the absolute path is the local-era
     // acceptance the omega brand monorepo already makes for itself.
@@ -42,47 +40,35 @@ const cases = async () => {
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
 
-    assertEq(
-      world.pkg().devDependencies['@omega.js/manager'],
-      `file:${shellPath(path.join(world.framework, 'manager'))}`,
-      'the root manifest points at the framework this machine resolves it from',
-    );
-    assertEq(
-      world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'],
-      `file:${shellPath(path.join(world.framework, 'web'))}`,
-      'and so does every app, resolved from ITS own directory',
-    );
+    expect(world.pkg().devDependencies['@omega.js/manager'], 'the root manifest points at the framework this machine resolves it from').toBe(`file:${shellPath(path.join(world.framework, 'manager'))}`);
+    expect(world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'], 'and so does every app, resolved from ITS own directory').toBe(`file:${shellPath(path.join(world.framework, 'web'))}`);
     cleanup(world.root);
   });
 
-  await test('a registry spec passes the seed untouched, and the description gains no Local era note', () => {
+  test('a registry spec passes the seed untouched, and the description gains no Local era note', () => {
     const world = mkWorld({ registryPin: '0.54.1' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     const { code, out } = inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
-    assertEq(code, 0, `exit 0: ${out}`);
+    expect(code, `exit 0: ${out}`).toBe(0);
 
-    assertEq(world.pkg().devDependencies['@omega.js/manager'], '0.54.1', 'the root manifest keeps its npm version');
-    assertEq(
-      world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'],
-      '0.54.1',
-      'and so does the app',
-    );
-    assert(!/Local era/.test(world.pkg().description), `no Local era sentence, got: ${world.pkg().description}`);
+    expect(world.pkg().devDependencies['@omega.js/manager'], 'the root manifest keeps its npm version').toBe('0.54.1');
+    expect(world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'], 'and so does the app').toBe('0.54.1');
+    expect(!/Local era/.test(world.pkg().description), `no Local era sentence, got: ${world.pkg().description}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a spec nothing resolves is left alone and said out loud', () => {
+  test('a spec nothing resolves is left alone and said out loud', () => {
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     cleanup(path.join(world.framework, 'manager'));
 
     const { out } = inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
-    assert(/@omega\.js\/manager still points at/.test(out), `it names the spec it could not resolve, got: ${out}`);
-    assert(/file:\.\.\//.test(world.pkg().devDependencies['@omega.js/manager']), 'and the spec is untouched');
+    expect(/@omega\.js\/manager still points at/.test(out), `it names the spec it could not resolve, got: ${out}`).toBeTruthy();
+    expect(/file:\.\.\//.test(world.pkg().devDependencies['@omega.js/manager']), 'and the spec is untouched').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('the seed is the app and nothing else: no config file, no .workkit', () => {
+  test('the seed is the app and nothing else: no config file, no .workkit', () => {
     // The clone is engine territory: the site options are the
     // user's and live in the machine settings file, and the home repo is known
     // by path, so there is no opt-in to seed and no inbox to keep out.
@@ -90,17 +76,17 @@ const cases = async () => {
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed');
 
-    assert(!fs.existsSync(path.join(world.tower, 'config', 'workkit.json')), 'no site options inside the project');
-    assert(!fs.existsSync(path.join(world.tower, '.workkit')), 'and no .workkit/ folder at all');
+    expect(!fs.existsSync(path.join(world.tower, 'config', 'workkit.json')), 'no site options inside the project').toBeTruthy();
+    expect(!fs.existsSync(path.join(world.tower, '.workkit')), 'and no .workkit/ folder at all').toBeTruthy();
 
     const ignore = fs.readFileSync(path.join(world.tower, '.gitignore'), 'utf8').split('\n');
-    assert(ignore.includes('node_modules/'), 'the app’s own rules are kept');
-    assert(ignore.includes('dist/'), 'build output included');
-    assert(!ignore.some((l) => l.includes('.workkit')), `and nothing is ignored for a folder that never exists: ${ignore.join('\n')}`);
+    expect(ignore.includes('node_modules/'), 'the app’s own rules are kept').toBeTruthy();
+    expect(ignore.includes('dist/'), 'build output included').toBeTruthy();
+    expect(!ignore.some((l) => l.includes('.workkit')), `and nothing is ignored for a folder that never exists: ${ignore.join('\n')}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a stray .workkit/ in the clone is never committed by the daily push', () => {
+  test('a stray .workkit/ in the clone is never committed by the daily push', () => {
     // The clone carries no participation state, so anything under that name is
     // scratch someone or something left there, and an unattended commit must
     // not push it to the default branch.
@@ -121,15 +107,9 @@ const cases = async () => {
 
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
-    assert(/edited/.test(fs.readFileSync(path.join(check, 'README.md'), 'utf8')), 'the real change went');
-    assert(!fs.existsSync(path.join(check, '.workkit')), 'and the scratchpad stayed home');
-    assert(fs.existsSync(path.join(world.tower, '.workkit', 'scratch.md')), 'left where it was, not removed');
+    expect(/edited/.test(fs.readFileSync(path.join(check, 'README.md'), 'utf8')), 'the real change went').toBeTruthy();
+    expect(!fs.existsSync(path.join(check, '.workkit')), 'and the scratchpad stayed home').toBeTruthy();
+    expect(fs.existsSync(path.join(world.tower, '.workkit', 'scratch.md')), 'left where it was, not removed').toBeTruthy();
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

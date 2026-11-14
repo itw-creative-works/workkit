@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# workflow/workkit/commands.sh: the other six commands the dispatch names,
-# `update`, `publish`, `brief`, `test`, `tools` and `doctor`. Sourced by
+# workflow/workkit/commands.sh: the other seven commands the dispatch names,
+# `update`, `publish`, `brief`, `test`, `tools`, `convert` and `doctor`. Sourced by
 # workkit.sh, functions only; every name it reads, and the QUIET and
 # PUBLISH_FAILED it sets, are the entry's.
 
@@ -104,22 +104,36 @@ cmd_test() {
   exec npm test -- "$@"
 }
 
-# The tools the repo's suites name through needs(), from the kit's own copy of
-# workkit-core's bin, so a cloud setup can read the list before npm install.
-cmd_tools() {
+# One verb of the kit's own copy of workkit-core's bin, run at the repo root,
+# so it answers before npm install; each error line is led by the verb.
+run_core_bin() {
+  local verb="$1"
+  shift
   local bin="$KIT_DIR/packages/core/bin/workkit.js"
   if [[ ! -f "$bin" ]]; then
-    wk_error "tools: no workkit-core beside this engine ($(wk_native_path "$bin")), and this command needs the whole kit"
+    wk_error "$verb: no workkit-core beside this engine ($(wk_native_path "$bin")), and this command needs the whole kit"
     exit 1
   fi
   if ! command -v node >/dev/null 2>&1; then
-    wk_error "tools: the verb runs node, and there is no node on PATH"
+    wk_error "$verb: the verb runs node, and there is no node on PATH"
     exit 1
   fi
   local root
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
   cd "$root" || exit 1
-  exec node "$bin" tools "$@"
+  exec node "$bin" "$verb" "$@"
+}
+
+# The tools the repo's suites name through needs(), so a cloud setup can read
+# the list before npm install.
+cmd_tools() {
+  run_core_bin tools "$@"
+}
+
+# The repo's old-shape suites rewritten onto Node's test functions, its paths
+# read from the repo root.
+cmd_convert() {
+  run_core_bin convert "$@"
 }
 
 cmd_doctor() {
@@ -172,6 +186,25 @@ cmd_doctor() {
     fi
   else
     attention=$((attention + 1))
+  fi
+  # A session's start puts gitshim/ first on PATH; any kit copy's shim counts.
+  local git_shim="$SCRIPT_DIR/gitshim/git"
+  if [[ ! -f "$git_shim" || ! -x "$git_shim" ]]; then
+    wk_warn "git shim: $(wk_native_path "$git_shim") is missing or not executable; the kit is incomplete"
+    attention=$((attention + 1))
+  elif [[ "${CLAUDECODE:-}" == 1 ]]; then
+    local first_git
+    first_git="$(command -v git 2>/dev/null || true)"
+    if [[ -n "$first_git" && "$(wk_physical_path "$first_git")" == */workflow/gitshim/git ]]; then
+      wk_ok "git shim: $(wk_native_path "$first_git") comes first on PATH"
+    else
+      local named='no git'
+      [[ -n "$first_git" ]] && named="$(wk_native_path "$first_git")"
+      wk_warn "git shim: $named comes first on PATH, so safety:tree-guard is off in this session; a session restart puts the shim first"
+      attention=$((attention + 1))
+    fi
+  else
+    wk_skip "git shim: a session puts it first on PATH at its start; doctor checks it from inside one"
   fi
 
   script_shell doctor || attention=$((attention + 1))

@@ -2,9 +2,9 @@
  * workflow/lib/detach.js: the detached runner, a command that outlives the
  * shell that started it. Two stages: the launcher truncates the log, starts a
  * supervisor copy of itself in its own session and exits; the supervisor runs
- * the command into the log and writes its exit code to the done file. With a
- * root it reads the run every tests.check minutes (lib/pulse.js); an `end`
- * file beside the done file ends the run.
+ * the command into the log, WORKKIT_SUPERVISED=1 set on it, and writes its exit
+ * code to the done file. With a root it reads the run every tests.check minutes
+ * (lib/pulse.js); an `end` file beside the done file ends the run.
  * Usage: node detach.js <log> <done> [--root <root>] -- <cmd> [args...]   (detach.sh calls it)
  */
 
@@ -19,6 +19,9 @@ const SUPERVISE = '--supervise';
 const ROOT = '--root';
 const CHECK = '--check';
 const USAGE = 'usage: detach.js <log> <done> [--root <root>] -- <cmd> [args...]';
+
+// Set to 1 on the command a supervisor runs.
+const SUPERVISED = 'WORKKIT_SUPERVISED';
 
 // How often the supervisor looks for an `end` file beside the done file.
 const END_POLL_MS = 1000;
@@ -231,7 +234,10 @@ const supervise = (argv) => {
     writeWhole(job.done, `${code}\n`);
   };
   holdAwake(say);
-  const child = spawn(job.cmd, job.args, { stdio: ['ignore', out, out], windowsHide: true });
+  // The mark a `test` event reads (script-shell.sh): already supervised, it runs
+  // in the foreground and is never detached again.
+  const env = { ...process.env, [SUPERVISED]: '1' };
+  const child = spawn(job.cmd, job.args, { stdio: ['ignore', out, out], env, windowsHide: true });
   child.on('error', (err) => {
     say(`detach: ${job.cmd}: ${err.message}`);
     finish(127);

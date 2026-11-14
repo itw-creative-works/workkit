@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  group, test, assert, assertEq, summary, selfRun, mkTmp, WORKKIT_DIR, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, WORKKIT_DIR, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   BASH, NO_RC, NODE_DIR, shellPath, stubTool, joinPath, homeEnv, basePathWithout, spawnSync,
@@ -52,7 +52,7 @@ const run = (w, name, { PATH = basePath(), env = {} } = {}) => {
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `${name} finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `${name} finished (no timeout): ${res.error || ''}`).toBeTruthy();
   const out = res.stdout || '';
   const err = res.stderr || '';
   return { code: res.status, out, err, all: out + err };
@@ -84,99 +84,96 @@ const xvfbStub = (w) => {
   return { PATH: joinPath(w.bin, basePath()), argv: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : null) };
 };
 
-const cases = async () => {
-  group('ci-node-version.sh: which Node the job sets up');
-
-  await test('a root .nvmrc is the version, over a root .node-version', () => {
+describe('ci-node-version.sh: which Node the job sets up', () => {
+  test('a root .nvmrc is the version, over a root .node-version', () => {
     const w = mkWorld({ '.nvmrc': '20.11.1\n', '.node-version': '18.19.0\n' });
     const { code, out, err } = run(w, 'ci-node-version.sh');
-    assertEq(code, 0, `exit 0, stderr: ${err}`);
-    assertEq(out.trim(), '20.11.1', 'the .nvmrc value');
+    expect(code, `exit 0, stderr: ${err}`).toBe(0);
+    expect(out.trim(), 'the .nvmrc value').toBe('20.11.1');
   });
 
-  await test('only a root .node-version: its value', () => {
+  test('only a root .node-version: its value', () => {
     const w = mkWorld({ '.node-version': '22.3.0\n' });
     const { code, out, err } = run(w, 'ci-node-version.sh');
-    assertEq(code, 0, `exit 0, stderr: ${err}`);
-    assertEq(out.trim(), '22.3.0', 'the .node-version value');
+    expect(code, `exit 0, stderr: ${err}`).toBe(0);
+    expect(out.trim(), 'the .node-version value').toBe('22.3.0');
   });
 
-  await test('neither at the root, a targets/web/.nvmrc below it: lts/*', () => {
+  test('neither at the root, a targets/web/.nvmrc below it: lts/*', () => {
     const w = mkWorld({ 'targets/web/.nvmrc': '20\n' });
     const { code, out, err } = run(w, 'ci-node-version.sh');
-    assertEq(code, 0, `exit 0, stderr: ${err}`);
-    assertEq(out.trim(), 'lts/*', 'no folder below the root is read');
+    expect(code, `exit 0, stderr: ${err}`).toBe(0);
+    expect(out.trim(), 'no folder below the root is read').toBe('lts/*');
   });
 
-  await test('nvm\'s spellings: vN/* and vN are N; lts/*, node and a plain version pass through', () => {
+  test('nvm\'s spellings: vN/* and vN are N; lts/*, node and a plain version pass through', () => {
     const forms = [
       ['v22/*\n', '22'], ['v22\n', '22'], ['v20.11.1\n', '20.11.1'], ['lts/*\n', 'lts/*'], ['node\n', 'node'],
       ['22.3.0\n', '22.3.0'], ['lts/iron\n', 'lts/iron'],
     ];
     for (const [body, want] of forms) {
       const { code, out } = run(mkWorld({ '.nvmrc': body }), 'ci-node-version.sh');
-      assertEq(code, 0, `${JSON.stringify(body)}: exit 0`);
-      assertEq(out, `${want}\n`, `${JSON.stringify(body)}: the version setup-node takes`);
+      expect(code, `${JSON.stringify(body)}: exit 0`).toBe(0);
+      expect(out, `${JSON.stringify(body)}: the version setup-node takes`).toBe(`${want}\n`);
     }
   });
 
-  await test('blank and comment lines are skipped, a trailing comment and a CR stripped', () => {
+  test('blank and comment lines are skipped, a trailing comment and a CR stripped', () => {
     const forms = [
       ['\n# the version\n\nv22/*\n', '22'], ['  v22/* # current LTS\r\n', '22'], ['20 # pinned\n', '20'],
       ['\r\n#only\r\n18\r\n', '18'],
     ];
     for (const [body, want] of forms) {
-      assertEq(run(mkWorld({ '.nvmrc': body }), 'ci-node-version.sh').out, `${want}\n`, `${JSON.stringify(body)}`);
+      expect(run(mkWorld({ '.nvmrc': body }), 'ci-node-version.sh').out, `${JSON.stringify(body)}`).toBe(`${want}\n`);
     }
-    assertEq(run(mkWorld({ '.nvmrc': '# nothing\n\n', '.node-version': '21\n' }), 'ci-node-version.sh').out, '21\n',
-      'an .nvmrc of comments alone falls through to .node-version');
+    expect(run(mkWorld({ '.nvmrc': '# nothing\n\n', '.node-version': '21\n' }), 'ci-node-version.sh').out, 'an .nvmrc of comments alone falls through to .node-version').toBe('21\n');
   });
+});
 
-  group('ci-setup.sh: the repo\'s hooks.ciSetup commands');
-
-  await test('two commands run in order, from the repo root', () => {
+describe('ci-setup.sh: the repo\'s hooks.ciSetup commands', () => {
+  test('two commands run in order, from the repo root', () => {
     const w = mkWorld(settings(ciSetup('echo one >> order.txt', 'echo two >> order.txt && pwd -P > where.txt')));
     const { code, all } = run(w, 'ci-setup.sh');
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(w.read('order.txt'), 'one\ntwo\n', 'both ran, first then second');
-    assertEq(w.read('where.txt'), `${shellPath(fs.realpathSync(w.repo))}\n`, 'from the repo root, not the folder the step started in');
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(w.read('order.txt'), 'both ran, first then second').toBe('one\ntwo\n');
+    expect(w.read('where.txt'), 'from the repo root, not the folder the step started in').toBe(`${shellPath(fs.realpathSync(w.repo))}\n`);
   });
 
-  await test('a failing first command: the second never runs, the job fails naming the command', () => {
+  test('a failing first command: the second never runs, the job fails naming the command', () => {
     const w = mkWorld(settings(ciSetup('exit 3', 'echo two >> order.txt')));
     const { code, all } = run(w, 'ci-setup.sh');
-    assert(code !== 0, `a non-zero exit, got ${code}: ${all}`);
-    assert(all.split('\n').includes('ci-setup: failed: exit 3'), `the line naming the command, got: ${all}`);
-    assertEq(w.read('order.txt'), null, 'the second command never ran');
+    expect(code !== 0, `a non-zero exit, got ${code}: ${all}`).toBeTruthy();
+    expect(all.split('\n').includes('ci-setup: failed: exit 3'), `the line naming the command, got: ${all}`).toBeTruthy();
+    expect(w.read('order.txt'), 'the second command never ran').toBe(null);
   });
 
-  await test('a command appending FOO=1 to $GITHUB_ENV leaves it there for the later steps', () => {
+  test('a command appending FOO=1 to $GITHUB_ENV leaves it there for the later steps', () => {
     const w = mkWorld(settings(ciSetup('echo FOO=1 >> "$GITHUB_ENV"')));
     const envFile = path.join(w.dir, 'github-env');
     fs.writeFileSync(envFile, '');
     const { code, all } = run(w, 'ci-setup.sh', { env: { GITHUB_ENV: shellPath(envFile) } });
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(fs.readFileSync(envFile, 'utf8'), 'FOO=1\n', 'the runner\'s env file holds the line');
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(fs.readFileSync(envFile, 'utf8'), 'the runner\'s env file holds the line').toBe('FOO=1\n');
   });
 
-  await test('a local: true entry is skipped on the runner, and the entries after it run', () => {
+  test('a local: true entry is skipped on the runner, and the entries after it run', () => {
     const w = mkWorld(settings({ ciSetup: [{ command: 'echo local >> order.txt', local: true }, { command: 'echo two >> order.txt' }] }));
     const { code, all } = run(w, 'ci-setup.sh');
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(w.read('order.txt'), 'two\n', 'the local entry alone did not run');
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(w.read('order.txt'), 'the local entry alone did not run').toBe('two\n');
   });
 
-  await test('an entry with no string command fails the job naming hooks.ciSetup[<i>]', () => {
+  test('an entry with no string command fails the job naming hooks.ciSetup[<i>]', () => {
     for (const [name, bad] of Object.entries({ 'no command': {}, 'a number command': { command: 5 }, 'a bare string': 'echo bare >> order.txt' })) {
       const w = mkWorld(settings({ ciSetup: [{ command: 'true' }, bad] }));
       const { code, all } = run(w, 'ci-setup.sh');
-      assert(code !== 0, `${name}: a non-zero exit, got ${code}: ${all}`);
-      assert(all.includes('hooks.ciSetup[1]'), `${name}: the entry named, got: ${all}`);
-      assertEq(w.read('order.txt'), null, `${name}: the bad entry never ran`);
+      expect(code !== 0, `${name}: a non-zero exit, got ${code}: ${all}`).toBeTruthy();
+      expect(all.includes('hooks.ciSetup[1]'), `${name}: the entry named, got: ${all}`).toBeTruthy();
+      expect(w.read('order.txt'), `${name}: the bad entry never ran`).toBe(null);
     }
   });
 
-  await test('no hooks.ciSetup: nothing runs, exit 0', () => {
+  test('no hooks.ciSetup: nothing runs, exit 0', () => {
     const shapes = {
       'no settings file': {},
       'settings with no hooks': settings(),
@@ -185,33 +182,33 @@ const cases = async () => {
     for (const [name, files] of Object.entries(shapes)) {
       const w = mkWorld(files);
       const { code, all } = run(w, 'ci-setup.sh');
-      assertEq(code, 0, `${name}: exit 0, got: ${all}`);
-      assertEq(w.read('ran.txt'), null, `${name}: nothing ran`);
+      expect(code, `${name}: exit 0, got: ${all}`).toBe(0);
+      expect(w.read('ran.txt'), `${name}: nothing ran`).toBe(null);
     }
   });
+});
 
-  group('ci-test.sh: the suite');
-
-  await test('a test script with xvfb-run on PATH: the suite runs as xvfb-run -a npm test', () => {
+describe('ci-test.sh: the suite', () => {
+  test('a test script with xvfb-run on PATH: the suite runs as xvfb-run -a npm test', () => {
     const w = mkWorld(withTestScript());
     const xvfb = xvfbStub(w);
     const { code, all } = run(w, 'ci-test.sh', { PATH: xvfb.PATH });
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(xvfb.argv(), '-a\nnpm\ntest\n', 'the wrapper got -a npm test');
-    assertEq(w.read('ran.txt'), 'ran', 'and the repo\'s test script ran');
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(xvfb.argv(), 'the wrapper got -a npm test').toBe('-a\nnpm\ntest\n');
+    expect(w.read('ran.txt'), 'and the repo\'s test script ran').toBe('ran');
   });
 
-  await test('a test script without xvfb-run: plain npm test, its failure the step\'s', () => {
+  test('a test script without xvfb-run: plain npm test, its failure the step\'s', () => {
     const w = mkWorld(withTestScript());
     const { code, all } = run(w, 'ci-test.sh');
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(w.read('ran.txt'), 'ran', 'the repo\'s test script ran');
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(w.read('ran.txt'), 'the repo\'s test script ran').toBe('ran');
     const red = mkWorld(withTestScript(4));
     const failed = run(red, 'ci-test.sh');
-    assert(failed.code !== 0, `a failing suite fails the step, got ${failed.code}: ${failed.all}`);
+    expect(failed.code !== 0, `a failing suite fails the step, got ${failed.code}: ${failed.all}`).toBeTruthy();
   });
 
-  await test('no test script: one line, exit 0, nothing wrapped', () => {
+  test('no test script: one line, exit 0, nothing wrapped', () => {
     const shapes = {
       'no package.json': {},
       'a package.json with no test script': { 'package.json': '{ "name": "fixture", "private": true, "scripts": { "build": "exit 1" } }\n' },
@@ -220,16 +217,10 @@ const cases = async () => {
       const w = mkWorld(files);
       const xvfb = xvfbStub(w);
       const { code, all } = run(w, 'ci-test.sh', { PATH: xvfb.PATH });
-      assertEq(code, 0, `${name}: exit 0, got: ${all}`);
-      assertEq(all.trim().split('\n').length, 1, `${name}: one line, got: ${all}`);
-      assert(all.trim() !== '', `${name}: a line, not silence`);
-      assertEq(xvfb.argv(), null, `${name}: xvfb-run never called`);
+      expect(code, `${name}: exit 0, got: ${all}`).toBe(0);
+      expect(all.trim().split('\n').length, `${name}: one line, got: ${all}`).toBe(1);
+      expect(all.trim() !== '', `${name}: a line, not silence`).toBeTruthy();
+      expect(xvfb.argv(), `${name}: xvfb-run never called`).toBe(null);
     }
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -2,7 +2,7 @@
 // two files resolves to a real file or folder.
 const path = require('path');
 const fs = require('fs');
-const { group, test, assert, assertEq, selfRun, summary } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 
 const REPO = path.join(__dirname, '..', '..');
 const README = path.join(REPO, 'README.md');
@@ -38,24 +38,15 @@ const resolvedLinks = (file) =>
 const missing = (file) =>
   resolvedLinks(file).filter(({ abs }) => !fs.existsSync(abs)).map(({ target }) => target);
 
-const cases = async () => {
-  group('README: links and images');
-
-  await test('every relative link and image path in README.md resolves to a file or folder', () => {
-    assertEq(missing(README).join(', '), '', 'README.md links that resolve to nothing');
+describe('README: links and images', () => {
+  test('every relative link and image path in README.md resolves to a file or folder', () => {
+    expect(missing(README).join(', '), 'README.md links that resolve to nothing').toBe('');
   });
+});
 
-  group('docs/setup.md: links');
-
-  await test('every relative link in docs/setup.md resolves to a file or folder', () => {
-    assert(fs.existsSync(SETUP), 'docs/setup.md does not exist');
-    assertEq(missing(SETUP).join(', '), '', 'docs/setup.md links that resolve to nothing');
+describe('docs/setup.md: links', () => {
+  test('every relative link in docs/setup.md resolves to a file or folder', () => {
+    expect(fs.existsSync(SETUP), 'docs/setup.md does not exist').toBeTruthy();
+    expect(missing(SETUP).join(', '), 'docs/setup.md links that resolve to nothing').toBe('');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -4,9 +4,12 @@
  * triage, suite and package markers, the gh shim's journals, a call's mark of them
  * and the read of what it changed, the per-session marker, a file's age, and
  * the folder Git Bash means by a path the shell spelled, which the module's
- * variables and the guard facts go through. Writers and readers name each
+ * variables and the guard facts go through, and the session's PATH with the
+ * git shim's folder first. Writers and readers name each
  * file through the one derivation, so the two sides never drift apart.
  */
+
+import { userDirOf } from './log.js';
 
 /**
  * The SHA-1 of a text, as lowercase hex: the one digest every marker and cache
@@ -58,6 +61,24 @@ export function shellDirOf(given, { TMP, TEMP, LOCALAPPDATA }, platform) {
 export const tempDirOf = (env, platform) => shellDirOf(env.TMPDIR || '/tmp', env, platform);
 
 /**
+ * The session's PATH with the shim folder first: the PATH as given when its
+ * first entry already is the folder, else the folder, the platform's
+ * separator and the PATH. On Windows the folder is in its native form
+ * (backslashes) and the separator is `;`.
+ * @param {string|undefined} current the session's PATH, unset when absent
+ * @param {string} shimDir the shim folder
+ * @param {string} platform `win32` on Windows
+ * @returns {string}
+ */
+export function sessionPath(current, shimDir, platform) {
+  const win = platform === 'win32';
+  const sep = win ? ';' : ':';
+  const dir = win ? shimDir.replace(/\//g, '\\') : shimDir;
+  if (!current) return dir;
+  return current.split(sep)[0] === dir ? current : `${dir}${sep}${current}`;
+}
+
+/**
  * The variables with every folder the shell spelled translated (shellDirOf):
  * TMPDIR, `/tmp` when unset, and WORKFLOW_HOME and HOME where set.
  * @param {object} env the variables as read
@@ -91,9 +112,30 @@ export async function markerPath(dir, anchor, home) {
 export const reviewMarkerPath = (root, home) => markerPath('claude-review-marker', root, home);
 export const reviewFullMarkerPath = (root, home) => markerPath('claude-review-full-marker', root, home);
 export const triageMarkerPath = (anchor, home) => markerPath('claude-triage-marker', anchor, home);
+/** The triage marker's age in seconds up to which a triage run is going. */
+export const TRIAGE_MAX_AGE_S = 1800;
+
+/**
+ * Whether a triage run is going, by its marker's age: the one rule
+ * safety:capture-guard and safety:script-write read.
+ * @param {number|null} ageS the marker's age in seconds (triageMarkerAge), null when there is none
+ * @returns {boolean}
+ */
+export const triageGoing = (ageS) => ageS !== null && ageS <= TRIAGE_MAX_AGE_S;
+
+/**
+ * The age in seconds of the triage marker `workkit triage mark` wrote for an
+ * anchor, null when there is none.
+ * @param {{env: object, stat: function, now: function}} io the variables, a stat and the clock
+ * @param {string} anchor the capture file's repo root, else its `.workkit` folder's parent
+ * @returns {Promise<number|null>}
+ */
+export async function triageMarkerAge({ env, stat, now }, anchor) {
+  const marker = await stat(await triageMarkerPath(anchor, userDirOf(env)));
+  return marker ? fileAge(marker.mtimeMs, await now()) : null;
+}
 export const suiteMarkerPath = (root, home) => markerPath('claude-suite-marker', root, home);
 export const pkgMarkerPath = (root, home) => markerPath('claude-package-marker', root, home);
-export const snapshotMarkerPath = (root, home) => markerPath('claude-red-snapshot', root, home);
 
 // The gh journals' folder name, under the markers folder.
 const JOURNAL_DIR = 'claude-gh-journal';
@@ -183,6 +225,34 @@ export function journalMarks(text) {
     if (parts[i]) marks.push({ journal: parts[i], bytes: Number(parts[i + 1]) });
   }
   return marks;
+}
+
+/**
+ * The start a Bash call's tool.call leaves beside its journal mark, keyed by
+ * the call (callStartText): its start time and its folder's repo root.
+ * @param {string} toolUseId the call's tool_use_id
+ * @param {string} home the machine folder (userDirOf in hooks/mods/log.js)
+ * @returns {Promise<string>}
+ */
+export const callStartPath = (toolUseId, home) => markerPath('claude-call-start', toolUseId, home);
+
+/**
+ * A call start's text: a line of the start time in epoch ms, then a line of
+ * the repo root ('' outside one).
+ * @param {{ms: number, root: string|null}} start
+ * @returns {string}
+ */
+export const callStartText = ({ ms, root }) => `${ms}\n${root ?? ''}`;
+
+/**
+ * A call start read back (callStartText): `ms` null when the first line is no
+ * time, `root` null when the call began outside a repo.
+ * @param {string} text the start's text
+ * @returns {{ms: number|null, root: string|null}}
+ */
+export function callStartOf(text) {
+  const [ms = '', root = ''] = text.split('\n');
+  return { ms: /^[0-9]+$/.test(ms) ? Number(ms) : null, root: root || null };
 }
 
 /**

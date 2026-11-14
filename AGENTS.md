@@ -20,15 +20,15 @@
 ├── .github/workflows/    # checks.yml (the suite on every pull request and push to main but a release-only one; the release job on a push) · ci.yml, release.yml (the reusable CI and release job every kit-owned checks.yml calls) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
 ├── .github/scripts/      # release-push.sh (checks.yml's scope job and ci.yml's Scope step: whether a push is a release stamp only) · ci-node-version.sh, ci-setup.sh, ci-test.sh (ci.yml's steps: the Node version, a repo's hooks.ciSetup, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
-│   ├── register.js       # the hooks module: the twenty-six in-process hooks (eight guards run in the `gh` shim and git's hooks), the one file that touches `$`
-│   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data
+│   ├── register.js       # the hooks module: the twenty-two in-process hooks (nine guards run in the `gh` and `git` shims and git's hooks), the one file that touches `$`
+│   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data (facts.js: the Bash guards' facts; changed.js: a call's changed files; slug.js)
 │   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage,proof}/, prove.sh, the snapshot entry and .github/scripts/release-push.sh, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, paths, tree, snapshot
 │   └── manager/          # resources/ladder.json (the rungs and the classes; the tiers' defaults are defaults/settings.json's)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, gitshim/ (the `git` shim), templates)
 ├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
 ├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run`, a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
@@ -55,22 +55,22 @@
 
 ## Hooks
 
-- Twenty-six of the thirty-three run in process, in the hooks module the `modules` list of `hooks/hooks.json` names.
+- Twenty-two of the thirty-one run in process, in the hooks module the `modules` list of `hooks/hooks.json` names.
   - The module is `hooks/register.js`, each hook's logic in `hooks/mods/`, loaded once per session.
-- Eight guards run in the `gh` shim and git's hooks, below, `safety:release-taken` in both.
+- Nine guards run in the `gh` shim, the `git` shim and git's hooks, below.
 - Settings and the hooks log name a hook by `prefix:name`.
 - A repo that has not opted in gets none of the hooks.
   - Opting in is its own `.workkit/settings.json` saying `"enabled": true`; nothing else counts.
   - The module's gate stands every one down there but the setup reminder and the restart notice (`docs/hooks.md` § Where every hook stands down).
-  - Nor does it stand down the chain after a Bash call, which acts only on lines from opted-in repos.
-- The commit guards judge in git's own `pre-commit` and `commit-msg` hooks, and the `gh` guards in the `gh` shim.
-  - Both judge the real tree, message and argv.
-  - Both sit under one gate, `wk_session_judges` (`workflow/README.md`, the `lib/participation.sh` row).
-  - The shim's secrets scan runs on every `gh` call.
-- Six parsers still read a command's text: `safety:tree-guard`, `safety:capture-guard`, `safety:release-taken`'s `npm publish` half, `workflow:bare-call`, `workflow:unwatched` and `safety:script-write`.
-  - `workflow:bare-call` is a notice naming a kit verb run inside a compound or with a command substitution in an argument.
-  - `workflow:unwatched` is a notice naming the `workkit supervise` form of a background test run the supervisor does not read.
-- The index of all thirty-three and what each one does: `docs/hooks.md` § The hooks module.
+  - The chain after a Bash call runs when the repo it began or ended in opted in, or when it left a gh journal line from one that did.
+- The commit guards judge in git's own `pre-commit` and `commit-msg` hooks, the `gh` guards in the `gh` shim, and `safety:tree-guard` in the `git` shim.
+  - All three judge the real tree, message and argv.
+  - All three sit under one gate, `wk_session_judges` (`workflow/README.md`, the `lib/participation.sh` row).
+  - The `git` shim (`workflow/gitshim/git`) is on a session's PATH alone, put first there at session start.
+  - The `gh` shim's secrets scan runs on every `gh` call.
+- No guard reads a command's text. `safety:capture-guard` gets one yes or no: whether the command names `.workkit/capture.md`.
+  - `safety:script-write` runs after a Bash call: the five write checks on each file the call changed on disk, as notices.
+- The index of all thirty-one and what each one does: `docs/hooks.md` § The hooks module.
 
 ## Agents
 
@@ -90,7 +90,7 @@
   - Those are the plugin's install and list, and `claude setup-token`.
   - The test runner's mod half (`claude plugin test`) lives in `workkit-core`.
 - `workkit.sh` is the one command and the from-zero entry point:
-  - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `tools` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run]`;
+  - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`;
   - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
 - Beside it live:
   - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
@@ -129,22 +129,23 @@
   - The package is `packages/core/`, its library in `test/lib/` there.
   - The global `workkit test` hands its arguments to this `npm test`.
 - `test/lib/harness.js` is a one-line re-export of `workkit-core/test`, which carries the whole library.
-- `test/lib/serial.js` is this repo's serial list.
-- A suite whose precondition this machine cannot meet calls `skipSuite()`, and the runner names the skip.
-  - One that runs a command a cloud session may lack calls `needs()` with its name instead.
-  - That is a skip there and a failure anywhere else (`docs/tests.md` § The kit's runner).
-- Suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
-  - The library's own suites sit at the `test/` root (`runner`, `node-test`, `harness`, `log`, `spawn`).
+- `test/lib/serial.js` is this repo's serial list, its entries paths from the repo root.
+- Every suite is Node's own shape, `describe`, `test` and `expect` from `test/lib/harness.js` (`docs/tests.md` § The shape).
+- A suite or case this machine cannot answer states a `skip` value, `false` or the reason; the runner names the skip.
+  - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutFileLink` in `test/lib/`.
+- The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
+- This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
+  - The library's own suites sit at the `test/` root (`runner`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`).
 - A suite keeps to its own temp folder through `mkTmp` and touches no fixed shared path.
   - One that must is added to `SERIAL`, with the path named in a one-line comment beside its entry.
 - Then the mod half: `claude plugin test` on the kit root runs the hooks module's wiring suites, `test/mods/*.test.ts`, inside the engine.
   - The runner adds its counts beside the Node suites'.
   - With no `claude` on PATH it is a named skip and the Node half still runs.
   - A named `test/mods/<name>.test.ts` after `--` runs the whole mod half, since `claude plugin test` takes a folder.
-- Every suite ends with `if (require.main === module) selfRun(<its export>);`.
-  - One suite runs alone as `npm test -- test/<path>.test.js`, and still as `node test/<path>.test.js` through `selfRun`.
+- One suite runs alone as `npm test -- test/<path>.test.js`, or as `node test/<path>.test.js` with no line added.
   - The runner takes suite paths after `--`, and exits 1 naming a path that matches no suite.
-  - `test/runner.test.js` fails naming a suite without the line.
+  - A case that starts a suite file with `node` passes `aloneEnv()` (`test/lib/alone-env.js`), its env without `NODE_TEST_CONTEXT`.
+  - `test/lib/run-lists.js` reads a run's end (`TOTALS_LINE`, `linesOf`, `listsOf`), and `caught(fn)` (`test/lib/caught.js`) what a call threw or rejected with, or `null`.
 - Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer.
 - Everything that differs lives in `test/lib/platform.js`, every export the identity on macOS and Linux.
   - What differs: the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH.
@@ -161,7 +162,7 @@
     - Elsewhere the strings compare as they are.
   - `stubTool()` is the one writer of a PATH stub, which a shell starts by its bare name on either platform.
     - Its `<name>.exe` launcher (`test/lib/stub-launcher.cs`, built once per machine) makes the stub startable from Node on Windows where the C# compiler exists.
-    - The cases written before it keep their `NO_NODE_STUB` skip until each is run there once.
+    - A case resting on a stub written before it skips on Windows through `skipWithoutNodeStub()` (`NO_NODE_STUB`) until it is run there once.
   - `test/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions, so every suite spells a shape the same way.
     - Its exports: `mods(name)`, `textOf`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`, `sessionFacts`, `briefMarker`, `daysBefore`, `row` (`row.user`, `row.result`, `row.tool`), `ghEntry`, `MODELS`, `REMINDER_ROOT`.
   - `test/lib/mod-fixtures.mjs` is the one home of the fixtures both halves share.
@@ -177,7 +178,6 @@
 - A world built the same way for every case has one home too: `seeded(build)` in the kit's `seed.js`, reached through `test/lib/harness.js`.
   - It builds the world once per process for each shape on first use, and removes it at exit.
   - It returns a copier that `fs.cpSync`s that shape's seed into the case's own folder, so no case is handed the seed.
-- A case only one platform can answer names its skip through the harness's `skip()`.
 - On a Windows machine `workkit setup` builds the kit's script shell (`workflow/script-shell.cs`) and points npm at it.
   - So a root `npm test` there records its tree.
 - The Windows lane runs in CI: `checks.yml` runs the suite on Linux and Windows for every pull request and every push to `main`.

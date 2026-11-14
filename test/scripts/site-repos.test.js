@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { gitPath } = require('../lib/platform');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
@@ -65,73 +65,71 @@ const dropFromRoster = (workflowHome, name) => {
 
 const keysOf = (machines) => Object.keys(machines).sort().join(',');
 
-const cases = async () => {
-  group('workflow/site-repos: what the list says');
-
-  await test('every registered repo is a slug, and the home repo rides along', () => {
+describe('workflow/site-repos: what the list says', () => {
+  test('every registered repo is a slug, and the home repo rides along', () => {
     const tmp = mkTmp('workkit-site-repos-');
     const workflowHome = mkWorkflowHome(tmp, ['omega', 'dotfiles']);
     const list = composeSlugs({ workflowHome, home: tmp });
-    assertEq(list.repos.sort().join(','), 'owner/dotfiles,owner/omega,owner/workkit', 'the roster plus the home repo');
-    assertEq(list.home, 'owner/workkit', 'named again, because the summaries are Discussions on that one');
+    expect(list.repos.sort().join(','), 'the roster plus the home repo').toBe('owner/dotfiles,owner/omega,owner/workkit');
+    expect(list.home, 'named again, because the summaries are Discussions on that one').toBe('owner/workkit');
     cleanup(tmp);
   });
+});
 
-  group('workflow/site-repos: an empty machine and a roster that will not read');
-
-  await test('a machine that registers nothing writes the empty list, it is true', () => {
+describe('workflow/site-repos: an empty machine and a roster that will not read', () => {
+  test('a machine that registers nothing writes the empty list, it is true', () => {
     // The truth case: no roster file at all is not a failure, it is a machine
     // that has enabled nothing, and the list it composes says exactly that.
     const tmp = mkTmp('workkit-site-repos-');
     const workflowHome = mkWorkflowHome(tmp, [], { homeSlug: null, roster: null });
     const outfile = path.join(tmp, 'data', 'repos.json');
-    assertEq(writeSlugs(outfile, { workflowHome, home: tmp, hostname: MAC }), true, 'the file was written');
+    expect(writeSlugs(outfile, { workflowHome, home: tmp, hostname: MAC }), 'the file was written').toBe(true);
     const written = JSON.parse(fs.readFileSync(outfile, 'utf8'));
-    assertEq(JSON.stringify(written.repos), '[]', 'and it says there are no repos');
-    assertEq(written.home, null, 'and no home repo');
-    assertEq(JSON.stringify(written.machines), '{"ians-macbook-pro":[]}', 'this machine, with nothing in its entry');
+    expect(JSON.stringify(written.repos), 'and it says there are no repos').toBe('[]');
+    expect(written.home, 'and no home repo').toBe(null);
+    expect(JSON.stringify(written.machines), 'this machine, with nothing in its entry').toBe('{"ians-macbook-pro":[]}');
     cleanup(tmp);
   });
 
-  await test('the list already published survives a roster that will not read', () => {
+  test('the list already published survives a roster that will not read', () => {
     const tmp = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmp, 'data', 'repos.json');
     const workflowHome = mkWorkflowHome(tmp, ['omega']);
-    assertEq(writeSlugs(outfile, { workflowHome, home: tmp }), true, 'a good roster writes the list');
+    expect(writeSlugs(outfile, { workflowHome, home: tmp }), 'a good roster writes the list').toBe(true);
     const before = fs.readFileSync(outfile, 'utf8');
 
     fs.writeFileSync(path.join(workflowHome, '.repos.json'), '{ not json');
     try {
       writeSlugs(outfile, { workflowHome, home: tmp });
-      assert(false, 'the write should have raised');
+      expect(false, 'the write should have raised').toBeTruthy();
     } catch (err) {
-      assert(/could not be read/.test(err.message), `raised for the roster, got: ${err.message}`);
+      expect(/could not be read/.test(err.message), `raised for the roster, got: ${err.message}`).toBeTruthy();
     }
-    assertEq(fs.readFileSync(outfile, 'utf8'), before, 'and the file on disk is exactly what it was');
+    expect(fs.readFileSync(outfile, 'utf8'), 'and the file on disk is exactly what it was').toBe(before);
     cleanup(tmp);
   });
 
-  await test('the CLI exits non-zero and writes nothing when the roster will not read', () => {
+  test('the CLI exits non-zero and writes nothing when the roster will not read', () => {
     const tmp = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmp, 'data', 'repos.json');
     const workflowHome = mkWorkflowHome(tmp, ['omega'], { roster: '{ not json' });
     const script = path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js');
     const res = spawnSync(process.execPath, [script, outfile, workflowHome], { encoding: 'utf8' });
-    assert(res.status !== 0, `non-zero, got ${res.status}`);
-    assert(/could not be read/.test(res.stderr), `it says why, got: ${res.stderr}`);
-    assertEq(fs.existsSync(outfile), false, 'and nothing was written where the list goes');
+    expect(res.status !== 0, `non-zero, got ${res.status}`).toBeTruthy();
+    expect(/could not be read/.test(res.stderr), `it says why, got: ${res.stderr}`).toBeTruthy();
+    expect(fs.existsSync(outfile), 'and nothing was written where the list goes').toBe(false);
     cleanup(tmp);
   });
+});
 
-  group('workflow/site-repos: every machine owns its own entry');
-
-  await test('a machine key is the hostname\'s first label, lowercased', () => {
-    assertEq(machineKey('Ians-MacBook-Pro.local'), 'ians-macbook-pro', 'the Mac');
-    assertEq(machineKey('DESKTOP-IFL07VG'), 'desktop-ifl07vg', 'the Windows machine');
-    assertEq(machineKey('my-mac.lan'), 'my-mac', 'a router-given domain dropped too');
+describe('workflow/site-repos: every machine owns its own entry', () => {
+  test('a machine key is the hostname\'s first label, lowercased', () => {
+    expect(machineKey('Ians-MacBook-Pro.local'), 'the Mac').toBe('ians-macbook-pro');
+    expect(machineKey('DESKTOP-IFL07VG'), 'the Windows machine').toBe('desktop-ifl07vg');
+    expect(machineKey('my-mac.lan'), 'a router-given domain dropped too').toBe('my-mac');
   });
 
-  await test('two machines with different rosters publish the sorted union, both entries kept', () => {
+  test('two machines with different rosters publish the sorted union, both entries kept', () => {
     const tmpMac = mkTmp('workkit-site-repos-');
     const tmpWin = mkTmp('workkit-site-repos-');
     const macHome = mkWorkflowHome(tmpMac, ['omega', 'dotfiles', 'shared']);
@@ -140,20 +138,16 @@ const cases = async () => {
     const fromMac = composeSlugs({ workflowHome: macHome, home: tmpMac, hostname: MAC, previous: null });
     const both = composeSlugs({ workflowHome: winHome, home: tmpWin, hostname: WIN, previous: fromMac });
 
-    assertEq(both.repos.join(','),
-      'owner/alpha,owner/dotfiles,owner/omega,owner/shared,owner/Zeta,owner/workkit',
-      'the union sorted without regard to case, the home repo appended');
-    assertEq(both.home, 'owner/workkit', 'the home repo named');
-    assertEq(keysOf(both.machines), 'desktop-ifl07vg,ians-macbook-pro', 'one entry per machine');
-    assertEq(both.machines['ians-macbook-pro'].join(','), 'owner/dotfiles,owner/omega,owner/shared',
-      'the Mac entry, in the order the roster reader lists it (by path)');
-    assertEq(both.machines['desktop-ifl07vg'].join(','), 'owner/alpha,owner/shared,owner/Zeta',
-      'the Windows entry, in the order the roster reader lists it (by path)');
+    expect(both.repos.join(','), 'the union sorted without regard to case, the home repo appended').toBe('owner/alpha,owner/dotfiles,owner/omega,owner/shared,owner/Zeta,owner/workkit');
+    expect(both.home, 'the home repo named').toBe('owner/workkit');
+    expect(keysOf(both.machines), 'one entry per machine').toBe('desktop-ifl07vg,ians-macbook-pro');
+    expect(both.machines['ians-macbook-pro'].join(','), 'the Mac entry, in the order the roster reader lists it (by path)').toBe('owner/dotfiles,owner/omega,owner/shared');
+    expect(both.machines['desktop-ifl07vg'].join(','), 'the Windows entry, in the order the roster reader lists it (by path)').toBe('owner/alpha,owner/shared,owner/Zeta');
     cleanup(tmpMac);
     cleanup(tmpWin);
   });
 
-  await test('a repo one machine drops leaves the list unless the other machine still lists it', () => {
+  test('a repo one machine drops leaves the list unless the other machine still lists it', () => {
     const tmpMac = mkTmp('workkit-site-repos-');
     const tmpWin = mkTmp('workkit-site-repos-');
     const macHome = mkWorkflowHome(tmpMac, ['omega', 'dotfiles', 'shared']);
@@ -166,30 +160,27 @@ const cases = async () => {
     dropFromRoster(macHome, 'shared');
     const again = composeSlugs({ workflowHome: macHome, home: tmpMac, hostname: MAC, previous: both });
 
-    assertEq(again.machines['ians-macbook-pro'].join(','), 'owner/omega', 'the Mac entry lost both repos');
-    assertEq(again.machines['desktop-ifl07vg'].join(','), 'owner/shared,owner/Zeta',
-      'the Windows entry is untouched');
-    assertEq(again.repos.join(','), 'owner/omega,owner/shared,owner/Zeta,owner/workkit',
-      'dotfiles is gone, shared stays because Windows lists it');
+    expect(again.machines['ians-macbook-pro'].join(','), 'the Mac entry lost both repos').toBe('owner/omega');
+    expect(again.machines['desktop-ifl07vg'].join(','), 'the Windows entry is untouched').toBe('owner/shared,owner/Zeta');
+    expect(again.repos.join(','), 'dotfiles is gone, shared stays because Windows lists it').toBe('owner/omega,owner/shared,owner/Zeta,owner/workkit');
     cleanup(tmpMac);
     cleanup(tmpWin);
   });
 
-  await test('a file from before machines holds only this machine after its publish', () => {
+  test('a file from before machines holds only this machine after its publish', () => {
     const tmp = mkTmp('workkit-site-repos-');
     const workflowHome = mkWorkflowHome(tmp, ['omega', 'dotfiles']);
     const legacy = { repos: ['owner/old-one', 'owner/omega', 'owner/workkit'], home: 'owner/workkit' };
 
     const list = composeSlugs({ workflowHome, home: tmp, hostname: WIN, previous: legacy });
 
-    assertEq(keysOf(list.machines), 'desktop-ifl07vg', 'only this machine has an entry');
-    assertEq(list.machines['desktop-ifl07vg'].join(','), 'owner/dotfiles,owner/omega', 'its roster');
-    assertEq(list.repos.join(','), 'owner/dotfiles,owner/omega,owner/workkit',
-      'its list plus the home repo, the old list dropped');
+    expect(keysOf(list.machines), 'only this machine has an entry').toBe('desktop-ifl07vg');
+    expect(list.machines['desktop-ifl07vg'].join(','), 'its roster').toBe('owner/dotfiles,owner/omega');
+    expect(list.repos.join(','), 'its list plus the home repo, the old list dropped').toBe('owner/dotfiles,owner/omega,owner/workkit');
     cleanup(tmp);
   });
 
-  await test('an unchanged roster writes nothing, the file on disk left alone', () => {
+  test('an unchanged roster writes nothing, the file on disk left alone', () => {
     const tmpMac = mkTmp('workkit-site-repos-');
     const tmpWin = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmpMac, 'data', 'repos.json');
@@ -201,23 +192,21 @@ const cases = async () => {
     fs.mkdirSync(path.dirname(outfile), { recursive: true });
     fs.writeFileSync(outfile, `${JSON.stringify(fromWin, null, 2)}\n`);
 
-    assertEq(writeSlugs(outfile, { workflowHome: macHome, home: tmpMac, hostname: MAC }), true,
-      'the Mac entry is new, so the file is written');
+    expect(writeSlugs(outfile, { workflowHome: macHome, home: tmpMac, hostname: MAC }), 'the Mac entry is new, so the file is written').toBe(true);
     const first = JSON.parse(fs.readFileSync(outfile, 'utf8'));
-    assertEq(keysOf(first.machines), 'desktop-ifl07vg,ians-macbook-pro', 'the entry read from disk survives');
-    assertEq(first.repos.join(','), 'owner/dotfiles,owner/omega,owner/shared,owner/workkit', 'the union');
+    expect(keysOf(first.machines), 'the entry read from disk survives').toBe('desktop-ifl07vg,ians-macbook-pro');
+    expect(first.repos.join(','), 'the union').toBe('owner/dotfiles,owner/omega,owner/shared,owner/workkit');
 
     const before = fs.readFileSync(outfile, 'utf8');
     const mtime = fs.statSync(outfile).mtimeMs;
-    assertEq(writeSlugs(outfile, { workflowHome: macHome, home: tmpMac, hostname: MAC }), false,
-      'the same roster again writes nothing');
-    assertEq(fs.readFileSync(outfile, 'utf8'), before, 'the bytes are what they were');
-    assertEq(fs.statSync(outfile).mtimeMs, mtime, 'and the file was never rewritten');
+    expect(writeSlugs(outfile, { workflowHome: macHome, home: tmpMac, hostname: MAC }), 'the same roster again writes nothing').toBe(false);
+    expect(fs.readFileSync(outfile, 'utf8'), 'the bytes are what they were').toBe(before);
+    expect(fs.statSync(outfile).mtimeMs, 'and the file was never rewritten').toBe(mtime);
     cleanup(tmpMac);
     cleanup(tmpWin);
   });
 
-  await test('a home repo no machine lists is appended to the list once', () => {
+  test('a home repo no machine lists is appended to the list once', () => {
     const tmpMac = mkTmp('workkit-site-repos-');
     const tmpWin = mkTmp('workkit-site-repos-');
     const macHome = mkWorkflowHome(tmpMac, ['omega', 'alpha'], { homeSlug: 'owner/hub' });
@@ -226,15 +215,14 @@ const cases = async () => {
     const fromMac = composeSlugs({ workflowHome: macHome, home: tmpMac, hostname: MAC, previous: null });
     const both = composeSlugs({ workflowHome: winHome, home: tmpWin, hostname: WIN, previous: fromMac });
 
-    assertEq(both.repos.join(','), 'owner/alpha,owner/omega,owner/shared,owner/zeta,owner/hub',
-      'the home repo once, after the sorted union');
-    assertEq(both.machines['ians-macbook-pro'].includes('owner/hub'), false, 'and in no machine entry');
-    assertEq(both.machines['desktop-ifl07vg'].includes('owner/hub'), false, 'on either machine');
+    expect(both.repos.join(','), 'the home repo once, after the sorted union').toBe('owner/alpha,owner/omega,owner/shared,owner/zeta,owner/hub');
+    expect(both.machines['ians-macbook-pro'].includes('owner/hub'), 'and in no machine entry').toBe(false);
+    expect(both.machines['desktop-ifl07vg'].includes('owner/hub'), 'on either machine').toBe(false);
     cleanup(tmpMac);
     cleanup(tmpWin);
   });
 
-  await test('one slug spelled two ways is listed once, the home repo included', () => {
+  test('one slug spelled two ways is listed once, the home repo included', () => {
     const tmpMac = mkTmp('workkit-site-repos-');
     const tmpWin = mkTmp('workkit-site-repos-');
     const macHome = mkWorkflowHome(tmpMac, ['x', 'omega'], { homeSlug: 'owner/Home' });
@@ -246,16 +234,10 @@ const cases = async () => {
     const both = composeSlugs({ workflowHome: macHome, home: tmpMac, hostname: MAC, previous: fromWin });
 
     const spelled = (slug) => both.repos.filter((s) => s.toLowerCase() === slug);
-    assertEq(spelled('owner/x').join(','), 'Owner/x', 'one x, the first spelling');
-    assertEq(spelled('owner/home').length, 1, `one home spelling, got ${both.repos.join(',')}`);
-    assertEq(both.repos.length, 3, `x, home and omega, got ${both.repos.join(',')}`);
+    expect(spelled('owner/x').join(','), 'one x, the first spelling').toBe('Owner/x');
+    expect(spelled('owner/home').length, `one home spelling, got ${both.repos.join(',')}`).toBe(1);
+    expect(both.repos.length, `x, home and omega, got ${both.repos.join(',')}`).toBe(3);
     cleanup(tmpMac);
     cleanup(tmpWin);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

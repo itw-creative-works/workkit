@@ -1,7 +1,7 @@
 /**
  * safety:commit-gate judged through the hooks module over a real scratch repo:
  * preCommitVerdict over commitFacts (hooks/mods/commit-gate.js) built on
- * bashFacts (hooks/mods/guards.js) from the real machine's io
+ * bashFacts (hooks/mods/facts.js) from the real machine's io
  * (workflow/lib/io.js), as the pre-commit judge builds them. Consumers:
  * test/hooks/commit-gate/{first-commit,marker}.test.js,
  * test/scripts/prove.test.js and script-shell.test.js.
@@ -26,7 +26,7 @@ const gateOn = async (repo, env, { unstarted = () => false } = {}) => {
   const run = async (argv, init) => (unstarted(argv) ? NOT_STARTED(argv) : io.run(argv, init));
   // The root as the pre-commit judge is handed it: git's own spelling of it.
   const root = await io.top(repo);
-  const g = mods('guards').bashFacts({ ...io, run }, env, { command: '', cwd: root });
+  const g = mods('facts').bashFacts({ ...io, run }, env, { cwd: root });
   const v = await mods('commit-gate').preCommitVerdict(mods('commit-gate').commitFacts(g, root));
   return {
     deny: v && typeof v.deny === 'string' ? v.deny : null,

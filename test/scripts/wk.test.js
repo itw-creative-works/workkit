@@ -6,7 +6,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, NO_RC, shellPath, gitPath, homeEnv, stubTool, basePathWithout,
   systemPathWith, joinPath,
@@ -111,83 +111,81 @@ const runScriptBytes = (cwd, noteLiteral, t, extraEnv = {}) => {
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 
-const cases = async () => {
-  group('wk.sh: which capture file a note lands in');
-
-  await test('a note from inside a participating repo lands in the repo capture file', async () => {
+describe('wk.sh: which capture file a note lands in', () => {
+  test('a note from inside a participating repo lands in the repo capture file', async () => {
     const t = makeTree();
     const { code, out } = runScript(t.repo, ['note', 'a repo thought'], t);
-    assertEq(code, 0, 'exit 0');
-    assert(out.includes(gitPath(t.repoCapture)), `names where it filed, got: ${out}`);
-    assert(read(t.repoCapture).endsWith('- a repo thought\n'), 'the bullet is there');
-    assertEq(t.ghCalls().length, 0, 'and nothing was filed on the home repo');
+    expect(code, 'exit 0').toBe(0);
+    expect(out.includes(gitPath(t.repoCapture)), `names where it filed, got: ${out}`).toBeTruthy();
+    expect(read(t.repoCapture).endsWith('- a repo thought\n'), 'the bullet is there').toBeTruthy();
+    expect(t.ghCalls().length, 'and nothing was filed on the home repo').toBe(0);
     cleanup(t.dir);
   });
 
-  await test('the walk up from a subdirectory finds the repo root', async () => {
+  test('the walk up from a subdirectory finds the repo root', async () => {
     const t = makeTree();
-    assertEq(runScript(t.deep, ['note', 'from the depths'], t).code, 0, 'exit 0');
-    assert(read(t.repoCapture).includes('- from the depths\n'), 'filed at the root, not beside the cwd');
-    assert(!fs.existsSync(path.join(t.deep, W)), 'nothing created in the subdirectory');
+    expect(runScript(t.deep, ['note', 'from the depths'], t).code, 'exit 0').toBe(0);
+    expect(read(t.repoCapture).includes('- from the depths\n'), 'filed at the root, not beside the cwd').toBeTruthy();
+    expect(!fs.existsSync(path.join(t.deep, W)), 'nothing created in the subdirectory').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a non-participating cwd files the note as an issue on the home repo', async () => {
+  test('a non-participating cwd files the note as an issue on the home repo', async () => {
     // A capture that belongs to no project goes straight to the queue triage
     // would have put it in.
     const t = makeTree();
     const { code, out } = runScript(t.outside, ['note', 'a stray thought'], t);
-    assertEq(code, 0, `exit 0: ${out}`);
-    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `it names the issue, got: ${out}`);
+    expect(code, `exit 0: ${out}`).toBe(0);
+    expect(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `it names the issue, got: ${out}`).toBeTruthy();
 
     const calls = t.ghCalls();
-    assertEq(calls.length, 1, `one gh call: ${fmtCalls(calls)}`);
+    expect(calls.length, `one gh call: ${fmtCalls(calls)}`).toBe(1);
     const argv = calls[0];
-    assert(isCall(argv, 'issue', 'create'), `it creates an issue: ${fmtCalls(calls)}`);
-    assertEq(argv[argv.indexOf('--repo') + 1], 'owner/workkit', 'on the home repo');
-    assertEq(argv[argv.indexOf('--title') + 1], 'a stray thought', 'the note is the title');
-    assertEq(argv[argv.indexOf('--label') + 1], 'status:inbox,type:idea', 'labelled for triage');
+    expect(isCall(argv, 'issue', 'create'), `it creates an issue: ${fmtCalls(calls)}`).toBeTruthy();
+    expect(argv[argv.indexOf('--repo') + 1], 'on the home repo').toBe('owner/workkit');
+    expect(argv[argv.indexOf('--title') + 1], 'the note is the title').toBe('a stray thought');
+    expect(argv[argv.indexOf('--label') + 1], 'labelled for triage').toBe('status:inbox,type:idea');
     const body = argv[argv.indexOf('--body') + 1];
-    assert(/^## Description\n\na stray thought\n\n## Spec\n\nNone needed: small item\.$/.test(body),
-      `the body is the spec's issue anatomy, got: ${body}`);
+    expect(/^## Description\n\na stray thought\n\n## Spec\n\nNone needed: small item\.$/.test(body),
+      `the body is the spec's issue anatomy, got: ${body}`).toBeTruthy();
 
-    assert(!fs.existsSync(path.join(t.tower, W)), 'and nothing at all is written into the clone');
-    assert(!fs.existsSync(t.repoCapture), 'the repo capture file stayed out of it');
+    expect(!fs.existsSync(path.join(t.tower, W)), 'and nothing at all is written into the clone').toBeTruthy();
+    expect(!fs.existsSync(t.repoCapture), 'the repo capture file stayed out of it').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a cwd under $HOME still files the issue: the machine settings are not a repo opt-in', async () => {
+  test('a cwd under $HOME still files the issue: the machine settings are not a repo opt-in', async () => {
     // The walk up passes through $HOME, where `.workkit/settings.json` is the
     // machine settings file (roster, site options, home slug), never a repo's yes.
     const t = makeTree();
     const scratch = path.join(t.home, 'Documents', 'scratch');
     fs.mkdirSync(scratch, { recursive: true });
     const { code, out } = runScript(scratch, ['note', 'a thought from under home'], t);
-    assertEq(code, 0, `exit 0: ${out}`);
-    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`);
-    assertEq(t.ghCalls().length, 1, 'one gh call');
-    assert(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'and no user-level capture file appeared');
+    expect(code, `exit 0: ${out}`).toBe(0);
+    expect(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `filed as an issue, got: ${out}`).toBeTruthy();
+    expect(t.ghCalls().length, 'one gh call').toBe(1);
+    expect(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'and no user-level capture file appeared').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a note longer than a title is truncated, and the body keeps it whole', async () => {
+  test('a note longer than a title is truncated, and the body keeps it whole', async () => {
     const t = makeTree();
     const long = `the tower poller keeps ${'x'.repeat(90)} losing its place`;
-    assertEq(runScript(t.outside, ['note', long], t).code, 0, 'exit 0');
+    expect(runScript(t.outside, ['note', long], t).code, 'exit 0').toBe(0);
     const argv = t.ghCalls()[0];
     const title = argv[argv.indexOf('--title') + 1];
-    assertEq(title.length, 72, `the title is one line: ${title}`);
-    assert(title.endsWith('…'), 'and says it was cut');
-    assert(argv[argv.indexOf('--body') + 1].includes(long), 'while the body carries the whole thought');
+    expect(title.length, `the title is one line: ${title}`).toBe(72);
+    expect(title.endsWith('…'), 'and says it was cut').toBeTruthy();
+    expect(argv[argv.indexOf('--body') + 1].includes(long), 'while the body carries the whole thought').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('under a byte locale the truncated title is still valid UTF-8', async () => {
+  test('under a byte locale the truncated title is still valid UTF-8', async () => {
     // LC_ALL=C makes bash count and cut bytes, so the 72-char cut lands inside
     // a multibyte character and would otherwise hand gh a title no API accepts.
     const t = makeTree();
     const long = `${'a'.repeat(70)}→ the rest of the thought`;
-    assertEq(runScript(t.outside, ['note', long], t, { LC_ALL: 'C' }).code, 0, 'exit 0');
+    expect(runScript(t.outside, ['note', long], t, { LC_ALL: 'C' }).code, 'exit 0').toBe(0);
 
     // Read the log as bytes: a string read would have replaced whatever
     // invalid sequence the cut left behind before the assertion could see it.
@@ -196,169 +194,163 @@ const cases = async () => {
 
     const argv = t.ghCalls()[0];
     const title = argv[argv.indexOf('--title') + 1];
-    assert(title.startsWith('a'.repeat(70)), `the note is still the title: ${title}`);
-    assert(title.endsWith('…'), 'and still says it was cut');
-    assert(argv[argv.indexOf('--body') + 1].includes(long), 'while the body carries the whole thought');
+    expect(title.startsWith('a'.repeat(70)), `the note is still the title: ${title}`).toBeTruthy();
+    expect(title.endsWith('…'), 'and still says it was cut').toBeTruthy();
+    expect(argv[argv.indexOf('--body') + 1].includes(long), 'while the body carries the whole thought').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', async () => {
+  test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', async () => {
     // Nothing is truncated here: the note arrives ending in a severed multibyte
     // sequence. iconv drops the tail and reports a failure for it everywhere, so
     // a fallback reading that status would file a doubled title, still invalid.
     const t = makeTree();
     const { code, out } = runScriptBytes(t.outside, "$'a short note\\xe2\\x80'", t);
-    assertEq(code, 0, `exit 0: ${out}`);
+    expect(code, `exit 0: ${out}`).toBe(0);
 
     const argv = t.ghCalls()[0];
-    assertEq(argv[argv.indexOf('--title') + 1], 'a short note', 'the title is the note with the severed bytes dropped, once');
+    expect(argv[argv.indexOf('--title') + 1], 'the title is the note with the severed bytes dropped, once').toBe('a short note');
     cleanup(t.dir);
   });
 
-  await test('a home repo without the labels yet takes the issue unlabelled', async () => {
+  test('a home repo without the labels yet takes the issue unlabelled', async () => {
     const t = makeTree({ gh: 'labels' });
     const { code, out, err } = runScript(t.outside, ['note', 'a fresh home'], t);
-    assertEq(code, 0, `exit 0, the thought is filed either way: ${err}`);
-    assert(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `it still names the issue, got: ${out}`);
-    assert(/labels could not be applied/.test(err), `and says so once, got: ${err}`);
+    expect(code, `exit 0, the thought is filed either way: ${err}`).toBe(0);
+    expect(out.includes('✓ noted → https://github.com/owner/workkit/issues/7'), `it still names the issue, got: ${out}`).toBeTruthy();
+    expect(/labels could not be applied/.test(err), `and says so once, got: ${err}`).toBeTruthy();
 
     const calls = t.ghCalls();
-    assertEq(calls.length, 2, 'one labelled attempt, then one without');
-    assert(calls[0].includes('--label'), 'the first try asks for them');
-    assert(!calls[1].includes('--label'), 'the retry does not');
+    expect(calls.length, 'one labelled attempt, then one without').toBe(2);
+    expect(calls[0].includes('--label'), 'the first try asks for them').toBeTruthy();
+    expect(!calls[1].includes('--label'), 'the retry does not').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a gh that cannot file the issue prints the note back and exits 1', async () => {
+  test('a gh that cannot file the issue prints the note back and exits 1', async () => {
     // Offline, unauthenticated, a repo that is gone: there is no file buffer
     // anywhere, so the only safe place for the thought is the terminal.
     const t = makeTree({ gh: 'down' });
     const { code, err } = runScript(t.outside, ['note', 'not lost, at least'], t);
-    assertEq(code, 1, 'the caller learns the thought was not filed');
-    assert(/not lost, at least/.test(err), `and gets it back, got: ${err}`);
-    assert(/owner\/workkit/.test(err), 'with the repo it could not reach');
-    assertEq(t.ghCalls().length, 2, 'after the unlabelled retry');
+    expect(code, 'the caller learns the thought was not filed').toBe(1);
+    expect(/not lost, at least/.test(err), `and gets it back, got: ${err}`).toBeTruthy();
+    expect(/owner\/workkit/.test(err), 'with the repo it could not reach').toBeTruthy();
+    expect(t.ghCalls().length, 'after the unlabelled retry').toBe(2);
     cleanup(t.dir);
   });
 
-  await test('no gh on the machine refuses the note rather than losing it', async () => {
+  test('no gh on the machine refuses the note rather than losing it', async () => {
     const t = makeTree({ gh: false });
     const { code, err } = runScript(t.outside, ['note', 'no tooling here'], t,
       { PATH: joinPath(t.bin, basePathWithout(t.dir, 'gh')) });
-    assertEq(code, 1, 'exit 1');
-    assert(/gh is not on this machine/.test(err), `it names what is missing, got: ${err}`);
-    assert(/no tooling here/.test(err), 'and hands the thought back');
+    expect(code, 'exit 1').toBe(1);
+    expect(/gh is not on this machine/.test(err), `it names what is missing, got: ${err}`).toBeTruthy();
+    expect(/no tooling here/.test(err), 'and hands the thought back').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a repo whose settings say enabled:false is not a participating repo', async () => {
+  test('a repo whose settings say enabled:false is not a participating repo', async () => {
     // The deliberate no. The note still has somewhere to go: the home repo.
     const t = makeTree({ settings: '{ "version": 1, "enabled": false }\n' });
-    assertEq(runScript(t.deep, ['note', 'declined repo'], t).code, 0, 'exit 0');
-    assert(t.ghCalls()[0].includes('declined repo'), 'filed on the home repo');
-    assert(!fs.existsSync(t.repoCapture), 'and never into the repo that said no');
+    expect(runScript(t.deep, ['note', 'declined repo'], t).code, 'exit 0').toBe(0);
+    expect(t.ghCalls()[0].includes('declined repo'), 'filed on the home repo').toBeTruthy();
+    expect(!fs.existsSync(t.repoCapture), 'and never into the repo that said no').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('with no tower repo yet, the note is refused rather than written nowhere', async () => {
+  test('with no tower repo yet, the note is refused rather than written nowhere', async () => {
     const t = makeTree({ tower: false });
     const { code, err } = runScript(t.outside, ['note', 'nowhere to go'], t);
-    assertEq(code, 1, 'the caller learns the thought was not filed');
-    assert(/workkit setup/.test(err), `and which command makes a home, got: ${err}`);
-    assert(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'nothing is created at the user level');
+    expect(code, 'the caller learns the thought was not filed').toBe(1);
+    expect(/workkit setup/.test(err), `and which command makes a home, got: ${err}`).toBeTruthy();
+    expect(!fs.existsSync(path.join(t.home, W, 'capture.md')), 'nothing is created at the user level').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a foreign repo sitting at the clone’s path is refused, not written into', async () => {
+  test('a foreign repo sitting at the clone’s path is refused, not written into', async () => {
     // The engine never adopts what it finds at ~/.workkit/tower. A `.git`
     // directory is not the test: being the home repo's clone is.
     const t = makeTree({ tower: 'foreign' });
     const { code, err } = runScript(t.outside, ['note', 'not yours'], t);
-    assertEq(code, 1, 'the caller learns the thought was not filed');
-    assert(/not the home repo/.test(err), `it says whose folder that is not, got: ${err}`);
-    assertEq(t.ghCalls().length, 0, 'and nothing was filed against somebody else’s repo');
+    expect(code, 'the caller learns the thought was not filed').toBe(1);
+    expect(/not the home repo/.test(err), `it says whose folder that is not, got: ${err}`).toBeTruthy();
+    expect(t.ghCalls().length, 'and nothing was filed against somebody else’s repo').toBe(0);
     cleanup(t.dir);
   });
 
-  await test('a settings file with no enabled key is not a participating repo', async () => {
+  test('a settings file with no enabled key is not a participating repo', async () => {
     // Only "enabled": true is the repo's yes; the note goes to the home repo.
     const t = makeTree({ settings: '{ "version": 1 }\n' });
-    assertEq(runScript(t.deep, ['note', 'unanswered repo'], t).code, 0, 'exit 0');
-    assert(t.ghCalls()[0].includes('unanswered repo'), 'filed on the home repo');
-    assert(!fs.existsSync(t.repoCapture), 'and never into the repo that gave no answer');
+    expect(runScript(t.deep, ['note', 'unanswered repo'], t).code, 'exit 0').toBe(0);
+    expect(t.ghCalls()[0].includes('unanswered repo'), 'filed on the home repo').toBeTruthy();
+    expect(!fs.existsSync(t.repoCapture), 'and never into the repo that gave no answer').toBeTruthy();
     cleanup(t.dir);
   });
+});
 
-  group('wk.sh: what it writes');
-
-  await test('a missing capture file is created from the engine template', async () => {
+describe('wk.sh: what it writes', () => {
+  test('a missing capture file is created from the engine template', async () => {
     const t = makeTree();
     runScript(t.repo, ['note', 'first ever'], t);
     const body = read(t.repoCapture);
-    assert(body.startsWith(TEMPLATE), 'the header is the template, byte for byte');
-    assert(body.endsWith('- first ever\n'), 'with the bullet appended after it');
+    expect(body.startsWith(TEMPLATE), 'the header is the template, byte for byte').toBeTruthy();
+    expect(body.endsWith('- first ever\n'), 'with the bullet appended after it').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('existing content is preserved and the note appends', async () => {
+  test('existing content is preserved and the note appends', async () => {
     const t = makeTree();
     fs.mkdirSync(path.join(t.repo, W), { recursive: true });
     fs.writeFileSync(t.repoCapture, '# capture\n\n- an older note\n');
     runScript(t.repo, ['note', 'a newer note'], t);
-    assertEq(read(t.repoCapture), '# capture\n\n- an older note\n- a newer note\n', 'appended, nothing lost');
+    expect(read(t.repoCapture), 'appended, nothing lost').toBe('# capture\n\n- an older note\n- a newer note\n');
     cleanup(t.dir);
   });
 
-  await test('a file with no trailing newline gets one before the bullet', async () => {
+  test('a file with no trailing newline gets one before the bullet', async () => {
     const t = makeTree();
     fs.mkdirSync(path.join(t.repo, W), { recursive: true });
     fs.writeFileSync(t.repoCapture, '- an unterminated note');
     runScript(t.repo, ['note', 'the next one'], t);
-    assertEq(read(t.repoCapture), '- an unterminated note\n- the next one\n', 'the entries stay separate lines');
+    expect(read(t.repoCapture), 'the entries stay separate lines').toBe('- an unterminated note\n- the next one\n');
     cleanup(t.dir);
   });
 
-  await test('multiple arguments join with spaces', async () => {
+  test('multiple arguments join with spaces', async () => {
     // The unquoted call: the shell split it, and the script reassembles it.
     const t = makeTree();
     runScript(t.repo, ['note', 'fix', 'the', 'tower', 'poller'], t);
-    assert(read(t.repoCapture).endsWith('- fix the tower poller\n'), 'one bullet, one sentence');
+    expect(read(t.repoCapture).endsWith('- fix the tower poller\n'), 'one bullet, one sentence').toBeTruthy();
     cleanup(t.dir);
   });
+});
 
-  group('wk.sh: usage');
-
-  await test('an empty note exits 1 with usage and writes nothing', async () => {
+describe('wk.sh: usage', () => {
+  test('an empty note exits 1 with usage and writes nothing', async () => {
     const t = makeTree();
     const { code, err } = runScript(t.repo, ['note'], t);
-    assertEq(code, 1, 'exit 1');
-    assert(err.includes('usage: wk.sh note'), `usage on stderr, got: ${err}`);
-    assert(!fs.existsSync(t.repoCapture), 'no capture file created');
+    expect(code, 'exit 1').toBe(1);
+    expect(err.includes('usage: wk.sh note'), `usage on stderr, got: ${err}`).toBeTruthy();
+    expect(!fs.existsSync(t.repoCapture), 'no capture file created').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('a whitespace-only note is an empty note', async () => {
+  test('a whitespace-only note is an empty note', async () => {
     const t = makeTree();
     const { code } = runScript(t.repo, ['note', '   '], t);
-    assertEq(code, 1, 'exit 1');
-    assert(!fs.existsSync(t.repoCapture), 'no capture file created');
+    expect(code, 'exit 1').toBe(1);
+    expect(!fs.existsSync(t.repoCapture), 'no capture file created').toBeTruthy();
     cleanup(t.dir);
   });
 
-  await test('no arguments and an unknown subcommand both print usage and exit 1', async () => {
+  test('no arguments and an unknown subcommand both print usage and exit 1', async () => {
     const t = makeTree();
     for (const args of [[], ['dance']]) {
       const { code, out, err } = runScript(t.repo, args, t);
-      assertEq(code, 1, `exit 1 for [${args}]`);
-      assert(err.includes('usage: wk.sh'), `usage on stderr for [${args}], got: ${err}`);
-      assertEq(out, '', 'and nothing on stdout');
+      expect(code, `exit 1 for [${args}]`).toBe(1);
+      expect(err.includes('usage: wk.sh'), `usage on stderr for [${args}], got: ${err}`).toBeTruthy();
+      expect(out, 'and nothing on stdout').toBe('');
     }
     cleanup(t.dir);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

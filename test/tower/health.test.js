@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp } = require('../lib/harness');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 
 const { repoHealth, unreleasedCount } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'health.js'));
 
@@ -61,101 +61,93 @@ const CHANGELOG = [
   '',
 ].join('\n');
 
-const cases = async () => {
-  group('tower/health: git counts');
-
-  await test('unpushed counts commits ahead of the upstream', () => {
+describe('tower/health: git counts', () => {
+  test('unpushed counts commits ahead of the upstream', () => {
     const tmp = mkTmp('tower-health-');
     const dir = mkTrackedRepo(tmp);
-    assertEq(repoHealth(dir).unpushed, 0, 'level with origin');
+    expect(repoHealth(dir).unpushed, 'level with origin').toBe(0);
     commit(dir, 'a.txt', 'a');
     commit(dir, 'b.txt', 'b');
-    assertEq(repoHealth(dir).unpushed, 2, 'two ahead');
+    expect(repoHealth(dir).unpushed, 'two ahead').toBe(2);
     cleanup(tmp);
   });
 
-  await test('no upstream reads null, which is NOT the same as zero', () => {
+  test('no upstream reads null, which is NOT the same as zero', () => {
     const tmp = mkTmp('tower-health-');
     const health = repoHealth(mkRepo(tmp));
-    assertEq(health.unpushed, null, 'never pushed anywhere');
-    assertEq(health.error, null, 'a local-only repo is healthy, not broken');
+    expect(health.unpushed, 'never pushed anywhere').toBe(null);
+    expect(health.error, 'a local-only repo is healthy, not broken').toBe(null);
     cleanup(tmp);
   });
 
-  await test('uncommitted counts working-tree entries', () => {
+  test('uncommitted counts working-tree entries', () => {
     const tmp = mkTmp('tower-health-');
     const dir = mkRepo(tmp);
-    assertEq(repoHealth(dir).uncommitted, 0, 'clean');
+    expect(repoHealth(dir).uncommitted, 'clean').toBe(0);
     fs.writeFileSync(path.join(dir, 'new.txt'), 'x');
     fs.writeFileSync(path.join(dir, 'README.md'), '# changed\n');
-    assertEq(repoHealth(dir).uncommitted, 2, 'one untracked, one modified');
+    expect(repoHealth(dir).uncommitted, 'one untracked, one modified').toBe(2);
     cleanup(tmp);
   });
 
-  await test('lastTag is the most recent tag, or null when there is none', () => {
+  test('lastTag is the most recent tag, or null when there is none', () => {
     const tmp = mkTmp('tower-health-');
     const dir = mkRepo(tmp);
-    assertEq(repoHealth(dir).lastTag, null, 'never released');
+    expect(repoHealth(dir).lastTag, 'never released').toBe(null);
     git(dir, 'tag', 'v1.0.0');
     commit(dir, 'c.txt', 'c');
     git(dir, 'tag', 'v1.1.0');
-    assertEq(repoHealth(dir).lastTag, 'v1.1.0', 'the latest');
+    expect(repoHealth(dir).lastTag, 'the latest').toBe('v1.1.0');
     cleanup(tmp);
   });
+});
 
-  group('tower/health: the CHANGELOG');
-
-  await test('only bullets under [Unreleased] are counted', () => {
+describe('tower/health: the CHANGELOG', () => {
+  test('only bullets under [Unreleased] are counted', () => {
     const tmp = mkTmp('tower-health-');
     const dir = mkRepo(tmp);
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG);
-    assertEq(repoHealth(dir).unreleasedEntries, 2, 'the preamble and the released section are excluded');
+    expect(repoHealth(dir).unreleasedEntries, 'the preamble and the released section are excluded').toBe(2);
     cleanup(tmp);
   });
 
-  await test('no CHANGELOG, and an empty [Unreleased], both count zero', () => {
+  test('no CHANGELOG, and an empty [Unreleased], both count zero', () => {
     const tmp = mkTmp('tower-health-');
     const dir = mkRepo(tmp);
-    assertEq(repoHealth(dir).unreleasedEntries, 0, 'no file');
+    expect(repoHealth(dir).unreleasedEntries, 'no file').toBe(0);
     fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), '# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n- [#1](../../issues/1) - Shipped.\n');
-    assertEq(repoHealth(dir).unreleasedEntries, 0, 'just released');
+    expect(repoHealth(dir).unreleasedEntries, 'just released').toBe(0);
     cleanup(tmp);
   });
 
-  await test('unreleasedCount reads a file directly, and a missing one is zero', () => {
+  test('unreleasedCount reads a file directly, and a missing one is zero', () => {
     const tmp = mkTmp('tower-health-');
     const file = path.join(tmp, 'CHANGELOG.md');
     fs.writeFileSync(file, CHANGELOG);
-    assertEq(unreleasedCount(file), 2, 'two entries');
-    assertEq(unreleasedCount(path.join(tmp, 'absent.md')), 0, 'no file');
+    expect(unreleasedCount(file), 'two entries').toBe(2);
+    expect(unreleasedCount(path.join(tmp, 'absent.md')), 'no file').toBe(0);
     cleanup(tmp);
   });
+});
 
-  group('tower/health: nothing throws');
-
-  await test('a path that is not a git repository reports an error and nulls', () => {
+describe('tower/health: nothing throws', () => {
+  test('a path that is not a git repository reports an error and nulls', () => {
     const tmp = mkTmp('tower-health-');
     const health = repoHealth(path.join(tmp, 'not-a-repo'));
-    assert(/not a git repository/.test(health.error), 'the error names the problem');
-    assertEq(health.unpushed, null, 'null');
-    assertEq(health.uncommitted, null, 'null');
-    assertEq(health.lastTag, null, 'null');
-    assertEq(health.unreleasedEntries, 0, 'zero');
+    expect(/not a git repository/.test(health.error), 'the error names the problem').toBeTruthy();
+    expect(health.unpushed, 'null').toBe(null);
+    expect(health.uncommitted, 'null').toBe(null);
+    expect(health.lastTag, 'null').toBe(null);
+    expect(health.unreleasedEntries, 'zero').toBe(0);
     cleanup(tmp);
   });
 
-  await test('every field is present on every path, so a tile always renders', () => {
+  test('every field is present on every path, so a tile always renders', () => {
     const tmp = mkTmp('tower-health-');
     const keys = (h) => Object.keys(h).sort().join(',');
     const expected = 'error,lastTag,uncommitted,unpushed,unreleasedEntries';
-    assertEq(keys(repoHealth(mkRepo(tmp))), expected, 'healthy repo');
-    assertEq(keys(repoHealth(path.join(tmp, 'nope'))), expected, 'broken path');
+    expect(keys(repoHealth(mkRepo(tmp))), 'healthy repo').toBe(expected);
+    expect(keys(repoHealth(path.join(tmp, 'nope'))), 'broken path').toBe(expected);
     cleanup(tmp);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

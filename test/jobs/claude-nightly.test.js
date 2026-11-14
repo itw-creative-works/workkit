@@ -7,13 +7,13 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  group, test, assert, assertEq, summary, selfRun, skipSuite, mkTmp, SPAWN_DEADLINE, until,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE, until,
 } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath,
 } = require('../lib/platform');
-const { noNodeTest, barePathTest, NO_NODE_LINE } = require('../lib/job-path');
+const { skipOnJobPathNode, skipOnUsrLocalBin, NO_NODE_LINE } = require('../lib/job-path');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
 
@@ -172,252 +172,245 @@ const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT
   env: world.env,
 });
 
-const cases = async () => {
-  if (process.platform !== 'darwin') skipSuite('the runner is a macOS launchd job (~/Library paths)');
-
-  group('jobs/claude-nightly: no home repo is a named skip');
-
-  await test('no home repo configured: it skips and says so', async () => {
-    const world = mkWorld();
-    const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(/summaries: no home repo configured; skipped/.test(world.log()), `the log names the reason: ${world.log()}`);
-    assertEq(world.calls().length, 0, `nothing was sent: ${fmtCalls(world.calls())}`);
-    // The notification would be fired detached, so its absence needs a moment of
-    // waiting to mean anything: an assertion made immediately would pass even on a
-    // job that did notify.
-    assert(!(await until(() => world.notifs().length > 0, 500)), 'and nothing interrupted anyone');
-    cleanup(world.root);
+describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the runner is a macOS launchd job (~/Library paths)' }, () => {
+  describe('jobs/claude-nightly: no home repo is a named skip', () => {
+    test('no home repo configured: it skips and says so', async () => {
+      const world = mkWorld();
+      const res = runJob(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      expect(/summaries: no home repo configured; skipped/.test(world.log()), `the log names the reason: ${world.log()}`).toBeTruthy();
+      expect(world.calls().length, `nothing was sent: ${fmtCalls(world.calls())}`).toBe(0);
+      // The notification would be fired detached, so its absence needs a moment of
+      // waiting to mean anything: an assertion made immediately would pass even on a
+      // job that did notify.
+      expect(!(await until(() => world.notifs().length > 0, 500)), 'and nothing interrupted anyone').toBeTruthy();
+      cleanup(world.root);
+    });
   });
 
-  group('jobs/claude-nightly: the summary is published');
+  describe('jobs/claude-nightly: the summary is published', () => {
+    test('a home repo IS configured: the summary is written and posted', () => {
+      const world = mkWorld({ home: 'owner/private-home' });
+      const res = runJob(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      const logText = world.log();
+      expect(/posted the daily summary/.test(logText), `the log says it published: ${logText}`).toBeTruthy();
+      expect(/discussions\/7/.test(logText), 'and names the discussion it created').toBeTruthy();
+      expect(world.calls().length, `Claude wrote it once: ${fmtCalls(world.calls())}`).toBe(1);
+      const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
+      expect(created.length, `one createDiscussion mutation: ${fmtCalls(world.ghCalls())}`).toBe(1);
+      cleanup(world.root);
+    });
 
-  await test('a home repo IS configured: the summary is written and posted', () => {
-    const world = mkWorld({ home: 'owner/private-home' });
-    const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    const logText = world.log();
-    assert(/posted the daily summary/.test(logText), `the log says it published: ${logText}`);
-    assert(/discussions\/7/.test(logText), 'and names the discussion it created');
-    assertEq(world.calls().length, 1, `Claude wrote it once: ${fmtCalls(world.calls())}`);
-    const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
-    assertEq(created.length, 1, `one createDiscussion mutation: ${fmtCalls(world.ghCalls())}`);
-    cleanup(world.root);
+    test('the repo id and the category ids are cached in the machine\'s disposable file', () => {
+      // Ids are GitHub's and rebuildable, so they live in `.cache.json` and never
+      // in the hand-edited settings.json beside it.
+      const world = mkWorld({ home: 'owner/private-home' });
+      runJob(world);
+      expect(!('homeCache' in world.settings()), 'the hand-edited file carries no cache').toBeTruthy();
+      const cache = world.cache().homeCache['owner/private-home'];
+      expect(cache.repositoryId, 'the repo node id is cached').toBe('R_kdt');
+      expect(cache.categories.Daily, 'and every category by name').toBe('DIC_0');
+
+      // A second run reads the cache instead of asking again.
+      const before = world.ghCalls().filter((c) => c.join(' ').includes('discussionCategories')).length;
+      runJob(world);
+      const after = world.ghCalls().filter((c) => c.join(' ').includes('discussionCategories')).length;
+      expect(after, `the cached ids are not re-fetched: ${fmtCalls(world.ghCalls())}`).toBe(before);
+      cleanup(world.root);
+    });
+
+    test('a repo with no Daily category publishes in the default one, and says so', () => {
+      // Categories cannot be created over the API (no such mutation exists) so
+      // a fallback is the only honest behavior, and it is never silent.
+      const world = mkWorld({ home: 'owner/private-home', categories: ['General'] });
+      const res = runJob(world);
+      expect(res.status, 'exit 0').toBe(0);
+      const logText = world.log();
+      expect(/posted the daily summary in General/.test(logText), `it names the category it used: ${logText}`).toBeTruthy();
+      expect(/no API that creates one/.test(logText), 'and why it was not the Daily one').toBeTruthy();
+      cleanup(world.root);
+    });
+
+    test('an API that refuses is logged, and the step still exits 0', () => {
+      const world = mkWorld({ home: 'owner/private-home', ghFails: true });
+      const res = runJob(world);
+      expect(res.status, 'a summary that cannot be posted never fails the morning').toBe(0);
+      const logText = world.log();
+      expect(/skipped/.test(logText), `the log says what happened: ${logText}`).toBeTruthy();
+      expect(/nothing was written to disk/.test(logText), 'and that no file was left behind instead').toBeTruthy();
+      expect(!/posted the daily summary/.test(logText), 'and never claims to have published').toBeTruthy();
+      cleanup(world.root);
+    });
+
+    test('a Claude that answers with nothing posts nothing', () => {
+      const world = mkWorld({ home: 'owner/private-home', summary: '' });
+      const res = runJob(world);
+      expect(res.status, 'exit 0').toBe(0);
+      expect(/was not written/.test(world.log()), `the log says the summary never existed: ${world.log()}`).toBeTruthy();
+      const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
+      expect(created.length, `and an empty summary is never posted: ${fmtCalls(world.ghCalls())}`).toBe(0);
+      cleanup(world.root);
+    });
+
+    test('no settings file at all reads as no home repo, not as a failure', () => {
+      const world = mkWorld({ settings: null });
+      const res = runJob(world);
+      expect(res.status, 'a machine that has never healed anything is not broken').toBe(0);
+      expect(/no home repo configured/.test(world.log()), `the log says which reason: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+    });
+
+    test('the log block is timestamped, and --now stamps it manual', () => {
+      const world = mkWorld();
+      runJob(world);
+      expect(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/.test(world.log()), `one timestamped block: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+
+      const manual = mkWorld();
+      runJob(manual, ['--now']);
+      expect(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ---/.test(manual.log()),
+        `stamped manual: ${manual.log().slice(0, 120)}`).toBeTruthy();
+      expect(manual.calls().length, 'and the manual trigger sends nothing either').toBe(0);
+      cleanup(manual.root);
+    });
   });
 
-  await test('the repo id and the category ids are cached in the machine\'s disposable file', () => {
-    // Ids are GitHub's and rebuildable, so they live in `.cache.json` and never
-    // in the hand-edited settings.json beside it.
-    const world = mkWorld({ home: 'owner/private-home' });
-    runJob(world);
-    assert(!('homeCache' in world.settings()), 'the hand-edited file carries no cache');
-    const cache = world.cache().homeCache['owner/private-home'];
-    assertEq(cache.repositoryId, 'R_kdt', 'the repo node id is cached');
-    assertEq(cache.categories.Daily, 'DIC_0', 'and every category by name');
+  describe('jobs/claude-nightly: the send', () => {
 
-    // A second run reads the cache instead of asking again.
-    const before = world.ghCalls().filter((c) => c.join(' ').includes('discussionCategories')).length;
-    runJob(world);
-    const after = world.ghCalls().filter((c) => c.join(' ').includes('discussionCategories')).length;
-    assertEq(after, before, `the cached ids are not re-fetched: ${fmtCalls(world.ghCalls())}`);
-    cleanup(world.root);
+    test('the send carries the read tools and the transcripts root it indexed', () => {
+      // The reflection reads the transcripts itself. Without the grant it is
+      // reasoning about an index of file names it cannot open.
+      const world = mkWorld({ home: 'owner/private-home' });
+      runJob(world);
+      const argv = world.calls()[0];
+      expect(argv, `the send happened: ${fmtCalls(world.calls())}`).toBeTruthy();
+      const tools = argv.indexOf('--tools');
+      expect(tools !== -1 && argv[tools + 1] === 'Read,Grep,Glob', `the three read tools: ${JSON.stringify(argv)}`).toBeTruthy();
+      const dir = argv.indexOf('--add-dir');
+      expect(argv[dir + 1],
+        'and the SAME root the payload indexed: the grant and the index cannot disagree').toBe(path.join(world.root, 'projects'));
+      cleanup(world.root);
+    });
+
+    test('the send runs from an empty scratch directory, never from /', () => {
+      // Under launchd the cwd is / and the job is its own TCC identity: a startup
+      // scan from there trips the macOS privacy prompts.
+      const world = mkWorld({ home: 'owner/private-home' });
+      runJob(world);
+      const cwd = world.cwds()[0];
+      expect(cwd && cwd !== '/' && cwd !== world.home, `it worked from a scratch dir, got: ${cwd}`).toBeTruthy();
+      expect(fs.existsSync(cwd), 'which went away with the run').toBe(false);
+      cleanup(world.root);
+    });
+
+    test('what the send wrote to stderr reaches the log, never the published body', () => {
+      const world = mkWorld({ home: 'owner/private-home', claudeStderr: 'warning: a deprecated flag\n' });
+      runJob(world);
+      const body = world.postedBody();
+      expect(/The suite is green/.test(body), `the summary is what was published: ${body}`).toBeTruthy();
+      expect(!/deprecated flag/.test(body), `and the noise is not part of it: ${body}`).toBeTruthy();
+      expect(/deprecated flag/.test(world.log()), `it is in the log instead: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+    });
   });
 
-  await test('a repo with no Daily category publishes in the default one, and says so', () => {
-    // Categories cannot be created over the API (no such mutation exists) so
-    // a fallback is the only honest behavior, and it is never silent.
-    const world = mkWorld({ home: 'owner/private-home', categories: ['General'] });
-    const res = runJob(world);
-    assertEq(res.status, 0, 'exit 0');
-    const logText = world.log();
-    assert(/posted the daily summary in General/.test(logText), `it names the category it used: ${logText}`);
-    assert(/no API that creates one/.test(logText), 'and why it was not the Daily one');
-    cleanup(world.root);
+  describe('jobs/claude-nightly: node and the PATH', () => {
+    test('the send runs on a PATH that carries /usr/local/bin', { skip: skipOnUsrLocalBin() }, () => {
+      // Intel Homebrew and the nodejs.org installer both put node there.
+      const world = mkWorld({ home: 'owner/private-home' });
+      runJob(world);
+      const seen = world.sendPaths();
+      expect(seen.length, `the send happened once: ${fmtCalls(world.calls())}`).toBe(1);
+      expect(seen[0].split(':').includes('/usr/local/bin'), `the job's own PATH adds it: ${seen[0]}`).toBeTruthy();
+      cleanup(world.root);
+    });
+
+    test('a PATH without node: the named line, nothing sent or posted, exit 0', { skip: skipOnJobPathNode() }, () => {
+      const world = mkWorld({ home: 'owner/private-home' });
+      world.env.PATH = joinPath(path.join(world.home, '.local', 'bin'), SYSTEM_PATH);
+      const res = runJob(world);
+      expect(res.status, `a missing node never fails the morning: ${res.stderr}`).toBe(0);
+      const lines = [...world.log().matchAll(NO_NODE_LINE)];
+      expect(lines.length, `one named line in the log: ${world.log()}`).toBe(1);
+      expect(lines[0][1].split(':').includes('/usr/bin'), `naming the PATH it searched: ${lines[0][1]}`).toBeTruthy();
+      expect(!/exit 127/.test(world.log()), `never the bare exit status of a missing command: ${world.log()}`).toBeTruthy();
+      expect(world.calls().length, `nothing was sent: ${fmtCalls(world.calls())}`).toBe(0);
+      const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
+      expect(created.length, `and nothing was posted: ${fmtCalls(world.ghCalls())}`).toBe(0);
+      cleanup(world.root);
+    });
   });
 
-  await test('an API that refuses is logged, and the step still exits 0', () => {
-    const world = mkWorld({ home: 'owner/private-home', ghFails: true });
-    const res = runJob(world);
-    assertEq(res.status, 0, 'a summary that cannot be posted never fails the morning');
-    const logText = world.log();
-    assert(/skipped/.test(logText), `the log says what happened: ${logText}`);
-    assert(/nothing was written to disk/.test(logText), 'and that no file was left behind instead');
-    assert(!/posted the daily summary/.test(logText), 'and never claims to have published');
-    cleanup(world.root);
+  describe('jobs/claude-nightly: the guards', () => {
+    test('a day already published is not published twice', () => {
+      const world = mkWorld({ home: 'owner/private-home', posted: allPostedToday() });
+      const res = runJob(world);
+      expect(res.status, 'exit 0').toBe(0);
+      expect(/already carries the daily summary/.test(world.log()), `it says so: ${world.log()}`).toBeTruthy();
+      expect(world.calls().length, 'nothing was composed').toBe(0);
+      const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
+      expect(created.length, `and nothing was posted: ${fmtCalls(world.ghCalls())}`).toBe(0);
+      cleanup(world.root);
+    });
+
+    test('--now posts anyway: a manual run is an explicit ask', () => {
+      const world = mkWorld({ home: 'owner/private-home', posted: [`daily: ${today()}`] });
+      runJob(world, ['--now']);
+      expect(/posted the daily summary/.test(world.log()), `it published: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+    });
+
+    test('a quiet day is logged and nothing is sent or posted', () => {
+      // No transcripts and no commits in the window: a summary composed from that
+      // would be invention, and publishing it would put invention in the archive
+      // the rollups read.
+      const world = mkWorld({ home: 'owner/private-home', quiet: true });
+      const res = runJob(world);
+      expect(res.status, 'exit 0').toBe(0);
+      expect(/a quiet day/.test(world.log()), `it names the reason: ${world.log()}`).toBeTruthy();
+      expect(world.calls().length, `nothing was sent: ${fmtCalls(world.calls())}`).toBe(0);
+      const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
+      expect(created.length, `and nothing was posted: ${fmtCalls(world.ghCalls())}`).toBe(0);
+      cleanup(world.root);
+    });
+
+    test('--now sends on a quiet day too', () => {
+      const world = mkWorld({ home: 'owner/private-home', quiet: true });
+      runJob(world, ['--now']);
+      expect(world.calls().length, `the manual trigger overrides: ${fmtCalls(world.calls())}`).toBe(1);
+      expect(/posted the daily summary/.test(world.log()), `and it published: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+    });
   });
 
-  await test('a Claude that answers with nothing posts nothing', () => {
-    const world = mkWorld({ home: 'owner/private-home', summary: '' });
-    const res = runJob(world);
-    assertEq(res.status, 0, 'exit 0');
-    assert(/was not written/.test(world.log()), `the log says the summary never existed: ${world.log()}`);
-    const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
-    assertEq(created.length, 0, `and an empty summary is never posted: ${fmtCalls(world.ghCalls())}`);
-    cleanup(world.root);
+  describe('jobs/claude-nightly: nothing is written', () => {
+    test('the run writes no file anywhere but its own log', () => {
+      const world = mkWorld({ home: 'owner/private-home' });
+      runJob(world);
+      // The whole fixture home, minus the one log the step is allowed to append.
+      const found = [];
+      const walk = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) walk(full);
+          else found.push(full);
+        }
+      };
+      walk(world.home);
+      const logFile = path.join(world.home, 'Library', 'Logs', 'claude-nightly.log');
+      // The shims the fixture itself put in ~/.local/bin are not the run's doing.
+      const written = found.filter((f) => !f.startsWith(path.join(world.home, '.local', 'bin')));
+      expect(written.join(','), `the log and nothing else, got: ${written.join(', ')}`).toBe(logFile);
+      cleanup(world.root);
+    });
+
+    test('a home with no Library/Logs gets one: the log line still lands', () => {
+      const world = mkWorld({ logsDir: false });
+      const res = runJob(world);
+      expect(res.status, `the append cannot fail the step: ${res.stderr}`).toBe(0);
+      expect(/no home repo configured/.test(world.log()), `the log says which reason: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+    });
   });
-
-  await test('no settings file at all reads as no home repo, not as a failure', () => {
-    const world = mkWorld({ settings: null });
-    const res = runJob(world);
-    assertEq(res.status, 0, 'a machine that has never healed anything is not broken');
-    assert(/no home repo configured/.test(world.log()), `the log says which reason: ${world.log()}`);
-    cleanup(world.root);
-  });
-
-  await test('the log block is timestamped, and --now stamps it manual', () => {
-    const world = mkWorld();
-    runJob(world);
-    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ---/.test(world.log()), `one timestamped block: ${world.log()}`);
-    cleanup(world.root);
-
-    const manual = mkWorld();
-    runJob(manual, ['--now']);
-    assert(/--- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(manual\) ---/.test(manual.log()),
-      `stamped manual: ${manual.log().slice(0, 120)}`);
-    assertEq(manual.calls().length, 0, 'and the manual trigger sends nothing either');
-    cleanup(manual.root);
-  });
-
-  group('jobs/claude-nightly: the send');
-
-  await test('the send carries the read tools and the transcripts root it indexed', () => {
-    // The reflection reads the transcripts itself. Without the grant it is
-    // reasoning about an index of file names it cannot open.
-    const world = mkWorld({ home: 'owner/private-home' });
-    runJob(world);
-    const argv = world.calls()[0];
-    assert(argv, `the send happened: ${fmtCalls(world.calls())}`);
-    const tools = argv.indexOf('--tools');
-    assert(tools !== -1 && argv[tools + 1] === 'Read,Grep,Glob', `the three read tools: ${JSON.stringify(argv)}`);
-    const dir = argv.indexOf('--add-dir');
-    assertEq(argv[dir + 1], path.join(world.root, 'projects'),
-      'and the SAME root the payload indexed: the grant and the index cannot disagree');
-    cleanup(world.root);
-  });
-
-  await test('the send runs from an empty scratch directory, never from /', () => {
-    // Under launchd the cwd is / and the job is its own TCC identity: a startup
-    // scan from there trips the macOS privacy prompts.
-    const world = mkWorld({ home: 'owner/private-home' });
-    runJob(world);
-    const cwd = world.cwds()[0];
-    assert(cwd && cwd !== '/' && cwd !== world.home, `it worked from a scratch dir, got: ${cwd}`);
-    assertEq(fs.existsSync(cwd), false, 'which went away with the run');
-    cleanup(world.root);
-  });
-
-  await test('what the send wrote to stderr reaches the log, never the published body', () => {
-    const world = mkWorld({ home: 'owner/private-home', claudeStderr: 'warning: a deprecated flag\n' });
-    runJob(world);
-    const body = world.postedBody();
-    assert(/The suite is green/.test(body), `the summary is what was published: ${body}`);
-    assert(!/deprecated flag/.test(body), `and the noise is not part of it: ${body}`);
-    assert(/deprecated flag/.test(world.log()), `it is in the log instead: ${world.log()}`);
-    cleanup(world.root);
-  });
-
-  group('jobs/claude-nightly: node and the PATH');
-
-  await barePathTest('the send runs on a PATH that carries /usr/local/bin', () => {
-    // Intel Homebrew and the nodejs.org installer both put node there.
-    const world = mkWorld({ home: 'owner/private-home' });
-    runJob(world);
-    const seen = world.sendPaths();
-    assertEq(seen.length, 1, `the send happened once: ${fmtCalls(world.calls())}`);
-    assert(seen[0].split(':').includes('/usr/local/bin'), `the job's own PATH adds it: ${seen[0]}`);
-    cleanup(world.root);
-  });
-
-  await noNodeTest('a PATH without node: the named line, nothing sent or posted, exit 0', () => {
-    const world = mkWorld({ home: 'owner/private-home' });
-    world.env.PATH = joinPath(path.join(world.home, '.local', 'bin'), SYSTEM_PATH);
-    const res = runJob(world);
-    assertEq(res.status, 0, `a missing node never fails the morning: ${res.stderr}`);
-    const lines = [...world.log().matchAll(NO_NODE_LINE)];
-    assertEq(lines.length, 1, `one named line in the log: ${world.log()}`);
-    assert(lines[0][1].split(':').includes('/usr/bin'), `naming the PATH it searched: ${lines[0][1]}`);
-    assert(!/exit 127/.test(world.log()), `never the bare exit status of a missing command: ${world.log()}`);
-    assertEq(world.calls().length, 0, `nothing was sent: ${fmtCalls(world.calls())}`);
-    const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
-    assertEq(created.length, 0, `and nothing was posted: ${fmtCalls(world.ghCalls())}`);
-    cleanup(world.root);
-  });
-
-  group('jobs/claude-nightly: the guards');
-
-  await test('a day already published is not published twice', () => {
-    const world = mkWorld({ home: 'owner/private-home', posted: allPostedToday() });
-    const res = runJob(world);
-    assertEq(res.status, 0, 'exit 0');
-    assert(/already carries the daily summary/.test(world.log()), `it says so: ${world.log()}`);
-    assertEq(world.calls().length, 0, 'nothing was composed');
-    const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
-    assertEq(created.length, 0, `and nothing was posted: ${fmtCalls(world.ghCalls())}`);
-    cleanup(world.root);
-  });
-
-  await test('--now posts anyway: a manual run is an explicit ask', () => {
-    const world = mkWorld({ home: 'owner/private-home', posted: [`daily: ${today()}`] });
-    runJob(world, ['--now']);
-    assert(/posted the daily summary/.test(world.log()), `it published: ${world.log()}`);
-    cleanup(world.root);
-  });
-
-  await test('a quiet day is logged and nothing is sent or posted', () => {
-    // No transcripts and no commits in the window: a summary composed from that
-    // would be invention, and publishing it would put invention in the archive
-    // the rollups read.
-    const world = mkWorld({ home: 'owner/private-home', quiet: true });
-    const res = runJob(world);
-    assertEq(res.status, 0, 'exit 0');
-    assert(/a quiet day/.test(world.log()), `it names the reason: ${world.log()}`);
-    assertEq(world.calls().length, 0, `nothing was sent: ${fmtCalls(world.calls())}`);
-    const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
-    assertEq(created.length, 0, `and nothing was posted: ${fmtCalls(world.ghCalls())}`);
-    cleanup(world.root);
-  });
-
-  await test('--now sends on a quiet day too', () => {
-    const world = mkWorld({ home: 'owner/private-home', quiet: true });
-    runJob(world, ['--now']);
-    assertEq(world.calls().length, 1, `the manual trigger overrides: ${fmtCalls(world.calls())}`);
-    assert(/posted the daily summary/.test(world.log()), `and it published: ${world.log()}`);
-    cleanup(world.root);
-  });
-
-  group('jobs/claude-nightly: nothing is written');
-
-  await test('the run writes no file anywhere but its own log', () => {
-    const world = mkWorld({ home: 'owner/private-home' });
-    runJob(world);
-    // The whole fixture home, minus the one log the step is allowed to append.
-    const found = [];
-    const walk = (dir) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else found.push(full);
-      }
-    };
-    walk(world.home);
-    const logFile = path.join(world.home, 'Library', 'Logs', 'claude-nightly.log');
-    // The shims the fixture itself put in ~/.local/bin are not the run's doing.
-    const written = found.filter((f) => !f.startsWith(path.join(world.home, '.local', 'bin')));
-    assertEq(written.join(','), logFile, `the log and nothing else, got: ${written.join(', ')}`);
-    cleanup(world.root);
-  });
-
-  await test('a home with no Library/Logs gets one: the log line still lands', () => {
-    const world = mkWorld({ logsDir: false });
-    const res = runJob(world);
-    assertEq(res.status, 0, `the append cannot fail the step: ${res.stderr}`);
-    assert(/no home repo configured/.test(world.log()), `the log says which reason: ${world.log()}`);
-    cleanup(world.root);
-  });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

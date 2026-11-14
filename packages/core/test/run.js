@@ -1,28 +1,27 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// The kit's test runner, over the repo at the cwd: every
-// `test/**/*.test.js` in worker processes, a parallel wave then the serial tail
-// the repo's `test/lib/serial.js` names, then the mod half (`claude plugin test`
-// over `test/mods/*.test.ts`), totalled; non-zero on any failure. Suite paths
-// after `--` narrow the run. A repo reaches it through `workkit test`, the
-// package's bin. A repo with no `test/` is read from `tests/`.
+// The kit's test runner, over the repo at the cwd: every suite findSuites
+// names, each in a worker process on Node's own runner, a parallel wave then
+// the serial tail the repo's `test/lib/serial.js` names, then the mod half
+// (`claude plugin test` over `test/mods/*.test.ts`), totalled; non-zero on any
+// failure. Suite paths after `--` narrow the run. A repo reaches it through
+// `workkit test`, the package's bin.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { constants } from 'node:os';
-import { stripVTControlCharacters } from 'node:util';
 import { fork, spawnSync } from 'node:child_process';
-import { suiteDir, findSuites, findModSuites, POOL } from './lib/suites.js';
-import { isNodeTestSuite, runNodeTest } from './lib/node-test.js';
+import { findSuites, findModSuites, suiteName, modDir, POOL } from './lib/suites.js';
+import { fromStart, unmatchedLine, writtenPaths, namedSuites } from './lib/suite-path.js';
+import { runNodeTest, endedMessage, howEnded } from './lib/node-test.js';
 import { PIPE_GRACE_MS, SUITE_DEADLINE } from './lib/process.js';
 import { endTree, endGroup, groupLives } from './lib/spawn.js';
 import { indentRest, indentWriter } from './lib/log.js';
 
-// Suites and a repo's serial list are CommonJS, loaded by absolute path.
+// A repo's serial list is CommonJS, loaded by absolute path.
 const require = createRequire(import.meta.url);
 
-const TAIL_LINES = 3;
 const SLOWEST = 5;
 // The most seconds TEST_DEADLINE may name: node's timers hold 2^31 - 1 ms at most.
 const MAX_DEADLINE_SECONDS = 2147483;
@@ -39,9 +38,11 @@ let ending = [];
 // dropped, every other argument a suite path.
 const parseArgs = (argv) => {
   const root = process.cwd();
-  const testDir = suiteDir(root);
-  return { root, testDir, modDir: path.join(testDir, 'mods'), paths: argv.filter((arg) => arg !== '--') };
+  return { root, paths: writtenPaths(argv) };
 };
+
+// The serial list's home, and how a start failure names it.
+const SERIAL_FILE = 'test/lib/serial.js';
 
 // The per-file deadline in ms: SUITE_DEADLINE, or the seconds TEST_DEADLINE
 // names; a value that is no positive number, or more than a timer holds, ends
@@ -56,9 +57,9 @@ const deadlineOf = (raw) => {
   return seconds * 1000;
 };
 
-// The repo's serial tail, relative to the suite folder; none without a serial.js.
-const serialOf = (testDir) => {
-  const file = path.join(testDir, 'lib', 'serial.js');
+// The repo's serial tail, paths from the start folder; none without a serial.js.
+const serialOf = (root) => {
+  const file = path.join(root, SERIAL_FILE);
   return fs.existsSync(file) ? require(file).SERIAL : [];
 };
 
@@ -66,31 +67,22 @@ const serialOf = (testDir) => {
 // suite ends the run before anything starts. A named `.test.ts` picks the mod
 // half, which `claude plugin test` runs whole, since it takes a folder. A
 // serial entry that is no suite ends the run the same way.
-const pickSuites = ({ root, testDir, modDir, paths: args }, serialRels) => {
-  const all = fs.existsSync(testDir) ? findSuites(testDir) : [];
-  const mods = findModSuites(modDir);
-  for (const rel of serialRels) {
-    if (!all.includes(path.join(testDir, rel))) {
-      console.error(`No suite matches ${rel} (${path.basename(testDir)}/lib/serial.js)`);
-      process.exit(1);
-    }
+const pickSuites = ({ root, paths: args }, serialRels) => {
+  const all = findSuites(root);
+  const mods = findModSuites(modDir(root));
+  const serialMiss = unmatchedLine(root, all, serialRels);
+  if (serialMiss !== null) {
+    console.error(`${serialMiss} (${SERIAL_FILE})`);
+    process.exit(1);
   }
-  if (args.length === 0) return { suites: all.sort(), withMods: mods.length > 0 };
-  const picked = new Set();
-  let withMods = false;
-  for (const arg of args) {
-    const full = path.resolve(root, arg);
-    if (mods.includes(full)) {
-      withMods = true;
-      continue;
-    }
-    if (!all.includes(full)) {
-      console.error(`No suite matches ${arg} under ${path.basename(testDir)}/`);
-      process.exit(1);
-    }
-    picked.add(full);
+  if (args.length === 0) return { suites: all, withMods: mods.length > 0 };
+  const named = args.filter((arg) => !mods.includes(fromStart(root, arg)));
+  const miss = unmatchedLine(root, all, named);
+  if (miss !== null) {
+    console.error(miss);
+    process.exit(1);
   }
-  return { suites: [...picked].sort(), withMods };
+  return { suites: namedSuites(root, named), withMods: named.length < args.length };
 };
 
 // The mod half: the plugin's wiring suites, run by the engine itself on the repo
@@ -113,67 +105,24 @@ const runModHalf = (root) => {
   return { passed: count('pass'), failed, failures };
 };
 
-// Worker mode: runs one suite and sends its result as ONE message, then exits 0
-// once its output is flushed. A whole-suite failure (no load, no runner, a
-// throw) is a `whole` failure, named as the runner always named it. A
-// `node:test` suite is picked before any require, which would run its tests.
-const runOne = async (suite, testDir) => {
-  const rel = path.relative(testDir, suite);
-  const result = { passed: 0, failed: 0, failures: [], skips: [], skipped: null };
-  const send = () => process.send(result, () => {
+// Worker mode: runs one suite on Node's runner and sends its result as ONE
+// message, then exits 0 once its output is flushed.
+const runOne = async (suite, root) => {
+  const result = await runNodeTest(suite, suiteName(root, suite));
+  process.send(result, () => {
     process.stdout.write('', () => process.stderr.write('', () => process.exit(0)));
   });
-  if (isNodeTestSuite(fs.readFileSync(suite, 'utf8'))) {
-    Object.assign(result, await runNodeTest(suite, rel));
-    send();
-    return;
-  }
-  const wholeFailure = (name, message) => {
-    result.failed = 1;
-    result.failures = [{ name, message, whole: true }];
-  };
-  let mod;
-  let loaded = false;
-  try {
-    mod = require(suite);
-    loaded = true;
-  } catch (err) {
-    console.error(`\x1b[31mfailed to load ${rel}:\x1b[0m ${indentRest(err.stack || err)}`);
-    wholeFailure(`load ${rel}`, err.message);
-  }
-  if (loaded && typeof mod !== 'function') {
-    console.error(`\x1b[31m${rel} does not export an async runner function\x1b[0m`);
-    wholeFailure(`export ${rel}`, 'no default export function');
-  } else if (loaded) {
-    try {
-      const res = await mod();
-      result.passed = res.passed || 0;
-      result.failed = res.failed || 0;
-      result.failures = (res.failures || []).map((f) => ({ name: f.name, message: f.err.message }));
-      result.skips = (res.skips || []).map((s) => ({ name: s.name, reason: s.reason }));
-    } catch (err) {
-      // skipSuite() reports a missing precondition, not a defect.
-      if (err.suiteSkipped) {
-        console.log(`\x1b[33m⊘ skipped:\x1b[0m ${indentRest(err.message)}`);
-        result.skipped = err.message;
-      } else {
-        console.error(`\x1b[31m${rel} threw:\x1b[0m ${indentRest(err.stack || err)}`);
-        wholeFailure(`run ${rel}`, err.message);
-      }
-    }
-  }
-  send();
 };
 
 // One suite in a worker process: everything it wrote, both streams in arrival
 // order, its message (null when it ended without one), its wall time in ms and
 // whether <deadline> passed first, which ends the worker's process group.
-const runWorker = (suite, testDir, deadline) => new Promise((resolve) => {
+const runWorker = (suite, root, deadline) => new Promise((resolve) => {
   // A run a signal is ending starts no more workers; its exit ends the wait.
   if (stopping) return;
   const began = Date.now();
   // Its own process group off Windows, so endGroup reaches what the suite started in it.
-  const child = fork(import.meta.filename, ['--worker', suite, testDir], {
+  const child = fork(import.meta.filename, ['--worker', suite, root], {
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: process.platform !== 'win32',
   });
   live.add(child.pid);
@@ -235,18 +184,20 @@ const passSignalsOn = () => {
 // the last lines it wrote, so the failure line alone says where it stopped.
 const crashMessage = ({ output, code, signal, error, timedOut }, deadline) => {
   const how = timedOut ? `timed out after ${deadline / 1000}s`
-    : error ? `did not run: ${error}` : signal ? `killed by ${signal}` : `exited with code ${code}`;
-  const tail = stripVTControlCharacters(output).split('\n').map((line) => line.trim()).filter(Boolean).slice(-TAIL_LINES);
-  return `${how} without a result${tail.length ? `; last output: ${tail.join(' | ')}` : ''}`;
+    : error ? `did not run: ${error}` : howEnded({ code, signal });
+  return endedMessage(how, output);
 };
 
 /**
  * One run over a repo: the whole of what `npm test` prints and exits with.
  * @param {string[]} argv `[--] [suite paths...]`, or a worker's
- *   `--worker <suite> <suite dir>`
+ *   `--worker <suite> <start folder>`
  * @returns {Promise<void>}
  */
 export const main = async (argv) => {
+  // Node's run() runs no file under a variable its own test files inherit, so a
+  // run a case starts in a scratch folder would run nothing; this run is its own.
+  delete process.env.NODE_TEST_CONTEXT;
   if (argv[0] === '--worker') {
     // A parent that is gone takes its workers with it, and each worker the
     // processes its suite started: off Windows its own group never hears the terminal.
@@ -265,12 +216,12 @@ export const main = async (argv) => {
   if (process.platform !== 'win32') passSignalsOn();
   const start = Date.now();
   const args = parseArgs(argv);
-  const { root, testDir } = args;
-  const serialRels = serialOf(testDir);
+  const { root } = args;
+  const serialRels = serialOf(root);
   const { suites, withMods } = pickSuites(args, serialRels);
 
   if (suites.length === 0 && !withMods) {
-    console.error(`No *.test.js suites found under ${path.basename(testDir)}/.`);
+    console.error('No test file found (*.test.js, *.test.mjs, *.test.cjs)');
     process.exit(1);
   }
 
@@ -283,17 +234,13 @@ export const main = async (argv) => {
 
   // One finished suite: its block printed whole, its counts and time added.
   const report = (suite, outcome) => {
-    const rel = path.relative(testDir, suite);
+    const rel = suiteName(root, suite);
     timings.push({ rel, ms: outcome.ms });
     process.stdout.write(`\n\x1b[1m\x1b[36m▶ ${rel}\x1b[0m\n${outcome.output}`);
     const res = outcome.result;
     if (!res || outcome.timedOut) {
       failed++;
       allFailures.push({ name: `run ${rel}`, message: crashMessage(outcome, deadline) });
-      return;
-    }
-    if (res.skipped !== null) {
-      skippedSuites.push({ name: rel, reason: res.skipped });
       return;
     }
     passed += res.passed;
@@ -308,7 +255,7 @@ export const main = async (argv) => {
 
   // The parallel wave: POOL workers at a time, each block printed once it and
   // every suite before it have finished, so the order is the sorted list's.
-  const serial = new Set(serialRels.map((rel) => path.join(testDir, rel)));
+  const serial = new Set(serialRels.map((rel) => fromStart(root, rel)));
   const wave = suites.filter((suite) => !serial.has(suite));
   const outcomes = [];
   let next = 0;
@@ -316,7 +263,7 @@ export const main = async (argv) => {
   const lane = async () => {
     while (next < wave.length) {
       const i = next++;
-      outcomes[i] = await runWorker(wave[i], testDir, deadline);
+      outcomes[i] = await runWorker(wave[i], root, deadline);
       while (printed < wave.length && outcomes[printed]) {
         report(wave[printed], outcomes[printed]);
         printed++;
@@ -326,7 +273,7 @@ export const main = async (argv) => {
   await Promise.all(Array.from({ length: Math.min(POOL, wave.length) }, lane));
 
   for (const suite of suites.filter((s) => serial.has(s))) {
-    report(suite, await runWorker(suite, testDir, deadline));
+    report(suite, await runWorker(suite, root, deadline));
   }
 
   if (withMods) {

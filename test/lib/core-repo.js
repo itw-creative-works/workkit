@@ -7,27 +7,21 @@
 
 const fs = require('fs');
 const path = require('path');
-const { assert, skipSuite, mkTmp, seeded, SPAWN_DEADLINE } = require('./harness');
+const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('./harness');
 const {
   BASH, NO_RC, NODE_DIR, SYSTEM_PATH, which, joinPath, homeEnv, spawnSync,
 } = require('./platform');
 
 const CORE = path.join(__dirname, '..', '..', 'packages', 'core');
 
-// A suite in the harness's shape, its one case named `name`.
+// A suite in the door's shape, its one case named `name`.
 const SUITE = (name) => `
-const { test, assert, summary, selfRun } = require('./lib/harness');
-module.exports = async () => {
-  await test('${name}', () => { assert(true); });
-  return summary();
-};
-if (require.main === module) selfRun(module.exports);
+const { test } = require('./lib/harness');
+test('${name}', () => {});
 `;
 
-/** The precondition every consumer shares: an npm beside this node. */
-const skipWithoutNpm = () => {
-  if (!which('npm', NODE_DIR)) skipSuite('no npm beside this node, so no package is ever installed');
-};
+/** The precondition every consumer shares, as a skip value: false with an npm beside this node, else the reason. */
+const skipWithoutNpm = () => !which('npm', NODE_DIR) && 'no npm beside this node, so no package is ever installed';
 
 /**
  * The env npm runs under on a machine with no kit: the scratch home `home` and
@@ -57,7 +51,7 @@ const npmIn = (cwd, args) => {
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `npm ${args.join(' ')} finished: ${res.error || ''}`);
+  expect(res.status, `npm ${args.join(' ')} finished: ${res.error || ''}`).not.toBeNull();
   return { code: res.status, output: `${res.stdout || ''}${res.stderr || ''}` };
 };
 
@@ -74,7 +68,7 @@ const copyCoreRepo = seeded((seed) => {
   write('test/a.test.js', SUITE('a case'));
   write('test/b.test.js', SUITE('b case'));
   const installed = npmIn(seed, ['install', '--offline', '--no-audit', '--no-fund', '--no-package-lock']);
-  assert(installed.code === 0, `npm install links workkit-core, got: ${installed.output}`);
+  expect(installed.code, `npm install links workkit-core, got: ${installed.output}`).toBe(0);
   // npm links relative, which a copy at another depth would break.
   const link = path.join(seed, 'node_modules', 'workkit-core');
   if (!path.isAbsolute(fs.readlinkSync(link))) {

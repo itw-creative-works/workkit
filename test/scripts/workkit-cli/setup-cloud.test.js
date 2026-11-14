@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  group, test, assert, assertEq, summary, selfRun,
+  describe, test, expect,
 } = require('../../lib/harness');
 const { recordArgv } = require('../../lib/argv-log');
 const { IDENTITY_NA } = require('../../lib/identity');
@@ -37,33 +37,25 @@ const cloudSetup = ({ localBin = true } = {}, fn) => {
   }
 };
 
-const cases = async () => {
-  group('workkit setup --cloud');
-
-  await test('the identity step is one not-applicable line and no warning, exit 0', () => {
+describe('workkit setup --cloud', () => {
+  test('the identity step is one not-applicable line and no warning, exit 0', () => {
     cloudSetup({}, ({ code, out, said }) => {
-      assertEq(code, 0, `exit 0, got: ${said}`);
-      assert(out.includes(IDENTITY_NA), `the not-applicable line prints, got: ${said}`);
-      assert(!said.includes('not signed in'), `and no sign-in warning, got: ${said}`);
+      expect(code, `exit 0, got: ${said}`).toBe(0);
+      expect(out.includes(IDENTITY_NA), `the not-applicable line prints, got: ${said}`).toBeTruthy();
+      expect(!said.includes('not signed in'), `and no sign-in warning, got: ${said}`).toBeTruthy();
     });
   });
 
-  await test('case 3: a machine with no ~/.local/bin gets the folder, the workkit command link and the gh shim link', () => {
+  test('case 3: a machine with no ~/.local/bin gets the folder, the workkit command link and the gh shim link', () => {
     cloudSetup({ localBin: false }, ({ world, kit, said }) => {
-      assert(fs.existsSync(world.localBin), `~/.local/bin is made, got: ${said}`);
+      expect(fs.existsSync(world.localBin), `~/.local/bin is made, got: ${said}`).toBeTruthy();
       const target = (name) => {
         const link = path.join(world.localBin, name);
-        assert(fs.lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink(), `${name} is a link in ~/.local/bin, got: ${said}`);
+        expect(fs.lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink(), `${name} is a link in ~/.local/bin, got: ${said}`).toBeTruthy();
         return fs.realpathSync(link);
       };
-      assertEq(target('workkit'), fs.realpathSync(path.join(kit, 'workflow', 'workkit.sh')), 'the workkit command resolves to the kit\'s');
-      assertEq(target('gh'), fs.realpathSync(path.join(kit, 'workflow', 'identity', 'gh')), 'the gh shim resolves to the kit\'s');
+      expect(target('workkit'), 'the workkit command resolves to the kit\'s').toBe(fs.realpathSync(path.join(kit, 'workflow', 'workkit.sh')));
+      expect(target('gh'), 'the gh shim resolves to the kit\'s').toBe(fs.realpathSync(path.join(kit, 'workflow', 'identity', 'gh')));
     });
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

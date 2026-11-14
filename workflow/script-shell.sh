@@ -3,10 +3,10 @@
 # script-shell` names it. The proved-tree records (lib/suite.sh) are the
 # engine-agnostic contract and this file is npm's adapter: a green bare root
 # `npm test`, run detached, writes the suite record; every other green `test`
-# event (narrowed anywhere, or a nested package's bare run) runs in the
-# foreground and writes the package record; an install-time script is followed
-# by the git hooks' re-point; every other script is plain sh. A bare root run
-# first asks the full-suite hold (lib/hold.sh).
+# event (narrowed, or a nested package's bare run), detached in a slot of its
+# own, writes the package record; under a supervisor (WORKKIT_SUPERVISED=1) a
+# `test` event runs in the foreground. An install-time script is followed by the
+# hooks' re-point; any other is plain sh. A bare root run asks lib/hold.sh first.
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
@@ -18,16 +18,24 @@
 recorded_run() {
   local root="$1" pkg="$2" what=suite record=record hashed=1 before after rc=0 started ms
   local changed='the tree changed during the run, so no record was written; run npm test again'
+  local ci='CI is set, so no record was written; run npm test again without CI'
   shift 2
   if [ -n "$pkg" ]; then
     what=run record='package record'
     changed='the tree changed during it, so no record was written; run it again'
+    ci='CI is set, so no record was written; run it again without CI'
   fi
   before=$(wk_tree_hash "$root" "$pkg") || hashed=0
   started=$SECONDS
   sh "$@" || rc=$?
   ms=$(wk_elapsed_ms "$started")
   [ "$rc" -eq 0 ] || exit "$rc"
+  # CI set records nothing whatever the hashes say, so its line comes first:
+  # a run again with CI still set would record nothing either.
+  if wk_ci_set; then
+    printf 'script-shell: the %s passed, but %s\n' "$what" "$ci" >&2
+    exit 0
+  fi
   after=$(wk_tree_hash "$root" "$pkg") || hashed=0
   if [ "$hashed" -eq 0 ]; then
     printf 'script-shell: the %s passed, but the tree of %s could not be hashed, so no record was written\n' "$what" "$root" >&2
@@ -49,13 +57,36 @@ recorded_run() {
   exit 0
 }
 
-# suite_body <root> -c <script>: the detached whole root run. Its last line is
-# always `script-shell: exit <code>`, for a reader of the log.
-suite_body() {
-  local root="$1"
-  shift
+# run_body <root> <pkg> -c <script>: a detached test run, the whole root suite
+# when <pkg> is empty. Its last line is always `script-shell: exit <code>`, for
+# a reader of the log.
+run_body() {
   wk_body_traps script-shell
-  recorded_run "$root" "" "$@"
+  recorded_run "$@"
+}
+
+# package_run <root> <pkg> -c <script>: a narrowed or nested run, detached in a
+# slot named by this wrapper's pid, so several run at once in one repo. Its log
+# and lock go once this call reads the end or Ctrl-C ends it; a look, or a
+# Ctrl-C whose end failed, leaves them for `workkit watch <pid>`.
+package_run() {
+  local root="$1" log lock rc=0
+  wk_test_slots_sweep "$root"
+  log=$(wk_test_log_path "$root" "$$") || exit 1
+  lock=$(wk_test_lock_path "$root" "$$") || exit 1
+  # shellcheck disable=SC2034  # read by wk_attach_run's look line
+  WK_WATCH_NAME=$$
+  # Ctrl-C ends the run and this call inside wk_run_detached; the slot goes too,
+  # once the lock is gone: a run whose end failed keeps its lock and its log.
+  # shellcheck disable=SC2064  # the root, the lock and the pid are fixed for this run
+  trap "[ \"\${WK_RAN_INT:-}\" != 1 ] || [ -d $(printf '%q' "$lock") ] || wk_test_slot_clear $(printf '%q' "$root") $$" EXIT
+  wk_run_detached "$log" "$lock" --root "$root" -- "$BASH" "$SCRIPT_DIR/script-shell.sh" --test-body "$@" || rc=$?
+  if [ -n "$WK_HELD_PID" ]; then
+    printf 'script-shell: a run already holds this slot (pid %s); its output is in %s\n' "$WK_HELD_PID" "$(wk_native_path "$log")" >&2
+    exit 1
+  fi
+  [ "$WK_RAN_LOOK" = 1 ] || wk_test_slot_clear "$root" "$$"
+  exit "$rc"
 }
 
 load_libs() {
@@ -94,11 +125,10 @@ install_repoint() {
 }
 
 main() {
-  if [ "${1:-}" = --suite-body ]; then
-    shift
-    load_libs
-    suite_body "$@"
-  fi
+  case "${1:-}" in
+    --suite-body) shift; load_libs; run_body "$1" "" "${@:2}" ;;
+    --test-body) shift; load_libs; run_body "$@" ;;
+  esac
   case "${npm_lifecycle_event:-}" in
     test) ;;
     prepare|install|postinstall)
@@ -126,9 +156,11 @@ main() {
 
   # npm appends a narrowed run's arguments (`npm test -- <file>`) to the script
   # text, so only the root's bare script is the whole suite. Every other test
-  # run is the package path: in the foreground, no CHANGELOG lint.
+  # run is the package path: no hold, no CHANGELOG lint. Under a supervisor
+  # already it runs in the foreground, never detached again.
   if [ "$rel" != . ] || [ "${2:-}" != "${npm_lifecycle_script:-}" ]; then
-    recorded_run "$root" "$rel" "$@"
+    ! wk_supervised || recorded_run "$root" "$rel" "$@"
+    package_run "$root" "$rel" "$@"
   fi
 
   # The full-suite hold (lib/hold.sh) before anything else the root run does: a
@@ -158,12 +190,13 @@ main() {
   # The suite runs in its own session, so a kill of the shell that started it
   # leaves it running to its record; INT (a human's Ctrl-C) still ends it. A
   # frozen suite exits 124, and a look at an unclear one 125 with the suite on.
+  # Under a supervisor already it runs here, the suite's slot held for its length.
   log=$(wk_suite_log_path "$root") || exit 1
   lock=$(wk_suite_lock_path "$root") || exit 1
   rc=0
   wk_run_detached "$log" "$lock" --root "$root" -- "$BASH" "$SCRIPT_DIR/script-shell.sh" --suite-body "$root" "$@" || rc=$?
   if [ -n "$WK_HELD_PID" ]; then
-    printf 'script-shell: a root npm test is already running (pid %s); its output is in %s\n' "$WK_HELD_PID" "$log" >&2
+    printf 'script-shell: a root npm test is already running (pid %s); its output is in %s\n' "$WK_HELD_PID" "$(wk_native_path "$log")" >&2
     exit 1
   fi
   exit "$rc"

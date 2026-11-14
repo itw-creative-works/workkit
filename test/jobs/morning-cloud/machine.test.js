@@ -1,44 +1,42 @@
 // Tests for jobs/morning.sh as a GitHub Actions runner runs it: the machine it
 // makes (the settings file, the roster, the budget rails, the unreadable repos).
-// The shared prologue (world factory, no-jq PATH, job runner, case gates) is ./helpers.js.
+// The shared prologue (world factory, no-jq PATH, job runner) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { BASH, NO_RC, shellPath, skipWithoutNodeStub } = require('../../lib/platform');
 const {
-  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, mkWorld, withoutJq, runJob, composerTest,
+  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, mkWorld, withoutJq, runJob,
 } = require('./helpers');
 
-const cases = async () => {
-  group('jobs/morning (cloud): the machine it makes');
-
-  await test('an absent settings file is written from the repo the run belongs to', () => {
+describe('jobs/morning (cloud): the machine it makes', () => {
+  test('an absent settings file is written from the repo the run belongs to', () => {
     // The workflow lives on the home repo, so GITHUB_REPOSITORY is the home and
     // nothing has to be configured to say which one it is.
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(world.settings().site.repo, HOME_SLUG, 'the repo the runner is standing in');
-    assert(res.stdout.includes('settings: wrote'), `and it says it wrote it: ${res.stdout}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(world.settings().site.repo, 'the repo the runner is standing in').toBe(HOME_SLUG);
+    expect(res.stdout.includes('settings: wrote'), `and it says it wrote it: ${res.stdout}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await composerTest('an existing settings file wins over the repo the run belongs to', () => {
+  test('an existing settings file wins over the repo the run belongs to', { skip: skipWithoutNodeStub() }, () => {
     const world = mkWorld({
       settings: { version: 1, site: { repo: 'configured/home' } },
       githubRepo: 'env/home',
     });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assertEq(world.settings().site.repo, 'configured/home', 'a configured runner is not rewritten');
-    assert(world.roster().some((r) => r.slug === 'configured/home'), 'and that is the repo swept');
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(world.settings().site.repo, 'a configured runner is not rewritten').toBe('configured/home');
+    expect(world.roster().some((r) => r.slug === 'configured/home'), 'and that is the repo swept').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a runner without the seeded engine refuses, naming what is missing', () => {
+  test('a runner without the seeded engine refuses, naming what is missing', () => {
     // The cloud branch builds its roster through the seeded engine's
     // predicates (home.sh's WK_HOME_RUNNER_FILES); without them every
     // directory reads as no repo, so a named refusal beats an empty roster.
@@ -53,48 +51,48 @@ const cases = async () => {
     const res = spawnSync(BASH, [...NO_RC, shellPath(copy)], {
       encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env,
     });
-    assertEq(res.status, 1, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`);
-    assert(/engine/.test(res.stderr), `and names the engine as what is missing: ${res.stderr}`);
-    assertEq(world.calls().length, 0, 'nothing was sent');
+    expect(res.status, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`).toBe(1);
+    expect(/engine/.test(res.stderr), `and names the engine as what is missing: ${res.stderr}`).toBeTruthy();
+    expect(world.calls().length, 'nothing was sent').toBe(0);
     cleanup(world.root);
   });
 
-  await test('a missing jq is named as a missing tool, not as a missing home repo', () => {
+  test('a missing jq is named as a missing tool, not as a missing home repo', () => {
     // jq reads the home slug, so an absent one empties that read: the two
     // refusals have to say which of them happened.
     const world = mkWorld();
     const env = { ...world.env, PATH: withoutJq(world.root, path.join(world.root, 'bin')) };
     const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
-    assertEq(res.status, 1, 'the run refuses');
-    assert(/jq is not installed/.test(res.stderr), `and names the tool: ${res.stderr}`);
-    assert(!/names no home repo/.test(res.stderr), 'never the key, which is right there');
+    expect(res.status, 'the run refuses').toBe(1);
+    expect(/jq is not installed/.test(res.stderr), `and names the tool: ${res.stderr}`).toBeTruthy();
+    expect(!/names no home repo/.test(res.stderr), 'never the key, which is right there').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('neither a settings file nor a repo to belong to refuses the run', () => {
+  test('neither a settings file nor a repo to belong to refuses the run', () => {
     const world = mkWorld({ githubRepo: null });
     const res = runJob(world);
-    assertEq(res.status, 1, 'there is no board to sweep and nowhere to publish');
-    assert(/GITHUB_REPOSITORY/.test(res.stderr), `and it names what is missing: ${res.stderr}`);
-    assertEq(world.calls().length, 0, 'nothing was sent');
+    expect(res.status, 'there is no board to sweep and nowhere to publish').toBe(1);
+    expect(/GITHUB_REPOSITORY/.test(res.stderr), `and it names what is missing: ${res.stderr}`).toBeTruthy();
+    expect(world.calls().length, 'nothing was sent').toBe(0);
     cleanup(world.root);
   });
 
-  await composerTest('the roster comes from the home repo’s own branch, and the composer reads it back', () => {
+  test('the roster comes from the home repo’s own branch, and the composer reads it back', { skip: skipWithoutNodeStub() }, () => {
     // Private, and read with the cross-repo token, never from gh-pages, which
     // is public even on a private repo.
     const world = mkWorld({ siteRepos: { repos: ['a/one', 'b/two', HOME_SLUG], home: HOME_SLUG } });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
     const slugs = world.roster().map((r) => r.slug).sort();
-    assertEq(slugs.join(','), ['a/one', 'b/two', HOME_SLUG].sort().join(','),
-      `every slug on the list is on the roster: ${JSON.stringify(world.roster())}`);
-    assert(world.ghCalls().some((argv) => argv.includes(`repos/${HOME_SLUG}/contents/data/repos.json?ref=main`)),
-      `read from the default branch, not the public one: ${fmtCalls(world.ghCalls())}`);
+    expect(slugs.join(','),
+      `every slug on the list is on the roster: ${JSON.stringify(world.roster())}`).toBe(['a/one', 'b/two', HOME_SLUG].sort().join(','));
+    expect(world.ghCalls().some((argv) => argv.includes(`repos/${HOME_SLUG}/contents/data/repos.json?ref=main`)),
+      `read from the default branch, not the public one: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await composerTest('the branch the roster is read from is asked for, never assumed to be main', () => {
+  test('the branch the roster is read from is asked for, never assumed to be main', { skip: skipWithoutNodeStub() }, () => {
     // The publish pushes whatever branch the home clone is on. A runner has no
     // site's data/home.json to read that from, so it asks GitHub for the repo
     // it is standing in.
@@ -103,62 +101,56 @@ const cases = async () => {
       siteRepos: { repos: ['a/one', HOME_SLUG], home: HOME_SLUG },
     });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
-    assert(world.ghCalls().some((argv) => argv.includes(`repos/${HOME_SLUG}/contents/data/repos.json?ref=trunk`)),
-      `the roster is read from the branch GitHub named: ${fmtCalls(world.ghCalls())}`);
-    assert(world.roster().some((r) => r.slug === 'a/one'),
-      `and the list on it is the roster swept: ${JSON.stringify(world.roster())}`);
-    assert(!res.stdout.includes('sweeping the home repo alone'), `with no fallback in sight: ${res.stdout}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(world.ghCalls().some((argv) => argv.includes(`repos/${HOME_SLUG}/contents/data/repos.json?ref=trunk`)),
+      `the roster is read from the branch GitHub named: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
+    expect(world.roster().some((r) => r.slug === 'a/one'),
+      `and the list on it is the roster swept: ${JSON.stringify(world.roster())}`).toBeTruthy();
+    expect(!res.stdout.includes('sweeping the home repo alone'), `with no fallback in sight: ${res.stdout}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await composerTest('no slug list falls back to the home repo alone, and still composes', () => {
+  test('no slug list falls back to the home repo alone, and still composes', { skip: skipWithoutNodeStub() }, () => {
     const world = mkWorld();
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
     const slugs = world.roster().map((r) => r.slug);
-    assertEq(slugs.join(','), HOME_SLUG, `the home repo, whose issues are the cross-project queue: ${slugs}`);
-    assert(res.stdout.includes('sweeping the home repo alone'), `and it says so: ${res.stdout}`);
+    expect(slugs.join(','), `the home repo, whose issues are the cross-project queue: ${slugs}`).toBe(HOME_SLUG);
+    expect(res.stdout.includes('sweeping the home repo alone'), `and it says so: ${res.stdout}`).toBeTruthy();
     const calls = world.calls();
-    assertEq(calls.length, 1, `the brief was still composed: ${fmtCalls(calls).slice(0, 200)}`);
-    assert(calls[0][1].startsWith(INSTRUCTION), 'from the payload the machine rehearses with');
+    expect(calls.length, `the brief was still composed: ${fmtCalls(calls).slice(0, 200)}`).toBe(1);
+    expect(calls[0][1].startsWith(INSTRUCTION), 'from the payload the machine rehearses with').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('the budget rails are the machine’s, unchanged', () => {
+  test('the budget rails are the machine’s, unchanged', () => {
     const world = mkWorld();
     runJob(world);
     const argv = world.calls()[0];
     const after = (flag) => argv[argv.indexOf(flag) + 1];
-    assertEq(argv[0], '-p', 'headless');
-    assertEq(after('--model'), 'haiku', 'the cheapest model');
-    assertEq(after('--effort'), 'low', 'at the lowest effort');
-    assert(argv.includes('--safe-mode'), 'safe mode');
-    assert(argv.includes('--no-session-persistence'), 'nothing persisted');
-    assertEq(after('--tools'), '', 'no tools');
-    assertEq(after('--max-budget-usd'), '0.25', 'and a hard budget');
+    expect(argv[0], 'headless').toBe('-p');
+    expect(after('--model'), 'the cheapest model').toBe('haiku');
+    expect(after('--effort'), 'at the lowest effort').toBe('low');
+    expect(argv.includes('--safe-mode'), 'safe mode').toBeTruthy();
+    expect(argv.includes('--no-session-persistence'), 'nothing persisted').toBeTruthy();
+    expect(after('--tools'), 'no tools').toBe('');
+    expect(after('--max-budget-usd'), 'and a hard budget').toBe('0.25');
     cleanup(world.root);
   });
 
-  await composerTest('a repo the token cannot read is named in the log, not in the payload', () => {
+  test('a repo the token cannot read is named in the log, not in the payload', { skip: skipWithoutNodeStub() }, () => {
     // The scope gap the Actions log has to show: the token reaches the home repo
     // and not the rest, the brief reads clean, and only this line says so.
     const world = mkWorld({ boardBroken: true });
     const res = runJob(world);
-    assertEq(res.status, 0, `exit 0, stderr: ${res.stderr}`);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
     // A line that needs a person is a warning, so it rides stderr the way
     // every other warning in the kit does; the Actions log carries both streams.
-    assert(`${res.stdout}${res.stderr}`.includes(`brief: 1 repos unreadable: ${HOME_SLUG}`),
-      `the log names them: ${res.stdout}${res.stderr}`);
+    expect(`${res.stdout}${res.stderr}`.includes(`brief: 1 repos unreadable: ${HOME_SLUG}`),
+      `the log names them: ${res.stdout}${res.stderr}`).toBeTruthy();
     const calls = world.calls();
-    assertEq(calls.length, 1, 'the brief was still composed');
-    assert(calls[0][1].startsWith(INSTRUCTION), 'and the payload is untouched: the line never entered it');
+    expect(calls.length, 'the brief was still composed').toBe(1);
+    expect(calls[0][1].startsWith(INSTRUCTION), 'and the payload is untouched: the line never entered it').toBeTruthy();
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

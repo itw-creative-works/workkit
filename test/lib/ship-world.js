@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { assert, SPAWN_DEADLINE } = require('./harness');
+const { expect, SPAWN_DEADLINE } = require('./harness');
 const {
   NODE_DIR, SYSTEM_PATH, joinPath, shellPath, spawnSync,
 } = require('./platform');
@@ -55,7 +55,7 @@ const runShip = (g, name, args = [], { cwd = g.repo, binDirs = [] } = {}) => {
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `ship ${name} finished (no timeout, no signal): ${res.error || ''}`);
+  expect(res.status !== null, `ship ${name} finished (no timeout, no signal): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 

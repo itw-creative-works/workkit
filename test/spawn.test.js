@@ -3,16 +3,19 @@
 // group, climbing INT, TERM, KILL only while the child lives, its stdin carries
 // the input given, else is empty, a deadline ends a
 // child that never exits, and endTree() ends a group, refuses a pid that is
-// not a positive integer and throws on a signal the system refuses.
+// not a positive integer and throws on a signal the system refuses; on its
+// Windows arm, reached through its seams, it runs taskkill from System32 and
+// throws when that cannot start or SystemRoot is unset. alive() is false for any pid but a positive integer.
 
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const {
-  group, test, testUnless, assert, assertEq, summary, selfRun,
+  describe, test, expect,
   run, start, endTree, alive, until, readPid, mkTmp,
 } = require('./lib/harness');
-const { IS_WINDOWS } = require('./lib/platform');
+const { IS_WINDOWS, recordingRun, signalsRefused, samePath } = require('./lib/platform');
+const { caught } = require('./lib/caught');
 
 // Writes one line to each stream, stdout first, then exits 3.
 const BOTH = 'process.stdout.write("to stdout\\n", () => { process.stderr.write("to stderr\\n", () => process.exit(3)); });';
@@ -98,80 +101,79 @@ const endAll = (...pids) => {
   for (const pid of pids) if (pid) endTree(pid, 'SIGKILL');
 };
 
-const cases = async () => {
-  group('spawn: run()');
-
-  await test('run keeps both streams, stdout then stderr, and the status; a child past its deadline comes back timedOut with a signal', () => {
+describe('spawn: run()', () => {
+  test('run keeps both streams, stdout then stderr, and the status; a child past its deadline comes back timedOut with a signal', () => {
     const done = run(process.execPath, ['-e', BOTH]);
-    assertEq(done.stdout, 'to stdout\n', 'stdout alone');
-    assertEq(done.stderr, 'to stderr\n', 'stderr alone');
-    assertEq(done.output, 'to stdout\nto stderr\n', 'output is stdout, then stderr');
-    assertEq(done.status, 3, 'the exit status');
-    assertEq(done.timedOut, false, 'an exit is no timeout');
+    expect(done.stdout, 'stdout alone').toBe('to stdout\n');
+    expect(done.stderr, 'stderr alone').toBe('to stderr\n');
+    expect(done.output, 'output is stdout, then stderr').toBe('to stdout\nto stderr\n');
+    expect(done.status, 'the exit status').toBe(3);
+    expect(done.timedOut, 'an exit is no timeout').toBe(false);
     const late = run(process.execPath, ['-e', FOREVER], { deadline: SHORT });
-    assertEq(late.timedOut, true, `the deadline ended it, got: ${JSON.stringify(late)}`);
-    assert(late.signal, `a signal is set, got: ${JSON.stringify(late)}`);
+    expect(late.timedOut, `the deadline ended it, got: ${JSON.stringify(late)}`).toBe(true);
+    expect(late.signal, `a signal is set, got: ${JSON.stringify(late)}`).toBeTruthy();
   });
+});
 
-  group('spawn: start()');
-
-  await test('start: output grows while the child runs, done resolves on exit, and end() ends a grandchild too', async () => {
+describe('spawn: start()', () => {
+  test('start: output grows while the child runs, done resolves on exit, and end() ends a grandchild too', async () => {
     const dir = mkTmp('spawn-');
     const go = path.join(dir, 'go');
     const stepped = start(process.execPath, ['-e', STEPPED(go)]);
-    assert(await until(() => stepped.output().includes('first')), `the first line arrives while the child runs, got: ${stepped.output()}`);
-    assert(!stepped.output().includes('second') && alive(stepped.pid), 'the child is still running, the second line not yet written');
+    expect(await until(() => stepped.output().includes('first')), `the first line arrives while the child runs, got: ${stepped.output()}`).toBeTruthy();
+    expect(!stepped.output().includes('second') && alive(stepped.pid), 'the child is still running, the second line not yet written').toBeTruthy();
     fs.writeFileSync(go, '');
     const exit = await settle(stepped.done);
-    assert(exit, 'done resolved once the child exited');
-    assertEq(exit.status, 0, 'the exit status');
-    assertEq(stepped.output(), 'first\nsecond\n', 'output() grew by the second line');
+    expect(exit, 'done resolved once the child exited').toBeTruthy();
+    expect(exit.status, 'the exit status').toBe(0);
+    expect(stepped.output(), 'output() grew by the second line').toBe('first\nsecond\n');
 
     const pidFile = path.join(dir, 'grandchild.pid');
     const tree = start(process.execPath, ['-e', PARENT(pidFile)], { detached: true });
     let grand;
     try {
-      assert(await until(() => fs.existsSync(pidFile)), 'the child wrote its grandchild\'s pid');
+      expect(await until(() => fs.existsSync(pidFile)), 'the child wrote its grandchild\'s pid').toBeTruthy();
       grand = readPid(pidFile);
-      assert(alive(tree.pid) && alive(grand), 'child and grandchild both alive before end()');
+      expect(alive(tree.pid) && alive(grand), 'child and grandchild both alive before end()').toBeTruthy();
       await tree.end();
-      assert(!alive(tree.pid), 'the child is gone once end() resolves');
-      assert(await until(() => !alive(grand)), 'the grandchild is gone too');
+      expect(!alive(tree.pid), 'the child is gone once end() resolves').toBeTruthy();
+      expect(await until(() => !alive(grand)), 'the grandchild is gone too').toBeTruthy();
     } finally {
       endAll(tree.pid, grand);
     }
   });
 
-  await testUnless(IS_WINDOWS, 'Windows ends a child through one taskkill, no signal ladder')(
+  test(
     'end() climbs INT, TERM, KILL while the child lives: a child trapping INT and TERM gets both in order and is ended by KILL; a child that exits on INT is ended by INT',
+    { skip: IS_WINDOWS && 'Windows ends a child through one taskkill, no signal ladder' },
     async () => {
       const record = path.join(mkTmp('spawn-'), 'signals');
       const trapped = start(process.execPath, ['-e', TRAPS(record)]);
       const plain = start(process.execPath, ['-e', FOREVER]);
       try {
-        assert(await until(() => trapped.output().includes('ready')), `the trapping child set its traps, got: ${trapped.output()}`);
+        expect(await until(() => trapped.output().includes('ready')), `the trapping child set its traps, got: ${trapped.output()}`).toBeTruthy();
         await trapped.end();
-        assert(!alive(trapped.pid), 'the trapping child is gone once end() resolves');
+        expect(!alive(trapped.pid), 'the trapping child is gone once end() resolves').toBeTruthy();
         const trappedExit = await settle(trapped.done);
-        assertEq(trappedExit?.signal, 'SIGKILL', `KILL ended the trapping child, got: ${JSON.stringify(trappedExit)}`);
-        assertEq(fs.readFileSync(record, 'utf8'), 'SIGINT\nSIGTERM\n', 'the child got INT, then TERM, before the KILL');
+        expect(trappedExit?.signal, `KILL ended the trapping child, got: ${JSON.stringify(trappedExit)}`).toBe('SIGKILL');
+        expect(fs.readFileSync(record, 'utf8'), 'the child got INT, then TERM, before the KILL').toBe('SIGINT\nSIGTERM\n');
 
         await plain.end();
         const plainExit = await settle(plain.done);
-        assertEq(plainExit?.signal, 'SIGINT', `INT ended the plain child, the first rung, got: ${JSON.stringify(plainExit)}`);
+        expect(plainExit?.signal, `INT ended the plain child, the first rung, got: ${JSON.stringify(plainExit)}`).toBe('SIGINT');
       } finally {
         endAll(trapped.pid, plain.pid);
       }
     },
   );
 
-  await test('end() on a child already gone, plain or detached, sends nothing: done reports the child\'s own exit and end() resolves', async () => {
+  test('end() on a child already gone, plain or detached, sends nothing: done reports the child\'s own exit and end() resolves', async () => {
     for (const detached of [false, true]) {
       const child = start(process.execPath, ['-e', EXITS], { detached });
       try {
         const exit = await settle(child.done);
-        assertEq(exit?.status, 4, `the child's own exit status (detached: ${detached}), got: ${JSON.stringify(exit)}`);
-        assertEq(exit.signal, null, `no signal ended it (detached: ${detached})`);
+        expect(exit?.status, `the child's own exit status (detached: ${detached}), got: ${JSON.stringify(exit)}`).toBe(4);
+        expect(exit.signal, `no signal ended it (detached: ${detached})`).toBe(null);
         // Forwards every call to the real process.kill and only records: the one seam that shows nothing was sent.
         const sent = [];
         const realKill = process.kill;
@@ -182,166 +184,192 @@ const cases = async () => {
           process.kill = realKill;
         }
         const rungs = sent.filter(({ pid, signal }) => (pid === child.pid || pid === -child.pid) && signal !== 0);
-        assertEq(JSON.stringify(rungs), '[]', `end() sent no signal but the alive probe to the child or its group (detached: ${detached})`);
+        expect(JSON.stringify(rungs), `end() sent no signal but the alive probe to the child or its group (detached: ${detached})`).toBe('[]');
       } finally {
         endAll(child.pid);
       }
     }
   });
 
-  await testUnless(IS_WINDOWS, 'Windows ends a child through one taskkill, no signal probe')(
+  test(
     'end() on a detached child that exited and is not yet reaped resolves, and done reports its exit 0',
+    { skip: IS_WINDOWS && 'Windows ends a child through one taskkill, no signal probe' },
     async () => {
       const child = start('/bin/sh', ['-c', 'exit 0'], { detached: true });
       // Blocks the loop until the child is a zombie, so the signal probe meets it unreaped.
       const stretch = run('/bin/sh', ['-c', UNTIL_ZOMBIE, 'sh', String(child.pid)]);
-      assertEq(stretch.status, 0, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`);
+      expect(stretch.status, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`).toBe(0);
       let rejected;
       await child.end().catch((err) => { rejected = err; });
-      assertEq(rejected?.message, undefined, 'end() resolves on a child that already exited');
+      expect(rejected?.message, 'end() resolves on a child that already exited').toBe(undefined);
       const exit = await settle(child.done);
-      assertEq(exit?.status, 0, `done reports the child's own exit, got: ${JSON.stringify(exit)}`);
+      expect(exit?.status, `done reports the child's own exit, got: ${JSON.stringify(exit)}`).toBe(0);
     },
   );
 
-  await testUnless(IS_WINDOWS, 'Windows ends a tree through taskkill, not a signal')(
+  test(
     'endTree on a detached child that exited and is not yet reaped ends quietly, and done reports its exit 0',
+    { skip: IS_WINDOWS && 'Windows ends a tree through taskkill, not a signal' },
     async () => {
       const child = start('/bin/sh', ['-c', 'exit 0'], { detached: true });
       // Blocks the loop until the child is a zombie, so endTree meets it unreaped.
       const stretch = run('/bin/sh', ['-c', UNTIL_ZOMBIE, 'sh', String(child.pid)]);
-      assertEq(stretch.status, 0, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`);
-      let threw;
-      try { endTree(child.pid, 'SIGKILL'); } catch (err) { threw = err; }
-      assertEq(threw?.message, undefined, 'endTree does not throw on a leader that already exited');
+      expect(stretch.status, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`).toBe(0);
+      const threw = await caught(() => endTree(child.pid, 'SIGKILL'));
+      expect(threw?.message, 'endTree does not throw on a leader that already exited').toBe(undefined);
       const exit = await settle(child.done);
-      assertEq(exit?.status, 0, `done reports the child's own exit, got: ${JSON.stringify(exit)}`);
+      expect(exit?.status, `done reports the child's own exit, got: ${JSON.stringify(exit)}`).toBe(0);
     },
   );
 
-  await test('the watchdog: a child that never exits is ended at its deadline and done reports timedOut', async () => {
+  test('the watchdog: a child that never exits is ended at its deadline and done reports timedOut', async () => {
     const forever = start(process.execPath, ['-e', FOREVER], { deadline: SHORT });
     const exit = await settle(forever.done);
-    assert(exit, 'done resolved');
-    assertEq(exit.timedOut, true, `done reports timedOut, got: ${JSON.stringify(exit)}`);
-    assert(!alive(forever.pid), 'the child is gone');
+    expect(exit, 'done resolved').toBeTruthy();
+    expect(exit.timedOut, `done reports timedOut, got: ${JSON.stringify(exit)}`).toBe(true);
+    expect(!alive(forever.pid), 'the child is gone').toBeTruthy();
   });
 
-  await test('done reports an exit, never timedOut, for a child that exited while its grandchild holds stdout open', async () => {
+  test('done reports an exit, never timedOut, for a child that exited while its grandchild holds stdout open', async () => {
     const pidFile = path.join(mkTmp('spawn-'), 'grandchild.pid');
     const child = start(process.execPath, ['-e', LEAVES_STDOUT(pidFile)]);
     let grand;
     try {
-      assert(await until(() => fs.existsSync(pidFile)), 'the child wrote its grandchild\'s pid');
+      expect(await until(() => fs.existsSync(pidFile)), 'the child wrote its grandchild\'s pid').toBeTruthy();
       grand = readPid(pidFile);
       const exit = await settle(child.done);
-      assert(exit, 'done resolved');
-      assertEq(exit.status, 0, 'the child\'s own exit status');
-      assertEq(exit.timedOut, false, `an exit before the deadline is no timeout, got: ${JSON.stringify(exit)}`);
-      assert(alive(grand), 'the grandchild still holds the stdout pipe');
-      assert(await until(() => child.output() === 'from the child\n'), `output() holds what the child printed, got: ${JSON.stringify(child.output())}`);
+      expect(exit, 'done resolved').toBeTruthy();
+      expect(exit.status, 'the child\'s own exit status').toBe(0);
+      expect(exit.timedOut, `an exit before the deadline is no timeout, got: ${JSON.stringify(exit)}`).toBe(false);
+      expect(alive(grand), 'the grandchild still holds the stdout pipe').toBeTruthy();
+      expect(await until(() => child.output() === 'from the child\n'), `output() holds what the child printed, got: ${JSON.stringify(child.output())}`).toBeTruthy();
     } finally {
       endAll(grand);
     }
   });
 
-  await test('start with input: the child reads the string on its stdin, then stdin ends', async () => {
+  test('start with input: the child reads the string on its stdin, then stdin ends', async () => {
     const child = start(process.execPath, ['-e', ECHOES], { input: 'line one\nline two\n' });
     const exit = await settle(child.done);
-    assertEq(exit?.status, 0, `the child exited once its stdin ended, got: ${JSON.stringify(exit)}`);
-    assertEq(child.stdout(), 'line one\nline two\n', 'the child echoed its input');
+    expect(exit?.status, `the child exited once its stdin ended, got: ${JSON.stringify(exit)}`).toBe(0);
+    expect(child.stdout(), 'the child echoed its input').toBe('line one\nline two\n');
   });
 
-  await test('start without input: the child sees an empty stdin at once, no hang', async () => {
+  test('start without input: the child sees an empty stdin at once, no hang', async () => {
     const child = start(process.execPath, ['-e', ECHOES]);
     const exit = await settle(child.done);
-    assertEq(exit?.status, 0, `the child exited on its own, got: ${JSON.stringify(exit)}`);
-    assertEq(exit.timedOut, false, 'no deadline ended it');
-    assertEq(child.stdout(), '', 'its stdin was empty');
+    expect(exit?.status, `the child exited on its own, got: ${JSON.stringify(exit)}`).toBe(0);
+    expect(exit.timedOut, 'no deadline ended it').toBe(false);
+    expect(child.stdout(), 'its stdin was empty').toBe('');
   });
 
-  await test('start with input a child exits without reading: done reports its exit, the unread write no crash', async () => {
+  test('start with input a child exits without reading: done reports its exit, the unread write no crash', async () => {
     const child = start(process.execPath, ['-e', EXITS], { input: BIG_INPUT });
     const exit = await settle(child.done);
-    assertEq(exit?.status, 4, `the child's own exit status, got: ${JSON.stringify(exit)}`);
+    expect(exit?.status, `the child's own exit status, got: ${JSON.stringify(exit)}`).toBe(4);
   });
 
-  await test('a child that never spawned: end() resolves, done rejects with the spawn error, and the suite goes on', async () => {
+  test('a child that never spawned: end() resolves, done rejects with the spawn error, and the suite goes on', async () => {
     const missing = start(path.join(mkTmp('spawn-'), 'no-such-binary'), []);
     await missing.end();
     // A turn with no handler on done: an unhandled rejection here would end the worker.
     await new Promise((resolve) => setImmediate(resolve));
     let rejected;
     await missing.done.catch((err) => { rejected = err; });
-    assertEq(rejected?.code, 'ENOENT', `done rejects with the spawn error, got: ${rejected?.message}`);
+    expect(rejected?.code, `done rejects with the spawn error, got: ${rejected?.message}`).toBe('ENOENT');
   });
 
-  await test('end() rejects a signal off the ladder before it sends anything', async () => {
+  test('end() rejects a signal off the ladder before it sends anything', async () => {
     const child = start(process.execPath, ['-e', FOREVER]);
     try {
       let rejected;
       await child.end('SIGHUP').catch((err) => { rejected = err; });
-      assert(/end: signal must be one of/.test(rejected?.message), `the ladder's own error, got: ${rejected?.message}`);
-      assert(alive(child.pid), 'the child is untouched');
+      expect(/end: signal must be one of/.test(rejected?.message), `the ladder's own error, got: ${rejected?.message}`).toBeTruthy();
+      expect(alive(child.pid), 'the child is untouched').toBeTruthy();
     } finally {
       await child.end('SIGKILL');
     }
   });
+});
 
-  group('spawn: endTree()');
-
-  await testUnless(IS_WINDOWS, 'Windows ends a tree through taskkill, not a process group')(
+describe('spawn: endTree()', () => {
+  test(
     'endTree on a raw pid ends the process group: the detached child and its grandchild',
+    { skip: IS_WINDOWS && 'Windows ends a tree through taskkill, not a process group' },
     async () => {
       const pidFile = path.join(mkTmp('spawn-'), 'grandchild.pid');
       const child = spawn(process.execPath, ['-e', PARENT(pidFile)], { detached: true, stdio: 'ignore' });
       let grand;
       try {
-        assert(await until(() => fs.existsSync(pidFile)), 'the child wrote its grandchild\'s pid');
+        expect(await until(() => fs.existsSync(pidFile)), 'the child wrote its grandchild\'s pid').toBeTruthy();
         grand = readPid(pidFile);
-        assert(alive(child.pid) && alive(grand), 'child and grandchild both alive before endTree()');
+        expect(alive(child.pid) && alive(grand), 'child and grandchild both alive before endTree()').toBeTruthy();
         endTree(child.pid);
-        assert(await until(() => !alive(child.pid) && !alive(grand)), 'endTree() ended the child and its grandchild');
+        expect(await until(() => !alive(child.pid) && !alive(grand)), 'endTree() ended the child and its grandchild').toBeTruthy();
       } finally {
         endAll(child.pid, grand);
       }
     },
   );
 
-  await test('endTree throws for a pid that is not a positive integer: 0, -1 and 1.5', async () => {
+  test('endTree throws for a pid that is not a positive integer: 0, -1 and 1.5', async () => {
     for (const pid of [0, -1, 1.5]) {
-      let threw;
       // Signal 0 sends nothing, so a red run signals no process at all.
-      try { endTree(pid, 0); } catch (err) { threw = err; }
-      assert(/endTree: pid must be a positive integer/.test(threw?.message), `endTree(${pid}) throws the guard's error`);
+      const threw = await caught(() => endTree(pid, 0));
+      expect(/endTree: pid must be a positive integer/.test(threw?.message), `endTree(${pid}) throws the guard's error`).toBeTruthy();
     }
   });
 
+  test('endTree on its Windows arm runs taskkill from System32, and throws when it cannot start', async () => {
+    const seamsOf = (recorded) => ({ platform: 'win32', run: recorded.run, systemRoot: 'C:\\Windows' });
+    const starts = recordingRun(0);
+    await signalsRefused(() => endTree(4242, 'SIGKILL', seamsOf(starts)));
+    expect(starts.calls.length, `one program was run, got: ${JSON.stringify(starts.calls)}`).toBe(1);
+    expect(samePath(starts.calls[0].file, 'C:\\Windows\\System32\\taskkill.exe', 'win32'),
+      `the program is System32's taskkill, got: ${starts.calls[0].file}`).toBeTruthy();
+
+    const missing = recordingRun(null);
+    const err = await signalsRefused(() => caught(() => endTree(4242, 'SIGKILL', seamsOf(missing))));
+    expect(err?.message, 'the throw carries the start error')
+      .toBe(`endTree: taskkill could not run (spawnSync ${missing.calls[0]?.file} ENOENT)`);
+  });
+
+  test('endTree on its Windows arm with SystemRoot unset throws naming SystemRoot, and runs nothing', async () => {
+    const unset = recordingRun(0);
+    const err = await signalsRefused(() => caught(() => endTree(4242, 'SIGKILL', { platform: 'win32', run: unset.run, systemRoot: undefined })));
+    expect(/SystemRoot/.test(err?.message), `the throw names SystemRoot, got: ${err?.message}`).toBeTruthy();
+    expect(unset.calls.length, `no program was run, got: ${JSON.stringify(unset.calls)}`).toBe(0);
+  });
+
+  // Read when the file is collected: the case's skip value needs it.
   const rootPid = IS_WINDOWS || process.getuid() === 0 ? null : rootOwnedPid();
-  await testUnless(rootPid === null, IS_WINDOWS ? 'Windows ends a tree through taskkill, not a signal'
-    : process.getuid() === 0 ? 'root may signal any process, so nothing refuses the signal'
-      : 'no process owned by root, pid above 1, is listed here')(
+  test(
     'endTree throws when the system refuses the signal: a root process signalled by a user that is not root names EPERM and the pid',
-    () => {
+    {
+      skip: rootPid === null && (IS_WINDOWS ? 'Windows ends a tree through taskkill, not a signal'
+        : process.getuid() === 0 ? 'root may signal any process, so nothing refuses the signal'
+          : 'no process owned by root, pid above 1, is listed here'),
+    },
+    async () => {
       let threw;
       let pid = rootPid;
       const tried = [];
       // A pick can exit between the listing and the signal, so a silent one is drawn again, three in all.
       while (pid !== null && !threw) {
         tried.push(pid);
-        try { endTree(pid, 'SIGTERM'); } catch (err) { threw = err; }
+        threw = await caught(() => endTree(pid, 'SIGTERM'));
         if (threw || tried.length === 3) break;
         pid = rootOwnedPid(tried);
       }
-      assert(/EPERM/.test(threw?.message) && new RegExp(`\\bpid ${pid}\\b`).test(threw?.message),
-        `endTree throws naming EPERM and pid ${pid}, got: ${threw?.message}`);
+      expect(/EPERM/.test(threw?.message) && new RegExp(`\\bpid ${pid}\\b`).test(threw?.message),
+        `endTree throws naming EPERM and pid ${pid}, got: ${threw?.message}`).toBeTruthy();
     },
   );
-};
+});
 
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+describe('spawn: alive()', () => {
+  test('alive is false for 0, -1 and NaN, and true for this process', () => {
+    for (const pid of [0, -1, NaN]) expect(alive(pid), `alive(${pid})`).toBe(false);
+    expect(alive(process.pid), 'alive(process.pid)').toBe(true);
+  });
+});

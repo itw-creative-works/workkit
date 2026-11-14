@@ -4,72 +4,70 @@
 //
 
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, until } = require('../../lib/harness');
+const { describe, test, expect, until } = require('../../lib/harness');
 const {
   DEFAULT_BIND, DEFAULT_PORT, cleanup, issueNode, mkWorld, start, getJson, sweptBoard, tiles,
 } = require('./helpers');
 
-const cases = async () => {
-  group('tower/api/server: the edges');
-
-  await test('the API serves no pages - / is a 404 like any other non-endpoint', async () => {
+describe('tower/api/server: the edges', () => {
+  test('the API serves no pages - / is a 404 like any other non-endpoint', async (t) => {
     const w = mkWorld();
     const c = await start(w);
+    t.after(() => c.stop());
     const root = await getJson(c, '/');
-    assertEq(root.status, 404, 'the dashboard is the OMEGA app, not this process');
-    assertEq(root.body.ok, false, 'the soft shape everywhere');
+    expect(root.status, 'the dashboard is the OMEGA app, not this process').toBe(404);
+    expect(root.body.ok, 'the soft shape everywhere').toBe(false);
     const asset = await getJson(c, '/assets/css/omega.css');
-    assertEq(asset.status, 404, 'and nothing static is served either');
-    await c.stop();
+    expect(asset.status, 'and nothing static is served either').toBe(404);
     cleanup(w.root);
   });
 
-  await test('an unknown path is a 404 with a JSON reason', async () => {
+  test('an unknown path is a 404 with a JSON reason', async (t) => {
     const w = mkWorld();
     const c = await start(w);
+    t.after(() => c.stop());
     const { status, body } = await getJson(c, '/api/nope');
-    assertEq(status, 404, '404');
-    assertEq(body.ok, false, 'the soft shape everywhere');
-    assert(/no such endpoint/.test(body.reason), 'says what was asked for');
-    await c.stop();
+    expect(status, '404').toBe(404);
+    expect(body.ok, 'the soft shape everywhere').toBe(false);
+    expect(/no such endpoint/.test(body.reason), 'says what was asked for').toBeTruthy();
     cleanup(w.root);
   });
 
-  await test('the defaults bind 127.0.0.1 on 8693 - Tailscale is the only way in', () => {
-    assertEq(DEFAULT_BIND, '127.0.0.1', 'localhost only, never 0.0.0.0');
-    assertEq(DEFAULT_PORT, 8693, 'TOWER on a keypad');
+  test('the defaults bind 127.0.0.1 on 8693 - Tailscale is the only way in', () => {
+    expect(DEFAULT_BIND, 'localhost only, never 0.0.0.0').toBe('127.0.0.1');
+    expect(DEFAULT_PORT, 'TOWER on a keypad').toBe(8693);
   });
 
   // A throw in a handler must not end the API process, which takes the dashboard
   // down with it (tower/start.sh: either half ending ends both). A bug in a lib
   // is a 500 on that request and nothing more.
-  await test('a handler that throws answers 500 and the process keeps serving', async () => {
+  test('a handler that throws answers 500 and the process keeps serving', async (t) => {
     const w = mkWorld();
     // A shape no normalizer expects: the connection's nodes are not a list.
     w.board = { data: { r0: { issues: { totalCount: 1, nodes: { nope: true } } } } };
     const c = await start(w);
+    t.after(() => c.stop());
     const said = [];
     const wasError = console.error;
     console.error = (line) => said.push(line);
     try {
       const board = await getJson(c, '/api/board');
-      assertEq(board.status, 500, 'the request that broke is the only thing that failed');
-      assertEq(board.body.ok, false, 'the soft shape everywhere');
-      assert(board.body.reason.length > 0, `and it carries the message, got: ${board.body.reason}`);
-      assertEq(said.length, 1, 'logged once, so the machine has a trail');
+      expect(board.status, 'the request that broke is the only thing that failed').toBe(500);
+      expect(board.body.ok, 'the soft shape everywhere').toBe(false);
+      expect(board.body.reason.length > 0, `and it carries the message, got: ${board.body.reason}`).toBeTruthy();
+      expect(said.length, 'logged once, so the machine has a trail').toBe(1);
       const repos = await getJson(c, '/api/repos');
-      assertEq(repos.status, 200, 'and the next request is answered by the same live process');
+      expect(repos.status, 'and the next request is answered by the same live process').toBe(200);
     } finally {
       console.error = wasError;
     }
-    await c.stop();
     cleanup(w.root);
   });
 
   // The same bug one page later, where no request is left to answer it: the
   // continuations run on a timer, off the request stack, so a round that cannot
   // finish is dropped, not fatal.
-  await test('a continuation that throws is dropped, and the process keeps serving', async () => {
+  test('a continuation that throws is dropped, and the process keeps serving', async (t) => {
     const w = mkWorld();
     // A first page that is whole and says another follows, and a continuation
     // whose issue carries a labels connection that is not a list - a shape the
@@ -94,51 +92,45 @@ const cases = async () => {
     };
 
     const c = await start(w);
+    t.after(() => c.stop());
     const said = [];
     const wasError = console.error;
     console.error = (line) => said.push(line);
     try {
       const first = await getJson(c, '/api/board');
-      assertEq(first.status, 200, 'the read that started the sweep is answered with its first page');
+      expect(first.status, 'the read that started the sweep is answered with its first page').toBe(200);
       // The drop happens a turn of the loop later. Bounded, so a regression that
       // takes the process down fails here rather than hanging the suite.
       await until(() => said.length > 0);
-      assertEq(said.length, 1, 'the machine is told once, the way every other catch here tells it');
+      expect(said.length, 'the machine is told once, the way every other catch here tells it').toBe(1);
       // The kit's one line shape: the glyph, then the message.
-      assert(/^✖ the board sweep was dropped: /.test(said[0]),
-        `and in those words, got: ${said[0]}`);
+      expect(/^✖ the board sweep was dropped: /.test(said[0]),
+        `and in those words, got: ${said[0]}`).toBeTruthy();
 
       const alive = await getJson(c, '/api/repos');
-      assertEq(alive.status, 200, 'the listener is still up - the timer did not take it with it');
+      expect(alive.status, 'the listener is still up - the timer did not take it with it').toBe(200);
 
       // The slot stayed cold, so there is nothing to serve for the minute: the
       // next read sweeps again, and a page that has stopped breaking lands.
       broken = false;
       const second = await getJson(c, '/api/board');
       const body = await sweptBoard(c, second.body);
-      assertEq(body.issues.length, 2, 'the whole board, from a sweep that was started fresh');
-      assertEq(said.length, 1, 'and nothing more was dropped');
+      expect(body.issues.length, 'the whole board, from a sweep that was started fresh').toBe(2);
+      expect(said.length, 'and nothing more was dropped').toBe(1);
     } finally {
       console.error = wasError;
     }
-    await c.stop();
     cleanup(w.root);
   });
 
-  await test('an absent roster serves an empty one instead of crashing', async () => {
+  test('an absent roster serves an empty one instead of crashing', async (t) => {
     const w = mkWorld();
     const c = await start(w, { workflowHome: path.join(w.root, 'absent') });
+    t.after(() => c.stop());
     const repos = await getJson(c, '/api/repos');
-    assertEq(repos.body.length, 0, 'empty');
+    expect(repos.body.length, 'empty').toBe(0);
     const health = await getJson(c, '/api/health');
-    assertEq(tiles(health.body).length, 0, 'no tiles, no error page');
-    await c.stop();
+    expect(tiles(health.body).length, 'no tiles, no error page').toBe(0);
     cleanup(w.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

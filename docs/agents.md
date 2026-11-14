@@ -286,16 +286,18 @@ flowchart TB
 ### Watching a run
 
 - A run the manager starts in the background is one the supervisor reads, never a bare background command:
-  - the root `npm test`, started as `npm test` or `npm run test` in the repo root, or `workkit test` from any folder of it;
+  - any `npm test` npm's script shell runs, the root's and a narrowed `npm test -- <files>` alike, or `workkit test` from any folder of the repo;
   - `workkit prove`;
-  - or `workkit supervise -- <command>`, for any other run (a narrowed `npm test -- <files>`, a lane, a build).
-- The root `npm test`, `workkit test` and `workkit prove` are never wrapped in `workkit supervise`: it refuses them.
+  - or `workkit supervise -- <command>`, for any other run (a lane, a build).
+- Wrapping one of the first two in `workkit supervise` changes nothing: it runs inside that one supervised run.
 - The supervised call ends with the command's own code, 124 after a frozen end, or 125 on a look.
+  - A narrowed run's output ends with `script-shell: exit <code>`, its stderr on stdout.
   - The checks, the verdicts and the evidence: `tests.md` § The checks.
 - On 125 the manager reads the evidence and the log's last lines.
   - A run that still moves gets `workkit watch`.
   - A run that goes in circles gets `workkit watch --end`.
-  - Each runs as its own Bash call, since its allow rule matches the bare call alone (`hooks.md` § `workflow:bare-call`).
+  - A narrowed run is named by the pid its look line prints (`workkit watch <pid>`); with several live, an unnamed call names each and exits 2.
+  - Each runs as its own Bash call, since its allow rule matches the bare call alone.
 - After a frozen end, or an end it asked for, the manager reads the evidence and finds the cause.
   - A bug it can reach is fixed and the run started again.
   - A one-time cause is a rerun.
@@ -305,7 +307,6 @@ flowchart TB
 - The manager may end, without asking, a run its own session started.
   - It never ends a process the run did not start.
 - Every freeze, its cause and what was done are said in the report.
-- `workflow:unwatched` names the `workkit supervise` form of a background test run the supervisor does not read (`hooks.md` § `workflow:unwatched`).
 
 ## Agents from other repos
 

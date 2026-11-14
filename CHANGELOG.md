@@ -7,6 +7,40 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#532](../../issues/532) - workkit-core's suite library exports `pidIn(file)`: the pid a file holds, or 0 while the file is absent, empty or not yet a whole number. The kit's suites that wait for a pid file read it through `pidIn`.
+- [#530](../../issues/530) - workkit-core exports `expect(actual, message?)`: Jest's matchers and forms, plus `toBeTypeOf`, each failure an `AssertionError` carrying `actual` and `expected`; `expect.extend` adds a matcher. It also exports `suiteName` and `modDir`.
+- [#531](../../issues/531) - `workkit convert [paths...]`, in workkit-core's bin and the global `workkit` command, rewrites suites in the old shape in place onto Node's test functions. It prints `converted <path> (<n> case[s])`, or `left <path>:<line> <why>` for a file it leaves byte for byte, for a person to convert.
+- [#533](../../issues/533) - `workkit doctor` checks the `git` shim under This machine: a missing or non-executable shim, or, in a session, another `git` first on PATH (`safety:tree-guard` off until a restart), is a warning. Outside a session the PATH line is a skip.
+- [#533](../../issues/533) - `workkit watch <pid>` attaches to one narrowed run, named by the pid its look line prints; each logs to `.workkit/test.log.<pid>`. With several live, an unnamed `workkit watch` names each and exits 2. `workkit supervise` no longer refuses `npm test`, `workkit test` or `workkit prove`.
+
+### Changed
+
+- [#533](../../issues/533) - No guard reads a Bash command's text. `safety:tree-guard` runs in a `git` shim put first on each session's PATH, and `safety:script-write` checks the files a Bash call changed, after it. A narrowed `npm test` runs supervised. `workflow:bare-call`, `workflow:unwatched` and the `npm publish` check are gone.
+- [#530](../../issues/530) - workkit-core's runner finds a suite by its name, `*.test.js`, `*.test.mjs` or `*.test.cjs`, anywhere under the repo but `node_modules`, a `.` or `_` name, a nested package and a git-ignored file. Names are repo-root paths: rewrite `test/lib/serial.js` entries (`x.test.js` becomes `test/x.test.js`), since an old one exits 1 with `No suite matches`.
+- [#530](../../issues/530) - A suite prints one line per case under its `describe` path's heading, and the failure and skip lists name a case `<suite> › <describe path> › <case>`.
+- [#531](../../issues/531) - A suite is Node's `describe`, `test`, hooks and `expect` from `workkit-core/test`, run alone by `node <file>`. A case with no `timeout` gets 120 seconds. In a `skip` option, `needs()` fails the file on a missing tool outside a cloud session. Upgrade: run `workkit convert`, then hand-convert what it lists.
+- [#531](../../issues/531) - Every suite runs on Node's runner. A file that dies before any case is `load <suite>`; a late failure, an exit or the deadline is `run <suite>`; one with no case is `empty <suite>`; an old-shape suite fails. `t.diagnostic()` lines print under their case.
+- (no issue) - The red-proof snapshot lives in `~/.cache/workkit/snapshot`, outside every repo even when `~/.workkit` links into one. A snapshot in the old home is not read: `workkit proof red` answers `no snapshot for this repo` until the issue is claimed again. The old folder, `~/.workkit/markers/claude-red-snapshot`, can be deleted.
+
+### Removed
+
+- [#530](../../issues/530) - workkit-core's `suiteDir` export and its `tests/` fallback are gone, and the standards heal no longer names a `tests/` folder as drift.
+- [#531](../../issues/531) - workkit-core's own case engine is gone: `group`, its `test`, `assert`, `assertEq`, `failureOf`, `skip`, `testUnless`, `skipSuite`, `summary`, `selfRun`, `log`, `stripAnsi`, `openCase`, `drain`, `TEST_LOG` and the `export <suite>` failure. Node's `describe`, `test`, `skip` option and `t.diagnostic()`, `expect` and `util.stripVTControlCharacters` replace them.
+
+### Fixed
+
+- [#529](../../issues/529) - A test run with `CI` set (any value, `false` and `0` included) no longer counts as proof of the tree: `npm test` writes no record and says so, and `workkit prove` refuses to start. A repo's script may run only part of its suite under `CI`. Run it without `CI`.
+- [#532](../../issues/532) - On Windows the supervisor ends a run with `taskkill` from `System32`, never through PATH, and says so when it cannot start it. A PATH without it left the command running while the run read as ended. The red-proof and watch suites carry their paths and pids in forms Windows reads.
+- [#533](../../issues/533) - A `HUP`, `INT` or `TERM` before a detached run's supervisor is recorded removes its lock, so the next call takes it at once, not 5 seconds later. `workkit watch --end` on a run held in the foreground inside another run says at once which call ends it.
+- [#534](../../issues/534) - On Windows `wk_end_run` ends a run's tree through `node workflow/lib/tree.js end <pid>`, the one home of that end, and returns 1 when it could not. workkit-core's `endTree` runs `taskkill` from `System32` too, throwing when it cannot start it, and `alive` is false for anything but a positive whole pid.
+- [#534](../../issues/534) - On Windows the end of a run's tree gives `taskkill` 60 seconds, then fails as one that could not run. A Ctrl-C whose end of the run fails keeps the run's lock and log, since the run still goes, so the next call is refused.
+- (no issue) - A red-proof snapshot take ended by `TERM`, `INT` or `HUP` removes its half copy at once and exits non-zero, rather than leaving it for a later take's sweep.
+- (no issue) - `workkit tools` and the `safety:test-bar` nudge read a `/` after a postfix `++` or `--` (`i++ / 2`) as division. They read it as a regex, which hid the rest of that line: a `needs()` call there could go unlisted.
+- (no issue) - `safety:issue-guard` now catches a one-word, numeric or local-URL `.env` value under a key naming a secret (holding `PASS`, `PWD`, `SECRET`, `TOKEN`, `KEY` or `CREDENTIAL`, any case), blocking the `gh` call and naming the key. A value under 8 characters still passes.
+- (no issue) - `safety:issue-guard` reads each `.env` value with Node's own reader (`util.parseEnv`) beside its whole line, so a `gh` call carrying a value behind a trailing comment, in backtick quotes, with a `\n` escape or over several lines is blocked, naming the key. It missed each before.
+
 ## [0.94.0] - 2026-11-12
 
 ### Added

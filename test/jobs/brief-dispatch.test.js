@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
@@ -75,43 +75,41 @@ if dispatch_brief; then printf 'ok\\n%s\\n' "$DISPATCH_LINE"; else printf 'refus
   return { verdict, said: rest.join('\n').trim(), stderr: res.stderr || '' };
 };
 
-const cases = async () => {
-  group('jobs/brief-dispatch: shape');
-
-  await test('bash -n: no syntax errors, and nothing runs at load', () => {
+describe('jobs/brief-dispatch: shape', () => {
+  test('bash -n: no syntax errors, and nothing runs at load', () => {
     const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(LIB)], { encoding: 'utf8' });
-    assertEq(res.status, 0, `bash -n: ${res.stderr}`);
+    expect(res.status, `bash -n: ${res.stderr}`).toBe(0);
     const sourced = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(shellPath(LIB))}`], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    assertEq(sourced.status, 0, 'sourcing it is free');
-    assertEq(sourced.stdout, '', 'and silent');
+    expect(sourced.status, 'sourcing it is free').toBe(0);
+    expect(sourced.stdout, 'and silent').toBe('');
   });
+});
 
-  group('jobs/brief-dispatch: the day going over');
-
-  await test('a dispatch that lands names the workflow, the repo, and what happens next', () => {
+describe('jobs/brief-dispatch: the day going over', () => {
+  test('a dispatch that lands names the workflow, the repo, and what happens next', () => {
     const world = mkWorld();
     const { verdict, said } = dispatch(world);
-    assertEq(verdict, 'ok', `the dispatch was made: ${said}`);
+    expect(verdict, `the dispatch was made: ${said}`).toBe('ok');
     const sent = world.dispatched();
-    assertEq(sent.length, 1, `one workflow run: ${fmtCalls(world.ghCalls())}`);
-    assertEq(sent[0][2], 'brief.yml', 'the brief workflow');
-    assertEq(sent[0][3], '--repo', 'on a repo');
-    assertEq(sent[0][4], 'owner/private-home', 'the home repo, where the secrets live');
-    assert(/dispatched brief\.yml on owner\/private-home/.test(said), `and the line says so: ${said}`);
+    expect(sent.length, `one workflow run: ${fmtCalls(world.ghCalls())}`).toBe(1);
+    expect(sent[0][2], 'the brief workflow').toBe('brief.yml');
+    expect(sent[0][3], 'on a repo').toBe('--repo');
+    expect(sent[0][4], 'the home repo, where the secrets live').toBe('owner/private-home');
+    expect(/dispatched brief\.yml on owner\/private-home/.test(said), `and the line says so: ${said}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('the secrets are checked on the same repo the dispatch names', () => {
+  test('the secrets are checked on the same repo the dispatch names', () => {
     const world = mkWorld({ home: 'owner/other-home' });
     dispatch(world);
     const listed = world.ghCalls().filter((c) => c[0] === 'secret' && c[1] === 'list');
-    assertEq(listed.length, 1, 'one listing');
-    assert(listed[0].join(' ').includes('owner/other-home'), `on the home repo: ${listed[0].join(' ')}`);
+    expect(listed.length, 'one listing').toBe(1);
+    expect(listed[0].join(' ').includes('owner/other-home'), `on the home repo: ${listed[0].join(' ')}`).toBeTruthy();
     cleanup(world.root);
   });
+});
 
-  group('jobs/brief-dispatch: every refusal is named');
-
+describe('jobs/brief-dispatch: every refusal is named', () => {
   const refusals = [
     ['gh is not on this machine', { gh: false }, /gh is not on this machine/],
     ['no home repo is configured', { home: null }, /no home repo is configured/],
@@ -123,19 +121,19 @@ const cases = async () => {
   ];
 
   for (const [why, over, pattern] of refusals) {
-    await test(`${why}: the reason is set and no day goes over`, () => {
+    test(`${why}: the reason is set and no day goes over`, () => {
       const world = mkWorld(over);
       const { verdict, said } = dispatch(world);
-      assertEq(verdict, 'refused', `the dispatch was refused: ${said}`);
-      assert(pattern.test(said), `and says why: ${said}`);
+      expect(verdict, `the dispatch was refused: ${said}`).toBe('refused');
+      expect(pattern.test(said), `and says why: ${said}`).toBeTruthy();
       if (over.dispatch !== false) {
-        assertEq(world.dispatched().length, 0, `nothing was triggered: ${fmtCalls(world.ghCalls())}`);
+        expect(world.dispatched().length, `nothing was triggered: ${fmtCalls(world.ghCalls())}`).toBe(0);
       }
       cleanup(world.root);
     });
   }
 
-  await test('a copy of the lib with no engine beside it refuses by name', () => {
+  test('a copy of the lib with no engine beside it refuses by name', () => {
     // The engine resolves from the file's own location, so a partial checkout
     // is a named refusal rather than a crash.
     const world = mkWorld();
@@ -144,15 +142,9 @@ const cases = async () => {
     const copy = path.join(lone, 'brief-dispatch.sh');
     fs.copyFileSync(LIB, copy);
     const { verdict, said } = dispatch(world, copy);
-    assertEq(verdict, 'refused', `no engine, no dispatch: ${said}`);
-    assert(/home-repo library is missing at/.test(said), `and the path is named: ${said}`);
-    assertEq(world.dispatched().length, 0, 'nothing was triggered');
+    expect(verdict, `no engine, no dispatch: ${said}`).toBe('refused');
+    expect(/home-repo library is missing at/.test(said), `and the path is named: ${said}`).toBeTruthy();
+    expect(world.dispatched().length, 'nothing was triggered').toBe(0);
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

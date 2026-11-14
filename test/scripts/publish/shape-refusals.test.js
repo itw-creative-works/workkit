@@ -6,50 +6,48 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { gitPath } = require('../../lib/platform');
 const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
-const cases = async () => {
-  group('workflow/publish: the reasons not to');
-
-  await test('no home repo is a named skip, and nothing is built', () => {
+describe('workflow/publish: the reasons not to', () => {
+  test('no home repo is a named skip, and nothing is built', () => {
     const world = mkWorld({ home: false });
     const { code, out } = publish(world);
-    assertEq(code, 0, 'exit 0: a machine without a home repo is not broken');
-    assert(/no home repo/.test(out), `it names the reason, got: ${out}`);
-    assert(!fs.existsSync(world.dist), 'and never runs a build');
+    expect(code, 'exit 0: a machine without a home repo is not broken').toBe(0);
+    expect(/no home repo/.test(out), `it names the reason, got: ${out}`).toBeTruthy();
+    expect(!fs.existsSync(world.dist), 'and never runs a build').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a configured home with nothing cloned points at setup', () => {
+  test('a configured home with nothing cloned points at setup', () => {
     const world = mkWorld({ home: false });
     fs.writeFileSync(
       path.join(world.workflowHome, 'settings.json'),
       `${JSON.stringify({ version: 1, site: { repo: 'owner/workkit', publish: true } }, null, 2)}\n`,
     );
     const { code, out } = publish(world);
-    assertEq(code, 0, 'exit 0');
-    assert(/nothing is cloned/.test(out) && /workkit setup/.test(out), `it names the fix, got: ${out}`);
+    expect(code, 'exit 0').toBe(0);
+    expect(/nothing is cloned/.test(out) && /workkit setup/.test(out), `it names the fix, got: ${out}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('no build tooling is a named skip that says what is missing', () => {
+  test('no build tooling is a named skip that says what is missing', () => {
     // The honest signal: an `npm install` can exit 0 and still link no omega
     // binary, so the binary's presence is the only thing worth checking.
     const world = mkWorld({ tooling: false });
     const { code, out } = publish(world);
-    assertEq(code, 0, 'exit 0');
-    assert(/node_modules\/\.bin\/omega/.test(out), `it names what is missing, got: ${out}`);
+    expect(code, 'exit 0').toBe(0);
+    expect(/node_modules\/\.bin\/omega/.test(out), `it names what is missing, got: ${out}`).toBeTruthy();
     const line = out.split('\n').find((l) => /npm install/.test(l)) || '';
-    assert(line.includes(gitPath(world.tower)) && /omega/.test(line),
-      `it says \`npm install\` at the clone did not produce the omega binary, got: ${out}`);
-    assert(!/file:/.test(line), `and talks no file: specs, which the pins no longer are, got: ${line}`);
-    assertEq(fromPages(world), null, 'nothing is published');
+    expect(line.includes(gitPath(world.tower)) && /omega/.test(line),
+      `it says \`npm install\` at the clone did not produce the omega binary, got: ${out}`).toBeTruthy();
+    expect(!/file:/.test(line), `and talks no file: specs, which the pins no longer are, got: ${line}`).toBeTruthy();
+    expect(fromPages(world), 'nothing is published').toBe(null);
     cleanup(world.root);
   });
 
-  await test('a folder that is not the clone publishes nothing', () => {
+  test('a folder that is not the clone publishes nothing', () => {
     const world = mkWorld({ home: false });
     const theirs = path.join(world.root, 'theirs.git');
     spawnSync('git', ['init', '-q', '--bare', '-b', 'main', theirs], { encoding: 'utf8' });
@@ -62,12 +60,12 @@ const cases = async () => {
     );
 
     const { code, out } = publish(world);
-    assertEq(code, 0, 'exit 0');
-    assert(/not the home repo's clone/.test(out), `it says why, got: ${out}`);
+    expect(code, 'exit 0').toBe(0);
+    expect(/not the home repo's clone/.test(out), `it says why, got: ${out}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('a diverged clone is skipped, and nothing is forced onto main', () => {
+  test('a diverged clone is skipped, and nothing is forced onto main', () => {
     const world = mkWorld();
     // Two histories that disagree: someone else pushed while this machine
     // committed something of its own.
@@ -82,16 +80,15 @@ const cases = async () => {
 
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
     const { code, out } = publish(world);
-    assertEq(code, 0, 'a divergence is a skip, not a failure');
-    assert(/could not catch up with its upstream/.test(out) && /nothing was forced/.test(out),
-      `it names the symptom and the fix, and calls no offline or auth failure a divergence, got: ${out}`);
-    assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), before,
-      'and main on the remote is exactly where it was');
-    assertEq(fromPages(world), null, 'with nothing published');
+    expect(code, 'a divergence is a skip, not a failure').toBe(0);
+    expect(/could not catch up with its upstream/.test(out) && /nothing was forced/.test(out),
+      `it names the symptom and the fix, and calls no offline or auth failure a divergence, got: ${out}`).toBeTruthy();
+    expect(spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), 'and main on the remote is exactly where it was').toBe(before);
+    expect(fromPages(world), 'with nothing published').toBe(null);
     cleanup(world.root);
   });
 
-  await test('an autostash that cannot come back publishes nothing and puts the tree back', () => {
+  test('an autostash that cannot come back publishes nothing and puts the tree back', () => {
     // The silent half of `pull --rebase --autostash`: the rebase lands, the
     // stash conflicts on its way back, and the pull still exits 0 over a tree
     // full of conflict markers. A run carrying on would push them to main.
@@ -106,52 +103,42 @@ const cases = async () => {
 
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
     const { code, out } = publish(world);
-    assertEq(code, 0, 'a conflict is a skip, not a failure');
-    assert(/conflict/.test(out) && /put back/.test(out), `it says what it did, got: ${out}`);
-    assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), before,
-      'main on the remote is exactly where it was');
-    assertEq(fromPages(world), null, 'and nothing was published');
+    expect(code, 'a conflict is a skip, not a failure').toBe(0);
+    expect(/conflict/.test(out) && /put back/.test(out), `it says what it did, got: ${out}`).toBeTruthy();
+    expect(spawnSync('git', ['-C', world.bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), 'main on the remote is exactly where it was').toBe(before);
+    expect(fromPages(world), 'and nothing was published').toBe(null);
 
     // The line endings are the machine git's business (Windows checks out
     // CRLF); what this case is about is that the edit came back whole.
-    assertEq(fs.readFileSync(world.source, 'utf8').replace(/\r\n/g, '\n'), mine,
-      'the local edit is back, with no conflict markers in it');
-    assertEq(spawnSync('git', ['-C', world.tower, 'stash', 'list'], { encoding: 'utf8' }).stdout.trim(), '',
-      'and nothing of it was left behind in a stash');
+    expect(fs.readFileSync(world.source, 'utf8').replace(/\r\n/g, '\n'), 'the local edit is back, with no conflict markers in it').toBe(mine);
+    expect(spawnSync('git', ['-C', world.tower, 'stash', 'list'], { encoding: 'utf8' }).stdout.trim(), 'and nothing of it was left behind in a stash').toBe('');
     cleanup(world.root);
   });
 
-  await test('a settings file that does not parse refuses loudly instead of defaulting', () => {
+  test('a settings file that does not parse refuses loudly instead of defaulting', () => {
     // `site.publish` and `site.url` decide what is published, and the same file
     // names the home repo the slug list points at. An unreadable file read as an
     // absent one would drop the CNAME and the home without a word, so the
     // refusal has to come before every other check.
     const world = mkWorld();
     publish(world);
-    assert(fs.existsSync(path.join(fromPages(world), 'index.html')), 'the site was published');
+    expect(fs.existsSync(path.join(fromPages(world), 'index.html')), 'the site was published').toBeTruthy();
     const before = spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim();
 
     fs.writeFileSync(world.settings, '{ "site": { "publish": true, }\n');
     const { code, out } = publish(world);
-    assertEq(code, 0, 'exit 0: a file to fix is not a crash');
-    assert(/does not parse as JSON/.test(out) && /settings\.json/.test(out), `it names the file, got: ${out}`);
-    assert(!/no home repo/.test(out), `and never reads an unparseable file as a machine with no home, got: ${out}`);
-    assertEq(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), before,
-      'and the published site was not quietly rebuilt out of a file nobody can read');
+    expect(code, 'exit 0: a file to fix is not a crash').toBe(0);
+    expect(/does not parse as JSON/.test(out) && /settings\.json/.test(out), `it names the file, got: ${out}`).toBeTruthy();
+    expect(!/no home repo/.test(out), `and never reads an unparseable file as a machine with no home, got: ${out}`).toBeTruthy();
+    expect(spawnSync('git', ['-C', world.bare, 'rev-parse', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), 'and the published site was not quietly rebuilt out of a file nobody can read').toBe(before);
     cleanup(world.root);
   });
 
-  await test('a build that fails exits non-zero with its last lines', () => {
+  test('a build that fails exits non-zero with its last lines', () => {
     const world = mkWorld({ buildFails: true });
     const { code, out, err } = publish(world);
-    assert(code !== 0, 'the caller can tell a failure from a skip');
-    assert(/build failed/.test(out + err), `and sees what the build said, got: ${out}${err}`);
+    expect(code !== 0, 'the caller can tell a failure from a skip').toBeTruthy();
+    expect(/build failed/.test(out + err), `and sees what the build said, got: ${out}${err}`).toBeTruthy();
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

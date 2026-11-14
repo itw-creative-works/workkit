@@ -3,7 +3,7 @@
 // recording `run`: the argv each builds, with and without --repo, and the answer
 // handed back, gh's text on success and null when gh fails.
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods, runResult } = require('../lib/mods-inputs');
 
 // A run that records each argv and answers `result`.
@@ -15,71 +15,62 @@ const recorder = (result = runResult({ stdout: '{"ok":true}\n' })) => {
 
 // The argv after the program, whatever spelling of gh it was run as.
 const argsOf = (call) => {
-  assertEq(call.argv[0].split(/[\\/]/).pop().replace(/\.exe$/, ''), 'gh', `the program is gh, got: ${call.argv[0]}`);
+  expect(call.argv[0].split(/[\\/]/).pop().replace(/\.exe$/, ''), `the program is gh, got: ${call.argv[0]}`).toBe('gh');
   return call.argv.slice(1);
 };
 
 // The value after a flag, undefined when the flag is not there.
 const flag = (args, name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 
-const cases = async () => {
-  group('gh.js: issueView');
-
-  await test('issueView asks gh issue view <n> --json <fields>, with no --repo when none is given', async () => {
+describe('gh.js: issueView', () => {
+  test('issueView asks gh issue view <n> --json <fields>, with no --repo when none is given', async () => {
     const { run: r, calls } = recorder();
     await mods('gh').issueView(r, 12, 'state,labels,comments,url', {});
-    assertEq(calls.length, 1, 'one gh call');
+    expect(calls.length, 'one gh call').toBe(1);
     const args = argsOf(calls[0]);
-    assertEq(args.slice(0, 3).join(' '), 'issue view 12', `the view of the number, got: ${args.join(' ')}`);
-    assertEq(flag(args, '--json'), 'state,labels,comments,url', 'the fields asked for');
-    assert(!args.includes('--repo') && !args.includes('-R'), `no repo named, got: ${args.join(' ')}`);
+    expect(args.slice(0, 3).join(' '), `the view of the number, got: ${args.join(' ')}`).toBe('issue view 12');
+    expect(flag(args, '--json'), 'the fields asked for').toBe('state,labels,comments,url');
+    expect(!args.includes('--repo') && !args.includes('-R'), `no repo named, got: ${args.join(' ')}`).toBeTruthy();
   });
 
-  await test('issueView with a repo adds --repo <owner/name>', async () => {
+  test('issueView with a repo adds --repo <owner/name>', async () => {
     const { run: r, calls } = recorder();
     await mods('gh').issueView(r, 7, 'body', { repo: 'acme/widgets' });
     const args = argsOf(calls[0]);
-    assertEq(args.slice(0, 3).join(' '), 'issue view 7', `the view of the number, got: ${args.join(' ')}`);
-    assertEq(flag(args, '--repo'), 'acme/widgets', `the repo, got: ${args.join(' ')}`);
+    expect(args.slice(0, 3).join(' '), `the view of the number, got: ${args.join(' ')}`).toBe('issue view 7');
+    expect(flag(args, '--repo'), `the repo, got: ${args.join(' ')}`).toBe('acme/widgets');
   });
 
-  await test("issueView answers gh's text, and null when gh fails", async () => {
-    assertEq(await mods('gh').issueView(recorder().run, 12, 'body', {}), '{"ok":true}\n', 'the view as gh printed it');
+  test("issueView answers gh's text, and null when gh fails", async () => {
+    expect(await mods('gh').issueView(recorder().run, 12, 'body', {}), 'the view as gh printed it').toBe('{"ok":true}\n');
     const failed = recorder(runResult({ exitCode: 1, stderr: 'GraphQL: Could not resolve to an issue\n' }));
-    assertEq(await mods('gh').issueView(failed.run, 12, 'body', {}), null, 'a failed view is null');
+    expect(await mods('gh').issueView(failed.run, 12, 'body', {}), 'a failed view is null').toBe(null);
   });
+});
 
-  group('gh.js: buildingList');
-
-  await test('buildingList asks gh issue list --state open --label status:building, with no --repo when none is given', async () => {
+describe('gh.js: buildingList', () => {
+  test('buildingList asks gh issue list --state open --label status:building, with no --repo when none is given', async () => {
     const { run: r, calls } = recorder();
     await mods('gh').buildingList(r, {});
-    assertEq(calls.length, 1, 'one gh call');
+    expect(calls.length, 'one gh call').toBe(1);
     const args = argsOf(calls[0]);
-    assertEq(args.slice(0, 2).join(' '), 'issue list', `the issue list, got: ${args.join(' ')}`);
-    assertEq(flag(args, '--state'), 'open', 'open issues');
-    assertEq(flag(args, '--label'), 'status:building', 'at status:building');
-    assert(!args.includes('--repo') && !args.includes('-R'), `no repo named, got: ${args.join(' ')}`);
+    expect(args.slice(0, 2).join(' '), `the issue list, got: ${args.join(' ')}`).toBe('issue list');
+    expect(flag(args, '--state'), 'open issues').toBe('open');
+    expect(flag(args, '--label'), 'at status:building').toBe('status:building');
+    expect(!args.includes('--repo') && !args.includes('-R'), `no repo named, got: ${args.join(' ')}`).toBeTruthy();
   });
 
-  await test('buildingList with a repo adds --repo <owner/name>', async () => {
+  test('buildingList with a repo adds --repo <owner/name>', async () => {
     const { run: r, calls } = recorder();
     await mods('gh').buildingList(r, { repo: 'acme/widgets' });
     const args = argsOf(calls[0]);
-    assertEq(flag(args, '--label'), 'status:building', 'at status:building');
-    assertEq(flag(args, '--repo'), 'acme/widgets', `the repo, got: ${args.join(' ')}`);
+    expect(flag(args, '--label'), 'at status:building').toBe('status:building');
+    expect(flag(args, '--repo'), `the repo, got: ${args.join(' ')}`).toBe('acme/widgets');
   });
 
-  await test("buildingList answers gh's text, and null when gh fails", async () => {
-    assertEq(await mods('gh').buildingList(recorder().run, {}), '{"ok":true}\n', 'the list as gh printed it');
+  test("buildingList answers gh's text, and null when gh fails", async () => {
+    expect(await mods('gh').buildingList(recorder().run, {}), 'the list as gh printed it').toBe('{"ok":true}\n');
     const failed = recorder(runResult({ exitCode: 1, stderr: 'error connecting to api.github.com\n' }));
-    assertEq(await mods('gh').buildingList(failed.run, {}), null, 'a failed list is null');
+    expect(await mods('gh').buildingList(failed.run, {}), 'a failed list is null').toBe(null);
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

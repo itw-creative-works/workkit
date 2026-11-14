@@ -1,21 +1,20 @@
-// Tests for safety:tree-guard's logic, treeGuardVerdict({ command, cwd, exists }) in hooks/mods/tree-guard.js:
-// the git commands that discard a shared working tree (checkout with a pathspec, a forced switch, restore, stash,
-// clean -f, reset --hard) bounce; the escape, read off the command alone, stands aside. The guard's run line is
-// test/mods/guards-tree-guard.test.ts.
+// Tests for safety:tree-guard's logic, treeGuardVerdict({ argv, exists, allow }) in hooks/mods/tree-guard.js:
+// git's real argument list, as the git shim got it, is judged. The forms that discard a shared working tree
+// (checkout with a pathspec or force, a forced switch, restore over the tree, stash but list and show, a forced
+// clean, reset --hard) bounce; `allow`, WORKKIT_ALLOW_DISCARD=1 in the shim's environment, stands aside and says so.
+// The shim through a real PATH and a real repo is test/scripts/gitshim.test.js.
 
-const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods, textOf } = require('../lib/mods-inputs');
 
-const CWD = '/w/repo';
-// The working directory the path probe answers about: `src/app.js` exists, so
+// The folder the shim runs in, as the path probe answers for it: `src/app.js` exists, so
 // it reads as a pathspec, while `feature/thing` does not and reads as a branch.
 const TREE = new Set(['src', 'src/app.js', 'notes.md']);
 const exists = async (rel) => TREE.has(rel.replace(/^(\.\/)+/, '').replace(/\/+$/, ''));
 
-const judge = (command) => mods('tree-guard').treeGuardVerdict({ command, cwd: CWD, exists });
+const judge = (argv, allow = false) => mods('tree-guard').treeGuardVerdict({ argv, exists, allow });
 
-const BLOCK = (found) => `tree-guard: BLOCKED this command: it runs ${found}, which discards or parks working-tree state, and this tree is SHARED: reverting your own edits that way takes whatever else is uncommitted with it (issue #157).\nRevert your own changes by reverse-editing your own hunks: edit each file back to what it was. If the discard is genuinely intended, the OWNER reruns the command with WORKKIT_ALLOW_DISCARD=1 in front of it.`;
-const ASIDE = (found) => `tree-guard: stood aside for a deliberate discard: WORKKIT_ALLOW_DISCARD=1 is set on this command (${found}).`;
+const BLOCK = (found) => `tree-guard: BLOCKED this command: it runs ${found}, which discards or parks working-tree state, and this tree is SHARED: reverting your own edits that way takes whatever else is uncommitted with it.\nRevert your own changes by reverse-editing your own hunks: edit each file back to what it was. If the discard is genuinely intended, the OWNER reruns the command with WORKKIT_ALLOW_DISCARD=1 in front of it.`;
 
 const CHECKOUT = 'git checkout with a pathspec';
 const SWITCH = 'git switch --discard-changes/--force';
@@ -25,221 +24,144 @@ const CLEAN = 'git clean -f';
 const RESET = 'git reset --hard';
 
 const denyOf = (r) => (r && typeof r.deny === 'string' ? r.deny.replace(/\n$/, '') : null);
+const shown = (argv) => `git ${argv.join(' ')}`;
 
-const blocks = async (command, found) => {
-  const r = await judge(command);
-  assertEq(denyOf(r), BLOCK(found), `must block: ${command}`);
+const blocks = async (argv, found) => {
+  expect(denyOf(await judge(argv)), `must block: ${shown(argv)}`).toBe(BLOCK(found));
 };
 
-const passes = async (command) => {
-  const r = await judge(command);
-  assertEq(denyOf(r), null, `must pass: ${command}`);
-  assertEq(textOf(r), '', `silently: ${command}`);
+const passes = async (argv) => {
+  const r = await judge(argv);
+  expect(denyOf(r), `must pass: ${shown(argv)}`).toBe(null);
+  expect(textOf(r), `silently: ${shown(argv)}`).toBe('');
 };
 
-const cases = async () => {
-  group('tree-guard: git checkout');
-
-  await test('checkout with a pathspec after --: exit 2', async () => {
-    for (const c of ['git checkout -- .', 'git checkout -- src/app.js',
-      'git checkout main -- src/app.js', 'git checkout HEAD -- src/app.js notes.md']) {
-      await blocks(c, CHECKOUT);
+describe('tree-guard: git checkout', () => {
+  test('checkout with a pathspec after --: blocked', async () => {
+    for (const a of [['checkout', '--', '.'], ['checkout', '--', 'src/app.js'],
+      ['checkout', 'main', '--', 'src/app.js'], ['checkout', 'HEAD', '--', 'src/app.js', 'notes.md']]) {
+      await blocks(a, CHECKOUT);
     }
   });
 
-  await test('checkout with . or a path-looking token: exit 2', async () => {
-    for (const c of ['git checkout .', 'git checkout ./src', 'git checkout src/app.js',
-      'git checkout notes.md', 'git checkout "src/*.js"']) {
-      await blocks(c, CHECKOUT);
+  test('checkout with . or a path the folder holds: blocked', async () => {
+    for (const a of [['checkout', '.'], ['checkout', './src'], ['checkout', 'src/app.js'], ['checkout', 'notes.md']]) {
+      await blocks(a, CHECKOUT);
     }
   });
 
-  await test('checkout of two operands is the ref+pathspec form: exit 2', async () => {
-    await blocks('git checkout main app.js', CHECKOUT);
+  test('checkout of two operands is the ref and pathspec form: blocked', async () => {
+    await blocks(['checkout', 'main', 'app.js'], CHECKOUT);
   });
 
-  await test('a FORCED branch switch discards the tree too: exit 2', async () => {
-    for (const c of ['git checkout -f main', 'git checkout --force main']) await blocks(c, CHECKOUT);
+  test('a forced branch checkout discards the tree too: blocked', async () => {
+    for (const a of [['checkout', '-f', 'main'], ['checkout', '--force', 'main']]) await blocks(a, CHECKOUT);
   });
 
-  await test('a redirection or a comment is not an operand: exit 0', async () => {
-    for (const c of ['git checkout main > /tmp/out', 'git checkout main 2> /tmp/err',
-      'git checkout main >/tmp/out', 'git checkout main # words']) {
-      await passes(c);
+  test('a plain branch checkout passes: a name the folder does not hold is a branch', async () => {
+    for (const a of [['checkout', 'main'], ['checkout', '-b', 'new'], ['checkout', '-b', 'new', 'main'],
+      ['checkout', 'feature/thing'], ['checkout', 'origin/main'], ['checkout', '-']]) {
+      await passes(a);
+    }
+  });
+});
+
+describe('tree-guard: git switch', () => {
+  test('a switch that overwrites local changes: blocked', async () => {
+    for (const a of [['switch', '--discard-changes', 'main'], ['switch', '-f', 'main'], ['switch', '--force', 'main']]) {
+      await blocks(a, SWITCH);
     }
   });
 
-  await test('a redirect\'s & never splits the clause: the discard after it is seen, exit 2', async () => {
-    await blocks('git checkout 2>&1 -- file.txt', CHECKOUT);
-    await blocks('git clean 2>&1 -f', CLEAN);
-    await blocks('git reset 2>&1 --hard', RESET);
-    await blocks('git checkout &>/dev/null -- file.txt', CHECKOUT);
+  test('a plain switch passes', async () => {
+    for (const a of [['switch', 'main'], ['switch', '-c', 'new'], ['switch', '-c', 'new', 'main'], ['switch', '-'], ['switch', '--create', 'new']]) {
+      await passes(a);
+    }
   });
+});
 
-  await test('a word carrying > that is no redirect stays an operand: exit 2', async () => {
-    await blocks('git checkout HEAD~1 file.txt>/dev/null', CHECKOUT);
-  });
-
-  await test('a comment does not answer for the command in front of it: exit 0', async () => {
-    for (const c of ['git reset --soft HEAD~1 # not --hard', 'git clean -n # never -f']) await passes(c);
-  });
-
-  await test('a plain branch switch stays legal: exit 0', async () => {
-    for (const c of ['git checkout main', 'git checkout -b new', 'git checkout -b new main',
-      'git checkout feature/thing', 'git checkout origin/main', 'git checkout -']) {
-      await passes(c);
+describe('tree-guard: git restore', () => {
+  test('a restore that touches the working tree: blocked', async () => {
+    for (const a of [['restore', 'src/app.js'], ['restore', '.'], ['restore', '--worktree', 'src/app.js'],
+      ['restore', '--staged', '--worktree', 'src/app.js'], ['restore', '-SW', 'src/app.js'], ['restore']]) {
+      await blocks(a, RESTORE);
     }
   });
 
-  group('tree-guard: git switch');
+  test('a restore of the index alone passes', async () => {
+    for (const a of [['restore', '--staged', 'src/app.js'], ['restore', '--staged', '.'], ['restore', '-S', 'src/app.js']]) {
+      await passes(a);
+    }
+  });
+});
 
-  await test('switch that overwrites local modifications: exit 2', async () => {
-    for (const c of ['git switch --discard-changes main', 'git switch -f main', 'git switch --force main']) {
-      await blocks(c, SWITCH);
+describe('tree-guard: git stash, clean, reset', () => {
+  test('every stash but list and show: blocked', async () => {
+    for (const a of [['stash'], ['stash', 'push', '-m', 'wip'], ['stash', 'push', 'src/app.js'], ['stash', 'pop'],
+      ['stash', 'apply'], ['stash', 'drop'], ['stash', 'clear'], ['stash', 'save', 'wip']]) {
+      await blocks(a, STASH);
     }
   });
 
-  await test('a plain switch stays legal: exit 0', async () => {
-    for (const c of ['git switch main', 'git switch -c new', 'git switch -c new main',
-      'git switch -', 'git switch --create new']) {
-      await passes(c);
+  test('stash list and show pass', async () => {
+    for (const a of [['stash', 'list'], ['stash', 'show'], ['stash', 'show', '-p', 'stash@{0}']]) await passes(a);
+  });
+
+  test('a clean with a force spelling: blocked', async () => {
+    for (const a of [['clean', '-f'], ['clean', '-fd'], ['clean', '-fdx'], ['clean', '-x', '-f'], ['clean', '--force']]) {
+      await blocks(a, CLEAN);
     }
   });
 
-  group('tree-guard: git restore');
+  test('a dry-run clean passes', async () => {
+    for (const a of [['clean', '-n'], ['clean', '--dry-run']]) await passes(a);
+  });
 
-  await test('restore touching the working tree: exit 2', async () => {
-    for (const c of ['git restore src/app.js', 'git restore .', 'git restore --worktree src/app.js',
-      'git restore --staged --worktree src/app.js', 'git restore -SW src/app.js', 'git restore']) {
-      await blocks(c, RESTORE);
+  test('reset --hard: blocked', async () => {
+    for (const a of [['reset', '--hard'], ['reset', '--hard', 'HEAD~1'], ['reset', '--hard', 'origin/main']]) await blocks(a, RESET);
+  });
+
+  test('a reset that leaves the tree alone passes', async () => {
+    for (const a of [['reset', '--soft', 'HEAD~1'], ['reset', 'HEAD', 'src/app.js'], ['reset', 'src/app.js'], ['reset']]) await passes(a);
+  });
+});
+
+describe('tree-guard: git\'s own global options', () => {
+  test('a discard behind -C, -c or --git-dir is judged as its verb: blocked', async () => {
+    await blocks(['-C', '/other', 'stash'], STASH);
+    await blocks(['-C', '/other', 'checkout', '--', '.'], CHECKOUT);
+    await blocks(['-c', 'core.quotepath=off', 'reset', '--hard'], RESET);
+    await blocks(['--git-dir=/other/.git', 'clean', '-f'], CLEAN);
+  });
+
+  test('a read-only form behind -C passes', async () => {
+    await passes(['-C', '/other', 'stash', 'list']);
+  });
+});
+
+describe('tree-guard: what it never touches', () => {
+  test('every other verb passes, whatever words follow it', async () => {
+    for (const a of [['status'], ['diff', '--', 'src/app.js'], ['add', '-A'], ['log', '--oneline'],
+      ['commit', '-m', 'docs: say why git checkout -- . is banned'], ['grep', 'reset --hard']]) {
+      await passes(a);
+    }
+  });
+});
+
+describe('tree-guard: the deliberate discard', () => {
+  test('allow passes a discard and says it stood aside, naming the form', async () => {
+    for (const [a, found] of [[['checkout', '--', '.'], CHECKOUT], [['stash', 'pop'], STASH], [['reset', '--hard'], RESET]]) {
+      const r = await judge(a, true);
+      expect(denyOf(r), `the escape passes: ${shown(a)}`).toBe(null);
+      const said = textOf(r);
+      expect(said.startsWith('tree-guard: stood aside'), `and says so: ${shown(a)}, got: ${said}`).toBeTruthy();
+      expect(said.includes(found), `naming ${found}: got: ${said}`).toBeTruthy();
     }
   });
 
-  await test('restore of the INDEX alone is legal: exit 0', async () => {
-    for (const c of ['git restore --staged src/app.js', 'git restore --staged .', 'git restore -S src/app.js']) {
-      await passes(c);
-    }
+  test('allow with no discard is silent', async () => {
+    const r = await judge(['status'], true);
+    expect(denyOf(r), 'nothing to stand aside from').toBe(null);
+    expect(textOf(r), 'and nothing said').toBe('');
   });
-
-  group('tree-guard: git stash, clean, reset');
-
-  await test('every mutating stash spelling: exit 2', async () => {
-    for (const c of ['git stash', 'git stash push -m "wip"', 'git stash push src/app.js',
-      'git stash pop', 'git stash apply', 'git stash drop', 'git stash clear', 'git stash save wip']) {
-      await blocks(c, STASH);
-    }
-  });
-
-  await test('read-only stash subcommands: exit 0', async () => {
-    for (const c of ['git stash list', 'git stash show', 'git stash show -p stash@{0}',
-      'git -C /other stash list', 'echo start; git stash list; echo done']) {
-      await passes(c);
-    }
-  });
-
-  await test('clean with a force spelling: exit 2', async () => {
-    for (const c of ['git clean -f', 'git clean -fd', 'git clean -fdx', 'git clean -x -f', 'git clean --force']) {
-      await blocks(c, CLEAN);
-    }
-  });
-
-  await test('a dry-run clean is not a discard: exit 0', async () => {
-    for (const c of ['git clean -n', 'git clean --dry-run']) await passes(c);
-  });
-
-  await test('reset --hard: exit 2', async () => {
-    for (const c of ['git reset --hard', 'git reset --hard HEAD~1', 'git reset --hard origin/main']) {
-      await blocks(c, RESET);
-    }
-  });
-
-  await test('reset that leaves the tree alone: exit 0', async () => {
-    for (const c of ['git reset --soft HEAD~1', 'git reset HEAD src/app.js', 'git reset']) await passes(c);
-  });
-
-  group('tree-guard: where the discard hides');
-
-  await test('a discard mid-compound is found: exit 2', async () => {
-    await blocks('npm test && git checkout -- src/app.js', CHECKOUT);
-    await blocks('echo start; git stash pop; echo done', STASH);
-    await blocks('npm run build || git reset --hard', RESET);
-  });
-
-  await test('a discard aimed at another repo with -C: exit 2', async () => {
-    await blocks('git -C /other stash', STASH);
-    await blocks('git -C /other checkout -- .', CHECKOUT);
-  });
-
-  await test('wrapper prefixes do not hide it: exit 2', async () => {
-    for (const [c, found] of [
-      ['command git stash', STASH], ['env git reset --hard', RESET], ['/usr/bin/git clean -fd', CLEAN],
-      ['(git stash pop)', STASH], ['time git stash', STASH], ['builtin command git reset --hard', RESET],
-      ['\\git clean -fd', CLEAN], ['if git stash', STASH], ['! git reset --hard', RESET],
-      ['2>/dev/null git stash', STASH],
-    ]) {
-      await blocks(c, found);
-    }
-  });
-
-  await test('a quoted MENTION is not a command: exit 0', async () => {
-    for (const c of ['echo "never run git stash here"',
-      'git commit -m "docs: say why git checkout -- . is banned"',
-      'grep -rn "git reset --hard" docs/']) {
-      await passes(c);
-    }
-  });
-
-  await test('a heredoc BODY naming a discard is file content: exit 0', async () => {
-    await passes("cat >> notes.md <<'EOF'\n- never: git checkout -- .\nEOF");
-  });
-
-  group('tree-guard: what it never touches');
-
-  await test('ordinary commands: exit 0', async () => {
-    for (const c of ['npm test', 'git status', 'git diff -- src/app.js', 'git add -A',
-      'git log --oneline', 'ls -la', 'rm -rf build']) {
-      await passes(c);
-    }
-  });
-
-  await test('a non-git command that merely carries the words: exit 0', async () => {
-    for (const c of ['npm run stash', 'make clean -f Makefile']) await passes(c);
-  });
-
-  group('tree-guard: the deliberate discard escapes');
-
-  await test('WORKKIT_ALLOW_DISCARD=1 passes, and says it stood aside', async () => {
-    for (const [c, found] of [
-      ['WORKKIT_ALLOW_DISCARD=1 git checkout -- .', CHECKOUT],
-      ['WORKKIT_ALLOW_DISCARD=1 git stash pop', STASH],
-      ['export WORKKIT_ALLOW_DISCARD=1; git reset --hard', RESET],
-    ]) {
-      const r = await judge(c);
-      assertEq(denyOf(r), null, `the escape passes: ${c}`);
-      assertEq(textOf(r), ASIDE(found), `and says so, naming the escape: ${c}`);
-    }
-  });
-
-  await test('the escape inside a quoted span is not an escape: exit 2', async () => {
-    await blocks('echo "set WORKKIT_ALLOW_DISCARD=1 first" && git stash', STASH);
-  });
-
-  await test('the escape without a discard is silent: exit 0', async () => {
-    const r = await judge('WORKKIT_ALLOW_DISCARD=1 npm test');
-    assertEq(denyOf(r), null, 'nothing to stand aside from');
-    assertEq(textOf(r), '', 'and nothing said');
-  });
-
-  group('tree-guard: fail-open and wiring');
-
-  await test('missing command: exit 0: an empty command is silence', async () => {
-    await passes('');
-  });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

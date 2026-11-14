@@ -24,17 +24,6 @@ load_libs() {
   . "$SCRIPT_DIR/lib/detach.sh"
 }
 
-# read_already <command> [args...]: 0 when the supervisor reads the command
-# itself: the bare root `npm test`, the bare `workkit test`, `workkit prove`
-# or `workkit supervise`. Twin of bareNpm and bareWorkkit in hooks/mods/unwatched.js.
-read_already() {
-  case "${1##*/} ${*:2}" in
-    'workkit test'|'workkit prove'|'workkit prove '*|'workkit supervise'|'workkit supervise '*) return 0 ;;
-    'npm test'|'npm run test') [ -z "$(git rev-parse --show-prefix 2>/dev/null)" ] ;;
-    *) return 1 ;;
-  esac
-}
-
 # supervise_body -- <command> [args...]: the detached run. Its last line is
 # always `supervise: exit <code>`, the command's own code.
 supervise_body() {
@@ -59,11 +48,6 @@ main() {
   shift
   load_libs
   root=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not inside a git repository"
-  # Its supervisor would leave the session and so the outer one's reach.
-  if read_already "$@"; then
-    printf 'supervise: the supervisor reads %s already; run it without workkit supervise\n' "$*" >&2
-    exit 2
-  fi
 
   # Checked by the root's tests.check: a frozen run exits 124, and a look at an
   # unclear one 125 with the run on.

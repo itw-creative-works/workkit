@@ -4,9 +4,8 @@
 // the suites the runner would run from the cwd; it never loads one.
 
 import fs from 'node:fs';
-import path from 'node:path';
-import { suiteDir, findSuites, findModSuites } from './lib/suites.js';
-import { lexLine } from './lib/lexer.js';
+import { findSuites, findModSuites, suiteName, modDir } from './lib/suites.js';
+import { maskSpans } from './lib/lexer.js';
 
 // A `needs(` call, not a method of the same name or a longer identifier.
 const NEEDS_CALL = /(?<![\w$.])needs\s*\(/g;
@@ -15,20 +14,8 @@ const NEEDS_CALL = /(?<![\w$.])needs\s*\(/g;
 const LITERAL_ARG = /^\s*(['"])([^'"\\\n]+)\1\s*(,|\))/;
 
 // `text` with every comment blanked to spaces, and every string, template and
-// regex too unless `strings` is false (the lexer's spans); newlines are kept,
-// so an index in it is the same index in `text`.
-const codeOnly = (text, strings = true) => {
-  let open = '';
-  return text.split('\n').map((line) => {
-    const lexed = lexLine(line, open);
-    open = lexed.open;
-    let out = line;
-    for (const { start, end, comment } of lexed.spans) {
-      if (strings || comment) out = `${out.slice(0, start)}${' '.repeat(end - start)}${out.slice(end)}`;
-    }
-    return out;
-  }).join('\n');
-};
+// regex too unless `strings` is false; an index in it is the same index in `text`.
+const codeOnly = (text, strings = true) => maskSpans(text, { comment: ' ', literal: strings ? ' ' : null }).code;
 
 // Whether the `needs(` at `at` in the code-only text, its `(` ending at
 // `from`, defines a function rather than calling one: `function needs(` or a
@@ -67,11 +54,7 @@ const literalArgs = (text, from) => {
  *   call whose arguments are not string literals, as `<file>:<line>: ...`
  */
 export const suiteTools = (root) => {
-  const testDir = suiteDir(root);
-  const suites = [
-    ...(fs.existsSync(testDir) ? findSuites(testDir) : []),
-    ...findModSuites(path.join(testDir, 'mods')),
-  ].sort();
+  const suites = [...findSuites(root), ...findModSuites(modDir(root))].sort();
   const tools = new Set();
   for (const suite of suites) {
     const text = fs.readFileSync(suite, 'utf8');
@@ -83,7 +66,7 @@ export const suiteTools = (root) => {
       const args = literalArgs(uncommented, from);
       if (args === null) {
         const line = text.slice(0, call.index).split('\n').length;
-        return { error: `${path.relative(root, suite)}:${line}: needs() takes string literals only` };
+        return { error: `${suiteName(root, suite)}:${line}: needs() takes string literals only` };
       }
       for (const arg of args) tools.add(arg);
     }

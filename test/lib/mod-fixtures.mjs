@@ -1,6 +1,7 @@
 // The fixtures both test halves share, as one ES module: the logic suites reach
-// it through test/lib/mods-inputs.js and test/lib/git-repo.js (Node requires it),
-// the wiring suites through test/lib/mod-world.ts (the engine imports it).
+// it through test/lib/mods-inputs.js, test/lib/git-repo.js and the capture-guard
+// helpers (Node requires it), the wiring suites through test/lib/mod-world.ts or
+// directly (the engine imports it).
 
 /**
  * A repo's .workkit/settings.json text: `current` as the kit writes it, `retired`
@@ -10,6 +11,9 @@ export const OPT_IN_SHAPES = {
   retired: '{\n  "version": 1,\n  "enabled": true\n}\n',
   current: '{\n  "enabled": true\n}\n',
 }
+
+/** safety:capture-guard's refusal of a read of the capture file outside a triage run. */
+export const CAPTURE_READ = "capture-guard: BLOCKED reading .workkit/capture.md: it is the owner's capture surface, and its contents are read only during a triage run.\nRun the workkit:triage skill, which records the marker this guard checks, and read it there; the session-start line already says whether it has entries."
 
 /**
  * A copy of the kit's defaults/settings.json, for the wiring suites, whose

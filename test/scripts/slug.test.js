@@ -7,7 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, gitPath, systemPathWith,
 } = require('../lib/platform');
@@ -29,7 +29,7 @@ const inSeam = (script, args = [], home = null) => {
       timeout: SPAWN_DEADLINE,
     },
   );
-  assert(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`);
+  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -40,24 +40,21 @@ const inSeam = (script, args = [], home = null) => {
  */
 const slug = (url) => {
   const { code, out, err } = inSeam('wk_slug_from_remote "$1"', [url]);
-  assertEq(code, 0, `the shell sourced the seam and answered: ${err}`);
+  expect(code, `the shell sourced the seam and answered: ${err}`).toBe(0);
   return out;
 };
 
-const cases = async () => {
-  group('slug.sh: sourcing it');
-
-  await test('sourcing defines the four functions', () => {
+describe('slug.sh: sourcing it', () => {
+  test('sourcing defines the four functions', () => {
     // The contract this file shares with platform.sh and participation.sh: a
     // caller sources it at load time and gets functions, in a shell whose
     // options are its own.
     const out = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
-    assertEq(out.code, 0, `it sources clean, stderr: ${out.err}`);
-    assertEq(out.out, 'wk_is_kit_checkout wk_repo_slug wk_roster_path wk_slug_from_remote ',
-      `the four, and nothing else named wk_*, got: ${out.out}`);
+    expect(out.code, `it sources clean, stderr: ${out.err}`).toBe(0);
+    expect(out.out, `the four, and nothing else named wk_*, got: ${out.out}`).toBe('wk_is_kit_checkout wk_repo_slug wk_roster_path wk_slug_from_remote ');
   });
 
-  await test('sourcing sets no variable and runs nothing', () => {
+  test('sourcing sets no variable and runs nothing', () => {
     // A seam that set something would change the shell of every caller. The
     // control runs `:` where the other sources the file, so the comparison is
     // against a command that does nothing (bash sets PIPESTATUS at the first).
@@ -68,44 +65,44 @@ const cases = async () => {
     );
     const before = vars(':');
     const after = vars(`. ${JSON.stringify(SLUG)}`);
-    assertEq(after.stdout, before.stdout, 'the same variables as a shell that sourced nothing');
-    assertEq(after.stderr, '', `and nothing printed at load, got: ${after.stderr}`);
+    expect(after.stdout, 'the same variables as a shell that sourced nothing').toBe(before.stdout);
+    expect(after.stderr, `and nothing printed at load, got: ${after.stderr}`).toBe('');
+  });
+});
+
+describe('slug.sh: wk_slug_from_remote', () => {
+  test('every form git writes a GitHub remote in answers the same slug', () => {
+    expect(slug('git@github.com:owner/repo.git'), 'ssh shorthand').toBe('owner/repo');
+    expect(slug('ssh://git@github.com/owner/repo'), 'ssh URL').toBe('owner/repo');
+    expect(slug('https://github.com/owner/repo.git'), 'https').toBe('owner/repo');
+    expect(slug('https://github.com/owner/repo/'), 'a trailing slash').toBe('owner/repo');
+    expect(slug('https://github.com/owner/repo//'), 'every trailing slash, not one').toBe('owner/repo');
   });
 
-  group('slug.sh: wk_slug_from_remote');
-
-  await test('every form git writes a GitHub remote in answers the same slug', () => {
-    assertEq(slug('git@github.com:owner/repo.git'), 'owner/repo', 'ssh shorthand');
-    assertEq(slug('ssh://git@github.com/owner/repo'), 'owner/repo', 'ssh URL');
-    assertEq(slug('https://github.com/owner/repo.git'), 'owner/repo', 'https');
-    assertEq(slug('https://github.com/owner/repo/'), 'owner/repo', 'a trailing slash');
-    assertEq(slug('https://github.com/owner/repo//'), 'owner/repo', 'every trailing slash, not one');
+  test('a local path answers in either separator, the native Windows one included', () => {
+    expect(slug('/Users/x/theirs.git'), 'a POSIX path').toBe('x/theirs');
+    expect(slug('C:/Users/x/theirs.git'), 'the mixed form Git Bash prints').toBe('x/theirs');
+    expect(slug('C:\\Users\\x\\theirs.git'), 'the native form git stores verbatim').toBe('x/theirs');
+    expect(slug('C:\\Users\\x\\theirs.git\\'), 'and a trailing backslash comes off like a trailing slash').toBe('x/theirs');
   });
 
-  await test('a local path answers in either separator, the native Windows one included', () => {
-    assertEq(slug('/Users/x/theirs.git'), 'x/theirs', 'a POSIX path');
-    assertEq(slug('C:/Users/x/theirs.git'), 'x/theirs', 'the mixed form Git Bash prints');
-    assertEq(slug('C:\\Users\\x\\theirs.git'), 'x/theirs', 'the native form git stores verbatim');
-    assertEq(slug('C:\\Users\\x\\theirs.git\\'), 'x/theirs', 'and a trailing backslash comes off like a trailing slash');
+  test('a remote with no owner segment answers nothing', () => {
+    expect(slug(''), 'no remote at all').toBe('');
+    expect(slug('notaremote'), 'a bare word').toBe('');
   });
+});
 
-  await test('a remote with no owner segment answers nothing', () => {
-    assertEq(slug(''), '', 'no remote at all');
-    assertEq(slug('notaremote'), '', 'a bare word');
-  });
-
-  group('slug.sh: wk_is_kit_checkout');
-
-  await test('a git dir whose origin is a workkit repo is the kit; any other is not', () => {
+describe('slug.sh: wk_is_kit_checkout', () => {
+  test('a git dir whose origin is a workkit repo is the kit; any other is not', () => {
     const repoWith = (origin) => mkOriginRepo(mkTmp('slug-'), origin);
     const answer = (dir) => inSeam('wk_is_kit_checkout "$1"', [dir]).code;
-    assertEq(answer(shellPath(repoWith('https://github.com/owner/workkit.git'))), 0, 'owner/workkit answers yes');
-    assertEq(answer(shellPath(repoWith('https://github.com/owner/other.git'))), 1, 'owner/other answers no');
-    assertEq(answer(''), 1, 'an empty argument answers no');
+    expect(answer(shellPath(repoWith('https://github.com/owner/workkit.git'))), 'owner/workkit answers yes').toBe(0);
+    expect(answer(shellPath(repoWith('https://github.com/owner/other.git'))), 'owner/other answers no').toBe(1);
+    expect(answer(''), 'an empty argument answers no').toBe(1);
   });
+});
 
-  group('slug.sh: wk_roster_path');
-
+describe('slug.sh: wk_roster_path', () => {
   // A scratch home whose roster (~/.workkit/.repos.json) holds one enabled and
   // one declined repo, keyed by the root in git's spelling as the engine keys it.
   const rosterWorld = () => {
@@ -119,48 +116,42 @@ const cases = async () => {
   };
   const roster = (home, name) => inSeam('wk_roster_path "$1"', [name], home);
 
-  await test('an enabled entry whose origin is the slug answers its folder', () => {
+  test('an enabled entry whose origin is the slug answers its folder', () => {
     const { home, enabled } = rosterWorld();
     const { code, out, err } = roster(home, 'Owner/Mine');
-    assertEq(code, 0, `found, stderr: ${err}`);
-    assertEq(out.trim(), gitPath(enabled), 'the roster folder, as the roster keys it');
+    expect(code, `found, stderr: ${err}`).toBe(0);
+    expect(out.trim(), 'the roster folder, as the roster keys it').toBe(gitPath(enabled));
   });
 
-  await test('the slug matches in any letter case', () => {
+  test('the slug matches in any letter case', () => {
     const { home, enabled } = rosterWorld();
     const { code, out, err } = roster(home, 'owner/MINE');
-    assertEq(code, 0, `found, stderr: ${err}`);
-    assertEq(out.trim(), gitPath(enabled), 'the same folder');
+    expect(code, `found, stderr: ${err}`).toBe(0);
+    expect(out.trim(), 'the same folder').toBe(gitPath(enabled));
   });
 
-  await test('a declined entry is never matched', () => {
+  test('a declined entry is never matched', () => {
     const { home } = rosterWorld();
     const { code, out } = roster(home, 'owner/theirs');
-    assertEq(code, 1, 'a declined repo has not opted in');
-    assertEq(out, '', `prints nothing, got: ${out}`);
+    expect(code, 'a declined repo has not opted in').toBe(1);
+    expect(out, `prints nothing, got: ${out}`).toBe('');
   });
 
-  await test('with a match, the first enabled folder it accepts answers, handed the slug lowercased', () => {
+  test('with a match, the first enabled folder it accepts answers, handed the slug lowercased', () => {
     const { home, enabled } = rosterWorld();
     // The match accepts any folder holding a `paired` file naming the slug, the declined one included.
     const { repos } = JSON.parse(fs.readFileSync(path.join(home, '.workkit', '.repos.json'), 'utf8'));
     for (const folder of Object.keys(repos)) fs.writeFileSync(path.join(folder, 'paired'), 'acme/public\n');
     const paired = 'paired() { [[ "$(cat "$1/paired" 2>/dev/null)" == "$2" ]]; }';
     const { code, out, err } = inSeam(`${paired}\nwk_roster_path "$1" paired`, ['Acme/Public'], home);
-    assertEq(code, 0, `found, stderr: ${err}`);
-    assertEq(out.trim(), gitPath(enabled), 'the enabled folder the match accepts, never the declined one');
+    expect(code, `found, stderr: ${err}`).toBe(0);
+    expect(out.trim(), 'the enabled folder the match accepts, never the declined one').toBe(gitPath(enabled));
   });
 
-  await test('a slug no roster entry carries returns 1', () => {
+  test('a slug no roster entry carries returns 1', () => {
     const { home } = rosterWorld();
     const { code, out } = roster(home, 'owner/absent');
-    assertEq(code, 1, 'not on the roster');
-    assertEq(out, '', `prints nothing, got: ${out}`);
+    expect(code, 'not on the roster').toBe(1);
+    expect(out, `prints nothing, got: ${out}`).toBe('');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

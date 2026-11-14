@@ -3,7 +3,7 @@
 // test file no record covers blocks. The gathering is the wiring's, a real gh call through the shim:
 // test/scripts/identity/gh-shim.test.js. The packages are ./qa-groups.test.js.
 
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const {
   ROOT, viewer, packagesOf, pkgRecord, suiteRecord, step, judge, QA, QA_BLOCK, HASH_BLOCK,
   assertBlocks, passText,
@@ -14,93 +14,84 @@ const {
 const flip = async (touched, over = {}, steps = QA) => {
   const view = viewer();
   const r = await judge(steps, { touched, issueView: view.issueView, ...over });
-  assertEq(view.calls.length, 0, `a qa flip reads no issue, got: ${JSON.stringify(view.calls)}`);
+  expect(view.calls.length, `a qa flip reads no issue, got: ${JSON.stringify(view.calls)}`).toBe(0);
   return r;
 };
 
-const cases = async () => {
-  group('proof-guard: the park reads the records and runs nothing');
-
-  await test('no touched test file: exit 0, the notice says so', async () => {
+describe('proof-guard: the park reads the records and runs nothing', () => {
+  test('no touched test file: exit 0, the notice says so', async () => {
     const msg = passText(await flip(['lib/x.js']), 'no test file');
-    assert(msg.startsWith('proof-guard: no touched test files in the working diff, so the qa flip needs no test record.'),
-      `the notice is about the touched test files, got: ${msg}`);
-    assert(!msg.includes('lib/x.js'), `a code file is never a test file, got: ${msg}`);
+    expect(msg.startsWith('proof-guard: no touched test files in the working diff, so the qa flip needs no test record.'),
+      `the notice is about the touched test files, got: ${msg}`).toBeTruthy();
+    expect(!msg.includes('lib/x.js'), `a code file is never a test file, got: ${msg}`).toBeTruthy();
   });
 
-  await test('a whole root suite record on the tree: exit 0, the notice says the suite covers the files', async () => {
+  test('a whole root suite record on the tree: exit 0, the notice says the suite covers the files', async () => {
     const msg = passText(await flip(['tests/a.test.js'], { suiteRecord: suiteRecord() }), 'the suite record');
-    assert(msg.startsWith('proof-guard: the whole root suite is green on this tree, which covers the 1 touched test file(s).'),
-      `the notice names the whole root suite and the files it covers, got: ${msg}`);
+    expect(msg.startsWith('proof-guard: the whole root suite is green on this tree, which covers the 1 touched test file(s).'),
+      `the notice names the whole root suite and the files it covers, got: ${msg}`).toBeTruthy();
   });
 
-  await test('a touched test file with no record: exit 2, naming the root and the file', async () => {
+  test('a touched test file with no record: exit 2, naming the root and the file', async () => {
     assertBlocks(await flip(['tests/a.test.js']), QA_BLOCK(1, 'the repo root: tests/a.test.js'), 'no record blocks');
   });
 
-  await test('a touched .test.zsh file is a test file: no record blocks, the root record passes', async () => {
+  test('a touched .test.zsh file is a test file: no record blocks, the root record passes', async () => {
     assertBlocks(await flip(['tests/x.test.zsh']), QA_BLOCK(1, 'the repo root: tests/x.test.zsh'), 'no record blocks');
     const msg = passText(await flip(['tests/x.test.zsh'], { packageRecord: pkgRecord(['.']) }), 'the root line');
-    assert(msg.startsWith('proof-guard: every touched test file has a green npm test recorded on this tree: the repo root (1 file(s)).'),
-      `the notice names the root, got: ${msg}`);
+    expect(msg.startsWith('proof-guard: every touched test file has a green npm test recorded on this tree: the repo root (1 file(s)).'),
+      `the notice names the root, got: ${msg}`).toBeTruthy();
   });
 
   for (const name of ['tests/helpers.js', 'tests/x.sh']) {
-    await test(`${name}, under a test folder but not test-shaped: named, never required`, async () => {
+    test(`${name}, under a test folder but not test-shaped: named, never required`, async () => {
       const msg = passText(await flip([name]), name);
-      assert(msg.includes(`Touched under a test folder but not a test file, so not required: ${name}.`), `the helper is named, got: ${msg}`);
+      expect(msg.includes(`Touched under a test folder but not a test file, so not required: ${name}.`), `the helper is named, got: ${msg}`).toBeTruthy();
     });
   }
 
-  await test('a helper beside a recorded test file: the helper is named, the record alone passes', async () => {
+  test('a helper beside a recorded test file: the helper is named, the record alone passes', async () => {
     const msg = passText(await flip(['tests/a.test.js', 'tests/helpers.js'], { packageRecord: pkgRecord(['.']) }), 'the helper');
-    assert(msg.includes('Touched under a test folder but not a test file, so not required: tests/helpers.js.'), `the helper is named, got: ${msg}`);
+    expect(msg.includes('Touched under a test folder but not a test file, so not required: tests/helpers.js.'), `the helper is named, got: ${msg}`).toBeTruthy();
   });
 
   for (const label of ['a root with no test script']) {
-    await test(`${label}: exit 0, the touched file named as not provable by npm test`, async () => {
+    test(`${label}: exit 0, the touched file named as not provable by npm test`, async () => {
       const msg = passText(await flip(['tests/a.test.js'], { packages: packagesOf([], false) }), label);
-      assert(msg.startsWith('proof-guard: no touched test file can be proved by npm test here, so the qa flip needs no test record. Cannot be proved by npm test, since the repo root has no test script, so not required: tests/a.test.js.'),
-        `the file is named as one npm test cannot prove, got: ${msg}`);
+      expect(msg.startsWith('proof-guard: no touched test file can be proved by npm test here, so the qa flip needs no test record. Cannot be proved by npm test, since the repo root has no test script, so not required: tests/a.test.js.'),
+        `the file is named as one npm test cannot prove, got: ${msg}`).toBeTruthy();
     });
   }
 
-  await test('a tree that cannot be hashed: exit 2, naming the hash as the cause', async () => {
+  test('a tree that cannot be hashed: exit 2, naming the hash as the cause', async () => {
     assertBlocks(await flip(['tests/a.test.js'], { treeId: null, packageRecord: pkgRecord(['.']) }), HASH_BLOCK(ROOT), 'no tree id blocks');
   });
 
-  await test('a test file with a non-ASCII name and no record: exit 2, named as written', async () => {
+  test('a test file with a non-ASCII name and no record: exit 2, named as written', async () => {
     assertBlocks(await flip(['tests/café.test.js']), QA_BLOCK(1, 'the repo root: tests/café.test.js'), 'named as written');
   });
+});
 
-  group('proof-guard: the steps a qa flip names');
-
-  await test('a compound flipping two issues is judged once: one notice', async () => {
+describe('proof-guard: the steps a qa flip names', () => {
+  test('a compound flipping two issues is judged once: one notice', async () => {
     const msg = passText(await flip(['tests/a.test.js'], { packageRecord: pkgRecord(['.']) },
       [step('edit', 3, ['status:qa']), step('edit', 4, ['status:qa'])]), 'two flips');
-    assertEq(msg.split('proof-guard:').length - 1, 1, `one notice for the whole command, got: ${msg}`);
+    expect(msg.split('proof-guard:').length - 1, `one notice for the whole command, got: ${msg}`).toBe(1);
   });
 
-  await test('any other label flip reads nothing, over a touched file with no record', async () => {
+  test('any other label flip reads nothing, over a touched file with no record', async () => {
     for (const s of [
       step('edit', 3, ['status:building'], ['status:specced']),
       step('edit', 3, ['status:building'], ['status:qa']),
     ]) {
-      assertEq(passText(await flip(['tests/a.test.js'], {}, [s]), JSON.stringify(s)), '', `no notice: ${JSON.stringify(s)}`);
+      expect(passText(await flip(['tests/a.test.js'], {}, [s]), JSON.stringify(s)), `no notice: ${JSON.stringify(s)}`).toBe('');
     }
   });
+});
 
-  group('proof-guard: the park stands down out loud');
-
-  await test('a session outside any git repository: exit 0, one notice', async () => {
+describe('proof-guard: the park stands down out loud', () => {
+  test('a session outside any git repository: exit 0, one notice', async () => {
     const msg = passText(await flip([], { root: null, cwd: '/w/plain' }), 'no repo');
-    assertEq(msg, "proof-guard: /w/plain is inside no git repository, so the park's test-record check did not run at the qa flip.", 'says so');
+    expect(msg, 'says so').toBe("proof-guard: /w/plain is inside no git repository, so the park's test-record check did not run at the qa flip.");
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

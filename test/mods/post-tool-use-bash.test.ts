@@ -11,8 +11,8 @@ import { mkWorld, hooksLog, REPO, HOME, SID, OPTED_IN, OPTED_OUT } from '../lib/
 import { ghEntry, journalText } from '../lib/mod-fixtures.mjs'
 
 const TMP = '/w/tmp'
-// The snapshot folder of the session repo: the workflow home's markers, the folder, the SHA-1 of the root.
-const SNAP = `${HOME}/.workkit/markers/claude-red-snapshot/2d98e56dc36b7431b8f668bf4d7715c564698d73`
+// The snapshot folder of the session repo: HOME's .cache/workkit/snapshot, the SHA-1 of the root.
+const SNAP = `${HOME}/.cache/workkit/snapshot/2d98e56dc36b7431b8f668bf4d7715c564698d73`
 const LIVE = { [`${SNAP}/tree/src/x.js`]: 'module.exports = 1;\n', [`${SNAP}/head`]: `${'c'.repeat(40)}\n`, [`${SNAP}/issues`]: '5\n' }
 // The session repo's gh journal, keyed the same way, and the mark of tool use toolu_1.
 const JOURNAL = `${HOME}/.workkit/markers/claude-gh-journal/2d98e56dc36b7431b8f668bf4d7715c564698d73`

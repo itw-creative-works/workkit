@@ -1,103 +1,162 @@
-// Tests for the one entry, packages/core/test/lib/harness.js: every export behind it, a
-// suite on that one require run by file and under the runner, a failure's first frame
-// outside the library, every later line of a message, skip reason or case body's own print
-// off column zero with the real writers back after, and needs() skipping only in the cloud.
+// Tests for the door, packages/core/test/index.js: Node's own test functions handed out
+// untouched, `test` and `it` behind the case deadline with Node's skip, todo and only
+// forms, `needs` as a skip value, every concern's export behind the one require, and a
+// suite on that require run by file and under the runner.
 
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const nodeTest = require('node:test');
 const { stripVTControlCharacters } = require('util');
-const {
-  group, test, testUnless, assert, assertEq, failureOf, summary, selfRun, mkTmp, run,
-} = require('./lib/harness');
+const door = require('./lib/harness');
 const { IS_WINDOWS, NO_EXEC_BIT, stubTool } = require('./lib/platform');
+const { aloneEnv } = require('./lib/alone-env');
+const { listsOf } = require('./lib/run-lists');
 
-const KIT_LIB = path.join(__dirname, '..', 'packages', 'core', 'test', 'lib');
-const RUNNER = path.join(__dirname, '..', 'packages', 'core', 'test', 'run.js');
+const { describe, test, expect, mkTmp, run, needs } = door;
+
+const CORE_TEST = path.join(__dirname, '..', 'packages', 'core', 'test');
+const KIT_LIB = path.join(CORE_TEST, 'lib');
+const ENTRY = path.join(CORE_TEST, 'index.js');
+const CASES = path.join(KIT_LIB, 'cases.js');
+const RUNNER = path.join(CORE_TEST, 'run.js');
+const BIN = path.join(CORE_TEST, '..', 'bin', 'workkit.js');
 const CONCERNS = ['process', 'scratch', 'seed', 'suites', 'log', 'spawn'];
-const ENTRY = path.join(KIT_LIB, '..', 'index.js');
+const NODE_WORDS = ['describe', 'before', 'after', 'beforeEach', 'afterEach', 'mock'];
 
-// A suite on the one require alone, reaching a scratch folder, a wait, a child
-// run and the log through it: three cases that pass.
+// A suite on the one require alone, reaching a scratch folder, a wait and a child
+// run through it: three cases that pass.
 const ONE_REQUIRE = `
 const fs = require('fs');
 const path = require('path');
-const { test, assert, assertEq, summary, selfRun, mkTmp, until, run, log } = require('./lib/harness');
-const cases = async () => {
-  await test('a scratch folder and a wait', async () => {
+const { describe, test, expect, mkTmp, until, run } = require('./lib/harness');
+describe('the one require', () => {
+  test('a scratch folder and a wait', async () => {
     const file = path.join(mkTmp('one-'), 'mark');
     fs.writeFileSync(file, 'x');
-    assert(await until(() => fs.existsSync(file)), 'the mark is seen');
+    expect(await until(() => fs.existsSync(file)), 'the mark is seen').toBeTruthy();
   });
-  await test('a child run', () => {
-    assertEq(run(process.execPath, ['-e', 'process.stdout.write("hi")']).stdout, 'hi', 'the child spoke');
+  test('a child run', () => {
+    expect(run(process.execPath, ['-e', 'process.stdout.write("hi")']).stdout, 'the child spoke').toBe('hi');
   });
-  await test('a logged case', () => { log('a', 'note'); });
-};
-module.exports = async () => { await cases(); return summary(); };
-if (require.main === module) selfRun(module.exports);
+  test('a third case', () => {});
+});
 `;
 
-// A scratch repo whose test/ holds the harness re-export and the one suite.
-const mkRepo = () => {
-  const root = mkTmp('one-require-');
-  run('git', ['init', '-q'], { cwd: root });
-  fs.mkdirSync(path.join(root, 'test', 'lib'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'test', 'lib', 'harness.js'), `module.exports = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});\n`);
-  fs.writeFileSync(path.join(root, 'test', 'one.test.js'), ONE_REQUIRE);
-  return root;
+// Two cases that never end, through `test` and `it` given a 200 ms limit by the wrap's
+// seam; the after hook clears what holds them open, so the file exits once both fail.
+const NEVER_ENDS = `
+const { test, it, after } = require('node:test');
+const { withDeadline } = require(${JSON.stringify(CASES)});
+const handles = [];
+after(() => { for (const handle of handles) clearInterval(handle); });
+withDeadline(test, 200)('never ends through test', () => new Promise(() => { handles.push(setInterval(() => {}, 1000)); }));
+withDeadline(it, 200)('never ends through it', () => new Promise(() => { handles.push(setInterval(() => {}, 1000)); }));
+`;
+
+// A case through the door that states its own 500 ms limit and runs for a second.
+const OWN_LIMIT = `
+const { test } = require(${JSON.stringify(ENTRY)});
+test('runs a second', { timeout: 500 }, () => new Promise((resolve) => { setTimeout(resolve, 1000); }));
+`;
+
+// The skip and todo forms of the door's `test` and `it`: a skip body throws if it runs,
+// and a todo body runs and throws, which Node reports as a todo, never a failure.
+const SKIP_TODO = `
+const { test, it } = require(${JSON.stringify(ENTRY)});
+test.skip('skipped by test.skip', () => { throw new Error('test.skip ran its body'); });
+it.skip('skipped by it.skip', () => { throw new Error('it.skip ran its body'); });
+test.todo('todo by test.todo', () => { throw new Error('a todo failure'); });
+it.todo('todo by it.todo');
+`;
+
+// The only forms of the door's `test` and `it` beside a case not marked only that fails if it ran.
+const ONLY = `
+const { test, it } = require(${JSON.stringify(ENTRY)});
+test.only('only by test.only', () => {});
+it.only('only by it.only', () => {});
+test('not marked only', () => { throw new Error('ran without only'); });
+`;
+
+// The door loaded over spies standing in for node:test's `test` and `it`, then one case
+// through each of its words: prints what options each spy was handed.
+const SPIED = `
+const nodeTest = require('node:test');
+const calls = [];
+const spy = (word) => (...args) => { calls.push({ word, options: args.find((arg) => arg !== null && typeof arg === 'object') }); };
+nodeTest.test = spy('test');
+nodeTest.it = spy('it');
+require('node:module').syncBuiltinESMExports();
+const door = require(${JSON.stringify(ENTRY)});
+door.test('through test', () => {});
+door.it('through it', () => {});
+console.log(JSON.stringify(calls));
+`;
+
+// A suite whose one describe takes needs() over `tools` as its skip value, and a sibling.
+const NEEDING = (...tools) => `
+const { describe, test, needs } = require('./lib/harness');
+describe('needy', { skip: needs(${tools.map((tool) => JSON.stringify(tool)).join(', ')}) }, () => {
+  test('the needing case', () => { throw new Error('the needing case ran'); });
+});
+`;
+const NEEDY = NEEDING('no-such-tool-here');
+const PLAIN = `
+const { test } = require('./lib/harness');
+test('the plain case', () => {});
+`;
+// A suite whose one describe needs node, a tool every machine running it has.
+const PRESENT = `
+const { describe, test, needs } = require('./lib/harness');
+describe('present', { skip: needs('node') }, () => {
+  test('the present case', () => {});
+});
+`;
+
+// This process's env for a child in a cloud session, CLAUDE_CODE_REMOTE set to `remote`,
+// or outside one when `remote` is null, the variable gone; `extra` over it.
+const sessionEnv = (remote, extra = {}) => {
+  const env = aloneEnv(extra);
+  delete env.CLAUDE_CODE_REMOTE;
+  return remote === null ? env : { ...env, CLAUDE_CODE_REMOTE: remote };
 };
 
-// A node run from `root`: its exit and both streams with the colors stripped.
-const node = (root, args) => {
-  const res = run(process.execPath, args, { cwd: root });
+// node with `args` from `cwd`, a run of its own under `env`: its exit and both streams, colours stripped.
+const node = (cwd, args, env = aloneEnv()) => {
+  const res = run(process.execPath, args, { cwd, env });
   return { code: res.status, output: stripVTControlCharacters(res.output) };
 };
 
-// A suite on the library whose one case throws an error carrying `stack` and `message`.
-const THROWS = (stack, message = 'boom') => `
-const { test, summary, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
-module.exports = async () => {
-  await test('throws', () => { const err = new Error(${JSON.stringify(message)}); err.stack = ${JSON.stringify(stack)}; throw err; });
-  return summary();
-};
-if (require.main === module) selfRun(module.exports);
-`;
-
-const DIM = '\x1b[2m';
-const RESET = '\x1b[0m';
-
-// `stack` thrown by a one-case suite run by file: the suite's exit, its output,
-// and the dimmed frame lines under the failure message.
-const framesOf = (dir, stack, message) => {
-  const file = path.join(dir, 'throws.test.js');
-  fs.writeFileSync(file, THROWS(stack, message));
-  const res = run(process.execPath, [file]);
-  const frames = res.output.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith(DIM))
-    .map((l) => l.slice(DIM.length, l.lastIndexOf(RESET)));
-  return { status: res.status, output: res.output, frames };
+// needs(...args) called in a child node under `env`: what it returned, or the name and message it threw.
+const needsIn = (env, args) => {
+  const probe = `const { needs } = require(${JSON.stringify(ENTRY)});
+try { console.log(JSON.stringify({ returned: needs(...${JSON.stringify(args)}) })); }
+catch (error) { console.log(JSON.stringify({ threw: error.name, message: error.message })); }`;
+  const { code, output } = node(mkTmp('needs-probe-'), ['-e', probe], env);
+  expect(code, `the probe ran, got:\n${output}`).toBe(0);
+  return JSON.parse(output.trim().split(/\r?\n/).pop());
 };
 
-// A one-case suite on the library whose case runs `body`, then a group header and `after`.
-const BODY = (body, after = '') => `
-const { group, test, summary, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
-module.exports = async () => {
-  await test('the case', ${body});
-  group('after');
-  ${after}
-  return summary();
-};
-if (require.main === module) selfRun(module.exports);
-`;
+// The suite file `name` of a repo run by node alone under `env`.
+const byFile = (root, name, env) => node(root, [path.join('test', name)], env);
 
-// The BODY suite over `body`, run by file: its exit, its whole output and each stream, colours stripped.
-const bodyRun = (body, after) => {
-  const dir = mkTmp('body-');
-  const file = path.join(dir, 'body.test.js');
-  fs.writeFileSync(file, BODY(body, after));
-  const res = run(process.execPath, [file], { cwd: dir });
-  const [output, stdout, stderr] = [res.output, res.stdout, res.stderr].map((text) => stripVTControlCharacters(text));
-  return { code: res.status, output, stdout, stderr };
+// The fixture `source` written to a scratch folder and run by file on Node's TAP reporter, after `flags`.
+const tapRun = (source, flags = []) => {
+  const dir = mkTmp('door-');
+  fs.writeFileSync(path.join(dir, 'fixture.test.js'), source);
+  return node(dir, [...flags, '--test-reporter=tap', 'fixture.test.js']);
+};
+
+// The top-level result lines of a TAP run, the duration-free part of each.
+const results = (output) => output.split(/\r?\n/).filter((l) => /^(not )?ok \d+ - /.test(l));
+
+// A scratch git repo whose test/ holds the door's re-export and `suites`, file name to source.
+const mkRepo = (suites) => {
+  const root = mkTmp('door-repo-');
+  run('git', ['init', '-q'], { cwd: root });
+  fs.mkdirSync(path.join(root, 'test', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'test', 'lib', 'harness.js'), `module.exports = require(${JSON.stringify(ENTRY)});\n`);
+  for (const [name, source] of Object.entries(suites)) fs.writeFileSync(path.join(root, 'test', name), source);
+  return root;
 };
 
 // How many case lines in `output` carry the pass mark, and the fail mark.
@@ -106,259 +165,161 @@ const marks = (output) => {
   return { passed: lines.filter((l) => l.startsWith('✓')).length, failed: lines.filter((l) => l.startsWith('✗')).length };
 };
 
-// A suite on the package entry whose top runs `call`, then one case.
-const NEEDS = (call) => `
-const { needs, test, summary, selfRun } = require(${JSON.stringify(ENTRY)});
-module.exports = async () => {
-  ${call};
-  await test('the needing case', () => {});
-  return summary();
-};
-if (require.main === module) selfRun(module.exports);
-`;
+describe('harness: Node\'s own words', () => {
+  test('describe, before, after, beforeEach, afterEach and mock from the door are node:test\'s own', () => {
+    for (const word of NODE_WORDS) expect(door[word], `${word} is node:test's own`).toBe(nodeTest[word]);
+  });
 
-// A scratch PATH folder holding one runnable stub per name in `tools`.
-const toolBin = (tools = []) => {
-  const bin = mkTmp('needs-bin-');
-  for (const name of tools) stubTool(bin, name, ['#!/bin/sh', 'exit 0']);
-  return bin;
-};
+  test('a case through the seam that states no timeout and never ends fails as timed out at the seam\'s limit, through test and it', () => {
+    const { code, output } = tapRun(NEVER_ENDS);
+    expect(code, `the file fails, got:\n${output}`).toBe(1);
+    expect(results(output)).toEqual(['not ok 1 - never ends through test', 'not ok 2 - never ends through it']);
+    expect(output.split(/\r?\n/).filter((l) => l.includes('test timed out after 200ms')), `both name the timeout, got:\n${output}`).toHaveLength(2);
+  });
 
-// The env a needs() suite runs under: PATH the one folder `bin`, CLAUDE_CODE_REMOTE `remote`, unset when undefined.
-const needsEnv = (bin, remote) => {
-  const env = { ...process.env, PATH: bin };
-  delete env.CLAUDE_CODE_REMOTE;
-  return remote === undefined ? env : { ...env, CLAUDE_CODE_REMOTE: remote };
-};
+  test('a case through the door that states { timeout: 500 } and runs a second fails at 500 ms, not at the default', () => {
+    const { code, output } = tapRun(OWN_LIMIT);
+    expect(code, `the file fails, got:\n${output}`).toBe(1);
+    expect(results(output)).toEqual(['not ok 1 - runs a second']);
+    expect(output, 'the failure names its own limit').toContain('test timed out after 500ms');
+  });
 
-// The NEEDS suite over `call`, run by file under needsEnv(bin, remote): its exit and output, colours stripped.
-const needsRun = (call, bin, remote) => {
-  const dir = mkTmp('needs-');
-  const file = path.join(dir, 'needs.test.js');
-  fs.writeFileSync(file, NEEDS(call));
-  const res = run(process.execPath, [file], { cwd: dir, env: needsEnv(bin, remote) });
-  return { code: res.status, output: stripVTControlCharacters(res.output) };
-};
+  test('test.skip, it.skip, test.todo and it.todo through the door skip and mark todo as Node does, the run green', () => {
+    const { code, output } = tapRun(SKIP_TODO);
+    expect(code, `the file passes, got:\n${output}`).toBe(0);
+    expect(results(output)).toEqual([
+      'ok 1 - skipped by test.skip # SKIP',
+      'ok 2 - skipped by it.skip # SKIP',
+      'not ok 3 - todo by test.todo # TODO',
+      'ok 4 - todo by it.todo # TODO',
+    ]);
+    expect(output, 'no skipped body ran').not.toMatch(/\.skip ran its body/);
+  });
 
-const SKIP_LINE = (tools) => `⊘ skipped: needs ${tools}, not installed in this cloud session`;
-const trimmed = (output) => output.split(/\r?\n/).map((l) => l.trim());
+  test('test.only and it.only through the door, under --test-only, run alone', () => {
+    const { code, output } = tapRun(ONLY, ['--test-only']);
+    expect(code, `the file passes, got:\n${output}`).toBe(0);
+    expect(results(output)).toEqual(['ok 1 - only by test.only', 'ok 2 - only by it.only']);
+    expect(output, 'the case not marked only never ran').not.toContain('ran without only');
+  });
 
-const cases = async () => {
-  group('harness: the one entry');
+  test('a case through the door\'s test and it that states no timeout hands Node 120000 ms', () => {
+    const dir = mkTmp('door-spied-');
+    fs.writeFileSync(path.join(dir, 'spied.js'), SPIED);
+    const { code, output } = node(dir, ['spied.js']);
+    expect(code, `the probe ran, got:\n${output}`).toBe(0);
+    expect(JSON.parse(output.trim().split(/\r?\n/).pop())).toEqual([
+      { word: 'test', options: { timeout: 120000 } },
+      { word: 'it', options: { timeout: 120000 } },
+    ]);
+  });
 
-  await test('the entry exposes every export of process, scratch, seed, suites, log and spawn', () => {
-    const entry = new Set(Object.keys(require('./lib/harness')));
+  // A getter of Node's may build a new object per read, so the descriptors are compared, not the reads.
+  test('the door\'s test and it carry every own key of node:test\'s, each Node\'s own getter or value', () => {
+    for (const word of ['test', 'it']) {
+      expect(Object.keys(door[word]).sort(), `${word}: the same own keys`).toEqual(Object.keys(nodeTest[word]).sort());
+      for (const key of Object.keys(nodeTest[word])) {
+        const node = Object.getOwnPropertyDescriptor(nodeTest[word], key);
+        const carried = Object.getOwnPropertyDescriptor(door[word], key);
+        if (node.get) expect(carried.get, `${word}.${key}: Node's own getter`).toBe(node.get);
+        else expect(carried.value, `${word}.${key}: Node's own value`).toBe(node.value);
+      }
+    }
+    expect(door.test.mock.fn, 'test.mock.fn through the door').toBeTypeOf('function');
+  });
+});
+
+describe('harness: the one entry', () => {
+  test('the entry exposes every export of process, scratch, seed, suites, log and spawn', () => {
+    const entry = new Set(Object.keys(door));
     const missing = CONCERNS
       .flatMap((name) => Object.keys(require(path.join(KIT_LIB, `${name}.js`))).sort().map((key) => `${name}.${key}`))
       .filter((named) => !entry.has(named.slice(named.indexOf('.') + 1)));
-    assertEq(missing.join(', '), '', 'every concern export reachable through the one require');
+    expect(missing.join(', '), 'every concern export reachable through the one require').toBe('');
   });
 
-  await test('a suite on the one require alone runs by file and under the runner with the same totals', () => {
-    const root = mkRepo();
-    const alone = node(root, [path.join('test', 'one.test.js')]);
-    assertEq(alone.code, 0, `by file exits 0, got:\n${alone.output}`);
-    assertEq(JSON.stringify(marks(alone.output)), JSON.stringify({ passed: 3, failed: 0 }), `by file, three passes, got:\n${alone.output}`);
+  test('a suite on the one require alone runs by file and under the runner with the same totals', () => {
+    const root = mkRepo({ 'one.test.js': ONE_REQUIRE });
+    const alone = node(root, ['--test-reporter=tap', path.join('test', 'one.test.js')]);
+    expect(alone.code, `by file exits 0, got:\n${alone.output}`).toBe(0);
+    expect(alone.output, 'by file, three passes').toMatch(/^# pass 3$/m);
+    expect(alone.output, 'by file, no failure').toMatch(/^# fail 0$/m);
     const pooled = node(root, [RUNNER]);
-    assertEq(pooled.code, 0, `under the runner exits 0, got:\n${pooled.output}`);
-    assertEq(JSON.stringify(marks(pooled.output)), JSON.stringify({ passed: 3, failed: 0 }), `under the runner, the same three, got:\n${pooled.output}`);
-    assert(pooled.output.includes('3 passed, 0 failed'), `the runner's totals agree, got:\n${pooled.output}`);
+    expect(pooled.code, `under the runner exits 0, got:\n${pooled.output}`).toBe(0);
+    expect(marks(pooled.output), `under the runner, the same three, got:\n${pooled.output}`).toEqual({ passed: 3, failed: 0 });
+    expect(pooled.output, 'the runner\'s totals agree').toContain('3 passed, 0 failed');
+  });
+});
+
+describe('harness: needs', () => {
+  test('needs(\'node\') is false', () => {
+    expect(needs('node')).toBe(false);
   });
 
-  group('harness: the failure frame');
+  test('outside a cloud session, a suite whose describe needs a missing tool fails by file: exit 1, the error naming the tool as not installed, its case never run', () => {
+    const root = mkRepo({ 'needy.test.js': NEEDY });
+    const { code, output } = byFile(root, 'needy.test.js', sessionEnv(null));
+    expect(code, `exit 1, got:\n${output}`).toBe(1);
+    expect(output.split(/\r?\n/), `the error line, got:\n${output}`).toContain('Error: needs no-such-tool-here, not installed');
+    expect(output, 'the needing case never ran').not.toContain('the needing case ran');
+  });
 
-  await test('a stack carrying only a file:/// frame outside the library prints that frame as its path', () => {
-    const dir = mkTmp('frame-');
-    const outside = path.join(dir, 'x.js');
-    const url = pathToFileURL(outside).href;
-    for (const frame of [`at ${url}:3:5`, `at fn (${url}:3:5)`]) {
-      const { status, output, frames } = framesOf(dir, `Error: boom\n    ${frame}`);
-      assertEq(status, 1, `the case failed, got:\n${output}`);
-      assertEq(frames.length, 1, `one frame line for "${frame}", got:\n${output}`);
-      assert(frames[0].includes(`${outside}:3:5`) && !frames[0].includes('file:'), `"${frame}" prints as its path, got: ${frames[0]}`);
+  test('outside a cloud session, the kit runner lists that suite as load <suite> with the message, exit 1, no pass counted', () => {
+    const root = mkRepo({ 'needy.test.js': NEEDY });
+    const { code, output } = node(root, [BIN, 'test'], sessionEnv(null));
+    expect(code, `exit 1, got:\n${output}`).toBe(1);
+    expect(output, 'no pass, the one failure').toMatch(/^0 passed, 1 failed/m);
+    expect(listsOf(output), `the load failure with the message, got:\n${output}`).toContain('  - load test/needy.test.js: needs no-such-tool-here, not installed');
+  });
+
+  test('CLAUDE_CODE_REMOTE set to 1, false or empty is no cloud session: the suite fails by file as outside one', () => {
+    const root = mkRepo({ 'needy.test.js': NEEDY });
+    for (const remote of ['1', 'false', '']) {
+      const { code, output } = byFile(root, 'needy.test.js', sessionEnv(remote));
+      expect(code, `CLAUDE_CODE_REMOTE=${JSON.stringify(remote)}: exit 1, got:\n${output}`).toBe(1);
+      expect(output.split(/\r?\n/), `CLAUDE_CODE_REMOTE=${JSON.stringify(remote)}: the error line, got:\n${output}`).toContain('Error: needs no-such-tool-here, not installed');
     }
   });
 
-  await test('an `at async` frame with no parentheses, outside the library, prints as its path', () => {
-    const dir = mkTmp('frame-');
-    const outside = path.join(dir, 'x.js');
-    for (const frame of [`at async ${outside}:3:5`, `at async ${pathToFileURL(outside).href}:3:5`]) {
-      const { status, output, frames } = framesOf(dir, `Error: boom\n    ${frame}`);
-      assertEq(status, 1, `the case failed, got:\n${output}`);
-      assertEq(frames.length, 1, `one frame line for "${frame}", got:\n${output}`);
-      assert(frames[0].includes(`${outside}:3:5`) && !frames[0].includes('file:'), `"${frame}" prints as its path, got: ${frames[0]}`);
+  test('two missing tools, one given twice, beside a present one: the error and the skip reason list both once, in the order given', () => {
+    const args = ['no-such-tool-b', 'node', 'no-such-tool-a', 'no-such-tool-b'];
+    expect(needsIn(sessionEnv(null), args), 'outside a cloud session').toEqual({ threw: 'Error', message: 'needs no-such-tool-b, no-such-tool-a, not installed' });
+    expect(needsIn(sessionEnv('true'), args), 'in a cloud session').toEqual({ returned: 'needs no-such-tool-b, no-such-tool-a' });
+  });
+
+  test('needs with no argument or a non-string one throws its TypeError', () => {
+    for (const args of [[], [42], ['node', 42]]) {
+      expect(() => needs(...args), `needs(${args.map((a) => JSON.stringify(a)).join(', ')})`).toThrow(TypeError);
     }
   });
 
-  await test('a file:/// frame inside the library is skipped and the next frame, outside it, prints', () => {
-    const dir = mkTmp('frame-');
-    const inside = pathToFileURL(path.join(KIT_LIB, 'harness.js')).href;
-    const outside = path.join(dir, 'y.js');
-    const { status, output, frames } = framesOf(dir, `Error: boom\n    at ${inside}:10:5\n    at ${outside}:7:9`);
-    assertEq(status, 1, `the case failed, got:\n${output}`);
-    assertEq(frames.length, 1, `one frame line, got:\n${output}`);
-    assert(frames[0].includes(`${outside}:7:9`), `the outside frame prints, not the library's, got: ${frames[0]}`);
-  });
-
-  group('harness: the failure message');
-
-  await test('a failing message of two lines prints both at the case indent', () => {
-    const dir = mkTmp('message-');
-    const outside = path.join(dir, 'x.js');
-    const { status, output } = framesOf(dir, `Error: first\nsecond\n    at ${outside}:3:5`, 'first\nsecond');
-    assertEq(status, 1, `the case failed, got:\n${output}`);
-    const printed = stripVTControlCharacters(output).split(/\r?\n/);
-    const frame = printed.find((l) => l.trim().startsWith(`at ${outside}`));
-    assert(frame, `the frame line printed, got:\n${output}`);
-    const indent = frame.slice(0, frame.indexOf('at '));
-    assert(indent.length > 0, `the case indent is not column zero, got:\n${output}`);
-    assert(printed.includes(`${indent}first`), `the first line at the case indent, got:\n${output}`);
-    assert(printed.includes(`${indent}second`), `the second line at the case indent, got:\n${output}`);
-  });
-
-  group('harness: selfRun');
-
-  await test('selfRun over a suite skipped with a two-line reason prints the second line at the case indent', () => {
-    const dir = mkTmp('skip-');
-    const file = path.join(dir, 'skipped.test.js');
-    fs.writeFileSync(file, `
-const { skipSuite, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
-module.exports = async () => skipSuite('skip first\\nskip second');
-if (require.main === module) selfRun(module.exports);
-`);
-    const { code, output } = node(dir, [file]);
-    assertEq(code, 0, `a skipped suite exits 0, got:\n${output}`);
-    const printed = output.split(/\r?\n/);
-    assert(printed.some((l) => l.includes('skip first')), `the reason's first line printed, got:\n${output}`);
-    assert(printed.includes('    skip second'), `the second line at the case indent, got:\n${output}`);
-    assert(!printed.some((l) => l.startsWith('skip second')), `the second line never at column zero, got:\n${output}`);
-  });
-
-  group('harness: a skipped case');
-
-  await test('a skipped case whose reason holds two lines prints the second line indented, never at column zero', () => {
-    const dir = mkTmp('skip-case-');
-    const file = path.join(dir, 'gated.test.js');
-    fs.writeFileSync(file, `
-const { skip, summary, selfRun } = require(${JSON.stringify(path.join(KIT_LIB, 'harness.js'))});
-module.exports = async () => { skip('the gated case', 'reason first\\nreason second'); return summary(); };
-if (require.main === module) selfRun(module.exports);
-`);
-    const { code, output } = node(dir, [file]);
-    assertEq(code, 0, `a skipped case keeps the suite green, got:\n${output}`);
-    const printed = output.split(/\r?\n/);
-    assert(printed.some((l) => l.includes('the gated case') && l.includes('reason first')), `the skip line names the case and the first line, got:\n${output}`);
-    assert(printed.some((l) => /^\s+reason second/.test(l)), `the second line indented, got:\n${output}`);
-    assert(!printed.some((l) => l.startsWith('reason second')), `the second line never at column zero, got:\n${output}`);
-  });
-
-  group('harness: a case body\'s own prints');
-
-  await test('a passing case whose body writes two lines with console.log prints both at the case indent, the next header at column zero', () => {
-    const { code, output } = bodyRun("() => { console.log('one\\ntwo'); }");
-    assertEq(code, 0, `the case passed, got:\n${output}`);
-    assertEq(output, '    one\n    two\n  ✓ the case\n\n[after]\n', 'the body lines indented, the mark and the header on the real writer');
-  });
-
-  await test('a passing case whose body writes two lines with process.stdout.write prints both at the case indent, the next header at column zero', () => {
-    const { code, output } = bodyRun("() => { process.stdout.write('one\\ntwo\\n'); }");
-    assertEq(code, 0, `the case passed, got:\n${output}`);
-    assertEq(output, '    one\n    two\n  ✓ the case\n\n[after]\n', 'the body lines indented, the mark and the header on the real writer');
-  });
-
-  await test('a passing case whose body writes two lines with console.error prints both at the case indent on stderr, a print after the case at column zero', () => {
-    const { code, stdout, stderr } = bodyRun("() => { console.error('one\\ntwo'); }", "console.error('after on stderr');");
-    assertEq(code, 0, `the case passed, got:\n${stdout}${stderr}`);
-    assertEq(stderr, '    one\n    two\nafter on stderr\n', 'the body lines on stderr at the case indent, the real writer back after the case');
-    assertEq(stdout, '  ✓ the case\n\n[after]\n', 'the mark and the header on stdout, untouched');
-  });
-
-  await test('a failing case\'s body print is indented the same, and the body that threw gets its writer put back', () => {
-    const { code, output } = bodyRun("() => { console.log('one\\ntwo'); const err = new Error('boom'); err.stack = 'Error: boom'; throw err; }");
-    assertEq(code, 1, `the case failed, got:\n${output}`);
-    assertEq(output, '    one\n    two\n  ✗ the case\n    boom\n\n[after]\n', 'the body lines indented, the mark, the message and the header on the real writer');
-  });
-
-  group('harness: needs');
-
-  await test('needs() with every tool on PATH returns and prints nothing, locally and in a cloud session', () => {
-    const bin = toolBin(['wk-tool-a', 'wk-tool-b']);
-    for (const remote of [undefined, 'true']) {
-      const { code, output } = needsRun("needs('wk-tool-a', 'wk-tool-b')", bin, remote);
-      assertEq(code, 0, `CLAUDE_CODE_REMOTE=${remote}: the suite passes, got:\n${output}`);
-      assertEq(output, '  ✓ the needing case\n', `CLAUDE_CODE_REMOTE=${remote}: the case ran and needs() printed nothing`);
-    }
-  });
-
-  await test('in a cloud session the run prints the skip line under the suite missing hugo, and its sibling still runs', () => {
-    const root = mkTmp('needs-run-');
-    run('git', ['init', '-q'], { cwd: root });
-    fs.mkdirSync(path.join(root, 'test'));
-    fs.writeFileSync(path.join(root, 'test', 'needy.test.js'), NEEDS("needs('hugo')"));
-    fs.writeFileSync(path.join(root, 'test', 'plain.test.js'), NEEDS('void 0'));
-    const res = run(process.execPath, [RUNNER], { cwd: root, env: needsEnv(toolBin(), 'true') });
-    const output = stripVTControlCharacters(res.output);
-    assertEq(res.status, 0, `a skipped suite keeps the run green, got:\n${output}`);
-    const lines = trimmed(output);
-    const header = lines.indexOf('▶ needy.test.js');
-    assert(header >= 0, `the suite's header printed, got:\n${output}`);
-    assertEq(lines.slice(header + 1).find(Boolean), SKIP_LINE('hugo'), `the skip line under the suite's header, got:\n${output}`);
-    assertEq(marks(output).passed, 1, `only the sibling's case ran, got:\n${output}`);
-    assert(output.includes('1 passed, 0 failed, 1 suite skipped'), `the totals count the skipped suite, got:\n${output}`);
-  });
-
-  await test('in a cloud session the skip names every missing tool in argument order, and no tool that is there', () => {
-    const { code, output } = needsRun("needs('wk-tool-a', 'hugo', 'ffmpeg')", toolBin(['wk-tool-a']), 'true');
-    assertEq(code, 0, `a skipped suite exits 0, got:\n${output}`);
-    assert(trimmed(output).includes(SKIP_LINE('hugo, ffmpeg')), `the one skip line naming both, got:\n${output}`);
-    assertEq(marks(output).passed, 0, `the suite's case never ran, got:\n${output}`);
-  });
-
-  await test('off a cloud session (CLAUDE_CODE_REMOTE unset or false) a missing tool fails the suite, naming it', () => {
-    for (const remote of [undefined, 'false']) {
-      const { code, output } = needsRun("needs('hugo')", toolBin(), remote);
-      assertEq(code, 1, `CLAUDE_CODE_REMOTE=${remote}: the suite fails, got:\n${output}`);
-      assert(output.includes('needs hugo, not installed'), `CLAUDE_CODE_REMOTE=${remote}: the failure names the tool, got:\n${output}`);
-      assert(!output.includes('cloud session') && !output.includes('⊘'), `CLAUDE_CODE_REMOTE=${remote}: never the cloud skip, got:\n${output}`);
-      assertEq(marks(output).passed, 0, `CLAUDE_CODE_REMOTE=${remote}: the suite's case never ran, got:\n${output}`);
-    }
-  });
-
-  await testUnless(IS_WINDOWS, NO_EXEC_BIT)('a file of the tool\'s name on PATH without the executable bit is not the command', () => {
-    const bin = toolBin();
+  test('a file of the tool\'s name on PATH without the executable bit is not the command', { skip: IS_WINDOWS && NO_EXEC_BIT }, () => {
+    const bin = mkTmp('needs-bin-');
+    stubTool(bin, 'wk-tool-a', ['#!/bin/sh', 'exit 0']);
     fs.writeFileSync(path.join(bin, 'hugo'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
-    const { code, output } = needsRun("needs('hugo')", bin, undefined);
-    assertEq(code, 1, `the suite fails as with no hugo at all, got:\n${output}`);
-    assert(output.includes('needs hugo, not installed'), `the failure names the tool, got:\n${output}`);
+    expect(needsIn(sessionEnv('true', { PATH: bin }), ['wk-tool-a', 'hugo']), 'the stub found, the file without the bit missing').toEqual({ returned: 'needs hugo' });
   });
 
-  await test('needs() with no argument or a non-string one fails the suite even in a cloud session, never a skip', () => {
-    for (const call of ['needs()', 'needs(42)', "needs('hugo', 42)"]) {
-      const { code, output } = needsRun(call, toolBin(), 'true');
-      assertEq(code, 1, `${call}: a programmer error fails the suite, got:\n${output}`);
-      assert(!output.includes('⊘'), `${call}: never the skip path, got:\n${output}`);
-      assertEq(marks(output).passed, 0, `${call}: the suite's case never ran, got:\n${output}`);
+  test('in a cloud session, a describe skipped with needs(\'no-such-tool-here\') skips with that reason by file and in a real run\'s skips, its sibling run', () => {
+    const root = mkRepo({ 'needy.test.js': NEEDY, 'plain.test.js': PLAIN });
+    const alone = node(root, ['--test-reporter=tap', path.join('test', 'needy.test.js')], sessionEnv('true'));
+    expect(alone.code, `by file, a skip exits 0, got:\n${alone.output}`).toBe(0);
+    expect(results(alone.output), 'by file, the describe skipped with the reason').toEqual(['ok 1 - needy # SKIP needs no-such-tool-here']);
+    const { code, output } = node(root, [BIN, 'test'], sessionEnv('true'));
+    expect(code, `a skip keeps the run green, got:\n${output}`).toBe(0);
+    expect(output, 'the totals count the sibling\'s one case').toMatch(/^1 passed, 0 failed/m);
+    const listed = listsOf(output).filter((l) => l.includes('test/needy.test.js') && l.includes('needs no-such-tool-here'));
+    expect(listed, `one skip line after the totals names the suite and the reason, got:\n${output}`).toHaveLength(1);
+    expect(output, 'the skipped describe\'s case never ran').not.toContain('the needing case ran');
+  });
+
+  test('a describe that needs a present tool runs its case by file, in and outside a cloud session', () => {
+    const root = mkRepo({ 'present.test.js': PRESENT });
+    for (const remote of [null, 'true']) {
+      const { code, output } = node(root, ['--test-reporter=tap', path.join('test', 'present.test.js')], sessionEnv(remote));
+      expect(code, `CLAUDE_CODE_REMOTE=${remote}: exit 0, got:\n${output}`).toBe(0);
+      expect(results(output), `CLAUDE_CODE_REMOTE=${remote}: the describe ran, not skipped`).toEqual(['ok 1 - present']);
+      expect(output, `CLAUDE_CODE_REMOTE=${remote}: its case passed`).toMatch(/^ {4}ok 1 - the present case$/m);
     }
   });
-
-  group('harness: failureOf');
-
-  await test('failureOf resolves the error a sync call threw and the one an async call rejected with', async () => {
-    const thrown = new Error('sync');
-    const rejected = new Error('async');
-    assertEq(await failureOf(() => { throw thrown; }), thrown, 'the thrown error');
-    assertEq(await failureOf(async () => { throw rejected; }), rejected, 'the rejected error');
-  });
-
-  await test('failureOf over a call that returns rejects, naming the return', async () => {
-    const err = await failureOf(() => failureOf(async () => 'answered'));
-    assertEq(err.message, 'expected a failure, got a return', 'the failure of its own');
-  });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

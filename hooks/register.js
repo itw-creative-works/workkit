@@ -1,45 +1,36 @@
 /**
- * hooks/register.js: the workkit hooks module, the twenty-six in-process
- * hooks on ten events (docs/hooks.md § The hooks module); eight guards run in
- * the `gh` shim and git's hooks instead, release-taken in both. The one file that
+ * hooks/register.js: the workkit hooks module, the twenty-two in-process
+ * hooks on ten events (docs/hooks.md § The hooks module); nine guards run in
+ * the `gh` and `git` shims and git's hooks instead. The one file that
  * touches `$`: each hook's logic is plain functions in hooks/mods/<name>.js,
  * and this file gathers their facts (or hands a mods gatherer the engine calls
  * as plain functions), gates them, logs each fire and answers.
  */
 
 import { addonContext, addonPath } from './mods/addon.js';
-import { boardGuardGather, boardGuardRepo } from './mods/board-guard.js';
+import { CAPTURE_PATH } from './mods/changed.js';
 import { changeTrackerGather } from './mods/change-tracker.js';
-import { changelogGuardVerdict, isChangelog, linterPath } from './mods/changelog-guard.js';
 import { checkpointContext } from './mods/checkpoint.js';
 import { closeGuardGather } from './mods/close-guard.js';
 import { featureContext, featureMatch } from './mods/feature.js';
 import { isSystemPrompt } from './mods/frame.js';
 import { isExempt } from './mods/gate.js';
-import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, folderOpted, grownLines, runChain } from './mods/guards.js';
+import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, callRoots, callSince, folderOpted, journalSize, markCall, runChain } from './mods/guards.js';
 import { appendLog, homeOf, logLine, pad, userDirOf } from './mods/log.js';
 import { crewClass, isAdvise, managerConfig } from './mods/manager.js';
-import { journalFor, journalMarkPath, journalMarkText, journalMarks, journalSizes, sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
-import { repoPathOf } from './mods/optin.js';
+import { journalFor, sessionPath, sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
 import { profileContext } from './mods/profile.js';
 import { reloadFingerprint, reloadGuardContext, surfacePaths } from './mods/reload-guard.js';
 import { resolverAdvice, resolverModel } from './mods/resolver.js';
+import { WRITE_CHECKS, dirOf, writeChecks } from './mods/script-write.js';
 import { sessionGather } from './mods/session.js';
-import { sessionGuardVerdict } from './mods/session-guard.js';
 import { loadSettings } from './mods/settings.js';
 import { spawnGuardWarning } from './mods/spawn-guard.js';
 import { standardsGather } from './mods/standards.js';
 import { inboxCount, stateCheckContext } from './mods/state-check.js';
-import { testBarContext } from './mods/test-bar.js';
-import { isCodePath, isTestPath, testReminderContext } from './mods/test-reminder.js';
 
-// Each hook as settings and the hooks log name it.
+// Each hook as settings and the hooks log name it; the five write checks are WRITE_CHECKS.
 const HOOK = {
-  boardGuard: 'docs:board-guard',
-  changelogGuard: 'docs:changelog-guard',
-  sessionGuard: 'docs:session-guard',
-  testReminder: 'safety:test-reminder',
-  testBar: 'safety:test-bar',
   stateCheck: 'docs:state-check',
   session: 'docs:session',
   standards: 'workflow:standards',
@@ -57,12 +48,6 @@ const HOOK = {
 const GH_TIMEOUT_MS = 5000;
 const INBOX_CACHE_MS = 30 * 60 * 1000;
 
-// A path's folder; a drive root keeps its slash (`C:/`), so git never runs drive-relative.
-const dirOf = (path) => {
-  const cut = path.lastIndexOf('/');
-  if (cut <= 0) return '/';
-  return /^[A-Za-z]:$/.test(path.slice(0, cut)) ? path.slice(0, cut + 1) : path.slice(0, cut);
-};
 const verdictOf = (hook, opted) => (isExempt(hook) || opted ? 'run' : 'stood-down');
 const storeKey = (sid, name) => `workkit:${sid}:${name}`;
 const failedRun = (err) => ({ exitCode: 1, stdout: '', stderr: String(err?.message ?? err), isStarted: false });
@@ -270,55 +255,25 @@ async function configOf($, env, cwd) {
 const namesIn = ($, path) => $.fs.list(path).then((entries) => entries.map((f) => f.name), () => []);
 
 // The engine calls a mods gatherer makes, as plain functions: `$` stays here.
-const ioOf = ($, env) => ({
+// Given the session's id, the store reads and writes are that session's.
+const ioOf = ($, env, sid) => ({
   pluginRoot: $.plugin.root,
   top: (cwd) => gitTop($, cwd), read: (path) => readText($, path), now: () => now($),
   exists: (path) => exists($, path), real: (path) => realPath($, path), run: (argv, init) => run($, argv, init),
   list: (path) => namesIn($, path),
   write: (path, text) => quiet($.fs.write(path, text)), sha1: sha1Hex, stat: (path) => $.fs.stat(path).catch(() => null),
   config: (cwd) => configOf($, env, cwd), model: () => sessionModel($),
-  messages: () => $.session.messages(), log: (text) => $.ui.log(text),
+  messages: () => $.session.messages(), log: (text) => $.ui.log(text), debug: (text) => $.ui.log(text, { to: 'debug' }),
+  storeGet: (name) => storeGet($, sid, name), storeSet: (name, value) => storeSet($, sid, name, value),
 });
 
-async function changelogGuardHook($, env, file, text) {
-  if (!isChangelog(file) || text === null) return null;
-  const linter = linterPath(env, $.plugin.root);
-  if (!(await exists($, linter))) return null;
-  const lint = await run($, ['node', linter, file, '--added-only'], { cwd: dirOf(file) });
-  // No node to run the linter, or a run past its timeout: the guard stands aside, out loud.
-  if (lint.isStarted !== false) return changelogGuardVerdict(file, lint);
-  $.ui.log(`docs/changelog-guard: the linter did not start (${lint.stderr.trim()}); the write is not judged`);
-  return null;
-}
-
-// A written file in the session's own repo as `{ root, rel }`, else null: the
-// gate test-reminder and test-bar share.
-async function repoRel($, e, file) {
-  if (!file || !(await exists($, file))) return null;
-  const dir = dirOf(file);
-  const [root, fileRoot] = await Promise.all([gitTop($, e.cwd || (await sessionCwd($))), gitTop($, dir)]);
-  const rel = root && root === fileRoot ? await repoPathOf(dir, (argv, init) => run($, argv, init), file.split('/').pop()) : null;
-  return rel && { root, rel };
-}
-
-async function testReminderHook($, e, where) {
-  if (!where) return null;
-  const { root, rel } = where;
-  const seen = (await storeGet($, e.session_id, 'test-reminder')) ?? [];
-  if (!isCodePath(rel) || seen.includes(`${root}/${rel}`)) return null;
-  const listing = await run($, ['git', '-c', 'core.quotePath=false', 'ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root });
-  const files = listing.exitCode === 0 ? listing.stdout.split('\n').filter(Boolean) : [];
-  const tests = {};
-  await Promise.all(files.filter(isTestPath).map(async (path) => {
-    tests[path] = (await readText($, `${root}/${path}`)) ?? '';
-  }));
-  const context = testReminderContext({ root, rel, files, tests }, seen);
-  if (context) await storeSet($, e.session_id, 'test-reminder', [...seen, `${root}/${rel}`]);
-  return context;
-}
-
-async function testBarHook(where, text) {
-  return where ? testBarContext({ ...where, text }) : null;
+// The session's PATH with the git shim's folder first (sessionPath); a PATH
+// that already leads with it is left alone.
+async function sessionPathHook($) {
+  const current = await $.env.get('PATH');
+  if (!current) throw new Error('the session has no PATH to put the git shim on');
+  const next = sessionPath(current, `${$.plugin.root}/workflow/gitshim`, windowsKit($.plugin.root) ? 'win32' : 'posix');
+  if (next !== current) await $.env.set('PATH', next);
 }
 
 // The open inbox count; only silence is cached, about 30 minutes per repo,
@@ -461,7 +416,7 @@ const failClosed = ($, e, next) => (next.called ? next(e) : { deny: `${GUARDS_FA
 async function guardChain($, e, next, event, guards, facts) {
   const env = await envOf($);
   if (env.HOOK_DISABLE === '1') return next(e);
-  const chain = await runChain(ioOf($, env), env, guards, await facts(env));
+  const chain = await runChain(ioOf($, env, e.session_id), env, guards, await facts(env));
   await logFires($, env, event === 'tool.call' ? 'PreToolUse' : event, e, chain.fires);
   if (chain.error) throw chain.error;
   if (chain.deny) return { deny: chain.deny };
@@ -486,51 +441,27 @@ async function fileFacts($, e) {
 // The gh journal of the folder's repo root (journalFor), under the machine folder.
 const journalAt = ($, env, cwd) => journalFor((dir) => gitTop($, dir), cwd, userDirOf(env));
 
-// The journal's length in bytes, measured and never read: the stat's size,
-// else `wc -c`; an absent journal is 0.
-async function journalSize($, journal) {
-  const stat = await $.fs.stat(journal).catch(() => null);
-  if (!stat) return 0;
-  if (typeof stat.size === 'number') return stat.size;
-  const counted = await run($, ['wc', '-c', journal]);
-  return counted.exitCode === 0 ? Number.parseInt(counted.stdout.trim(), 10) || 0 : 0;
-}
-
-// Before a Bash call runs: its mark holds every gh journal on the machine
-// and its length (journalSizes); no command text, no git call.
-async function markJournal($, env, id) {
-  if (!id) return;
-  const sizing = journalSizes((dir) => namesIn($, dir), (journal) => journalSize($, journal), userDirOf(env));
-  const [sized, mark] = await Promise.all([sizing, journalMarkPath(id, userDirOf(env))]);
-  const dir = dirOf(mark);
-  if ((await $.fs.stat(dir).catch(() => null))?.kind !== 'dir') await run($, ['mkdir', '-p', dir]);
-  await quiet($.fs.write(mark, journalMarkText(sized)));
-}
-
-// After it ran: the opted-in lines of each journal the call changed, oldest
-// first (grownLines), the mark removed; no mark, no lines.
-async function journalSince($, env, e) {
-  if (!e.tool_use_id) return [];
-  const mark = await journalMarkPath(e.tool_use_id, userDirOf(env));
-  const held = await readText($, mark);
-  if (held === null) return [];
-  await run($, ['rm', '-f', mark]);
-  return grownLines(ioOf($, env), userDirOf(env), journalMarks(held), (journal) => journalSize($, journal));
-}
-
 // The owner prompt's turn start: the time and the length of the journal of its
 // cwd's root, for the Stop to read the turn's lines past. A harness frame (a
 // hand-back, a task notification) opens no turn, so it moves nothing.
 async function turnJournalHook($, env, e) {
   if (!e.cwd || isSystemPrompt(e.prompt)) return null;
   const journal = await journalAt($, env, e.cwd);
-  await storeSet($, e.session_id, 'turn-journal', { ms: await now($), bytes: await journalSize($, journal) });
+  await storeSet($, e.session_id, 'turn-journal', { ms: await now($), bytes: await journalSize(ioOf($, env), journal) });
   return null;
 }
 
-// The facts of a Bash call that already ran: the journal lines its gh writes
-// left, and no command text.
-const postBashFacts = ($, e) => async (env) => ({ cwd: e.cwd ?? '', lines: await journalSince($, env, e).catch(() => []) });
+// The facts of a Bash call that already ran (callSince): its gh journal lines,
+// start time and the roots it began and ended in; no command text. A failed
+// read skips the after-call checks, said in one owner line.
+const postBashFacts = ($, e) => async (env) => {
+  const io = ioOf($, env);
+  const call = await callSince(io, env, e.tool_use_id).catch((err) => {
+    $.ui.log(`workkit: the after-call checks were skipped for this Bash call, since its mark could not be read: ${err?.message ?? err}`);
+    return { lines: [], since: null, began: null };
+  });
+  return { cwd: e.cwd ?? '', lines: call.lines, since: call.since, roots: call.since === null ? [] : await callRoots(io, call.began, e.cwd) };
+};
 
 export function register(on) {
   on('classic.PostToolUse', { tool_name: ['Edit', 'Write'] }, async ($, e, next) => {
@@ -538,37 +469,13 @@ export function register(on) {
     if (env.HOOK_DISABLE === '1') return next(e);
     const file = await physicalPath($, filePathOf(e));
     const opted = await folderOpted(ioOf($, env), file ? dirOf(file) : e.cwd);
-    const fires = [];
-    let block = null;
-    const contexts = [];
-    if (!opted) {
-      for (const hook of [HOOK.boardGuard, HOOK.changelogGuard, HOOK.sessionGuard, HOOK.testReminder, HOOK.testBar]) fires.push([hook, 'stood-down']);
-    } else {
-      // In order: the first block wins and the hooks after it do not run.
-      const text = file ? await readText($, file) : null;
-      fires.push([HOOK.boardGuard, 'run']);
-      block = await caught($, HOOK.boardGuard, boardGuardGather(file, text, `${$.plugin.root}/docs/project-state.md`, () => boardGuardRepo(file, dirOf(file), env, ioOf($, env))));
-      if (!block) {
-        fires.push([HOOK.changelogGuard, 'run']);
-        block = await caught($, HOOK.changelogGuard, changelogGuardHook($, env, file, text));
-      }
-      if (!block) {
-        fires.push([HOOK.sessionGuard, 'run']);
-        block = sessionGuardVerdict(file, text);
-      }
-      if (!block) {
-        // The two nudges share one repo read; neither blocks.
-        const where = await caught($, `${HOOK.testReminder}, ${HOOK.testBar} (repo read)`, repoRel($, e, file));
-        fires.push([HOOK.testReminder, 'run']);
-        contexts.push(await caught($, HOOK.testReminder, testReminderHook($, e, where)));
-        fires.push([HOOK.testBar, 'run']);
-        contexts.push(await caught($, HOOK.testBar, testBarHook(where, text)));
-      }
-    }
-    await logFires($, env, 'PostToolUse', e, fires);
+    const checked = opted
+      ? await writeChecks(ioOf($, env, e.session_id), env, { file, cwd: e.cwd || (await sessionCwd($)) })
+      : { fires: WRITE_CHECKS.map((hook) => [hook, 'stood-down']), block: null, contexts: [] };
+    await logFires($, env, 'PostToolUse', e, checked.fires);
     const result = await next(e);
-    if (block) return { ...result, block: [block, result?.block].filter(Boolean).join('\n\n') };
-    return withContext(result, contexts.filter(Boolean));
+    if (checked.block) return { ...result, block: [checked.block.text, result?.block].filter(Boolean).join('\n\n') };
+    return withContext(result, checked.contexts.map((said) => said.text));
   }).catch(($, e, next) => (next.called
     ? next(e)
     : { block: 'workkit: the PostToolUse guards failed before they could judge this write; check the file by hand.' }));
@@ -576,6 +483,7 @@ export function register(on) {
   on('classic.SessionStart', async ($, e, next) => {
     const env = await envOf($);
     if (env.HOOK_DISABLE === '1') return next(e);
+    await sessionPathHook($).catch((err) => $.ui.log(`workkit: the git shim is not on this session's PATH, so safety:tree-guard is off: ${err?.message ?? err}`));
     const opted = await folderOpted(ioOf($, env), e.cwd);
     // The reload stamp is taken only where the session loads its surfaces.
     const stamps = e.source === 'startup' || e.source === 'resume';
@@ -628,11 +536,12 @@ export function register(on) {
   }).catch(passOn);
 
   // tool.call carries no cwd: the folder is the session's, or the subagent's in a
-  // subagent. The journal mark is left first, for the PostToolUse to read past.
+  // subagent. The call's mark is left first, for the PostToolUse to read past.
+  // The capture path match is the one read of the command's text.
   on('tool.call', { tool: 'Bash' }, ($, e, next) => guardChain($, e, next, 'tool.call', BASH_GUARDS, async (env) => {
     const cwd = await $.session.cwd();
-    await quiet(markJournal($, env, e.tool_use_id));
-    return { command: e.command ?? '', cwd, background: e.run_in_background === true };
+    await markCall({ ...ioOf($, env), write: (path, text) => $.fs.write(path, text) }, env, e.tool_use_id, cwd).catch((err) => $.ui.log(`workkit: the after-call checks will be skipped for this Bash call, since its mark could not be written: ${err?.message ?? err}`));
+    return { cwd, background: e.run_in_background === true, namesCapture: String(e.command ?? '').includes(CAPTURE_PATH) };
   })).catch(failClosed);
 
   on('tool.call', { tool: ['Edit', 'Write'] }, ($, e, next) => guardChain($, e, next, 'tool.call', FILE_GUARDS, () => fileFacts($, e))).catch(failClosed);

@@ -45,6 +45,16 @@ export function userDirOf(env) {
 }
 
 /**
+ * The kit's cache folder, wk_cache_dir's rule: <home>/.cache/workkit. HOME
+ * moves it; WORKFLOW_HOME does not, since ~/.workkit can be a link into a repo.
+ * @param {object} env the variables the module read
+ * @returns {string}
+ */
+export function cacheDirOf(env) {
+  return `${homeOf(env)}/.cache/workkit`;
+}
+
+/**
  * One fire's line: `<iso>\t<hook>\t<event>\t<session_id>\t<cwd>\t<verdict>\n`.
  * @param {string} iso the time, UTC, to the second
  * @returns {string}

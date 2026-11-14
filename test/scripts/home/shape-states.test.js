@@ -5,27 +5,25 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { BASH, NO_RC, shellPath } = require('../../lib/platform');
 const { WORKFLOW_DIR, KIT_DIR, cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
 const { settingsAt } = require('../../../workflow/lib/settings');
 
-const cases = async () => {
-  group('workflow/home: shape');
-
-  await test('the three libraries parse and run nothing at load', () => {
+describe('workflow/home: shape', () => {
+  test('the three libraries parse and run nothing at load', () => {
     for (const lib of ['lib.sh', 'lib/discussions.sh', 'home.sh']) {
       const file = path.join(WORKFLOW_DIR, lib);
-      assertEq(spawnSync(BASH, [...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, 0, `bash -n is clean for ${lib}`);
+      expect(spawnSync(BASH, [...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, `bash -n is clean for ${lib}`).toBe(0);
     }
     const world = mkWorld();
     // Sourcing all three prints nothing: a library that acted at load would
     // act every time the CLI, the heal or the job started.
-    assertEq(inHome(world, 'true').out, '', 'sourcing says nothing');
+    expect(inHome(world, 'true').out, 'sourcing says nothing').toBe('');
     cleanup(world.root);
   });
 
-  await test('the copy’s exclude list covers everything the app’s .gitignore names', () => {
+  test('the copy’s exclude list covers everything the app’s .gitignore names', () => {
     // The list is the gitignore's set, so both are read and held to it: an
     // ignore rule the list misses is a tree the seed and the sync copy into the
     // published clone.
@@ -47,29 +45,28 @@ const cases = async () => {
     // gives it back the same way: the keep list is those lines, exactly.
     const negated = rules.filter((line) => line.startsWith('!')).map((line) => line.slice(1));
 
-    assert(ignored.length > 0, 'the app’s ignore rules were read');
+    expect(ignored.length > 0, 'the app’s ignore rules were read').toBeTruthy();
     for (const name of ignored) {
-      assert(excluded.includes(name), `the exclude list carries ${name}`);
+      expect(excluded.includes(name), `the exclude list carries ${name}`).toBeTruthy();
     }
-    assertEq(kept.join(','), negated.join(','), 'and the keep list is the gitignore’s negations, no more and no fewer');
+    expect(kept.join(','), 'and the keep list is the gitignore’s negations, no more and no fewer').toBe(negated.join(','));
   });
 
-  await test('the addresses are the new layout: a plain folder with one repo in it', () => {
+  test('the addresses are the new layout: a plain folder with one repo in it', () => {
     const world = mkWorld();
     const { out } = inHome(world, 'printf "%s\\n%s\\n%s\\n" "$WK_USER_DIR" "$WK_HOME_DIR" "$WK_HOME_SETTINGS"');
     const [userDir, homeDir, settings] = out.trim().split('\n');
-    assertEq(userDir, shellPath(world.workflowHome), 'the user folder is ~/.workkit');
-    assertEq(homeDir, shellPath(path.join(world.workflowHome, 'tower')), 'and the clone is the tower under it');
-    assertEq(settings, shellPath(path.join(world.workflowHome, 'settings.json')),
-      'the site options live beside the roster, outside the clone the user never edits');
+    expect(userDir, 'the user folder is ~/.workkit').toBe(shellPath(world.workflowHome));
+    expect(homeDir, 'and the clone is the tower under it').toBe(shellPath(path.join(world.workflowHome, 'tower')));
+    expect(settings, 'the site options live beside the roster, outside the clone the user never edits').toBe(shellPath(path.join(world.workflowHome, 'settings.json')));
 
     // Nothing addresses anything inside the clone but the app it builds.
     const lib = fs.readFileSync(path.join(WORKFLOW_DIR, 'lib.sh'), 'utf8');
-    assert(!/WK_HOME_CONFIG|WK_HOME_INBOX/.test(lib), 'no address is kept for either retired file');
+    expect(!/WK_HOME_CONFIG|WK_HOME_INBOX/.test(lib), 'no address is kept for either retired file').toBeTruthy();
     cleanup(world.root);
   });
 
-  await test('the site host reads one way, whatever shape the domain was typed in', () => {
+  test('the site host reads one way, whatever shape the domain was typed in', () => {
     // One reader, because the CNAME, the path prefix and the site URL all want
     // the same answer. A CNAME carries a host and never a path, so the scheme and
     // any trailing slash come off here rather than at a caller. Bracketed so the
@@ -82,58 +79,52 @@ const cases = async () => {
     ]) {
       const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: typed } } });
       const { code, out } = inHome(world, 'printf "[%s]" "$(wk_site_host)"');
-      assertEq(code, 0, `exit 0 for ${JSON.stringify(typed)}`);
-      assertEq(out, `[${host}]`, `${JSON.stringify(typed)} reads as the host alone`);
+      expect(code, `exit 0 for ${JSON.stringify(typed)}`).toBe(0);
+      expect(out, `${JSON.stringify(typed)} reads as the host alone`).toBe(`[${host}]`);
       cleanup(world.root);
     }
   });
+});
 
-  group('workflow/home: the four states');
-
-  await test('no home slug is `unset`', () => {
+describe('workflow/home: the four states', () => {
+  test('no home slug is `unset`', () => {
     const world = mkWorld();
-    assertEq(inHome(world, 'wk_home_state').out, 'unset', 'nothing has been decided');
+    expect(inHome(world, 'wk_home_state').out, 'nothing has been decided').toBe('unset');
     cleanup(world.root);
   });
 
-  await test('the slug write seeds the settings file when nothing has yet, with the switch unanswered', () => {
+  test('the slug write seeds the settings file when nothing has yet, with the switch unanswered', () => {
     // The one order where setup runs before any heal: this function creates the
     // hand-edited file itself. The switch is left to the kit defaults, so it reads
     // unanswered and setup still has a question to put.
     const world = mkWorld({ settings: null });
     const { code } = inHome(world, 'wk_home_set_slug owner/workkit');
-    assertEq(code, 0, 'exit 0');
+    expect(code, 'exit 0').toBe(0);
     const { site } = settingsAt(null, path.join(world.workflowHome, 'settings.json'));
-    assertEq(site.repo, 'owner/workkit', 'the slug it was asked to record');
-    assertEq(site.publish, null, 'and nobody has answered the switch');
-    assertEq(site.url, null, 'no custom domain');
+    expect(site.repo, 'the slug it was asked to record').toBe('owner/workkit');
+    expect(site.publish, 'and nobody has answered the switch').toBe(null);
+    expect(site.url, 'no custom domain').toBe(null);
     cleanup(world.root);
   });
 
-  await test('a slug with nothing cloned is `absent`', () => {
+  test('a slug with nothing cloned is `absent`', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
-    assertEq(inHome(world, 'wk_home_state').out, 'absent', 'setup has the clone left to do');
+    expect(inHome(world, 'wk_home_state').out, 'setup has the clone left to do').toBe('absent');
     cleanup(world.root);
   });
 
-  await test('the clone of the home repo is `clone`', () => {
+  test('the clone of the home repo is `clone`', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, { seed: { 'package.json': '{}\n' } });
     inHome(world, 'wk_home_clone owner/workkit');
-    assertEq(inHome(world, 'wk_home_state').out, 'clone', 'the one state everything else needs');
+    expect(inHome(world, 'wk_home_state').out, 'the one state everything else needs').toBe('clone');
     cleanup(world.root);
   });
 
-  await test('anything else at that path is `other`, and is never adopted', () => {
+  test('anything else at that path is `other`, and is never adopted', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     fs.mkdirSync(path.join(world.tower, 'something'), { recursive: true });
-    assertEq(inHome(world, 'wk_home_state').out, 'other', 'a folder somebody else made');
+    expect(inHome(world, 'wk_home_state').out, 'a folder somebody else made').toBe('other');
     cleanup(world.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

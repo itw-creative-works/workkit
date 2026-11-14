@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # workflow/standards/tests.sh: the check that a repo's `npm test` runs
-# workkit-core's runner, read off package.json and never run, and that its
-# suites live under `test/`. Sourced by standards.sh, functions only.
+# workkit-core's runner, read off package.json and never run. Sourced by
+# standards.sh, functions only.
 
 # ── 6. npm test runs workkit-core's runner ──
 # Silent when devDependencies names workkit-core (wk_has_core_package, read off
@@ -14,14 +14,4 @@ check_test_runner() {
   [[ -n "$script" ]] || return 0
   wk_has_core_package && return 0
   wk_warn "test script: npm test does not run workkit-core's runner; run \`npm i -D workkit-core\` and set \`\"test\": \"workkit test\"\`"
-}
-
-# ── 6b. The suites live under test/ ──
-# A Node repo (one with a package.json) whose suites sit in `tests/` with no
-# `test/` beside it gets the one line naming the move; the runner still reads
-# it, so never a flag on the run.
-check_test_folder() {
-  [[ -f package.json ]] || return 0
-  [[ -d tests && ! -d test ]] || return 0
-  wk_warn "tests/: the suites live under tests/; Node's convention is test/ (git mv tests test)"
 }

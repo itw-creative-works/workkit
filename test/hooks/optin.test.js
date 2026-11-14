@@ -1,154 +1,57 @@
-// Tests for the Bash gate's logic, optinRepo({ command, cwd, toplevel,
-// settingsText }) in hooks/mods/optin.js: which repo a Bash command acts on and
-// whether it opted in, the port of hook_optin_repo. Each case ports the
-// loader.test.js case its name quotes. Not here: the Edit and link cases (no
-// command, the classic.PreToolUse gate) and the hooks-log and HOOK_DISABLE
-// cases, which run in test/mods/guards-tree-guard.test.ts.
+// Tests for the opt-in gate's logic: folderOpted(io, dir) in hooks/mods/guards.js, whether the repo holding a
+// call's real folder opted in, and rosterOf in hooks/mods/optin.js, the one roster read. The folder is the call's
+// own ($.session.cwd() before a Bash call, the event's cwd after it), never one read off the command's text: the
+// wiring cases, the hooks-log and HOOK_DISABLE ones included, are test/mods/guards-tree-guard.test.ts.
 
-const { group, test, assertEq, summary, selfRun } = require('../lib/harness');
+const { describe, test, expect } = require('../lib/harness');
 const { mods } = require('../lib/mods-inputs');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
-// Each world folder holds its `repo` and is in no repo itself; `/w/nowhere`
-// and `/tmp` are in none at all.
-const NOWHERE = '/w/nowhere';
-const OPTED = { dir: '/w/o', repo: '/w/o/repo' };
-const NOT = { dir: '/w/n', repo: '/w/n/repo' };
 // Each repo's .workkit/settings.json as text, the form the gate reads.
 const SETTINGS = {
   enabled: OPT_IN_SHAPES.current,
   declined: '{ "version": 1, "enabled": false }\n',
   unanswered: '{ "version": 1 }\n',
 };
-const REPOS = { [OPTED.repo]: SETTINGS.enabled, [NOT.repo]: null };
 
-const toplevelIn = (repos) => async (dir) => Object.keys(repos)
-  .filter((root) => dir === root || dir.startsWith(`${root}/`))
-  .sort((a, b) => b.length - a.length)[0] ?? null;
-
-// settingsText answers a root's settings text, null for no file.
-const ask = (command, cwd, { repos = REPOS } = {}) => mods('optin').optinRepo({
-  command, cwd, toplevel: toplevelIn(repos), settingsText: async (root) => repos[root] ?? null,
+// An io over one repo at /w/r whose settings are `settings` (null for no file); /w/nowhere is in no repo.
+const ioWith = (settings) => ({
+  top: async (dir) => (dir === '/w/r' || dir.startsWith('/w/r/') ? '/w/r' : null),
+  read: async (p) => (p === '/w/r/.workkit/settings.json' ? settings : null),
+  exists: async () => false,
+  run: async () => null,
+  stat: async () => null,
+  now: () => 0,
+  pluginRoot: '/kit',
 });
 
-const runs = async (command, cwd, opts) => {
-  assertEq((await ask(command, cwd, opts)).opted, true, `${JSON.stringify(command)} from ${cwd} must run the hook`);
-};
+const opted = async (settings, dir = '/w/r') => Boolean(await mods('guards').folderOpted(ioWith(settings), dir));
 
-const stands = async (command, cwd, opts) => {
-  assertEq((await ask(command, cwd, opts)).opted, false, `${JSON.stringify(command)} from ${cwd} must stand the hook down`);
-};
+describe('optin: the repo holding the folder', () => {
+  test('enabled runs the hooks, from the root and from a folder under it', async () => {
+    expect(await opted(SETTINGS.enabled), 'the root').toBe(true);
+    expect(await opted(SETTINGS.enabled, '/w/r/packages/core'), 'a folder under it').toBe(true);
+  });
 
-const cases = async () => {
-  group('optin: a repo that has not opted in');
-
-  await test('no settings file: commit-gate and docs:change-tracker step aside', async () => {
-    for (const [answer, settings, opted] of [['enabled', SETTINGS.enabled, true], ['none', null, false]]) {
-      const r = await ask('git status', '/w/r', { repos: { '/w/r': settings } });
-      assertEq(r.opted, opted, `a repo answering ${answer}`);
-      assertEq(r.root, '/w/r', `the root it judged, answering ${answer}`);
+  test('no settings file, "enabled": false and a file with no enabled key each stand the hooks down', async () => {
+    for (const [answer, settings] of [['none', null], ['declined', SETTINGS.declined], ['no enabled key', SETTINGS.unanswered]]) {
+      expect(await opted(settings), `a repo answering ${answer}`).toBe(false);
     }
   });
 
-  await test('"enabled": false and a file with no enabled key both step aside', async () => {
-    for (const [answer, settings, opted] of [['declined', SETTINGS.declined, false], ['no enabled key', SETTINGS.unanswered, false]]) {
-      const r = await ask('git status', '/w/r', { repos: { '/w/r': settings } });
-      assertEq(r.opted, opted, `a repo answering ${answer}`);
-      assertEq(r.root, '/w/r', `the root it judged, answering ${answer}`);
-    }
+  test('outside any git repo: the gate says no', async () => {
+    expect(await opted(SETTINGS.enabled, '/w/nowhere'), 'no repo').toBe(false);
   });
+});
 
-  await test('outside any git repo: the gate says no', async () => {
-    for (const command of ['git commit -m "feat: add x"', 'npm test']) await stands(command, NOWHERE);
-  });
-
-  group('optin: a Bash command that changes folder');
-
-  await test('cd into an opted-in repo from no repo runs the hook', async () => {
-    await runs(`cd ${OPTED.repo} && git status`, NOWHERE);
-  });
-
-  await test('cd into a repo not opted in from no repo stands down', async () => {
-    await stands(`cd ${NOT.repo} && ls`, NOWHERE);
-  });
-
-  await test('cd into an opted-in repo from a repo not opted in runs the hook', async () => {
-    await runs(`cd ${OPTED.repo}; ls`, NOT.repo);
-  });
-
-  await test('a second cd resolves from where the first landed', async () => {
-    await runs('cd repo && cd sub && ls', OPTED.dir);
-    await runs(`cd ${OPTED.dir} && cd repo && ls`, NOT.dir);
-  });
-
-  await test('a cd inside a subshell does not move the steps after it', async () => {
-    await runs(`(cd ${NOT.dir}) ; cd repo && ls`, OPTED.dir);
-    await stands(`(cd ${NOT.repo}) && ls`, NOWHERE);
-  });
-
-  await test('a cd the loader cannot follow runs the hook', async () => {
-    for (const command of ['cd "$X" && ls', 'cd ~/x && ls', 'pushd /tmp && ls', 'cd -P /tmp && ls', 'env cd /tmp']) {
-      await runs(command, NOWHERE);
-    }
-  });
-
-  await test('a cd in a heredoc body or a quoted string is not a step', async () => {
-    await stands(`cat > f <<EOF\ncd ${OPTED.repo}\nEOF`, NOWHERE);
-    await stands(`echo "cd ${OPTED.repo}"`, NOWHERE);
-  });
-
-  await test('an opted-in cwd still runs the hook after a cd out of it', async () => {
-    await runs('cd /tmp && ls', OPTED.repo);
-  });
-
-  await test('a command with no cd is judged by the cwd alone', async () => {
-    await stands('ls', NOWHERE);
-    const r = await ask('ls', OPTED.repo);
-    assertEq(r.opted, true, 'ls in the opted-in repo runs the hook');
-    assertEq(r.root, OPTED.repo, 'judged by the repo holding the cwd');
-  });
-
-  group('optin: a Bash command that moves its target without a plain cd');
-
-  await test('git -C, GIT_DIR, --git-dir, bash -c and eval aimed at an opted-in repo run the hook, from no repo', async () => {
-    const repo = OPTED.repo;
-    for (const command of [
-      `git -C ${repo} commit -m x`,
-      `GIT_DIR=${repo}/.git git commit -m x`,
-      `git --git-dir=${repo}/.git --work-tree=${repo} commit -m x`,
-      `bash -c 'cd ${repo} && git commit -m x'`,
-      `eval 'cd ${repo} && git commit -m x'`,
-    ]) await runs(command, NOWHERE);
-  });
-
-  await test('a backtick substitution, CDPATH and a quoted cd word run the hook, from no repo', async () => {
-    for (const command of [
-      `x=\`cd ${OPTED.repo} && git status\``,
-      `CDPATH=${OPTED.dir} cd repo && ls`,
-      `"cd" ${OPTED.repo} && ls`,
-    ]) await runs(command, NOWHERE);
-  });
-
-  await test('a "cd" inside a word is no cd: a hash and a path still stand down', async () => {
-    await stands('git log 3acd12f && ls /x/abcd', NOWHERE);
-  });
-
-  group('optin.js: rosterOf, the one roster read');
-
-  await test('rosterOf parses the machine folder\'s .repos.json, WORKFLOW_HOME moving it, null when absent or broken', async () => {
+describe('optin.js: rosterOf, the one roster read', () => {
+  test('rosterOf parses the machine folder\'s .repos.json, WORKFLOW_HOME moving it, null when absent or broken', async () => {
     const { rosterOf } = mods('optin');
     const roster = { repos: { '/w/o/repo': 'enabled' } };
     const files = { '/w/home/.workkit/.repos.json': JSON.stringify(roster), '/w/moved/.repos.json': '{ "repos": ' };
     const read = async (p) => files[p] ?? null;
-    assertEq(JSON.stringify(await rosterOf({ HOME: '/w/home' }, read)), JSON.stringify(roster), 'the roster under HOME');
-    assertEq(await rosterOf({ HOME: '/w/home', WORKFLOW_HOME: '/w/moved' }, read), null, 'WORKFLOW_HOME moves it, and a broken file is null');
-    assertEq(await rosterOf({ HOME: '/w/empty' }, read), null, 'no roster is null');
+    expect(JSON.stringify(await rosterOf({ HOME: '/w/home' }, read)), 'the roster under HOME').toBe(JSON.stringify(roster));
+    expect(await rosterOf({ HOME: '/w/home', WORKFLOW_HOME: '/w/moved' }, read), 'WORKFLOW_HOME moves it, and a broken file is null').toBe(null);
+    expect(await rosterOf({ HOME: '/w/empty' }, read), 'no roster is null').toBe(null);
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

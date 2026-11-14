@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
   BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, gitPath, which, linkTool, systemPathWith,
 } = require('../../lib/platform');
@@ -12,10 +12,8 @@ const {
   WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, copyDefaults,
 } = require('./helpers');
 
-const cases = async () => {
-  group('standards.sh: it fails loudly, never silently');
-
-  await test('a missing template warns, keeps healing, and exits non-zero', () => {
+describe('standards.sh: it fails loudly, never silently', () => {
+  test('a missing template warns, keeps healing, and exits non-zero', () => {
     const kit = mkTmp('wf-std-');
     const engine = path.join(kit, 'workflow');
     fs.mkdirSync(engine);
@@ -32,13 +30,13 @@ const cases = async () => {
       encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     const out = (res.stdout || '') + (res.stderr || '');
-    assert(out.includes('template missing'), `names the missing template, got: ${out}`);
-    assertEq(res.status, 1, 'a partial heal exits non-zero so the caller can tell');
-    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'and the rest of the heal still ran');
+    expect(out.includes('template missing'), `names the missing template, got: ${out}`).toBeTruthy();
+    expect(res.status, 'a partial heal exits non-zero so the caller can tell').toBe(1);
+    expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'and the rest of the heal still ran').toBeTruthy();
     cleanup(repo); cleanup(stub.dir); cleanup(kit);
   });
 
-  await test('a missing labels.json still answers --state and --announce, and the heal says what broke', () => {
+  test('a missing labels.json still answers --state and --announce, and the heal says what broke', () => {
     // A manifest check ahead of mode dispatch would answer --state with exit 1,
     // which the hook reads as nogit and goes silent forever.
     const kit = mkTmp('wf-std-');
@@ -53,81 +51,81 @@ const cases = async () => {
       WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
     };
     const state = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    assertEq(state.status, 0, '--state answers without the manifest');
-    assertEq((state.stdout || '').trim(), 'enabled', 'and answers correctly');
+    expect(state.status, '--state answers without the manifest').toBe(0);
+    expect((state.stdout || '').trim(), 'and answers correctly').toBe('enabled');
     const announce = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--announce', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    assertEq(announce.status, 0, '--announce answers without the manifest');
-    assert((announce.stdout || '').includes('--enable'), 'and still offers');
+    expect(announce.status, '--announce answers without the manifest').toBe(0);
+    expect((announce.stdout || '').includes('--enable'), 'and still offers').toBeTruthy();
     const heal = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const out = (heal.stdout || '') + (heal.stderr || '');
-    assert(out.includes('labels.json missing'), `the heal names the broken install, got: ${out}`);
-    assertEq(heal.status, 1, 'and exits non-zero so the caller retries');
-    assert(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the local heals still ran');
+    expect(out.includes('labels.json missing'), `the heal names the broken install, got: ${out}`).toBeTruthy();
+    expect(heal.status, 'and exits non-zero so the caller retries').toBe(1);
+    expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the local heals still ran').toBeTruthy();
     cleanup(repo); cleanup(kit);
   });
 
-  await test('a timed-out decline leaves the other run\'s lock in place', () => {
+  test('a timed-out decline leaves the other run\'s lock in place', () => {
     // The rmdir trap belongs to a run that acquired the lock, or a run that gave
     // up after 5s would delete another run's mutex on its way out.
     const repo = makeRepo({ settings: null });
     const home = mkTmp('wf-std-');
     fs.mkdirSync(path.join(home, '.state.lock'), { recursive: true });
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
-    assert(output.includes('without the lock'), `says it proceeded unlocked, got: ${output}`);
-    assert(fs.existsSync(path.join(home, '.state.lock')), 'the mutex it never held survives');
-    assertEq(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'declined', 'the decline is still recorded');
+    expect(output.includes('without the lock'), `says it proceeded unlocked, got: ${output}`).toBeTruthy();
+    expect(fs.existsSync(path.join(home, '.state.lock')), 'the mutex it never held survives').toBeTruthy();
+    expect(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'the decline is still recorded').toBe('declined');
     // And a decline that did acquire the lock removes its own on exit.
     const home2 = mkTmp('wf-std-');
     runScript(repo, { args: ['--decline'], workflowHome: home2 });
-    assert(!fs.existsSync(path.join(home2, '.state.lock')), 'a held lock is released');
+    expect(!fs.existsSync(path.join(home2, '.state.lock')), 'a held lock is released').toBeTruthy();
     cleanup(repo); cleanup(home); cleanup(home2);
   });
 
-  await test('a repo settings.json that is not valid JSON never resolves to enabled', () => {
+  test('a repo settings.json that is not valid JSON never resolves to enabled', () => {
     const repo = makeRepo({ settings: 'garbage{\n' });
-    assertEq(runScript(repo, { args: ['--state'] }).stdout.trim(), 'unreadable', 'an unparseable answer is not a yes');
+    expect(runScript(repo, { args: ['--state'] }).stdout.trim(), 'an unparseable answer is not a yes').toBe('unreadable');
     const { output } = runScript(repo);
-    assert(output.includes('not valid JSON'), `and it says so, got: ${output}`);
-    assert(!fs.existsSync(path.join(repo, '.github')), 'healing nothing until it is fixed');
+    expect(output.includes('not valid JSON'), `and it says so, got: ${output}`).toBeTruthy();
+    expect(!fs.existsSync(path.join(repo, '.github')), 'healing nothing until it is fixed').toBeTruthy();
     cleanup(repo);
   });
 
-  await test('a committed no with a severed tail is still a no, never a heal', () => {
+  test('a committed no with a severed tail is still a no, never a heal', () => {
     // jq prints the answer it parsed and then fails on the tail, so a read
     // whose fallback is appended to that answer resolves to neither `false`
     // nor `unreadable`: it falls through to the enabled arm and heals a repo
     // that said no.
     const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }{\n' });
-    assertEq(runScript(repo, { args: ['--state'] }).stdout.trim(), 'disabled', 'the deliberate no is read as a no');
+    expect(runScript(repo, { args: ['--state'] }).stdout.trim(), 'the deliberate no is read as a no').toBe('disabled');
     const { output } = runScript(repo);
-    assertEq(output, '', `nothing is said about a repo that opted out, got: ${output}`);
-    assert(!fs.existsSync(path.join(repo, '.github')), 'and nothing is written into it');
+    expect(output, `nothing is said about a repo that opted out, got: ${output}`).toBe('');
+    expect(!fs.existsSync(path.join(repo, '.github')), 'and nothing is written into it').toBeTruthy();
     cleanup(repo);
   });
 
-  await test('a severed tail on a yes with no version key: the heals run and the file is never rewritten', () => {
+  test('a severed tail on a yes with no version key: the heals run and the file is never rewritten', () => {
     // jq prints the answer it parsed and then fails on the tail, so a key
     // check that reads the failure as a key found tries a write nothing can make.
     const text = '{ "enabled": true }{\n';
     const repo = makeRepo({ settings: text });
     const { output } = runScript(repo);
-    assert(output.includes('issue forms'), `the mechanical heals still run, got: ${output}`);
-    assert(!/not valid JSON/.test(output), `no write is tried on the file, got: ${output}`);
-    assertEq(fs.readFileSync(path.join(repo, '.workkit', 'settings.json'), 'utf8'), text, 'and it stands as it was');
+    expect(output.includes('issue forms'), `the mechanical heals still run, got: ${output}`).toBeTruthy();
+    expect(!/not valid JSON/.test(output), `no write is tried on the file, got: ${output}`).toBeTruthy();
+    expect(fs.readFileSync(path.join(repo, '.workkit', 'settings.json'), 'utf8'), 'and it stands as it was').toBe(text);
     cleanup(repo);
   });
 
-  await test('a malformed roster file: declines cleanly, records nothing, leaves no litter', () => {
+  test('a malformed roster file: declines cleanly, records nothing, leaves no litter', () => {
     const home = mkTmp('wf-std-');
     fs.writeFileSync(path.join(home, '.repos.json'), '{ this is not json\n');
     const repo = makeRepo({ settings: null });
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
-    assert(output.includes('not valid JSON'), `says what is wrong, got: ${output}`);
-    assertEq(fs.readdirSync(home).filter((f) => f.includes('.tmp.')).length, 0, 'and leaves no temp file behind');
+    expect(output.includes('not valid JSON'), `says what is wrong, got: ${output}`).toBeTruthy();
+    expect(fs.readdirSync(home).filter((f) => f.includes('.tmp.')).length, 'and leaves no temp file behind').toBe(0);
     cleanup(repo); cleanup(home);
   });
 
-  await test('a symlinked roster file is updated in place, not replaced', () => {
+  test('a symlinked roster file is updated in place, not replaced', () => {
     // This repo's whole model is symlinking config out of ~, so writing over the
     // link would replace it with a regular file and orphan the real one.
     const home = mkTmp('wf-std-');
@@ -137,23 +135,23 @@ const cases = async () => {
     fs.symlinkSync(realFile, path.join(home, '.repos.json'));
     const repo = makeRepo({ settings: null });
     runScript(repo, { args: ['--decline'], workflowHome: home });
-    assert(fs.lstatSync(path.join(home, '.repos.json')).isSymbolicLink(), 'still a symlink');
+    expect(fs.lstatSync(path.join(home, '.repos.json')).isSymbolicLink(), 'still a symlink').toBeTruthy();
     const written = JSON.parse(fs.readFileSync(realFile, 'utf8'));
-    assertEq(written.repos[gitPath(fs.realpathSync(repo))] || written.repos[gitPath(repo)], 'declined', 'the real target got the decline');
-    assertEq(written.digest.hour, 9, 'and an unrelated key survived');
+    expect(written.repos[gitPath(fs.realpathSync(repo))] || written.repos[gitPath(repo)], 'the real target got the decline').toBe('declined');
+    expect(written.digest.hour, 'and an unrelated key survived').toBe(9);
     cleanup(repo); cleanup(home); cleanup(realDir);
   });
 
-  await test('declining a repo whose committed file says yes admits it will not take effect', () => {
+  test('declining a repo whose committed file says yes admits it will not take effect', () => {
     const home = mkTmp('wf-std-');
     const repo = makeRepo();
     const { output } = runScript(repo, { args: ['--decline'], workflowHome: home });
-    assert(/committed answer, which wins/.test(output), `does not claim a decline it cannot deliver, got: ${output}`);
-    assertEq(runScript(repo, { args: ['--state'], workflowHome: home }).stdout.trim(), 'enabled', 'and the repo file still wins');
+    expect(/committed answer, which wins/.test(output), `does not claim a decline it cannot deliver, got: ${output}`).toBeTruthy();
+    expect(runScript(repo, { args: ['--state'], workflowHome: home }).stdout.trim(), 'and the repo file still wins').toBe('enabled');
     cleanup(repo); cleanup(home);
   });
 
-  await test('no jq: a committed enabled:false is still a no, and a file with no enabled key no yes', () => {
+  test('no jq: a committed enabled:false is still a no, and a file with no enabled key no yes', () => {
     // The grep fallback exists for exactly this: a committed answer, read without jq.
     const binDir = mkTmp('wf-std-');
     // cygpath is the engine's path spelling on Windows (wk_native_path), as much a
@@ -167,25 +165,19 @@ const cases = async () => {
       const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
         env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
-      assertEq((res.stdout || '').trim(), want, `${settings.trim()} on a jq-less machine, stderr: ${res.stderr}`);
+      expect((res.stdout || '').trim(), `${settings.trim()} on a jq-less machine, stderr: ${res.stderr}`).toBe(want);
       cleanup(repo);
     }
     cleanup(binDir);
   });
 
-  await test('the offer line survives a repo path containing a space', () => {
+  test('the offer line survives a repo path containing a space', () => {
     const parent = mkTmp('wf-std-');
     const repo = path.join(parent, 'has space');
     fs.mkdirSync(repo);
     spawnSync('git', ['init', '-q'], { cwd: repo });
     const { stdout } = runScript(repo, { args: ['--announce'] });
-    assert(!/--enable [^'"]*has space/.test(stdout), `the suggested command must survive a paste, got: ${stdout}`);
+    expect(!/--enable [^'"]*has space/.test(stdout), `the suggested command must survive a paste, got: ${stdout}`).toBeTruthy();
     cleanup(parent);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

@@ -1,59 +1,77 @@
-// Tests for safety:capture-guard's logic on the Bash path, where a
-// content-reading command is gated and a count or another file stays open.
-// The shared facts are ./helpers.js.
+// Tests for safety:capture-guard's Bash half, its entry on BASH_GUARDS (hooks/mods/guards.js) run with a real io
+// over a real repo and a real workflow home: the guard is handed one boolean, whether the command names
+// .workkit/capture.md (`namesCapture`, matched by the hooks module), never the text. Named outside a triage run
+// (no marker under 30 minutes old) it is refused before it runs; inside one it runs. The match itself, through
+// the hooks module, is test/mods/guards-capture-guard.test.ts.
 
+const fs = require('fs');
+const path = require('path');
 const {
-  group, test, summary, WORKKIT_DIR: W, selfRun,
+  describe, test, expect, mkTmp, seeded,
 } = require('../../lib/harness');
-const {
-  FRESH, READ, bash, refuses, allows,
-} = require('./helpers');
+const { homeEnv, shellPath, spawnSync } = require('../../lib/platform');
+const { mods, textOf } = require('../../lib/mods-inputs');
+const { ioIn } = require('../../../workflow/lib/io');
+const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
-const cases = async () => {
-  group('capture-guard: the Bash path');
+const HOOK = 'safety:capture-guard';
 
-  await test('a content-reading command: exit 2', async () => {
-    for (const c of [
-      `cat ${W}/capture.md`,
-      `head -20 ${W}/capture.md`,
-      `tail -n 5 ${W}/capture.md`,
-      `grep -n "note" ${W}/capture.md`,
-      `sed -n 1,10p ${W}/capture.md`,
-      `awk 'NR<5' ${W}/capture.md`,
-    ]) {
-      await refuses(bash(c), READ, c);
-    }
-  });
+// An opted-in repo holding a capture file, beside an empty home.
+const seed = seeded((dir) => {
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(path.join(repo, '.workkit'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'home', '.workkit'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
+  fs.writeFileSync(path.join(repo, '.workkit', 'capture.md'), '# capture\n\n- a private thought\n');
+  const init = spawnSync('git', ['init', '-q'], { cwd: repo, encoding: 'utf8', env: homeEnv(path.join(dir, 'home'), { PATH: process.env.PATH }) });
+  if (init.status !== 0) throw new Error(`git init: ${init.stderr}`);
+});
 
-  await test('a fresh marker opens the Bash path too: exit 0', async () => {
-    await allows(bash(`cat ${W}/capture.md`, { markerAgeS: FRESH }), 'a triage run reads freely');
-  });
-
-  await test('counting the entries: exit 0', async () => {
-    for (const c of [`wc -l ${W}/capture.md`, `wc -l < ${W}/capture.md`]) await allows(bash(c), c);
-  });
-
-  await test('a command naming another file: exit 0', async () => {
-    await allows(bash(`cat ${W}/agents/session.md`), 'only the capture file is gated');
-  });
-
-  // The two halves of the path need not be contiguous: a `cd` into .workkit
-  // leaves the file named on its own, and that is the same read.
-  await test('a read split across a cd: exit 2', async () => {
-    await refuses(bash(`cd ${W} && cat capture.md`), READ, 'the cd names the directory the read names the file');
-  });
-
-  await test('a split command that only counts: exit 0', async () => {
-    await allows(bash(`cd ${W} && wc -l capture.md`), 'counts stay open however they are spelled');
-  });
-
-  await test('a capture.md with no .workkit anywhere: exit 0', async () => {
-    for (const c of ['echo x >> notes/capture.md', 'cat notes/capture.md']) await allows(bash(c), c);
-  });
-
-  return summary();
+/** A fresh world; `markerAgeS` dates a triage marker for the repo that many seconds back, null leaves none. */
+const mkWorld = async ({ markerAgeS = null } = {}) => {
+  const dir = mkTmp('wk-capture-bash-');
+  seed(dir);
+  const repo = path.join(dir, 'repo');
+  const workflowHome = path.join(dir, 'home', '.workkit');
+  const env = homeEnv(path.join(dir, 'home'), { PATH: process.env.PATH, WORKFLOW_HOME: shellPath(workflowHome) });
+  if (markerAgeS !== null) {
+    const root = await ioIn(env).top(repo);
+    const marker = await mods('markers').triageMarkerPath(root, workflowHome);
+    fs.mkdirSync(path.dirname(marker), { recursive: true });
+    fs.writeFileSync(marker, '');
+    const at = new Date(Date.now() - markerAgeS * 1000);
+    fs.utimesSync(marker, at, at);
+  }
+  return { repo, env };
 };
 
-module.exports = cases;
+/** The chain's answer for a call from the repo whose command does or does not name the capture file. */
+const judged = async (world, namesCapture) => {
+  const entry = mods('guards').BASH_GUARDS.filter((g) => g.hook === HOOK);
+  expect(entry.length, `${HOOK} is on the Bash chain once`).toBe(1);
+  return mods('guards').runChain(ioIn(world.env), world.env, entry, { cwd: world.repo, background: false, namesCapture });
+};
 
-if (require.main === module) selfRun(cases);
+const denied = (chain) => (chain && typeof chain.deny === 'string' ? chain.deny : null);
+
+describe('capture-guard: a Bash command naming the capture file', () => {
+  test('no triage marker: refused before it runs', async () => {
+    const deny = denied(await judged(await mkWorld(), true));
+    expect(deny !== null && deny.startsWith('capture-guard: BLOCKED'), `refused, got: ${deny}`).toBeTruthy();
+  });
+
+  test('a marker 31 minutes old is no triage run: refused', async () => {
+    const deny = denied(await judged(await mkWorld({ markerAgeS: 31 * 60 }), true));
+    expect(deny !== null && deny.startsWith('capture-guard: BLOCKED'), `refused, got: ${deny}`).toBeTruthy();
+  });
+
+  test('a fresh marker: it runs', async () => {
+    expect(denied(await judged(await mkWorld({ markerAgeS: 0 }), true)), 'no deny').toBe(null);
+  });
+
+  test('a command that does not name the capture file runs, saying nothing', async () => {
+    const chain = await judged(await mkWorld(), false);
+    expect(denied(chain), 'no deny').toBe(null);
+    expect(textOf(chain.notice), 'nothing said').toBe('');
+  });
+});

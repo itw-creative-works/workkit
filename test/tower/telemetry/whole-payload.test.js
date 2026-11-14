@@ -5,15 +5,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const {
   sessionTelemetry, dayKey, OVERTIME_DAYS, cleanup, PRICED, assistantLine, spawnLine, mkWorld, mkSession, mkSubagent, collect,
 } = require('./helpers');
 
-const cases = async () => {
-  group('tower/telemetry: the whole payload');
-
-  await test('byModel counts tokens per model across the session and its subagents', () => {
+describe('tower/telemetry: the whole payload', () => {
+  test('byModel counts tokens per model across the session and its subagents', () => {
     const w = mkWorld();
     const transcript = mkSession(w, { lines: [assistantLine({ id: 'r', model: PRICED, input: 100 })] });
     mkSubagent(transcript, 'x', {
@@ -21,12 +19,12 @@ const cases = async () => {
       meta: { agentType: 'workkit:scout' },
     });
     const { byModel } = collect(w);
-    assertEq(byModel[PRICED], 100, 'the parent model');
-    assertEq(byModel['claude-haiku-4-5'], 20, 'and the subagent model');
+    expect(byModel[PRICED], 'the parent model').toBe(100);
+    expect(byModel['claude-haiku-4-5'], 'and the subagent model').toBe(20);
     cleanup(w.root);
   });
 
-  await test('overTime is 30 days ending today, quiet days present with zero', () => {
+  test('overTime is 30 days ending today, quiet days present with zero', () => {
     const w = mkWorld();
     const now = Date.now();
     const today = dayKey(new Date(now));
@@ -40,17 +38,17 @@ const cases = async () => {
       ],
     });
     const { overTime } = collect(w, { now });
-    assertEq(overTime.length, OVERTIME_DAYS, 'thirty entries');
-    assertEq(overTime[overTime.length - 1].label, today, 'ending today');
+    expect(overTime.length, 'thirty entries').toBe(OVERTIME_DAYS);
+    expect(overTime[overTime.length - 1].label, 'ending today').toBe(today);
     const byLabel = Object.fromEntries(overTime.map((d) => [d.label, d.tokens]));
-    assertEq(byLabel[today], 10, "today's tokens");
-    assertEq(byLabel[threeAgo], 5, 'three days back');
-    assertEq(byLabel[longAgo], undefined, 'and nothing older than the window');
-    assertEq(overTime.filter((d) => d.tokens === 0).length, OVERTIME_DAYS - 2, 'every quiet day is present at zero');
+    expect(byLabel[today], "today's tokens").toBe(10);
+    expect(byLabel[threeAgo], 'three days back').toBe(5);
+    expect(byLabel[longAgo], 'and nothing older than the window').toBe(undefined);
+    expect(overTime.filter((d) => d.tokens === 0).length, 'every quiet day is present at zero').toBe(OVERTIME_DAYS - 2);
     cleanup(w.root);
   });
 
-  await test('a session row carries the marker facts, the statusline pair and its span', () => {
+  test('a session row carries the marker facts, the statusline pair and its span', () => {
     const w = mkWorld();
     fs.writeFileSync(path.join(w.stateDir, 'sess_1.json'), JSON.stringify({
       model: { id: 'claude-opus-4-1' },
@@ -64,19 +62,19 @@ const cases = async () => {
       ],
     });
     const [session] = collect(w).sessions;
-    assertEq(session.id, 'sess-1', 'the session id');
-    assertEq(session.cwd, '/x/fixture', 'its cwd');
-    assertEq(session.chatName, 'The tower build', 'its name');
-    assertEq(session.state, 'working', 'a live assertion and a fresh transcript');
-    assertEq(session.model, 'claude-opus-4-1', 'model from the statusline cache');
-    assertEq(session.effort, 'high', 'and effort with it');
-    assertEq(session.startedAt, '2026-07-27T09:00:00.000Z', 'the first stamp');
-    assertEq(session.lastAt, '2026-07-27T11:00:00.000Z', 'and the last');
-    assert(session.cost > 0, 'a priced model reports a cost');
+    expect(session.id, 'the session id').toBe('sess-1');
+    expect(session.cwd, 'its cwd').toBe('/x/fixture');
+    expect(session.chatName, 'its name').toBe('The tower build');
+    expect(session.state, 'a live assertion and a fresh transcript').toBe('working');
+    expect(session.model, 'model from the statusline cache').toBe('claude-opus-4-1');
+    expect(session.effort, 'and effort with it').toBe('high');
+    expect(session.startedAt, 'the first stamp').toBe('2026-07-27T09:00:00.000Z');
+    expect(session.lastAt, 'and the last').toBe('2026-07-27T11:00:00.000Z');
+    expect(session.cost > 0, 'a priced model reports a cost').toBeTruthy();
     cleanup(w.root);
   });
 
-  await test('a row says what it last reached for, where its transcript is, and the file times', () => {
+  test('a row says what it last reached for, where its transcript is, and the file times', () => {
     const w = mkWorld();
     const transcript = mkSession(w, {
       lines: [
@@ -99,55 +97,49 @@ const cases = async () => {
       meta: { toolUseId: 'toolu_w' },
     });
     const [session] = collect(w).sessions;
-    assertEq(session.lastTool, 'Read', 'the last tool_use in the parent transcript, not the first');
-    assertEq(session.lastToolAt, '2026-07-27T12:30:00.000Z', 'stamped when the line was written');
-    assertEq(session.transcript, transcript, 'the file every one of these was read from');
-    assert(typeof session.lastActivity === 'number', 'listSessions\' mtime probe travels');
-    assert(typeof session.aliveSince === 'number', 'and its birth time');
+    expect(session.lastTool, 'the last tool_use in the parent transcript, not the first').toBe('Read');
+    expect(session.lastToolAt, 'stamped when the line was written').toBe('2026-07-27T12:30:00.000Z');
+    expect(session.transcript, 'the file every one of these was read from').toBe(transcript);
+    expect(typeof session.lastActivity === 'number', 'listSessions\' mtime probe travels').toBeTruthy();
+    expect(typeof session.aliveSince === 'number', 'and its birth time').toBeTruthy();
     const [agent] = session.subagents;
-    assertEq(agent.lastTool, 'Edit', 'a subagent says its own last tool');
-    assertEq(agent.lastToolAt, '2026-07-27T12:31:00.000Z', 'with its own stamp');
-    assertEq(agent.transcript, sub, 'and carries its own transcript path');
+    expect(agent.lastTool, 'a subagent says its own last tool').toBe('Edit');
+    expect(agent.lastToolAt, 'with its own stamp').toBe('2026-07-27T12:31:00.000Z');
+    expect(agent.transcript, 'and carries its own transcript path').toBe(sub);
     cleanup(w.root);
   });
 
-  await test('a transcript that has called no tool says so with a null, never a guess', () => {
+  test('a transcript that has called no tool says so with a null, never a guess', () => {
     const w = mkWorld();
     mkSession(w, { lines: [assistantLine({ id: 'a', input: 1 })] });
     const [session] = collect(w).sessions;
-    assertEq(session.lastTool, null, 'nothing was called');
-    assertEq(session.lastToolAt, null, 'so there is no when either');
+    expect(session.lastTool, 'nothing was called').toBe(null);
+    expect(session.lastToolAt, 'so there is no when either').toBe(null);
     cleanup(w.root);
   });
 
-  await test('with no statusline cache the model comes from the transcript instead', () => {
+  test('with no statusline cache the model comes from the transcript instead', () => {
     const w = mkWorld();
     mkSession(w, { lines: [assistantLine({ id: 'a', model: 'claude-sonnet-4-5', input: 1 })] });
-    assertEq(collect(w).sessions[0].model, 'claude-sonnet-4-5', 'a VS Code session still names one');
+    expect(collect(w).sessions[0].model, 'a VS Code session still names one').toBe('claude-sonnet-4-5');
     cleanup(w.root);
   });
 
-  await test('no markers at all is an empty payload, still the right shape', () => {
+  test('no markers at all is an empty payload, still the right shape', () => {
     const w = mkWorld();
     const payload = collect(w);
-    assertEq(payload.sessions.length, 0, 'nobody running');
-    assertEq(Object.keys(payload.byModel).length, 0, 'no models');
-    assertEq(payload.overTime.length, OVERTIME_DAYS, 'the series is always thirty long');
+    expect(payload.sessions.length, 'nobody running').toBe(0);
+    expect(Object.keys(payload.byModel).length, 'no models').toBe(0);
+    expect(payload.overTime.length, 'the series is always thirty long').toBe(OVERTIME_DAYS);
     cleanup(w.root);
   });
 
-  await test('sessionTelemetry finds one by id and answers null for anything else', () => {
+  test('sessionTelemetry finds one by id and answers null for anything else', () => {
     const w = mkWorld();
     mkSession(w, { lines: [assistantLine({ id: 'a', input: 42 })] });
     const opts = { home: w.home, markerDir: w.markerDir, stateDir: w.stateDir, exec: w.exec };
-    assertEq(sessionTelemetry('sess-1', opts).tokens.total, 42, 'the drill-down');
-    assertEq(sessionTelemetry('sess-nope', opts), null, 'and nothing invented');
+    expect(sessionTelemetry('sess-1', opts).tokens.total, 'the drill-down').toBe(42);
+    expect(sessionTelemetry('sess-nope', opts), 'and nothing invented').toBe(null);
     cleanup(w.root);
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

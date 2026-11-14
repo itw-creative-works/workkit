@@ -4,7 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, SPAWN_DEADLINE } = require('../lib/harness');
 const { execFileSync } = require('../lib/platform');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -152,61 +152,53 @@ const treeOf = (texts) => [Object.keys(texts), (f) => texts[f]];
 const CP = 'child_process';
 const USES = `const { spawnSync } = require('${CP}');\n`;
 
-const cases = async () => {
-  group('run-home: the check on a fixture tree');
-
-  await test('a shipped file importing child_process fails, naming it', () => {
+describe('run-home: the check on a fixture tree', () => {
+  test('a shipped file importing child_process fails, naming it', () => {
     const [files, read] = treeOf({ 'workflow/ship/cut.js': USES, 'workflow/lib/io.js': "require('./run');\n" });
     const faults = faultsOf(files, read, []);
-    assertEq(faults.length, 1, `one fault, got: ${faults.join(' | ')}`);
-    assert(faults[0].startsWith('workflow/ship/cut.js:'), `it names the file, got: ${faults[0]}`);
+    expect(faults.length, `one fault, got: ${faults.join(' | ')}`).toBe(1);
+    expect(faults[0].startsWith('workflow/ship/cut.js:'), `it names the file, got: ${faults[0]}`).toBeTruthy();
   });
 
-  await test('a shipped file under a package test/ folder is no test file: importing child_process fails, naming it', () => {
+  test('a shipped file under a package test/ folder is no test file: importing child_process fails, naming it', () => {
     const [files, read] = treeOf({ 'packages/core/test/lib/other.js': USES });
     const faults = faultsOf(files, read, []);
-    assertEq(faults.length, 1, `one fault, got: ${faults.join(' | ')}`);
-    assert(faults[0].startsWith('packages/core/test/lib/other.js: starts a program'), `it names the file as shipped, got: ${faults[0]}`);
+    expect(faults.length, `one fault, got: ${faults.join(' | ')}`).toBe(1);
+    expect(faults[0].startsWith('packages/core/test/lib/other.js: starts a program'), `it names the file as shipped, got: ${faults[0]}`).toBeTruthy();
   });
 
-  await test('the published runner\'s two files import child_process and pass', () => {
+  test('the published runner\'s two files import child_process and pass', () => {
     const [files, read] = treeOf({ 'packages/core/test/run.js': USES, 'packages/core/test/lib/spawn.js': USES });
-    assertEq(faultsOf(files, read, []).join(' | '), '', 'the named exception');
+    expect(faultsOf(files, read, []).join(' | '), 'the named exception').toBe('');
   });
 
-  await test('run.js itself imports child_process and passes', () => {
+  test('run.js itself imports child_process and passes', () => {
     const [files, read] = treeOf({ [RUN_HOME]: USES });
-    assertEq(faultsOf(files, read, []).join(' | '), '', 'the one home is allowed the import');
+    expect(faultsOf(files, read, []).join(' | '), 'the one home is allowed the import').toBe('');
   });
 
-  await test('a test file importing child_process off the list fails, naming it; a listed one passes', () => {
+  test('a test file importing child_process off the list fails, naming it; a listed one passes', () => {
     const [files, read] = treeOf({ 'test/scripts/new.test.js': `import { spawn } from 'node:${CP}';\n`, 'test/lib/old.js': USES });
     const faults = faultsOf(files, read, ['test/lib/old.js']);
-    assertEq(faults.length, 1, `one fault, got: ${faults.join(' | ')}`);
-    assert(faults[0].startsWith('test/scripts/new.test.js:'), `it names the new file, got: ${faults[0]}`);
+    expect(faults.length, `one fault, got: ${faults.join(' | ')}`).toBe(1);
+    expect(faults[0].startsWith('test/scripts/new.test.js:'), `it names the new file, got: ${faults[0]}`).toBeTruthy();
   });
 
-  await test('a listed test file that no longer imports child_process fails, naming it', () => {
+  test('a listed test file that no longer imports child_process fails, naming it', () => {
     const [files, read] = treeOf({ 'test/lib/old.js': "const { spawnSync } = require('../lib/platform');\n" });
     const faults = faultsOf(files, read, ['test/lib/old.js']);
-    assertEq(faults.length, 1, `one fault, got: ${faults.join(' | ')}`);
-    assert(faults[0].startsWith('test/lib/old.js:'), `it names the listed file, got: ${faults[0]}`);
+    expect(faults.length, `one fault, got: ${faults.join(' | ')}`).toBe(1);
+    expect(faults[0].startsWith('test/lib/old.js:'), `it names the listed file, got: ${faults[0]}`).toBeTruthy();
   });
+});
 
-  group('run-home: the check on this tree');
-
-  await test('every file git tracks or would add keeps to the rule', () => {
+describe('run-home: the check on this tree', () => {
+  test('every file git tracks or would add keeps to the rule', () => {
     // Untracked files git does not ignore too, so a new file is caught before its commit.
     const listed = (...args) => execFileSync('git', ['ls-files', '-z', ...args], { cwd: ROOT, encoding: 'utf8', timeout: SPAWN_DEADLINE })
       .split('\0');
     const files = [...listed(), ...listed('--others', '--exclude-standard')].filter((f) => f && fs.existsSync(path.join(ROOT, f)));
     const faults = faultsOf(files, (f) => fs.readFileSync(path.join(ROOT, f), 'utf8'), STILL_IMPORTING);
-    assertEq(faults.join('\n'), '', 'no file starts a program around run.js');
+    expect(faults.join('\n'), 'no file starts a program around run.js').toBe('');
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});

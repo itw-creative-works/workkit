@@ -6,7 +6,7 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  group, test, assert, mkTmp, summary, selfRun,
+  describe, test, expect, mkTmp,
 } = require('../../lib/harness');
 const { shellPath, basePathWithout } = require('../../lib/platform');
 const { mkRepo } = require('../../lib/script-shell');
@@ -37,7 +37,7 @@ const repo = () => {
   fs.mkdirSync(path.join(dir, 'packages', 'a', 'test'));
   fs.writeFileSync(path.join(dir, 'packages', 'a', 'test', 'a.test.js'), 'require("../index.js");\n');
   world = { dir, ownId: treeHash(dir, ['packages/b', 'packages/c']), wholeId: treeHash(dir) };
-  assert(world.ownId !== world.wholeId, 'a\'s own id is not the whole tree\'s');
+  expect(world.ownId !== world.wholeId, 'a\'s own id is not the whole tree\'s').toBeTruthy();
   return world;
 };
 
@@ -55,47 +55,38 @@ const noNodeSession = (homeEnv) => {
   return env;
 };
 
-const cases = async () => {
-  group('proof-guard: a package\'s record line read against its own id, through the real facts');
-
-  await test('in the suite\'s own session, a line on packages/a\'s own id passes the qa flip; the same line on the whole tree\'s id blocks, naming packages/a', async () => {
+describe('proof-guard: a package\'s record line read against its own id, through the real facts', () => {
+  test('in the suite\'s own session, a line on packages/a\'s own id passes the qa flip; the same line on the whole tree\'s id blocks, naming packages/a', async () => {
     const { dir, ownId, wholeId } = repo();
     const { workflowHome } = scratchWorkflowHome('pkg-tree-home-');
     const env = ownSession(workflowHome);
 
     plantPkgRecord(workflowHome, dir, ['packages/a'], ownId);
     const msg = passText(await flip(dir, env), 'the line on a\'s own id');
-    assert(msg.includes('packages/a (1 file(s))'), `the notice names packages/a, got: ${msg}`);
+    expect(msg.includes('packages/a (1 file(s))'), `the notice names packages/a, got: ${msg}`).toBeTruthy();
 
     plantPkgRecord(workflowHome, dir, ['packages/a'], wholeId);
     assertBlocks(await flip(dir, env), QA_BLOCK(1, 'packages/a: test/a.test.js'), 'the line on the whole tree\'s id is stale for a');
   });
 
-  await test('a session that cannot reach node keys packages/a to the whole tree: the flip on a\'s own id is denied, the denial saying why and naming the fix', async () => {
+  test('a session that cannot reach node keys packages/a to the whole tree: the flip on a\'s own id is denied, the denial saying why and naming the fix', async () => {
     const { dir, ownId } = repo();
     const { workflowHome, env: homeEnv } = scratchWorkflowHome('pkg-tree-nonode-');
     plantPkgRecord(workflowHome, dir, ['packages/a'], ownId);
     const deny = denyOf(await flip(dir, noNodeSession(homeEnv)));
-    assert(deny !== null, 'the flip is denied');
+    expect(deny !== null, 'the flip is denied').toBeTruthy();
     const [head] = QA_BLOCK(1).split('\n');
-    assert(deny.split('\n')[0].startsWith(head), `the qa denial's head first, got: ${deny}`);
-    assert(deny.includes(WHOLE_TREE(NO_NODE)), `the sentence carries the child's line, got: ${deny}`);
-    assert(deny.indexOf(WHOLE_TREE(NO_NODE)) < deny.indexOf('packages/a: test/a.test.js'), `the sentence comes after the head, before the files, got: ${deny}`);
+    expect(deny.split('\n')[0].startsWith(head), `the qa denial's head first, got: ${deny}`).toBeTruthy();
+    expect(deny.includes(WHOLE_TREE(NO_NODE)), `the sentence carries the child's line, got: ${deny}`).toBeTruthy();
+    expect(deny.indexOf(WHOLE_TREE(NO_NODE)) < deny.indexOf('packages/a: test/a.test.js'), `the sentence comes after the head, before the files, got: ${deny}`).toBeTruthy();
   });
 
-  await test('the whole-tree fallback on both sides, the record written on the whole tree\'s id and read by a session that cannot reach node: the flip passes, no sentence', async () => {
+  test('the whole-tree fallback on both sides, the record written on the whole tree\'s id and read by a session that cannot reach node: the flip passes, no sentence', async () => {
     const { dir, wholeId } = repo();
     const { workflowHome, env: homeEnv } = scratchWorkflowHome('pkg-tree-both-');
     plantPkgRecord(workflowHome, dir, ['packages/a'], wholeId);
     const msg = passText(await flip(dir, noNodeSession(homeEnv)), 'the writer and the gate agree on the whole tree');
-    assert(msg.includes('packages/a (1 file(s))'), `the notice names packages/a, got: ${msg}`);
-    assert(!msg.includes('keyed to the whole tree'), `no fallback sentence on a pass, got: ${msg}`);
+    expect(msg.includes('packages/a (1 file(s))'), `the notice names packages/a, got: ${msg}`).toBeTruthy();
+    expect(!msg.includes('keyed to the whole tree'), `no fallback sentence on a pass, got: ${msg}`).toBeTruthy();
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

@@ -9,7 +9,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
-const { group, test, assert, assertEq, summary, selfRun, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { mods, textOf, runResult } = require('../lib/mods-inputs');
 
 const LINTER = path.join(__dirname, '..', '..', 'workflow', 'changelog', 'lint.js');
@@ -45,69 +45,60 @@ const append = (dir, line) => {
   return file;
 };
 
-const cases = async () => {
-  group('changelog-guard: scope');
-
-  await test('a file that is not a CHANGELOG is ignored', () => {
+describe('changelog-guard: scope', () => {
+  test('a file that is not a CHANGELOG is ignored', () => {
     const failing = runResult({ exitCode: 1, stderr: 'issue-link: no issue link\n' });
-    assertEq(verdict('/w/repo/README.md', failing), '', 'the path decides, whatever a lint said');
+    expect(verdict('/w/repo/README.md', failing), 'the path decides, whatever a lint said').toBe('');
   });
+});
 
-  group('changelog-guard: judging');
-
-  await test('a new entry in the format passes', () => {
+describe('changelog-guard: judging', () => {
+  test('a new entry in the format passes', () => {
     const dir = mkRepo(doc());
     const file = append(dir, `- ${ISSUE} - Plugins install from settings.json.`);
-    assertEq(verdict(file), '', 'passes');
+    expect(verdict(file), 'passes').toBe('');
     cleanup(dir);
   });
 
-  await test('a new essay entry blocks with exit 2 and names the rule', () => {
+  test('a new essay entry blocks with exit 2 and names the rule', () => {
     const dir = mkRepo(doc());
     const file = append(dir, `- **Plugins are installed from a declaration.** ${new Array(60).fill('word').join(' ')}`);
     const out = verdict(file);
-    assert(out.includes('issue-link'), `names the rule, got: ${out}`);
-    assert(out.includes('word-cap'), `names every broken rule at once, got: ${out}`);
+    expect(out.includes('issue-link'), `names the rule, got: ${out}`).toBeTruthy();
+    expect(out.includes('word-cap'), `names every broken rule at once, got: ${out}`).toBeTruthy();
     cleanup(dir);
   });
 
   // Adopting the format must never bounce a repo for its history.
-  await test('a legacy entry the write did not touch does not block', () => {
+  test('a legacy entry the write did not touch does not block', () => {
     const dir = mkRepo(doc('- A legacy essay entry with no issue link at all.'));
     const file = append(dir, `- ${ISSUE} - A properly formatted new entry.`);
-    assertEq(verdict(file), '', 'passes');
+    expect(verdict(file), 'passes').toBe('');
     cleanup(dir);
   });
 
-  await test('a correct entry in a keepachangelog file with a link footer passes', () => {
+  test('a correct entry in a keepachangelog file with a link footer passes', () => {
     const dir = mkRepo(['# Changelog', '', '## [Unreleased]', '', '### Added', '', '[Unreleased]: https://github.com/o/r/compare/v1.0.0...HEAD', ''].join('\n'));
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('[Unreleased]:', `- ${ISSUE} - A correct new entry.\n\n[Unreleased]:`));
-    assertEq(verdict(file), '', 'passes');
+    expect(verdict(file), 'passes').toBe('');
     cleanup(dir);
   });
 
   // With no git to ask, everything is new: a first CHANGELOG is still judged.
-  await test('a CHANGELOG outside git is judged in full', () => {
+  test('a CHANGELOG outside git is judged in full', () => {
     const dir = mkTmp('clg-');
     const file = path.join(dir, 'CHANGELOG.md');
     fs.writeFileSync(file, doc('- An essay entry with no issue link.'));
-    assert(verdict(file).length > 0, 'blocked');
+    expect(verdict(file).length > 0, 'blocked').toBeTruthy();
     cleanup(dir);
   });
+});
 
-  group('changelog-guard.js: linterPath');
-
-  await test('linterPath is the plugin\'s workflow/changelog/lint.js, and WORKFLOW_DIR wins over <pluginRoot>/workflow', () => {
+describe('changelog-guard.js: linterPath', () => {
+  test('linterPath is the plugin\'s workflow/changelog/lint.js, and WORKFLOW_DIR wins over <pluginRoot>/workflow', () => {
     const { linterPath } = mods('changelog-guard');
-    assertEq(linterPath({}, '/k'), '/k/workflow/changelog/lint.js', 'the plugin root\'s engine');
-    assertEq(linterPath({ WORKFLOW_DIR: '/e' }, '/k'), '/e/changelog/lint.js', 'WORKFLOW_DIR names another engine');
+    expect(linterPath({}, '/k'), 'the plugin root\'s engine').toBe('/k/workflow/changelog/lint.js');
+    expect(linterPath({ WORKFLOW_DIR: '/e' }, '/k'), 'WORKFLOW_DIR names another engine').toBe('/e/changelog/lint.js');
   });
-};
-
-module.exports = async () => {
-  await cases();
-  return summary();
-};
-
-if (require.main === module) selfRun(module.exports);
+});

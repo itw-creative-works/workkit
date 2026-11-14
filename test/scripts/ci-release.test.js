@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  group, test, assert, assertEq, summary, selfRun, SPAWN_DEADLINE,
+  describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
   NODE_DIR, SYSTEM_PATH, joinPath, shellPath, spawnSync,
@@ -102,7 +102,7 @@ const scan = (g, gh, before) => {
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
-  assert(res.status !== null, `ci-release finished (no timeout, no signal): ${res.error || ''}`);
+  expect(res.status !== null, `ci-release finished (no timeout, no signal): ${res.error || ''}`).toBeTruthy();
   const out = res.stdout || '';
   const err = res.stderr || '';
   return { code: res.status, all: out + err };
@@ -116,24 +116,22 @@ const flagValue = (call, flag) => {
   return at < 0 ? undefined : call[at + 1];
 };
 
-const cases = async () => {
-  group('ci-release.js: a release commit in the push');
-
-  await test('one chore(release): 1.2.3 commit: gh creates v1.2.3 at that commit, the section as notes', () => {
+describe('ci-release.js: a release commit in the push', () => {
+  test('one chore(release): 1.2.3 commit: gh creates v1.2.3 at that commit, the section as notes', () => {
     const { g, before } = mkWorld();
     workCommit(g, 'work');
     const sha = releaseCommit(g, '1.2.3');
     const gh = releaseGh(g);
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
     const made = creates(gh);
-    assertEq(made.length, 1, `one create, got: ${fmtCalls(gh.calls())}`);
-    assertEq(made[0][2], 'v1.2.3', `the tag, got: ${fmtCalls(made)}`);
-    assertEq(flagValue(made[0], '--target'), sha, `the target is the release commit's full sha, got: ${fmtCalls(made)}`);
-    assertEq((gh.notes('v1.2.3') || '').trim(), NOTES, 'the notes are the [1.2.3] section\'s body');
+    expect(made.length, `one create, got: ${fmtCalls(gh.calls())}`).toBe(1);
+    expect(made[0][2], `the tag, got: ${fmtCalls(made)}`).toBe('v1.2.3');
+    expect(flagValue(made[0], '--target'), `the target is the release commit's full sha, got: ${fmtCalls(made)}`).toBe(sha);
+    expect((gh.notes('v1.2.3') || '').trim(), 'the notes are the [1.2.3] section\'s body').toBe(NOTES);
   });
 
-  await test('a PR merge whose second parent holds the release commit: the release at the release commit, not the merge', () => {
+  test('a PR merge whose second parent holds the release commit: the release at the release commit, not the merge', () => {
     const { g, before } = mkWorld();
     g.git('checkout', '-q', '-b', 'claude/thing');
     workCommit(g, 'work');
@@ -144,27 +142,25 @@ const cases = async () => {
     const merge = g.git('rev-parse', 'HEAD').trim();
     const gh = releaseGh(g);
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
     const made = creates(gh);
-    assertEq(JSON.stringify(made.map((c) => [c[2], flagValue(c, '--target')])), JSON.stringify([['v1.2.3', sha]]),
-      `one create at the release commit, not the merge ${merge}, got: ${fmtCalls(made)}`);
+    expect(JSON.stringify(made.map((c) => [c[2], flagValue(c, '--target')])), `one create at the release commit, not the merge ${merge}, got: ${fmtCalls(made)}`).toBe(JSON.stringify([['v1.2.3', sha]]));
   });
 
-  await test('an earlier push\'s release commit never released: this push releases it at that commit, once', () => {
+  test('an earlier push\'s release commit never released: this push releases it at that commit, once', () => {
     const { g } = mkWorld();
     const sha = releaseCommit(g, '1.2.3');
     const before = g.git('rev-parse', 'HEAD').trim();
     workCommit(g, 'later');
     const gh = releaseGh(g);
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
     const made = creates(gh);
-    assertEq(JSON.stringify(made.map((c) => [c[2], flagValue(c, '--target')])), JSON.stringify([['v1.2.3', sha]]),
-      `one create at the earlier release commit, got: ${fmtCalls(made)}`);
-    assertEq((gh.notes('v1.2.3') || '').trim(), NOTES, 'the notes are the [1.2.3] section\'s body');
+    expect(JSON.stringify(made.map((c) => [c[2], flagValue(c, '--target')])), `one create at the earlier release commit, got: ${fmtCalls(made)}`).toBe(JSON.stringify([['v1.2.3', sha]]));
+    expect((gh.notes('v1.2.3') || '').trim(), 'the notes are the [1.2.3] section\'s body').toBe(NOTES);
   });
 
-  await test('every unreleased release commit the cut would wait for: v1.0.0 released, v1.1.0 not, the push brings 1.2.0; both are created, oldest first', () => {
+  test('every unreleased release commit the cut would wait for: v1.0.0 released, v1.1.0 not, the push brings 1.2.0; both are created, oldest first', () => {
     const { g } = mkWorld();
     releaseCommit(g, '1.0.0');
     const older = releaseCommit(g, '1.1.0');
@@ -172,66 +168,65 @@ const cases = async () => {
     const sha = releaseCommit(g, '1.2.0');
     const gh = releaseGh(g, { tags: ['v1.0.0'] });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
     const made = creates(gh);
-    assertEq(JSON.stringify(made.map((c) => [c[2], flagValue(c, '--target')])), JSON.stringify([['v1.1.0', older], ['v1.2.0', sha]]),
-      `v1.1.0 at its own commit, then v1.2.0, got: ${fmtCalls(made)}`);
+    expect(JSON.stringify(made.map((c) => [c[2], flagValue(c, '--target')])), `v1.1.0 at its own commit, then v1.2.0, got: ${fmtCalls(made)}`).toBe(JSON.stringify([['v1.1.0', older], ['v1.2.0', sha]]));
   });
 
-  await test('a create that fails while another run made the release: it counts as released, exit 0', () => {
+  test('a create that fails while another run made the release: it counts as released, exit 0', () => {
     const { g, before } = mkWorld();
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g, { late: { 'v1.2.3': 1 }, createExit: 1 });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(creates(gh).length, 1, `one create tried, got: ${fmtCalls(gh.calls())}`);
-    assert(all.includes('v1.2.3 is there now, so it is released'), `the line saying so, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(creates(gh).length, `one create tried, got: ${fmtCalls(gh.calls())}`).toBe(1);
+    expect(all.includes('v1.2.3 is there now, so it is released'), `the line saying so, got: ${all}`).toBeTruthy();
   });
 
-  await test('gh release view failing for a reason other than not found: its line, exit 1, no create', () => {
+  test('gh release view failing for a reason other than not found: its line, exit 1, no create', () => {
     const { g, before } = mkWorld();
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g, { fails: true });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 1, `exit 1, got: ${all}`);
-    assert(all.split('\n').includes('ci-release: gh release view v1.2.3 failed: gh: To get started with GitHub CLI, please run: gh auth login'),
-      `the gh failure line, got: ${all}`);
-    assertEq(creates(gh).length, 0, `no create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 1, got: ${all}`).toBe(1);
+    expect(all.split('\n').includes('ci-release: gh release view v1.2.3 failed: gh: To get started with GitHub CLI, please run: gh auth login'),
+      `the gh failure line, got: ${all}`).toBeTruthy();
+    expect(creates(gh).length, `no create, got: ${fmtCalls(gh.calls())}`).toBe(0);
   });
+});
 
-  group('ci-release.js: nothing to make');
-
-  await test('a release commit with a `Release: none` trailer: no create, exit 0', () => {
+describe('ci-release.js: nothing to make', () => {
+  test('a release commit with a `Release: none` trailer: no create, exit 0', () => {
     const { g, before } = mkWorld();
     releaseCommit(g, '1.2.3', { body: 'Release: none' });
     const gh = releaseGh(g);
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(creates(gh).length, 0, `no create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(creates(gh).length, `no create, got: ${fmtCalls(gh.calls())}`).toBe(0);
   });
 
-  await test('a release v1.2.3 already there: no create, exit 0', () => {
+  test('a release v1.2.3 already there: no create, exit 0', () => {
     const { g, before } = mkWorld();
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g, { tags: ['v1.2.3'] });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(creates(gh).length, 0, `no create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(creates(gh).length, `no create, got: ${fmtCalls(gh.calls())}`).toBe(0);
   });
 
-  await test('a push with no release commit: no create, exit 0', () => {
+  test('a push with no release commit: no create, exit 0', () => {
     const { g, before } = mkWorld();
     workCommit(g, 'one');
     workCommit(g, 'two');
     const gh = releaseGh(g);
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(creates(gh).length, 0, `no create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(creates(gh).length, `no create, got: ${fmtCalls(gh.calls())}`).toBe(0);
   });
+});
 
-  group('ci-release.js: the workflows a published release would have started');
-
-  await test('after the create, a release: workflow taking workflow_dispatch is run, one without it named in a warning', () => {
+describe('ci-release.js: the workflows a published release would have started', () => {
+  test('after the create, a release: workflow taking workflow_dispatch is run, one without it named in a warning', () => {
     const { g, before } = mkWorld({
       '.github/workflows/pages.yml': PAGES,
       '.github/workflows/notify.yml': NOTIFY,
@@ -240,41 +235,39 @@ const cases = async () => {
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g);
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
     const calls = gh.calls();
     const runs = calls.filter((c) => isCall(c, 'workflow', 'run'));
-    assertEq(JSON.stringify(runs.map((c) => c[2])), JSON.stringify(['pages.yml']),
-      `pages.yml alone is run, not notify.yml (no dispatch) nor build.yml (not on release), got: ${fmtCalls(calls)}`);
+    expect(JSON.stringify(runs.map((c) => c[2])), `pages.yml alone is run, not notify.yml (no dispatch) nor build.yml (not on release), got: ${fmtCalls(calls)}`).toBe(JSON.stringify(['pages.yml']));
     const created = calls.findIndex((c) => isCall(c, 'release', 'create'));
     const ran = calls.findIndex((c) => isCall(c, 'workflow', 'run'));
-    assert(created >= 0 && ran > created, `the run comes after the create, got: ${fmtCalls(calls)}`);
-    assert(all.split('\n').some((l) => l.includes('notify.yml')), `a warning names notify.yml, got: ${all}`);
+    expect(created >= 0 && ran > created, `the run comes after the create, got: ${fmtCalls(calls)}`).toBeTruthy();
+    expect(all.split('\n').some((l) => l.includes('notify.yml')), `a warning names notify.yml, got: ${all}`).toBeTruthy();
   });
 
-  await test('a re-run after the release was made: v1.2.3 already there, its release commit in the push, the dispatch is tried again', () => {
+  test('a re-run after the release was made: v1.2.3 already there, its release commit in the push, the dispatch is tried again', () => {
     const { g, before } = mkWorld({ '.github/workflows/pages.yml': PAGES });
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g, { tags: ['v1.2.3'] });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(creates(gh).length, 0, `no create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(creates(gh).length, `no create, got: ${fmtCalls(gh.calls())}`).toBe(0);
     const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
-    assertEq(JSON.stringify(runs.map((c) => c[2])), JSON.stringify(['pages.yml']), `pages.yml is run, got: ${fmtCalls(gh.calls())}`);
+    expect(JSON.stringify(runs.map((c) => c[2])), `pages.yml is run, got: ${fmtCalls(gh.calls())}`).toBe(JSON.stringify(['pages.yml']));
   });
 
-  await test('a re-run that makes no release: v1.2.3 already there, its release commit in the push, a tag-input workflow is run with -f tag=v1.2.3', () => {
+  test('a re-run that makes no release: v1.2.3 already there, its release commit in the push, a tag-input workflow is run with -f tag=v1.2.3', () => {
     const { g, before } = mkWorld({ '.github/workflows/vsix.yml': VSIX });
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g, { tags: ['v1.2.3'] });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
-    assertEq(creates(gh).length, 0, `no create, got: ${fmtCalls(gh.calls())}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(creates(gh).length, `no create, got: ${fmtCalls(gh.calls())}`).toBe(0);
     const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
-    assertEq(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), JSON.stringify([['vsix.yml', 'tag=v1.2.3']]),
-      `vsix.yml with the found release's tag, got: ${fmtCalls(gh.calls())}`);
+    expect(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), `vsix.yml with the found release's tag, got: ${fmtCalls(gh.calls())}`).toBe(JSON.stringify([['vsix.yml', 'tag=v1.2.3']]));
   });
 
-  await test('a workflow whose dispatch declares a tag input: v1.1.0 and v1.2.0 released, it is run once with -f tag=v1.2.0; one without it gets no -f', () => {
+  test('a workflow whose dispatch declares a tag input: v1.1.0 and v1.2.0 released, it is run once with -f tag=v1.2.0; one without it gets no -f', () => {
     const { g } = mkWorld({ '.github/workflows/pages.yml': PAGES, '.github/workflows/vsix.yml': VSIX });
     releaseCommit(g, '1.0.0');
     releaseCommit(g, '1.1.0');
@@ -282,39 +275,30 @@ const cases = async () => {
     releaseCommit(g, '1.2.0');
     const gh = releaseGh(g, { tags: ['v1.0.0'] });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
     const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
-    assertEq(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), JSON.stringify([['pages.yml', undefined], ['vsix.yml', 'tag=v1.2.0']]),
-      `pages.yml with no input, vsix.yml with the newest tag, got: ${fmtCalls(gh.calls())}`);
+    expect(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), `pages.yml with no input, vsix.yml with the newest tag, got: ${fmtCalls(gh.calls())}`).toBe(JSON.stringify([['pages.yml', undefined], ['vsix.yml', 'tag=v1.2.0']]));
   });
 
-  await test('a tag: key outside workflow_dispatch.inputs (a step\'s with:, an input\'s property): no -f', () => {
+  test('a tag: key outside workflow_dispatch.inputs (a step\'s with:, an input\'s property): no -f', () => {
     const { g, before } = mkWorld({ '.github/workflows/docs.yml': STRAY_TAG });
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g);
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 0, `exit 0, got: ${all}`);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
     const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
-    assertEq(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), JSON.stringify([['docs.yml', undefined]]),
-      `docs.yml is run with no input, got: ${fmtCalls(gh.calls())}`);
+    expect(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), `docs.yml is run with no input, got: ${fmtCalls(gh.calls())}`).toBe(JSON.stringify([['docs.yml', undefined]]));
   });
 
-  await test('a failed dispatch: the next workflow is still run, a line names the failure, exit 1', () => {
+  test('a failed dispatch: the next workflow is still run, a line names the failure, exit 1', () => {
     const { g, before } = mkWorld({ '.github/workflows/docs.yml': PAGES, '.github/workflows/pages.yml': PAGES });
     releaseCommit(g, '1.2.3');
     const gh = releaseGh(g, { dispatchFails: ['docs.yml'] });
     const { code, all } = scan(g, gh, before);
-    assertEq(code, 1, `exit 1, got: ${all}`);
+    expect(code, `exit 1, got: ${all}`).toBe(1);
     const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
-    assertEq(JSON.stringify(runs.map((c) => c[2])), JSON.stringify(['docs.yml', 'pages.yml']),
-      `docs.yml is tried, then pages.yml still runs, got: ${fmtCalls(gh.calls())}`);
-    assert(all.split('\n').includes('ci-release: dispatch of .github/workflows/docs.yml failed: '
-      + 'could not create workflow dispatch event: HTTP 403: Resource not accessible by integration'), `the failure line, got: ${all}`);
+    expect(JSON.stringify(runs.map((c) => c[2])), `docs.yml is tried, then pages.yml still runs, got: ${fmtCalls(gh.calls())}`).toBe(JSON.stringify(['docs.yml', 'pages.yml']));
+    expect(all.split('\n').includes('ci-release: dispatch of .github/workflows/docs.yml failed: '
+      + 'could not create workflow dispatch event: HTTP 403: Resource not accessible by integration'), `the failure line, got: ${all}`).toBeTruthy();
   });
-
-  return summary();
-};
-
-module.exports = cases;
-
-if (require.main === module) selfRun(cases);
+});
