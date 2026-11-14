@@ -20,6 +20,7 @@ const {
 const { gateOn: gateIn } = require('../lib/real-gate');
 const { runLib } = require('../lib/hook-lib');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
+const { linesOf } = require('../lib/run-lists');
 
 const ROOT = path.join(__dirname, '..', '..');
 const KIT_HOOKS = path.join(ROOT, 'workflow', 'githooks');
@@ -69,7 +70,7 @@ const mkWrapperCopy = (world) => {
 const CI_SUITE_LINE = 'script-shell: the suite passed, but CI is set, so no record was written; run npm test again without CI';
 const CI_RUN_LINE = 'script-shell: the run passed, but CI is set, so no record was written; run it again without CI';
 // A detached run relays every body line on stdout, so a line is read from both streams.
-const linesOf = (res) => `${res.out}\n${res.err}`.split(/\r?\n/);
+const linesOfBoth = (res) => linesOf(`${res.out}\n${res.err}`);
 const saysCi = (res) => `${res.out}${res.err}`.includes('CI is set');
 
 // The commit gate, through the hooks module, asked about what <repo> has
@@ -299,7 +300,7 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       const res = npm(world, repo, ['test', '--', 'only/one.test.js'], world.wrapper, { CI: 'false' });
       expect(res.code, `exit 0, got: ${res.code} ${res.err}`).toBe(0);
       expect(packaged(world, repo), 'CI=false writes no package record').toBe(undefined);
-      expect(linesOf(res).includes(CI_RUN_LINE), `the run line, got: ${res.out} ${res.err}`).toBeTruthy();
+      expect(linesOfBoth(res).includes(CI_RUN_LINE), `the run line, got: ${res.out} ${res.err}`).toBeTruthy();
       cleanup(world.root); cleanup(repo);
     });
 
@@ -309,7 +310,7 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
         const repo = mkRepo({ scripts: { test: 'echo edited > app.js' } });
         const res = npm(world, repo, args, world.wrapper, { CI: 'true' });
         expect(res.code, `${label}: exit 0, got: ${res.code} ${res.err}`).toBe(0);
-        expect(linesOf(res).includes(line), `${label}: the CI line, got: ${res.out} ${res.err}`).toBeTruthy();
+        expect(linesOfBoth(res).includes(line), `${label}: the CI line, got: ${res.out} ${res.err}`).toBeTruthy();
         expect(`${res.out}${res.err}`.includes('the tree changed during'), `${label}: no tree-changed line, got: ${res.out} ${res.err}`).toBe(false);
         expect(recorded(world, repo) === undefined && packaged(world, repo) === undefined, `${label}: no record of either kind`).toBe(true);
         cleanup(world.root); cleanup(repo);
@@ -323,7 +324,7 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
         const res = npm(world, repo, ['test'], world.wrapper, { CI: value });
         expect(res.code, `CI=${value}: exit 0, got: ${res.code} ${res.err}`).toBe(0);
         expect(recorded(world, repo), `CI=${value}: no record`).toBe(undefined);
-        expect(linesOf(res).includes(CI_SUITE_LINE), `CI=${value}: the line, got: ${res.out} ${res.err}`).toBeTruthy();
+        expect(linesOfBoth(res).includes(CI_SUITE_LINE), `CI=${value}: the line, got: ${res.out} ${res.err}`).toBeTruthy();
         cleanup(world.root); cleanup(repo);
       }
     });

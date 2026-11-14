@@ -100,7 +100,8 @@ describe('x', () => {
 });
 `;
 
-const BAD = path.join('test', 'sub', 'bad.test.js');
+// The tool names a suite with / on every platform, so the path is spelled so, never through path.join.
+const BAD = 'test/sub/bad.test.js';
 const literalOnly = (line) => `✖ tools: ${BAD}:${line}: needs() takes string literals only`;
 
 describe('workkit-core bin: tools', () => {

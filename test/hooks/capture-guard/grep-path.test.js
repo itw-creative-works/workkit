@@ -7,7 +7,7 @@ const {
   describe, test, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  REPO, CAPTURE, FRESH, READ, grep, refuses, allows,
+  REPO, CAPTURE, DRIVE_CWD, DRIVE_CAPTURE, DRIVE_FACTS, FRESH, READ, grep, refuses, allows,
 } = require('./helpers');
 
 const label = (input) => JSON.stringify(input);
@@ -25,6 +25,10 @@ describe('capture-guard: the Grep path', () => {
 
   test('a Grep whose path is the .workkit directory: exit 2', async () => {
     for (const p of [`${REPO}/${W}`, W]) await refuses(grep({ pattern: 'salary', path: p }), READ, p);
+  });
+
+  test('a Grep whose path is the file or its folder spelled with backslashes: exit 2', async () => {
+    for (const p of [DRIVE_CAPTURE, `${DRIVE_CWD}\\${W}`]) await refuses(grep({ pattern: 'salary', path: p }, DRIVE_FACTS), READ, p);
   });
 
   test('a glob spelling the capture file out: exit 2', async () => {

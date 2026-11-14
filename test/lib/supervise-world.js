@@ -84,7 +84,9 @@ const workkit = async (args, opts) => {
   }
 };
 
-const linesOf = (text) => text.replace(/\r/g, '').replace(/\n$/, '').split('\n');
+// The lines up to the last one written, every \r dropped: unlike run-lists' linesOf,
+// no empty entry follows a final newline, so the last entry is the last line.
+const linesToLast = (text) => text.replace(/\r/g, '').replace(/\n$/, '').split('\n');
 
 // The fake commands beyond ./supervise.js's, each a `node -e` script.
 const touches = (file) => `require('fs').writeFileSync(${jsPath(file)}, '');`;
@@ -98,5 +100,5 @@ const waitsFor = (pidFile, go, { lines, after = '', code }) => [
 ].join('\n');
 
 module.exports = {
-  LONG_CHECK, mkWorld, runLog, suiteLog, workkitStart, workkit, linesOf, touches, prints, waitsFor,
+  LONG_CHECK, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, touches, prints, waitsFor,
 };

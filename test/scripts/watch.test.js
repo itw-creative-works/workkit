@@ -11,7 +11,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  BASH, NO_RC, jsPath, shellPath,
+  BASH, NO_RC, IS_WINDOWS, jsPath, shellPath, cygpathStub, joinPath,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
@@ -20,7 +20,7 @@ const {
   CHECK_MINUTES, skipOnWindows, pidOf, reap, silent, writesPid, ended, read, realOf,
 } = require('../lib/supervise');
 const {
-  LONG_CHECK, mkWorld, runLog, suiteLog, workkitStart, workkit, linesOf, waitsFor,
+  LONG_CHECK, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor,
 } = require('../lib/supervise-world');
 
 const USAGE = 'usage: workkit watch [--end] [suite|run|<pid>]';
@@ -102,13 +102,26 @@ const slotOf = ({ w, env }, pid) => {
   return { log, lock };
 };
 
-/** The suite lock and the run lock of <w>'s repo, from the suite library's own paths. */
-const lockPaths = (w) => {
+/**
+ * The suite lock and the run lock of <w>'s repo from the suite library's own paths,
+ * under <env>: the shell's spelling, which a run writes in a `foreground` file.
+ */
+const lockPaths = (w, env = w.env) => {
   const root = run('git', ['rev-parse', '--show-toplevel'], { cwd: w.repo }).stdout.trim();
-  const res = runLib(`wk_suite_lock_path "${root}" && wk_run_lock_path "${root}"`, { ...w.env, WORKKIT_NODE: shellPath(process.execPath) });
+  const res = runLib(`wk_suite_lock_path "${root}" && wk_run_lock_path "${root}"`, { ...env, WORKKIT_NODE: shellPath(process.execPath) });
   const [suite, runLock] = res.stdout.trim().split('\n');
   expect(res.code === 0 && suite && runLock, `the repo's two locks, got: ${res.stdout} ${res.stderr}`).toBeTruthy();
   return { suite, run: runLock };
+};
+
+/** The same two locks as Node opens them, where a planted lock goes on every platform. */
+const lockFolders = (w) => ({ suite: suiteLockPath(w.workflowHome, w.repo), run: runLock(w) });
+
+/** Plant <lock> as a run held in the foreground leaves it: a live pid, and the enclosing run's lock. */
+const plantForeground = (lock, enclosing) => {
+  fs.mkdirSync(lock, { recursive: true });
+  fs.writeFileSync(path.join(lock, 'pid'), `${process.pid}\n`);
+  fs.writeFileSync(path.join(lock, 'foreground'), `${enclosing}\n`);
 };
 
 /** Narrowed runs <names>, each left by a look and then let end with no call attached: their slots, each holding its done file. */
@@ -184,6 +197,9 @@ const foregroundSuite = () => {
   return { w, env, pidFile, supervised: workkitStart(['supervise', '--', 'npm', 'test'], { cwd: w.repo, env }) };
 };
 
+// The skip of a case that ends the supervised run and then needs the suite gone.
+const skipEndOfNpmSuite = () => (IS_WINDOWS && 'Windows: the end does not reach a suite an npm test started under the supervised run') || skipWithoutWrapper();
+
 describe('workkit watch: attaching to the live run', () => {
   test('a live supervised run: the log\'s last 20 lines, then the run followed to its own code', async () => {
     const w = mkWorld();
@@ -201,7 +217,7 @@ describe('workkit watch: attaching to the live run', () => {
       expect(await until(() => watch.output().includes('line-30')), `watch never printed the log; it said: ${watch.output()}`).toBeTruthy();
       fs.writeFileSync(go, '');
       const { status } = await watch.done;
-      const said = linesOf(watch.output());
+      const said = linesToLast(watch.output());
       expect(status, `the run's own code, got: ${watch.output()}`).toBe(5);
       const missing = lines.slice(10).filter((line) => !said.includes(line));
       expect(missing.join(', '), `the log's last 20 lines, got: ${watch.output()}`).toBe('');
@@ -287,7 +303,7 @@ describe('workkit watch: attaching to the live run', () => {
       const res = await workkit(['watch'], { cwd: w.repo, env });
       expect(res.code, `watch with two narrowed runs and no name exits 2, got: ${res.output}`).toBe(2);
       const names = (line) => pids.every((pid) => new RegExp(`\\b${pid}\\b`).test(line));
-      expect(linesOf(res.output).some(names), `one line names both runs ${pids.join(' and ')}, got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).some(names), `one line names both runs ${pids.join(' and ')}, got: ${res.output}`).toBeTruthy();
     } finally {
       reap(pidIn(world.pidFile('one')), pidIn(world.pidFile('two')));
     }
@@ -329,7 +345,7 @@ describe('workkit watch: no run to attach to', () => {
       await lookedThenEnded(w, pidFile);
       const first = await workkit(['watch'], { cwd: w.repo, env: w.env });
       expect(first.code, `the run's own code, got: ${first.output}`).toBe(3);
-      expect(linesOf(first.output).includes('supervise: exit 3'), `the log's last lines, got: ${first.output}`).toBeTruthy();
+      expect(linesToLast(first.output).includes('supervise: exit 3'), `the log's last lines, got: ${first.output}`).toBeTruthy();
       const second = await workkit(['watch'], { cwd: w.repo, env: w.env });
       expect(second.code, `the second watch exits 1, got: ${second.output}`).toBe(1);
       expect(NO_RUN.test(second.output), `the second watch prints the no-run line, got: ${second.output}`).toBeTruthy();
@@ -342,7 +358,7 @@ describe('workkit watch: no run to attach to', () => {
     const w = mkWorld();
     const res = await workkit(['watch'], { cwd: mkTmp('watch-nogit-'), env: w.env });
     expect(res.code, `exit 1, got: ${res.output}`).toBe(1);
-    expect(linesOf(res.output).includes('watch: not inside a git repository'), `the line, got: ${res.output}`).toBeTruthy();
+    expect(linesToLast(res.output).includes('watch: not inside a git repository'), `the line, got: ${res.output}`).toBeTruthy();
   });
 
   test('any other argument: the usage line, exit 2', async () => {
@@ -350,7 +366,7 @@ describe('workkit watch: no run to attach to', () => {
     for (const args of [['nope'], ['--end', 'nope'], ['--stop']]) {
       const res = await workkit(['watch', ...args], { cwd: w.repo, env: w.env });
       expect(res.code, `exit 2 for [${args}], got: ${res.output}`).toBe(2);
-      expect(linesOf(res.output).includes(USAGE), `the usage line for [${args}], got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).includes(USAGE), `the usage line for [${args}], got: ${res.output}`).toBeTruthy();
     }
   });
 });
@@ -364,7 +380,7 @@ describe('workkit watch --end', () => {
       const cmd = await pidOf(pidFile);
       const res = await workkit(['watch', '--end'], { cwd: w.repo, env: w.env });
       expect(res.code, `exit 0, got: ${res.output}`).toBe(0);
-      expect(linesOf(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
       expect(await until(() => !alive(cmd)), `the command ${cmd} outlived the request`).toBeTruthy();
       const { status } = await supervised.done;
       expect(status, `the still-attached supervise call gets the run's code, got: ${supervised.output()}`).toBe(143);
@@ -387,7 +403,7 @@ describe('workkit watch --end', () => {
       const runs = [pidIn(world.pidFile('suite')), pidIn(world.pidFile('one'))];
       const res = await workkit(['watch', '--end'], { cwd: w.repo, env });
       expect(res.code, `watch --end with two runs and no name exits 2, got: ${res.output}`).toBe(2);
-      const said = linesOf(res.output);
+      const said = linesToLast(res.output);
       expect(said.some((line) => /\bsuite\b/.test(line)) && said.some((line) => new RegExp(`\\b${pid}\\b`).test(line)),
         `the output names the suite and the narrowed run ${pid}, got: ${res.output}`).toBeTruthy();
       expect(!(await until(() => runs.some((each) => !alive(each)), 500)), `both runs still live after the refusal: ${runs.join(', ')}`).toBeTruthy();
@@ -415,7 +431,7 @@ describe('workkit watch --end', () => {
       expect(res.code, `watch --end exits 0, got: ${res.output}`).toBe(0);
       const { status } = await attached.done;
       expect(status, `the attached call gets the run's code, got: ${attached.output()}`).toBe(143);
-      expect(linesOf(attached.stdout()).includes('script-shell: exit 143'), `its closing line, got: ${attached.output()}`).toBeTruthy();
+      expect(linesToLast(attached.stdout()).includes('script-shell: exit 143'), `its closing line, got: ${attached.output()}`).toBeTruthy();
       expect(!fs.existsSync(slot.log) && !fs.existsSync(slot.lock), `the slot is gone: ${slot.log}, ${slot.lock}`).toBeTruthy();
     } finally {
       reap(pidIn(world.pidFile('one')));
@@ -434,7 +450,7 @@ describe('workkit watch --end', () => {
       const suitePid = await pidOf(world.pidFile('suite'));
       const res = await workkit(['watch', '--end'], { cwd: w.repo, env });
       expect(res.code, `the finished run is no live run, so the suite alone is ended, got: ${res.output}`).toBe(0);
-      expect(linesOf(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
       expect(await until(() => !alive(suitePid)), `the suite ${suitePid} outlived the request`).toBeTruthy();
     } finally {
       reap(pidIn(world.pidFile('suite')), pidIn(world.pidFile('one')));
@@ -449,7 +465,7 @@ describe('workkit watch --end', () => {
       await lookedThenEnded(w, pidFile);
       const res = await workkit(['watch', '--end'], { cwd: w.repo, env: w.env });
       expect(res.code, `exit 0, got: ${res.output}`).toBe(0);
-      expect(linesOf(res.output).includes('watch: the run ended already (exit 3)'), `the ended line, got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).includes('watch: the run ended already (exit 3)'), `the ended line, got: ${res.output}`).toBeTruthy();
       const after = await workkit(['watch'], { cwd: w.repo, env: w.env });
       expect(after.code, `a watch after the end exits 1, got: ${after.output}`).toBe(1);
       expect(NO_RUN.test(after.output), `a watch after the end prints the no-run line, got: ${after.output}`).toBeTruthy();
@@ -458,13 +474,13 @@ describe('workkit watch --end', () => {
     }
   });
 
-  test('a suite run held in the foreground under workkit supervise: watch --end with no name ends the supervised run, never exit 2', { skip: skipWithoutWrapper() }, async () => {
+  test('a suite run held in the foreground under workkit supervise: watch --end with no name ends the supervised run, never exit 2', { skip: skipEndOfNpmSuite() }, async () => {
     const { w, env, pidFile, supervised } = foregroundSuite();
     try {
       const suite = await pidOf(pidFile);
       const res = await workkit(['watch', '--end'], { cwd: w.repo, env });
       expect(res.code, `the foreground suite is no run to choose, so the supervised one is ended, got: ${res.output}`).toBe(0);
-      expect(linesOf(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
       expect(await until(() => !alive(suite)), `the suite ${suite} outlived the end`).toBeTruthy();
     } finally {
       reap(pidIn(pidFile));
@@ -472,7 +488,7 @@ describe('workkit watch --end', () => {
     }
   });
 
-  test('a suite run held in the foreground under workkit supervise: watch --end suite says so, exit 1, no end file, the run goes on; watch --end run ends it', { skip: skipWithoutWrapper() }, async () => {
+  test('a suite run held in the foreground under workkit supervise: watch --end suite says so, exit 1, no end file, the run goes on', { skip: skipWithoutWrapper() }, async () => {
     const { w, env, pidFile, supervised } = foregroundSuite();
     try {
       const suite = await pidOf(pidFile);
@@ -480,14 +496,24 @@ describe('workkit watch --end', () => {
       expect(fs.existsSync(path.join(lock, 'pid')), `the foreground run holds the suite lock at ${lock}`).toBeTruthy();
       const refusal = await workkit(['watch', '--end', 'suite'], { cwd: w.repo, env });
       expect(refusal.code, `exit 1, got: ${refusal.output}`).toBe(1);
-      const said = linesOf(refusal.output);
+      const said = linesToLast(refusal.output);
       expect(said.length === 1 && /foreground/.test(said[0]) && said[0].includes('workkit watch --end run'),
         `one line naming the foreground hold and the call that ends it, got: ${refusal.output}`).toBeTruthy();
       expect(!fs.existsSync(path.join(lock, 'end')), 'no end request was written').toBeTruthy();
       expect(alive(suite), `the suite ${suite} still runs`).toBeTruthy();
+    } finally {
+      reap(pidIn(pidFile));
+      await endAll(supervised);
+    }
+  });
+
+  test('a suite run held in the foreground under workkit supervise: watch --end run ends it', { skip: skipEndOfNpmSuite() }, async () => {
+    const { w, env, pidFile, supervised } = foregroundSuite();
+    try {
+      const suite = await pidOf(pidFile);
       const res = await workkit(['watch', '--end', 'run'], { cwd: w.repo, env });
       expect(res.code, `watch --end run exits 0, got: ${res.output}`).toBe(0);
-      expect(linesOf(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).includes(REQUEST_LINE), `the request line, got: ${res.output}`).toBeTruthy();
       expect(await until(() => !alive(suite)), `the suite ${suite} outlived the end`).toBeTruthy();
     } finally {
       reap(pidIn(pidFile));
@@ -504,18 +530,38 @@ describe('workkit watch --end', () => {
   ]) {
     test(`the ${typed} lock held in the foreground under ${ends ? 'the suite lock' : 'neither lock'}: watch --end ${typed} exits 1 on one line ${ends ? `naming ${ends}` : 'naming no other watch call'}, no end file`, async () => {
       const w = mkWorld();
-      const locks = lockPaths(w);
-      const lock = locks[typed];
-      fs.mkdirSync(lock, { recursive: true });
-      fs.writeFileSync(path.join(lock, 'pid'), `${process.pid}\n`);
-      fs.writeFileSync(path.join(lock, 'foreground'), `${enclosing(locks)}\n`);
+      const lock = lockFolders(w)[typed];
+      plantForeground(lock, enclosing(lockPaths(w)));
       const res = await workkit(['watch', '--end', typed], { cwd: w.repo, env: w.env });
       expect(res.code, `exit 1, got: ${res.output}`).toBe(1);
-      const said = linesOf(res.output);
+      const said = linesToLast(res.output);
       expect(said.length, `one line, got: ${res.output}`).toBe(1);
       if (ends) expect(said[0].includes(ends), `the line names ${ends}, got: ${res.output}`).toBeTruthy();
       const others = (said[0].match(/workkit watch --end \w+/g) || []).filter((call) => call !== ends && call !== `workkit watch --end ${typed}`);
       expect(others.join(', '), `the line names no call that leaves the run going, got: ${res.output}`).toBe('');
+      expect(!fs.existsSync(path.join(lock, 'end')), 'no end request was written').toBeTruthy();
+    });
+  }
+
+  // On Windows a run writes the enclosing lock in another spelling of the folder
+  // watch computes. An inherited OSTYPE and the seam's cygpath give that second
+  // spelling off Windows; there the real cygpath gives it.
+  for (const [typed, enclosing] of [['suite', 'run'], ['run', 'suite']]) {
+    test(`the ${typed} lock held in the foreground under the ${enclosing} lock spelled another way: watch --end ${typed} exits 1 on one line naming the foreground hold and workkit watch --end ${enclosing}, no end file`, async () => {
+      const w = mkWorld();
+      const cyg = mkTmp('watch-cygpath-');
+      cygpathStub(cyg);
+      const env = { ...w.env, OSTYPE: 'msys', PATH: joinPath(cyg, w.env.PATH) };
+      const enclosingShell = lockPaths(w, env)[enclosing];
+      const spelled = runLib(`wk_native_path "${enclosingShell}"`, env).stdout;
+      expect(spelled && spelled !== enclosingShell, `a second spelling of ${enclosingShell}, got: ${spelled}`).toBeTruthy();
+      const lock = lockFolders(w)[typed];
+      plantForeground(lock, spelled);
+      const res = await workkit(['watch', '--end', typed], { cwd: w.repo, env });
+      expect(res.code, `exit 1, got: ${res.output}`).toBe(1);
+      const said = linesToLast(res.output);
+      expect(said.length === 1 && /foreground/.test(said[0]) && said[0].includes(`workkit watch --end ${enclosing}`),
+        `one line naming the foreground hold and workkit watch --end ${enclosing}, got: ${res.output}`).toBeTruthy();
       expect(!fs.existsSync(path.join(lock, 'end')), 'no end request was written').toBeTruthy();
     });
   }
@@ -527,11 +573,11 @@ describe('workkit watch --end', () => {
       const { suite, run } = await startBoth(both);
       const refused = await workkit(['watch', '--end'], { cwd: w.repo, env });
       expect(refused.code, `the refusal's code, got: ${refused.output}`).toBe(2);
-      expect(linesOf(refused.output).includes(TWO_LIVE), `the refusal line, got: ${refused.output}`).toBeTruthy();
+      expect(linesToLast(refused.output).includes(TWO_LIVE), `the refusal line, got: ${refused.output}`).toBeTruthy();
       expect(!(await until(() => !alive(suite) || !alive(run), 500)), 'both runs still live after the refusal').toBeTruthy();
       const ended = await workkit(['watch', '--end', 'run'], { cwd: w.repo, env });
       expect(ended.code, `exit 0, got: ${ended.output}`).toBe(0);
-      expect(linesOf(ended.output).includes(REQUEST_LINE), `the request line, got: ${ended.output}`).toBeTruthy();
+      expect(linesToLast(ended.output).includes(REQUEST_LINE), `the request line, got: ${ended.output}`).toBeTruthy();
       expect(await until(() => !alive(run)), `the supervised command ${run} outlived the request`).toBeTruthy();
       expect(alive(suite), `the suite ${suite} still runs`).toBeTruthy();
     } finally {

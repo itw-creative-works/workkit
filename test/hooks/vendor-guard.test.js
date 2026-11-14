@@ -146,6 +146,36 @@ describe('vendor-guard: dist/ and build/ anchored to package roots', () => {
   });
 });
 
+// A Windows repo: a package root at a drive path, holding a plain source folder with a build/ and a dist/.
+const DRIVE = 'D:/a/repo';
+const DRIVE_FACTS = {
+  root: DRIVE,
+  kindOf: kinds({
+    'D:/': 'dir',
+    'D:/a': 'dir',
+    [DRIVE]: 'dir',
+    [`${DRIVE}/.git`]: 'dir',
+    [`${DRIVE}/package.json`]: 'file',
+    [`${DRIVE}/dist`]: 'dir',
+    [`${DRIVE}/src`]: 'dir',
+    [`${DRIVE}/src/build`]: 'dir',
+  }),
+};
+
+describe('vendor-guard: a drive-letter path is walked from its drive root', () => {
+  test('a build/ in a plain source folder: exit 0', async () => {
+    await passes(`${DRIVE}/src/build/x.js`, DRIVE_FACTS);
+  });
+
+  test('a dist/ under the package root: exit 2: names the package-root anchor', async () => {
+    await blocks(`${DRIVE}/dist/x.js`, OUTPUT_DIR, DRIVE_FACTS);
+  });
+
+  test('a dist/ at a drive root that is no package root: exit 0', async () => {
+    await passes('D:/dist/x.js', DRIVE_FACTS);
+  });
+});
+
 describe('vendor-guard: gitignored files', () => {
   test('gitignored file in a repo: exit 2: names the reason', async () => {
     await blocks(`${GIT}/generated.json`, IGNORED, GIT_FACTS);

@@ -14,6 +14,13 @@ const HOME = '/w/home';
 const CAPTURE = `${REPO}/${W}/capture.md`;
 const HOME_CAPTURE = `${HOME}/${W}/capture.md`;
 
+// The repo as a Windows session hands it over, the top level Windows git prints
+// for it, its capture file spelled with backslashes, and the facts of a call there.
+const DRIVE_CWD = 'D:\\a\\repo';
+const DRIVE_TOP = 'D:/a/repo';
+const DRIVE_CAPTURE = `${DRIVE_CWD}\\${W}\\capture.md`;
+const DRIVE_FACTS = { cwd: DRIVE_CWD, root: DRIVE_TOP };
+
 // A marker written this moment, and one past the 30 minutes a triage run holds.
 const FRESH = 0;
 const STALE = 31 * 60;
@@ -48,6 +55,6 @@ const allows = async (call, label) => {
 };
 
 module.exports = {
-  REPO, HOME, CAPTURE, HOME_CAPTURE, FRESH, STALE, ROUTE_ON, READ, REWRITE,
+  REPO, HOME, CAPTURE, HOME_CAPTURE, DRIVE_CWD, DRIVE_TOP, DRIVE_CAPTURE, DRIVE_FACTS, FRESH, STALE, ROUTE_ON, READ, REWRITE,
   judge, denyOf, read, edit, write, grep, refuses, allows,
 };

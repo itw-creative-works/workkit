@@ -336,9 +336,16 @@ describe('spawn: endTree()', () => {
 
   test('endTree on its Windows arm with SystemRoot unset throws naming SystemRoot, and runs nothing', async () => {
     const unset = recordingRun(0);
-    const err = await signalsRefused(() => caught(() => endTree(4242, 'SIGKILL', { platform: 'win32', run: unset.run, systemRoot: undefined })));
-    expect(/SystemRoot/.test(err?.message), `the throw names SystemRoot, got: ${err?.message}`).toBeTruthy();
-    expect(unset.calls.length, `no program was run, got: ${JSON.stringify(unset.calls)}`).toBe(0);
+    // The seam's default is the environment's SystemRoot, which a Windows runner sets, so the case removes it.
+    const realRoot = process.env.SystemRoot;
+    delete process.env.SystemRoot;
+    try {
+      const err = await signalsRefused(() => caught(() => endTree(4242, 'SIGKILL', { platform: 'win32', run: unset.run })));
+      expect(/SystemRoot/.test(err?.message), `the throw names SystemRoot, got: ${err?.message}`).toBeTruthy();
+      expect(unset.calls.length, `no program was run, got: ${JSON.stringify(unset.calls)}`).toBe(0);
+    } finally {
+      if (realRoot !== undefined) process.env.SystemRoot = realRoot;
+    }
   });
 
   // Read when the file is collected: the case's skip value needs it.

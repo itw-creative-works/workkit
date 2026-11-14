@@ -23,12 +23,28 @@ export async function sha1Hex(text) {
 }
 
 /**
+ * Whether a path starts at a drive: a drive letter, a colon and a slash of
+ * either kind (`D:\`, `D:/`), a Windows absolute path.
+ * @param {string} path the path
+ * @returns {boolean}
+ */
+export const driveRooted = (path) => /^[A-Za-z]:[\\/]/.test(path);
+
+/**
+ * Whether a path is absolute: a leading `/`, or a drive letter, a colon and a
+ * slash of either kind (`driveRooted`).
+ * @param {string} path the path
+ * @returns {boolean}
+ */
+export const absolutePath = (path) => path.startsWith('/') || driveRooted(path);
+
+/**
  * Whether the kit runs on Windows: its folder starts with a drive letter, the
  * one signal the module has.
  * @param {string} kit the plugin's root folder
  * @returns {boolean}
  */
-export const windowsKit = (kit) => /^[A-Za-z]:[\\/]/.test(kit);
+export const windowsKit = (kit) => driveRooted(kit);
 
 /**
  * The folder Git Bash means by a path, as the module can open it. Off Windows

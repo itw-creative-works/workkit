@@ -260,10 +260,10 @@ const sendsToStore = (call) => STORE_VERBS.has(call.verb)
 // The leak scan over the argv and every body file it sends.
 async function leakOf(argv, call, facts, platform) {
   const { leakVerdict, leakFacts } = mod('issue-guard');
-  const { shellDirOf } = mod('markers');
+  const { absolutePath, shellDirOf } = mod('markers');
   const bodies = [];
   for (const file of call.bodyFiles) {
-    const text = await facts.read(file.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file) ? shellDirOf(file, facts.env, platform) : `${facts.cwd}/${file}`);
+    const text = await facts.read(absolutePath(file) ? shellDirOf(file, facts.env, platform) : `${facts.cwd}/${file}`);
     if (text !== null) bodies.push(text);
   }
   return leakVerdict({ text: argv.join('\n'), bodies, parseEnv, ...(await leakFacts(facts)) });

@@ -7,7 +7,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  REPO, CAPTURE, FRESH, ROUTE_ON, REWRITE, edit, write, denyOf, refuses, allows,
+  REPO, CAPTURE, DRIVE_CAPTURE, DRIVE_FACTS, FRESH, ROUTE_ON, REWRITE, edit, write, denyOf, refuses, allows,
 } = require('./helpers');
 
 describe('capture-guard: the Edit and Write path', () => {
@@ -15,6 +15,11 @@ describe('capture-guard: the Edit and Write path', () => {
     await refuses(edit(CAPTURE), REWRITE(), 'Edit');
     await refuses(write(CAPTURE), REWRITE(), 'Write');
     await refuses(edit(`${W}/capture.md`), REWRITE(), 'Edit, relative');
+  });
+
+  test('editing or writing it spelled with backslashes, no marker: exit 2: the rewrite refusal', async () => {
+    await refuses(edit(DRIVE_CAPTURE, DRIVE_FACTS), REWRITE(), 'Edit');
+    await refuses(write(DRIVE_CAPTURE, DRIVE_FACTS), REWRITE(), 'Write');
   });
 
   test('editing or writing it with a fresh marker: exit 0', async () => {
