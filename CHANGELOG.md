@@ -7,12 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.95.1] - 2026-11-14
+
 ### Fixed
 
-- [#536](../../issues/536) - On Windows the capture guard no longer refuses every Bash command that names the capture file, a triage run's included. A session folder that starts with a drive letter is now read as absolute, so the triage marker is found.
-- [#536](../../issues/536) - On Windows `workkit watch --end suite` names `workkit watch --end run` for a suite held in the foreground under `workkit supervise`. The marker and the lock are compared as folders, whatever their spelling.
-- [#537](../../issues/537) - `safety:capture-guard` now gates a Read, Edit, Write or Grep that names the capture file with backslashes (`D:\a\repo\.workkit\capture.md`). On Windows such a path was not gated at all.
-- [#537](../../issues/537) - On Windows `safety:vendor-guard` no longer refuses every edit under a `build/` or `dist/` folder. A drive-letter path is walked from its drive root, so only one directly under a package root is refused.
+- [#536](../../issues/536) [`6ea1d8d`](../../commit/6ea1d8d) Thanks [@ianwieds]! - On Windows the capture guard no longer refuses every Bash command that names the capture file, a triage run's included. A session folder that starts with a drive letter is now read as absolute, so the triage marker is found.
+- [#536](../../issues/536) [`6ea1d8d`](../../commit/6ea1d8d) Thanks [@ianwieds]! - On Windows `workkit watch --end suite` names `workkit watch --end run` for a suite held in the foreground under `workkit supervise`. The marker and the lock are compared as folders, whatever their spelling.
+- [#537](../../issues/537) [`6ea1d8d`](../../commit/6ea1d8d) Thanks [@ianwieds]! - `safety:capture-guard` now gates a Read, Edit, Write or Grep that names the capture file with backslashes (`D:\a\repo\.workkit\capture.md`). On Windows such a path was not gated at all.
+- [#537](../../issues/537) [`6ea1d8d`](../../commit/6ea1d8d) Thanks [@ianwieds]! - On Windows `safety:vendor-guard` no longer refuses every edit under a `build/` or `dist/` folder. A drive-letter path is walked from its drive root, so only one directly under a package root is refused.
 
 ## [0.95.0] - 2026-11-14
 
