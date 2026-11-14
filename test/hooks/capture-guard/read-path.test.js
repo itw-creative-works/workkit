@@ -5,7 +5,7 @@ const {
   describe, test, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  REPO, CAPTURE, FRESH, STALE, READ, read, refuses, allows,
+  REPO, CAPTURE, DRIVE_CWD, DRIVE_CAPTURE, DRIVE_FACTS, FRESH, STALE, READ, read, refuses, allows,
 } = require('./helpers');
 
 describe('capture-guard: the Read path', () => {
@@ -29,5 +29,16 @@ describe('capture-guard: the Read path', () => {
     for (const f of [`${REPO}/${W}/agents/session.md`, `${REPO}/capture.md`, `${REPO}/README.md`]) {
       await allows(read(f), f);
     }
+  });
+});
+
+describe('capture-guard: the Read path spelled with backslashes', () => {
+  test('reading the capture file with no marker: exit 2, the read refusal', async () => {
+    await refuses(read(DRIVE_CAPTURE, DRIVE_FACTS), READ, DRIVE_CAPTURE);
+  });
+
+  test('any other file: exit 0', async () => {
+    const f = `${DRIVE_CWD}\\README.md`;
+    await allows(read(f, DRIVE_FACTS), f);
   });
 });

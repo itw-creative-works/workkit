@@ -19,7 +19,7 @@ const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, pidOf, reap, silent, busy, read, lastLine, realOf,
 } = require('../lib/supervise');
 const {
-  mkWorld, runLog, suiteLog, workkitStart, workkit, linesOf, touches, prints, waitsFor,
+  mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, touches, prints, waitsFor,
 } = require('../lib/supervise-world');
 
 const USAGE = 'usage: workkit supervise -- <command> [args...]';
@@ -36,7 +36,7 @@ describe('workkit supervise: the run and its code', () => {
     const w = mkWorld();
     const res = await supervise(w, prints(3, { out: 'supervised-out', err: 'supervised-err' }));
     expect(res.code, `the command's own code, got: ${res.output}`).toBe(3);
-    const said = linesOf(res.output);
+    const said = linesToLast(res.output);
     expect(said.includes('supervised-out') && said.includes('supervised-err'), `the call shows both streams, got: ${res.output}`).toBeTruthy();
     const log = read(runLog(w));
     expect(log.includes('supervised-out\n') && log.includes('supervised-err\n'), `the run log holds both, got: ${JSON.stringify(log)}`).toBeTruthy();
@@ -49,7 +49,7 @@ describe('workkit supervise: the run and its code', () => {
     try {
       const res = await supervise(w, silent(pidFile));
       expect(res.code, `the frozen run's code, got: ${res.output}`).toBe(124);
-      expect(FROZEN_LINE.test(lastLine(res.output)), `the call's last line is the frozen line, got: ${JSON.stringify(linesOf(res.output).slice(-3))}`).toBeTruthy();
+      expect(FROZEN_LINE.test(lastLine(res.output)), `the call's last line is the frozen line, got: ${JSON.stringify(linesToLast(res.output).slice(-3))}`).toBeTruthy();
     } finally {
       reap(pidIn(pidFile));
     }
@@ -98,7 +98,7 @@ describe('workkit supervise: how and where it is called', () => {
     for (const args of [['supervise'], ['supervise', 'node', '-e', touches(marker)], ['supervise', '--']]) {
       const res = await workkit(args, { cwd: w.repo, env: w.env });
       expect(res.code, `exit 2 for [${args.slice(0, 2)}], got: ${res.output}`).toBe(2);
-      expect(linesOf(res.output).includes(USAGE), `the usage line for [${args.slice(0, 2)}], got: ${res.output}`).toBeTruthy();
+      expect(linesToLast(res.output).includes(USAGE), `the usage line for [${args.slice(0, 2)}], got: ${res.output}`).toBeTruthy();
     }
     expect(!(await until(() => fs.existsSync(marker), 500)), 'no call ran its command').toBeTruthy();
   });
@@ -108,7 +108,7 @@ describe('workkit supervise: how and where it is called', () => {
     const marker = path.join(w.out, 'ran');
     const res = await supervise(w, touches(marker), mkTmp('supervise-nogit-'));
     expect(res.code, `exit 1, got: ${res.output}`).toBe(1);
-    expect(linesOf(res.output).includes('supervise: not inside a git repository'), `the line, got: ${res.output}`).toBeTruthy();
+    expect(linesToLast(res.output).includes('supervise: not inside a git repository'), `the line, got: ${res.output}`).toBeTruthy();
     expect(!(await until(() => fs.existsSync(marker), 500)), 'the command never ran').toBeTruthy();
   });
 });
@@ -120,7 +120,7 @@ describe('workkit supervise: a supervised call inside it', () => {
     fs.writeFileSync(path.join(w.repo, 'narrowed.js'), prints(3, { out: 'narrowed-out', err: 'narrowed-err' }));
     const res = await workkit(['supervise', '--', 'npm', 'test', '--', 'only/one.test.js'], { cwd: w.repo, env: wiredNpmEnv(w) });
     expect(res.code, `the script's own code, got: ${res.output}`).toBe(3);
-    const said = linesOf(res.output);
+    const said = linesToLast(res.output);
     expect(said.includes('narrowed-out') && said.includes('narrowed-err'), `the call shows the script's output, got: ${res.output}`).toBeTruthy();
     const closing = said.filter((line) => /^(supervise|script-shell): exit \d+$/.test(line));
     expect(JSON.stringify(closing), `one supervisor closed the run, the inner run none of its own, got: ${res.output}`).toBe(JSON.stringify(['supervise: exit 3']));
@@ -172,7 +172,7 @@ describe('workkit supervise: a supervised call inside it', () => {
       for (const w of [plain, nestedWorld]) fs.writeFileSync(go(w), '');
       const { status } = await calls[1].done;
       expect(status, `the script's own code, got: ${calls[1].output()}`).toBe(3);
-      expect(linesOf(calls[1].output()).includes('inner-out'), `the call shows the script's output, got: ${calls[1].output()}`).toBeTruthy();
+      expect(linesToLast(calls[1].output()).includes('inner-out'), `the call shows the script's output, got: ${calls[1].output()}`).toBeTruthy();
     } finally {
       reap(pidIn(pidFile(plain)), pidIn(pidFile(nestedWorld)));
       await Promise.all(calls.map((call) => call.end('SIGKILL')));
@@ -191,6 +191,6 @@ describe('workkit supervise: a supervised call inside it', () => {
     const log = read(runLog(w));
     expect(!log.includes('\0'), `the run log holds no NUL byte, got: ${JSON.stringify(log)}`).toBeTruthy();
     const lines = ['pre-line', ...nested];
-    expect(JSON.stringify(linesOf(log).filter((line) => lines.includes(line))), `the run log holds each line once, in order, got: ${JSON.stringify(log)}`).toBe(JSON.stringify(lines));
+    expect(JSON.stringify(linesToLast(log).filter((line) => lines.includes(line))), `the run log holds each line once, in order, got: ${JSON.stringify(log)}`).toBe(JSON.stringify(lines));
   });
 });

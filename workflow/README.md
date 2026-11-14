@@ -629,6 +629,7 @@
   - An end that rejects with the command alive writes no `<done>`, removes the `end` file, and leaves the end poll and the checks running.
   - On Windows `treeOf` is null, so nothing is checked; `endTreeOf` is one `taskkill /T /F`, run from `System32` under `SystemRoot`, never through PATH.
     - A `taskkill` that cannot start, or runs past 60 seconds (`TASKKILL_MS`), rejects the end. A nonzero exit code is not read as a failure, because `taskkill` gives one for a tree that is already gone.
+    - A known limit there: the end of a supervised run does not reach a suite that an `npm test` started inside it. `workkit watch --end` exits 0 with its request line, and that suite runs on to its own end.
 - `lib/git.js`:
   - `repoRoot(cwd)` is the git top level of `cwd`, trimmed. It is null outside a repo, or for a folder that is not there.
   - `headSha(cwd)` is HEAD's full sha, or null outside a repo or before its first commit.

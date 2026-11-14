@@ -10,6 +10,7 @@ const {
   describe, test, expect,
 } = require('../../lib/harness');
 const { stripVTControlCharacters } = require('util');
+const { gitPath } = require('../../lib/platform');
 const { cleanup, makeRepo, makeGhStub, runScript } = require('./helpers');
 
 // A participating repo whose package.json runs `script` as its test, `pkg`
@@ -84,7 +85,7 @@ describe('standards.sh: the suite folder', () => {
       const repo = repoTesting('workkit test', { [`${folder}/a.test.js`]: 'module.exports = async () => ({ passed: 0, failed: 0, failures: [], skips: [] });\n' }, ON_CORE);
       const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
       expect(code, `${folder}/: exit 0, got: ${output}`).toBe(0);
-      printed[folder] = stripVTControlCharacters(output).split(repo).join('<repo>');
+      printed[folder] = stripVTControlCharacters(output).split(gitPath(repo)).join('<repo>');
       cleanup(repo);
     }
     expect(printed.tests, 'the same lines for tests/ as for test/').toBe(printed.test);

@@ -55,10 +55,13 @@ drop_slot() {
 # the call that ends the enclosing run its marker holds; exit 1.
 refuse_foreground() {
   local enclosing how='end the run that started it'
+  # Compared as folders: the native programs the marker's path crossed may
+  # respell it (D:/a for /d/a), and wk_posix_path folds every spelling to one.
   enclosing=$(cat "$2/foreground" 2>/dev/null) || enclosing=""
-  if [ -n "$enclosing" ] && [ "$enclosing" = "$(wk_run_lock_path "$1")" ]; then
+  if [ -n "$enclosing" ]; then enclosing=$(wk_posix_path "$enclosing") || enclosing=""; fi
+  if [ -n "$enclosing" ] && [ "$enclosing" = "$(wk_posix_path "$(wk_run_lock_path "$1")")" ]; then
     how='workkit watch --end run ends it'
-  elif [ -n "$enclosing" ] && [ "$enclosing" = "$(wk_suite_lock_path "$1")" ]; then
+  elif [ -n "$enclosing" ] && [ "$enclosing" = "$(wk_posix_path "$(wk_suite_lock_path "$1")")" ]; then
     how='workkit watch --end suite ends it'
   fi
   fail "workkit watch --end $3 cannot end a run held in the foreground inside another run; $how"

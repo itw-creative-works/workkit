@@ -13,6 +13,7 @@ const {
 } = require('../../lib/harness');
 const { IS_WINDOWS } = require('../../lib/platform');
 const { caught } = require('../../lib/caught');
+const { linesOf } = require('../../lib/run-lists');
 const {
   INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json, startServer,
   startService, scratchKit, scratchEnv, hostsOf, PTY, atTerminal,
@@ -61,7 +62,7 @@ const postedRepos = (server) => server.requests().filter((r) => r.method === 'PO
 const userReads = (server) => server.requests().filter((r) => r.method === 'GET' && r.url.startsWith('/users/'));
 
 /** `text`'s lines, trimmed. */
-const linesOf = (text) => text.split('\n').map((l) => l.trim());
+const trimmedLines = (text) => linesOf(text).map((l) => l.trim());
 
 /** A scratch home signed in as octocat; returns the login file. */
 const signedIn = () => writeLogin(mkTmp('wk-identity-login-'), { token: USER_TOKEN, login: 'octocat' });
@@ -475,7 +476,7 @@ describe('identity/token: the owner read before the ask', () => {
       useTokenService(home, `${server.url}/token`);
       const res = command([OLD], hostsOf(server));
       expect(res.status, `exit 4, stderr: ${res.stderr}`).toBe(4);
-      const lines = linesOf(res.stderr);
+      const lines = trimmedLines(res.stderr);
       const at = lines.findIndex((l) => l.endsWith(`install workkit-agent[bot] on New: ${PRESELECTED}7`));
       expect(at >= 0, `stderr names the canonical owner and its pre-selected page, got: ${res.stderr}`).toBeTruthy();
       expect(lines[at + 1], 'the next line is the --bot command').toBe(BOT_HINT);
@@ -497,7 +498,7 @@ describe('identity/token: the owner read before the ask', () => {
       useTokenService(home, `${service.url}/token`);
       const res = command([OLD], hostsOf(gone));
       expect(res.status, `connection refused: exit 4, stderr: ${res.stderr}`).toBe(4);
-      expect(linesOf(res.stderr).some((l) => l.endsWith(UNREADABLE)), `connection refused: stderr says the id was unreadable, got: ${res.stderr}`).toBeTruthy();
+      expect(trimmedLines(res.stderr).some((l) => l.endsWith(UNREADABLE)), `connection refused: stderr says the id was unreadable, got: ${res.stderr}`).toBeTruthy();
       expect(!res.stderr.includes('installations/new'), `connection refused: no install page anywhere, got: ${res.stderr}`).toBeTruthy();
       expect(!res.stderr.includes(BOT_HINT), `connection refused: no --bot line, got: ${res.stderr}`).toBeTruthy();
       expect(JSON.stringify(postedRepos(service)), 'connection refused: one POST, under the slug as sent').toBe(JSON.stringify([OLD]));
@@ -520,7 +521,7 @@ describe('identity/token: the owner read before the ask', () => {
       }));
       expect(err, 'tokenFor throws, got a return').toBeInstanceOf(Error);
       expect(err.code, `${label}: not_installed`).toBe('not_installed');
-      expect(linesOf(err.message).some((l) => l.endsWith(UNREADABLE)), `${label}: the unreadable line, got: ${err.message}`).toBeTruthy();
+      expect(trimmedLines(err.message).some((l) => l.endsWith(UNREADABLE)), `${label}: the unreadable line, got: ${err.message}`).toBeTruthy();
       expect(!err.message.includes('installations/new'), `${label}: no install page, got: ${err.message}`).toBeTruthy();
       expect(!err.message.includes(BOT_HINT), `${label}: no --bot line, got: ${err.message}`).toBeTruthy();
       const reads = fake.reads.map((r) => new URL(r.url).pathname);
@@ -537,7 +538,7 @@ describe('identity/token: the owner read before the ask', () => {
     }));
     expect(err, 'tokenFor throws, got a return').toBeInstanceOf(Error);
     expect(err.code, 'not_installed').toBe('not_installed');
-    const lines = linesOf(err.message);
+    const lines = trimmedLines(err.message);
     const at = lines.findIndex((l) => l.endsWith(`install workkit-agent[bot] on acme: ${PRESELECTED}4242`));
     expect(at >= 0, `the refusal names acme and its pre-selected page, got: ${err.message}`).toBeTruthy();
     expect(lines[at + 1], 'the next line is the --bot command').toBe(BOT_HINT);
@@ -567,7 +568,7 @@ describe('identity/token: the owner read before the ask', () => {
             expect(!res.stderr.includes('installations/new'), `${label}: prints no page, got: ${res.stderr}`).toBeTruthy();
             expect(userReads(server).length, `${label}: no public user read, got: ${JSON.stringify(server.requests())}`).toBe(0);
           } else if (scene === 'renamed, not installed') {
-            expect(linesOf(res.stderr).some((l) => l.endsWith(`install workkit-agent[bot] on New: ${PRESELECTED}7`)), `${label}: names New's pre-selected page, got: ${res.stderr}`).toBeTruthy();
+            expect(trimmedLines(res.stderr).some((l) => l.endsWith(`install workkit-agent[bot] on New: ${PRESELECTED}7`)), `${label}: names New's pre-selected page, got: ${res.stderr}`).toBeTruthy();
           } else if (scene === 'private, not installed') {
             expect(userReads(server).length, `${label}: the public user read gives the page's id, got: ${JSON.stringify(server.requests())}`).toBe(1);
           }
@@ -591,7 +592,7 @@ describe('identity/token: the owner read before the ask', () => {
       useTokenService(home, `${server.url}/token`);
       const res = command([REPO], hostsOf(server));
       expect(res.status, `exit 4, stderr: ${res.stderr}`).toBe(4);
-      const lines = linesOf(res.stderr);
+      const lines = trimmedLines(res.stderr);
       const at = lines.findIndex((l) => l.endsWith(`install workkit-agent[bot] on acme: ${PRESELECTED}7`));
       expect(at >= 0, `stderr names acme and the page pre-selected on id 7, got: ${res.stderr}`).toBeTruthy();
       expect(lines[at + 1], 'the next line is the --bot command').toBe(BOT_HINT);

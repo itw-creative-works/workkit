@@ -35,8 +35,10 @@ const seed = seeded((dir, { optIn }) => {
     fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
   }
   const env = homeEnv(path.join(dir, 'home'), { PATH: process.env.PATH });
+  // Git for Windows' system config turns autocrlf on, and the scratch home hides CI's global off,
+  // so the repo turns it off itself: a file git rewrites reads back with \n on every platform.
   for (const args of [['init', '-q', '-b', 'main'], ['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test'],
-    ['add', '-A'], ['commit', '-q', '-m', 'init'], ['branch', 'feature']]) {
+    ['config', 'core.autocrlf', 'false'], ['add', '-A'], ['commit', '-q', '-m', 'init'], ['branch', 'feature']]) {
     const res = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
     if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
   }

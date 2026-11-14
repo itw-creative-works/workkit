@@ -8,7 +8,7 @@
 
 import { CAPTURE_PATH } from './changed.js';
 import { homeOf } from './log.js';
-import { triageGoing, triageMarkerAge } from './markers.js';
+import { absolutePath, triageGoing, triageMarkerAge } from './markers.js';
 import { findingsRoute, settingsOf } from './settings.js';
 
 const namesCapture = (path) => path === CAPTURE_PATH || path.endsWith(`/${CAPTURE_PATH}`);
@@ -22,8 +22,9 @@ const dirname = (path) => {
 
 /**
  * The capture file a call reaches and what it does there, or null when it
- * reaches none: `path` as the call spells it (relative to `cwd`, or `~/` and
- * `$HOME/` forms), `mode` (`read`, `write` or `bash`), and `probe` when a
+ * reaches none: `path` as the call spells it, every backslash a slash
+ * (relative to `cwd`, or `~/` and `$HOME/` forms), `mode` (`read`, `write`
+ * or `bash`), and `probe` when a
  * Grep pointed at the `.workkit` folder reaches the file only if it is there.
  * A Bash call reaches the cwd's file when its input's `namesCapture` is true.
  * @param {{tool: string, input: object, cwd: string}} call the tool, its input and folder
@@ -31,13 +32,13 @@ const dirname = (path) => {
  */
 function captureTarget({ tool, input, cwd }) {
   if (tool === 'Read' || tool === 'Edit' || tool === 'Write') {
-    const path = input?.file_path ?? '';
+    const path = String(input?.file_path ?? '').replace(/\\/g, '/');
     return path && namesCapture(path) ? { path, mode: tool === 'Read' ? 'read' : 'write', probe: false } : null;
   }
   if (tool === 'Bash') return input?.namesCapture === true ? { path: `${cwd}/${CAPTURE_PATH}`, mode: 'bash', probe: false } : null;
   if (tool !== 'Grep') return null;
   // Only a search pointed AT the file is gated: its path or folder, or a glob naming it.
-  const path = String(input?.path ?? '').replace(/\/+$/, '');
+  const path = String(input?.path ?? '').replace(/\\/g, '/').replace(/\/+$/, '');
   const glob = String(input?.glob ?? '');
   if (namesCapture(path)) return { path, mode: 'read', probe: false };
   if (path === '.workkit' || path.endsWith('/.workkit')) {
@@ -69,11 +70,12 @@ export function captureGuardVerdict({ tool, input, cwd, markerAgeS, route }) {
 }
 
 // The path made absolute: the tilde and HOME forms through HOME, a relative
-// one against the session's folder, as the tool resolves it.
+// one against the session's folder, as the tool resolves it; a `/` or a
+// drive-letter start (`D:\`, `D:/`) is absolute already.
 function absolute(path, cwd, home) {
   const homed = path.match(/^(~|\$HOME|\$\{HOME\})\//);
   if (homed) return `${home}/${path.slice(homed[0].length)}`;
-  return path.startsWith('/') ? path : `${cwd}/${path}`;
+  return absolutePath(path) ? path : `${cwd}/${path}`;
 }
 
 /**

@@ -7,6 +7,8 @@
  * (docs/hooks.md § safety:vendor-guard).
  */
 
+import { driveRooted } from './markers.js';
+
 const LOCKFILES = new Set([
   'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lock', 'bun.lockb', 'Gemfile.lock', 'Podfile.lock', 'composer.lock',
 ]);
@@ -29,15 +31,17 @@ async function isPackageRoot(dir, kindOf) {
 
 // A dist/ or build/ folder directly under a package root; deeper in a source
 // tree it is source. The last segment is the file itself, never a folder.
+// A `/` or a drive (`D:/`) is the root the walk starts from.
 async function inOutputDir(file, kindOf) {
-  let prefix = file.startsWith('/') ? '' : '.';
-  let rest = file.startsWith('/') ? file.slice(1) : file;
+  const drive = driveRooted(file) ? file.slice(0, 2) : null;
+  let prefix = drive ?? (file.startsWith('/') ? '' : '.');
+  let rest = drive ? file.slice(3) : file.startsWith('/') ? file.slice(1) : file;
   while (rest) {
     const cut = rest.indexOf('/');
     if (cut < 0) break;
     const seg = rest.slice(0, cut);
     rest = rest.slice(cut + 1);
-    if ((seg === 'dist' || seg === 'build') && (await isPackageRoot(prefix, kindOf))) return true;
+    if ((seg === 'dist' || seg === 'build') && (await isPackageRoot(prefix === drive ? `${drive}/` : prefix, kindOf))) return true;
     prefix = `${prefix}/${seg}`;
   }
   return false;

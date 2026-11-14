@@ -1384,6 +1384,7 @@
   - a `dist/` or `build/` directly under a package root;
     - A package root is the repo root or a folder holding a `package.json`.
     - A folder that is not there cannot be disproved and counts as one.
+    - The folders are asked from the path's root: `/`, or a drive (`D:/`) for a Windows path.
     - Deeper in a source tree the folder is source.
   - a lockfile;
   - and a file `git check-ignore` matches in the repo holding its folder.
@@ -1436,6 +1437,7 @@
   - It is keyed to the capture file's repo root, or for a file in no repo the `.workkit` folder's parent.
   - Its age is `$.fs.stat`'s mtime against `$.clock.now()`.
 - A `~/`, `$HOME/` or `${HOME}/` path resolves through `HOME`, a relative one against the `cwd`.
+  - A Read, Edit, Write or Grep path is read with every backslash a slash, on every platform, so `D:\a\repo\.workkit\capture.md` is matched; a drive start (`D:/`) is absolute.
 - A Grep is gated only when its path points at the file or its folder (the file present there) or its glob names it.
   - A repo-wide search stays open.
 - The write and Bash blocks name where a finding goes instead, by `findings.file` read for the session's `cwd` (`findingsRoute` in `hooks/mods/settings.js`): said in chat under 🧭 Findings while it is off, the default; a `status:inbox` issue when it is on (`docs/project-state.md` § How big is one issue).

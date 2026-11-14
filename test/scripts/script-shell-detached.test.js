@@ -24,7 +24,7 @@ const { runLib } = require('../lib/hook-lib');
 const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, reap, realOf, ended, silent,
 } = require('../lib/supervise');
-const { linesOf, prints } = require('../lib/supervise-world');
+const { linesToLast, prints } = require('../lib/supervise-world');
 
 // The suite log of a repo that does not ignore .workkit/, the lock's pid, and
 // the log of one that does.
@@ -332,7 +332,7 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
       const repo = mkRepo({ scripts: { test: 'node narrowed.js' } }, { 'narrowed.js': prints(3, { out: 'narrowed-out', err: 'narrowed-err' }) });
       const res = npm(world, repo, ['test', '--', 'only/one.test.js']);
       expect(res.code, `the script's own code, got: ${res.code} ${res.out} ${res.err}`).toBe(3);
-      const said = linesOf(res.out);
+      const said = linesToLast(res.out);
       expect(said.includes('narrowed-out') && said.includes('narrowed-err'), `the output holds the script's stdout and stderr, got: ${res.out}`).toBeTruthy();
       expect(said[said.length - 1], `the last line is the closing line, got: ${res.out}`).toBe('script-shell: exit 3');
       cleanup(world.root); cleanup(repo);
@@ -359,7 +359,7 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
         for (const { code, call } of runs) {
           const { status } = await call.done;
           expect(status, `the run given ${code} exits with it, got: ${call.output()}`).toBe(code);
-          const said = linesOf(call.stdout());
+          const said = linesToLast(call.stdout());
           expect(said[said.length - 1], `its own supervisor saw its end, got: ${call.output()}`).toBe(`script-shell: exit ${code}`);
         }
       } finally {
