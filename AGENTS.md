@@ -144,7 +144,7 @@
   - A named `test/mods/<name>.test.ts` after `--` runs the whole mod half, since `claude plugin test` takes a folder.
 - One suite runs alone as `npm test -- test/<path>.test.js`, or as `node test/<path>.test.js` with no line added.
   - The runner takes suite paths after `--`, and exits 1 naming a path that matches no suite.
-  - A case that starts a suite file with `node` passes `aloneEnv()` (`test/lib/alone-env.js`), its env without `NODE_TEST_CONTEXT`.
+  - A case that starts the runner, or a suite file with `node`, passes `aloneEnv()` (`test/lib/alone-env.js`), its env without `NODE_TEST_CONTEXT` and `WORKKIT_TEST_SUMMARY`.
   - `test/lib/run-lists.js` reads a run's end (`TOTALS_LINE`, `linesOf`, `listsOf`), and `caught(fn)` (`test/lib/caught.js`) what a call threw or rejected with, or `null`.
 - Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer.
 - Everything that differs lives in `test/lib/platform.js`, every export the identity on macOS and Linux.

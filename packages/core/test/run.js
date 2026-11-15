@@ -198,6 +198,10 @@ export const main = async (argv) => {
   // Node's run() runs no file under a variable its own test files inherit, so a
   // run a case starts in a scratch folder would run nothing; this run is its own.
   delete process.env.NODE_TEST_CONTEXT;
+  // The file `workkit proof red` names for this run's counts; taken out, so a
+  // run a suite starts writes no line of its own.
+  const summaryFile = process.env.WORKKIT_TEST_SUMMARY;
+  delete process.env.WORKKIT_TEST_SUMMARY;
   if (argv[0] === '--worker') {
     // A parent that is gone takes its workers with it, and each worker the
     // processes its suite started: off Windows its own group never hears the terminal.
@@ -212,6 +216,13 @@ export const main = async (argv) => {
     return;
   }
 
+  let passed = 0;
+  let failed = 0;
+  // One line added on every exit the run makes itself, one before any suite
+  // included, since one proof command may start several runs.
+  if (summaryFile) {
+    process.on('exit', () => fs.appendFileSync(summaryFile, `${JSON.stringify({ passed, failed })}\n`));
+  }
   const deadline = deadlineOf(process.env.TEST_DEADLINE);
   if (process.platform !== 'win32') passSignalsOn();
   const start = Date.now();
@@ -225,8 +236,6 @@ export const main = async (argv) => {
     process.exit(1);
   }
 
-  let passed = 0;
-  let failed = 0;
   const allFailures = [];
   const skippedSuites = [];
   const skippedCases = [];

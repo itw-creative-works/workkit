@@ -7,6 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#535](../../issues/535) - `workkit proof red` no longer calls a run on workkit-core's runner red when no test ran or none failed: the runner writes its counts to the file `WORKKIT_TEST_SUMMARY` names. Another runner gets the check only by printing node's summary block; otherwise the exit code decides.
+- [#538](../../issues/538) - On Windows `workkit watch --end` now ends a suite that an `npm test` started inside a supervised run. The end reads both the Windows and the Git Bash process tables and ends each process of the run, where `taskkill /T` stopped at a broken parent link.
+- [#541](../../issues/541) - The runner suite's case on a second signal no longer fails when its fixture starts slowly. The fixture writes its pid file from inside its running case, so the first signal lands once the process is idle.
+
 ## [0.95.1] - 2026-11-14
 
 ### Fixed

@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, until, start, pidIn, alive,
   endTree, run,
 } = require('../lib/harness');
-const { IS_WINDOWS, pathWith, recordingRun, signalsRefused, samePath, spawn } = require('../lib/platform');
+const { pathWith, windowsTables, PS_HEADER, samePath, spawn } = require('../lib/platform');
 const { skipOnWindows, reap } = require('../lib/supervise');
 const { caught } = require('../lib/caught');
 
@@ -19,22 +19,42 @@ const { treeOf, endTreeOf } = require(TREE);
 const PLATFORM = path.join(__dirname, '..', 'lib', 'platform.js');
 
 const SYSTEM_ROOT = 'C:\\Windows';
-const TASKKILL = 'C:\\Windows\\System32\\taskkill.exe';
+const POWERSHELL = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
 
-/**
- * The seams that put `endTreeOf` or `endTree` on its Windows arm with a `run`
- * whose taskkill exits `status` (null: cannot start, 'hang': runs to its timeout),
- * and the calls it saw.
- */
-const windowsArm = (status, extra = { systemRoot: SYSTEM_ROOT }) => {
-  const recorded = recordingRun(status);
-  return { seams: { platform: 'win32', run: recorded.run, ...extra }, calls: recorded.calls };
-};
+/** A creation time at `time` on one fixed day, as .NET's 'o' format prints one in UTC. */
+const at = (time) => `2026-11-15T${time}Z`;
 
-/** The one call `calls` holds, else a failure naming them all. */
-const onlyCall = (calls) => {
-  expect(calls.length, `one program was run, got: ${JSON.stringify(calls)}`).toBe(1);
-  return calls[0];
+// Process rows recorded from a windows-latest run of a supervised `npm test`: the
+// Windows rows and Git Bash's `ps -el` rows as recorded, creation times written to
+// fit the links. 9064's parent, and 7196's and 3804's Windows rows, were not
+// recorded: each parent named is a pid no row holds.
+const RECORDED = [
+  { pid: 9064, ppid: 6140, created: at('02:51:01.8123456') },
+  { pid: 7612, ppid: 3512, created: at('02:51:03.1804567'), ps: '     1530       1    1530       7612  ?         197108 02:51:03 /usr/bin/bash' },
+  { pid: 7196, ppid: 5208, created: at('02:51:02.3101234'), ps: '     1510    1502    1502       7196  ?         197108 02:51:02 /usr/bin/bash' },
+  { pid: 6116, ppid: 6916, created: at('02:51:03.4105678'), ps: '     1563    1530    1530       6116  ?         197108 02:51:03 /usr/bin/bash' },
+  { pid: 7652, ppid: 6808, created: at('02:51:03.4306789'), ps: '     1564    1530    1530       7652  ?         197108 02:51:03 /usr/bin/tee' },
+  { pid: 3804, ppid: 5932, created: at('02:51:02.6502345'), ps: '     1523    1510    1502       3804  ?         197108 02:51:02 /c/hostedtoolcache/windows/node/26.13.1/x64/node' },
+  { pid: 872, ppid: 9064, created: at('02:51:02.0412345'), ps: '     1502       1    1502        872  ?         197108 02:51:02 /usr/bin/bash' },
+  { pid: 6660, ppid: 872, created: at('02:51:02.0598765') },
+  { pid: 3512, ppid: 3804, created: at('02:51:03.1203456') },
+  { pid: 1252, ppid: 3452, created: at('02:51:03.9207890') },
+  { pid: 8748, ppid: 1252, created: at('02:51:04.1234567'), ps: '     1589    1563    1530       8748  ?         197108 02:51:04 /c/hostedtoolcache/windows/node/26.13.1/x64/node' },
+];
+
+/** End `pid`'s tree on the Windows arm against `world`'s tables and signals. */
+const endIn = (world, pid, seams = { systemRoot: SYSTEM_ROOT }) => world.during(
+  () => endTreeOf(pid, { platform: 'win32', run: world.run, ...seams }),
+);
+
+/** The pids `world` signalled, in order. */
+const signalled = (world) => world.signals.map((s) => s.pid);
+
+/** Every call `world` saw to the program `name` (any folder, `.exe` or not), at least one. */
+const callsTo = (world, name) => {
+  const found = world.calls.filter((c) => c.file.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '') === name);
+  expect(found.length > 0, `${name} was run, got: ${JSON.stringify(world.calls)}`).toBeTruthy();
+  return found;
 };
 
 // A process that writes its pid to <dir>/<name>, starts each child [name, detached,
@@ -107,78 +127,210 @@ describe('tree: treeOf', () => {
 });
 
 describe('tree: endTreeOf on the Windows arm', () => {
-  test('a taskkill that starts is run from System32 under SystemRoot with /T /F /PID, whatever PATH holds', async () => {
-    const shadow = mkTmp('tree-path-');
-    fs.writeFileSync(path.join(shadow, 'taskkill.exe'), '');
-    const { seams, calls } = windowsArm(0);
-    const realPath = process.env.PATH;
-    process.env.PATH = pathWith(shadow);
-    try {
-      await signalsRefused(() => endTreeOf(4242, seams));
-    } finally {
-      process.env.PATH = realPath;
-    }
-    const call = onlyCall(calls);
-    expect(samePath(call.file, TASKKILL, 'win32'), `the program is ${TASKKILL}, got: ${call.file}`).toBeTruthy();
-    expect(JSON.stringify(call.args), 'the whole tree, forced, by pid').toBe(JSON.stringify(['/T', '/F', '/PID', '4242']));
+  test('rows recorded from a supervised npm test on Windows: the end of the body shell signals every process of the run, the suite\'s node included, and none outside it', async () => {
+    const world = windowsTables(RECORDED);
+    const err = await caught(() => endIn(world, 872));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    const got = [...signalled(world)].sort((a, b) => a - b);
+    expect(JSON.stringify(got), 'the body shell, its conhost, npm\'s bash and node, the script shell and its bash, the suite-body bash, tee and the suite node, each once')
+      .toBe(JSON.stringify([872, 3512, 3804, 6116, 6660, 7196, 7612, 7652, 8748]));
+    expect(world.signals.every((s) => s.signal === 'SIGKILL'), `each a forced end, got: ${JSON.stringify(world.signals)}`).toBeTruthy();
   });
 
-  test('a taskkill that cannot start rejects the end, naming why', async () => {
-    const { seams, calls } = windowsArm(null);
-    const err = await signalsRefused(() => caught(() => endTreeOf(4242, seams)));
-    const cause = `spawnSync ${onlyCall(calls).file} ENOENT`;
-    expect(err.message, 'the reject line carries the start error').toBe(`tree.js: taskkill could not run (${cause})`);
+  test('a ps row led by a state letter still links its process into the tree', async () => {
+    // 300's Windows parent is gone, so only its Git Bash row, waiting on the terminal, links it.
+    const world = windowsTables([
+      { pid: 100, ppid: 4, created: at('03:00:00.0000000'), ps: '       10       1      10        100  pty0      197108 03:00:00 /usr/bin/bash' },
+      { pid: 300, ppid: 999, created: at('03:00:01.0000000'), ps: 'I      11      10      10        300  pty0      197108 03:00:01 /usr/bin/bash' },
+    ]);
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    expect(JSON.stringify([...signalled(world)].sort((a, b) => a - b)), 'the root and its Git Bash child 300').toBe(JSON.stringify([100, 300]));
   });
 
-  test('with no SystemRoot the end rejects with the line that names it', async () => {
-    const { seams } = windowsArm(0, {});
+  test('a process whose Windows parent pid names a member but that is older than it is not signalled', async () => {
+    const world = windowsTables([
+      { pid: 100, ppid: 4, created: at('03:00:00.0000000') },
+      { pid: 200, ppid: 100, created: at('03:00:01.0000000') },
+      { pid: 300, ppid: 100, created: at('02:59:59.0000000') },
+    ]);
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    expect(JSON.stringify([...signalled(world)].sort((a, b) => a - b)), 'the root and its child, never the older 300').toBe(JSON.stringify([100, 200]));
+  });
+
+  test('a newer process holding a gone member\'s pid is not signalled, nor its child; the member\'s own child still is', async () => {
+    const world = windowsTables([
+      { pid: 100, ppid: 4, created: at('03:00:00.0000000') },
+      { pid: 200, ppid: 100, created: at('03:00:01.0000000') },
+    ], {
+      // Read 2, the first to find 200 gone: 300, which 200 started before it went, and a
+      // newer process holding the pid 200 with its child 400.
+      onRead: (n, w) => {
+        if (n !== 2) return;
+        w.add(
+          { pid: 300, ppid: 200, created: at('03:00:02.0000000') },
+          { pid: 200, ppid: 4, created: at('03:00:05.0000000') },
+          { pid: 400, ppid: 200, created: at('03:00:06.0000000') },
+        );
+      },
+    });
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    expect(JSON.stringify([...signalled(world)].sort((a, b) => a - b)), 'the root, the member 200 once, and its child 300; never the newer 200 or its 400')
+      .toBe(JSON.stringify([100, 200, 300]));
+  });
+
+  test('a process first seen after a read found its parent member gone is not signalled', async () => {
+    const world = windowsTables([
+      { pid: 100, ppid: 4, created: at('03:00:00.0000000') },
+      { pid: 200, ppid: 100, created: at('03:00:01.0000000') },
+    ], {
+      // Read 2 finds 100 and 200 gone and only 150, a child of 100, new, so the end
+      // reads a third time; 300, a child of 200, shows from read 3.
+      onRead: (n, w) => {
+        if (n === 2) w.add({ pid: 150, ppid: 100, created: at('03:00:01.5000000') });
+        if (n === 3) w.add({ pid: 300, ppid: 200, created: at('03:00:02.0000000') });
+      },
+    });
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    expect(JSON.stringify([...signalled(world)].sort((a, b) => a - b)), 'the root, 150 and 200, never the later 300').toBe(JSON.stringify([100, 150, 200]));
+    expect(callsTo(world, 'powershell').length, 'the end read the table that showed 300').toBe(3);
+  });
+
+  test('a Windows child of a member with no creation time is not signalled', async () => {
+    const world = windowsTables([
+      { pid: 100, ppid: 4, created: at('03:00:00.0000000') },
+      { pid: 200, ppid: 100, created: at('03:00:01.0000000') },
+      { pid: 300, ppid: 100, created: '' },
+    ]);
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    expect(JSON.stringify([...signalled(world)].sort((a, b) => a - b)), 'the root and its timed child, never 300').toBe(JSON.stringify([100, 200]));
+  });
+
+  test('a tree whose every member goes at its signal: the end reads each table twice and resolves', async () => {
+    const world = windowsTables(RECORDED);
+    const err = await caught(() => endIn(world, 872));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    expect(JSON.stringify([callsTo(world, 'powershell').length, callsTo(world, 'bash').length]),
+      'one read to find the tree, one to find it gone').toBe('[2,2]');
+  });
+
+  test('a root not in the Windows table is a tree already gone: the end resolves and signals nothing', async () => {
+    const world = windowsTables([{ pid: 100, ppid: 4, created: at('03:00:00.0000000') }]);
+    const err = await caught(() => endIn(world, 4242));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    expect(JSON.stringify(world.signals), 'nothing is signalled').toBe('[]');
+  });
+
+  test('a process a member starts between two reads is signalled after the next read, each member once, and the end resolves on a read with no member', async () => {
+    // 200 outlives its signal for two asks, and starts 300 meanwhile.
+    const world = windowsTables([
+      { pid: 100, ppid: 4, created: at('03:00:00.0000000') },
+      { pid: 200, ppid: 100, created: at('03:00:01.0000000'), lingers: 2 },
+    ], {
+      onSignal: (pid, w) => { if (pid === 200) w.add({ pid: 300, ppid: 200, created: at('03:00:02.0000000') }); },
+    });
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the end resolves').toBe(undefined);
+    const got = signalled(world);
+    expect(JSON.stringify([...got].sort((a, b) => a - b)), 'each member signalled once').toBe(JSON.stringify([100, 200, 300]));
+    expect(got.indexOf(300), `the new process is signalled after the first two, got: ${got.join(', ')}`).toBe(2);
+    expect(JSON.stringify([callsTo(world, 'powershell').length, callsTo(world, 'bash').length]),
+      'three reads of each table: the first, the one that finds 300, the one that finds no member').toBe('[3,3]');
+  });
+
+  test('one member\'s refused signal: every other member gets its own, and the end rejects naming the refused pid', async () => {
+    const world = windowsTables([
+      { pid: 100, ppid: 4, created: at('03:00:00.0000000') },
+      { pid: 200, ppid: 100, created: at('03:00:01.0000000'), refuse: 'EPERM' },
+      { pid: 300, ppid: 100, created: at('03:00:02.0000000') },
+    ]);
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the reject line').toBe('could not signal 200 (kill EPERM)');
+    expect(JSON.stringify([...signalled(world)].sort((a, b) => a - b)), 'each member was signalled').toBe(JSON.stringify([100, 200, 300]));
+  });
+
+  for (const [how, answer, code] of [['cannot start', null, 'ENOENT'], ['runs to its timeout', 'hang', 'ETIMEDOUT']]) {
+    test(`a PowerShell that ${how} rejects the end, naming why, and signals nothing`, async () => {
+      const world = windowsTables([{ pid: 100, ppid: 4, created: at('03:00:00.0000000') }], { answers: { powershell: answer } });
+      const err = await caught(() => endIn(world, 100));
+      const cause = `spawnSync ${callsTo(world, 'powershell')[0].file} ${code}`;
+      expect(err?.message, 'the reject line carries the start error').toBe(`tree.js: powershell could not run (${cause})`);
+      expect(JSON.stringify(world.signals), 'nothing is signalled').toBe('[]');
+    });
+  }
+
+  test('a ps that exits nonzero with three stderr lines rejects the end on one line with its code and the first of them, and signals nothing', async () => {
+    const stderr = 'ps: cannot read the process table\n  at /proc/1530/stat\nps: giving up\n';
+    const world = windowsTables([{ pid: 100, ppid: 4, created: at('03:00:00.0000000') }],
+      { answers: { ps: { status: 1, stderr } } });
+    const err = await caught(() => endIn(world, 100));
+    expect(err?.message, 'the one reject line').toBe('tree.js: ps exited 1: ps: cannot read the process table');
+    expect(JSON.stringify(world.signals), 'nothing is signalled').toBe('[]');
+  });
+
+  const BAD_ROW = '     1530       -    1530       7612  ?         197108 02:51:03 /usr/bin/bash';
+  for (const [what, program, answers, holds] of [
+    ['a PowerShell error in place of the JSON', 'powershell', { powershell: { status: 0, stdout: 'Get-CimInstance : Access denied\r\n' } }, null],
+    ['one process as a JSON object, not an array', 'powershell', { powershell: { status: 0, stdout: '{"pid":100,"ppid":4,"created":"2026-11-15T03:00:00.0000000Z"}\r\n' } }, null],
+    ['a ps row whose PPID is no number', 'ps', { ps: { status: 0, stdout: `${[PS_HEADER, BAD_ROW].join('\n')}\n` } }, BAD_ROW.trim()],
+  ]) {
+    test(`${what}: the end rejects with ${program}'s unreadable-table line and signals nothing`, async () => {
+      const world = windowsTables([{ pid: 100, ppid: 4, created: at('03:00:00.0000000') }], { answers });
+      const err = await caught(() => endIn(world, 100));
+      const prefix = `tree.js: ${program} printed a table it cannot read: `;
+      expect(err?.message?.startsWith(prefix), `the reject line starts ${JSON.stringify(prefix)}, got: ${err?.message}`).toBeTruthy();
+      if (holds) expect(err.message.includes(holds), `the line names the row, got: ${err.message}`).toBeTruthy();
+      expect(JSON.stringify(world.signals), 'nothing is signalled').toBe('[]');
+    });
+  }
+
+  test('with no SystemRoot the end rejects with the line that names it and starts no program', async () => {
+    const world = windowsTables([{ pid: 100, ppid: 4, created: at('03:00:00.0000000') }]);
     const realRoot = process.env.SystemRoot;
     delete process.env.SystemRoot;
     try {
-      const err = await signalsRefused(() => caught(() => endTreeOf(4242, seams)));
-      expect(err.message, 'the reject names SystemRoot').toBe('tree.js: SystemRoot is not set, so taskkill cannot be found');
+      const err = await caught(() => endIn(world, 100, {}));
+      expect(err?.message, 'the reject names SystemRoot').toBe('tree.js: SystemRoot is not set, so powershell cannot be found');
     } finally {
       if (realRoot !== undefined) process.env.SystemRoot = realRoot;
     }
+    expect(JSON.stringify(world.calls), 'no program was started').toBe('[]');
+    expect(JSON.stringify(world.signals), 'nothing is signalled').toBe('[]');
   });
 
-  test('the taskkill call is bounded at 60 seconds', async () => {
-    const { seams, calls } = windowsArm(0);
-    await signalsRefused(() => endTreeOf(4242, seams));
-    expect(onlyCall(calls).options.timeout, 'the timeout taskkill runs under, in ms').toBe(60000);
-  });
-
-  test('a taskkill that hangs to its timeout rejects the end as one that could not run', async () => {
-    const { seams, calls } = windowsArm('hang');
-    const err = await signalsRefused(() => caught(() => endTreeOf(4242, seams)));
-    const cause = `spawnSync ${onlyCall(calls).file} ETIMEDOUT`;
-    expect(err?.message, 'the reject line carries the timeout').toBe(`tree.js: taskkill could not run (${cause})`);
-  });
-
-  test('a taskkill that exits nonzero still resolves the end, as it does for a tree already gone', async () => {
-    const { seams, calls } = windowsArm(128);
-    let rejected;
-    await signalsRefused(() => endTreeOf(4242, seams)).catch((err) => { rejected = err; });
-    expect(rejected?.message, 'the end resolves').toBe(undefined);
-    onlyCall(calls);
-  });
-
-  test('the published endTree runs the same program with the same arguments as endTreeOf', async () => {
-    const home = windowsArm(0);
-    const published = windowsArm(0);
-    await signalsRefused(async () => {
-      await endTreeOf(4242, home.seams);
-      await endTree(4242, 'SIGKILL', published.seams);
-    });
-    const [a, b] = [onlyCall(home.calls), onlyCall(published.calls)];
-    expect(JSON.stringify([b.file, ...b.args]), 'endTree matches endTreeOf').toBe(JSON.stringify([a.file, ...a.args]));
+  test('PowerShell runs from System32 under SystemRoot whatever PATH holds, ps through bash, each read bounded at 60 seconds', async () => {
+    const shadow = mkTmp('tree-path-');
+    fs.writeFileSync(path.join(shadow, 'powershell.exe'), '');
+    const world = windowsTables([{ pid: 100, ppid: 4, created: at('03:00:00.0000000') }]);
+    const realPath = process.env.PATH;
+    process.env.PATH = pathWith(shadow);
+    try {
+      await endIn(world, 100);
+    } finally {
+      process.env.PATH = realPath;
+    }
+    for (const call of callsTo(world, 'powershell')) {
+      expect(samePath(call.file, POWERSHELL, 'win32'), `the program is ${POWERSHELL}, got: ${call.file}`).toBeTruthy();
+      expect(JSON.stringify(call.args.slice(0, 5)), 'no profile, no prompt, no policy, then the encoded script')
+        .toBe(JSON.stringify(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand']));
+      expect(call.args.length, `the encoded script is the last argument, got: ${JSON.stringify(call.args)}`).toBe(6);
+      const script = Buffer.from(call.args[5], 'base64').toString('utf16le');
+      expect(script.includes('Win32_Process'), `the script reads as UTF-16LE and asks Win32_Process, got: ${JSON.stringify(script)}`).toBeTruthy();
+    }
+    for (const call of callsTo(world, 'bash')) {
+      expect(JSON.stringify(call.args), 'Git Bash\'s own ps, no rc files').toBe(JSON.stringify(['--noprofile', '--norc', '-c', '/usr/bin/ps -el']));
+    }
+    const unbounded = world.calls.filter((c) => c.options.timeout !== 60000);
+    expect(JSON.stringify(unbounded), 'every read runs under a 60000 ms timeout').toBe('[]');
   });
 });
 
 describe('tree: the end command', () => {
-  test('node tree.js end <pid> ends a live process and exits 0', {
-    skip: IS_WINDOWS && 'off Windows only; on Windows the command is one real taskkill, its arm answered above',
-  }, async () => {
+  test('node tree.js end <pid> ends a live process and exits 0', async () => {
     // No start() watchdog: it would end the child at the deadline `until` waits on.
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30);'], { detached: true, stdio: 'ignore' });
     try {

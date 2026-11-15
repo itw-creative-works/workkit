@@ -493,11 +493,31 @@ const asWindows = (fn) => {
 };
 
 /**
+ * spawnSync's result for a program that cannot start (`how` null: ENOENT) or
+ * hangs (`how` 'hang': ended at the call's `timeout`, ETIMEDOUT), as
+ * child_process gives it. A hang with no timeout throws: it would never return.
+ * @param {string} file
+ * @param {null|'hang'} how
+ * @param {object} options - the call's spawnSync options
+ * @returns {object}
+ */
+const failedRun = (file, how, options) => {
+  if (how === 'hang') {
+    if (!(options.timeout > 0)) throw new Error(`test/lib/platform: ${file} hangs, and with no timeout it never returns`);
+    const error = Object.assign(new Error(`spawnSync ${file} ETIMEDOUT`), { code: 'ETIMEDOUT', errno: -60, syscall: `spawnSync ${file}`, path: file });
+    return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status: null, signal: 'SIGTERM', error };
+  }
+  const error = Object.assign(new Error(`spawnSync ${file} ENOENT`), { code: 'ENOENT', errno: -2, syscall: `spawnSync ${file}`, path: file });
+  return { pid: 0, output: null, stdout: null, stderr: null, status: null, signal: null, error };
+};
+
+/** spawnSync's result for a program that ran and exited `status`. */
+const ranRun = (status, stdout = '', stderr = '') => ({ pid: 1, output: [null, stdout, stderr], stdout, stderr, status, signal: null });
+
+/**
  * A `run` seam in spawnSync's call form and result that starts nothing: it
  * records each program, its arguments and its options, and the program exits
- * with `status`, cannot start (ENOENT, child_process's own result) when `status`
- * is null, or hangs when it is 'hang': ended at the call's `timeout` (ETIMEDOUT,
- * spawnSync's result), and with no timeout a throw, since it would never return.
+ * with `status`, or cannot start or hangs as `failedRun` says for null or 'hang'.
  * @param {number|null|'hang'} [status]
  * @returns {{ run: Function, calls: { file: string, args: string[], options: object }[] }}
  */
@@ -505,16 +525,98 @@ const recordingRun = (status = 0) => {
   const calls = [];
   const recorded = (file, args, options = {}) => {
     calls.push({ file, args: (args || []).map(String), options });
-    if (status === 'hang') {
-      if (!(options.timeout > 0)) throw new Error(`recordingRun: ${file} hangs, and with no timeout it never returns`);
-      const error = Object.assign(new Error(`spawnSync ${file} ETIMEDOUT`), { code: 'ETIMEDOUT', errno: -60, syscall: `spawnSync ${file}`, path: file });
-      return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status: null, signal: 'SIGTERM', error };
-    }
-    if (status !== null) return { pid: 1, output: [null, '', ''], stdout: '', stderr: '', status, signal: null };
-    const error = Object.assign(new Error(`spawnSync ${file} ENOENT`), { code: 'ENOENT', errno: -2, syscall: `spawnSync ${file}`, path: file });
-    return { pid: 0, output: null, stdout: null, stderr: null, status: null, signal: null, error };
+    return typeof status === 'number' ? ranRun(status) : failedRun(file, status, options);
   };
   return { run: recorded, calls };
+};
+
+/** process.kill's error for a pid no process holds. */
+const noSuchProcess = () => Object.assign(new Error('kill ESRCH'), { code: 'ESRCH', errno: -3, syscall: 'kill' });
+
+/**
+ * Run `fn` with `process.kill` replaced by `kill`, the real one restored after.
+ * @param {Function} kill
+ * @param {Function} fn
+ * @returns {Promise<*>} whatever `fn` resolved to
+ */
+const withKill = async (kill, fn) => {
+  const real = process.kill;
+  process.kill = kill;
+  try {
+    return await fn();
+  } finally {
+    process.kill = real;
+  }
+};
+
+// The header Git Bash's `ps -el` prints above its rows.
+const PS_HEADER = '      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND';
+
+/**
+ * A Windows machine's process tables for a tree end's Windows arm, on any machine.
+ * A process is `{ pid, ppid, created, ps }`, `ps` its raw `ps -el` row. `run`
+ * answers `powershell.exe` with the JSON array, `bash` with `ps -el`'s text;
+ * `answers.powershell` or `.ps` replaces one (null, 'hang', `{ status, stdout,
+ * stderr }`). `during(fn)` makes `process.kill` the world's: a signal is recorded,
+ * takes the process out (after `lingers` signal-0 asks it answers alive), calls
+ * `onSignal(pid, world)`; `refuse: <code>` throws it, the process gone. Signal 0
+ * answers from the world. `onRead(n, world)` runs before the n-th PowerShell read.
+ * @param {{ onSignal?: Function, onRead?: Function, answers?: object }} [options]
+ * @returns {{ run: Function, calls: object[], signals: object[], add: Function, during: Function }}
+ */
+const windowsTables = (processes, { onSignal = () => {}, onRead = () => {}, answers = {} } = {}) => {
+  let live = processes.map((p) => ({ ...p }));
+  let reads = 0;
+  const calls = [];
+  const signals = [];
+  const answer = (file, override, options, table) => {
+    if (override === undefined) return ranRun(0, table());
+    if (override === null || override === 'hang') return failedRun(file, override, options);
+    return ranRun(override.status, override.stdout || '', override.stderr || '');
+  };
+  const powershell = () => {
+    reads += 1;
+    onRead(reads, world);
+    return `${JSON.stringify(live.map(({ pid, ppid, created }) => ({ pid, ppid, created })))}\r\n`;
+  };
+  // A signalled process answers alive to `asks` more signal-0 asks, then it is gone.
+  const ask = (pid) => {
+    const held = live.filter((p) => p.pid === pid);
+    live = live.filter((p) => !held.includes(p) || p.asks !== 0);
+    for (const p of held) if (p.asks > 0) p.asks -= 1;
+    if (!live.some((p) => p.pid === pid)) throw noSuchProcess();
+    return true;
+  };
+  const ps = () => [PS_HEADER, ...live.filter((p) => p.ps).map((p) => p.ps), ''].join('\n');
+  const run = (file, args, options = {}) => {
+    calls.push({ file, args: (args || []).map(String), options });
+    const stem = String(file).split(/[\\/]/).pop().toLowerCase();
+    if (stem === 'powershell.exe') return answer(file, answers.powershell, options, powershell);
+    if (stem === 'bash' || stem === 'bash.exe') return answer(file, answers.ps, options, ps);
+    throw new Error(`test/lib/platform: windowsTables has no answer for ${file} ${JSON.stringify(args)}`);
+  };
+  const kill = (pid, signal) => {
+    if (signal === 0) return ask(pid);
+    const target = live.find((p) => p.pid === pid && p.asks === undefined);
+    signals.push({ pid, signal });
+    if (!target) throw noSuchProcess();
+    if (target.refuse) {
+      live = live.filter((p) => p !== target);
+      throw Object.assign(new Error(`kill ${target.refuse}`), { code: target.refuse, syscall: 'kill' });
+    }
+    if (target.lingers > 0) target.asks = target.lingers;
+    else live = live.filter((p) => p !== target);
+    onSignal(pid, world);
+    return true;
+  };
+  const world = {
+    run,
+    calls,
+    signals,
+    add: (...more) => { live.push(...more.map((p) => ({ ...p }))); },
+    during: (fn) => withKill(kill, fn),
+  };
+  return world;
 };
 
 /**
@@ -523,21 +625,14 @@ const recordingRun = (status = 0) => {
  * @param {Function} fn
  * @returns {Promise<*>} whatever `fn` resolved to
  */
-const signalsRefused = async (fn) => {
-  const real = process.kill;
-  process.kill = () => { throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH', errno: -3, syscall: 'kill' }); };
-  try {
-    return await fn();
-  } finally {
-    process.kill = real;
-  }
-};
+const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
+  windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.
   spawnSync: run.spawnSync,
   spawn: run.spawn,

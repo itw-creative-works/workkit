@@ -16,10 +16,13 @@ const {
   IS_WINDOWS, BASH, NO_RC, shellPath, jsPath, gitPath,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
+const { linesOf } = require('../lib/run-lists');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
 const { homeOf, proofBase, runFolders, plantRun } = require('../lib/workflow-home');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'proof', 'red.sh');
+// The kit's own runner, the one that writes the summary file a proof run reads.
+const RUNNER = path.join(__dirname, '..', '..', 'packages', 'core', 'test', 'run.js');
 const NO_SNAPSHOT = 'red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)';
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
@@ -914,6 +917,108 @@ describe('proof red: the test summary', () => {
     expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
     cleanup(w.dir);
+  });
+});
+
+// A node --test command writes no summary line, so node's block still decides:
+// the three node --test cases above. A command with neither is judged by its
+// exit code: the two cases of `proof red: the verdict`.
+describe('proof red: the kit runner\'s summary file', () => {
+  const NO_TEST_RAN = 'red-proof: not runnable: no test ran';
+  const NO_TEST_FAILED = 'red-proof: not runnable: no test failed; the command stopped another way';
+
+  // Where the run's output holds the runner's totals line for `passed` and `failed`, -1 when it does not.
+  const totalsAt = (said, passed, failed) => linesOf(said).findIndex((line) => line.startsWith(`${passed} passed, ${failed} failed`));
+
+  // No verdict line on stdout, and `want` the last stderr line.
+  const assertStop = (code, out, err, want) => {
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe(want);
+  };
+
+  test('a runner case that fails without the source: red, exit 0', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', NODE_TEST_OF(2));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', RUNNER]);
+    expect(totalsAt(`${out}${err}`, 0, 1) >= 0, `the kit's runner ran the case and failed it: ${out}${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a runner stopped before any suite by a TEST_DEADLINE that is no number: exit 2, no test ran, never red', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', NODE_TEST_OF(2));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', RUNNER], w.repo, { ...w.env, TEST_DEADLINE: 'abc' });
+    expect(`${out}${err}`.includes('TEST_DEADLINE must be a positive number of seconds, got abc'), `the runner stopped at its start: ${out}${err}`).toBeTruthy();
+    assertStop(code, out, err, NO_TEST_RAN);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a runner whose every case passes, then a later step that exits 3: exit 2, no test failed, never red', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('tests/x.test.js', NODE_TEST_OF(1));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', 'node "$1" && exit 3', '_', RUNNER]);
+    expect(totalsAt(`${out}${err}`, 1, 0) >= 0, `the runner passed its one case: ${out}${err}`).toBeTruthy();
+    assertStop(code, out, err, NO_TEST_FAILED);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a runner whose every case is skipped: exit 2, no test ran, never green', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('tests/x.test.js', [
+      "const test = require('node:test');",
+      "require('../src/x');",
+      "test('x', { skip: 'not here' }, () => {});",
+      '',
+    ].join('\n'));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', RUNNER]);
+    expect(`${out}${err}`.includes('not here'), `the runner listed the skip: ${out}${err}`).toBeTruthy();
+    assertStop(code, out, err, NO_TEST_RAN);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  // The failing run comes first, so a read of the last line alone would find no failed test.
+  test('a command that starts the runner twice, the first run failing a case and the second passing: red, exit 0', () => {
+    const w = mkWorld();
+    w.write('tests/a.test.js', "const test = require('node:test');\ntest('a', () => {});\n");
+    w.git('add', '-A');
+    w.git('commit', '-q', '-m', 'a passing suite');
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', NODE_TEST_OF(2));
+    const both = 'status=0; node "$1" tests/x.test.js || status=1; node "$1" tests/a.test.js || status=1; exit "$status"';
+    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', both, '_', RUNNER]);
+    const said = `${out}${err}`;
+    const [failing, passing] = [totalsAt(said, 0, 1), totalsAt(said, 1, 0)];
+    expect(failing >= 0 && passing > failing, `both runs ran, the failing one first: ${said}`).toBeTruthy();
+    expect(code, `exit 0: ${said}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a summary file holding a line that is not the counts JSON: exit 2, the summary cannot be read, never red', () => {
+    for (const junk of ['not json', '{"passed":1}']) {
+      const w = mkWorld();
+      takeSnapshot(w);
+      const command = `require('fs').appendFileSync(process.env.WORKKIT_TEST_SUMMARY, ${JSON.stringify(`${junk}\n`)}); process.exit(1);`;
+      const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', command]);
+      assertStop(code, out, err, 'red-proof: not runnable: the test summary cannot be read');
+      assertNoWorktree(w);
+      cleanup(w.dir);
+    }
   });
 });
 

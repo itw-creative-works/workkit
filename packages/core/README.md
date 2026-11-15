@@ -58,6 +58,10 @@ npm i -D workkit-core
   - A `TEST_DEADLINE` that is no positive number, or above 2147483 (more than node's timer holds), fails the run before any suite starts.
   - Once the suite's own process exits, the worker waits one grace for its output to close, then reports; a child the suite left running is left alive.
   - A suite whose own process stays alive (an open server) waits for the deadline. So a case closes what it opens in `t.after` or an `after` hook.
+- `WORKKIT_TEST_SUMMARY=<file>`, which `workkit proof red` sets for its command, has the run add one line to that file on every exit it makes itself: `{"passed":<n>,"failed":<n>}`, the totals line's counts.
+  - A forced end (`SIGKILL`, any signal on Windows) writes none.
+  - A run that stops before any suite ran writes both as 0. Unset, no file is written.
+  - The runner takes the variable out of its environment at its start, so a run a suite starts writes no line.
 - Every suite runs on Node's own runner, through its `run()`; no file's text is read to pick a shape.
   - Its block heads a case with its `describe` path, `[outer › inner]`, and prints one line per case: `✓ name`, `✗ name`, or `⊘ name: reason` for a skip or a todo.
   - Under a failed case: its message and the first stack frame in the suite file. A failed hook prints its thrown message.

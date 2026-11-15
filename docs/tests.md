@@ -169,7 +169,7 @@
     - `endTree` runs `taskkill.exe` from `System32` under `SystemRoot`, never through PATH, with `/T /F /PID <pid>`. A nonzero exit is no failure.
     - One that cannot start throws `endTree: taskkill could not run (<message>)`, and an unset `SystemRoot` throws naming it.
     - It takes the platform, the program runner and `SystemRoot` as seams (`endTree(pid, signal, seams)`), so a case reaches that arm on any machine.
-    - The kit's own end, `endTreeOf` in `workflow/lib/tree.js`, runs the same program with the same arguments, held so by a parity case in `test/scripts/tree.test.js`. The package cannot require it, since it is published alone.
+    - It ends a test's own child. The kit's own end, `endTreeOf` in `workflow/lib/tree.js`, ends a whole supervised run instead: it reads the Windows and the Git Bash process tables and ends each process of the tree, so it reaches what `taskkill /T` misses. The package cannot require it, since it is published alone.
   - `alive(pid)` is false for anything but a positive integer, since 0 or a negative pid reaches a whole group.
   - A real signal the system refuses for the pid itself rejects `end()` (and throws from `endTree`), naming the pid and `EPERM`.
     - A refused group falls through to the pid, since a leader that exited unreaped refuses its group.
@@ -214,6 +214,10 @@
     - A second of the three while it is ending sends `SIGKILL` at once, before anything else runs, to every group the first began to end that still lives, its worker exited or not, then exits 128 plus that second signal's number.
       - So `workkit prove`'s ladder on the runner (`wk_end_run`) leaves no worker behind: its `SIGTERM` has the runner KILL every worker before its own `SIGKILL` comes.
     - A runner ended by `SIGKILL` cannot; a worker then ends its own tree only once its event loop notices the parent gone.
+- `WORKKIT_TEST_SUMMARY=<file>` in the environment, set by `workkit proof red` alone, has the run add one line to that file on every exit it makes itself; a forced end (`SIGKILL`, any signal on Windows) writes none.
+  - The line is `{"passed":<n>,"failed":<n>}`, the counts the totals line prints, the mod half's included; a run that stops before any suite ran writes both as 0.
+  - The runner takes the variable out of its environment at its start, so a run a suite starts writes no line. Unset, no file is written.
+  - How the proof reads it: `agents.md` § Crew sizing.
 - Every suite runs on Node's own runner, its `run()` in the suite's worker. No file's text is read to pick a shape.
   - Its pass, fail, skip and todo events are counted into the totals and the lists.
     - Node's own pass for the file is not a case, so a file that registered none is `empty <suite>`.
@@ -313,6 +317,7 @@
   - With the command itself gone, the log gets the failure as `detach: <message>` (a refused signal: `detach: could not signal <pids> (<message>)`), then the closing line, and the code is recorded as always.
 - A busy run is never ended, however long it takes.
 - On macOS every supervised run holds the machine awake (`caffeinate -i`), so idle sleep does not pause it.
-- On Windows no process is read, so there is no frozen and no look.
-  - An end there is one `taskkill /T /F` from `System32` under `SystemRoot`, never through PATH (`endTreeOf` in `workflow/lib/tree.js`), given 60 seconds. One that cannot start or runs past them fails the end as above.
+- On Windows no processor time is read, so there is no frozen and no look.
+  - An end there has no terminate signal, only the forced end. It reads the Windows process table (PowerShell from `System32` under `SystemRoot`, never through PATH) and Git Bash's own (`ps -el`), and ends each process of the run once, forced, a suite an `npm test` started inside it included (`endTreeOf` in `workflow/lib/tree.js`).
+    - A read that fails, or runs past its 60 seconds, fails the end as above. How it reads, what bounds it and its one known limit are in the mechanics below.
 - The mechanics: `workflow/README.md` § `lib/detach.js`.

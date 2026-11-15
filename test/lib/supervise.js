@@ -18,7 +18,7 @@ const { IS_WINDOWS, jsPath } = require('./platform');
 // A check of about a second, so two checks pass well inside the spawn deadline.
 const CHECK_MINUTES = 0.02;
 
-const NO_PROCESS_READ = 'the supervisor reads no processes on Windows, so it gives no frozen or look verdict there';
+const NO_PROCESS_READ = 'the supervisor reads no processor time on Windows, so it gives no frozen or look verdict there';
 
 /** The skip value of a case that needs a process read: the reason on Windows, else false. */
 const skipOnWindows = () => IS_WINDOWS && NO_PROCESS_READ;

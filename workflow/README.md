@@ -30,7 +30,7 @@
 | `lib/detach.sh` | A command that outlives the shell that started it, one per lock |
 | `lib/detach.js` | The detached runner's Node half: the supervisor, its checks and its ends, requiring `lib/run.js`, `lib/pulse.js` and `lib/tree.js`, and `lib/settings.js` only with `--root` |
 | `lib/pulse.js` | The supervisor's verdict on a run from one reading per check, CJS, requiring nothing: `judge`, and the counts, the work floor and the two codes |
-| `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`), CJS, requiring only `lib/run.js`; `node tree.js end <pid>` is the end as a command, which `wk_end_run` runs on Windows |
+| `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`, on Windows from both the Windows and the Git Bash process tables), CJS, requiring only `lib/run.js`; `node tree.js end <pid>` is the end as a command, which `wk_end_run` runs on Windows |
 | `lib/discussions.sh` | Sourced: the home repo's Discussions API (GraphQL through `gh`), enabling, resolving and caching the repo and category ids, posting a summary or a brief, reading prior posts back |
 | `lib/git.js` | The git reads the kit's Node scripts share, CJS, requiring only `lib/run.js` |
 | `lib/pause.js` | The one blocking wait the kit's synchronous Node commands share, CJS, requiring nothing beyond Node: `pause(seconds)` blocks the process through `Atomics.wait`, a fraction allowed, so a poll loop sleeps with no child process (`identity/rest-pr.js`'s `pr checks --watch`, `ship/cut.js`'s release wait) |
@@ -267,7 +267,7 @@
     - That path is forceful whatever signal it is handed.
   - `wk_end_run <pid>`, beside them: a detached run's supervisor ended with its process group (on Windows its process tree).
     - On Windows it runs `node lib/tree.js end <pid>` under `wk_node`, the one home of a tree's end (`endTreeOf`), and returns that command's code.
-    - There a `taskkill` that cannot start or runs past 60 seconds, or an unset `SystemRoot`, is the command's one stderr line and 1.
+    - There a table reader (PowerShell or Git Bash's `ps`) that cannot start, runs past 60 seconds, exits nonzero or prints a table it cannot read, an unset `SystemRoot`, a refused signal (`could not signal <pids> (<message>)`), or a process left after the forced end is the command's one stderr line and 1.
     - Where no node fits it prints `wk_end_run: no node at or above <floor> is installed, so the tree of <pid> was not ended` and returns 1.
     - Elsewhere it ends its process group, and returns 0: INT so the body logs its own code, then TERM and KILL.
     - Each comes 1.5 seconds after the last, while the group lives.
@@ -627,9 +627,18 @@
   - An `end` file beside `<done>` is read every second (`END_POLL_MS`) and ends the run's tree; `<done>` gets 143.
     - Without `--root` too, so every supervised run can be ended so.
   - An end that rejects with the command alive writes no `<done>`, removes the `end` file, and leaves the end poll and the checks running.
-  - On Windows `treeOf` is null, so nothing is checked; `endTreeOf` is one `taskkill /T /F`, run from `System32` under `SystemRoot`, never through PATH.
-    - A `taskkill` that cannot start, or runs past 60 seconds (`TASKKILL_MS`), rejects the end. A nonzero exit code is not read as a failure, because `taskkill` gives one for a tree that is already gone.
-    - A known limit there: the end of a supervised run does not reach a suite that an `npm test` started inside it. `workkit watch --end` exits 0 with its request line, and that suite runs on to its own end.
+  - On Windows `treeOf` is null, so nothing is checked; `endTreeOf` reads two process tables and ends each process of the tree it finds once, forced (`process.kill(<pid>, 'SIGKILL')`).
+    - A read of both tables takes seconds there, so between reads it asks each signalled pid through `process.kill(<pid>, 0)` every `POLL_MS`, until all are gone or `GRACE_MS` has passed since the last signal, then reads again. It resolves when a read finds no member: a tree that goes at its signal costs two reads.
+    - What bounds the whole end: two reads for a run that goes at its signal, `GRACE_MS` after the last signal for one that does not, each read given 60 seconds. `workkit watch --end` waits 30 seconds (`WK_END_WAIT`) for it.
+    - The Windows table is one PowerShell call, run from `System32\WindowsPowerShell\v1.0` under `SystemRoot`, never through PATH, its script through `-EncodedCommand`.
+      - The script is a WMI query (`[wmisearcher]`) on `Win32_Process` for `ProcessId`, `ParentProcessId` and `CreationDate` alone, its JSON array written by hand.
+      - It uses no cmdlet: a cmdlet makes PowerShell load a module, which is slow under a home folder PowerShell has not seen.
+    - Git Bash's table is `/usr/bin/ps -el` through `bash --noprofile --norc -c`. It keeps the parent link a Windows parent pid loses where one Git Bash program starts another.
+    - A process is in the tree when it is the root, a Windows child of a member, or a Git Bash child of a member, the two tables joined on WINPID.
+    - Windows hands a gone parent's pid out again, so a member is its pid and its creation time together: a Windows child counts only when created at or after its parent and before any later holder of that pid. A member found gone takes no new child after the read that first finds it gone.
+    - A root the Windows table lacks is a tree already gone, and nothing is signalled. A process still alive 10 seconds (`GRACE_MS`) after the last signal rejects the end, naming it.
+    - A reader that cannot start, runs past 60 seconds (`READ_MS`), exits nonzero or prints a table it cannot read rejects the end on one line naming the program. Of a nonzero exit's stderr, that line keeps the first line only.
+    - A known limit there: a process a Git Bash member starts while a read is under way can be missed. Its Windows parent is already gone, and its Git Bash parent is ended before the next read, so the end resolves with that process alive.
 - `lib/git.js`:
   - `repoRoot(cwd)` is the git top level of `cwd`, trimmed. It is null outside a repo, or for a folder that is not there.
   - `headSha(cwd)` is HEAD's full sha, or null outside a repo or before its first commit.
@@ -1313,8 +1322,10 @@
     - its own path;
     - its path through a workspace link, the nearest folder that exists resolved physically (`physical`, which `root_relative` reads through too);
     - a bare specifier with a subpath, against its package folder in the nearest `node_modules` at or above the requiring file (`module_path`).
+  - It names `summary` in its run folder, beside `out` and `err`, and exports its path in `WORKKIT_TEST_SUMMARY` (`wk_native_path`), where workkit-core's runner adds one `{"passed":<n>,"failed":<n>}` line per run.
+    - The lines are summed through `wk_jq` (`run_summary`). With one line or more they decide and node's block (`test_summary`) is not read; a line that is not that JSON is a stop.
   - The copy, the load check, the summary check and the limits are `docs/agents.md` § Crew sizing.
-    - In the summary check, a node test summary with no test, or a failing run with none failed, is a stop.
+    - In the summary check, a test summary with no test, or a failing run with none failed, is a stop.
 
 ## The one command
 

@@ -164,17 +164,36 @@ flowchart TB
       - a bare specifier with a subpath (`@scope/a/new`), against its package folder in the nearest `node_modules` at or above the requiring file.
     - A bare package name with no subpath, or a package not there, never resolves.
   - The same message about any other folder, a test merely printing it, is ignored.
-- When the output carries node's whole summary block, the block decides.
+- A test summary decides where the run leaves one: the kit runner's summary file, else node's summary block.
+  - A summary counting no test exits 2 with `red-proof: not runnable: no test ran`, never green.
+    - Node's block counts a skipped case as a test, and the runner's line counts only passed and failed, so a run whose every case is skipped reads `no test ran` on the kit's runner only.
+  - A failing run whose summary counts no failed test exits 2, never red.
+    - The line: `red-proof: not runnable: no test failed; the command stopped another way`.
+- The summary file is workkit-core's runner's (`tests.md` § The kit's runner).
+  - `workkit proof red` names it `summary`, in the run's own folder beside `out` and `err`.
+  - It hands the path to the command in `WORKKIT_TEST_SUMMARY`, in the platform's native form.
+  - The runner adds one line `{"passed":<n>,"failed":<n>}` per run, on every exit it makes itself.
+  - The lines are summed, so a command that starts the runner more than once (a repo with several packages) counts every run.
+  - With one line or more the file decides, and node's block is not read.
+  - A line that is not that JSON exits 2 with `red-proof: not runnable: the test summary cannot be read`.
+  - Its known limits:
+    - A command that stops before the runner starts writes no line, so it is judged as a command with no summary.
+    - A forced end of the runner (`SIGKILL`, an out-of-memory end, any end by signal on Windows) writes no line, so the exit code decides as before.
+    - A command that runs another runner beside the kit's is judged by the kit's lines alone.
+      - When only the other runner fails, the proof stops with `no test failed; the command stopped another way`, so a proof names one runner's files.
+    - A suite that fails whole (it crashes at its top level, times out, or holds no case) counts as one failed test, so that run reads red.
+      - A named source path that fails to load is the designed red; for any other whole-suite failure the verifier's read of the output decides.
+    - A suite that starts the kit's runner itself passes the variable on when the proof's command is not the kit's runner (`node <suite>` or `node --test`), unless the suite drops it from the child's environment.
+      - The kit's own suites drop it (`test/lib/alone-env.js`).
+- With no line, node's whole summary block decides when the output carries one.
   - The block is its eight lines `tests`, `suites`, `pass`, `fail`, `cancelled`, `skipped`, `todo`, `duration_ms`.
     - They come in that order at column zero under one prefix, `# ` under tap or `ℹ ` under spec.
   - `tests` is summed over every block it prints.
   - `fail` and `cancelled` together are the failed count, so a timed-out or hook-cancelled test is a red.
-  - A block counting no test exits 2 with `red-proof: not runnable: no test ran`, never green.
-  - A failing run whose blocks count no failed test exits 2, never red.
-    - The line: `red-proof: not runnable: no test failed; the command stopped another way`.
   - A fragment, an indented quote or a reprefixed line never counts.
-  - A command that prints no block is still judged by its exit code and the verifier's read of its output.
-- That check has one accepted limit: a runner or a test that reprints a child's whole block at column zero counts it.
+- A command that leaves neither summary is still judged by its exit code and the verifier's read of its output.
+  - So a repo whose tests run on another runner, one that neither writes the file nor prints node's block, gets no such check.
+- The block check has one accepted limit: a runner or a test that reprints a child's whole block at column zero counts it.
   - Node's spec reporter echoes a test's stdout raw, while tap escapes it.
   - The kit's runner and harness indent a child's text and a case's own prints.
   - So what still reaches column zero is three things:

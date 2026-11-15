@@ -414,9 +414,9 @@ describe('platform.sh: wk_end_run and wk_pid_alive', () => {
     return world;
   };
 
-  test('the Windows arm runs the tree command for the pid, and never kill, with no taskkill on PATH', () => {
-    // The system PATH holds no taskkill on either platform (only Git Bash's own
-    // directory on Windows), so only the tree command can end the tree.
+  test('the Windows arm runs the tree command for the pid, and never kill, on the system PATH', () => {
+    // The system PATH (only Git Bash's own directory on Windows) plus the stub's
+    // folder: the stubbed node's tree command is the one way to end the tree.
     const world = treeCommandWorld(['exit 0']);
     try {
       const res = inPlatform('wk_end_run 4242', { OSTYPE: 'msys', PATH: systemPathWith(world.dir) });
@@ -433,7 +433,7 @@ describe('platform.sh: wk_end_run and wk_pid_alive', () => {
   });
 
   test('the Windows arm returns 1 when the tree command exits 1, its line on stderr', () => {
-    const line = 'tree.js: taskkill could not run (spawn taskkill.exe ENOENT)';
+    const line = 'tree.js: powershell could not run (spawnSync powershell.exe ENOENT)';
     const world = treeCommandWorld([`echo "${line}" >&2`, 'exit 1']);
     try {
       const res = inPlatform('wk_end_run 4242', { OSTYPE: 'msys', PATH: systemPathWith(world.dir) });
@@ -454,7 +454,7 @@ describe('platform.sh: wk_end_run and wk_pid_alive', () => {
   });
 
   test('off Windows a detached run, its command and its supervisor, is gone and the call returns 0', {
-    skip: IS_WINDOWS && 'the process-group arm is the off-Windows one; Windows ends the tree through taskkill',
+    skip: IS_WINDOWS && 'the process-group arm is the off-Windows one; Windows ends the tree through tree.js reading both process tables',
   }, async () => {
     // The command rides out INT and TERM, so only the whole escalation ends it.
     const dir = mkTmp('wf-platform-');

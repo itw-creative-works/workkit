@@ -11,7 +11,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  BASH, NO_RC, IS_WINDOWS, jsPath, shellPath, cygpathStub, joinPath,
+  BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
@@ -196,9 +196,6 @@ const foregroundSuite = () => {
   const env = wiredNpmEnv(w);
   return { w, env, pidFile, supervised: workkitStart(['supervise', '--', 'npm', 'test'], { cwd: w.repo, env }) };
 };
-
-// The skip of a case that ends the supervised run and then needs the suite gone.
-const skipEndOfNpmSuite = () => (IS_WINDOWS && 'Windows: the end does not reach a suite an npm test started under the supervised run') || skipWithoutWrapper();
 
 describe('workkit watch: attaching to the live run', () => {
   test('a live supervised run: the log\'s last 20 lines, then the run followed to its own code', async () => {
@@ -474,7 +471,7 @@ describe('workkit watch --end', () => {
     }
   });
 
-  test('a suite run held in the foreground under workkit supervise: watch --end with no name ends the supervised run, never exit 2', { skip: skipEndOfNpmSuite() }, async () => {
+  test('a suite run held in the foreground under workkit supervise: watch --end with no name ends the supervised run, never exit 2', { skip: skipWithoutWrapper() }, async () => {
     const { w, env, pidFile, supervised } = foregroundSuite();
     try {
       const suite = await pidOf(pidFile);
@@ -507,7 +504,7 @@ describe('workkit watch --end', () => {
     }
   });
 
-  test('a suite run held in the foreground under workkit supervise: watch --end run ends it', { skip: skipEndOfNpmSuite() }, async () => {
+  test('a suite run held in the foreground under workkit supervise: watch --end run ends it', { skip: skipWithoutWrapper() }, async () => {
     const { w, env, pidFile, supervised } = foregroundSuite();
     try {
       const suite = await pidOf(pidFile);

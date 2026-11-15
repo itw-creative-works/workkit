@@ -2,7 +2,8 @@
  * workflow/lib/tree.js: the processes under a pid by parent, each with the
  * processor time it has used, read from /proc on Linux and `ps` elsewhere, and
  * the end of that tree. A child in its own session is in the tree; one whose
- * parent was already gone is not.
+ * parent was already gone is not. On Windows the end alone reads processes, from
+ * two tables: the Windows one, through PowerShell, and Git Bash's own, `ps -el`.
  * Usage: const { treeOf, endTreeOf } = require('./tree');   or   node tree.js end <pid>   (wk_end_run calls it)
  */
 
@@ -18,8 +19,40 @@ const USAGE = 'usage: tree.js end <pid>';
 const GRACE_MS = 10000;
 const POLL_MS = 200;
 
-// How long the Windows end waits on `taskkill` before it counts as not run.
-const TASKKILL_MS = 60000;
+// How long the Windows end waits on each table read before it counts as not run.
+const READ_MS = 60000;
+
+// The most output a process table read may print.
+const TABLE_BUFFER = 64 * 1024 * 1024;
+
+// Each Windows table reader's options: its output as text, bounded at READ_MS.
+const READ_OPTIONS = {
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'pipe'],
+  windowsHide: true,
+  timeout: READ_MS,
+  maxBuffer: TABLE_BUFFER,
+};
+
+// The Windows table as a JSON array, one row per process, its creation time in
+// UTC as a fixed-width string ('' when there is none). No cmdlet: one loads a
+// module, which is slow under a home folder PowerShell has not seen.
+const WINDOWS_TABLE_PS = [
+  "$ErrorActionPreference = 'Stop'",
+  "$rows = foreach ($p in ([wmisearcher]'SELECT ProcessId, ParentProcessId, CreationDate FROM Win32_Process').Get()) {",
+  "  $created = if ($p.CreationDate) { [Management.ManagementDateTimeConverter]::ToDateTime($p.CreationDate).ToUniversalTime().ToString('o') } else { '' }",
+  '  \'{"pid":\' + [int]$p.ProcessId + \',"ppid":\' + [int]$p.ParentProcessId + \',"created":"\' + $created + \'"}\'',
+  '}',
+  "'[' + ($rows -join ',') + ']'",
+].join('\n');
+
+const POWERSHELL_ARGS = [
+  '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+  '-EncodedCommand', Buffer.from(WINDOWS_TABLE_PS, 'utf16le').toString('base64'),
+];
+
+// One Git Bash `ps -el` row: an optional one-letter state, then PID, PPID, PGID and WINPID.
+const MSYS_ROW = /^\s*(?:[A-Za-z]\s+)?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s/;
 
 // One `ps` row: pid, ppid, state, processor time, command.
 const ROW = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s?(.*)$/;
@@ -90,33 +123,119 @@ const tableOf = () => {
   const ps = spawnSync('ps', ['-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'stat=', '-o', 'time=', '-o', 'command='], {
     encoding: 'utf8',
     windowsHide: true,
-    maxBuffer: 64 * 1024 * 1024,
+    maxBuffer: TABLE_BUFFER,
   });
   if (ps.error) throw ps.error;
   if (ps.status !== 0) throw new Error(`tree.js: ps exited ${ps.status}: ${ps.stderr.trim()}`);
   return ps.stdout.split('\n').map(rowOf).filter(Boolean);
 };
 
+/**
+ * A Windows table reader's stdout, or a one-line rejection naming `program` when
+ * it could not run or exited nonzero, keeping the first non-empty line of its stderr.
+ */
+const outputOf = (program, result) => {
+  if (result.error) throw new Error(`tree.js: ${program} could not run (${result.error.message})`);
+  if (result.status !== 0) {
+    const first = result.stderr.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
+    throw new Error(`tree.js: ${program} exited ${result.status}: ${first}`);
+  }
+  return result.stdout;
+};
+
+const unreadable = (program, what) => new Error(`tree.js: ${program} printed a table it cannot read: ${what}`);
+
+const isWindowsRow = (row) => Number.isInteger(row?.pid) && Number.isInteger(row.ppid) && typeof row.created === 'string';
+
+/** The Windows table, one `{ pid, ppid, created }` per process, from PowerShell at `powershell`. */
+const windowsTableOf = (run, powershell) => {
+  const stdout = outputOf('powershell', run(powershell, POWERSHELL_ARGS, READ_OPTIONS));
+  let rows;
+  try {
+    rows = JSON.parse(stdout);
+  } catch (err) {
+    throw unreadable('powershell', err.message);
+  }
+  if (!Array.isArray(rows)) throw unreadable('powershell', stdout.trim());
+  const bad = rows.find((row) => !isWindowsRow(row));
+  if (bad !== undefined) throw unreadable('powershell', JSON.stringify(bad));
+  return rows;
+};
+
+/** Git Bash's table, one `{ pid, ppid, winpid }` per process, from `ps -el` after its header line. */
+const msysTableOf = (run) => {
+  const stdout = outputOf('ps', run('bash', ['--noprofile', '--norc', '-c', '/usr/bin/ps -el'], READ_OPTIONS));
+  return stdout.split('\n').slice(1).filter((line) => line.trim() !== '').map((line) => {
+    const match = MSYS_ROW.exec(line);
+    if (!match) throw unreadable('ps', line.trimEnd());
+    return { pid: Number(match[1]), ppid: Number(match[2]), winpid: Number(match[4]) };
+  });
+};
+
+/** A Map from each parent pid in `rows` to the rows it parents. */
+const byParent = (rows) => {
+  const children = new Map();
+  for (const row of rows) {
+    if (!children.has(row.ppid)) children.set(row.ppid, []);
+    children.get(row.ppid).push(row);
+  }
+  return children;
+};
+
 /** The rows of `table` that are `roots` or under one of them by parent. */
 const under = (table, roots) => {
-  const children = new Map();
-  for (const row of table) children.set(row.ppid, [...(children.get(row.ppid) ?? []), row.pid]);
+  const children = byParent(table);
   const seen = new Set();
   const queue = [...roots];
   while (queue.length > 0) {
     const pid = queue.shift();
     if (seen.has(pid)) continue;
     seen.add(pid);
-    queue.push(...(children.get(pid) ?? []));
+    queue.push(...(children.get(pid) ?? []).map((row) => row.pid));
   }
   return table.filter((row) => seen.has(row.pid));
+};
+
+/** A Windows process's identity: its pid alone may name a later process. */
+const keyOf = (row) => `${row.pid}@${row.created}`;
+
+/**
+ * The Windows tree from the members in `tracked`, each new one added to it: a
+ * Windows child of a member, created at or after it and before any later holder
+ * of its pid, or a Git Bash child of a living member, joined on WINPID. A member
+ * the read finds gone is closed after it: a gone process starts nothing. Returns
+ * the members alive in `windows`; a process with no creation time is none.
+ */
+const membersOf = (windows, msys, tracked) => {
+  const live = new Map(windows.filter((row) => row.created !== '').map((row) => [row.pid, row]));
+  const windowsChildren = byParent([...live.values()]);
+  const msysOf = new Map(msys.map((row) => [row.winpid, row]));
+  const msysChildren = byParent(msys);
+  const queue = [...tracked.values()];
+  while (queue.length > 0) {
+    const member = queue.shift();
+    const holder = live.get(member.pid);
+    const alive = holder?.created === member.created;
+    const children = member.closed ? [] : (windowsChildren.get(member.pid) ?? [])
+      .filter((row) => row.created >= member.created && (alive || !holder || row.created < holder.created));
+    if (!alive) member.closed = true;
+    if (alive && msysOf.has(member.pid)) {
+      const own = msysOf.get(member.pid).pid;
+      children.push(...(msysChildren.get(own) ?? []).map((row) => live.get(row.winpid)).filter(Boolean));
+    }
+    for (const child of children) {
+      if (tracked.has(keyOf(child))) continue;
+      tracked.set(keyOf(child), child);
+      queue.push(child);
+    }
+  }
+  return [...tracked.values()].filter((member) => live.get(member.pid)?.created === member.created);
 };
 
 /**
  * The process `pid` and every process under it by parent, one
  * `{ pid, ppid, cpu, command }` each, `cpu` the processor seconds it has used
- * so far (on Linux with its waited-for children's). Null on Windows, where no
- * process is read.
+ * so far (on Linux with its waited-for children's). Null on Windows.
  * @param {number} pid
  * @returns {{pid: number, ppid: number, cpu: number, command: string}[]|null}
  */
@@ -145,24 +264,77 @@ const goneWithin = async (left, ms) => {
   return true;
 };
 
+/** The end's verdict once its signals are done: the refused pids first, then what outlived the forced end. */
+const settled = (refused, outlived) => {
+  if (refused.size > 0) throw new Error(`could not signal ${[...refused.keys()].join(', ')} (${[...refused.values()][0]})`);
+  if (outlived.length > 0) throw new Error(`tree.js: pid ${outlived.join(', ')} still running after a forced end`);
+};
+
+/** Whether `pid` still answers `process.kill(pid, 0)`: ESRCH is gone, any other throw alive. */
+const answers = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code !== 'ESRCH';
+  }
+};
+
+/**
+ * The Windows end: each read of both tables ends every member it finds once,
+ * forced, since Windows has no terminate signal a process can answer. Between
+ * reads it asks each member through `answers` every POLL_MS until all are gone
+ * or GRACE_MS has passed since the last signal, since a read takes seconds. A
+ * root the Windows table lacks is a tree already gone. It rejects naming what
+ * still lives GRACE_MS after the last signal went out.
+ */
+const endOnWindows = async (pid, run, systemRoot) => {
+  if (!systemRoot) throw new Error('tree.js: SystemRoot is not set, so powershell cannot be found');
+  const powershell = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const read = () => [windowsTableOf(run, powershell), msysTableOf(run)];
+  const [windows, msys] = read();
+  const root = windows.find((row) => row.pid === pid && row.created !== '');
+  if (!root) return;
+  const tracked = new Map([[keyOf(root), root]]);
+  const ended = new Set();
+  const refused = new Map();
+  let left = membersOf(windows, msys, tracked);
+  let lastSignal = Date.now();
+  let outlived = [];
+  for (;;) {
+    left = left.filter((member) => !refused.has(member.pid));
+    if (left.length === 0) break;
+    const fresh = left.filter((member) => !ended.has(keyOf(member)));
+    if (fresh.length > 0) {
+      for (const member of fresh) ended.add(keyOf(member));
+      signalEach(fresh.map((member) => member.pid), 'SIGKILL', refused);
+      lastSignal = Date.now();
+    } else if (Date.now() - lastSignal >= GRACE_MS) {
+      outlived = left.map((member) => member.pid);
+      break;
+    }
+    const signalled = left.map((member) => member.pid).filter((each) => !refused.has(each));
+    await goneWithin(() => signalled.filter(answers), lastSignal + GRACE_MS - Date.now());
+    left = membersOf(...read(), tracked);
+  }
+  settled(refused, outlived);
+};
+
 /**
  * Ends the tree `pid` heads: a terminate signal to each process, then a forced
  * end for what still lives GRACE_MS later. A process the tree held keeps
  * counting after its parent is gone, and so does any it starts meanwhile. A
  * refused signal is passed over, so every other process still gets its own,
- * and the end then rejects naming the refused pids. On Windows one `taskkill /T /F`
- * from System32 under SystemRoot, never through PATH; one that cannot start or runs past
- * TASKKILL_MS rejects; a nonzero exit, `taskkill`'s for a tree already gone, is no failure.
+ * and the end then rejects naming the refused pids. On Windows: endOnWindows,
+ * PowerShell run from System32 under SystemRoot, never through PATH.
  * @param {number} pid
  * @param {{ platform?: string, run?: function, systemRoot?: string }} [seams] - the platform, the spawnSync and the SystemRoot the end is for
- * @returns {Promise<void>} resolves when the tree is gone; rejects with `could not signal <pids> (<message>)`, `tree.js: SystemRoot is not set, so taskkill cannot be found`, `tree.js: taskkill could not run (<message>)`, or naming what outlived the forced end
+ * @returns {Promise<void>} resolves when the tree is gone; rejects with `could not signal <pids> (<message>)`, naming what outlived the forced end,
+ *   or on Windows `tree.js: SystemRoot is not set, so powershell cannot be found` or a reader's `tree.js: <powershell|ps> ...` line
  */
 const endTreeOf = async (pid, { platform = PLATFORM, run = spawnSync, systemRoot = process.env.SystemRoot } = {}) => {
   if (platform === 'win32') {
-    if (!systemRoot) throw new Error('tree.js: SystemRoot is not set, so taskkill cannot be found');
-    const taskkill = path.win32.join(systemRoot, 'System32', 'taskkill.exe');
-    const ended = run(taskkill, ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true, timeout: TASKKILL_MS });
-    if (ended.error) throw new Error(`tree.js: taskkill could not run (${ended.error.message})`);
+    await endOnWindows(pid, run, systemRoot);
     return;
   }
   const tracked = new Set([pid]);
@@ -178,8 +350,7 @@ const endTreeOf = async (pid, { platform = PLATFORM, run = spawnSync, systemRoot
     signalEach(left(), 'SIGKILL', refused);
     if (!(await goneWithin(left, GRACE_MS))) outlived = left();
   }
-  if (refused.size > 0) throw new Error(`could not signal ${[...refused.keys()].join(', ')} (${[...refused.values()][0]})`);
-  if (outlived.length > 0) throw new Error(`tree.js: pid ${outlived.join(', ')} still running after a forced end`);
+  settled(refused, outlived);
 };
 
 /**

@@ -18,6 +18,7 @@ const {
 } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
 const { TOTALS_LINE, linesOf, listsOf } = require('./lib/run-lists');
+const { treeOf } = require('./lib/red-snapshot');
 
 const KIT = path.join(__dirname, '..');
 const KIT_TEST = path.join(KIT, 'packages', 'core', 'test');
@@ -74,7 +75,7 @@ const runSuites = (suites, {
   prepare(root, home);
   const ceiling = git ? {} : { GIT_CEILING_DIRECTORIES: path.dirname(root) };
   const res = spawnSync('node', [RUNNER, ...args(root)], {
-    cwd: path.join(root, cwd), encoding: 'utf8', env: homeEnv(home, { ...process.env, ...ceiling, ...env }), timeout: SPAWN_DEADLINE,
+    cwd: path.join(root, cwd), encoding: 'utf8', env: homeEnv(home, aloneEnv({ ...ceiling, ...env })), timeout: SPAWN_DEADLINE,
   });
   const files = Object.fromEntries(read.map((name) => {
     const file = path.join(root, name);
@@ -116,7 +117,7 @@ const runModHalf = (PATH) => {
   fs.writeFileSync(path.join(root, 'hooks', 'register.js'), 'export function register(on) {}\n');
   fs.mkdirSync(path.join(dir, 'mods'));
   fs.writeFileSync(path.join(dir, 'mods', 'fixture.test.ts'), "import { test, expect } from 'claude-code/testing'\ntest('the mod case', async () => { expect(1).toBe(1) })\n");
-  const res = spawnSync('node', [RUNNER], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH }, timeout: SPAWN_DEADLINE });
+  const res = spawnSync('node', [RUNNER], { cwd: root, encoding: 'utf8', env: aloneEnv({ PATH }), timeout: SPAWN_DEADLINE });
   fs.rmSync(root, { recursive: true, force: true });
   return { code: res.status, output: (res.stdout || '') + (res.stderr || '') };
 };
@@ -494,7 +495,7 @@ for (let n = 1; n <= 10; n++) {
 `),
     });
     const pidFile = path.join(root, 'worker.pid');
-    const runner = start(process.execPath, [RUNNER], { cwd: root });
+    const runner = start(process.execPath, [RUNNER], { cwd: root, env: aloneEnv() });
     try {
       const wrote = await until(() => pidIn(pidFile) > 0);
       expect(wrote, 'the worker wrote its pid').toBeTruthy();
@@ -526,7 +527,7 @@ for (;;) {}
 `),
     });
     const pidOf = (name) => pidIn(path.join(root, name));
-    const runner = start(process.execPath, [RUNNER], { cwd: root });
+    const runner = start(process.execPath, [RUNNER], { cwd: root, env: aloneEnv() });
     try {
       expect(await until(() => pidOf('worker.pid') > 0), 'the worker wrote its pid').toBeTruthy();
       // A pid of 0 would signal this process group, so only written pids are probed and ended.
@@ -555,12 +556,15 @@ const path = require('path');
 for (const event of ['SIGINT', 'SIGTERM', 'disconnect']) process.removeAllListeners(event);
 process.on('SIGINT', () => fs.writeFileSync(path.join(__dirname, '..', 'interrupted'), ''));
 process.on('SIGTERM', () => {});
-fs.writeFileSync(path.join(__dirname, '..', 'worker.pid'), String(process.pid));
-test('holds its worker', () => new Promise(() => { setInterval(() => {}, 1000); }));
+test('holds its worker', () => new Promise(() => {
+  // Written from the running case, so the test's first signal lands past start-up.
+  fs.writeFileSync(path.join(__dirname, '..', 'worker.pid'), String(process.pid));
+  setInterval(() => {}, 1000);
+}));
 `),
     });
     const pidFile = path.join(root, 'worker.pid');
-    const runner = start(process.execPath, [RUNNER], { cwd: root });
+    const runner = start(process.execPath, [RUNNER], { cwd: root, env: aloneEnv() });
     try {
       expect(await until(() => pidIn(pidFile) > 0), 'the worker wrote its pid').toBeTruthy();
       // A pid of 0 would signal this process group, so only a written pid is probed and ended.
@@ -600,7 +604,7 @@ test('holds its worker', () => new Promise(() => { setInterval(() => {}, 1000); 
 `),
     });
     const pidOf = (name) => pidIn(path.join(root, name));
-    const runner = start(process.execPath, [RUNNER], { cwd: root });
+    const runner = start(process.execPath, [RUNNER], { cwd: root, env: aloneEnv() });
     try {
       expect(await until(() => pidOf('worker.pid') > 0 && pidOf('child.pid') > 0), 'the worker and its child wrote their pids').toBeTruthy();
       // A pid of 0 would signal this process group, so only written pids are probed and ended.
@@ -722,6 +726,83 @@ test('breaks', () => { throw new Error('steady breaks'); });
       expect(plain.includes(`TEST_DEADLINE must be a positive number of seconds, got ${value}`), `${value}: the start failure line, got: ${output}`).toBeTruthy();
       expect(!plain.includes('▶') && !plain.includes('alpha case'), `${value}: no suite ran, got: ${output}`).toBeTruthy();
     }
+  });
+});
+
+// WORKKIT_TEST_SUMMARY names a file the runner adds one counts line to as it ends.
+describe('run.js: the summary file', () => {
+  // The fixture run with WORKKIT_TEST_SUMMARY naming a scratch file outside its
+  // root, which holds `held` first when given; `lines` is the file's after.
+  const runSummed = (suites, { held, env = {}, ...opts } = {}) => {
+    const file = path.join(mkTmp('runner-summary-'), 'summary');
+    if (held !== undefined) fs.writeFileSync(file, held);
+    const res = runSuites(suites, { ...opts, env: { ...env, WORKKIT_TEST_SUMMARY: file } });
+    const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : null;
+    return { ...res, lines };
+  };
+
+  // The counts line a run's totals line reads as.
+  const countsOf = (output) => {
+    const totals = linesOf(output).find((line) => TOTALS_LINE.test(line));
+    expect(totals, `a totals line, got: ${output}`).toBeTruthy();
+    const [, passed, failed] = totals.match(/^(\d+) passed, (\d+) failed/);
+    return `{"passed":${passed},"failed":${failed}}`;
+  };
+
+  test('with the variable unset, a run writes no file in its folder, its home or its TMPDIR', () => {
+    const { root, home } = mkFixture({ 'alpha.test.js': SUITE("test('alpha case', () => {});") });
+    const tmp = mkTmp('runner-tmpdir-');
+    const env = homeEnv(home, aloneEnv({ TMPDIR: tmp, TMP: tmp, TEMP: tmp }));
+    const before = [root, home, tmp].map((dir) => JSON.stringify(treeOf(dir)));
+    const res = spawnSync('node', [RUNNER], { cwd: root, encoding: 'utf8', env, timeout: SPAWN_DEADLINE });
+    const output = (res.stdout || '') + (res.stderr || '');
+    expect(res.status, `exit 0, got: ${output}`).toBe(0);
+    expect([root, home, tmp].map((dir) => JSON.stringify(treeOf(dir))), 'no file added under the root, the home or TMPDIR').toEqual(before);
+  });
+
+  test('a file holding one line already: the run adds one line of its totals and keeps the first', () => {
+    const held = '{"passed":7,"failed":3}';
+    const { code, output, lines } = runSummed({
+      'mixed.test.js': SUITE(`
+test('one passes', () => {});
+test('two passes', () => {});
+test('three breaks', () => { throw new Error('three breaks'); });
+`),
+    }, { held: `${held}\n` });
+    expect(code, `exit 1, got: ${output}`).toBe(1);
+    expect(lines, `two lines, got: ${output}`).toEqual([held, countsOf(output)]);
+  });
+
+  // The inner runner starts in a folder with its own package.json, which the outer run never reads.
+  test('a suite that starts a runner of its own: the file holds one line, the outer run\'s', () => {
+    const { code, output, lines } = runSummed({
+      'outer.test.js': SUITE(`
+const { spawnSync } = require('child_process');
+const path = require('path');
+test('starts a runner of its own', () => {
+  const res = spawnSync(process.execPath, [${JSON.stringify(RUNNER)}], { cwd: path.join(__dirname, '..', 'inner'), encoding: 'utf8' });
+  const said = (res.stdout || '') + (res.stderr || '');
+  expect(res.status, 'the inner run passed: ' + said).toBe(0);
+  expect(said.includes('inner case 3'), 'the inner run ran its cases: ' + said).toBe(true);
+});
+`),
+    }, {
+      files: {
+        'inner/package.json': '{ "name": "inner", "private": true }\n',
+        'inner/x.test.js': SUITE("for (const n of [1, 2, 3]) test(`inner case ${n}`, () => {});", HARNESS),
+      },
+    });
+    expect(code, `exit 0, got: ${output}`).toBe(0);
+    expect(lines, `one line, the outer run's, got: ${output}`).toEqual([countsOf(output)]);
+  });
+
+  test('a run stopped before any suite ran: the file holds one line with both counts 0', () => {
+    const { code, output, lines } = runSummed({
+      'alpha.test.js': SUITE("test('alpha case', () => {});"),
+    }, { env: { TEST_DEADLINE: 'abc' } });
+    expect(code !== 0 && code !== null, `a non-zero exit, got ${code}: ${output}`).toBeTruthy();
+    expect(!output.includes('alpha case'), `no suite ran, got: ${output}`).toBeTruthy();
+    expect(lines, `one zero line, got: ${output}`).toEqual(['{"passed":0,"failed":0}']);
   });
 });
 

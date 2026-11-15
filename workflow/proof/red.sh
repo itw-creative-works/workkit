@@ -5,8 +5,8 @@
 # workflow:snapshot takes at the claim, every path changed since laid on live,
 # save the named paths, kept as the snapshot holds them; --live swaps the named
 # paths in the live tree, restored on exit. Red exits 0, green 1, any other stop
-# 2 with a `red-proof:` line on stderr. The verdict is stdout's last line. A node
-# test summary with no test, or a failing run with none failed, is a stop.
+# 2 with a `red-proof:` line on stderr. The verdict is stdout's last line. A test
+# summary with no test, or a failing run with none failed, is a stop.
 
 set -euo pipefail
 
@@ -310,6 +310,9 @@ if [ "${cmd[0]}" = node ]; then
   done < <(node_test_files "${cmd[@]:1}")
 fi
 
+# The kit's runner adds one line of counts per run to this file, beside out and err.
+WORKKIT_TEST_SUMMARY=$(wk_native_path "$tmp/summary") || fail "could not name the test summary file"
+export WORKKIT_TEST_SUMMARY
 # Each stream prints live and is kept, so a failure can be read for a load error.
 rc=0
 { { "${cmd[@]}" 2>&1 1>&3 3>&- | tee "$tmp/err" >&2 3>&-; } 3>&1 | tee "$tmp/out"; } || rc=$?
@@ -338,7 +341,23 @@ test_summary() {
     END { if (seen) print tests + 0, failed + 0 }
   ' "$tmp/out" "$tmp/err"
 }
-summary=$(test_summary)
+# run_summary: `<tests> <failed>` summed over the kit runner's lines, a test
+# being a pass or a failure; non-zero when a line is not `{"passed":n,"failed":n}`.
+run_summary() {
+  wk_jq -Rrn '
+    reduce (inputs | fromjson) as $l ([0, 0];
+      if ($l | type) == "object" and ($l | keys) == ["failed", "passed"]
+        and ($l.passed | type) == "number" and ($l.failed | type) == "number"
+      then [.[0] + $l.passed + $l.failed, .[1] + $l.failed] else error("not a summary line") end)
+    | "\(.[0]) \(.[1])"
+  ' "$tmp/summary" 2>/dev/null
+}
+# A line from the runner decides, and node's block is not read.
+if [ -s "$tmp/summary" ]; then
+  summary=$(run_summary) || fail "not runnable: the test summary cannot be read"
+else
+  summary=$(test_summary)
+fi
 [ "${summary%% *}" != 0 ] || fail "not runnable: no test ran"
 case "$rc" in
   0)
