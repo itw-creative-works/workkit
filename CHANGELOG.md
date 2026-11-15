@@ -7,17 +7,19 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-11-15
+
 ### Added
 
-- [#542](../../issues/542) - workkit-core's runner takes a folder wherever it takes a suite path: `npm test -- test/hooks` runs every suite under it, and a folder on the serial list runs its suites one at a time after the wave. The serial tail keeps the list's order; `workkit convert` takes folders too.
-- [#543](../../issues/543) - `workkit test --filter=<text>` runs only the cases whose full name (the `describe` path and the case's name) holds the text as typed. A suite with no case left prints nothing, no match anywhere fails as `No case matches <text>`, and a filtered run writes no proof record.
-- [#545](../../issues/545) - A repo's `test/lib/skip.js` can list suites a bare run leaves out: `SKIP` always, `CI_SKIP` when `CI` is set. The run prints how many it left out, a path naming the entry or a path inside it still runs it, and an entry naming no suite fails every run.
-- [#544](../../issues/544) - A bare run from a monorepo root now also runs each workspace member's own `npm test`, one at a time, ending with a row per member. A member whose test script does not run workkit's runner fails by name. The runner and the publish plan read `workspaces` through one file.
-- [#540](../../issues/540) - The runner writes plain lines, and a terminal shows them colored by one painter (green check, red x, gray skip). `logs.dir` in a repo's settings names its log folder. `setup`, `update`, `doctor`, `publish`, each ship step and `proof red` now log each run as plain text.
+- [#542](../../issues/542) [`7abfb55`](../../commit/7abfb55) Thanks [@ianwieds]! - workkit-core's runner takes a folder wherever it takes a suite path: `npm test -- test/hooks` runs every suite under it, and a folder on the serial list runs its suites one at a time after the wave. The serial tail keeps the list's order; `workkit convert` takes folders too.
+- [#543](../../issues/543) [`7abfb55`](../../commit/7abfb55) Thanks [@ianwieds]! - `workkit test --filter=<text>` runs only the cases whose full name (the `describe` path and the case's name) holds the text as typed. A suite with no case left prints nothing, no match anywhere fails as `No case matches <text>`, and a filtered run writes no proof record.
+- [#545](../../issues/545) [`7abfb55`](../../commit/7abfb55) Thanks [@ianwieds]! - A repo's `test/lib/skip.js` can list suites a bare run leaves out: `SKIP` always, `CI_SKIP` when `CI` is set. The run prints how many it left out, a path naming the entry or a path inside it still runs it, and an entry naming no suite fails every run.
+- [#544](../../issues/544) [`7abfb55`](../../commit/7abfb55) Thanks [@ianwieds]! - A bare run from a monorepo root now also runs each workspace member's own `npm test`, one at a time, ending with a row per member. A member whose test script does not run workkit's runner fails by name. The runner and the publish plan read `workspaces` through one file.
+- [#540](../../issues/540) [`7abfb55`](../../commit/7abfb55) Thanks [@ianwieds]! - The runner writes plain lines, and a terminal shows them colored by one painter (green check, red x, gray skip). `logs.dir` in a repo's settings names its log folder. `setup`, `update`, `doctor`, `publish`, each ship step and `proof red` now log each run as plain text.
 
 ### Fixed
 
-- [#535](../../issues/535) - `workkit proof red` no longer calls a run on workkit-core's runner red when no test ran or none failed: the runner writes its counts to the file `WORKKIT_TEST_SUMMARY` names. Another runner gets the check only by printing node's summary block; otherwise the exit code decides.
+- [#535](../../issues/535) [`7abfb55`](../../commit/7abfb55) Thanks [@ianwieds]! - `workkit proof red` no longer calls a run on workkit-core's runner red when no test ran or none failed: the runner writes its counts to the file `WORKKIT_TEST_SUMMARY` names. Another runner gets the check only by printing node's summary block; otherwise the exit code decides.
 - (no issue) - `safety:release-taken` now reads a `workspaces` pattern as the publish plan does. A pattern like `pkgs/*/x/*` is named as not expanded, and no package under it is checked, where the hook used to read it as the children of `pkgs/*/x`.
 
 ## [0.95.2] - 2026-11-15
