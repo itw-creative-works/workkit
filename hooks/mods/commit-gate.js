@@ -78,10 +78,33 @@ async function unwired(facts) {
   return !want || !have || have !== want;
 }
 
-// Where a root run logs: .workkit/suite.log where git ignores it, else its marker path.
+// The repo's log folder, `logs.dir` as wk_setting prints it walked to a path
+// from the root ('' the root itself, empty read as `.workkit`), as `{ dir }`,
+// or `{ error }`, the line naming the key: wk_log_dir's twin (lib/suite.sh).
+function logDirOf(settings) {
+  const raw = settings.logs?.dir;
+  const value = (typeof raw === 'string' ? raw : raw == null ? '' : JSON.stringify(raw)) || '.workkit';
+  const error = { error: `workkit: logs.dir must be a folder inside the repo, written from its root (got ${value})` };
+  if (/^([/\\]|[A-Za-z]:)/.test(value)) return error;
+  const kept = [];
+  for (const part of value.replace(/\\/g, '/').split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part !== '..') kept.push(part);
+    else if (kept.length === 0) return error;
+    else kept.pop();
+  }
+  return { dir: kept.join('/') };
+}
+
+// Where a root run logs: suite.log in the log folder where git ignores it,
+// else its marker path (wk_suite_log_path); a bad logs.dir is its line.
 async function suiteLogOf(facts, root) {
-  const ignored = await facts.run(['git', 'check-ignore', '-q', '.workkit/suite.log'], { cwd: root });
-  return ignored.exitCode === 0 ? `${root}/.workkit/suite.log` : markerPath('claude-suite.log', root, facts.home);
+  const settings = await loadSettings(facts.read, { kit: facts.kitRoot, root, user: facts.userSettings });
+  const folder = logDirOf(settings);
+  if ('error' in folder) return folder;
+  const name = `${folder.dir ? `${folder.dir}/` : ''}suite.log`;
+  const ignored = await facts.run(['git', 'check-ignore', '-q', name], { cwd: root });
+  return { path: ignored.exitCode === 0 ? `${root}/${name}` : await markerPath('claude-suite.log', root, facts.home) };
 }
 
 // The git list a read answers, one path per line; a failed read is the hold
@@ -163,7 +186,8 @@ async function suiteCheck(facts, root, notices) {
   }
   if (suiteProved(record, await facts.diskTreeId)) return deny(TEXT.disk);
   if (await unwired(facts)) return deny(TEXT.unwired);
-  return deny(noGreenText(await suiteLogOf(facts, root)));
+  const log = await suiteLogOf(facts, root);
+  return deny('error' in log ? log.error : noGreenText(log.path));
 }
 
 // Check 8: no closing trailer names a second issue on its line.

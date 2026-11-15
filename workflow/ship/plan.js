@@ -5,26 +5,19 @@
 // Step 5). Members are read from their own package.json files, never through
 // `npm query .workspace`, which answers nothing before `npm install`. The
 // library release.js, publish.js and lib/workspaces.js require, with how the
-// first two name npm's end; publish.js does the publishing.
+// first two name npm's end; publish.js does the publishing. The release-taken
+// hook imports skipReason.
 // Run from the repo root: workkit ship plan [--dir <root>]
 
 const fs = require('fs');
 const path = require('path');
 const { isSemver } = require('./semver');
 const { endOf } = require('../lib/say');
+const { expandWorkspaces, PlanError } = require('../lib/expand-workspaces');
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
-const GLOB_RE = /[*?[]/;
 /** How an npm call ended, for a line that names it (`endOf` in lib/say.js). */
 const npmEnd = (res) => `npm ${endOf(res)}`;
-
-/** A refusal: the plan cannot be made, and the message says why. */
-class PlanError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'PlanError';
-  }
-}
 
 /**
  * Read a JSON object from a file, refusing one that does not parse, or parses
@@ -44,56 +37,11 @@ const readJson = (file) => {
 };
 
 /**
- * The patterns a root package.json's `workspaces` field declares.
- * @param {*} workspaces the field's value
- * @returns {string[]} the array, or `{ packages }`'s array; [] for any other shape
- */
-const workspacePatterns = (workspaces) => {
-  if (Array.isArray(workspaces)) return workspaces;
-  if (workspaces && Array.isArray(workspaces.packages)) return workspaces.packages;
-  return [];
-};
-
-/**
  * The names a parsed package.json depends on, across every DEP_FIELDS field.
  * @param {object} pkg the parsed package.json
  * @returns {string[]} the dependency names, a name in two fields listed twice
  */
 const depNamesOf = (pkg) => DEP_FIELDS.flatMap((field) => Object.keys(pkg[field] || {}));
-
-/**
- * The workspace member directories a root declares, expanded for a literal
- * directory and `dir/*`, refusing every other glob shape and a literal member
- * with no package.json. A `dir/*` that matches nothing is a note, never a
- * silence: the same line the `safety:release-taken` hook prints.
- */
-const expandWorkspaces = (root, workspaces, notes) => {
-  const dirs = new Set();
-  for (const pattern of workspacePatterns(workspaces)) {
-    if (pattern.endsWith('/*') && !GLOB_RE.test(pattern.slice(0, -2))) {
-      const parent = path.join(root, pattern.slice(0, -2));
-      const entries = fs.existsSync(parent) ? fs.readdirSync(parent, { withFileTypes: true }) : [];
-      let matched = 0;
-      for (const entry of entries) {
-        const dir = path.join(parent, entry.name);
-        if (entry.isDirectory() && fs.existsSync(path.join(dir, 'package.json'))) {
-          dirs.add(dir);
-          matched += 1;
-        }
-      }
-      if (matched === 0) notes.push(`publish-plan: the workspace pattern ${pattern} matched no package, so nothing under it was planned.`);
-    } else if (GLOB_RE.test(pattern)) {
-      throw new PlanError(`publish-plan: the workspace pattern ${pattern} is not one this plan expands (a directory, or dir/*), so no plan was made.`);
-    } else {
-      const dir = path.join(root, pattern);
-      if (!fs.existsSync(path.join(dir, 'package.json'))) {
-        throw new PlanError(`publish-plan: the workspace member ${pattern} holds no package.json, so no plan was made.`);
-      }
-      dirs.add(dir);
-    }
-  }
-  return [...dirs];
-};
 
 /** Why a package is not a candidate, or null when it is one. */
 const skipReason = (pkg) => {
@@ -241,5 +189,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  plan, expandWorkspaces, depNamesOf, readJson, PlanError, report, npmEnd,
+  plan, expandWorkspaces, depNamesOf, readJson, PlanError, report, npmEnd, skipReason,
 };

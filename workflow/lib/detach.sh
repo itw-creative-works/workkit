@@ -3,7 +3,8 @@
 # command that outlives the shell that started it, one per lock, its output
 # tailed to this shell while it runs. Sourced, functions only, by
 # script-shell.sh, prove.sh, supervise.sh, watch.sh and ship/watch.sh; it reads
-# wk_pid_alive, wk_end_run, wk_node and wk_native_path from platform.sh.
+# wk_pid_alive, wk_end_run, wk_node and wk_native_path from platform.sh, and
+# wk_color_on from voice.sh, which it sources when the caller has not.
 
 # wk_body_traps <prefix> [<before-exit command>]: a detached body's traps. Its
 # last line is always `<prefix>: exit <code>`, after the optional command; bash
@@ -247,11 +248,58 @@ wk_run_detached() {
   return "$rc"
 }
 
-# wk_attach_run <log> <lock> <pid> [<offset>]: tail <log> from <offset> to <pid>'s
-# done file (or, gone with it, the record <lock>.done), drop <lock>, return the
-# code, also in WK_RAN_CODE (empty: the runner failed). A look prints and
-# consumes the look file, keeps the lock, sets WK_RAN_LOOK=1, returns 125.
+# wk_view_paints: 0 when the view of a run on this stdout is painted: the kit's
+# color gate says yes, and the painter's filter and a node at the kit's floor
+# are here, set in WK_VIEW_PAINT and WK_VIEW_NODE for wk_view_paint.
+wk_view_paints() {
+  declare -F wk_color_on >/dev/null || . "${BASH_SOURCE[0]%/*}/voice.sh"
+  wk_color_on || return 1
+  WK_VIEW_PAINT="$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd -P)/packages/core/test/lib/paint.js"
+  [ -f "$WK_VIEW_PAINT" ] && WK_VIEW_NODE=$(wk_node)
+}
+
+# wk_view_paint: standard input to standard output through the painter's
+# filter, each whole line painted. The gate judged the caller's stdout already,
+# and this one may be a pipe, so the color is forced.
+wk_view_paint() {
+  FORCE_COLOR=1 "$WK_VIEW_NODE" "$WK_VIEW_PAINT"
+}
+
+# wk_attach_run <log> <lock> <pid> [<offset>]: tail <log> from <offset>, painted
+# when wk_view_paints says so, to <pid>'s done file (or the record <lock>.done),
+# drop <lock>, return the code, also in WK_RAN_CODE (empty: the runner failed). A
+# look prints and consumes the look file, keeps the lock, sets WK_RAN_LOOK=1, 125.
 wk_attach_run() {
+  local state rc gone saved_int
+  if ! wk_view_paints; then
+    _wk_attach_tail "$@"
+    return
+  fi
+  # A Ctrl-C is only noted while the tail runs, then handed to the caller's own
+  # INT disposition: its trap, or bash's own end by the signal.
+  saved_int=$(trap -p INT)
+  WK_VIEW_INT=""
+  trap 'WK_VIEW_INT=1' INT
+  # The tail runs in the pipe's subshell, its answer back on fd 4 (`<code>
+  # <WK_RAN_CODE> <WK_RAN_LOOK> <gone>`, `-` for empty), the painted lines on fd 3.
+  # Its own INT trap ends it every time; bash's default may let it run on.
+  { state=$( { { trap 'exit 130' INT; set +o pipefail; WK_TAIL_PIPED=1; WK_TAIL_GONE=""
+    _wk_attach_tail "$@"
+    printf '%s %s %s %s\n' "$?" "${WK_RAN_CODE:--}" "${WK_RAN_LOOK:--}" "${WK_TAIL_GONE:--}" >&4
+  } | wk_view_paint >&3; } 4>&1 ); } 3>&1
+  eval "${saved_int:-trap - INT}"
+  if [ -n "$WK_VIEW_INT" ]; then kill -INT $$; fi
+  read -r rc WK_RAN_CODE WK_RAN_LOOK gone <<<"$state"
+  [ "$WK_RAN_CODE" != - ] || WK_RAN_CODE=""
+  [ "$WK_RAN_LOOK" != - ] || WK_RAN_LOOK=""
+  if [ "$gone" = 1 ]; then
+    printf 'detach: the painted view of the run ended, so this call stops; the run goes on, and workkit watch follows it\n' >&2
+  fi
+  return "${rc:-1}"
+}
+
+# _wk_attach_tail: wk_attach_run's tail itself, the log's bytes on stdout.
+_wk_attach_tail() {
   # The look line names `workkit watch` with the caller's WK_WATCH_NAME, when set.
   local log="$1" lock="$2" pid="$3" off="${4:-0}" code look size polls=0
   # shellcheck disable=SC2034  # both read by the caller
@@ -264,7 +312,13 @@ wk_attach_run() {
     [ -n "$code" ] || [ ! -f "$lock/look" ] || look=1
     size=$(( $(wc -c < "$log") ))
     if [ "$size" -gt "$off" ]; then
-      tail -c "+$(( off + 1 ))" "$log" | head -c "$(( size - off ))"
+      if [ -z "${WK_TAIL_PIPED:-}" ]; then
+        tail -c "+$(( off + 1 ))" "$log" | head -c "$(( size - off ))"
+      # Painted, a filter that is gone ends the tail quietly, the lock kept for a watch.
+      elif ! tail -c "+$(( off + 1 ))" "$log" | head -c "$(( size - off ))" 2>/dev/null; then
+        WK_TAIL_GONE=1
+        return 1
+      fi
       off="$size"
     fi
     [ -n "$code" ] && break

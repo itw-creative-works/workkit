@@ -62,6 +62,7 @@ WK_HOME_RUNNER_FILES=(
   'workflow/lib/flows.sh:brief/workflow/lib/flows.sh'
   'workflow/lib/state.sh:brief/workflow/lib/state.sh'
   'workflow/lib/discussions.sh:brief/workflow/lib/discussions.sh'
+  'workflow/lib/command-log.sh:brief/workflow/lib/command-log.sh'
   'workflow/home.sh:brief/workflow/home.sh'
   'workflow/home/options.sh:brief/workflow/home/options.sh'
   'workflow/home/repo.sh:brief/workflow/home/repo.sh'

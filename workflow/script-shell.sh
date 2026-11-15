@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # workflow/script-shell.sh: npm's script shell, once `npm config set
-# script-shell` names it. The proved-tree records (lib/suite.sh) are the
-# engine-agnostic contract and this file is npm's adapter: a green bare root
-# `npm test`, run detached, writes the suite record; every other green `test`
-# event (narrowed, or a nested package's bare run), detached in a slot of its
-# own, writes the package record; under a supervisor (WORKKIT_SUPERVISED=1) a
-# `test` event runs in the foreground. An install-time script is followed by the
-# hooks' re-point; any other is plain sh. A bare root run asks lib/hold.sh first.
+# script-shell` names it. The records (lib/suite.sh) are the engine-agnostic
+# contract and this file is npm's adapter: a green bare root `npm test`, run
+# detached, writes the suite record; every other green `test` event (narrowed,
+# or a nested package's bare run), in a slot of its own, the package record;
+# one under `--filter` none. Under WORKKIT_SUPERVISED=1 a `test` event runs in
+# the foreground. An install-time script is followed by the hooks' re-point;
+# any other is plain sh. A bare root run asks lib/hold.sh first.
 
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
@@ -30,8 +30,21 @@ recorded_run() {
   sh "$@" || rc=$?
   ms=$(wk_elapsed_ms "$started")
   [ "$rc" -eq 0 ] || exit "$rc"
-  # CI set records nothing whatever the hashes say, so its line comes first:
-  # a run again with CI still set would record nothing either.
+  # A run under the runner's --filter left cases out, so it proves no tree. Only
+  # what npm appended to the package's own script is read (single-quoted when it
+  # holds a space), so a script's own `--filter=` for another tool is no flag.
+  local added=""
+  case "$2" in
+    "${npm_lifecycle_script:-}"?*) [ -z "${npm_lifecycle_script:-}" ] || added=${2#"$npm_lifecycle_script"} ;;
+  esac
+  case "$added" in
+    *[[:space:]]--filter=*|*[[:space:]]\'--filter=*|*[[:space:]]\"--filter=*)
+      printf 'script-shell: the run passed, but --filter left cases out, so no record was written\n' >&2
+      exit 0
+      ;;
+  esac
+  # CI set records nothing whatever the hashes say, so its line comes before
+  # theirs: a run again with CI still set would record nothing either.
   if wk_ci_set; then
     printf 'script-shell: the %s passed, but %s\n' "$what" "$ci" >&2
     exit 0

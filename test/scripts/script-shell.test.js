@@ -21,6 +21,8 @@ const { gateOn: gateIn } = require('../lib/real-gate');
 const { runLib } = require('../lib/hook-lib');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 const { linesOf } = require('../lib/run-lists');
+const { coreBin } = require('../lib/workkit-bin');
+const { SUITE } = require('../lib/runner-world');
 
 const ROOT = path.join(__dirname, '..', '..');
 const KIT_HOOKS = path.join(ROOT, 'workflow', 'githooks');
@@ -71,6 +73,8 @@ const CI_SUITE_LINE = 'script-shell: the suite passed, but CI is set, so no reco
 const CI_RUN_LINE = 'script-shell: the run passed, but CI is set, so no record was written; run it again without CI';
 // A detached run relays every body line on stdout, so a line is read from both streams.
 const linesOfBoth = (res) => linesOf(`${res.out}\n${res.err}`);
+// The line a green run under --filter prints in place of its record.
+const FILTER_LINE = 'script-shell: the run passed, but --filter left cases out, so no record was written';
 const saysCi = (res) => `${res.out}${res.err}`.includes('CI is set');
 
 // The commit gate, through the hooks module, asked about what <repo> has
@@ -349,6 +353,60 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       expect(res.code, `the script's code comes back, got: ${res.code} ${res.err}`).toBe(3);
       expect(saysCi(res), `a red run says nothing of CI, got: ${res.out} ${res.err}`).toBe(false);
       expect(recorded(world, repo), 'a red run proves nothing').toBe(undefined);
+      cleanup(world.root); cleanup(repo);
+    });
+  });
+
+  describe('script-shell: a run under --filter writes no record', () => {
+    test('a green npm test -- --filter=alpha: exit 0, no record of either kind, one line says why', () => {
+      const world = mkWorld();
+      const repo = mkRepo({ scripts: { test: 'echo ran' } });
+      const res = npm(world, repo, ['test', '--', '--filter=alpha']);
+      expect(res.code, `exit 0, got: ${res.code} ${res.err}`).toBe(0);
+      expect(packaged(world, repo), 'a filtered run writes no package line').toBe(undefined);
+      expect(recorded(world, repo), 'and no suite record').toBe(undefined);
+      expect(linesOfBoth(res).includes(FILTER_LINE), `the filter line, got: ${res.out} ${res.err}`).toBeTruthy();
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('a package whose own test script holds another tool\'s --filter=x ahead of workkit test: a plain green npm test writes its package line', () => {
+      const world = mkWorld();
+      const repo = mkRepo({ scripts: { test: 'exit 0' } }, {
+        'packages/foo/package.json': { name: 'foo', scripts: { test: 'echo lint --filter=x && workkit test' } },
+        'packages/foo/test/foo.test.js': SUITE("test('the foo case', () => {});"),
+      });
+      const tree = treeHash(repo);
+      const res = npm(world, path.join(repo, 'packages', 'foo'), ['test'], world.wrapper, { PATH: joinPath(coreBin(), NODE_DIR, SYSTEM_PATH) });
+      expect(res.code, `exit 0, got: ${res.out} ${res.err}`).toBe(0);
+      expect(res.out.includes('the foo case'), `the runner ran the package's suite, got: ${res.out}`).toBeTruthy();
+      expect(packaged(world, repo), 'the package line on the tree').toBe(JSON.stringify([`${tree} packages/foo`]));
+      expect(linesOfBoth(res).includes(FILTER_LINE), `no filter line, got: ${res.out} ${res.err}`).toBe(false);
+      cleanup(world.root); cleanup(repo);
+    });
+  });
+
+  describe('script-shell: a bare root run over workspace members', () => {
+    test('green: the suite record holds the tree, and each member\'s package line is on its own id', () => {
+      const world = mkWorld();
+      const member = (name) => ({
+        [`packages/${name}/package.json`]: { name, private: true, scripts: { test: 'workkit test' } },
+        [`packages/${name}/test/${name}.test.js`]: SUITE(`test('the ${name} case', () => {});`),
+      });
+      const repo = mkRepo({ private: true, workspaces: ['packages/*'], scripts: { test: 'workkit test' } }, {
+        'test/root.test.js': SUITE("test('the root case', () => {});"),
+        ...member('a'),
+        ...member('b'),
+      });
+      const tree = treeHash(repo);
+      // Each member's id: the tree less the member it neither is nor depends on.
+      const aId = treeHash(repo, ['packages/b']);
+      const bId = treeHash(repo, ['packages/a']);
+      const res = npm(world, repo, ['test'], world.wrapper, { PATH: joinPath(coreBin(), NODE_DIR, SYSTEM_PATH) });
+      expect(res.code, `exit 0, got: ${res.out} ${res.err}`).toBe(0);
+      expect(res.out.includes('the a case') && res.out.includes('the b case'), `both members ran, got: ${res.out}`).toBeTruthy();
+      assertRecord(recorded(world, repo), tree, 'the record holds the tree the root run proved');
+      expect(JSON.stringify(JSON.parse(packaged(world, repo) || '[]').sort()), 'one line per member, each on its own id')
+        .toBe(JSON.stringify([`${aId} packages/a`, `${bId} packages/b`].sort()));
       cleanup(world.root); cleanup(repo);
     });
   });

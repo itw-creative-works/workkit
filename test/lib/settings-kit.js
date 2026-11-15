@@ -1,7 +1,7 @@
 // The kit pieces every settings read needs in a partial copy of the kit: the
 // defaults file and the hooks modules workflow/lib/settings.js requires, ES modules
 // under hooks/package.json's "type". Consumers: publish/helpers.js's copyEngine
-// (publish-sync's too) and the workkit-cli helpers' kit copies.
+// (publish-sync's too), the workkit-cli helpers' kit copies and ci-watch.test.js's.
 
 const fs = require('fs');
 const path = require('path');

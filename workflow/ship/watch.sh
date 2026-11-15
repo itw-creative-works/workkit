@@ -139,7 +139,8 @@ foreground() {
   # shellcheck source=../lib/suite.sh
   . "$SCRIPT_DIR/../lib/suite.sh"
   root="$(repo_root)"
-  log="$(wk_ci_log_path "$root")"
+  # A bad logs.dir is said by the path's reader, and is no answer, never a red.
+  log="$(wk_ci_log_path "$root")" || exit 4
   lock="$(wk_ci_lock_path "$root")"
   wk_run_detached "$log" "$lock" -- "$BASH" "$SCRIPT_DIR/watch.sh" --watch-body "$SHA" || rc=$?
   if ((rc == 3)) && [[ -n "$WK_HELD_PID" ]]; then

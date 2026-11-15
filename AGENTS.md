@@ -30,7 +30,7 @@
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, gitshim/ (the `git` shim), templates)
 ├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
-├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run`, a workspace member at the kit's version
+├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run` and its `workflow/lib/expand-workspaces.js` packed for the runner, a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · tests.md (the test bar and runner) · setup.md (the install walkthrough) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
@@ -90,7 +90,7 @@
   - Those are the plugin's install and list, and `claude setup-token`.
   - The test runner's mod half (`claude plugin test`) lives in `workkit-core`.
 - `workkit.sh` is the one command and the from-zero entry point:
-  - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`;
+  - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths] [--filter=<text>]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`;
   - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
 - Beside it live:
   - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
@@ -128,14 +128,17 @@
 - `npm test` is `workkit test`, the bin of the runner the kit ships as the npm package `workkit-core`.
   - The package is `packages/core/`, its library in `test/lib/` there.
   - The global `workkit test` hands its arguments to this `npm test`.
+  - A path after `--` is a suite file or a folder, every suite under it; `--filter=<text>` runs only the cases whose full name holds the text, and records no proof.
+  - The kit's root lists `packages/*` as workspaces, and `packages/core` has no `test` script, so the root run starts no member.
 - `test/lib/harness.js` is a one-line re-export of `workkit-core/test`, which carries the whole library.
-- `test/lib/serial.js` is this repo's serial list, its entries paths from the repo root.
+- `test/lib/serial.js` is this repo's serial list, its entries suite files or folders from the repo root, run in the list's order.
+  - The kit has no `test/lib/skip.js`, the runner's lists of suites a run leaves out unless a path names them narrowly (`docs/tests.md` § The kit's runner).
 - Every suite is Node's own shape, `describe`, `test` and `expect` from `test/lib/harness.js` (`docs/tests.md` § The shape).
 - A suite or case this machine cannot answer states a `skip` value, `false` or the reason; the runner names the skip.
   - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutFileLink` in `test/lib/`.
 - The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
 - This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
-  - The library's own suites sit at the `test/` root (`runner`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`).
+  - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`).
 - A suite keeps to its own temp folder through `mkTmp` and touches no fixed shared path.
   - One that must is added to `SERIAL`, with the path named in a one-line comment beside its entry.
 - Then the mod half: `claude plugin test` on the kit root runs the hooks module's wiring suites, `test/mods/*.test.ts`, inside the engine.

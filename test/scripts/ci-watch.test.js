@@ -13,7 +13,8 @@ const {
   IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, systemPathWith,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
-const { ciLockPath } = require('../lib/suite-record');
+const { ciLockPath, suiteLogPath } = require('../lib/suite-record');
+const { copySettingsKit } = require('../lib/settings-kit');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'watch.sh');
 const SHA = '0123456789abcdef0123456789abcdef01234567';
@@ -525,6 +526,35 @@ describe('ship watch: the detached watch', () => {
     cleanup(w.dir);
   });
 
+  test('logs.dir logs, git ignoring logs/: the watch logs to logs/ci.log and writes nothing under .workkit/', async () => {
+    const w = makeWorld({ runs: [runRow(88, 'Checks')] });
+    fs.writeFileSync(path.join(w.repo, '.gitignore'), '.workkit/*\nlogs/\n');
+    fs.mkdirSync(path.join(w.repo, '.workkit'), { recursive: true });
+    fs.writeFileSync(path.join(w.repo, '.workkit', 'settings.json'), `${JSON.stringify({ logs: { dir: 'logs' } })}\n`);
+    const r = runWatch(w, [SHA]);
+    expect(r.code, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`).toBe(0);
+    const logFile = path.join(w.repo, 'logs', 'ci.log');
+    const logText = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : null;
+    expect(logText, `the log is ${logFile}, holding what stdout showed`).toBe(r.out);
+    expect(readLog(w), 'nothing at .workkit/ci.log').toBe(null);
+    cleanup(w.dir);
+  });
+
+  test('logs.dir logs, git not ignoring logs/: the watch logs under the machine\'s markers folder, nothing in the repo', async () => {
+    const w = makeWorld({ runs: [runRow(89, 'Checks')] });
+    fs.mkdirSync(path.join(w.repo, '.workkit'), { recursive: true });
+    fs.writeFileSync(path.join(w.repo, '.workkit', 'settings.json'), `${JSON.stringify({ logs: { dir: 'logs' } })}\n`);
+    const r = runWatch(w, [SHA]);
+    expect(r.code, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`).toBe(0);
+    // The CI log's marker, shaped as the suite log's: <machine folder>/markers/claude-ci.log/<sha1 of the root>.
+    const suite = suiteLogPath(path.join(w.home, '.workkit'), w.repo);
+    const marker = path.join(path.dirname(path.dirname(suite)), 'claude-ci.log', path.basename(suite));
+    expect(fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : null, `the log is ${marker}, holding what stdout showed`).toBe(r.out);
+    expect(fs.existsSync(path.join(w.repo, 'logs')), 'nothing in logs/').toBe(false);
+    expect(readLog(w), 'nothing at .workkit/ci.log').toBe(null);
+    cleanup(w.dir);
+  });
+
   test('a TERM to the invoking shell\'s group leaves the watch to write its exit line to the log', {
     skip: IS_WINDOWS && 'Node cannot deliver TERM or INT to a Git Bash process on Windows',
   }, async (t) => {
@@ -642,6 +672,7 @@ describe('ship watch: the script itself', () => {
     const w = makeWorld({ runs: [runRow(86, 'Checks')] });
     const kit = path.join(w.dir, 'kit', 'workflow');
     fs.cpSync(path.join(__dirname, '..', '..', 'workflow'), kit, { recursive: true });
+    copySettingsKit(path.dirname(kit));
     const copy = path.join(kit, 'ship', 'watch.sh');
     fs.writeFileSync(path.join(w.fx, 'rewrite'), shellPath(copy));
     const res = spawnSync(BASH, [...NO_RC, shellPath(copy), SHA], { cwd: w.repo, env: watchEnv(w), encoding: 'utf8', timeout: SPAWN_DEADLINE });

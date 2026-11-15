@@ -13,9 +13,11 @@ const {
   describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, shellPath, jsPath, gitPath,
+  IS_WINDOWS, BASH, NO_RC, shellPath, jsPath, gitPath, joinPath,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
+const { skipWithoutNpm } = require('../lib/core-repo');
+const { coreBin } = require('../lib/workkit-bin');
 const { linesOf } = require('../lib/run-lists');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
 const { homeOf, proofBase, runFolders, plantRun } = require('../lib/workflow-home');
@@ -1006,6 +1008,36 @@ describe('proof red: the kit runner\'s summary file', () => {
     expect(code, `exit 0: ${said}`).toBe(0);
     expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
     assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  // The command copies the summary file before red.sh reads it, so the case sees the run's one line.
+  test('a root run whose member fails a test without the source: red, exit 0, its one line summing the root\'s counts and the member\'s', { skip: skipWithoutNpm() }, () => {
+    const memberTestOf = (value) => [
+      "const test = require('node:test');",
+      "const x = require('../../../src/x');",
+      `test('m', () => { if (x !== ${value}) throw new Error('x is ' + x); });`,
+      '',
+    ].join('\n');
+    const w = mkRepo('red-proof-members-', {
+      'package.json': `${JSON.stringify({ name: 'root', private: true, workspaces: ['packages/*'] })}\n`,
+      '.gitignore': 'node_modules/\n',
+      'src/x.js': 'module.exports = 1;\n',
+      'tests/root.test.js': "const test = require('node:test');\ntest('root', () => {});\n",
+      'packages/m/package.json': `${JSON.stringify({ name: 'm', private: true, scripts: { test: 'workkit test' } })}\n`,
+      'packages/m/test/m.test.js': memberTestOf(1),
+    });
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('packages/m/test/m.test.js', memberTestOf(2));
+    const copy = path.join(w.dir, 'summary.copy');
+    const command = 'node "$1"; s=$?; cp "$WORKKIT_TEST_SUMMARY" "$2"; exit "$s"';
+    const env = { ...w.env, PATH: joinPath(coreBin(), w.env.PATH) };
+    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', command, '_', RUNNER, shellPath(copy)], w.repo, env);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    const summary = fs.existsSync(copy) ? lines(fs.readFileSync(copy, 'utf8')) : null;
+    expect(summary, `the root's pass and the member's failure, one line: ${out}${err}`).toEqual(['{"passed":1,"failed":1}']);
     cleanup(w.dir);
   });
 

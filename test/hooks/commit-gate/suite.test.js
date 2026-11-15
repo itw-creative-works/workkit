@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, mkTmp } = require('../../lib/harness');
 const {
-  T, NOTICE, stage, write, commit, touchMarker, proveTree, judge, denyOf, blocks, passes, recordBlocks,
+  T, NOTICE, ROOT, stage, write, commit, touchMarker, proveTree, judge, denyOf, blocks, passes, recordBlocks,
   suiteRan, pkg, mkReleaseRepo,
 } = require('./helpers');
 
@@ -249,6 +249,33 @@ describe('commit-gate: the suite record', () => {
     recordBlocks({ deny });
     const logFile = deny.slice(deny.indexOf('writes its output to ') + 'writes its output to '.length, deny.length - T.recordTail.length);
     expect(logFile.includes('suite.log'), `the bounce names the suite log, got: ${logFile}`).toBeTruthy();
+  });
+
+  test('logs.dir logs, git ignoring logs/: the bounce for a missing record names logs/suite.log', async () => {
+    const r = mkReleaseRepo();
+    stage(r, '.workkit/settings.json', `${JSON.stringify({ enabled: true, logs: { dir: 'logs' } }, null, 2)}\n`);
+    commit(r);
+    stage(r, 'app.js', 'const x = 2;\n');
+    touchMarker(r);
+    // git's own answer for a repo whose .gitignore holds `logs/`: ignored there, nowhere else.
+    r.failOn = (argv) => (path.basename(argv[0]) === 'git' && argv.includes('check-ignore')
+      ? { exitCode: /^logs(\/|$)/.test(argv[argv.length - 1].replace(`${ROOT}/`, '')) ? 0 : 1 }
+      : null);
+    const deny = denyOf(await judge(r, 'feat: thing'));
+    recordBlocks({ deny });
+    const logFile = deny.slice(deny.indexOf('writes its output to ') + 'writes its output to '.length, deny.length - T.recordTail.length);
+    expect(logFile, 'the bounce names the log in the repo\'s log folder').toBe(`${ROOT}/logs/suite.log`);
+  });
+
+  test('logs.dir ../x: the bounce for a missing record names the bad setting', async () => {
+    const r = mkReleaseRepo();
+    stage(r, '.workkit/settings.json', `${JSON.stringify({ enabled: true, logs: { dir: '../x' } }, null, 2)}\n`);
+    commit(r);
+    stage(r, 'app.js', 'const x = 2;\n');
+    touchMarker(r);
+    const deny = denyOf(await judge(r, 'feat: thing'));
+    expect(deny !== null && deny.split('\n').some((l) => l.includes('workkit: logs.dir must be a folder inside the repo')),
+      `the deny holds the logs.dir line, got: ${deny}`).toBeTruthy();
   });
 
   // The Windows compare: npm's value spelled with a drive, read through cygpath,

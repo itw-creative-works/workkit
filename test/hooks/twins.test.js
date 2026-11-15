@@ -1,6 +1,6 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the test package, the
-// package record's read, the tree hash, the opt-in read (the gate's and the heal's), one setting, the machine folder, the
+// package record's read, the tree hash, the suite log's path, the opt-in read (the gate's and the heal's), one setting, the machine folder, the
 // CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
 // version-only change, the status:building list, the public slug, git's value-taking global options. Plus one
 // JavaScript pair, the plain-object test, and one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
@@ -181,6 +181,59 @@ describe('twins: the tree hash, wk_tree_hash in workflow/lib/suite.sh against tr
     expect(/^[0-9a-f]{40,64}$/.test(shell), `a tree id from wk_tree_hash, got: ${res.stdout}|${res.stderr}`).toBeTruthy();
     expect(treeHash(w.repo), 'the twin prints the kit\'s id').toBe(shell);
     fs.rmSync(w.dir, { recursive: true, force: true });
+  });
+});
+
+describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh against the path the commit gate\'s record block names', () => {
+  // [logs.dir, the repo's .gitignore]: undefined sets no logs.dir. The last four are
+  // spellings two hand-written path walkers could read apart.
+  const LOG_DIRS = [
+    [undefined, '.workkit/*\n'], ['logs', 'logs/\n'], ['out/logs', 'out/\n'], ['logs', '.workkit/*\n'], ['logs', ''],
+    ['./logs/', 'logs/\n'], ['x/../logs', 'logs/\n'], ['logs\\sub', 'logs*\n'], ['', '.workkit/*\nlogs/\n'],
+  ];
+  const settingsOf = (dir) => `${JSON.stringify({ enabled: true, ...(dir === undefined ? {} : { logs: { dir } }) }, null, 2)}\n`;
+  // One spelling for both sides: the root as <root>, a markers path from markers/ on, its repo key as <sha>.
+  const norm = (p, root) => {
+    const at = p.indexOf('/markers/');
+    if (at >= 0) return p.slice(at + 1).replace(/[0-9a-f]{40}$/, '<sha>');
+    return p.startsWith(`${root}/`) ? `<root>${p.slice(root.length)}` : p;
+  };
+
+  test('wk_log_path and the gate name one suite log for every logs.dir and .gitignore', async () => {
+    const shell = [];
+    const js = [];
+    for (const [dir, ignore] of LOG_DIRS) {
+      const w = mkRepo('twins-logdir-', { '.gitignore': ignore, '.workkit/settings.json': settingsOf(dir) }, undefined, { optIn: false });
+      const root = w.git('rev-parse', '--show-toplevel').trim();
+      const res = runLib(`wk_log_path "${root}" suite.log`, {
+        HOME: shellPath(path.dirname(w.workflowHome)), WORKFLOW_HOME: shellPath(w.workflowHome), WORKKIT_NODE: shellPath(process.execPath),
+      });
+      // A refused value is one answer on both sides: the shell's non-zero exit, the gate's line naming logs.dir.
+      shell.push(res.code === 0 ? norm(res.stdout.trim(), root) : 'refused');
+
+      const r = commitGate.mkReleaseRepo();
+      commitGate.stage(r, '.workkit/settings.json', settingsOf(dir));
+      commitGate.commit(r);
+      commitGate.stage(r, 'app.js', 'const x = 2;\n');
+      commitGate.touchMarker(r);
+      // Every ignore question the gate asks, answered by git in the shell side's repo.
+      r.failOn = (argv) => (path.basename(argv[0]) === 'git' && argv.includes('check-ignore')
+        ? { exitCode: spawnSync('git', ['check-ignore', '-q', argv[argv.length - 1].replace(`${commitGate.ROOT}/`, '')], { cwd: w.repo, env: w.env }).status }
+        : null);
+      const deny = commitGate.denyOf(await commitGate.judge(r, 'feat: thing'));
+      const head = 'writes its output to ';
+      expect(deny !== null, `the gate blocks for ${JSON.stringify([dir, ignore])}`).toBeTruthy();
+      js.push(deny.includes(head)
+        ? norm(deny.slice(deny.indexOf(head) + head.length, deny.length - commitGate.T.recordTail.length), commitGate.ROOT)
+        : (deny.includes('logs.dir') ? 'refused' : deny));
+    }
+    agree(LOG_DIRS.map((_, i) => i), shell, (i) => js[i], `the (logs.dir, .gitignore) fixtures by index, the gate's answers ${JSON.stringify(js)}`);
+    // A dot, a dot-dot that stays inside and a trailing slash all name logs/; a backslash is a separator; empty is the default.
+    expect(JSON.stringify(shell), 'each folder git ignores holds the log, the markers folder takes it otherwise').toBe(JSON.stringify([
+      '<root>/.workkit/suite.log', '<root>/logs/suite.log', '<root>/out/logs/suite.log',
+      'markers/claude-suite.log/<sha>', 'markers/claude-suite.log/<sha>',
+      '<root>/logs/suite.log', '<root>/logs/suite.log', '<root>/logs/sub/suite.log', '<root>/.workkit/suite.log',
+    ]));
   });
 });
 

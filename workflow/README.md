@@ -25,10 +25,12 @@
 | `lib/slug.sh` | The third of the seams beside `platform.sh` and `participation.sh`: what a repo is CALLED |
 | `lib/suite.sh` | The proved-tree records |
 | `lib/workspaces.js` | The workspace members a package's tree id leaves out |
+| `lib/expand-workspaces.js` | The expansion of a root's `workspaces` the publish plan, `lib/workspaces.js` and workkit-core's runner share |
 | `lib/hold.sh` | The full-suite hold |
 | `lib/changelog.sh` | The shell home of the CHANGELOG format check, the linter's resolution and the message |
 | `lib/detach.sh` | A command that outlives the shell that started it, one per lock |
 | `lib/detach.js` | The detached runner's Node half: the supervisor, its checks and its ends, requiring `lib/run.js`, `lib/pulse.js` and `lib/tree.js`, and `lib/settings.js` only with `--root` |
+| `lib/command-log.sh` | The command log: a `workkit` command that does work runs again with its two streams teed to the terminal, and its run kept plain in its log file |
 | `lib/pulse.js` | The supervisor's verdict on a run from one reading per check, CJS, requiring nothing: `judge`, and the counts, the work floor and the two codes |
 | `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`, on Windows from both the Windows and the Git Bash process tables), CJS, requiring only `lib/run.js`; `node tree.js end <pid>` is the end as a command, which `wk_end_run` runs on Windows |
 | `lib/discussions.sh` | Sourced: the home repo's Discussions API (GraphQL through `gh`), enabling, resolving and caching the repo and category ids, posting a summary or a brief, reading prior posts back |
@@ -201,7 +203,7 @@
     - It names a workflow on `release` alone in a `ci-release: warning:` line.
   - The heal rewrites the caller whenever it differs, so a hand edit lasts until the next heal (`standards/checks.sh`).
 - `workkit.sh`:
-  - Its verbs: `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `state` · `note` · `test [paths]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`.
+  - Its verbs: `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `state` · `note` · `test [paths] [--filter=<text>]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`.
   - And: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
   - It keeps the map, the constants and the dispatch, and sources its commands from `workkit/`.
   - A verb with subcommands follows one rule: `workkit <verb> <sub>` runs `<verb>/<sub>.sh` or `.js` (`run_verb`).
@@ -240,6 +242,7 @@
   - Six are seams the hooks and the entries source directly as well, each with its own row: `platform.sh`, `participation.sh`, `slug.sh`, `suite.sh`, `hold.sh` and `discussions.sh`.
   - Two more are the npm wrapper's, with rows of their own too: `changelog.sh`, and `detach.sh`.
     - `detach.sh` has its Node half `detach.js`, which the CI watch shares.
+  - One is `workkit.sh`'s alone, with a row of its own: `command-log.sh`.
 - `lib/platform.sh`:
   - Sourced by `lib.sh`, by `standards.sh` and by the hooks' `_lib.sh` alike.
   - It is the shell twin of `test/lib/platform.js`, and of `lib/run.js` on the Node side.
@@ -364,6 +367,7 @@
   - Every shipped file that starts a program requires it.
   - `test/scripts/run-home.test.js` fails any other `child_process` import but two and a list:
     - the published workkit-core runner's `packages/core/test/run.js` and `packages/core/test/lib/spawn.js`, since that package cannot require the kit's run.js;
+      - its `packages/core/test/lib/members.js` starts each member's `npm` through the starter `packages/core/test/run.js` hands it, so it imports none;
     - the root `test/` files still on the check's list, which only shrinks.
 - `lib/participation.sh`:
   - Sourced by `lib.sh` and by the hooks' `_lib.sh` alike.
@@ -425,7 +429,8 @@
     - Its readers are `safety:commit-gate`, through `suiteProved` in `hooks/mods/suite.js` (`wk_suite_proved`'s read).
     - And the full-suite hold (`lib/hold.sh`), through `wk_suite_proved` itself.
   - `wk_ci_set` is the one test of `CI`: it succeeds when `CI` holds any value but the empty string, `CI=false` and `CI=0` included.
-    - The kit leaves `CI` in the suite's environment as it came, and nothing else reads it: the gate, the hold and `safety:proof-guard` read records alone.
+    - The kit leaves `CI` in the suite's environment as it came, and nothing else in the kit's shell reads it: the gate, the hold and `safety:proof-guard` read records alone.
+    - workkit-core's runner reads `CI` by the same rule, any text but the empty string, to leave out the suites and members `test/lib/skip.js` lists in `CI_SKIP`.
   - The record's first line is the `git write-tree` id of the tree its writer proved, less `.workkit/`.
   - Its second line is `ms=<n>`, the wall time in milliseconds of the run that wrote it. The gate holds it against `tests.budget`.
   - Every read matches the first line alone, so a record with no second line still proves its tree.
@@ -463,8 +468,13 @@
   - The two records share the marker path rule (`wk_marker_path`), and the sweep each of their two writers runs first (`wk_sweep_markers`).
   - The package record's locked line write and its read (`wk_pkg_proved`) are its own, here in `lib/suite.sh`.
   - `wk_has_test_script` is the one has-a-test-script predicate (a non-empty string `scripts.test`).
+  - `wk_log_dir <root>` is the repo's log folder: `logs.dir` (`wk_setting`), a path from the root, default `.workkit`.
+    - Each `.` and `..` in it is walked, so `./logs/` reads as `logs`, and `.` is the root itself; an empty value reads as `.workkit`, as it does with no jq.
+    - An absolute value (`/`, `\` or a drive letter first), or one whose `..` leaves the repo, is `workkit: logs.dir must be a folder inside the repo, written from its root (got <value>)` on stderr, and 1.
+    - Every caller of a log path stops on that line: a root or narrowed `npm test`, `workkit prove`, `supervise` and `watch` exit 1, `workkit ship watch` 4 (no answer).
+    - Its twin is `logDirOf` in `hooks/mods/commit-gate.js`, so the gate's bounce names the same `suite.log`.
   - `wk_log_path <root> <name> [<id>]` is where a detached run logs.
-    - That is `<root>/.workkit/<name>` when git ignores it there, else `~/.workkit/markers/claude-<name>/<sha1 of the repo root>`.
+    - That is `<root>/<log folder>/<name>` when git ignores it there, else `~/.workkit/markers/claude-<name>/<sha1 of the repo root>`.
     - An `<id>` keeps one of several runs apart: `.<id>` ends the name in both places.
     - So a log never changes the tree hash.
     - `wk_suite_log_path`, `wk_run_log_path` and `wk_ci_log_path` are it for `suite.log`, `run.log` and `ci.log`.
@@ -482,7 +492,7 @@
   - Run by `wk_tree_hash` (`lib/suite.sh`) under `wk_node`, CJS.
   - `node workspaces.js <root> <pkg>` prints them, one folder per line.
   - `membersOf(root)` is `[{ name, dir, deps }]`.
-    - `dir` is relative to the root, from the root `package.json` `workspaces` expanded in one call of `ship/plan.js`'s `expandWorkspaces`.
+    - `dir` is relative to the root, from the root `package.json` `workspaces` expanded in one call of `lib/expand-workspaces.js`'s `expandWorkspaces`.
     - `deps` is the member names its `depNamesOf` reads across the dependency fields.
     - No `workspaces` field is `[]`.
   - `npm query .workspace` is never used: it answers `[]` until `npm install` has run.
@@ -492,6 +502,13 @@
     - `.` is `[]`.
   - Anything the plan refuses is `[]` and one stderr line, `workspaces: <plan.js's message>; <pkg> keyed to the whole tree`.
     - The plan refuses with `PlanError`: a pattern it does not expand, a `package.json` that does not parse.
+- `lib/expand-workspaces.js`:
+  - CJS, requiring nothing beyond Node, so workkit-core can ship it: its prepack copies it in as `expand-workspaces.cjs`, as it does `lib/run.js`.
+  - `expandWorkspaces(root, workspaces, notes)` is the absolute member folders: a literal folder, or `dir/*`'s folders that hold a `package.json`.
+    - A `dir/*` that matches nothing pushes a `publish-plan:` note onto `notes`.
+    - Any other pattern, and a literal member with no `package.json`, throw `PlanError` with the plan's own line.
+  - `ship/plan.js` and `lib/workspaces.js` load it, and workkit-core's runner reads a root's members through it (`docs/tests.md` § The kit's runner).
+  - `patternShape(pattern)` is what one pattern means, `children` (`dir/*`), `folder` or `other`, and `workspacePatterns(value)` the patterns a `workspaces` value declares; `expandWorkspaces` and `safety:release-taken` (`hooks/mods/release-taken.js`) both read through them.
 - `lib/hold.sh`:
   - Sourced by `script-shell.sh` and by the hooks' `_lib.sh`, so `prove.sh` and the snapshot reach it.
   - It is the rule of the spec's § The proof run where the root suite runs, never read off a command's text.
@@ -564,6 +581,12 @@
     - Under the enclosing run's own lock it writes neither: that run's supervisor writes them.
     - So `workkit prove`, a narrowed `npm test` or a second `workkit supervise` inside a supervised run runs in that run, within the outer supervisor's reach.
   - `wk_attach_run <log> <lock> <pid> [<offset>]` tails `<log>` to stdout from byte `<offset>` (0), so a later verb attaches to a run already going.
+    - The log is plain text. When `wk_view_paints` says yes, each whole line passes through the painter's filter (`wk_view_paint`) on its way to stdout; otherwise stdout gets the log's bytes.
+      - `wk_view_paints` is the kit's color gate (`wk_color_on`, `lib/voice.sh`, sourced when the caller has not) on the call's stdout, then the filter, `packages/core/test/lib/paint.js` beside this engine, and a node `wk_node` finds at the kit's floor.
+      - The filter runs with `FORCE_COLOR=1`, since the gate judged the stdout already. Its rules per line: `docs/tests.md` § The kit's runner.
+      - A painted tail runs in a pipe's subshell, so its code, `WK_RAN_CODE` and `WK_RAN_LOOK` come back to the call on a file descriptor of their own.
+      - A Ctrl-C ends that subshell by its own INT trap; the call notes it and hands it to the caller's INT disposition once the tail is over, so the run ends and the call exits 130 as with the gate off.
+      - A filter that is gone otherwise ends the tail quietly: `detach: the painted view of the run ended, so this call stops; the run goes on, and workkit watch follows it`, the lock kept for a watch.
     - It drops the lock and returns the code the command recorded.
     - That code is read once, from the done file, in the poll that first finds it.
     - A `look` file beside the done file, with no done file yet, is the supervisor asking for a look.
@@ -673,6 +696,38 @@
     - That is one `{ file, key, line }` per layer or value the merge set aside.
   - `homeSlug(workflowHome)` is the `site.repo` a machine folder's merged settings name, null unless it is an `owner/name` string.
     - Its callers: `identity/token.js`, `public/lib.js`, `ship/hooks.js`, `publish/site-repos.js`, `tower/api/lib/repos.js` and `summaries.js`, `jobs/morning/brief/cc-news.js`.
+- `lib/command-log.sh`, sourced by `workkit.sh` alone:
+  - `wk_command_log_name <args...>` is the name a call logs under, or nothing: `setup`, `update`, `doctor`, `publish`, `ship <step>` for each `SHIP_VERBS` step but `watch`, and `proof red`.
+  - `wk_command_log_path <name>` is its file.
+    - A machine command's is `~/.workkit/logs/<name>.log` (`wk_user_dir`).
+    - A repo command's is `wk_log_path` of the repo holding the folder the call was made in, its space a dash (`ship-plan.log`, `proof-red.log`); outside a repo it is none.
+  - `wk_command_log <file> <name> <command...>` runs the command with `WK_COMMAND_LOGGED=1`, its stdin the call's own.
+    - Its stdout and its stderr each pass through `tee -i` to the call's own, byte for byte as they come, and are appended to a raw file in the system temp folder.
+    - Where the call's stdout is a terminal it sets `WORKKIT_COLOR=1`, unless it is set already, so the color shows as it does without the log.
+    - It sets no `FORCE_COLOR`, so a Node or Go tool the command runs (`npm` under `ship publish`, `gh`) sees a pipe and prints without its own color.
+    - The command gets the call's own stdout on descriptor 7, its own stderr on 8 and the raw file on 9, for the two readers below.
+    - Ctrl-C ends the command, while this shell and the tees stay to write the log; the code is then 130.
+    - At the end `wk_command_log_plain` writes the raw file as a terminal leaves it: each line's text after its last carriage return, its color and link codes removed, a line of blanks empty.
+    - The line `workkit <name>: exit <code>` follows, and the file, made beside the log as `<log less .log>.<pid>.log`, is moved onto it. So the next run replaces the last, and two runs at once never mix.
+    - A log it cannot write is one stderr line, and the command still runs with its own code.
+    - A HUP or TERM to it takes effect once the command ends: the log is still written and the raw copy removed, and it then exits 129 or 143.
+    - Every background job the kit starts closes 7, 8 and 9 where it starts it (`wk_spin`'s and `wk_poll`'s frames, `bounded_read`'s read and its watchdog in `workkit/secrets.sh`), so no job left running holds the call's own stdout open.
+  - `wk_command_log_run <script> <args...>` is the dispatch's one call: a call that logs runs again as `<script> <args...>` under `wk_command_log`, and exits with its code.
+    - A call made with `WK_COMMAND_LOGGED` set never reaches it, so a step of a logged run writes no file of its own.
+    - A bad log folder exits 1 on `wk_log_dir`'s line, the command not run.
+  - Two step forms run a step on the call's own stdout and stderr (7 and 8), out of the log, which gets the one line `workkit: <what> ran on the terminal and is not in this log` in its place (on 9).
+    - With no command log holding those descriptors each just runs the step; `workkit.sh` defines those forms itself when the file is missing.
+    - `wk_secret_step <what> <command...>` is a step that shows a secret, out of the log wherever a log holds the call's streams, at a terminal or not, so no token or sign-in code reaches a file:
+      - the token mint, `claude setup-token` under its PTY runner (`workkit/secrets.sh`);
+      - the bot identity's sign-in, `identity/login.js` (`workkit/identity.sh`).
+    - `wk_terminal_step <what> <command...>` is a program handed the terminal, which may ask there: out of the log only where the call's own stdout or stderr is a terminal, and logged whole anywhere else (an agent's call, CI, a pipe):
+      - `ship publish`, whose `npm publish` may ask for a one-time password, and its afterPublish hooks;
+      - `ship deploy`, its deploy script and afterDeploy hooks;
+      - `ship cut`, for its afterRelease hooks.
+      - Those three start their programs from Node with inherited stdio, so the whole step runs on the terminal: at a terminal their log holds the note line and the closing line, away from one the whole run.
+    - The kit starts no `gh auth login`; it only names it.
+    - The bot token client, `identity/token.js` in the `gh` shim, keeps the shim's streams: under a logged command its stderr is the log's pipe, so it offers no sign-in, and its line names `workkit setup --login`.
+  - `wk_spin` and `wk_poll` draw their frames on the call's own stderr, 8 under a command log, else 2 (`wk_spin_fd` in `lib/voice.sh`, through `_wk_terminal_held` here when this file is loaded), so a spinner shows at the terminal and no frame enters the log.
 - `public/`:
   - Each script calls `gh` by name, so the shim (and in the cloud `identity/rest.js`) answers it.
   - `intake.js`: each open public issue with no `status:` label becomes a private `status:inbox`, `type:idea` issue.
@@ -922,6 +977,8 @@
     - An unchanged id writes the package's line `<id> <pkg>` to the package record (`wk_pkg_marker_write` in `lib/suite.sh`).
     - A changed one writes nothing, said in one `script-shell:` line.
     - With `CI` set, a green run writes nothing and exits 0: `script-shell: the run passed, but CI is set, so no record was written; run it again without CI`.
+    - A green run under the runner's `--filter=<text>` writes nothing and exits 0: `script-shell: the run passed, but --filter left cases out, so no record was written`.
+      - The flag is read only in what npm appended after the package's own script text (`npm_lifecycle_script`), bare or quoted, so a script's own `--filter=` for another tool still records. Its line comes before the `CI` line.
     - So a narrowed root run records `.` on the whole tree, and a `-w` or nested run records the member on its own id.
     - A package run skips the hold and the CHANGELOG lint. Both belong to the bare root run only.
   - That run is first judged by the full-suite hold (`wk_suite_hold` in `lib/hold.sh`, with the working tree's hash).
@@ -940,9 +997,9 @@
     - With `CI` set, a green run writes nothing and exits 0: `script-shell: the suite passed, but CI is set, so no record was written; run npm test again without CI`.
     - When `CI` is set and the tree changed too, only the `CI` line prints. A red run prints no `CI` line.
   - Its stdout and stderr go to the suite log, truncated per run, which the foreground tails to stdout.
-    - The log is `wk_suite_log_path`: `.workkit/suite.log` where git ignores it, else under `~/.workkit/markers`.
+    - The log is `wk_suite_log_path`: `suite.log` in the repo's log folder (`logs.dir`, default `.workkit`) where git ignores it, else under `~/.workkit/markers`.
     - The body's last line is always `script-shell: exit <code>`.
-    - The suite writes to that file, never to a terminal. So a colour or reporter choice that looks for a terminal sees none.
+    - The suite writes to that file, never to a terminal. So a colour or reporter choice that looks for a terminal sees none, and the file is plain; the tail paints it for a terminal (`lib/detach.sh`, `wk_attach_run`).
   - npm's exit code is the script's, with one exception.
     - A green run exits 1 when its tree cannot be hashed (on either side of the run), or its record cannot be written.
     - A changed tree, a green run with `CI` set, an unhashable tree and an unwritable record are each one `script-shell:` line in the log.
@@ -1015,7 +1072,7 @@
     - The body runs the command in the folder the call was made in, and exits with its code.
     - The body's last line is always `supervise: exit <code>`.
   - It has its own log and lock (`wk_run_log_path`, `wk_run_lock_path` in `lib/suite.sh`), beside the root run's.
-    - The log is `.workkit/run.log` where git ignores it, else under `~/.workkit/markers`.
+    - The log is `run.log` in the repo's log folder (`logs.dir`, default `.workkit`) where git ignores it, else under `~/.workkit/markers`.
     - So one supervised run goes at a time per repo, beside the suite's own.
     - A second prints `supervise: a supervised run is already running (pid <N>); its output is in <log>`, exit 1.
   - The call exits with the command's own code, 124 after a frozen end, or 125 on a look with the run going on (`lib/detach.js`).
@@ -1040,7 +1097,7 @@
     - `--end <name>` on a lock so marked writes no `end` file and waits on nothing: it prints `watch: workkit watch --end <name> cannot end a run held in the foreground inside another run; <how>`, exit 1.
     - `<how>` is `workkit watch --end run ends it` when the marker names the supervised run's lock, `workkit watch --end suite ends it` when it names the suite's, and otherwise `end the run that started it`.
   - A narrowed run's slot is cleared (`drop_slot`) once the call reads its end or ends it, and only when the slot's wrapper is gone. A look keeps it.
-  - It prints the log's last 20 lines, then tails it from there through `wk_attach_run`.
+  - It prints the log's last 20 lines, then tails it from there through `wk_attach_run`, both painted when `wk_view_paints` says yes (`lib/detach.sh`).
     - It ends at the run's end, a frozen end or the next look, with the same exit codes as the call that started the run.
     - A run that ended already gets its answer at once: the last 20 lines, the run's code as the exit, and the lock dropped, so a second `workkit watch` prints the no-run line.
     - Ctrl-C ends the call only: the run goes on, and its lock stays held.
@@ -1154,8 +1211,9 @@
   - The command: `workkit ship plan [--dir <root>]`. It publishes nothing.
   - It is the library `release.js`, `publish.js` and `lib/workspaces.js` require.
     - It gives the first two how they name npm's end: `npmEnd`, `lib/say.js`'s `endOf` after `npm`.
-    - It gives its workspace reading: `expandWorkspaces` for `release.js`.
-    - For `lib/workspaces.js` it gives that with `readJson` and `depNamesOf` (the dependency fields, `optionalDependencies` among them).
+    - It passes on `lib/expand-workspaces.js`'s `expandWorkspaces` and `PlanError` for `release.js`.
+    - For `lib/workspaces.js` it gives `readJson` and `depNamesOf` (the dependency fields, `optionalDependencies` among them).
+    - `safety:release-taken` (`hooks/mods/release-taken.js`) imports `skipReason`, the rule for which packages publish.
   - Its lines and refusals speak as `publish-plan:`.
 - `ship/publish.js`:
   - It prints the plan `plan.js` prints, then publishes it in order from the root.
@@ -1276,7 +1334,8 @@
   - The watch runs detached through `wk_run_detached` (`lib/detach.sh`), as this file again in its `--watch-body <sha>` mode.
     - So a kill of the invoking shell leaves it going to its answer.
     - Its output, stdout and stderr alike, goes to the CI log, truncated per call.
-    - The log is `wk_ci_log_path`: `.workkit/ci.log` where git ignores it, else under `~/.workkit/markers`.
+    - The log is `wk_ci_log_path`: `ci.log` in the repo's log folder (`logs.dir`, default `.workkit`) where git ignores it, else under `~/.workkit/markers`.
+    - A bad `logs.dir` is `wk_log_dir`'s line and exit 4, no answer, nothing watched.
     - The output reaches the terminal on stdout through the tail, every line above included.
     - Its first line is `ci-watch: watching <sha>`.
     - Its last is `ci-watch: exit <code>`, the code the foreground exits with, but after an INT.
@@ -1396,7 +1455,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 | `workkit state [repo]` | `standards.sh --state` under the one name: the repo's participation, one word on stdout (`enabled`, `disabled`, `declined`, `undecided`, `home` or `nogit`) |
 | `workkit note <text...>` | `wk.sh note`, unchanged |
 | `workkit log [-n N] [--follow]` | the hooks log (`docs/hooks.md` § The hooks log): the last 40 lines, `-n <N>` that many, `--follow` keeps printing new ones |
-| `workkit test [paths]` | hands its arguments to this repo's `npm test`, run at the repo root, so the one recorder, npm's script shell, sees the run |
+| `workkit test [paths] [--filter=<text>]` | hands its arguments to this repo's `npm test`, run at the repo root, so the one recorder, npm's script shell, sees the run |
 | `workkit tools` | prints every command this repo's suites name through `needs()`, one per line, sorted and unique, for a setup to install |
 | `workkit convert [paths...]` | rewrites this repo's suites in the old shape in place onto Node's test functions, one `converted` or `left` line per file (`docs/tests.md` § The kit's runner) |
 | `workkit prove` | `prove.sh`: the root suite on exactly the staged tree, in a copy outside the repo, recorded on green (refused with `CI` set), so a commit of it passes the gate while other work stays in the folder unstaged |
@@ -1408,6 +1467,17 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 | `workkit triage mark` | the triage marker: `triage/mark.sh` |
 | `workkit proof red [--live] <path>... -- <command>...` | the verifier's red run: `proof/red.sh` |
 | `workkit changelog lint <file> [flags]` | the CHANGELOG entry check: `changelog/lint.js` |
+
+- **The commands that do work write a log**, one whole run per file, replaced by the next run (`lib/command-log.sh`):
+  - `setup` (every form), `update`, `doctor` and `publish` to `~/.workkit/logs/<command>.log`, since they may run outside any repo;
+  - `ship items`, `release`, `cut`, `plan`, `publish` and `deploy` to `ship-<step>.log`, and `proof red` to `proof-red.log`, in the repo's log folder (`logs.dir`, [The two settings files](#the-two-settings-files)) where git ignores it, else under `~/.workkit/markers`;
+  - `ship watch` keeps its `ci.log`, and `test`, `prove` and `supervise` their own logs; every other command writes none.
+  - A file holds stdout and stderr as plain text, no color code and no spinner frame, and ends `workkit <command>: exit <code>`.
+  - The call shows what it shows without the log: the same color and spinner, the same questions answered from its stdin, its own exit code. The one exception is a `gh` call with no sign-in, which offers none under a logged command (the `lib/command-log.sh` entry).
+  - A command run as a step of a logged one in the same call (`setup`'s and `update`'s publish) writes no file of its own; its lines are in the outer log.
+  - A step that shows a secret or signs in (the token mint, the GitHub sign-in) runs on the terminal alone, and the log holds one line saying so in its place (`wk_secret_step`).
+  - At a terminal `ship publish`, `ship deploy` and `ship cut` keep the terminal for npm, the deploy script and the ship hooks, and their log holds that line and the closing line; away from one they are logged whole (`wk_terminal_step`).
+  - A log is moved into place when its run ends, so a call cut off before then has no log of that run to read.
 
 - `workkit setup --bot`:
   - It works in the repo it runs from, opted in or not.
@@ -1451,7 +1521,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - In a cloud session (`wk_is_cloud`) some checks are each one not-applicable line, counted by nothing.
     - Those are the schedule, the home clone, its runner, the cloud brief's secrets and the sign-in.
     - The rest stay real checks.
-- `workkit test [paths]`:
+- `workkit test [paths] [--filter=<text>]`:
   - A package.json with no `test` script is one error line and exit 1.
   - So is the verb started inside an `npm test`, where `workkit` should have been `workkit-core`'s bin.
     - That line is `workkit-core is not installed here: run npm install` (`docs/tests.md` § The kit's runner).
@@ -1542,6 +1612,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - The wrapped command runs in the foreground, so its stdout and its exit status pass through untouched.
     - So `x="$(wk_spin 'reading the roster' gh api ...)"` captures the answer alone.
   - `WORKKIT_SPIN=0` forces the static form.
+  - Under a command log the frames go to the call's own stderr, which the log holds aside (`wk_spin_fd`, through `lib/command-log.sh`), and the terminal question is asked of it; `wk_poll`'s countdown does the same.
 - Two things are deliberately not log lines:
   - a PROMPT (it carries no newline, because the answer is typed on it);
   - a script's stdout that is DATA (`standards.sh --state`, the reason `jobs/brief-dispatch.sh` hands its caller, a JSON payload).
@@ -1667,6 +1738,9 @@ workkit note fix the tower poller
     - It is read over the global key of that name.
   - An optional `"tests": { "check": <minutes> }` is the time between a supervised run's checks (`docs/tests.md` § The checks).
     - It is read over the global key of that name, and absent from both it reads as the kit default, 5.
+  - An optional `"logs": { "dir": "<folder>" }` names the folder this repo's logs go to, a path from the repo root, so a repo can keep them in its own `logs/` (`wk_log_dir`, the `lib/suite.sh` row).
+    - It is read over the global key of that name, and absent from both, or empty, it reads as the kit default, `.workkit`.
+    - A log is written there only where git ignores it, else under `~/.workkit/markers`; an absolute value, or one that leaves the repo, stops the command with one line naming the key.
   - An optional `"hooks": { "<event>": [{ "command": "<shell command>", "local": true }] }` declares the ship hooks for `afterRelease`, `afterPublish` and `afterDeploy`.
     - `workkit ship cut`, `publish` and `deploy` run them from the repo root once their step succeeds.
     - They run only where this file says `"enabled": true`.

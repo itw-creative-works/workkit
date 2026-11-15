@@ -129,7 +129,9 @@ identity_step() {
   opener="$(wk_opener)" || opener=''
   # A declined or abandoned sign-in is reported by the status read below,
   # except a forced one, which fails whatever file stands.
-  if ! node "$IDENTITY_LOGIN" ${opener:+--open "$opener"} && [[ -n "$force" ]]; then
+  # The device code is a sign-in's own, so it shows on the terminal, never in a log.
+  if ! wk_secret_step 'the GitHub sign-in (identity/login.js)' node "$IDENTITY_LOGIN" ${opener:+--open "$opener"} \
+    && [[ -n "$force" ]]; then
     wk_warn "identity: the sign-in did not finish; run \`workkit setup --login\` again"
     return 1
   fi

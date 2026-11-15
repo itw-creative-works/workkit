@@ -7,6 +7,8 @@
  * (docs/hooks.md § safety:release-taken).
  */
 
+import { patternShape, workspacePatterns } from '../../workflow/lib/expand-workspaces.js';
+import { skipReason } from '../../workflow/ship/plan.js';
 import { VERSION_RE } from './commit-language.js';
 import { isPlain, parseJson } from './settings.js';
 import { slugFromRemote } from './slug.js';
@@ -16,7 +18,6 @@ import { slugFromRemote } from './slug.js';
  * group (a leading `v` included): the one rule this hook and the ship's cut read.
  */
 export const RELEASE_SUBJECT = new RegExp(`^chore\\(release\\): (${VERSION_RE})$`);
-const GLOB = /[*?[]/;
 const LOOKUP_TIMEOUT_MS = 15000;
 
 const BUMP = 'Bump to a version no provider has yet, then release again. The override is HOOK_DISABLE=1 in the Claude Code environment, which stands every workkit hook aside; the owner alone reaches for it.';
@@ -25,11 +26,10 @@ const text = (value) => (typeof value === 'string' ? value : '');
 const firstLine = (run, tool) => String(run.stderr ?? '').split('\n')[0] || `${tool} exited ${run.exitCode}`;
 const answered = (notices) => (notices.length > 0 ? { context: notices.join('\n') } : null);
 
-// The workspace patterns a package.json declares: the array, or the object's `packages`.
+// The workspace patterns a package.json declares, by the plan's reading, each
+// a non-empty string.
 function patternsOf(pkg) {
-  const declared = isPlain(pkg) ? pkg.workspaces : null;
-  const list = Array.isArray(declared) ? declared : isPlain(declared) && Array.isArray(declared.packages) ? declared.packages : [];
-  return list.filter((pattern) => typeof pattern === 'string' && pattern !== '');
+  return workspacePatterns(isPlain(pkg) ? pkg.workspaces : null).filter((pattern) => typeof pattern === 'string' && pattern !== '');
 }
 
 // The project's packages, the root's and each member's, every member left out named.
@@ -38,12 +38,12 @@ function packageSet(root, packageJson, members, notices) {
   const pkgs = [{ file: `${root}/package.json`, pkg: packageJson }];
   const add = (folder) => pkgs.push({ file: `${root}/${folder}/package.json`, pkg: members[folder] });
   for (const pattern of patternsOf(packageJson)) {
-    if (pattern.endsWith('/*')) {
-      const dir = pattern.slice(0, pattern.lastIndexOf('/'));
+    const { shape, dir } = patternShape(pattern);
+    if (shape === 'children') {
       const hits = Object.keys(members).filter((key) => key.startsWith(`${dir}/`) && !key.slice(dir.length + 1).includes('/'));
       if (hits.length > 0) hits.forEach(add);
       else notices.push(`release-taken: the workspace pattern ${pattern} matched no package, so nothing under it was checked.`);
-    } else if (GLOB.test(pattern)) {
+    } else if (shape === 'other') {
       notices.push(`release-taken: the workspace pattern ${pattern} was not expanded, so its packages were not checked.`);
     } else if (Object.hasOwn(members, pattern)) {
       add(pattern);
@@ -54,7 +54,7 @@ function packageSet(root, packageJson, members, notices) {
   return pkgs;
 }
 
-// One job per package with publish intent (workflow/ship/plan.js's rule).
+// One job per package the publish plan would not skip.
 function jobsOf(pkgs, notices) {
   const jobs = [];
   for (const { file, pkg } of pkgs) {
@@ -62,8 +62,7 @@ function jobsOf(pkgs, notices) {
       notices.push(`release-taken: ${file} could not be read as JSON, so that package was not checked.`);
       continue;
     }
-    const intent = pkg.private === false && ((pkg.files ?? null) !== null || (pkg.publishConfig ?? null) !== null);
-    if (intent && text(pkg.name) && text(pkg.version)) jobs.push({ provider: 'npm', name: pkg.name, version: pkg.version });
+    if (skipReason(pkg) === null && text(pkg.name) && text(pkg.version)) jobs.push({ provider: 'npm', name: pkg.name, version: pkg.version });
   }
   return jobs;
 }
@@ -122,9 +121,10 @@ async function projectOf(root, { read, list }) {
   const packageJson = await readPackage(read, `${root}/package.json`);
   const members = {};
   for (const pattern of patternsOf(packageJson)) {
-    const dir = pattern.slice(0, pattern.lastIndexOf('/'));
-    const folders = pattern.endsWith('/*') ? (await list(`${root}/${dir}`)).map((name) => `${dir}/${name}`) : [pattern];
-    for (const folder of GLOB.test(pattern) && !pattern.endsWith('/*') ? [] : folders) {
+    const { shape, dir } = patternShape(pattern);
+    const folders = shape === 'children' ? (await list(`${root}/${dir}`)).map((name) => `${dir}/${name}`)
+      : shape === 'folder' ? [dir] : [];
+    for (const folder of folders) {
       const pkg = await readPackage(read, `${root}/${folder}/package.json`);
       if (pkg !== null) members[folder] = pkg;
     }

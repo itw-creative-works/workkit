@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 // workflow/lib/workspaces.js: a repo's npm workspace members and their links,
-// read as the publish plan reads them (ship/plan.js), and the members a package
-// cannot see, which its record's tree id leaves out (wk_tree_hash in suite.sh).
+// read by the one expansion the publish plan uses (expand-workspaces.js), and
+// the members a package cannot see, which its record's tree id leaves out
+// (wk_tree_hash in suite.sh).
 // Usage: node workspaces.js <root> <pkg>   prints one excluded folder per line
 
 const fs = require('fs');
 const path = require('path');
-const {
-  PlanError, depNamesOf, expandWorkspaces, readJson,
-} = require('../ship/plan');
+const { expandWorkspaces, PlanError } = require('./expand-workspaces');
+const { depNamesOf, readJson } = require('../ship/plan');
 
 const USAGE = 'usage: workspaces.js <root> <pkg>';
 
@@ -17,8 +17,8 @@ const USAGE = 'usage: workspaces.js <root> <pkg>';
 const holds = (outer, inner) => outer === inner || inner.startsWith(`${outer}/`);
 
 /**
- * The workspace members the root package.json declares, expanded by plan.js's
- * expandWorkspaces.
+ * The workspace members the root package.json declares, expanded by
+ * expand-workspaces.js.
  * @param {string} root the repo root
  * @returns {Array<{name: string, dir: string, deps: string[]}>} `dir` relative
  *   to the root, `deps` the member names it depends on; [] with no `workspaces`

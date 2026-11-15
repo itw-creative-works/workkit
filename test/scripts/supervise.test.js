@@ -2,7 +2,8 @@
 // supervisor, its output the call's and in `.workkit/run.log`, the call exiting with
 // its code, 124 on a frozen end or 125 on a look; one supervised run per repo,
 // inside a git repo only; a narrowed npm test or a second supervise inside it
-// runs under it alone, and a root npm test inside it holds the suite slot.
+// runs under it alone, and a root npm test inside it holds the suite slot; the call
+// paints the plain log's lines when the color gate says yes.
 // The world is test/lib/supervise-world.js.
 
 const fs = require('fs');
@@ -19,10 +20,15 @@ const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, pidOf, reap, silent, busy, read, lastLine, realOf,
 } = require('../lib/supervise');
 const {
-  mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, touches, prints, waitsFor,
+  COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, touches, prints, waitsFor,
 } = require('../lib/supervise-world');
 
 const USAGE = 'usage: workkit supervise -- <command> [args...]';
+
+const ESC = '\u001b';
+// A pass line, and the same line with its mark painted green.
+const PASS_LINE = '  ✓ a';
+const PAINTED_PASS = `  ${ESC}[32m✓${ESC}[39m a`;
 const REFUSAL = /^supervise: a supervised run is already running \(pid (\d+)\); its output is in (.+)$/m;
 
 const supervise = (world, script, cwd = world.repo) => workkit(['supervise', '--', 'node', '-e', script], { cwd, env: world.env });
@@ -66,6 +72,29 @@ describe('workkit supervise: the run and its code', () => {
     } finally {
       reap(pidIn(pidFile));
     }
+  });
+});
+
+describe('workkit supervise: the terminal view', () => {
+  const printsPass = `console.log(${JSON.stringify(PASS_LINE)});`;
+
+  test('a command printing `  ✓ a` with the gate forced on: the call shows the mark green, run.log holds no escape byte', async () => {
+    const w = mkWorld();
+    const res = await workkit(['supervise', '--', 'node', '-e', printsPass], { cwd: w.repo, env: { ...w.env, ...COLOR_ON } });
+    expect(res.code, `the command's own code, got: ${res.output}`).toBe(0);
+    expect(linesToLast(res.output).includes(PAINTED_PASS), `the call paints the line, got: ${JSON.stringify(res.output)}`).toBeTruthy();
+    const log = read(runLog(w));
+    expect(log.includes(`${PASS_LINE}\n`), `the run log holds the line, got: ${JSON.stringify(log)}`).toBeTruthy();
+    expect(log.includes(ESC), `the run log holds no escape byte, got: ${JSON.stringify(log)}`).toBe(false);
+  });
+
+  test('the same with the gate off: the call\'s output is the log\'s bytes', async () => {
+    const w = mkWorld();
+    const res = await workkit(['supervise', '--', 'node', '-e', printsPass], { cwd: w.repo, env: { ...w.env, WORKKIT_COLOR: '0' } });
+    expect(res.code, `the command's own code, got: ${res.output}`).toBe(0);
+    const log = read(runLog(w)).replace(/\r/g, '');
+    expect(log.includes(`${PASS_LINE}\n`), `the run log holds the line, got: ${JSON.stringify(log)}`).toBeTruthy();
+    expect(JSON.stringify(res.output), 'the call prints the log as it is').toBe(JSON.stringify(log));
   });
 });
 

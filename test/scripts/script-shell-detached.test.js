@@ -1,5 +1,5 @@
 // Tests for workflow/script-shell.sh's root `npm test`: the suite runs detached,
-// its output in the suite log and on the terminal, one run at a time, and the
+// its output in the suite log (plain text) and on the terminal, one run at a time, and the
 // CHANGELOG check runs before it starts; a narrowed run is supervised too, each in
 // a slot of its own that Ctrl-C clears; a suite that freezes is ended, and one that works in silence
 // asks for a look and runs on. The world both script-shell suites run npm in is
@@ -24,7 +24,8 @@ const { runLib } = require('../lib/hook-lib');
 const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, reap, realOf, ended, silent,
 } = require('../lib/supervise');
-const { linesToLast, prints } = require('../lib/supervise-world');
+const { COLOR_ON, linesToLast, prints } = require('../lib/supervise-world');
+const { RUNNER, SUITE } = require('../lib/runner-world');
 
 // The suite log of a repo that does not ignore .workkit/, the lock's pid, and
 // the log of one that does.
@@ -95,6 +96,21 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
       expect(logText.endsWith('red-end\nscript-shell: exit 3\n'), `the log ends on the closing line, got: ${JSON.stringify(logText)}`).toBeTruthy();
       expect(res.out.includes(logText), `the terminal shows the log's output whole, log: ${JSON.stringify(logText)}, out: ${res.out}`).toBeTruthy();
       expect(recorded(world, repo), 'a red run proves nothing').toBe(undefined);
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('a root npm test on the kit\'s runner with the color gate forced on: the suite log holds no escape byte', () => {
+      const world = mkWorld();
+      const repo = mkRepo(
+        { scripts: { test: `node "${shellPath(RUNNER)}"` } },
+        { 'test/x.test.js': SUITE("test('adds', () => {});") },
+      );
+      const res = npm(world, repo, ['test'], world.wrapper, COLOR_ON);
+      expect(res.code, `the run is green, got: ${res.code} ${res.out} ${res.err}`).toBe(0);
+      expect(res.out.includes('\u001b[32m✓'), `the gate was on: the terminal view is painted, got: ${JSON.stringify(res.out)}`).toBeTruthy();
+      const logText = read(tmpLog(world, repo)) || '';
+      expect(logText.includes('✓ adds'), `the log holds the run's lines, got: ${JSON.stringify(logText)}`).toBeTruthy();
+      expect(logText.includes('\u001b'), `the log holds no escape byte, got: ${JSON.stringify(logText)}`).toBe(false);
       cleanup(world.root); cleanup(repo);
     });
 

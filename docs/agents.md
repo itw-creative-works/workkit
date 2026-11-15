@@ -174,6 +174,8 @@ flowchart TB
   - It hands the path to the command in `WORKKIT_TEST_SUMMARY`, in the platform's native form.
   - The runner adds one line `{"passed":<n>,"failed":<n>}` per run, on every exit it makes itself.
   - The lines are summed, so a command that starts the runner more than once (a repo with several packages) counts every run.
+  - A monorepo root's run writes one line that holds its own counts plus each workspace member's, each member having written its own line to a file of its own.
+    - A member whose run stops before its runner (a step of its script fails, or its script runs another runner) counts as one failed test in that line.
   - With one line or more the file decides, and node's block is not read.
   - A line that is not that JSON exits 2 with `red-proof: not runnable: the test summary cannot be read`.
   - Its known limits:

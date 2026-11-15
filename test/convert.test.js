@@ -338,8 +338,8 @@ const mkRefusals = () => {
   return { parent, repo: path.join(parent, 'repo') };
 };
 
-// The four paths no suite matches: a folder, a non-suite file, a missing file, one outside.
-const NO_SUITE_ARGS = ['test', 'test/lib/seam.js', 'test/missing.test.js', '../outside.test.js'];
+// The four paths no suite matches: a folder with no suite, a non-suite file, a missing file, one outside.
+const NO_SUITE_ARGS = ['test/lib', 'test/lib/seam.js', 'test/missing.test.js', '../outside.test.js'];
 
 // `workkit convert` run from `root` with `args`: its exit, every printed line
 // (stdout's and stderr's, colours stripped, blanks dropped) and the whole output.
@@ -649,7 +649,22 @@ describe('workkit convert: paths', () => {
     expect(readText(root, 'test/two.test.js') !== TWO_GROUPS, 'the file was rewritten').toBeTruthy();
   });
 
-  test('a folder, a non-suite file, a missing file and a file outside the start folder: each is No suite matches <arg>, exit 1, nothing written', () => {
+  test('a folder holding each old-shape suite under it converts them all, and no suite outside it', () => {
+    const root = mkSuites({
+      'test/hooks/a.test.js': TWO_GROUPS,
+      'test/hooks/deep/b.test.js': TWO_GROUPS,
+      'test/other.test.js': TWO_GROUPS,
+    });
+    const { code, lines, said } = convert(root, ['test/hooks']);
+    expect(code, `exit 0, got: ${said}`).toBe(0);
+    expect([...lines].sort().join('\n'), 'one line per suite under the folder').toBe([
+      'converted test/hooks/a.test.js (4 cases)',
+      'converted test/hooks/deep/b.test.js (4 cases)',
+    ].join('\n'));
+    expect(readText(root, 'test/other.test.js'), 'the suite outside it untouched').toBe(TWO_GROUPS);
+  });
+
+  test('a folder with no suite, a non-suite file, a missing file and a file outside the start folder: each is No suite matches <arg>, exit 1, nothing written', () => {
     for (const arg of NO_SUITE_ARGS) {
       const { parent, repo } = mkRefusals();
       const before = snapshot(parent);

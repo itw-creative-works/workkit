@@ -62,6 +62,16 @@ describe('workkit test: the repo\'s npm test, from its root', { skip: skipWithou
     cleanup(world.root); cleanup(repo);
   });
 
+  test('workkit test --filter=a case hands the flag to the runner: only the a case runs, under its filter line', () => {
+    const world = mkWorld({ claude: false });
+    const repo = mkCoreRepo();
+    const { code, said, lines } = runTest(world, ['--filter=a case'], { cwd: repo });
+    expect(code, `exit 0, got: ${said}`).toBe(0);
+    expect(lines.some((line) => line.trim() === '✓ a case') && !ran(lines, 'b case'), `only the matching case ran, got: ${said}`).toBeTruthy();
+    expect(lines.some((line) => line.trim() === 'filter: a case'), `the runner's filter line, got: ${said}`).toBeTruthy();
+    cleanup(world.root); cleanup(repo);
+  });
+
   test('from a nested package\'s folder the verb runs the root\'s npm test, never the nested one', () => {
     const world = mkWorld({ claude: false });
     const repo = mkCoreRepo();

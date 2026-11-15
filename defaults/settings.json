@@ -11,6 +11,9 @@
   "findings": {
     "file": false
   },
+  "logs": {
+    "dir": ".workkit"
+  },
   "commit": {
     "attribution": true
   },

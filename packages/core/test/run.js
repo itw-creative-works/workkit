@@ -1,28 +1,29 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// The kit's test runner, over the repo at the cwd: every suite findSuites
-// names, each in a worker process on Node's own runner, a parallel wave then
+// The kit's test runner, over the repo at the cwd: the suites lib/pick.js
+// picks, each in a worker process on Node's own runner, a parallel wave then
 // the serial tail the repo's `test/lib/serial.js` names, then the mod half
-// (`claude plugin test` over `test/mods/*.test.ts`), totalled; non-zero on any
-// failure. Suite paths after `--` narrow the run. A repo reaches it through
-// `workkit test`, the package's bin.
+// (`claude plugin test` over `test/mods/*.test.ts`), then each workspace
+// member's own `npm test`, totalled; non-zero on any failure. Suite paths
+// after `--` narrow the run, `--filter=<text>` its cases. A repo reaches it
+// through `workkit test`, the package's bin.
 
 import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
 import { constants } from 'node:os';
-import { fork, spawnSync } from 'node:child_process';
-import { findSuites, findModSuites, suiteName, modDir, POOL } from './lib/suites.js';
-import { fromStart, unmatchedLine, writtenPaths, namedSuites } from './lib/suite-path.js';
+import { fork, spawn, spawnSync } from 'node:child_process';
+import { suiteName, POOL } from './lib/suites.js';
+import { readFilter, writtenPaths } from './lib/suite-path.js';
+import { pickSuites, SKIP_FILE } from './lib/pick.js';
+import { membersOf, runMember, memberOutcome, PlanError } from './lib/members.js';
 import { runNodeTest, endedMessage, howEnded } from './lib/node-test.js';
 import { PIPE_GRACE_MS, SUITE_DEADLINE } from './lib/process.js';
 import { endTree, endGroup, groupLives } from './lib/spawn.js';
 import { indentRest, indentWriter } from './lib/log.js';
-
-// A repo's serial list is CommonJS, loaded by absolute path.
-const require = createRequire(import.meta.url);
+import { paint } from './lib/paint.js';
 
 const SLOWEST = 5;
+// Why the mod half and the members do not start under a filter.
+const NOT_UNDER_FILTER = 'not started under --filter';
 // The most seconds TEST_DEADLINE may name: node's timers hold 2^31 - 1 ms at most.
 const MAX_DEADLINE_SECONDS = 2147483;
 // The signals the runner passes on to its workers' groups before it exits.
@@ -34,15 +35,17 @@ const live = new Set();
 let stopping = false;
 let ending = [];
 
-// The repo the run covers, the cwd, and the suite paths it was handed: `--`
-// dropped, every other argument a suite path.
+// The repo the run covers, the cwd, the filter text (null without the flag)
+// and the suite paths it was handed: `--` dropped, every other argument a
+// suite path. A misused flag ends the run before any suite.
 const parseArgs = (argv) => {
-  const root = process.cwd();
-  return { root, paths: writtenPaths(argv) };
+  const { filter, rest, error } = readFilter(argv);
+  if (error !== null) {
+    console.error(error);
+    process.exit(1);
+  }
+  return { root: process.cwd(), paths: writtenPaths(rest), filter };
 };
-
-// The serial list's home, and how a start failure names it.
-const SERIAL_FILE = 'test/lib/serial.js';
 
 // The per-file deadline in ms: SUITE_DEADLINE, or the seconds TEST_DEADLINE
 // names; a value that is no positive number, or more than a timer holds, ends
@@ -57,33 +60,54 @@ const deadlineOf = (raw) => {
   return seconds * 1000;
 };
 
-// The repo's serial tail, paths from the start folder; none without a serial.js.
-const serialOf = (root) => {
-  const file = path.join(root, SERIAL_FILE);
-  return fs.existsSync(file) ? require(file).SERIAL : [];
+// The workspace members of <root>; a pattern the expansion refuses ends the
+// run with the publish plan's own line, a package.json that does not parse by its path.
+const membersIn = (root) => {
+  try {
+    return membersOf(root);
+  } catch (err) {
+    if (!(err instanceof PlanError)) throw err;
+    console.error(err.message);
+    process.exit(1);
+  }
 };
 
-// The named suites, or every suite when none is named; a name that is no
-// suite ends the run before anything starts. A named `.test.ts` picks the mod
-// half, which `claude plugin test` runs whole, since it takes a folder. A
-// serial entry that is no suite ends the run the same way.
-const pickSuites = ({ root, paths: args }, serialRels) => {
-  const all = findSuites(root);
-  const mods = findModSuites(modDir(root));
-  const serialMiss = unmatchedLine(root, all, serialRels);
-  if (serialMiss !== null) {
-    console.error(`${serialMiss} (${SERIAL_FILE})`);
+// What one run covers, or the line that ends it before any suite: the suites
+// lib/pick.js picks, and the members a bare run starts (those with a `test`
+// script that no active skip entry names, the rest counted as left out), held
+// back whole under a filter.
+const startOf = ({ root, paths, filter }) => {
+  let members = null;
+  const membersHere = () => {
+    members ??= membersIn(root);
+    return members;
+  };
+  const isMember = (dir) => membersHere().some((member) => member.dir === dir);
+  const picked = pickSuites({ root, paths, ci: Boolean(process.env.CI), isMember });
+  if (picked.error !== undefined) {
+    console.error(picked.error);
     process.exit(1);
   }
-  if (args.length === 0) return { suites: all, withMods: mods.length > 0 };
-  const named = args.filter((arg) => !mods.includes(fromStart(root, arg)));
-  const miss = unmatchedLine(root, all, named);
-  if (miss !== null) {
-    console.error(miss);
+  const tested = paths.length === 0 ? membersHere().filter((member) => member.tested) : [];
+  const startable = tested.filter((member) => !picked.skipped.includes(member.dir));
+  if (picked.suites.length === 0 && !picked.withMods && startable.length === 0) {
+    console.error('No test file found (*.test.js, *.test.mjs, *.test.cjs)');
     process.exit(1);
   }
-  return { suites: namedSuites(root, named), withMods: named.length < args.length };
+  const held = filter !== null && startable.length > 0;
+  return {
+    ...picked, members: held ? [] : startable, membersHeld: held, membersLeftOut: tested.length - startable.length,
+  };
 };
+
+// <text> on stdout, painted by Node's rule for it (lib/paint.js): the workers
+// write plain text, so every color the run shows is put on here.
+const show = (text, done) => process.stdout.write(paint(text, process.stdout), done);
+const showLine = (line) => show(`${line}\n`);
+
+// <text> shown, resolved once written: a member's output goes to the same
+// place straight from its own process, so nothing of ours may still be queued.
+const say = (text) => new Promise((resolve) => { show(text, resolve); });
 
 // The mod half: the plugin's wiring suites, run by the engine itself on the repo
 // root (`claude plugin test` takes a plugin folder). No claude binary is a skip.
@@ -93,7 +117,7 @@ const runModHalf = (root) => {
     return { skip: res.error.code === 'ENOENT' ? 'no claude binary on PATH' : `claude did not start: ${res.error.message}` };
   }
   const out = `${res.stdout || ''}${res.stderr || ''}`;
-  indentWriter(process.stdout.write.bind(process.stdout))(out);
+  indentWriter(show)(out);
   const count = (word) => Number((out.match(new RegExp(`^\\s*(\\d+) ${word}$`, 'm')) || [])[1] || 0);
   const failures = [...out.matchAll(/^\(fail\) (.+?)(?: \[[\d.]+ms\])?$/gm)]
     .map((m) => ({ name: m[1], message: 'failed under claude plugin test' }));
@@ -107,22 +131,23 @@ const runModHalf = (root) => {
 
 // Worker mode: runs one suite on Node's runner and sends its result as ONE
 // message, then exits 0 once its output is flushed.
-const runOne = async (suite, root) => {
-  const result = await runNodeTest(suite, suiteName(root, suite));
+const runOne = async (suite, root, filter) => {
+  const result = await runNodeTest(suite, suiteName(root, suite), filter);
   process.send(result, () => {
     process.stdout.write('', () => process.stderr.write('', () => process.exit(0)));
   });
 };
 
-// One suite in a worker process: everything it wrote, both streams in arrival
-// order, its message (null when it ended without one), its wall time in ms and
-// whether <deadline> passed first, which ends the worker's process group.
-const runWorker = (suite, root, deadline) => new Promise((resolve) => {
+// One suite in a worker process, handed the filter text when there is one:
+// everything it wrote, both streams in arrival order, its message (null when it
+// ended without one), its wall time in ms and whether <deadline> passed first,
+// which ends the worker's process group.
+const runWorker = (suite, { root, filter }, deadline) => new Promise((resolve) => {
   // A run a signal is ending starts no more workers; its exit ends the wait.
   if (stopping) return;
   const began = Date.now();
   // Its own process group off Windows, so endGroup reaches what the suite started in it.
-  const child = fork(import.meta.filename, ['--worker', suite, root], {
+  const child = fork(import.meta.filename, ['--worker', suite, root, ...(filter === null ? [] : [filter])], {
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: process.platform !== 'win32',
   });
   live.add(child.pid);
@@ -190,8 +215,8 @@ const crashMessage = ({ output, code, signal, error, timedOut }, deadline) => {
 
 /**
  * One run over a repo: the whole of what `npm test` prints and exits with.
- * @param {string[]} argv `[--] [suite paths...]`, or a worker's
- *   `--worker <suite> <start folder>`
+ * @param {string[]} argv `[--] [--filter=<text>] [suite paths...]`, or a
+ *   worker's `--worker <suite> <start folder> [<filter text>]`
  * @returns {Promise<void>}
  */
 export const main = async (argv) => {
@@ -212,7 +237,7 @@ export const main = async (argv) => {
     // The deadline's ladder ends a worker through its exit handlers, so a
     // suite's scratch folders are removed.
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => process.exit(1));
-    await runOne(argv[1], argv[2]);
+    await runOne(argv[1], argv[2], argv[3] ?? null);
     return;
   }
 
@@ -227,26 +252,27 @@ export const main = async (argv) => {
   if (process.platform !== 'win32') passSignalsOn();
   const start = Date.now();
   const args = parseArgs(argv);
-  const { root } = args;
-  const serialRels = serialOf(root);
-  const { suites, withMods } = pickSuites(args, serialRels);
-
-  if (suites.length === 0 && !withMods) {
-    console.error('No test file found (*.test.js, *.test.mjs, *.test.cjs)');
-    process.exit(1);
-  }
+  const { root, filter } = args;
+  const {
+    suites, serial, withMods, leftOut, members, membersHeld, membersLeftOut,
+  } = startOf(args);
 
   const allFailures = [];
   const skippedSuites = [];
   const skippedCases = [];
   const timings = [];
+  let reported = 0;
+  if (membersHeld) skippedSuites.push({ name: 'members', reason: NOT_UNDER_FILTER });
 
   // One finished suite: its block printed whole, its counts and time added.
+  // Under a filter, a suite whose every case was left out prints and counts nothing.
   const report = (suite, outcome) => {
     const rel = suiteName(root, suite);
-    timings.push({ rel, ms: outcome.ms });
-    process.stdout.write(`\n\x1b[1m\x1b[36m▶ ${rel}\x1b[0m\n${outcome.output}`);
     const res = outcome.result;
+    if (filter !== null && res && !outcome.timedOut && res.passed + res.failed + res.skips.length === 0) return;
+    reported++;
+    timings.push({ rel, ms: outcome.ms });
+    show(`\n▶ ${rel}\n${outcome.output}`);
     if (!res || outcome.timedOut) {
       failed++;
       allFailures.push({ name: `run ${rel}`, message: crashMessage(outcome, deadline) });
@@ -262,17 +288,22 @@ export const main = async (argv) => {
     }
   };
 
+  if (filter !== null) showLine(`filter: ${filter}`);
+  if (leftOut > 0) showLine(`skip: ${leftOut} suite${leftOut === 1 ? '' : 's'} left out (${SKIP_FILE})`);
+  if (membersLeftOut > 0) showLine(`skip: ${membersLeftOut} member${membersLeftOut === 1 ? '' : 's'} left out (${SKIP_FILE})`);
+
   // The parallel wave: POOL workers at a time, each block printed once it and
   // every suite before it have finished, so the order is the sorted list's.
-  const serial = new Set(serialRels.map((rel) => fromStart(root, rel)));
-  const wave = suites.filter((suite) => !serial.has(suite));
+  // Then the serial tail, one at a time, in the serial list's order.
+  const inSerial = new Set(serial);
+  const wave = suites.filter((suite) => !inSerial.has(suite));
   const outcomes = [];
   let next = 0;
   let printed = 0;
   const lane = async () => {
     while (next < wave.length) {
       const i = next++;
-      outcomes[i] = await runWorker(wave[i], root, deadline);
+      outcomes[i] = await runWorker(wave[i], args, deadline);
       while (printed < wave.length && outcomes[printed]) {
         report(wave[printed], outcomes[printed]);
         printed++;
@@ -281,15 +312,15 @@ export const main = async (argv) => {
   };
   await Promise.all(Array.from({ length: Math.min(POOL, wave.length) }, lane));
 
-  for (const suite of suites.filter((s) => serial.has(s))) {
-    report(suite, await runWorker(suite, root, deadline));
+  for (const suite of serial.filter((s) => suites.includes(s))) {
+    report(suite, await runWorker(suite, args, deadline));
   }
 
   if (withMods) {
-    console.log(`\n\x1b[1m\x1b[36m▶ mod half: claude plugin test\x1b[0m`);
-    const mod = runModHalf(root);
+    showLine('\n▶ mod half: claude plugin test');
+    const mod = filter === null ? runModHalf(root) : { skip: NOT_UNDER_FILTER };
     if (mod.skip) {
-      console.log(`\x1b[33m⊘ skipped:\x1b[0m ${indentRest(mod.skip)}`);
+      showLine(`⊘ skipped: ${indentRest(mod.skip)}`);
       skippedSuites.push({ name: 'mod half (claude plugin test)', reason: mod.skip });
     } else {
       passed += mod.passed;
@@ -297,31 +328,52 @@ export const main = async (argv) => {
       for (const f of mod.failures) allFailures.push({ name: `mod half › ${f.name}`, message: f.message });
     }
   }
-  const ran = suites.length + (withMods ? 1 : 0);
+  const ran = reported + (withMods ? 1 : 0);
+
+  // The members, one at a time in folder order, each on its own runner.
+  const rows = [];
+  for (const member of members) {
+    // A run a signal is ending starts no more members, and prints no row or
+    // totals for the one it ended: the signal's handler exits the run.
+    if (stopping) return;
+    await say(`\n▶ ${member.name}: npm test\n`);
+    const end = await runMember(member, { spawn, live });
+    if (stopping) return;
+    const outcome = memberOutcome(member.name, end);
+    rows.push(outcome.row);
+    passed += outcome.passed;
+    failed += outcome.failed;
+    if (outcome.failure) allFailures.push(outcome.failure);
+  }
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   const suiteNote = skippedSuites.length ? `, ${skippedSuites.length} suite${skippedSuites.length === 1 ? '' : 's'} skipped` : '';
   const caseNote = skippedCases.length ? `, ${skippedCases.length} case${skippedCases.length === 1 ? '' : 's'} skipped` : '';
-  console.log(`\n\x1b[1m${passed} passed, ${failed} failed${suiteNote}${caseNote}\x1b[0m (${elapsed}s, ${ran} suite${ran === 1 ? '' : 's'})`);
+  const memberNote = rows.length ? `, ${rows.length} member${rows.length === 1 ? '' : 's'}` : '';
+  if (rows.length) showLine(`\n${rows.join('\n')}`);
+  showLine(`\n${passed} passed, ${failed} failed${suiteNote}${caseNote} (${elapsed}s, ${ran} suite${ran === 1 ? '' : 's'}${memberNote})`);
   if (timings.length) {
     const slowest = timings.sort((a, b) => b.ms - a.ms).slice(0, SLOWEST);
-    console.log(`slowest: ${slowest.map(({ rel, ms }) => `${rel} ${(ms / 1000).toFixed(1)}s`).join(', ')}`);
+    showLine(`slowest: ${slowest.map(({ rel, ms }) => `${rel} ${(ms / 1000).toFixed(1)}s`).join(', ')}`);
   }
 
   // Name every skip, file and case alike: a run must never quietly cover less
   // than the reader assumes.
   for (const s of [...skippedSuites, ...skippedCases]) {
-    console.log(`  \x1b[33m⊘ ${s.name}: ${indentRest(s.reason)}\x1b[0m`);
+    showLine(`  ⊘ ${s.name}: ${indentRest(s.reason)}`);
   }
 
   if (failed > 0) {
-    console.log('\n\x1b[1mFailures:\x1b[0m');
+    showLine('\nFailures:');
     for (const f of allFailures) {
-      console.log(`  - ${f.name}: ${indentRest(f.message)}`);
+      showLine(`  - ${f.name}: ${indentRest(f.message)}`);
     }
   }
+  // A filter that matched no case anywhere proves nothing, so it is no pass.
+  const noMatch = filter !== null && passed + failed + skippedCases.length === 0;
+  if (noMatch) console.error(`No case matches ${filter}`);
   // exitCode, not exit(): a block may still be draining into a slow pipe.
-  process.exitCode = failed > 0 ? 1 : 0;
+  process.exitCode = failed > 0 || noMatch ? 1 : 0;
 };
 
 if (import.meta.main) main(process.argv.slice(2));

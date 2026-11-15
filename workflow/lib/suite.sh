@@ -6,7 +6,7 @@
 # runs' logs and locks. Sourced, functions only, by script-shell.sh (the records'
 # writer), supervise.sh, watch.sh, ship/watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
 # wk_marker_path, wk_sweep_markers, wk_native_path, wk_node, WK_NODE_FLOOR, wk_take_lock
-# and wk_drop_lock from platform.sh, and runs workspaces.js beside it.
+# and wk_drop_lock from platform.sh, wk_setting from participation.sh, and runs workspaces.js.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
 # non-empty string. Consumers: prove.sh, cmd_test, hook_test_package_dir; the module's
@@ -23,14 +23,52 @@ wk_suite_marker_path() { wk_marker_path claude-suite-marker "$1"; }
 # a green whole suite and a green package run answer different questions.
 wk_pkg_marker_path() { wk_marker_path claude-package-marker "$1"; }
 
-# wk_log_path <repo_root> <name> [<id>]: where a detached run logs. Inside
-# .workkit/ only when git ignores it there, else a marker file, so a log never
-# changes the tree hash. An <id> keeps one of several runs apart: `.<id>` ends
-# the name in both places.
+# wk_setting (participation.sh) reads logs.dir; a caller that sourced only
+# platform.sh gets it here.
+# shellcheck source=./participation.sh
+declare -f wk_setting >/dev/null 2>&1 || . "${BASH_SOURCE[0]%/*}/participation.sh"
+
+# wk_log_dir <repo_root>: `logs.dir` (wk_setting) walked to a path from the
+# root, empty for the root itself; empty reads as `.workkit`, as with no jq.
+# Absolute or leaving the repo: one line naming the key, and 1. The module's
+# twin is logDirOf in hooks/mods/commit-gate.js.
+wk_log_dir() {
+  local value part out='' bad=0 parts=()
+  value=$(wk_setting "$1" logs.dir) || return 1
+  [ -n "$value" ] || value=.workkit
+  case "$value" in
+    /*|\\*|[A-Za-z]:*) bad=1 ;;
+    *)
+      IFS=/ read -r -a parts <<< "${value//\\//}"
+      for part in ${parts[@]+"${parts[@]}"}; do
+        case "$part" in
+          ''|.) ;;
+          ..)
+            [ -n "$out" ] || { bad=1; break; }
+            case "$out" in */*) out=${out%/*} ;; *) out='' ;; esac
+            ;;
+          *) out=${out:+$out/}$part ;;
+        esac
+      done
+      ;;
+  esac
+  if [ "$bad" -eq 1 ]; then
+    printf 'workkit: logs.dir must be a folder inside the repo, written from its root (got %s)\n' "$value" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
+# wk_log_path <repo_root> <name> [<id>]: where a detached run logs. In the log
+# folder (wk_log_dir) only when git ignores it there, else a marker file, so a
+# log never changes the tree hash. An <id> keeps one of several runs apart:
+# `.<id>` ends the name in both places.
 wk_log_path() {
-  local marker suffix="${3:+.$3}"
-  if git -C "$1" check-ignore -q ".workkit/$2$suffix" 2>/dev/null; then
-    printf '%s\n' "$1/.workkit/$2$suffix"
+  local marker dir suffix="${3:+.$3}"
+  dir=$(wk_log_dir "$1") || return 1
+  dir="${dir:+$dir/}"
+  if git -C "$1" check-ignore -q "$dir$2$suffix" 2>/dev/null; then
+    printf '%s\n' "$1/$dir$2$suffix"
   else
     marker=$(wk_marker_path "claude-$2" "$1") || return 1
     printf '%s\n' "$marker$suffix"

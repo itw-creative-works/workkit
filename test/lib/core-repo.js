@@ -2,8 +2,10 @@
 // of `workkit test`, the package linked in by a real `npm install` from the
 // kit's packages/core, a test/lib/harness.js re-exporting `workkit-core/test`,
 // and two suites, a and b. Consumers: test/scripts/workkit-core.test.js,
-// test/scripts/workkit-cli/test-verb.test.js and test/scripts/release.test.js
-// (the npm precondition and env alone).
+// test/scripts/workkit-cli/test-verb.test.js, test/scripts/release.test.js,
+// test/scripts/red-proof.test.js (the npm precondition and env alone),
+// test/members.test.js (those and the totals line), and
+// test/runner-folders.test.js (the totals line alone).
 
 const fs = require('fs');
 const path = require('path');
@@ -85,8 +87,12 @@ const mkCoreRepo = () => {
   return repo;
 };
 
-// The totals line: `passed` passing cases, none failed, across `suites` suites.
-const TOTALS = (passed, suites) => new RegExp(`^${passed} passed, 0 failed \\(\\d+(?:\\.\\d+)?s, ${suites} suites?\\)$`);
+// The totals line: `passed` passing cases, `failed` failed (none unless given),
+// across `suites` suites, and `members` workspace members when given.
+const TOTALS = (passed, suites, { failed = 0, members } = {}) => {
+  const tail = members === undefined ? '' : `, ${members} members?`;
+  return new RegExp(`^${passed} passed, ${failed} failed \\(\\d+(?:\\.\\d+)?s, ${suites} suites?${tail}\\)$`);
+};
 
 module.exports = {
   CORE, SUITE, TOTALS, skipWithoutNpm, npmEnv, npmIn, mkCoreRepo,

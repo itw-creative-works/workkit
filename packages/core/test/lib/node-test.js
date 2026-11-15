@@ -26,6 +26,8 @@ const JOINT = ' › ';
 const TAIL_LINES = 3;
 // How often the worker looks for the end of the suite process run() started.
 const EXIT_POLL_MS = 100;
+// Every character a pattern reads as its own, so a filter text matches as typed.
+const PATTERN_CHARS = /[.*+?^${}()|[\]\\]/g;
 
 /**
  * Why a suite ended without its result: how it ended, then the last lines it
@@ -69,7 +71,7 @@ const suiteRunning = () => process.getActiveResourcesInfo().includes('ProcessWra
 // file:// URL put in path form; the thrown error is the failure's cause.
 const suiteFrame = (error, suite) => {
   const url = pathToFileURL(suite).href;
-  const stack = String(error.cause?.stack ?? error.stack ?? '');
+  const stack = stripVTControlCharacters(String(error.cause?.stack ?? error.stack ?? ''));
   const frame = stack.split('\n').map((line) => line.trim())
     .find((line) => line.startsWith('at ') && (line.includes(`${suite}:`) || line.includes(`${url}:`)));
   return frame?.replace(url, suite);
@@ -78,16 +80,16 @@ const suiteFrame = (error, suite) => {
 /**
  * Runs one suite through Node's runner, prints its block, and resolves its
  * counts. A case is headed by its describe path, `[outer › inner]`, and named
- * by it in a list. Its stdout, stderr and `t.diagnostic()` lines print as they
- * arrive, at CASE_INDENT. A file that throws before any case ran fails whole as
- * `load <rel>`, one that dies or fails otherwise as `run <rel>`, one with no
- * case as `empty <rel>`. Once the suite process exits, one PIPE_GRACE_MS ends
- * the wait for a process it started that holds its output open.
+ * by it in a list; its prints and diagnostics sit at CASE_INDENT. A file fails
+ * whole as `load <rel>` (it threw before any case), `run <rel>` (it died or
+ * failed otherwise) or `empty <rel>` (no case, a filter aside). One
+ * PIPE_GRACE_MS past the suite's exit ends the wait on a process holding its output.
  * @param {string} suite the suite's absolute path
  * @param {string} rel the suite's path from the start folder, its name in a failure
+ * @param {string|null} [filter] the text a case's full name must hold to run, as typed
  * @returns {Promise<{passed: number, failed: number, failures: object[], skips: object[]}>}
  */
-export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
+export const runNodeTest = (suite, rel, filter = null) => new Promise((resolve, reject) => {
   const result = { passed: 0, failed: 0, failures: [], skips: [] };
   // Everything the block printed, and the suite's stderr alone.
   const printed = [];
@@ -128,7 +130,7 @@ export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
   const mark = (data, text) => {
     const parent = open[data.nesting - 1] ?? null;
     if (parent !== lastParent) {
-      if (parent) write(`\n\x1b[1m[${pathOf(data).map((node) => node.name).join(JOINT)}]\x1b[0m\n`);
+      if (parent) write(`\n[${pathOf(data).map((node) => node.name).join(JOINT)}]\n`);
       else if (lastParent !== undefined) write('\n');
       lastParent = parent;
     }
@@ -136,7 +138,7 @@ export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
   };
   const skipCase = (data, reason) => {
     result.skips.push({ name: fullName(data), reason });
-    mark(data, `\x1b[33m⊘\x1b[0m ${data.name}: \x1b[33m${indentRest(reason)}\x1b[0m`);
+    mark(data, `⊘ ${data.name}: ${indentRest(reason)}`);
   };
   // The result as counted. A suite that named a case and never sent its summary
   // died, with code 0 when no failure of the file came; cut short, the file's
@@ -149,8 +151,9 @@ export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
     if (cutShort && late !== null) wholeFailure(`run ${rel}`, late);
     else if (cutShort && !summarized) wholeFailure(`run ${rel}`, endedMessage('exited, its output held open by a process it started,', printed.join('')));
     else if (!summarized && registered && !failedWhole) wholeFailure(`run ${rel}`, endedMessage('exited with code 0', printed.join('')));
-    // A file in which no case ran proves nothing, so it is no pass.
-    if (result.passed + result.failed + result.skips.length === 0) wholeFailure(`empty ${rel}`, 'registered no test');
+    // A file in which no case ran proves nothing, so it is no pass; under a
+    // filter it is a file whose cases were all left out.
+    if (filter === null && result.passed + result.failed + result.skips.length === 0) wholeFailure(`empty ${rel}`, 'registered no test');
     resolve(result);
   };
   // A process the suite started may hold the suite's stdout open after the
@@ -162,7 +165,9 @@ export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
       setTimeout(() => finish(true), PIPE_GRACE_MS);
     }
   }, EXIT_POLL_MS);
-  const stream = run({ files: [suite], concurrency: 1 });
+  // Node matches a pattern against a case's describe path and name, joined by spaces.
+  const named = filter === null ? {} : { testNamePatterns: [new RegExp(filter.replace(PATTERN_CHARS, '\\$&'))] };
+  const stream = run({ files: [suite], concurrency: 1, ...named });
   stream.on('data', ({ type, data }) => {
     if (done) return;
     if (data.name !== suite && type !== 'test:enqueue' && type !== 'test:dequeue') heard = true;
@@ -178,7 +183,7 @@ export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
       // Node's own totals for the run carry no file, so they never print.
       if (data.file === undefined) return;
       write(`${CASE_INDENT}${indentRest(data.message)}\n`);
-      const quoted = data.message.match(LATE_ERROR);
+      const quoted = stripVTControlCharacters(data.message).match(LATE_ERROR);
       if (quoted) late = quoted[1].replace(ERROR_HEAD, '');
     } else if (data.name === suite) {
       // The file's own test is no case: Node reports a file holding none as
@@ -187,8 +192,8 @@ export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
       // That event says only `test failed`: a late error's message is in Node's
       // diagnostic, an uncaught one's in Node's report on stderr, else how it ended.
       const { error } = data.details;
-      const thrown = thrownOf(stderrText, error.exitCode);
-      const ended = error.exitCode === undefined ? error.message : endedMessage(howEnded({ code: error.exitCode, signal: error.signal }), printed.join(''));
+      const thrown = thrownOf(stripVTControlCharacters(stderrText), error.exitCode);
+      const ended = error.exitCode === undefined ? stripVTControlCharacters(error.message) : endedMessage(howEnded({ code: error.exitCode, signal: error.signal }), printed.join(''));
       wholeFailure(`${started || thrown === null ? 'run' : 'load'} ${rel}`, late ?? thrown ?? ended);
     } else if (type === 'test:start') {
       started = true;
@@ -204,21 +209,24 @@ export const runNodeTest = (suite, rel) => new Promise((resolve, reject) => {
       skipCase(data, data.skip === true ? 'skipped' : data.skip);
     } else if (type === 'test:pass' && data.details.type === 'test') {
       result.passed++;
-      mark(data, `\x1b[32m✓\x1b[0m ${data.name}`);
+      mark(data, `✓ ${data.name}`);
     } else if (type === 'test:fail' && data.details.error.failureType !== 'subtestsFailed') {
       // A test or describe whose only failure is a failed subtest is counted
       // there; it fails on its own only when its body or a hook threw.
       // A hook's failure says only which hook; why is the thrown error's own message.
+      // Node colors an assertion's diff under FORCE_COLOR; the runner's lines stay plain.
       const { error } = data.details;
-      const why = typeof error.cause?.message === 'string' && error.cause.message !== error.message ? error.cause.message : null;
+      const message = stripVTControlCharacters(String(error.message));
+      const cause = typeof error.cause?.message === 'string' ? stripVTControlCharacters(error.cause.message) : null;
+      const why = cause !== null && cause !== message ? cause : null;
       result.failed++;
-      result.failures.push({ name: fullName(data), message: why === null ? error.message : `${error.message}: ${why}` });
-      mark(data, `\x1b[31m✗\x1b[0m ${data.name}`);
-      for (const text of why === null ? [error.message] : [error.message, why]) {
-        write(`${CASE_INDENT}\x1b[31m${indentRest(String(text).trimEnd())}\x1b[0m\n`);
+      result.failures.push({ name: fullName(data), message: why === null ? message : `${message}: ${why}` });
+      mark(data, `✗ ${data.name}`);
+      for (const text of why === null ? [message] : [message, why]) {
+        write(`${CASE_INDENT}${indentRest(String(text).trimEnd())}\n`);
       }
       const frame = suiteFrame(error, suite);
-      if (frame) write(`${CASE_INDENT}\x1b[2m${frame}\x1b[0m\n`);
+      if (frame) write(`${CASE_INDENT}${frame}\n`);
     }
   });
   stream.on('error', reject);

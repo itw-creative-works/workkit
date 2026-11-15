@@ -72,7 +72,7 @@ claude plugin install workkit@workkit
   5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper.
      - From then on a root `npm test` records the tree it proved.
      - It lints any new CHANGELOG entry before the suite starts.
-     - It keeps running if the call that started it is cut, and logs to `.workkit/suite.log`.
+     - It keeps running if the call that started it is cut, and logs to `.workkit/suite.log` (another folder when the repo's `logs.dir` names one).
      - The kit's own wrapper reached through a linked folder reads as current.
      - A value someone else set is warned about and left alone.
      - The setting is made only when the wrapper exists behind the engine's address.
@@ -232,6 +232,7 @@ claude plugin install workkit@workkit
     - Setup asks the publish question once and never again.
   - `.repos.json` is the engine's list of repos on this machine, plus the ones you declined.
   - `.cache.json` is throwaway state, and `jobs/` is the daily job's state.
+  - `logs/` holds the last run of `workkit setup`, `update`, `doctor` and `publish`, one plain file each (`setup.log` and so on), ending `workkit <command>: exit <code>`; the terminal shows the same run in color. The token mint and the GitHub sign-in show on the terminal only, never in a log.
   - `morning.d/` is yours too: every executable `*.sh` in it is the 9am job's sixth step, run in name order ([`jobs/README.md`](../jobs/README.md#the-morning-on-this-machine)).
 - The full rules for this global layer: [`project-state.md`](project-state.md) § The global layer.
 

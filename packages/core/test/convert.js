@@ -111,8 +111,9 @@ export const convertText = (text, filename = 'suite.js') => {
 /**
  * The verb: each named suite, or every suite under the cwd, converted in
  * place or left, one line each; exit 0 once it ran. A path is read as the
- * runner reads one, from the cwd with `\` as `/`; one naming no suite there
- * is `No suite matches <arg>`, exit 1, before any file is written.
+ * runner reads one, from the cwd with `\` as `/`, a folder naming every suite
+ * under it; one naming no suite there is `No suite matches <arg>`, exit 1,
+ * before any file is written.
  * @param {string[]} args the suite paths, none for every suite
  */
 export const main = (args) => {
@@ -125,7 +126,7 @@ export const main = (args) => {
     process.exitCode = 1;
     return;
   }
-  for (const file of named.length ? namedSuites(root, named) : all) {
+  for (const file of named.length ? namedSuites(root, all, named) : all) {
     const name = suiteName(root, file);
     const res = convertText(fs.readFileSync(file, 'utf8'), file);
     if ('why' in res) {

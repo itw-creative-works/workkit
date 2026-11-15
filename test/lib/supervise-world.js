@@ -20,6 +20,10 @@ const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 // A check far longer than any case, so only the case ends the run.
 const LONG_CHECK = 10;
 
+// The env that forces the shell's color gate on: a real TERM beside it, since the
+// gate refuses the dumb one bash sets when none is given.
+const COLOR_ON = { WORKKIT_COLOR: '1', TERM: 'xterm-256color' };
+
 const write = (file, body) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body);
@@ -100,5 +104,5 @@ const waitsFor = (pidFile, go, { lines, after = '', code }) => [
 ].join('\n');
 
 module.exports = {
-  LONG_CHECK, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, touches, prints, waitsFor,
+  LONG_CHECK, COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, touches, prints, waitsFor,
 };

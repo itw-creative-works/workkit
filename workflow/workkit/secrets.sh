@@ -17,12 +17,14 @@ bounded_read() {
   local watchdog pid rc=0
   if command -v timeout >/dev/null 2>&1; then timeout "$SECRETS_TIMEOUT" "$@"; return $?; fi
   if command -v gtimeout >/dev/null 2>&1; then gtimeout "$SECRETS_TIMEOUT" "$@"; return $?; fi
-  "$@" &
+  # Neither background job keeps a command log's 7, 8 or 9 (lib/command-log.sh)
+  # open, which would hold the call's own stdout past this read.
+  "$@" 7>&- 8>&- 9>&- &
   pid=$!
   # The subshell's own stdout goes to /dev/null on purpose: inside a command
   # substitution a background `sleep` holding the capture pipe open would
   # outlive the very call this is here to bound.
-  ( sleep "$SECRETS_TIMEOUT"; kill -TERM "$pid" ) >/dev/null 2>&1 &
+  ( sleep "$SECRETS_TIMEOUT"; kill -TERM "$pid" ) >/dev/null 2>&1 7>&- 8>&- 9>&- &
   watchdog=$!
   wait "$pid" || rc=$?
   kill -TERM "$watchdog" >/dev/null 2>&1 || true
@@ -92,7 +94,8 @@ mint_claude_token() {
   trap "rm -f '$capture'" INT TERM EXIT
 
   wk_info "secrets: running \`claude setup-token\`; approve it in the browser, and the token goes straight to $slug, where the cloud brief runs"
-  run_under_pty "$capture" claude setup-token || rc=$?
+  # The mint shows the token, so it draws on the terminal, never into a log.
+  wk_secret_step 'the token mint (claude setup-token)' run_under_pty "$capture" claude setup-token || rc=$?
   raw="$(cat "$capture" 2>/dev/null || true)"
   rm -f "$capture"
   trap - INT TERM EXIT

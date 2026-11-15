@@ -3,7 +3,8 @@
 // prints the log's last 20 lines and follows it to the run's code; a run that ended
 // with no call attached still gives its code once; with no live run it says so;
 // `--end` ends the named run on request; a narrowed run's start clears this repo's
-// day-old leftover slots. The world is test/lib/supervise-world.js.
+// day-old leftover slots; the color gate paints what it prints. The world is
+// test/lib/supervise-world.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -20,13 +21,14 @@ const {
   CHECK_MINUTES, skipOnWindows, pidOf, reap, silent, writesPid, ended, read, realOf,
 } = require('../lib/supervise');
 const {
-  LONG_CHECK, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor,
+  LONG_CHECK, COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor,
 } = require('../lib/supervise-world');
 
 const USAGE = 'usage: workkit watch [--end] [suite|run|<pid>]';
 const REQUEST_LINE = 'detach: the run was ended on request (exit 143)';
 const TWO_LIVE = 'watch: two runs are live; name one: workkit watch --end suite, or workkit watch --end run';
 const NO_RUN = /^watch: no run is live in (.+)$/m;
+const ESC = '\u001b';
 
 const superviseStart = (world, script, env = world.env) => workkitStart(['supervise', '--', 'node', '-e', script], { cwd: world.repo, env });
 
@@ -220,6 +222,27 @@ describe('workkit watch: attaching to the live run', () => {
       expect(missing.join(', '), `the log's last 20 lines, got: ${watch.output()}`).toBe('');
       expect(!said.includes('line-10'), `and no line before them, got: ${watch.output()}`).toBeTruthy();
       expect(said.includes('after-attach'), `then what the run wrote after the attach, got: ${watch.output()}`).toBeTruthy();
+    } finally {
+      reap(pidIn(pidFile));
+      await endAll(supervised, watch);
+    }
+  });
+
+  test('a live supervised run watched with the gate forced on: the backlog and the followed lines painted', async () => {
+    const w = mkWorld();
+    const pidFile = path.join(w.out, 'cmd.pid');
+    const go = path.join(w.out, 'go');
+    const supervised = superviseStart(w, waitsFor(pidFile, go, { lines: ['  ✓ backlog'], after: '  ✓ followed', code: 0 }));
+    let watch;
+    try {
+      expect(await until(() => read(runLog(w)).includes('✓ backlog')), `the run never wrote its line; it said: ${supervised.output()}`).toBeTruthy();
+      watch = workkitStart(['watch'], { cwd: w.repo, env: { ...w.env, ...COLOR_ON } });
+      const painted = (name) => `  ${ESC}[32m✓${ESC}[39m ${name}`;
+      expect(await until(() => watch.output().includes(painted('backlog'))), `watch never painted the backlog; it said: ${JSON.stringify(watch.output())}`).toBeTruthy();
+      fs.writeFileSync(go, '');
+      const { status } = await watch.done;
+      expect(status, `the run's own code, got: ${watch.output()}`).toBe(0);
+      expect(linesToLast(watch.output()).includes(painted('followed')), `the followed line painted, got: ${JSON.stringify(watch.output())}`).toBeTruthy();
     } finally {
       reap(pidIn(pidFile));
       await endAll(supervised, watch);

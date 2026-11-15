@@ -88,7 +88,10 @@ jobs:
           elif [ -f package.json ]; then
             npm install --no-audit --no-fund
           fi
+      # The runner colors only a terminal or under FORCE_COLOR, so the CI log keeps its color.
       - name: Test
+        env:
+          FORCE_COLOR: '1'
         run: npm test
   test:
     # The one check branch protection requires by name: a matrix job reports

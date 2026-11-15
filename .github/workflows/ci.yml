@@ -65,8 +65,11 @@ jobs:
           elif [ -f package.json ]; then
             npm install --no-audit --no-fund
           fi
+      # The runner colors only a terminal or under FORCE_COLOR, so the CI log keeps its color.
       - name: Test
         if: steps.scope.outputs.run == 'true'
+        env:
+          FORCE_COLOR: '1'
         run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-test.sh"
       # Its work commit's run proved that code, so a release push ends here.
       - name: Release push

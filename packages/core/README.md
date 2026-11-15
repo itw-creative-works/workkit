@@ -15,7 +15,7 @@ npm i -D workkit-core
 { "scripts": { "test": "workkit test" } }
 ```
 
-- `npm test` runs every suite in the repo; `npm test -- test/x.test.js` runs only that file.
+- `npm test` runs every suite in the repo; `npm test -- test/x.test.js` runs only that file, `npm test -- test/hooks` every suite under that folder, and `npm test -- --filter=alpha` only the cases whose name holds `alpha`.
 - With the workkit plugin installed, `workkit test` and `workkit test test/x.test.js` in a terminal do the same.
   - The global command hands its arguments to `npm test`.
   - Inside `npm test`, npm puts this package's bin first on PATH.
@@ -44,21 +44,39 @@ npm i -D workkit-core
   - Outside a git work tree, or with no `git` on the PATH, nothing is skipped as ignored. Any other git failure stops the run with git's message.
   - No folder name is special: `test/`, `tests/` and `lib/` are read like any other.
   - A suite's printed name is its path from the start folder, with `/` on every platform (`test/hooks/x.test.js`).
-- A suite named in the repo's `test/lib/serial.js` (`module.exports = { SERIAL: ['test/x.test.js'] }`) runs alone, after the parallel wave.
-  - An entry is a path from the start folder, with either separator.
-- A path after `--` is read from the start folder too, a `\` in it read as `/`.
-- A path or a serial entry that names no suite fails the run before any suite starts.
-  - A path prints `No suite matches <arg>`, a serial entry `No suite matches <entry> (test/lib/serial.js)`.
-- A folder with no suite fails the run: `No test file found (*.test.js, *.test.mjs, *.test.cjs)`.
+- A suite named in the repo's `test/lib/serial.js` (`module.exports = { SERIAL: ['test/x.test.js', 'test/e2e'] }`) runs alone, after the parallel wave.
+  - An entry is a path from the start folder, with either separator: a suite file, or a folder, which puts every suite under it on the list.
+  - The serial suites run in the list's order, a folder's in sorted order; a suite two entries name runs once, at the first.
+- A path after `--` is read from the start folder too, a `\` in it read as `/`: a suite file, or a folder naming every suite under it by the bare run's rule.
+  - A suite named twice runs once, and a folder holding a `test/mods` suite runs the mod half.
+- A path or a list entry that names no suite fails the run before any suite starts.
+  - A path prints `No suite matches <arg>`, a serial entry `No suite matches <entry> (test/lib/serial.js)`, a skip entry `No suite matches <entry> (test/lib/skip.js)`.
+  - A folder holding no suite, or holding its own `package.json`, is such a path.
+- `--filter=<text>` runs only the cases whose full name (the `describe` path and the case's name, joined by spaces) holds the text as typed, case and every character counting.
+  - The run prints `filter: <text>` first. A case left out prints nothing, and a suite with no case left prints nothing and is no failure.
+  - No case matching anywhere is `No case matches <text>`, exit 1. An empty text is `--filter needs a text`, the flag twice `--filter is given once`.
+  - The mod half and the workspace members are not started under it, each named in the skip list.
+- `test/lib/skip.js` may export `SKIP`, suites a run leaves out unless a path names them (tests that run only when asked), and `CI_SKIP`, left out as well when `CI` holds any text.
+  - Entries are read as paths after `--` are, and may name a workspace member's folder, which is then not started.
+  - A run that leaves suites out prints `skip: <n> suite[s] left out (test/lib/skip.js)`, and one that leaves members out `skip: <n> member[s] left out (test/lib/skip.js)`. A path named after `--` runs a listed suite only when it names the entry or a path inside it; a wider path (`test`, `.`) leaves the suite out, and the line prints.
+  - A list must be an array of paths: `test/lib/serial.js: SERIAL must be an array of paths` (a `serial.js` with no `SERIAL` included), `test/lib/skip.js: SKIP must be an array of paths` (or `CI_SKIP`), exit 1 before any suite.
+- A folder with no suite, and no workspace member to start, fails the run: `No test file found (*.test.js, *.test.mjs, *.test.cjs)`.
 - `test/mods/*.test.ts` suites run after that through `claude plugin test`, skipped by name with no `claude` on PATH.
+- A bare run from a root whose `package.json` lists `workspaces` (a literal folder, or `dir/*`) then runs each member's own `npm test`, one at a time in folder order, under `▶ <member name>: npm test`.
+  - A member with no `test` script is not started. Each member must run this runner: one whose run writes no summary line fails as `✗ <name>: its test script did not run workkit's runner`, with ` (exit <code>)` after it when it exited other than 0.
+  - The run ends with a row per member, `✓ <name>` or `✗ <name> (exit <code>)`, and its totals add the members' counts and name them: `(Ns, K suites, P members)`.
+  - A signal that ends the run while a member runs prints no row for it and no totals line; the exit is 128 plus the signal's number. A member's run has no deadline of its own.
 - The run ends with `N passed, M failed (Ns, K suites)` and a `slowest:` line, then names every skipped suite and case, then every failure; any failure exits 1.
+- Its lines are plain text, with no time stamp, painted as they print by Node's own rule for stdout (`util.styleText`): color at a terminal or under `FORCE_COLOR`, none on a pipe, in a file or under `NO_COLOR`, which wins over `FORCE_COLOR`.
+  - A `✓` mark is green, a `✗` line red, a `⊘` line and `slowest:` gray, a `▶` line, a `[outer › inner]` heading, the totals line and `Failures:` bold; any other line is left as it is.
+  - `node node_modules/workkit-core/test/lib/paint.js` is the same painter as a filter: it reads standard input and writes each whole line painted, so a plain log shows in color.
 - Each suite file has a deadline of 600 seconds (`SUITE_DEADLINE`); `TEST_DEADLINE=<seconds>` sets it for one run.
   - A worker still running with no result when it passes has its process group ended, and its file is one failure, `run <suite>`: `timed out after <n>s without a result; last output: ...`.
     - A child the suite starts detached leads its own group, so it is the suite's own to end.
   - A `TEST_DEADLINE` that is no positive number, or above 2147483 (more than node's timer holds), fails the run before any suite starts.
   - Once the suite's own process exits, the worker waits one grace for its output to close, then reports; a child the suite left running is left alive.
   - A suite whose own process stays alive (an open server) waits for the deadline. So a case closes what it opens in `t.after` or an `after` hook.
-- `WORKKIT_TEST_SUMMARY=<file>`, which `workkit proof red` sets for its command, has the run add one line to that file on every exit it makes itself: `{"passed":<n>,"failed":<n>}`, the totals line's counts.
+- `WORKKIT_TEST_SUMMARY=<file>`, which `workkit proof red` sets for its command and a root run sets for each member it starts, has the run add one line to that file on every exit it makes itself: `{"passed":<n>,"failed":<n>}`, the totals line's counts, the members' included.
   - A forced end (`SIGKILL`, any signal on Windows) writes none.
   - A run that stops before any suite ran writes both as 0. Unset, no file is written.
   - The runner takes the variable out of its environment at its start, so a run a suite starts writes no line.

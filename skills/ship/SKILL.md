@@ -36,6 +36,9 @@ user-invocable: true
 - Every allow-listed verb (each `workkit ship` verb but `deploy`, and `workkit review ...`) runs as its own Bash call from the repo root (`cd` there in a call of its own first).
   - It runs as the bare command: no `cd <path> &&`, no pipe, no redirect, no trailing `; echo`, no variable prefix, no command substitution in an argument, since its allow rule matches the bare form only.
 - A refused verb is first checked for its shape: one run in a compound, behind a prefix or with a redirect is retried bare. Only a refused BARE call is reported, with the allow line `workkit doctor` names; the command is never handed to the owner to run.
+- Each step but `watch` also writes its run, plain, to `ship-<step>.log` in the repo's log folder (`.workkit/` unless `logs.dir` names another).
+  - The log exists once the step has ended, and its last line is `workkit ship <step>: exit <code>`; a call cut off before that has no log of this run to read, only the last run's or none.
+  - At a terminal `cut`, `publish` and `deploy` keep the terminal for the hooks, npm's one-time password and the deploy script, and their log holds one note line and the closing line; away from a terminal (an agent's call) they are logged whole.
 
 ## Step 0: Resolve target project
 
@@ -131,7 +134,7 @@ user-invocable: true
    - A cloud session (`CLAUDE_CODE_REMOTE=true`) always takes the PR path, from its own `claude/<name>` branch: the owner's "ship" is the ask the cloud platform needs before a PR.
    - **Direct**: stage (`git add -A`, or the named paths), then check that the index equals the disk, untracked files included.
      - The check: `git diff --quiet` exits 0 AND `git ls-files --others --exclude-standard` prints nothing.
-     - Both hold: run `npm test` at the repo root once on the final tree (detached through the kit's wrapper; a cut-off call reads `.workkit/suite.log`).
+     - Both hold: run `npm test` at the repo root once on the final tree (detached through the kit's wrapper; a cut-off call reads `suite.log` in the repo's log folder, `.workkit/` unless `logs.dir` names another).
        - It is watched per `docs/agents.md` § Watching a run.
      - Either fails: the folder holds work the commit leaves out, so run `workkit prove` once instead, never the whole-folder run, which cannot satisfy the gate in that state.
      - Then commit, never with `--no-verify` or `-c core.hooksPath=`: a git hook's bounce is fixed, never skipped.
@@ -199,7 +202,7 @@ user-invocable: true
 - That wait applies to every ship.
   - One that pushed a work commit watches it (on the PR path, the branch tip).
   - The no-commit path and a release-only ship watch the newest commit that is not a release commit.
-- The watch runs detached and logs everything to `.workkit/ci.log` (under `~/.workkit/markers` when `.workkit/` is not gitignored); its last `ci-watch: exit <code>` line is the answer.
+- The watch runs detached and logs everything to `ci.log` in the repo's log folder, `.workkit/` unless `logs.dir` names another (under `~/.workkit/markers` when that folder is not gitignored); its last `ci-watch: exit <code>` line is the answer.
   - A cut-off call leaves it running: read the log, never poll `gh`.
   - Exit 5 names the watched sha and the log; never start a second: wait for its exit line, record it, then watch the next sha (that call truncates the log).
   - Ctrl-C ends it with 130.

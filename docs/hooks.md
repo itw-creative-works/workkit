@@ -134,7 +134,7 @@
   - A reader that took only a forward slash answered nothing about it.
   - The rule lives once in the engine's [`workflow/lib/slug.sh`](../workflow/lib/slug.sh). Its Node twin is `slugFromRemote` in `workflow/slug.js`.
   - The module reads it through `repoSlug` in `hooks/mods/optin.js`, over `slugFromRemote` in `hooks/mods/slug.js`.
-    - That is the module's copy of the Node twin, shape for shape, since a hooks module cannot import CommonJS.
+    - That is the module's copy of the Node twin, shape for shape, since the session's hooks module cannot import CommonJS.
     - The three change together.
   - `safety:release-taken` names the repo in its github-release bounce through that same `slugFromRemote`.
 - `wk_native_path <path>`: the spelling of a path a person reads.
@@ -218,6 +218,7 @@
   - `docs.bullets` and `docs.paths` (`docs:board-guard`, through `bulletsOn` and `shapePaths`);
   - `tests.budget` (the commit gate);
   - `tests.check` (`workflow/lib/detach.js`, the minutes between the supervisor's checks of a run, default 5);
+  - `logs.dir` (the commit gate's `logDirOf`, and `wk_log_dir` in `workflow/lib/suite.sh` through `wk_setting`, the folder a repo's logs go to, default `.workkit`);
   - `commit.attribution` (`safety:commit-attribution`, through `attributionOff`);
   - `public` (`workflow:public-mirror`, `workflow/public/lib.js`);
   - `proof.rootOnly` (`safety:proof-guard`);
@@ -501,7 +502,7 @@
 - Stamps the load-time surfaces at a `startup` or `resume` session start, into the session's `$.store` record, digested.
   - `hooks/hooks.json` by content.
   - Plus the file list and mtimes of `agents/*.md`, `skills/*/SKILL.md`, `hooks/register.js` and every file under `hooks/mods/` at any depth.
-  - Plus `packages/core/test/lib/lexer.js`, the one file a mod loads from outside them.
+  - Plus `packages/core/test/lib/lexer.js`, the one file a mod the session loads reaches outside them.
   - The list is `surfacePaths` in `hooks/mods/reload-guard.js`.
 - Injects one line when they change.
   - Skill bodies and engine edits are already live, so only these need `/reload-plugins`.
@@ -925,7 +926,9 @@
     - The bounce names that gap and its two fixes: `git add -A`, or `workkit prove`.
     - `workkit prove` runs the suite on a copy of the index and records the staged tree, leaving the folder as it is.
   - Any other case bounces, naming `npm test` at the repo root as the fix and the log that run writes its output to.
-    - The log is `.workkit/suite.log` where git ignores it, else the `claude-suite.log` marker path (`wk_suite_log_path`'s rule).
+    - The log is `suite.log` in the repo's log folder where git ignores it, else the `claude-suite.log` marker path (`wk_suite_log_path`'s rule).
+    - The folder is `logs.dir` through `loadSettings`, walked by `logDirOf`, the twin of `wk_log_dir` (`workflow/README.md`, the `lib/suite.sh` row), default `.workkit`.
+    - A `logs.dir` that is absolute or leaves the repo bounces with that reader's line naming the key instead.
     - npm's `script-shell` is read with `npm config get script-shell`.
     - It is compared by physical path with the `workflow/script-shell.sh` beside the module.
     - When it is not the kit's wrapper, the bounce says so and names `workkit setup` first. With no npm to ask, that clause is left out.
@@ -981,7 +984,7 @@
     - `reviewMarker` (`{ mtimeMs }` or null), `suiteRecord` (the record's text or null);
     - `treeId` (the tree the commit carries), `diskTreeId` (the working tree's id), `isWindows`;
     - `scriptShell` (npm's raw value, null with no npm to ask), `kitRoot` (the plugin root), `scriptShellExe` (the Windows wrapper's path);
-    - `userSettings`: the machine's `settings.json` path, read for `tests.budget` under the repo's;
+    - `userSettings`: the machine's `settings.json` path, read for `tests.budget` and `logs.dir` under the repo's;
     - `home`: the machine folder the marker and record paths sit under;
     - `real(path)`: the physical path, null when missing.
   - The calls:
@@ -1036,8 +1039,9 @@
   - It asks for the GitHub release `v<x.y.z>` once.
 - The project is the package.json at the git toplevel.
   - Plus every `workspaces` member (the array, or the object's `packages`).
-  - A literal directory is read where it stands. `dir/*` is every direct subdirectory of `dir` holding a package.json.
-  - Any other glob shape, a pattern that matched nothing and a member with no package.json are each named and skipped.
+  - What a pattern means is the publish plan's reading, `patternShape` in [`workflow/lib/expand-workspaces.js`](../workflow/lib/expand-workspaces.js), which the plan and the runner share; the hook keeps no glob test of its own.
+  - A literal directory is read where it stands. `dir/*`, its `dir` holding no glob character, is every direct subdirectory of `dir` holding a package.json.
+  - Any other glob shape (`pkgs/*/x/*` among them, no member under it read), a pattern that matched nothing and a member with no package.json are each named and skipped.
 - Publish intent is the publish plan's rule, and [`workflow/ship/plan.js`](../workflow/ship/plan.js) is its home.
   - npm is asked about exactly the packages the plan would not skip (`"private": false` and a `files` or `publishConfig` key).
   - Plus a workspaces root that carries the intent itself.
@@ -1201,7 +1205,7 @@
   - npm's script shell (`workflow/script-shell.sh`) is the one writer of the package record.
   - The suite record keeps its two writers, the script shell and `workkit prove`.
   - A green bare root `npm test` writes the suite record (`workflow/README.md`, `script-shell.sh`).
-- Every other green `test` event, a narrowed run anywhere or a nested package's bare run, writes the package record.
+- Every other green `test` event, a narrowed run anywhere or a nested package's bare run, writes the package record, unless it ran under the runner's `--filter` or with `CI` set: those write none.
   - The writer is `wk_pkg_marker_write`. The file is `~/.workkit/markers/claude-package-marker/<sha1 of the repo root>`, named here by `pkgMarkerPath` in `hooks/mods/markers.js`.
   - It holds one line per package, `<id> <pkg>`.
   - `<id>` is the package's own tree id, hashed before the run. `<pkg>` after it is the package folder relative to the root (`.` for the root).

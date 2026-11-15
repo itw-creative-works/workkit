@@ -164,9 +164,14 @@ main() {
     drop_slot "$root" "$slot"
     exit 0
   fi
-  # The size first, so the last lines and the tail from it never overlap.
+  # The size first, so the last lines and the tail from it never overlap; both
+  # painted as wk_attach_run paints.
   size=$(( $(wc -c < "$log") ))
-  head -c "$size" "$log" | tail -n 20
+  if wk_view_paints; then
+    head -c "$size" "$log" | tail -n 20 | wk_view_paint
+  else
+    head -c "$size" "$log" | tail -n 20
+  fi
   wk_attach_run "$log" "$lock" "$pid" "$size" || rc=$?
   # A narrowed run's slot goes once its end is read; a look keeps it.
   [ "$WK_RAN_LOOK" = 1 ] || drop_slot "$root" "$slot"

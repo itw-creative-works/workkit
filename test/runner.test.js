@@ -19,6 +19,7 @@ const {
 const { aloneEnv } = require('./lib/alone-env');
 const { TOTALS_LINE, linesOf, listsOf } = require('./lib/run-lists');
 const { treeOf } = require('./lib/red-snapshot');
+const { MOD_FILES } = require('./lib/runner-world');
 
 const KIT = path.join(__dirname, '..');
 const KIT_TEST = path.join(KIT, 'packages', 'core', 'test');
@@ -109,14 +110,7 @@ const OLD_SHAPE = (runsAlone) => [
 // hooks module with one passing test/mods/*.test.ts, run whole through the real runner
 // on `PATH`.
 const runModHalf = (PATH) => {
-  const { root, dir } = mkFixture({ 'node.test.js': SUITE("test('the node case', () => {});") });
-  fs.mkdirSync(path.join(root, '.claude-plugin'));
-  fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), '{ "name": "fixture", "version": "0.0.1" }\n');
-  fs.mkdirSync(path.join(root, 'hooks'));
-  fs.writeFileSync(path.join(root, 'hooks', 'hooks.json'), '{ "modules": ["./register.js"] }\n');
-  fs.writeFileSync(path.join(root, 'hooks', 'register.js'), 'export function register(on) {}\n');
-  fs.mkdirSync(path.join(dir, 'mods'));
-  fs.writeFileSync(path.join(dir, 'mods', 'fixture.test.ts'), "import { test, expect } from 'claude-code/testing'\ntest('the mod case', async () => { expect(1).toBe(1) })\n");
+  const { root } = mkFixture({ 'node.test.js': SUITE("test('the node case', () => {});") }, { files: MOD_FILES });
   const res = spawnSync('node', [RUNNER], { cwd: root, encoding: 'utf8', env: aloneEnv({ PATH }), timeout: SPAWN_DEADLINE });
   fs.rmSync(root, { recursive: true, force: true });
   return { code: res.status, output: (res.stdout || '') + (res.stderr || '') };

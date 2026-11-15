@@ -58,7 +58,8 @@
   - Its output prints whole, in sorted order, so two suites never interleave.
 - A suite that touches a shared path (a fixed folder, a port) is named in the repo's serial list.
   - The path goes in a comment beside its entry.
-  - Those suites run one at a time after the parallel wave.
+  - Those suites run one at a time after the parallel wave, in the list's order.
+  - An entry may be a folder, which puts every suite under it on the list: a lane of suites that never overlap.
   - An entry that matches no suite fails the run, naming it, before any suite starts.
 - A world is seeded once per process (`seeded()`) and copied per case.
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
@@ -68,7 +69,8 @@
     - For `''`, `0` or `null`, Node runs a case's body anyway and labels it skipped, and on a `describe` it cancels the children, which fails the run.
   - A helper that decides a skip (the kit's, a repo's own) returns `false` or the reason. `needs` alone also throws for a missing tool outside a cloud session (its bullets below).
 - The run ends with one totals line, `N passed, M failed (Ns, K suites)`, with `, S suites skipped` and `, C cases skipped` after the failed count when there are any.
-  - A skipped `describe` counts as one case skipped. A suite skip is the mod half's alone, with no `claude` on PATH.
+  - A monorepo root's run that started its members names them last: `(Ns, K suites, P members)`.
+  - A skipped `describe` counts as one case skipped. A suite skip is one of three: the mod half with no `claude` on PATH, the mod half under `--filter`, and the members under `--filter`.
 - The kit's runner then prints one more line, `slowest: <suite> <s>s, ...`, naming the five slowest suites of the run by wall time, slowest first.
 - Under a failing case's message the runner prints the first stack frame that names the suite file: the suite's line, the one calling the seam when the assertion sits in one.
 - A case's `t.diagnostic()` lines and its own prints (`console.log`, `console.error`, `process.stdout.write`, `process.stderr.write`) sit at the case indent in the suite's block.
@@ -93,9 +95,11 @@
 - The package holds:
   - `test/run.js`;
   - `test/tools.js` (the `tools` verb) and `test/convert.js` (the `convert` verb);
-  - its library beside them in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `convert-read.js`, `convert-map.js`);
+  - its library beside them in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `pick.js`, `members.js`, `paint.js`, `convert-read.js`, `convert-map.js`);
+    - `pick.js` picks a run's suites, the serial tail's order and the skip lists' leftovers; `members.js` reads a monorepo root's members and runs one member's `npm test`;
   - the export `workkit-core/test`, the entry `harness.js` builds: Node's case functions, its own `test`, `it`, `needs`, `hasLaunchd` and `WORKKIT_DIR`, and every export of `process.js`, `scratch.js`, `seed.js`, `suites.js`, `log.js`, `spawn.js` and `expect.js`;
-  - plus `workkit-core/run`, the kit's `workflow/lib/run.js` its prepack copies in as `run.cjs`.
+  - plus `workkit-core/run`, the kit's `workflow/lib/run.js` its prepack copies in as `run.cjs`;
+  - plus the kit's `workflow/lib/expand-workspaces.js`, copied in as `expand-workspaces.cjs`, the expansion of `workspaces` the publish plan, the package record and the runner share. In the kit's own checkout the runner reads the kit's file, so a copy a local `npm pack` left there never wins; elsewhere it reads the packed copy.
 - It is ES, and a CommonJS suite `require()`s it alike.
 - Its README (`packages/core/README.md`) lists the exports.
 - The door, `workkit-core/test`, hands out Node's own `describe`, `before`, `after`, `beforeEach`, `afterEach` and `mock`, untouched.
@@ -108,10 +112,10 @@
   - Inside `npm test`, npm puts `node_modules/.bin` first on PATH, so `workkit` is the package's bin.
   - The bin runs the runner over the repo with the arguments npm passes on.
   - The bin runs `test`, `tools` and `convert`; any other verb exits 2, naming the global `workkit` command.
-- `workkit test [paths]` in a terminal is the global command.
+- `workkit test [paths] [--filter=<text>]` in a terminal is the global command.
   - It hands its arguments to the repo's own `npm test`, run at the repo root, and does nothing else.
   - So the one recorder, npm's script shell, sees the run.
-    - A narrowed run leaves the package record, a bare one the suite record.
+    - A narrowed run leaves the package record, a bare one the suite record; a run under `--filter`, or with `CI` set, leaves none.
     - A package's line in that record is keyed to its own id: the code it can see.
     - The rule: `docs/hooks.md` § `safety:proof-guard`, the package id bullet.
   - So `workkit test`, `npm test`, `workkit test test/x.test.js` and `npm test -- test/x.test.js` land in the same runner with the same arguments.
@@ -137,7 +141,7 @@
   - The global verb runs the kit's own copy of this bin at the repo root, so it answers before `npm install`.
 - `workkit convert [paths...]` rewrites a suite in the old shape in place onto Node's test functions through the door.
   - The old shape: a runner function the file exports, its cases on the removed words (`group`, the harness `test`, `assertEq`), a `selfRun` line last.
-  - No path means every suite the runner finds. A path is read as the runner reads one: from the start folder, a `\` in it as `/`.
+  - No path means every suite the runner finds. A path is read as the runner reads one: from the start folder, a `\` in it as `/`, a folder naming every suite under it.
     - Anything that names no suite is `No suite matches <arg>`, exit 1, before any file is touched.
   - It rewrites a file only when every statement of its runner is a label, a case or a constant, and maps each one for one:
     - a `group('x')` and the cases under it to `describe('x', () => { ... })`, and `await test(name, fn)` to `test(name, fn)`;
@@ -190,15 +194,49 @@
   - No folder name is special: `test/`, `tests/` and `lib/` are read like any other.
   - Every printed suite name is its path from the start folder, with `/` on every platform (`test/hooks/x.test.js`).
     - The `▶` heading, a failure, a skip and the `slowest:` line all print that name.
-  - A run that finds no suite exits 1: `No test file found (*.test.js, *.test.mjs, *.test.cjs)`.
+  - A run that finds no suite, and starts no member, exits 1: `No test file found (*.test.js, *.test.mjs, *.test.cjs)`.
 - A run covers every suite.
   - First the parallel wave, then the serial tail `test/lib/serial.js` names (none without the file).
-    - Its entries are paths from the start folder, with either separator (`['test/z.test.js']`).
+    - Its entries are paths from the start folder, with either separator (`['test/z.test.js', 'test/e2e']`).
+    - An entry is a suite file or a folder; a folder puts every suite under it on the list, found as a path after `--` finds them.
+    - The tail runs in the list's order: each entry in turn, a folder's suites in sorted order. A suite two entries name runs once, at the first.
     - An entry naming no suite exits 1: `No suite matches <entry> (test/lib/serial.js)`.
+    - A `serial.js` that exports no `SERIAL`, or one that is not an array of strings, exits 1 before any suite: `test/lib/serial.js: SERIAL must be an array of paths`.
   - Then the mod half, when `test/mods/` holds `*.test.ts` suites.
+  - Then, from a monorepo root, each member's own `npm test` (below).
   - Suite paths narrow the run.
-    - Each is a path from the start folder, a `\` in it read as `/`.
+    - Each is a path from the start folder, a `\` in it read as `/`, a trailing `/` fine.
+    - A file is one exact suite.
+    - A folder names every suite under it, by the rule a bare run reads by: none in `node_modules`, under a name starting with `.` or `_`, git-ignored, or below a folder holding its own `package.json`.
+    - A folder that holds a mod suite (`test/mods/*.test.ts`) runs the mod half, as naming one does.
+    - A suite named twice (a file, and a folder that holds it) runs once. A narrowed suite on the serial list runs in the serial tail.
   - A path matching no suite exits 1 with `No suite matches <arg>`, the argument as typed, and runs nothing.
+    - So does a folder holding no suite, or one holding its own `package.json`, and a path that resolves outside the start folder (`..`). The start folder itself (`.`) names every suite.
+- `--filter=<text>`, once, anywhere among the arguments, runs only the cases whose full name holds the text, in the suites the run would run anyway.
+  - `workkit test --filter=<text>` and `npm test -- --filter=<text>` both carry it.
+  - A case's full name is its `describe` path and its own name, joined by single spaces: `--filter=outer` runs every case under `describe('outer')`, and `--filter="outer alpha"` the one.
+  - The text matches as typed: upper and lower case count, and no character is a pattern.
+  - An empty text (`--filter=`, or `--filter` alone) exits 1 with `--filter needs a text`, and the flag given twice with `--filter is given once`; nothing runs.
+    - Any other argument starting with `--` is a path, as before (`No suite matches --other`).
+  - The run prints `filter: <text>` before the first suite.
+  - A case left out prints nothing and counts nowhere. A suite with no case left prints nothing, not even its heading, and is no failure: the `registered no test` rule does not apply.
+  - A run in which no case matched exits 1: `No case matches <text>`.
+  - The mod half and the members are not started under a filter, each named in the skip list: `not started under --filter`.
+  - A filtered run writes no proof record (`docs/project-state.md` § The proof).
+    - The script shell reads the flag only in what npm appended to the package's own script, so a script's own `--filter=` for another tool still records.
+- `test/lib/skip.js` names the suites a run leaves out unless a path names them, in two lists, each optional:
+  - `SKIP`, left out always: the home for suites that run only when asked, such as tests against a live service;
+  - `CI_SKIP`, left out as well when `CI` holds any text.
+  - An entry is a suite file or a folder, read as a path after `--` is. From a monorepo root it may also be a member's folder: that member is not started.
+  - A run that leaves suites out prints one line before the first suite: `skip: <n> suite[s] left out (test/lib/skip.js)`.
+    - A run that leaves members out prints `skip: <n> member[s] left out (test/lib/skip.js)`, after the suites' line when both print: a member on `SKIP` in every bare run, one on `CI_SKIP` when `CI` is set. A narrowed run prints no member line.
+  - A list exported and not an array of strings exits 1 before any suite: `test/lib/skip.js: SKIP must be an array of paths` (or `CI_SKIP`). A `skip.js` exporting one list, or neither, is fine.
+  - A path named after `--` runs a listed suite only when it names the entry or a path inside the entry, under `CI` or not (`npm test -- test/live` runs the suites of an entry `test/live`).
+    - A wider path, a folder that holds the entry (`test`, or `.`), leaves the suite out, and the `skip:` line prints with the count this run left out.
+    - With several paths, a listed suite runs when any one of them names it and is its entry or inside it. When every picked suite is left out, the run ends as a folder with no suite does.
+  - An entry naming no suite (and no member) exits 1 in every run, before any suite: `No suite matches <entry> (test/lib/skip.js)`. So a stale list fails on a person's machine first.
+  - A suite on the serial list and on a skip list is left out. A run that leaves every suite out ends as a folder with no suite does.
+  - The mod half is never on these lists.
 - Each suite file has a deadline, `SUITE_DEADLINE` (600 seconds).
   - `TEST_DEADLINE=<seconds>` in the environment sets it for one run.
     - A value that is no positive number, or above 2147483 (more than node's timer holds), exits 1 before any suite runs: `TEST_DEADLINE must be a positive number of seconds, got <value>`.
@@ -214,8 +252,20 @@
     - A second of the three while it is ending sends `SIGKILL` at once, before anything else runs, to every group the first began to end that still lives, its worker exited or not, then exits 128 plus that second signal's number.
       - So `workkit prove`'s ladder on the runner (`wk_end_run`) leaves no worker behind: its `SIGTERM` has the runner KILL every worker before its own `SIGKILL` comes.
     - A runner ended by `SIGKILL` cannot; a worker then ends its own tree only once its event loop notices the parent gone.
-- `WORKKIT_TEST_SUMMARY=<file>` in the environment, set by `workkit proof red` alone, has the run add one line to that file on every exit it makes itself; a forced end (`SIGKILL`, any signal on Windows) writes none.
-  - The line is `{"passed":<n>,"failed":<n>}`, the counts the totals line prints, the mod half's included; a run that stops before any suite ran writes both as 0.
+- A bare run from a folder whose `package.json` lists `workspaces` also runs each member's own `npm test`, after its own suites and mod half.
+  - Members are read by the publish plan's rule (`workflow/lib/expand-workspaces.js`): a literal folder, or `dir/*`. Any other pattern stops the run with the plan's own line before any suite.
+  - A member with no `test` script is not started. A narrowed or filtered run starts none, and a run started in a member's folder is that member's own.
+  - They run one at a time, in sorted folder order, each under a heading `▶ <member name>: npm test`, its output showing as it runs. A failed member stops none after it.
+    - A member's script may run steps of its own before the runner (`npm run prepare && workkit test`).
+  - Each is handed a summary file of its own (`WORKKIT_TEST_SUMMARY`), and the kit's runner writes its counts there.
+    - A member whose run writes no line did not run the kit's runner, so it fails by name, whatever its exit: `✗ <name>: its test script did not run workkit's runner`, with ` (exit <code>)` after it when it exited other than 0.
+  - The run ends with one row per member before the totals: `✓ <name>`, or `✗ <name> (exit <code>)`.
+    - The totals add each member's counts, an exit other than 0 with no failed case counting one, and name the members: `(12.3s, 4 suites, 3 members)`.
+    - The exit is 1 when any suite or any member failed.
+  - A signal that ends the run while a member runs ends that member's process group, prints no row for it and no totals line, and exits 128 plus the signal's number.
+  - Its limit: a member's run has no deadline of its own; its suites keep theirs.
+- `WORKKIT_TEST_SUMMARY=<file>` in the environment, set by `workkit proof red` for its command and by a root run for each member it starts, has the run add one line to that file on every exit it makes itself; a forced end (`SIGKILL`, any signal on Windows) writes none.
+  - The line is `{"passed":<n>,"failed":<n>}`, the counts the totals line prints, the mod half's and the members' included; a run that stops before any suite ran writes both as 0.
   - The runner takes the variable out of its environment at its start, so a run a suite starts writes no line. Unset, no file is written.
   - How the proof reads it: `agents.md` § Crew sizing.
 - Every suite runs on Node's own runner, its `run()` in the suite's worker. No file's text is read to pick a shape.
@@ -234,6 +284,14 @@
     - A case under no `describe` is `<suite> › <case>`.
   - What the suite itself prints arrives in its own order, at the case indent.
     - Node's runner hands it over before the case's result, so it can land above that case's heading.
+- The runner and its workers write no color code of their own, and no line carries a time stamp.
+  - They remove the codes Node adds to a failure under `FORCE_COLOR` (an uncaught error's report, a case's or hook's message and its stack frame) with `util.stripVTControlCharacters`. A suite's own printed output is left as it is.
+  - The parent paints what it prints through `paint(text, stream)` (`test/lib/paint.js`), by Node's own rule for its stdout (`util.styleText`): color at a terminal or under `FORCE_COLOR`, none on a pipe, in a file or under `NO_COLOR`.
+    - `NO_COLOR` set to any text wins, `FORCE_COLOR` or not: the painter reads it first, where Node's own rule would let `FORCE_COLOR` win.
+  - A line is painted by how it starts after its indent: a `✓` mark green, a `✗` line red, a `⊘` line and `slowest:` gray, a `▶` line, a `[outer › inner]` heading, the totals line and `Failures:` bold. Any other line is left byte for byte.
+  - `node test/lib/paint.js` is the same painter as a filter: standard input to standard output, each whole line painted once its line end arrives, what follows the last line end written when the input ends.
+  - So a run's log file is plain, and the kit's terminal view of a long run paints it as it shows it (`workflow/README.md` § `lib/detach.sh`).
+  - With `FORCE_COLOR` in the run's environment the parent paints into its log file too: that is how a CI log keeps its color.
 - A run a case starts (`workkit test` in a scratch folder) is a run of its own.
   - Node's runner runs nothing under `NODE_TEST_CONTEXT`, the variable its own test files inherit, so the runner drops it from its environment as it starts.
   - A case that starts a suite file with `node <file>` passes an env without that variable.
@@ -266,6 +324,7 @@
   - It deliberately lacks Jest's asymmetric matchers (`expect.any`), snapshots and mocks.
 - CI fetches the runner like any dependency.
   - The install brings the package, so no step clones the kit for it.
+  - The test step of the kit's CI (`ci.yml`, and the kit's own `checks.yml`) sets `FORCE_COLOR=1`, so a CI log keeps its color.
   - The heal's rewrite of `checks.yml` to the kit's caller drops the one an older copy carries.
 - The standards heal names a participating repo whose test script does not run this runner.
   - It is one line: `npm i -D workkit-core` and `"test": "workkit test"`.

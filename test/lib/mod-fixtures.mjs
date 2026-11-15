@@ -25,6 +25,7 @@ export const DEFAULTS = {
   proof: { rootOnly: null },
   tests: { budget: null, check: 5 },
   findings: { file: false },
+  logs: { dir: '.workkit' },
   commit: { attribution: true },
   docs: { bullets: false, paths: ['AGENTS.md', 'README.md', 'docs/'] },
   hooks: { afterRelease: [], afterPublish: [], afterDeploy: [], ciSetup: [] },

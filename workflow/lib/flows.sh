@@ -74,8 +74,9 @@ wk_poll() {
   while :; do
     if "$@"; then trap - INT; return 0; fi
     deadline=$(( $(date +%s) + interval ))
-    if [[ "${WORKKIT_SPIN:-}" != '0' ]] && [[ -t 2 ]]; then
-      wk_poll_draw "$msg" "$deadline" &
+    if [[ "${WORKKIT_SPIN:-}" != '0' ]] && [[ -t "$(wk_spin_fd)" ]]; then
+      # As wk_spin's frames: a command log's 7, 8 and 9 closed in the job.
+      wk_poll_draw "$msg" "$deadline" 2>&"$(wk_spin_fd)" 7>&- 8>&- 9>&- &
       WK_POLL_PID=$!
     else
       printf '%s⏳ %s...\n' "$WK_LOG_INDENT" "$msg" >&2
@@ -114,7 +115,7 @@ wk_poll_stop() {
   if [[ -n "$WK_POLL_PID" ]]; then
     { kill "$WK_POLL_PID"; wait "$WK_POLL_PID"; } >/dev/null 2>&1 || true
     WK_POLL_PID=''
-    printf '\r%*s\r' 72 '' >&2
+    printf '\r%*s\r' 72 '' >&"$(wk_spin_fd)"
   fi
 }
 

@@ -20,16 +20,19 @@
   - Every kit query reads up to 1,000 issues (`--limit 1000`).
   - A filter is applied before the cap, and `gh` never says when a cap cut the answer.
 - **Promotion rule**: anything durable (a finding, a decision, a blocker) is promoted to its issue as a comment the moment it exists. `.workkit/` holds only in-flight session state; it is private per developer, so nobody else ever reads it. It is a routing stop, never a destination.
-- **`.workkit/` splits by owner**. Three things live there, beside four kinds of log, and nothing else:
+- **`.workkit/` splits by owner**. Three things live there, beside the repo's logs, and nothing else:
   - `settings.json`, the tracked opt-in;
   - `capture.md`, the ONE owner-editable file (§ Capture);
   - `agents/`, everything the agents maintain: `session.md`, the `docs:change-tracker` fingerprint, anything future.
-  - The logs are the kit's detached runs' own, the owner's and the agents' alike to read and neither's to write:
+  - The logs are the kit's own, the owner's and the agents' alike to read and neither's to write:
     - `suite.log`, a root `npm test`'s output;
     - `run.log`, a `workkit supervise` run's;
     - `test.log.<pid>`, a narrowed `npm test`'s, one per run, named by its wrapper's pid;
-    - `ci.log`, the ship's CI watch's.
-    - Each is truncated per run and written there only where git ignores it.
+    - `ci.log`, the ship's CI watch's;
+    - `ship-<step>.log` for each other ship step and `proof-red.log`, a repo command's plain run (`workflow/README.md` § The one command).
+    - Each is replaced per run and written there only where git ignores it, else under `~/.workkit/markers`, so a log never changes the tree.
+    - `logs.dir` in the repo's settings names another folder for them, a path from the repo root, such as a repo's own `logs/`; an absolute value, or one that leaves the repo, stops the command with one line naming the key.
+    - The machine commands (`setup`, `update`, `doctor`, `publish`) log to `~/.workkit/logs/` instead, since they may run outside any repo.
   - The boundary is structural rather than a convention: the owner writes above `agents/`, the agents write inside it.
     - The one file that crosses is `capture.md`, which an agent only ever CLEARS, during a triage run.
 - **Participation is a tri-state, split across the two settings files.**
@@ -240,17 +243,24 @@ flowchart TB
     - Bare, it is that package's whole suite.
     - With arguments (`npm test -- <what>`) it is narrowed, and the package's runner decides what the arguments mean.
     - A repo's root `test` script is the whole definition of its tests; a nested package's suite is that script's job.
+      - On the kit's runner a bare root run starts each workspace member's own `npm test` after the root's suites (`docs/tests.md` § The kit's runner).
+      - Each member's run writes its own package line, and the record of a green bare root run stands for the root's suites and every member not on a skip list.
+      - Under `workkit proof red` the root run writes one summary line: its own counts plus each member's.
+    - A bare run leaves out the suites the repo's `test/lib/skip.js` lists in `SKIP`, so its record stands for every suite not on that list.
+      - A narrowed run leaves them out too unless a path names the entry or a path inside it, so a wide path's package record stands for the suites off the list.
+    - A run under the runner's `--filter=<text>` left cases out, so it writes no record: a green one says so in one `script-shell:` line and exits 0.
   - A tree is proved by running `npm test` at the repo root, by anyone (the owner in a terminal, the agent, a background run), with `CI` unset or empty.
     - The shell records the tree it proved, and the gate checks the record.
     - A run with `CI` set to any other value (`false` and `0` included) writes no record: a repo's root script may run only part of its suite under `CI`, so such a run cannot stand for the whole.
       - The run itself goes as always, `CI` left in its environment as it came; a green one says so in one `script-shell:` line and exits 0.
-      - Nothing else reads `CI`, so a tree only a `CI` run proved is refused at the commit for a missing record.
+      - The kit's runner reads `CI` only to leave out the suites and members `test/lib/skip.js` lists in `CI_SKIP`.
+      - Nothing else reads it, so a tree only a `CI` run proved is refused at the commit for a missing record.
     - Every tree id a record is keyed to (the working tree's, a package's own, the index's) is the tree with `.workkit/` left out.
     - So a write there (the suite log, a marker, `settings.json`) never re-keys a green record.
   - The shell is npm's `script-shell`, which `workkit setup` points at the kit's wrapper.
     - A green root run records the tree it started on; a run that changed the tree, or one with `CI` set, records nothing.
     - The wrapper first runs the gate's cheap check, the CHANGELOG format over every modified `CHANGELOG.md`. So a bad entry stops the run before the suite starts.
-    - The suite then runs in its own session, its output written to `.workkit/suite.log` as well as the terminal.
+    - The suite then runs in its own session, its output written to `suite.log` in the repo's log folder (`.workkit/` unless `logs.dir` names another, § The model) as well as the terminal.
     - A kill of the shell that started it (an agent tool's time limit) leaves it running to its record.
     - The agent reads the log for the result: the suite's closing line is `script-shell: exit <code>`, and a `detach:` line follows it after a frozen or requested end.
     - A Ctrl-C still ends it, and a second root `npm test` while one runs starts nothing, naming the log.
@@ -303,10 +313,10 @@ flowchart TB
       - The park needs no record for it, and the root run before the commit is its proof.
     - npm's script shell is the one writer of the package record. The suite record keeps its two writers, the script shell and `workkit prove`.
       - A green bare root run writes the suite record.
-      - Every other green `test` run (narrowed anywhere, or a nested package's bare run) writes the package record.
+      - Every other green `test` run (narrowed anywhere, or a nested package's bare run) writes the package record, unless it ran under the runner's `--filter` or with `CI` set.
       - That is one line per package folder, on that package's own id: the code it can see.
       - The rule: [`hooks.md`](hooks.md) § `safety:proof-guard`, the package id bullet.
-    - A run that changed its id, or one with `CI` set, records nothing.
+    - A run that changed its id, one with `CI` set, or one under the runner's `--filter`, records nothing.
       - So the packages a batch touched are run on the tree it parks, and an edit reruns only the packages that can see it.
 - **The drift questions**. The blind verification that precedes the park asks three questions past the brief it verified:
   - parity: the changed files' siblings on the other surfaces;
@@ -815,6 +825,7 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
 | `.repos.json` | MACHINE-MAINTAINED: the `repos` map: the roster (below) plus this developer's declines |
 | `.cache.json` | DISPOSABLE: the cached GitHub node ids and the upstream-news cursor. Safe to delete; every reader rebuilds what it does not find |
 | `jobs/` | Scheduled-job state (marks, caches). Machine-local by definition; never a record |
+| `logs/` | MACHINE-WRITTEN: the machine commands' logs, `setup.log`, `update.log`, `doctor.log` and `publish.log`, each one whole plain run replaced by the next, never holding a token or a sign-in code (`workflow/README.md` § The one command). Scratch, never a record |
 | `morning.d/` | HAND-WRITTEN: the owner's own scripts, which the local morning runs last, in name order (`jobs/README.md` § The morning on this machine) |
 | `tower/` | The clone of the home repo: the ONE git repo in the global layer, and the subject of everything below |
 

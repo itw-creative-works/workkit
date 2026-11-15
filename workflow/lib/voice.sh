@@ -140,18 +140,28 @@ wk_spin_draw() {
 # status pass through untouched.
 wk_spin() {
   local msg="$1"; shift
-  local rc=0 pid
-  if [[ "${WORKKIT_SPIN:-}" == '0' ]] || [[ ! -t 2 ]]; then
+  local rc=0 pid fd
+  fd="$(wk_spin_fd)"
+  if [[ "${WORKKIT_SPIN:-}" == '0' ]] || [[ ! -t "$fd" ]]; then
     if [[ "${QUIET:-0}" != '1' ]]; then
       printf "%s⏳ %s...\n" "$WK_LOG_INDENT" "$msg" >&2
     fi
     "$@" || rc=$?
     return "$rc"
   fi
-  wk_spin_draw "$msg" &
+  # The frames keep only the descriptor they draw on; a command log's 7, 8 and 9
+  # (lib/command-log.sh) are closed in them.
+  wk_spin_draw "$msg" 2>&"$fd" 7>&- 8>&- 9>&- &
   pid=$!
   "$@" || rc=$?
   { kill "$pid"; wait "$pid"; } >/dev/null 2>&1 || true
-  printf '\r%*s\r' 72 '' >&2
+  printf '\r%*s\r' 72 '' >&"$fd"
   return "$rc"
+}
+
+# wk_spin_fd: the descriptor a spinner draws on: the call's own stderr, which a
+# command log holds on 8 out of its pipe (_wk_terminal_held, lib/command-log.sh),
+# so no frame reaches the log; 2 with no command log, or none loaded.
+wk_spin_fd() {
+  if declare -f _wk_terminal_held >/dev/null 2>&1 && _wk_terminal_held; then printf '8\n'; else printf '2\n'; fi
 }

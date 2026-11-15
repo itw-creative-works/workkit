@@ -1,8 +1,8 @@
 // Tests for the workkit-core package as a repo installs it: `npm test` of
 // `workkit test` reaches the runner through the package's bin, whole or narrowed
 // to one file, the bin refuses every other verb, `workkit-core/test` gives exactly the
-// door's names to `require()` and `import` alike, and a packed package carries the
-// kit's run.js as `workkit-core/run`.
+// door's names to `require()` and `import` alike, a packed package carries the
+// kit's run.js as `workkit-core/run`, and a root run from it runs its workspace members.
 
 const fs = require('fs');
 const path = require('path');
@@ -31,7 +31,7 @@ const WIN32_LAUNCH = {
 
 /**
  * The package as npm packs it, installed into a scratch repo: packages/core, the
- * kit's LICENSE.md and workflow/lib/run.js copied at their real depths, so the
+ * kit's LICENSE.md and workflow/lib/ copied at their real depths, so the
  * prepack copies run.
  * @returns {string} the scratch repo the tarball is installed in
  */
@@ -40,8 +40,7 @@ const packedRepo = () => {
   const core = path.join(kit, 'packages', 'core');
   fs.cpSync(CORE, core, { recursive: true, filter: (src) => path.basename(src) !== 'node_modules' });
   fs.copyFileSync(path.join(KIT, 'LICENSE.md'), path.join(kit, 'LICENSE.md'));
-  fs.mkdirSync(path.join(kit, 'workflow', 'lib'), { recursive: true });
-  fs.copyFileSync(path.join(KIT, 'workflow', 'lib', 'run.js'), path.join(kit, 'workflow', 'lib', 'run.js'));
+  fs.cpSync(path.join(KIT, 'workflow', 'lib'), path.join(kit, 'workflow', 'lib'), { recursive: true });
   const packs = mkTmp('core-tgz-');
   const packed = npmIn(core, ['pack', '--offline', '--pack-destination', packs]);
   expect(packed.code, `npm pack, got: ${packed.output}`).toBe(0);
@@ -147,6 +146,28 @@ describe('workkit-core', { skip: skipWithoutNpm() }, () => {
       const { keys, launch } = JSON.parse(res.stdout.trim().split('\n').pop());
       expect(keys.join(', '), 'the same exports as run.js').toBe(RUN_EXPORTS.join(', '));
       expect(launch, 'the same win32 launch').toEqual(WIN32_LAUNCH);
+    });
+  });
+
+  describe('a root run from the packed package', () => {
+    test('a root on the packed package whose workspaces list a member runs the member\'s npm test after its own suite', () => {
+      const repo = packedRepo();
+      const write = (rel, text) => {
+        fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+        fs.writeFileSync(path.join(repo, rel), text);
+      };
+      const suite = (name) => `const { test } = require('workkit-core/test');\ntest('the ${name} case', () => {});\n`;
+      write('package.json', `${JSON.stringify({
+        name: 'fixture', private: true, workspaces: ['packages/*'], scripts: { test: 'workkit test' },
+      })}\n`);
+      write('test/root.test.js', suite('root'));
+      write('packages/a/package.json', `${JSON.stringify({ name: 'a', private: true, scripts: { test: 'workkit test' } })}\n`);
+      write('packages/a/test/a.test.js', suite('a'));
+      const { code, output } = npmIn(repo, ['test']);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      const lines = linesOf(output).map((line) => line.trim());
+      expect(lines.includes('▶ a: npm test') && ran(output, 'the a case') && lines.includes('✓ a'), `the member ran under its heading, got: ${output}`).toBe(true);
+      expect(lines.some((line) => TOTALS(2, 1, { members: 1 }).test(line)), `the totals count the member, got: ${output}`).toBe(true);
     });
   });
 });

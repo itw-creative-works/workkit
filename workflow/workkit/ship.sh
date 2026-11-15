@@ -10,11 +10,15 @@ SHIP_VERBS=(items release watch cut plan publish deploy)
 cmd_ship() {
   local sub="${1:-}" verb list
   for verb in "${SHIP_VERBS[@]}"; do
-    if [[ "$sub" == "$verb" ]]; then
-      shift
-      run_verb ship "$sub" "$@"
-      return
-    fi
+    [[ "$sub" == "$verb" ]] || continue
+    shift
+    # These hand the terminal to npm publish (whose one-time password it may
+    # ask), the deploy script or a ship hook (ship/publish.js, deploy.js, hooks.js).
+    case "$sub" in
+      cut|publish|deploy) wk_terminal_step "ship $sub" run_verb ship "$sub" "$@" ;;
+      *) run_verb ship "$sub" "$@" ;;
+    esac
+    return
   done
   # The list as a sentence, read off SHIP_VERBS: `a, b or c`.
   list="$(printf '%s, ' "${SHIP_VERBS[@]:0:${#SHIP_VERBS[@]}-1}")"

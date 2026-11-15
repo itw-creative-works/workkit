@@ -53,7 +53,7 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # Sourced tolerantly: an incomplete checkout is reported by the steps that need
 # these, never by a source that aborts before the command can speak.
 HOME_LIBS=1
-for _lib in lib/platform.sh lib/suite.sh lib.sh lib/discussions.sh home.sh; do
+for _lib in lib/platform.sh lib/suite.sh lib.sh lib/discussions.sh home.sh lib/command-log.sh; do
   if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
     # shellcheck source=/dev/null
     . "$SCRIPT_DIR/$_lib"
@@ -83,6 +83,9 @@ declare -f wk_native_path >/dev/null 2>&1 || wk_native_path() { printf '%s' "$1"
 declare -f wk_is_cloud >/dev/null 2>&1 || wk_is_cloud() { [[ "${CLAUDE_CODE_REMOTE:-}" == 'true' ]]; }
 declare -f wk_npm_script_shell >/dev/null 2>&1 \
   || wk_npm_script_shell() { npm config get script-shell 2>/dev/null | tr -d '\r'; return "${PIPESTATUS[0]}"; }
+# A checkout with no lib/command-log.sh has no command log to keep a step out of.
+declare -f wk_secret_step >/dev/null 2>&1 || wk_secret_step() { shift; "$@"; }
+declare -f wk_terminal_step >/dev/null 2>&1 || wk_terminal_step() { shift; "$@"; }
 # A partial kit has no clone test (lib/platform.sh), so no link outranks it.
 declare -f wk_clone_outranks >/dev/null 2>&1 || wk_clone_outranks() { return 1; }
 declare -f wk_user_dir >/dev/null 2>&1 || wk_user_dir() { printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}"; }
@@ -173,8 +176,9 @@ usage: workkit <command> [args]
                        declined, undecided, home or nogit
   note <text...>       append one bullet to the nearest capture file, or file it
                        as an issue on the home repo outside every project
-  test [paths]         hand the paths to this repo's npm test, run at its root,
-                       so the script shell records the run
+  test [paths] [--filter=<text>]
+                       hand the paths and the flag to this repo's npm test, run
+                       at its root, so the script shell records the run
   tools                print each command this repo's suites name through
                        needs(), one per line, sorted, for a setup to install
   convert [paths...]   rewrite this repo's old-shape suites in place onto
@@ -314,6 +318,12 @@ IDENTITY_USER=''
 . "$SCRIPT_DIR/workkit/allow.sh"
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
+
+# A command that does work runs again under its log (lib/command-log.sh); a
+# call made inside a logged one is in that log already.
+if [[ -z "${WK_COMMAND_LOGGED:-}" ]] && declare -f wk_command_log_run >/dev/null 2>&1; then
+  wk_command_log_run "$SCRIPT_DIR/workkit.sh" "$@"
+fi
 
 case "${1:-help}" in
   help|-h|--help) usage ;;
