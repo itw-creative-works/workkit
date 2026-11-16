@@ -4,11 +4,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { test as nodeTest, it as nodeIt } from 'node:test';
-import { withDeadline } from './cases.js';
-import { CASE_DEADLINE } from './process.js';
 
 export { describe, before, after, beforeEach, afterEach, mock } from 'node:test';
+export { test, it } from './cases.js';
 export * from './process.js';
 export * from './scratch.js';
 export * from './seed.js';
@@ -16,9 +14,8 @@ export * from './suites.js';
 export * from './log.js';
 export * from './spawn.js';
 export * from './expect.js';
-
-export const test = withDeadline(nodeTest, CASE_DEADLINE);
-export const it = withDeadline(nodeIt, CASE_DEADLINE);
+export * from './events.js';
+export * from './app-cases.js';
 
 // The workflow state directory's name for the test layer. The engine and the
 // hooks hold their own copy, so change all three together.

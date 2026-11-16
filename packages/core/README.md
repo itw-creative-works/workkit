@@ -54,17 +54,22 @@ npm i -D workkit-core
   - A folder holding no suite, or holding its own `package.json`, is such a path.
 - `--filter=<text>` runs only the cases whose full name (the `describe` path and the case's name, joined by spaces) holds the text as typed, case and every character counting.
   - The run prints `filter: <text>` first. A case left out prints nothing, and a suite with no case left prints nothing and is no failure.
-  - No case matching anywhere is `No case matches <text>`, exit 1. An empty text is `--filter needs a text`, the flag twice `--filter is given once`.
-  - The mod half and the workspace members are not started under it, each named in the skip list.
+  - No case matching anywhere, the root's own and every member's, is `No case matches <text>`, exit 1. An empty text is `--filter needs a text`, the flag twice `--filter is given once`.
+  - The mod half is not started under it, named in the skip list. The workspace members start as on a bare run, each handed the text (below); a filter with suite paths starts none.
 - `test/lib/skip.js` may export `SKIP`, suites a run leaves out unless a path names them (tests that run only when asked), and `CI_SKIP`, left out as well when `CI` holds any text.
   - Entries are read as paths after `--` are, and may name a workspace member's folder, which is then not started.
   - A run that leaves suites out prints `skip: <n> suite[s] left out (test/lib/skip.js)`, and one that leaves members out `skip: <n> member[s] left out (test/lib/skip.js)`. A path named after `--` runs a listed suite only when it names the entry or a path inside it; a wider path (`test`, `.`) leaves the suite out, and the line prints.
   - A list must be an array of paths: `test/lib/serial.js: SERIAL must be an array of paths` (a `serial.js` with no `SERIAL` included), `test/lib/skip.js: SKIP must be an array of paths` (or `CI_SKIP`), exit 1 before any suite.
 - A folder with no suite, and no workspace member to start, fails the run: `No test file found (*.test.js, *.test.mjs, *.test.cjs)`.
 - `test/mods/*.test.ts` suites run after that through `claude plugin test`, skipped by name with no `claude` on PATH.
-- A bare run from a root whose `package.json` lists `workspaces` (a literal folder, or `dir/*`) then runs each member's own `npm test`, one at a time in folder order, under `▶ <member name>: npm test`.
+- A run with no suite path, bare or under `--filter` alone, from a root whose `package.json` lists `workspaces` (a literal folder, or `dir/*`) then runs each member's own `npm test`, one at a time in folder order, under `▶ <member name>: npm test`.
   - A member with no `test` script is not started. Each member must run this runner: one whose run writes no summary line fails as `✗ <name>: its test script did not run workkit's runner`, with ` (exit <code>)` after it when it exited other than 0.
-  - The run ends with a row per member, `✓ <name>` or `✗ <name> (exit <code>)`, and its totals add the members' counts and name them: `(Ns, K suites, P members)`.
+  - Under a filter each runs `npm test -- --filter=<text>`, the text one argument. npm appends it to the member's script, so a script ending in the runner takes it (`node pre.js && workkit test`); one ending in another command does not, and its cases all run.
+    - On Windows the text arrives whole through Git Bash, which the starter uses when Git for Windows is there; without it `npm.cmd` reads the line again, so a text with an odd `"` before an `&` can split.
+    - Each is handed `WORKKIT_TEST_NO_MATCH=<file>` too (below): a run with no matching case adds one line there, and the member is the row `⊘ <name>: no case matches`, with no count and no failure.
+    - A member whose runs counted a pass or a failure is never that row, the line written or not: its counts and its exit code decide.
+      - So a script chaining a passing run and one matching nothing (`workkit test a && workkit test b`) exits 1, the row `✗ <name> (exit 1)`.
+  - The run ends with a row per member, `✓ <name>`, `⊘ <name>: no case matches` or `✗ <name> (exit <code>)`, and its totals add the members' counts and name them: `(Ns, K suites, P members)`.
   - A signal that ends the run while a member runs prints no row for it and no totals line; the exit is 128 plus the signal's number. A member's run has no deadline of its own.
 - The run ends with `N passed, M failed (Ns, K suites)` and a `slowest:` line, then names every skipped suite and case, then every failure; any failure exits 1.
   - Off Windows a `SIGINT`, `SIGTERM` or `SIGHUP` that ends the run prints nothing more: no block for a suite that ends meanwhile and no totals line; the exit is 128 plus the signal's number.
@@ -81,6 +86,8 @@ npm i -D workkit-core
   - A forced end (`SIGKILL`, any signal on Windows) writes none.
   - A run that stops before any suite ran writes both as 0. Unset, no file is written.
   - The runner takes the variable out of its environment at its start, so a run a suite starts writes no line.
+- `WORKKIT_TEST_NO_MATCH=<file>`, which a root run sets for each member it starts under a filter, has a run that ends with no matching case add one line to that file: the filter text, as a JSON string.
+  - The runner takes it out of its environment at its start, as it does the summary file's, so a run a suite starts writes none.
 - Every suite runs on Node's own runner, through its `run()`; no file's text is read to pick a shape.
   - Its block heads a case with its `describe` path, `[outer › inner]`, and prints one line per case: `✓ name`, `✗ name`, or `⊘ name: reason` for a skip or a todo.
   - Under a failed case: its message and the first stack frame in the suite file. A failed hook prints its thrown message.
@@ -157,6 +164,12 @@ describe('render', { skip: needs('ffmpeg') }, () => {
   - `expect.extend(matchers)` adds matchers, each `(actual, ...args) => ({ pass, message })`, `message` a function returning the failure text.
     - Inside one, `this.isNot` and `this.promise` (`''`, `'resolves'` or `'rejects'`) say how it was called. A built-in's name throws.
   - It has no asymmetric matchers (`expect.any`), snapshots or mocks.
+- Cases that run inside an app (a page, a service worker, an Electron process), each reporting one event line, `EVENT_PREFIX` (`__WORKKIT_TEST__`) then a JSON `{ id, name, status, durationMs, reason?, error? }`:
+  - `eventLine(event)`: the line, never broken across two. It reads nothing outside its own body, so `eventLine.toString()` runs in any realm: the whole app side the kit ships.
+  - `parseEventLine(line)`: the event, `null` for an ordinary line, a throw `not a valid event line: <line>` for a prefixed line that is no event.
+  - `appCases(cases, drive, { timeout })`: one case per `{ id, name }`, settled by its line, plus a last case, `app session`, failing on an unknown id, a second report, a bad line or a rejected `drive`.
+    - `drive(onLine)`, called once when the first of its cases a run selects starts, starts the program and hands over each line it prints (Node's `readline` reads a child's); a case with no line fails when it settles.
+  - The launch of a browser or Electron stays in the framework that needs it: [docs/tests.md](https://github.com/itw-creative-works/workkit/blob/main/docs/tests.md), § Cases that run inside an app.
 
 - `workkit-core/run` is the kit's program starter (`spawnSync`, `spawn`, `execFileSync`, `launchOf`, `windowsQuoted`), CommonJS.
   - It is `child_process`'s calls, with the real Windows launch of a bare name, a `#!` script or a `.cmd`.

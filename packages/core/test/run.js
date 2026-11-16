@@ -5,12 +5,12 @@
 // the serial tail the repo's `test/lib/serial.js` names, then the mod half
 // (`claude plugin test` over `test/mods/*.test.ts`), then each workspace
 // member's own `npm test`, totalled; non-zero on any failure. Suite paths
-// after `--` narrow the run, `--filter=<text>` its cases. A repo reaches it
-// through `workkit test`, the package's bin.
+// after `--` narrow the run, `--filter=<text>` its cases and each member's.
+// A repo reaches it through `workkit test`, the package's bin.
 
 import fs from 'node:fs';
 import { constants } from 'node:os';
-import { fork, spawn } from 'node:child_process';
+import { fork } from 'node:child_process';
 import { suiteName, POOL } from './lib/suites.js';
 import { readFilter, writtenPaths } from './lib/suite-path.js';
 import { pickSuites, SKIP_FILE } from './lib/pick.js';
@@ -22,11 +22,12 @@ import { indentRest, indentWriter } from './lib/log.js';
 import { paint } from './lib/paint.js';
 import { kitModule } from './lib/kit-module.js';
 
-// The kit's program starter: on Windows it finds a `claude.cmd` a raw start misses.
-const { spawnSync } = kitModule('run');
+// The kit's program starter: on Windows it finds a `claude.cmd` or `npm.cmd` a
+// raw start misses, and quotes each argument by its one rule.
+const { spawnSync, spawn } = kitModule('run');
 
 const SLOWEST = 5;
-// Why the mod half and the members do not start under a filter.
+// Why the mod half does not start under a filter.
 const NOT_UNDER_FILTER = 'not started under --filter';
 // The most seconds TEST_DEADLINE may name: node's timers hold 2^31 - 1 ms at most.
 const MAX_DEADLINE_SECONDS = 2147483;
@@ -77,10 +78,10 @@ const membersIn = (root) => {
 };
 
 // What one run covers, or the line that ends it before any suite: the suites
-// lib/pick.js picks, and the members a bare run starts (those with a `test`
-// script that no active skip entry names, the rest counted as left out), held
-// back whole under a filter.
-const startOf = ({ root, paths, filter }) => {
+// lib/pick.js picks, and the members a run with no suite path starts (those
+// with a `test` script that no active skip entry names, the rest counted as
+// left out), under a filter too.
+const startOf = ({ root, paths }) => {
   let members = null;
   const membersHere = () => {
     members ??= membersIn(root);
@@ -98,10 +99,7 @@ const startOf = ({ root, paths, filter }) => {
     console.error('No test file found (*.test.js, *.test.mjs, *.test.cjs)');
     process.exit(1);
   }
-  const held = filter !== null && startable.length > 0;
-  return {
-    ...picked, members: held ? [] : startable, membersHeld: held, membersLeftOut: tested.length - startable.length,
-  };
+  return { ...picked, members: startable, membersLeftOut: tested.length - startable.length };
 };
 
 // <text> on stdout, painted by Node's rule for it (lib/paint.js): the workers
@@ -231,6 +229,9 @@ export const main = async (argv) => {
   // run a suite starts writes no line of its own.
   const summaryFile = process.env.WORKKIT_TEST_SUMMARY;
   delete process.env.WORKKIT_TEST_SUMMARY;
+  // The file a root run names for a member's no-match line, taken out alike.
+  const noMatchFile = process.env.WORKKIT_TEST_NO_MATCH;
+  delete process.env.WORKKIT_TEST_NO_MATCH;
   if (argv[0] === '--worker') {
     // A parent that is gone takes its workers with it, and each worker the
     // processes its suite started: off Windows its own group never hears the terminal.
@@ -258,7 +259,7 @@ export const main = async (argv) => {
   const args = parseArgs(argv);
   const { root, filter } = args;
   const {
-    suites, serial, withMods, leftOut, members, membersHeld, membersLeftOut,
+    suites, serial, withMods, leftOut, members, membersLeftOut,
   } = startOf(args);
 
   const allFailures = [];
@@ -266,7 +267,6 @@ export const main = async (argv) => {
   const skippedCases = [];
   const timings = [];
   let reported = 0;
-  if (membersHeld) skippedSuites.push({ name: 'members', reason: NOT_UNDER_FILTER });
 
   // One finished suite: its block printed whole, its counts and time added.
   // Under a filter, a suite whose every case was left out prints and counts nothing,
@@ -339,16 +339,20 @@ export const main = async (argv) => {
     }
   }
   const ran = reported + (withMods ? 1 : 0);
+  // Whether a case of the root's own matched the filter, skipped ones included.
+  const rootMatched = passed + failed + skippedCases.length > 0;
 
   // The members, one at a time in folder order, each on its own runner.
   const rows = [];
+  let membersMatched = false;
   for (const member of members) {
     // A run a signal is ending starts no more members, and prints no row or
     // totals for the one it ended: the signal's handler exits the run.
     if (stopping) return;
     await say(`\n▶ ${member.name}: npm test\n`);
-    const end = await runMember(member, { spawn, live });
+    const end = await runMember(member, filter, { spawn, live });
     if (stopping) return;
+    if (!end.noMatch) membersMatched = true;
     const outcome = memberOutcome(member.name, end);
     rows.push(outcome.row);
     passed += outcome.passed;
@@ -379,9 +383,13 @@ export const main = async (argv) => {
       showLine(`  - ${f.name}: ${indentRest(f.message)}`);
     }
   }
-  // A filter that matched no case anywhere proves nothing, so it is no pass.
-  const noMatch = filter !== null && passed + failed + skippedCases.length === 0;
-  if (noMatch) console.error(`No case matches ${filter}`);
+  // A filter that matched no case anywhere proves nothing, so it is no pass:
+  // no case of the root's own, and every member it started wrote the no-match line.
+  const noMatch = filter !== null && !rootMatched && !membersMatched;
+  if (noMatch) {
+    console.error(`No case matches ${filter}`);
+    if (noMatchFile) fs.appendFileSync(noMatchFile, `${JSON.stringify(filter)}\n`);
+  }
   // exitCode, not exit(): a block may still be draining into a slow pipe.
   process.exitCode = failed > 0 || noMatch ? 1 : 0;
 };

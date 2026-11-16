@@ -2,7 +2,7 @@
 // starts it: suites on the door, the serial and skip lists, a recording `claude`
 // for the mod half, and the run with its exit and output. Consumers:
 // test/runner-folders.test.js, runner-filter.test.js, runner-skip.test.js, runner-color.test.js,
-// members.test.js, test/scripts/script-shell.test.js and script-shell-detached.test.js
+// members.test.js, app-cases.test.js, test/scripts/script-shell.test.js and script-shell-detached.test.js
 // (SUITE, RUNNER) and test/runner.test.js (MOD_FILES).
 
 const fs = require('fs');

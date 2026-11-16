@@ -53,13 +53,13 @@ const packedRepo = () => {
 };
 
 // Every name the door exports, and nothing else, which `workkit-core/test` carries: Node's
-// words and `expect`, the helpers Node has no equal for, the deadlines, and the rest.
+// words and `expect`, the helpers Node has no equal for, the deadlines, the app seam, and the rest.
 const DOOR_EXPORTS = [
   'describe', 'test', 'it', 'before', 'after', 'beforeEach', 'afterEach', 'mock', 'expect',
   'mkTmp', 'seeded', 'until', 'elapsedUntil', 'alive', 'readPid', 'run', 'start', 'endTree', 'endGroup', 'groupLives',
   'needs', 'hasLaunchd', 'SPAWN_DEADLINE', 'SUITE_DEADLINE', 'CASE_DEADLINE',
   'CASE_INDENT', 'PIPE_GRACE_MS', 'POOL', 'WORKKIT_DIR', 'findModSuites', 'findSuites', 'modDir', 'pidIn', 'suiteName',
-  'indentRest', 'indentWriter',
+  'indentRest', 'indentWriter', 'EVENT_PREFIX', 'eventLine', 'parseEventLine', 'appCases',
 ];
 
 const ran = (output, name) => linesOf(output).some((line) => line.includes(name));

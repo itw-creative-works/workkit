@@ -1,5 +1,8 @@
 // The case deadline's wrap: Node's `test` or `it` with a default `timeout`, in
-// every call form Node takes. The door builds its `test` and `it` from it.
+// every call form Node takes, and the door's `test` and `it` built from it.
+
+import { test as nodeTest, it as nodeIt } from 'node:test';
+import { CASE_DEADLINE } from './process.js';
 
 const isOptions = (value) => value !== null && typeof value === 'object';
 
@@ -27,3 +30,6 @@ export const withDeadline = (word, ms) => Object.defineProperties(
   (...args) => word(...withTimeout(args, ms)),
   Object.getOwnPropertyDescriptors(word),
 );
+
+export const test = withDeadline(nodeTest, CASE_DEADLINE);
+export const it = withDeadline(nodeIt, CASE_DEADLINE);

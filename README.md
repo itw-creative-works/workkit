@@ -69,8 +69,10 @@ claude
 - workkit also keeps the project's `.github/workflows/checks.yml`.
   - It is a few lines the kit owns and rewrites on every heal, so any edit there is lost.
   - They call the kit's CI, which runs `npm test` on every pull request and every push to the default branch, plus the changelog check.
-- The project's own CI needs (a tool to install, a variable to set) go under `hooks.ciSetup` in its `.workkit/settings.json`.
-  - The entries are shaped like the ship's (`{ "command": "<shell command>" }`), and run in order before the dependency install.
+- The project's own CI needs (a tool to install, a variable to set) go under `hooks.ciSetup` in its `.workkit/settings.json`, run before the dependency install.
+  - A command that needs the installed packages goes under `hooks.ciPostInstall`, run after the install and before the tests.
+  - The entries are shaped like the ship's (`{ "command": "<shell command>" }`), and each list runs in order.
+  - The kit's CI takes no `uses:` step: do an action's work as a command in one of the two lists.
   - A variable reaches the later steps by appending `NAME=value` to `$GITHUB_ENV`.
   - An entry marked `"local": true` is skipped there.
 - Type `/workkit:status` for a plain-language list of the open issues and what each one is waiting on.

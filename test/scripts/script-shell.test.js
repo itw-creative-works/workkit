@@ -385,18 +385,34 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
     });
   });
 
-  describe('script-shell: a bare root run over workspace members', () => {
-    test('green: the suite record holds the tree, and each member\'s package line is on its own id', () => {
-      const world = mkWorld();
+  describe('script-shell: a root run over workspace members', () => {
+    // A committed root on `workkit test` with its own suite and members a and b, each one case `the <name> case`.
+    const membersRepo = () => {
       const member = (name) => ({
         [`packages/${name}/package.json`]: { name, private: true, scripts: { test: 'workkit test' } },
         [`packages/${name}/test/${name}.test.js`]: SUITE(`test('the ${name} case', () => {});`),
       });
-      const repo = mkRepo({ private: true, workspaces: ['packages/*'], scripts: { test: 'workkit test' } }, {
+      return mkRepo({ private: true, workspaces: ['packages/*'], scripts: { test: 'workkit test' } }, {
         'test/root.test.js': SUITE("test('the root case', () => {});"),
         ...member('a'),
         ...member('b'),
       });
+    };
+
+    test('a green filtered root run whose filter matches a member\'s case: that case ran, no suite record and no member\'s package line', () => {
+      const world = mkWorld();
+      const repo = membersRepo();
+      const res = npm(world, repo, ['test', '--', '--filter=a case'], world.wrapper, { PATH: joinPath(coreBin(), NODE_DIR, SYSTEM_PATH) });
+      expect(res.code, `exit 0, got: ${res.out} ${res.err}`).toBe(0);
+      expect(linesOfBoth(res).map((line) => line.trim()).includes('✓ the a case'), `a's case ran, got: ${res.out} ${res.err}`).toBe(true);
+      expect(recorded(world, repo), 'a filtered run writes no suite record').toBe(undefined);
+      expect(packaged(world, repo), 'and no member writes its package line').toBe(undefined);
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('green: the suite record holds the tree, and each member\'s package line is on its own id', () => {
+      const world = mkWorld();
+      const repo = membersRepo();
       const tree = treeHash(repo);
       // Each member's id: the tree less the member it neither is nor depends on.
       const aId = treeHash(repo, ['packages/b']);

@@ -3,7 +3,8 @@
 // and holds no plain value with a colon; checks.yml runs a push on main only, its scope answer
 // gates suite and changelog, and release runs on a push only; ci.yml's Scope step
 // decides before setup and gates the rest, and is checks.yml's but name and path;
-// ci.yml's test job and checks.yml's suite job each carry a 60 minute limit.
+// ci.yml runs a repo's ciSetup list before the install and its ciPostInstall list
+// after it; ci.yml's test job and checks.yml's suite job each carry a 60 minute limit.
 
 const path = require('path');
 const fs = require('fs');
@@ -54,14 +55,24 @@ const jobKey = (file = WORKFLOW) => {
   };
 };
 
-// ci.yml's `jobs.test.steps`, each step as `{ name, id, if }` (absent keys null).
+// ci.yml's `jobs.test.steps`, each step as `{ name, id, if, run }` (absent keys null),
+// a `run: |` or `run: >` body as its trimmed lines.
 const ciSteps = () => listItems(jobKey(CI)('test', 'steps')).map((item) => {
   const value = (k) => {
     const found = block(item, k, indentOf(item[0]));
-    return found ? unquote(inlineValue(found)) : null;
+    if (!found) return null;
+    const inline = inlineValue(found);
+    return /^[|>]/.test(inline) ? found.slice(1).filter(isContent).map((l) => l.trim()).join('\n') : unquote(inline);
   };
-  return { name: value('name'), id: value('id'), if: value('if') };
+  return { name: value('name'), id: value('id'), if: value('if'), run: value('run') };
 });
+
+// The word a step's run line passes .github/scripts/ci-hooks.sh, or null when it runs no such script.
+const hooksEvent = (step) => {
+  const words = (step.run || '').split(/\s+/).map(unquote);
+  const at = words.findIndex((w) => w.endsWith('/.github/scripts/ci-hooks.sh'));
+  return at === -1 ? null : words[at + 1] || null;
+};
 
 // Every content line of the step with id scope in `jobs.<job>.steps` of `file`,
 // trimmed, its `name:` left out and the release-push.sh argument as one fixed
@@ -157,9 +168,9 @@ describe('ci.yml: the release-push skip is decided before setup', () => {
     expect(scope < setup, `Scope (step ${scope}) before Setup (step ${setup})`).toBeTruthy();
   });
 
-  test('Setup, Install dependencies and Test each run only on the scope step\'s run answer', () => {
+  test('Setup, Install dependencies, Post-install and Test each run only on the scope step\'s run answer', () => {
     const steps = ciSteps();
-    for (const name of ['Setup (hooks.ciSetup)', 'Install dependencies', 'Test']) {
+    for (const name of ['Setup (hooks.ciSetup)', 'Install dependencies', 'Post-install (hooks.ciPostInstall)', 'Test']) {
       const step = steps.find((s) => s.name === name);
       expect(step, `a ${name} step, got: ${JSON.stringify(steps)}`).toBeTruthy();
       expect(step.if, `${name}: if`).toBe("steps.scope.outputs.run == 'true'");
@@ -170,6 +181,18 @@ describe('ci.yml: the release-push skip is decided before setup', () => {
     const ci = scopeStep(CI, 'test');
     expect(ci !== '', 'ci.yml scope step has content lines').toBeTruthy();
     expect(ci, 'ci.yml scope step against checks.yml').toBe(scopeStep(WORKFLOW, 'scope'));
+  });
+});
+
+describe('ci.yml: a repo\'s two hook lists', () => {
+  test('the steps run setup, install, post-install, test, each hook step running ci-hooks.sh with its own event', () => {
+    const steps = ciSteps();
+    const order = ['Setup (hooks.ciSetup)', 'Install dependencies', 'Post-install (hooks.ciPostInstall)', 'Test'];
+    const at = order.map((name) => steps.findIndex((s) => s.name === name));
+    expect(at.every((i) => i >= 0), `each of ${order.join(', ')}, got: ${JSON.stringify(steps.map((s) => s.name))}`).toBeTruthy();
+    expect(at.every((i, n) => n === 0 || at[n - 1] < i), `in that order, got steps ${at.join(', ')}`).toBeTruthy();
+    expect(hooksEvent(steps[at[0]]), `Setup runs ci-hooks.sh ciSetup, got: ${steps[at[0]].run}`).toBe('ciSetup');
+    expect(hooksEvent(steps[at[2]]), `Post-install runs ci-hooks.sh ciPostInstall, got: ${steps[at[2]].run}`).toBe('ciPostInstall');
   });
 });
 

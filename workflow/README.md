@@ -74,7 +74,7 @@
 | `ship/cut.js` | The ship's GitHub release, which CI makes: `workkit ship cut <x.y.z>` creates nothing |
 | `ship/deploy.js` | The ship's deploy: `workkit ship deploy`, from inside the repo, run at its root |
 | `ship/hooks.js` | The ship hooks, a library with no CLI |
-| `ship/entries.js` | The one shape of a `hooks.<event>` declaration and its check, CJS with no imports so a CI runner's older Node loads it: `commandsOf(settings, event)` answers `[{ command, local }]` or throws `HooksError` naming the first misshapen entry; `ship/hooks.js` and `.github/scripts/ci-setup.sh` (`hooks.ciSetup`) both call it |
+| `ship/entries.js` | The one shape of a `hooks.<event>` declaration and its check, CJS with no imports so a CI runner's older Node loads it: `commandsOf(settings, event)` answers `[{ command, local }]` or throws `HooksError` naming the first misshapen entry; `ship/hooks.js` and `.github/scripts/ci-hooks.sh` (`hooks.ciSetup`, `hooks.ciPostInstall`) both call it |
 | `ship/watch.sh` | The ship's CI watch: `workkit ship watch <sha>` |
 | `ship/triggers.awk` | Whether one workflow file's top-level `on:` names an event, exit 0 yes and 1 no |
 | `ship/dispatch-input.awk` | Whether one workflow file declares a dispatch input, exit 0 yes and 1 no |
@@ -97,7 +97,7 @@
   - It creates the labels from `labels.json`, and corrects description/color drift.
   - It installs the issue templates.
   - It rewrites `.github/workflows/checks.yml` to the kit's CI caller whenever it differs.
-    - A replaced copy gets one warning per customization it held: a step to move into `hooks.ciSetup`, a kit step changed, a trigger, a job or workflow setting.
+    - A replaced copy gets one warning per customization it held: a step to move into `hooks.ciSetup` or `hooks.ciPostInstall`, a kit step changed, a trigger, a job or workflow setting.
   - It removes a vendored linter copy.
   - It converts a `CHANGELOG.md` written with em dash separators to spaced hyphens once.
   - It asks for branch protection on the caller's `checks / test` check (best effort).
@@ -143,7 +143,9 @@
     - Before replacing a file it reads it into `<path>\t<value>` leaves (`wk_checks_leaves`).
     - It names every customization in a `checks.yml: replaced by the kit's caller; <reason>: <what>` warning that flags the run (`wk_checks_kept_out`).
     - A customization is any of these:
-      - a step the kit's templates never carried (`move this step into hooks.ciSetup`, its `with:` and `env:` said);
+      - a step the kit's templates never carried, its `with:` and `env:` said:
+        - a `run:` step: `move this step into hooks.ciSetup, or into hooks.ciPostInstall when it needs the installed packages`;
+        - a `uses:` step: `a uses: step cannot run in the kit's CI; do its work as a command in hooks.ciSetup or hooks.ciPostInstall`;
       - a kit step whose body differs from every template's (`the kit's own step runs in place of this one`);
       - a trigger or a trigger filter past `pull_request`, a push on exactly the default branch and an old copy's CHANGELOG `paths-ignore` (the caller's release-push skip took its place);
       - a job setting past `runs-on: ubuntu-latest`, `steps` and the kit's changelog `uses:`;
@@ -175,7 +177,7 @@
     - Job `release` runs on a push only (`if: github.event_name == 'push'`), so a pull request's token stays read-only.
     - `release` has `contents: write` and `actions: write`, and calls the kit's `.github/workflows/release.yml@main` with no secrets. The job's own token is its only credential.
   - The reusable `ci.yml`'s `test` job runs the kit's `.github/scripts/ci-*.sh` from a shallow clone of the kit in `$RUNNER_TEMP`, outside the workspace.
-    - What they run: the Node version, the repo's `hooks.ciSetup` before the dependency install, the suite under `xvfb-run -a`.
+    - What they run: the Node version, the repo's `hooks.ciSetup` before the dependency install, its `hooks.ciPostInstall` after it, the suite under `xvfb-run -a`.
     - A newer run on the same pull request cancels the older.
   - A release push runs no setup, install or suite.
     - A `Scope` step right after the kit's clone answers `run=true` for a pull request.
@@ -371,7 +373,7 @@
   - The platform is read once at load, so a test that fakes `process.platform` never hands a real program the win32 launch.
   - Every shipped file that starts a program requires it.
   - `test/scripts/run-home.test.js` fails any other `child_process` import but one and a list:
-    - the published workkit-core runner's `packages/core/test/run.js`: run.js has no fork for its suite workers, and its one other raw start (each member's `npm` through the shell) starts no Git Bash program, so none of its arguments meets Git Bash's splitting and globbing;
+    - the published workkit-core runner's `packages/core/test/run.js`, for one reason: the fork of its suite workers, which run.js does not have;
       - its `packages/core/test/lib/spawn.js` starts through run.js, which `kit-module.js` loads: the kit's file in the kit's checkout, else the packed `run.cjs`;
       - its `packages/core/test/lib/members.js` starts each member's `npm` through the starter `packages/core/test/run.js` hands it, so it imports none;
     - the root `test/` files still on the check's list, which only shrinks.
@@ -1751,9 +1753,9 @@ workkit note fix the tower poller
     - `workkit ship cut`, `publish` and `deploy` run them from the repo root once their step succeeds.
     - They run only where this file says `"enabled": true`.
     - An entry's optional `"local": true` marks one that needs a machine, which a cloud session skips with its line (`ship/hooks.js`).
-  - The same shape under `"ciSetup"` is the repo's own CI setup, which the ship never runs.
-    - The kit's `ci.yml` runs each entry on the runner before the dependency install, skipping a `"local": true` one.
-    - Where: `.github/scripts/ci-setup.sh`, through the one entry check in `ship/entries.js`.
+  - The same shape under `"ciSetup"` and `"ciPostInstall"` is the repo's own CI setup, which the ship never runs.
+    - The kit's `ci.yml` runs each `ciSetup` entry on the runner before the dependency install, and each `ciPostInstall` entry after it and before the tests, skipping a `"local": true` one.
+    - Where: `.github/scripts/ci-hooks.sh <event>`, through the one entry check in `ship/entries.js`.
   - An optional `"public": "<owner>/<repo>"` pairs this private repo with the public one its users file issues on (`docs/project-state.md` § Capture).
     - The heal makes the `status:` labels there and mirrors each linked issue's status.
     - The `gh` shim posts there as the bot, and `workkit public` runs the intake and the close.

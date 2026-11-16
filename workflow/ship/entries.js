@@ -1,5 +1,5 @@
 // The one shape of a `hooks.<event>` declaration and its check, shared by the
-// ship hooks (hooks.js) and CI's setup step (.github/scripts/ci-setup.sh). No
+// ship hooks (hooks.js) and CI's hook steps (.github/scripts/ci-hooks.sh). No
 // imports, so a CI runner on the repo's own, perhaps older, Node loads it.
 // Usage: const { HooksError, commandsOf } = require('./entries');
 

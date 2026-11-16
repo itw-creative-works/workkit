@@ -28,7 +28,7 @@ export const DEFAULTS = {
   logs: { dir: '.workkit' },
   commit: { attribution: true },
   docs: { bullets: false, paths: ['AGENTS.md', 'README.md', 'docs/'] },
-  hooks: { afterRelease: [], afterPublish: [], afterDeploy: [], ciSetup: [] },
+  hooks: { afterRelease: [], afterPublish: [], afterDeploy: [], ciSetup: [], ciPostInstall: [] },
   manager: { mode: 'rewrite', enabled: true, tiers: { frontier: 'fable', workhorse: 'opus', fast: 'sonnet' } },
   site: { repo: null, publish: null, url: null, sidebar: null },
   identity: { tokenUrl: 'https://workkit.itwcreativeworks.com/token' },

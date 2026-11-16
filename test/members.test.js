@@ -1,18 +1,22 @@
-// Tests for a bare run of the kit's runner (packages/core/test/run.js) at a root
-// whose package.json lists `workspaces`: after its own suites it runs each member's
-// own `npm test`, one at a time in folder order, and a member that does not run the
-// kit's runner fails by name. A member's `workkit test` finds the package's bin.
+// Tests for a run of the kit's runner (packages/core/test/run.js) at a root whose
+// package.json lists `workspaces`: after its own suites it runs each member's own
+// `npm test` (under a filter, with the filter), one at a time in folder order, and a
+// member that does not run the kit's runner fails by name.
 
 const path = require('path');
-const { stripVTControlCharacters } = require('util');
 const {
   describe, test, expect, until, pidIn, alive, endTree,
 } = require('./lib/harness');
 const { IS_WINDOWS } = require('./lib/platform');
-const { TOTALS_LINE, linesOf, listsOf } = require('./lib/run-lists');
+const { TOTALS_LINE, linesOf } = require('./lib/run-lists');
 const { TOTALS, skipWithoutNpm } = require('./lib/core-repo');
 const { coreBin } = require('./lib/workkit-bin');
-const { SUITE, listFile, mkWorld } = require('./lib/runner-world');
+const {
+  RUNNER, SUITE, MOD_FILES, listFile, mkWorld, claudeStub,
+} = require('./lib/runner-world');
+
+// The kit's program starter, which a member's suite starts a run of its own through.
+const RUN_JS = path.join(__dirname, '..', 'workflow', 'lib', 'run.js');
 
 // The root package.json declaring `workspaces`, none when undefined.
 const ROOT = (workspaces) => ({
@@ -22,25 +26,33 @@ const ROOT = (workspaces) => ({
 // The root's own suite.
 const ROOT_SUITE = { 'test/root.test.js': SUITE("test('the root case', () => {});") };
 
+// One case of a suite's text: `name`, its body `body`.
+const CASE = (name, body = '') => `test(${JSON.stringify(name)}, () => { ${body} });`;
+
 /**
  * The member `name` at `folder`: its package.json with `script` as its test script
- * (none when null) and one suite, its case `the <name> case`, passing unless `fails`.
+ * (none when null) and one suite holding `cases`, else one case `the <name> case`,
+ * passing unless `fails`.
  */
-const member = (name, { folder = `packages/${name}`, script = 'workkit test', fails = false } = {}) => ({
+const member = (name, {
+  folder = `packages/${name}`, script = 'workkit test', fails = false, cases,
+} = {}) => ({
   [`${folder}/package.json`]: { name, private: true, ...(script === null ? {} : { scripts: { test: script } }) },
-  [`${folder}/test/${name}.test.js`]: SUITE(`test('the ${name} case', () => { ${fails ? `throw new Error('${name} breaks');` : ''} });`),
+  [`${folder}/test/${name}.test.js`]: SUITE((cases || [CASE(`the ${name} case`, fails ? `throw new Error('${name} breaks');` : '')]).join('\n')),
 });
 
-// The world holding `files`, the runner started with `args` and the package's bin on PATH.
-const runWith = (files, args = [], { env = {}, cwd = '' } = {}) => {
+// The world holding `files`, the runner started with `args`, the package's bin and `bins` on PATH.
+const runWith = (files, args = [], { env = {}, cwd = '', bins = [] } = {}) => {
   const w = mkWorld();
   w.write(files);
-  return { ...w.run(args, { cwd, env, bins: [coreBin()] }), read: w.read };
+  return { ...w.run(args, { cwd, env, bins: [coreBin(), ...bins] }), read: w.read };
 };
 
 const trimmed = (output) => linesOf(output).map((line) => line.trim());
 const at = (output, text) => trimmed(output).indexOf(text);
 const has = (output, text) => at(output, text) >= 0;
+// How many lines read exactly `text`.
+const count = (output, text) => trimmed(output).filter((line) => line === text).length;
 
 // The root run's totals line: the last one, since each member's own run prints one above it.
 const totalsOf = (output) => trimmed(output).filter((line) => TOTALS_LINE.test(line)).pop() || '';
@@ -147,6 +159,155 @@ describe('run.js: workspace members', { skip: skipWithoutNpm() }, () => {
       expect(output.includes('the a case') && has(output, '✓ a'), `the member ran, got: ${output}`).toBe(true);
       expect(output.includes('No test file found'), `no start failure, got: ${output}`).toBe(false);
     });
+
+    test('a bare run: the member starts with no filter appended, and its row and the totals read as ever', () => {
+      const { code, output, read } = runWith({
+        ...ROOT(['packages/*']),
+        ...ROOT_SUITE,
+        ...member('a', { script: 'workkit test && node argv.js' }),
+        'packages/a/argv.js': "require('fs').writeFileSync(require('path').join(__dirname, 'argv.json'), JSON.stringify(process.argv.slice(2)));\n",
+      });
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(read('packages/a/argv.json'), `npm appended nothing to the member's script, got: ${output}`).toBe('[]');
+      expect(has(output, '✓ a'), `a's row, got: ${output}`).toBe(true);
+      expect(TOTALS(2, 1, { members: 1 }).test(totalsOf(output)), `the totals line, got: ${output}`).toBe(true);
+    });
+  });
+
+  describe('a filtered root run hands its filter to each member', () => {
+    const ALPHA_BETA = {
+      ...ROOT(['packages/*']), ...member('a', { cases: [CASE('alpha one')] }), ...member('b', { cases: [CASE('beta two')] }),
+    };
+
+    test('--filter=alpha over members a (alpha one) and b (beta two): ✓ a, ⊘ b: no case matches, 1 passed 0 failed, exit 0, and no No case matches line from the root', () => {
+      const { code, output } = runWith(ALPHA_BETA, ['--filter=alpha']);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(has(output, '✓ alpha one'), `a's case ran, got: ${output}`).toBe(true);
+      expect(has(output, '✓ a') && has(output, '⊘ b: no case matches'), `the rows, got: ${output}`).toBe(true);
+      expect(totalsOf(output).startsWith('1 passed, 0 failed'), `the totals line, got: ${output}`).toBe(true);
+      expect(count(output, 'No case matches alpha'), `b's own line alone, none from the root, got: ${output}`).toBe(1);
+    });
+
+    test('--filter=nothing-here over the same members: both rows ⊘, the root prints No case matches nothing-here, exit 1', () => {
+      const { code, output } = runWith(ALPHA_BETA, ['--filter=nothing-here']);
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(has(output, '⊘ a: no case matches') && has(output, '⊘ b: no case matches'), `both rows, got: ${output}`).toBe(true);
+      expect(count(output, 'No case matches nothing-here'), `each member's own line and the root's, got: ${output}`).toBe(3);
+    });
+
+    test('a root suite with a matching case and members with none: the root case runs, each member row reads ⊘, exit 0', () => {
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']), 'test/root.test.js': SUITE(CASE('gamma three')), ...member('a'), ...member('b'),
+      }, ['--filter=gamma']);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(has(output, '✓ gamma three'), `the root case ran, got: ${output}`).toBe(true);
+      expect(has(output, '⊘ a: no case matches') && has(output, '⊘ b: no case matches'), `both rows, got: ${output}`).toBe(true);
+    });
+
+    test('a member whose matching case fails: its row reads ✗ a (exit 1), the totals count the failure, exit 1', () => {
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']), ...member('a', { cases: [CASE('alpha one', "throw new Error('alpha breaks');"), CASE('beta two')] }),
+      }, ['--filter=alpha']);
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(has(output, '✗ a (exit 1)'), `a's row, got: ${output}`).toBe(true);
+      expect(totalsOf(output).startsWith('0 passed, 1 failed'), `the totals count it, got: ${output}`).toBe(true);
+    });
+
+    test('a member whose only matching case is skipped: its row reads ✓ a and no No case matches line prints', () => {
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']), ...member('a', { cases: ["test('alpha one', { skip: 'not here' }, () => {});", CASE('beta two')] }),
+      }, ['--filter=alpha']);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(has(output, '✓ a'), `a's row, got: ${output}`).toBe(true);
+      expect(count(output, 'No case matches alpha'), `a skipped match is a match, got: ${output}`).toBe(0);
+    });
+
+    test('a member with a test script and no test file: its row reads ✗ b (exit 1), exit 1', () => {
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']),
+        ...member('a', { cases: [CASE('alpha one')] }),
+        'packages/b/package.json': { name: 'b', private: true, scripts: { test: 'workkit test' } },
+      }, ['--filter=alpha']);
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(has(output, '✗ b (exit 1)'), `b's row, got: ${output}`).toBe(true);
+    });
+
+    test('a member whose test script is another runner that exits 0: its row names it with no code, exit 1', () => {
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']),
+        ...member('a', { cases: [CASE('alpha one')] }),
+        'packages/c/package.json': { name: 'c', private: true, scripts: { test: 'node other.js' } },
+        'packages/c/other.js': "console.log('the other runner ran');\n",
+      }, ['--filter=alpha']);
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(has(output, "✗ c: its test script did not run workkit's runner"), `c's row, got: ${output}`).toBe(true);
+    });
+
+    test('a member whose script is node pre.js && workkit test: the first step ran and only the matching case ran', () => {
+      const { code, output, read } = runWith({
+        ...ROOT(['packages/*']),
+        ...member('a', { script: 'node pre.js && workkit test', cases: [CASE('alpha one'), CASE('beta two')] }),
+        'packages/a/pre.js': "require('fs').writeFileSync(require('path').join(__dirname, 'pre.done'), 'ran');\n",
+      }, ['--filter=alpha']);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(read('packages/a/pre.done'), 'the first step ran').toBe('ran');
+      expect(has(output, '✓ alpha one'), `the matching case ran, got: ${output}`).toBe(true);
+      expect(output.includes('beta two'), `the other case never ran, got: ${output}`).toBe(false);
+    });
+
+    test('a filter holding a space, a double quote, an ampersand and a percent sign: exactly the member case holding it runs', () => {
+      const text = 'say "hi" & 50% off';
+      const misses = ['say "hi" & 50% on', 'say hi & 50% off'];
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']), ...member('a', { cases: [CASE(`we ${text}`), ...misses.map((name) => CASE(name))] }),
+      }, [`--filter=${text}`]);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(has(output, `✓ we ${text}`), `the case holding the text ran, got: ${output}`).toBe(true);
+      expect(misses.filter((name) => output.includes(name)), `no near miss ran, got: ${output}`).toEqual([]);
+    });
+
+    test('a root with a mod half and a member: the member\'s case runs, the mod half is not started, and its skip line names the filter', () => {
+      const claude = claudeStub();
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']), ...MOD_FILES, ...member('a', { cases: [CASE('alpha one')] }),
+      }, ['--filter=alpha'], { bins: [claude.bin] });
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(has(output, '✓ alpha one'), `the member's case ran, got: ${output}`).toBe(true);
+      expect(claude.started(), `claude was never started, got: ${output}`).toBe(false);
+      expect(trimmed(output).some((line) => line.includes('mod half') && line.includes('--filter')), `the skip line names the flag, got: ${output}`).toBe(true);
+    });
+
+    // The inner run starts in a folder with its own package.json, which the member's run never reads.
+    test('a member suite that starts a run of its own matching nothing: that run writes no no-match line, so the member\'s row reads ✓ a', () => {
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']),
+        ...member('a', {
+          cases: [`const { spawnSync } = require(${JSON.stringify(RUN_JS)});
+test('alpha starts a run of its own', () => {
+  expect(process.env.WORKKIT_TEST_NO_MATCH, 'the member run names no no-match file to a run its suite starts').toBe(undefined);
+  const res = spawnSync(process.execPath, [${JSON.stringify(RUNNER)}, '--filter=nothing-here'], { cwd: require('path').join(__dirname, '..', 'inner'), encoding: 'utf8' });
+  expect((res.stdout || '') + (res.stderr || ''), 'the inner run matched nothing').toContain('No case matches nothing-here');
+});`],
+        }),
+        'packages/a/inner/package.json': { name: 'inner', private: true },
+        'packages/a/inner/x.test.js': SUITE(CASE('zeta')),
+      }, ['--filter=alpha']);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(has(output, '✓ alpha starts a run of its own'), `the member's case ran, got: ${output}`).toBe(true);
+      expect(has(output, '✓ a'), `a's row, got: ${output}`).toBe(true);
+    });
+
+    // `||`, since cmd.exe, npm's script shell on Windows, takes no `;`; the first run always exits 1.
+    test('a member whose script starts the runner twice, one run matching no case and one failing a case: its row reads ✗ a (exit 1) with its counts, exit 1', () => {
+      const { code, output } = runWith({
+        ...ROOT(['packages/*']),
+        'test/root.test.js': SUITE(CASE('alpha root')),
+        ...member('a', { script: 'workkit test --filter=nothing-here || workkit test', cases: [CASE('alpha one', "throw new Error('alpha breaks');")] }),
+      }, ['--filter=alpha']);
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(has(output, '✗ a (exit 1)'), `a's row, got: ${output}`).toBe(true);
+      expect(totalsOf(output).startsWith('1 passed, 1 failed'), `the totals count a's failure, got: ${output}`).toBe(true);
+    });
   });
 
   describe('runs that start no member', () => {
@@ -193,14 +354,12 @@ describe('run.js: workspace members', { skip: skipWithoutNpm() }, () => {
       expect(TOTALS(1, 1).test(totalsOf(output)), `a totals line with no member count, got: ${output}`).toBe(true);
     });
 
-    test('a filtered bare run at a root with members starts none, and its end names members as not started under --filter', () => {
+    test('--filter with a suite path at the root: no member starts', () => {
       const { code, output } = runWith({
         ...ROOT(['packages/*']), ...ROOT_SUITE, ...member('a'),
-      }, ['--filter=root']);
+      }, ['test/root.test.js', '--filter=case']);
       expect(code, `exit 0, got: ${output}`).toBe(0);
-      expect(has(output, '▶ a: npm test') || output.includes('the a case'), `a never started, got: ${output}`).toBe(false);
-      const skip = listsOf(output).map((line) => line.trim()).find((line) => line.startsWith('⊘ members'));
-      expect(skip && skip.endsWith(': not started under --filter'), `the skip names members and the reason, got: ${stripVTControlCharacters(output)}`).toBe(true);
+      expect(has(output, '▶ a: npm test') || has(output, '✓ the a case'), `a never started, got: ${output}`).toBe(false);
     });
   });
 
@@ -231,6 +390,14 @@ describe('run.js: workspace members', { skip: skipWithoutNpm() }, () => {
       const { code, output } = runWith(withList({ SKIP: ['packages/b'] }));
       expect(code, `exit 0, got: ${output}`).toBe(0);
       expect(has(output, '▶ b: npm test') || output.includes('the b case'), `b never started, got: ${output}`).toBe(false);
+      expect(has(output, MEMBER_LINE), `the member line, got: ${output}`).toBe(true);
+    });
+
+    test('SKIP naming a member\'s folder, under a filter: that member is not started and is counted as left out, the other runs', () => {
+      const { code, output } = runWith(withList({ SKIP: ['packages/b'] }), ['--filter=a case']);
+      expect(code, `exit 0, got: ${output}`).toBe(0);
+      expect(has(output, '✓ the a case'), `a ran, got: ${output}`).toBe(true);
+      expect(has(output, '▶ b: npm test') || has(output, '✓ the b case'), `b never started, got: ${output}`).toBe(false);
       expect(has(output, MEMBER_LINE), `the member line, got: ${output}`).toBe(true);
     });
 

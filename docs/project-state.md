@@ -98,7 +98,7 @@
   - `hooks`, the ship hooks: the commands its `afterRelease`, `afterPublish` and `afterDeploy` arrays name, for `workkit ship cut`, `publish` and `deploy` to run once their step succeeds.
     - They run in a repo whose file says `"enabled": true`, an entry marked `"local": true` skipped in a cloud session (`workflow/README.md`, the `ship/hooks.js` row).
     - An `afterRelease` hook must be idempotent. The ship's no-commit path reruns `workkit ship cut` for a version already released, and so reruns every `afterRelease` hook.
-    - `hooks` also holds its `ciSetup`, the repo's own CI setup, which the ship never runs (§ The system works without the harness).
+    - `hooks` also holds its `ciSetup` and `ciPostInstall`, the repo's own CI setup before and after the install, which the ship never runs (§ The system works without the harness).
   - A separate system claims a separate key and leaves them alone.
   - The one in use today is `manager`: the manager system's `mode`, model `tiers` and an `enabled` of its own, defaults in the same file.
     - It is a Claude-harness concern documented in [`hooks.md`](hooks.md) § `manager:resolver`, with no effect on the issue workflow.
@@ -975,19 +975,23 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
     - It reads the file as nvm reads it: blank and comment lines skipped, `v22/*` and `v22` as `22`.
   - It runs each entry of the repo's `hooks.ciSetup` before the dependency install.
     - So a tool or a `$GITHUB_ENV` value the install needs is in place.
-    - The key lives in `.workkit/settings.json`, with the ship hooks' shape and check (`workflow/ship/entries.js`): `[{ "command": "<shell command>" }]`.
+  - It installs the dependencies, then runs each entry of the repo's `hooks.ciPostInstall`.
+    - So a command that needs an installed package (a browser an installed package downloads) runs before the tests.
+  - The two lists share one shape and one set of rules.
+    - Each key lives in `.workkit/settings.json`, with the ship hooks' shape and check (`workflow/ship/entries.js`): `[{ "command": "<shell command>" }]`.
     - Each entry runs through `bash` from the repo root, in order.
     - An entry marked `"local": true` is skipped with a line.
     - The first failure fails the job and names the command.
     - A variable for the later steps is appended to `$GITHUB_ENV`.
-  - It installs the dependencies, then runs `xvfb-run -a npm test` when the repo has a test script.
+    - The kit's CI takes no `uses:` step from a repo: an action's work is a command in one of the two lists.
+  - Then it runs `xvfb-run -a npm test` when the repo has a test script.
   - The changelog check is a job of its own that runs either way.
 - The repo's own `npm test` script is the one test command CI runs.
   - A repo that wants a narrower run in CI reads `$CI` (set on every runner) in that script.
 - No job setting a copy carried (`env`, `timeout-minutes`, `services`, a matrix) is carried into the caller.
 - A newer push to the same pull request cancels the older run.
 - A heal that replaces a customized copy warns once per customization, so nothing is dropped unnamed. It names:
-  - a step of the repo's own (to move into `hooks.ciSetup`, its inputs said);
+  - a step of the repo's own, its inputs said: a `run:` step to move into `hooks.ciSetup`, or `hooks.ciPostInstall` when it needs the installed packages, and a `uses:` step whose work becomes a command in either;
   - a kit step it changed;
   - a trigger;
   - a job setting (`env`, `timeout-minutes`, `services`, a matrix);

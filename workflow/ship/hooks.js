@@ -12,8 +12,8 @@ const { settingsAt, faultsAt } = require('../lib/settings');
 const { isCloud } = require('../lib/cloud');
 const { HooksError, commandsOf } = require('./entries');
 
-// The events the ship runs; every known event, ciSetup (CI's) included, has its
-// default in defaults/settings.json.
+// The events the ship runs; every known event, ciSetup and ciPostInstall (CI's)
+// included, has its default in defaults/settings.json.
 const EVENTS = ['afterRelease', 'afterPublish', 'afterDeploy'];
 const SETTINGS = '.workkit/settings.json';
 

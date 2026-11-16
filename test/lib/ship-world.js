@@ -2,8 +2,7 @@
 // turns workkit on and declares hooks, and `node workflow/ship/<name>.js` run
 // under a scratch home with only node and the system tools on PATH. Consumers:
 // test/scripts/ship-cut.test.js and test/scripts/ship-deploy.test.js;
-// test/scripts/ship-hooks.test.js and publish-plan.test.js its `enabledWith`,
-// ship-hooks its `lines`.
+// ship-hooks, publish-plan and ci-scripts its `enabledWith`, ship-hooks its `lines`.
 
 const fs = require('fs');
 const path = require('path');

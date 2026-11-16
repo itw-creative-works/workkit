@@ -1,5 +1,5 @@
-// The end of a kit run's output as the suites read it: its lines with the colours
-// stripped, the totals line, and the failure and skip lists printed below it.
+// A kit run's output as the suites read it: its lines with the colours stripped,
+// the case marks, the totals line, and the failure and skip lists below it.
 
 const { stripVTControlCharacters } = require('util');
 
@@ -13,4 +13,15 @@ const listsOf = (output) => {
   return lines.slice(lines.findIndex((line) => TOTALS_LINE.test(line)) + 1);
 };
 
-module.exports = { TOTALS_LINE, linesOf, listsOf };
+// The case marks a run printed, trimmed: `✓ alpha`, `✗ beta`, `⊘ beta: why`.
+const marksOf = (output) => linesOf(output).map((line) => line.trim()).filter((line) => /^[✓✗⊘] /.test(line));
+
+// The totals line, or '' when the run printed none.
+const totalsOf = (output) => linesOf(output).find((line) => TOTALS_LINE.test(line)) || '';
+
+// The text below `Failures:`, or '' when the run printed no failure list.
+const failuresOf = (output) => linesOf(output).join('\n').split('Failures:')[1] || '';
+
+module.exports = {
+  TOTALS_LINE, linesOf, listsOf, marksOf, totalsOf, failuresOf,
+};

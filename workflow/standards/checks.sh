@@ -130,7 +130,7 @@ wk_checks_kept_out() {
       if (swith[sid] != "") what = what " (with: " swith[sid] ")"
       if (senv[sid] != "") what = what " (env: " senv[sid] ")"
       if (sother[sid] != "") what = what " (" sother[sid] ")"
-      print (id in known ? "the kit'"'"'s own step runs in place of this one" : "move this step into hooks.ciSetup") "\t" (sname[sid] != "" ? sname[sid] : suses[sid] != "" ? suses[sid] : "a nameless step") ": " what
+      print (id in known ? "the kit'"'"'s own step runs in place of this one" : suses[sid] != "" ? "a uses: step cannot run in the kit'"'"'s CI; do its work as a command in hooks.ciSetup or hooks.ciPostInstall" : "move this step into hooks.ciSetup, or into hooks.ciPostInstall when it needs the installed packages") "\t" (sname[sid] != "" ? sname[sid] : suses[sid] != "" ? suses[sid] : "a nameless step") ": " what
     }
     BEGIN {
       S = "\037"
@@ -170,7 +170,8 @@ wk_checks_kept_out() {
 
 # ── 2b. The CI caller ──
 # The kit owns checks.yml: any file that is not the rendered caller is
-# rewritten, and each customization it held is named, for hooks.ciSetup or by hand.
+# rewritten, and each customization it held is named, for hooks.ciSetup,
+# hooks.ciPostInstall or by hand.
 ensure_ci_workflow() {
   local dest=".github/workflows/checks.yml" src tmp out="" why what had=0 branch
   src="$(wk_checks_template)"

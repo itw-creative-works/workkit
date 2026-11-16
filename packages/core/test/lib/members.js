@@ -1,7 +1,7 @@
 // A monorepo root's members for the runner (test/run.js): the folders its
 // package.json's `workspaces` lists, read by the publish plan's own expansion,
-// and one member's `npm test`, judged by the line the kit's runner writes to
-// the summary file it is handed. The door does not re-export it.
+// and one member's `npm test`, judged by the lines the kit's runner writes to
+// the summary and no-match files it is handed. The door does not re-export it.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +15,8 @@ const { expandWorkspaces, PlanError } = kitModule('expand-workspaces');
 
 // The row and failure text of a member whose run wrote no summary line.
 const NOT_ON_RUNNER = 'its test script did not run workkit\'s runner';
+// The row text of a member whose run under a filter matched no case.
+const NO_CASE = 'no case matches';
 
 export { PlanError };
 
@@ -61,29 +63,36 @@ const countsIn = (file) => {
 
 /**
  * One member's `npm test` in its own folder, its output on the runner's own,
- * handed a summary file of its own (`WORKKIT_TEST_SUMMARY`). Off Windows it
+ * handed a summary file of its own (`WORKKIT_TEST_SUMMARY`). Under a filter
+ * the text goes after `--` as `--filter=<text>`, one argument, and the member
+ * is handed a no-match file too (`WORKKIT_TEST_NO_MATCH`). Off Windows it
  * leads its own process group, its pid in <live> while it runs.
  * @param {{dir: string}} member
- * @param {{spawn: Function, live: Set<number>}} seams the program starter and the runner's live pids
- * @returns {Promise<{code: number|null, signal: string|null, error?: string, counts: {passed: number, failed: number}|null}>}
+ * @param {string|null} filter the run's filter text, null without the flag
+ * @param {{spawn: Function, live: Set<number>}} seams the kit's program starter and the runner's live pids
+ * @returns {Promise<{code: number|null, signal: string|null, error?: string, counts: {passed: number, failed: number}|null, noMatch: boolean}>}
  */
-export const runMember = (member, { spawn, live }) => new Promise((resolve) => {
-  const summary = path.join(mkTmp('workkit-member-'), 'summary');
+export const runMember = (member, filter, { spawn, live }) => new Promise((resolve) => {
+  const scratch = mkTmp('workkit-member-');
+  const summary = path.join(scratch, 'summary');
+  const noMatch = path.join(scratch, 'no-match');
   const options = {
     cwd: member.dir,
-    env: { ...process.env, WORKKIT_TEST_SUMMARY: summary },
+    env: { ...process.env, WORKKIT_TEST_SUMMARY: summary, ...(filter === null ? {} : { WORKKIT_TEST_NO_MATCH: noMatch }) },
     stdio: ['ignore', 'inherit', 'inherit'],
     detached: !IS_WINDOWS,
   };
-  // npm is npm.cmd on Windows, which starts only through the shell.
-  const child = IS_WINDOWS ? spawn('npm test', { ...options, shell: true }) : spawn('npm', ['test'], options);
+  const child = spawn('npm', ['test', ...(filter === null ? [] : ['--', `--filter=${filter}`])], options);
   if (child.pid !== undefined) live.add(child.pid);
   let settled = false;
   const settle = (outcome) => {
     if (settled) return;
     settled = true;
     live.delete(child.pid);
-    resolve({ ...outcome, counts: countsIn(summary) });
+    // A run that counted a pass or a failure matched, whatever another run of the script wrote.
+    const counts = countsIn(summary);
+    const unmatched = fs.existsSync(noMatch) && (counts === null || counts.passed + counts.failed === 0);
+    resolve({ ...outcome, counts, noMatch: unmatched });
   };
   child.on('error', (err) => settle({ code: null, signal: null, error: err.message }));
   child.on('close', (code, signal) => settle({ code, signal }));
@@ -91,18 +100,21 @@ export const runMember = (member, { spawn, live }) => new Promise((resolve) => {
 
 /**
  * What one member's run adds to the root run: its row, its counts, and its
- * failure for the list. A run that wrote no summary line did not run the
- * kit's runner, so it fails by name whatever its exit; an exit other than 0
- * with no failed case counts one failure.
+ * failure for the list. A run that wrote the no-match line and counted no pass
+ * or failure is a `⊘` row with no count and no failure, whatever its exit. A
+ * run that wrote no summary line did not run the kit's runner, so it fails by
+ * name whatever its exit; an exit other than 0 with no failed case counts one
+ * failure.
  * @param {string} name the member's name
- * @param {{code: number|null, signal: string|null, error?: string, counts: object|null}} end
+ * @param {{code: number|null, signal: string|null, error?: string, counts: object|null, noMatch: boolean}} end
  * @returns {{row: string, passed: number, failed: number, failure: {name: string, message: string}|null}}
  */
-export const memberOutcome = (name, { code, signal, error, counts }) => {
+export const memberOutcome = (name, { code, signal, error, counts, noMatch }) => {
   if (error !== undefined) {
     const message = `npm did not start: ${error}`;
     return { row: `✗ ${name}: ${message}`, passed: 0, failed: 1, failure: { name, message } };
   }
+  if (noMatch) return { row: `⊘ ${name}: ${NO_CASE}`, passed: 0, failed: 0, failure: null };
   const exit = signal ? `killed by ${signal}` : `exit ${code}`;
   if (counts === null) {
     const message = code === 0 ? NOT_ON_RUNNER : `${NOT_ON_RUNNER} (${exit})`;

@@ -2,7 +2,7 @@
 // a job calling the kit's reusable ci.yml and, on a push alone, one calling its
 // release.yml, rewritten whenever it differs, the
 // repo's default branch filled in, a replaced copy's own steps named for
-// hooks.ciSetup. The shared prologue is ./helpers.js.
+// hooks.ciSetup or hooks.ciPostInstall. The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
@@ -14,7 +14,9 @@ const { cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helper
 
 const USES = 'itw-creative-works/workkit/.github/workflows/ci.yml@main';
 const RELEASE_USES = 'itw-creative-works/workkit/.github/workflows/release.yml@main';
-const WARNED = 'move this step into hooks.ciSetup';
+// The heal's advice for a repo's own step it replaced: a run: step, then a uses: step.
+const RUN_ADVICE = 'move this step into hooks.ciSetup, or into hooks.ciPostInstall when it needs the installed packages';
+const USES_ADVICE = 'a uses: step cannot run in the kit\'s CI; do its work as a command in hooks.ciSetup or hooks.ciPostInstall';
 
 /**
  * A participating repo whose default branch is trunk wherever the heal may ask:
@@ -76,7 +78,7 @@ const assertCaller = (body, output) => {
   expect(block(release, 'secrets', 4), 'and hands it no secrets, since it runs on the job\'s token alone').toBe(null);
 };
 
-const warnings = (output) => output.split('\n').filter((l) => l.includes(WARNED));
+const warnings = (output) => output.split('\n').filter((l) => l.includes(RUN_ADVICE) || l.includes(USES_ADVICE));
 
 describe('standards.sh: the checks.yml caller', () => {
   test('a repo with no checks.yml gets the caller, its push on the repo\'s default branch', () => {
@@ -95,7 +97,7 @@ describe('standards.sh: the checks.yml caller', () => {
     w.done();
   });
 
-  test('a customized copy is replaced by the caller, one warning per step the old template lacks', () => {
+  test('a customized copy with extra run: steps is replaced by the caller, one line per step advising ciSetup or ciPostInstall', () => {
     const w = trunkWorld();
     w.write(withSteps(OLD_CHECKS, [
       '      - name: Install Hugo',
@@ -107,7 +109,7 @@ describe('standards.sh: the checks.yml caller', () => {
     assertCaller(w.read(), output);
     const got = warnings(output);
     expect(got.length, `one line per extra step, got: ${got.join('\n')}`).toBe(2);
-    const line = (step) => `checks.yml: replaced by the kit's caller; move this step into hooks.ciSetup: ${step}`;
+    const line = (step) => `checks.yml: replaced by the kit's caller; ${RUN_ADVICE}: ${step}`;
     expect(got[0].endsWith(line('Install Hugo: sudo snap install hugo')), `the Hugo step, got: ${got[0]}`).toBeTruthy();
     expect(got[1].endsWith(line('Install ffmpeg: sudo apt-get install -y ffmpeg')), `the ffmpeg step, got: ${got[1]}`).toBeTruthy();
     w.done();
@@ -164,8 +166,8 @@ describe('standards.sh: every other customization a replaced copy held is named'
       "the kit's own step runs in place of this one: actions/setup-node@v5: uses: actions/setup-node@v5 (with: node-version-file=.nvmrc)"],
     ['setup-node on a pinned version', swapped('          node-version: lts/*', ['          node-version: 20']),
       "the kit's own step runs in place of this one: actions/setup-node@v5: uses: actions/setup-node@v5 (with: node-version=20)"],
-    ['an action step of its own, its inputs said', withSteps(ON_TRUNK, ['      - uses: ruby/setup-ruby@v1', '        with:', "          ruby-version: '3.3'"]),
-      'move this step into hooks.ciSetup: ruby/setup-ruby@v1: uses: ruby/setup-ruby@v1 (with: ruby-version=3.3)'],
+    ['an extra uses: step, said to be no step the kit\'s CI can run, its inputs said', withSteps(ON_TRUNK, ['      - uses: ruby/setup-ruby@v1', '        with:', "          ruby-version: '3.3'"]),
+      `${USES_ADVICE}: ruby/setup-ruby@v1: uses: ruby/setup-ruby@v1 (with: ruby-version=3.3)`],
     ['job env', after('    runs-on: ubuntu-latest', ['    env:', '      CHROME_BIN: /usr/bin/chromium']),
       'this job setting is not kept: test.env: CHROME_BIN=/usr/bin/chromium'],
     ['a job timeout', after('    runs-on: ubuntu-latest', ['    timeout-minutes: 30']),

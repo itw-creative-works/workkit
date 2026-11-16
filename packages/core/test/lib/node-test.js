@@ -165,8 +165,9 @@ export const runNodeTest = (suite, rel, filter = null) => new Promise((resolve, 
       setTimeout(() => finish(true), PIPE_GRACE_MS);
     }
   }, EXIT_POLL_MS);
-  // Node matches a pattern against a case's describe path and name, joined by spaces.
-  const named = filter === null ? {} : { testNamePatterns: [new RegExp(filter.replace(PATTERN_CHARS, '\\$&'))] };
+  // Node matches a pattern against a case's describe path and name, joined by spaces,
+  // and against the file's own root test, named `<root>`, which must never match.
+  const named = filter === null ? {} : { testNamePatterns: [new RegExp(`^(?!<root>$)[^]*${filter.replace(PATTERN_CHARS, '\\$&')}`)] };
   const stream = run({ files: [suite], concurrency: 1, ...named });
   stream.on('data', ({ type, data }) => {
     if (done) return;

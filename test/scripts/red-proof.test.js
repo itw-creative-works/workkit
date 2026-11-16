@@ -1010,19 +1010,25 @@ describe('proof red: the kit runner\'s summary file', () => {
     cleanup(w.dir);
   });
 
-  // The command copies the summary file before red.sh reads it, so the case sees the run's one line.
-  test('a root run whose member fails a test without the source: red, exit 0, its one line summing the root\'s counts and the member\'s', { skip: skipWithoutNpm() }, () => {
+  /**
+   * `workkit proof red` on src/x.js around the kit's runner, started with `runnerArgs`, at a
+   * root holding cases `shared root` and `other root` and member m on `workkit test` holding
+   * `shared m`, which fails without the source, and `other m`. The command copies the summary
+   * file before red.sh reads it, so the case sees the run's lines.
+   */
+  const redOverMember = (runnerArgs) => {
     const memberTestOf = (value) => [
       "const test = require('node:test');",
       "const x = require('../../../src/x');",
-      `test('m', () => { if (x !== ${value}) throw new Error('x is ' + x); });`,
+      `test('shared m', () => { if (x !== ${value}) throw new Error('x is ' + x); });`,
+      "test('other m', () => {});",
       '',
     ].join('\n');
     const w = mkRepo('red-proof-members-', {
       'package.json': `${JSON.stringify({ name: 'root', private: true, workspaces: ['packages/*'] })}\n`,
       '.gitignore': 'node_modules/\n',
       'src/x.js': 'module.exports = 1;\n',
-      'tests/root.test.js': "const test = require('node:test');\ntest('root', () => {});\n",
+      'tests/root.test.js': "const test = require('node:test');\ntest('shared root', () => {});\ntest('other root', () => {});\n",
       'packages/m/package.json': `${JSON.stringify({ name: 'm', private: true, scripts: { test: 'workkit test' } })}\n`,
       'packages/m/test/m.test.js': memberTestOf(1),
     });
@@ -1030,14 +1036,26 @@ describe('proof red: the kit runner\'s summary file', () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('packages/m/test/m.test.js', memberTestOf(2));
     const copy = path.join(w.dir, 'summary.copy');
-    const command = 'node "$1"; s=$?; cp "$WORKKIT_TEST_SUMMARY" "$2"; exit "$s"';
+    const command = 'node "$1" "${@:3}"; s=$?; cp "$WORKKIT_TEST_SUMMARY" "$2"; exit "$s"';
     const env = { ...w.env, PATH: joinPath(coreBin(), w.env.PATH) };
-    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', command, '_', RUNNER, shellPath(copy)], w.repo, env);
+    const res = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', command, '_', RUNNER, shellPath(copy), ...runnerArgs], w.repo, env);
+    const summary = fs.existsSync(copy) ? lines(fs.readFileSync(copy, 'utf8')) : null;
+    cleanup(w.dir);
+    return { ...res, summary };
+  };
+
+  test('a root run whose member fails a test without the source: red, exit 0, its one line summing the root\'s counts and the member\'s', { skip: skipWithoutNpm() }, () => {
+    const { code, out, err, summary } = redOverMember([]);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
-    const summary = fs.existsSync(copy) ? lines(fs.readFileSync(copy, 'utf8')) : null;
-    expect(summary, `the root's pass and the member's failure, one line: ${out}${err}`).toEqual(['{"passed":1,"failed":1}']);
-    cleanup(w.dir);
+    expect(summary, `the root's two passes and the member's pass and failure, one line: ${out}${err}`).toEqual(['{"passed":3,"failed":1}']);
+  });
+
+  test('a filtered root run whose member\'s matching case fails without the source: red, its one line summing the root\'s matched counts and the member\'s', { skip: skipWithoutNpm() }, () => {
+    const { code, out, err, summary } = redOverMember(['--filter=shared']);
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    expect(summary, `shared root's pass and shared m's failure, one line: ${out}${err}`).toEqual(['{"passed":1,"failed":1}']);
   });
 
   test('a summary file holding a line that is not the counts JSON: exit 2, the summary cannot be read, never red', () => {

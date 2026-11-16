@@ -18,7 +18,7 @@
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
 ├── .github/workflows/    # checks.yml (the suite on every pull request and push to main but a release-only one; the release job on a push) · ci.yml, release.yml (the reusable CI and release job every kit-owned checks.yml calls) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
-├── .github/scripts/      # release-push.sh (checks.yml's scope job and ci.yml's Scope step: whether a push is a release stamp only) · ci-node-version.sh, ci-setup.sh, ci-test.sh (ci.yml's steps: the Node version, a repo's hooks.ciSetup, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
+├── .github/scripts/      # release-push.sh (checks.yml's scope job and ci.yml's Scope step: whether a push is a release stamp only) · ci-node-version.sh, ci-hooks.sh, ci-test.sh (ci.yml's steps: the Node version, a repo's hooks.ciSetup and hooks.ciPostInstall, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── register.js       # the hooks module: the twenty-two in-process hooks (nine guards run in the `gh` and `git` shims and git's hooks), the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data (facts.js: the Bash guards' facts; changed.js: a call's changed files; slug.js)
@@ -138,7 +138,7 @@
   - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutFileLink` in `test/lib/`.
 - The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
 - This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
-  - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`).
+  - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`, `events`, `app-cases`).
 - A suite keeps to its own temp folder through `mkTmp` and touches no fixed shared path.
   - One that must is added to `SERIAL`, with the path named in a one-line comment beside its entry.
 - Then the mod half: `claude plugin test` on the kit root runs the hooks module's wiring suites, `test/mods/*.test.ts`, inside the engine.
@@ -147,8 +147,8 @@
   - A named `test/mods/<name>.test.ts` after `--` runs the whole mod half, since `claude plugin test` takes a folder.
 - One suite runs alone as `npm test -- test/<path>.test.js`, or as `node test/<path>.test.js` with no line added.
   - The runner takes suite paths after `--`, and exits 1 naming a path that matches no suite.
-  - A case that starts the runner, or a suite file with `node`, passes `aloneEnv()` (`test/lib/alone-env.js`), its env without `NODE_TEST_CONTEXT` and `WORKKIT_TEST_SUMMARY`.
-  - `test/lib/run-lists.js` reads a run's end (`TOTALS_LINE`, `linesOf`, `listsOf`), and `caught(fn)` (`test/lib/caught.js`) what a call threw or rejected with, or `null`.
+  - A case that starts the runner, or a suite file with `node`, passes `aloneEnv()` (`test/lib/alone-env.js`), its env without `NODE_TEST_CONTEXT`, `WORKKIT_TEST_SUMMARY` and `WORKKIT_TEST_NO_MATCH`.
+  - `test/lib/run-lists.js` reads a run's end (`TOTALS_LINE`, `linesOf`, `listsOf`, `marksOf`, `totalsOf`, `failuresOf`), and `caught(fn)` (`test/lib/caught.js`) what a call threw or rejected with, or `null`.
 - Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer.
 - Everything that differs lives in `test/lib/platform.js`, every export the identity on macOS and Linux.
   - What differs: the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH.

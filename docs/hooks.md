@@ -228,8 +228,8 @@
   - `identity.tokenUrl` (`workflow/identity/token.js`);
   - `site.repo` (`docs:session`, `tower/api/lib/repos.js` and `summaries.js`, `workflow/publish/site-repos.js`, `jobs/morning/brief/cc-news.js`).
     - Each reads it through `homeSlugOf` in `hooks/mods/settings.js`, the scripts by way of `homeSlug` in `workflow/lib/settings.js`.
-- No reader parses a settings file itself but one: `hooks.ciSetup`.
-  - `.github/scripts/ci-setup.sh` reads it off the repo's own file alone, on a CI runner.
+- No reader parses a settings file itself but one, for `hooks.ciSetup` and `hooks.ciPostInstall`.
+  - `.github/scripts/ci-hooks.sh` reads each off the repo's own file alone, on a CI runner.
   - The runner has no machine file and runs the repo's Node, perhaps too old to load the ESM loader.
   - Its entries pass the ship hooks' own check (`workflow/ship/entries.js`).
 - `docs:change-tracker`, `safety:capture-guard` and `safety:findings-guard` read `findings.file` through `findingsOn` and `findingsRoute`.

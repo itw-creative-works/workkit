@@ -8,7 +8,9 @@ const { stripVTControlCharacters } = require('util');
 const {
   describe, test, expect, mkTmp,
 } = require('./lib/harness');
-const { TOTALS_LINE, linesOf, listsOf } = require('./lib/run-lists');
+const {
+  linesOf, listsOf, marksOf, totalsOf,
+} = require('./lib/run-lists');
 const {
   SUITE, MOD_FILES, mkWorld, claudeStub,
 } = require('./lib/runner-world');
@@ -28,11 +30,6 @@ const runWith = (files, args, opts) => {
   w.write(files);
   return w.run(args, opts);
 };
-
-// The case marks a run printed, trimmed: `✓ alpha`, `✗ beta`.
-const marksOf = (output) => linesOf(output).map((line) => line.trim()).filter((line) => /^[✓✗⊘] /.test(line));
-
-const totalsOf = (output) => linesOf(output).find((line) => TOTALS_LINE.test(line)) || '';
 
 describe('run.js: --filter matches a case\'s full name', () => {
   test('--filter=alpha runs only alpha, under [outer], and the totals read 1 passed', () => {
@@ -68,6 +65,23 @@ describe('run.js: --filter matches a case\'s full name', () => {
     }, ['--filter=a.b']);
     expect(code, `exit 0, got: ${output}`).toBe(0);
     expect(marksOf(output), `a.b alone, got: ${output}`).toEqual(['✓ a.b']);
+  });
+
+  test('--filter=root over alpha and beta matches nothing: Node\'s file-level <root> never counts as a name', () => {
+    const { code, output } = runWith({
+      'test/x.test.js': SUITE("test('alpha', () => {});\ntest('beta', () => {});"),
+    }, ['--filter=root']);
+    expect(code, `exit 1, got: ${output}`).toBe(1);
+    expect(linesOf(output).some((line) => line.trim() === 'No case matches root'), `the no-match line, got: ${output}`).toBe(true);
+    expect(marksOf(output), `no case ran, got: ${output}`).toEqual([]);
+  });
+
+  test('--filter=root runs a case whose own name holds root, and only it', () => {
+    const { code, output } = runWith({
+      'test/x.test.js': SUITE("test('the root cause', () => {});\ntest('alpha', () => {});"),
+    }, ['--filter=root']);
+    expect(code, `exit 0, got: ${output}`).toBe(0);
+    expect(marksOf(output), `the root cause alone, got: ${output}`).toEqual(['✓ the root cause']);
   });
 });
 

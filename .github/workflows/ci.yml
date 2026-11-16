@@ -4,7 +4,8 @@
 # The logic sits in the kit's .github/scripts/ci-*.sh, run from a clone of the kit.
 
 # A repo's own setup is its hooks.ciSetup commands, run before the dependency
-# install; one sets a variable for the later steps by appending it to $GITHUB_ENV.
+# install, then its hooks.ciPostInstall commands, run after it and before the tests;
+# one sets a variable for the later steps by appending it to $GITHUB_ENV.
 # A release push runs neither: the Scope step skips every step after it.
 name: ci
 
@@ -56,7 +57,7 @@ jobs:
       # Before the install, so a tool or a $GITHUB_ENV value it needs is in place.
       - name: Setup (hooks.ciSetup)
         if: steps.scope.outputs.run == 'true'
-        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-setup.sh"
+        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-hooks.sh" ciSetup
       - name: Install dependencies
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -65,6 +66,10 @@ jobs:
           elif [ -f package.json ]; then
             npm install --no-audit --no-fund
           fi
+      # After the install, so a command that needs an installed package can run.
+      - name: Post-install (hooks.ciPostInstall)
+        if: steps.scope.outputs.run == 'true'
+        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-hooks.sh" ciPostInstall
       # No FORCE_COLOR here: it would reach every program a suite starts, and Node then colors what they print.
       - name: Test
         if: steps.scope.outputs.run == 'true'

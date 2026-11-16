@@ -11,9 +11,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const RUN_HOME = 'workflow/lib/run.js';
 const SOURCE = /\.(js|mjs|cjs|ts)$/;
 const TEST_SIDE = /^test\//;
-// The workkit-core runner keeps child_process: run.js has no fork for its suite workers, and its one other raw start
-// (each member's `npm` through the shell) starts no Git Bash program, so none of its arguments meets Git Bash's
-// splitting and globbing.
+// The workkit-core runner keeps child_process for one reason: the fork of its suite workers, which
+// workflow/lib/run.js does not have. Each member's `npm` starts through that starter.
 const PUBLISHED_RUNNER = ['packages/core/test/run.js'];
 const IMPORTS = /(?:require\s*\(\s*|from\s+|import\s*\(\s*)['"](?:node:)?child_process['"]/;
 

@@ -25,7 +25,8 @@
     "afterRelease": [],
     "afterPublish": [],
     "afterDeploy": [],
-    "ciSetup": []
+    "ciSetup": [],
+    "ciPostInstall": []
   },
   "manager": {
     "mode": "rewrite",

@@ -7,6 +7,16 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#546](../../issues/546) - A `--filter` run at a monorepo root now starts each member with the filter, so one case inside a member runs alone from the root. A member with no matching case shows as `⊘ <name>: no case matches`, and the root says `No case matches` only when nothing matched anywhere.
+- [#547](../../issues/547) - workkit-core can run cases that live inside an app. The app prints one line per result (`eventLine`), and `appCases` on the host turns each into a normal test case. A last case, `app session`, fails on a bad line, a repeated one, or a failed app.
+- [#548](../../issues/548) - A repo can list CI commands that run after the install and before the tests, in `hooks.ciPostInstall`, beside `hooks.ciSetup`. The heal's advice for a customized caller now tells a `run:` step from a `uses:` step, which no hook list can run.
+
+### Fixed
+
+- (no issue) - workkit-core's `--filter` no longer runs every case when its text is part of `<root>`, the name Node gives a file's own root test. `--filter=root` now runs only the cases whose own names hold it.
+
 ## [0.96.1] - 2026-11-16
 
 ### Fixed
