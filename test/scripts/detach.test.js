@@ -14,7 +14,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, shellPath, jsPath, stubTool, systemPathWith, homeEnv,
+  IS_WINDOWS, BASH, NO_RC, NODE_DIR, shellPath, jsPath, stubTool, lenientMkdir, systemPathWith, homeEnv,
 } = require('../lib/platform');
 const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, pidOf, reap,
@@ -231,6 +231,30 @@ describe('detach.sh: wk_run_detached and its lock', () => {
     const res = run(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
     expect(rcOf(res.stdout || ''), `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(6);
     expect(fs.existsSync(ran), 'the command ran').toBeTruthy();
+  });
+
+  test('a mkdir that answers 0 for a folder already there: a take of the lock a live run holds answers 3 with its supervisor\'s pid', async () => {
+    const dir = mkTmp('detach-held-');
+    const go = path.join(dir, 'go');
+    const lockPid = path.join(dir, 'lock', 'pid');
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin);
+    lenientMkdir(bin);
+    const script = `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(0)},50)`;
+    const first = start(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
+    try {
+      const supervisor = await pidOf(lockPid);
+      const take = run(BASH, [...NO_RC, '-c', [...SOURCED, 'wk_take_run_lock "$1"; rc=$?', 'printf "held=%s\\nrc=%s\\n" "$WK_HELD_PID" "$rc"'].join('\n'),
+        'wk', shellPath(path.join(dir, 'lock'))], { env: { PATH: systemPathWith(bin, NODE_DIR) } });
+      const out = take.stdout || '';
+      expect(rcOf(out), `the take answers 3, stdout: ${JSON.stringify(out)}, stderr: ${take.stderr}`).toBe(3);
+      expect(/(?:^|\n)held=(\d*)\n/.exec(out)[1], `WK_HELD_PID names the supervisor, stdout: ${JSON.stringify(out)}`).toBe(String(supervisor));
+      fs.writeFileSync(go, '');
+      expect(await until(() => first.child.exitCode !== null), `the run never returned, stdout: ${first.stdout()}`).toBeTruthy();
+    } finally {
+      reap(pidIn(lockPid));
+      await first.end('SIGKILL');
+    }
   });
 
   test('a run that starts on the lock the moment an earlier run\'s done file appears: each gets its own code', async () => {

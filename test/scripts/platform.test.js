@@ -10,7 +10,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, until, alive, pidIn, start, endTree, needs, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub, lenientMkdir,
   stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, skipWithoutFileLink, spawnBash,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
@@ -509,6 +509,31 @@ describe('platform.sh: wk_end_run and wk_pid_alive', () => {
       }
     },
   );
+});
+
+describe('platform.sh: wk_take_lock and wk_drop_lock', () => {
+  test('a mkdir that answers 0 for a folder already there: a second caller gets the lock only after the holder drops it', async () => {
+    const dir = mkTmp('wf-platform-lock-');
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin);
+    lenientMkdir(bin);
+    const env = { PATH: systemPathWith(bin), L: shellPath(path.join(dir, 'state', 'lock')) };
+    const waiting = path.join(dir, 'waiting');
+    const took = path.join(dir, 'took');
+    const holder = inPlatform('wk_take_lock "$L"', env);
+    expect(holder.code, `the holder took the lock, stderr: ${holder.err}`).toBe(0);
+    const second = start(BASH, [...NO_RC, '-c', `. ${JSON.stringify(PLATFORM)}\n: > "$1"\nwk_take_lock "$L" && : > "$2"`,
+      'wk', shellPath(waiting), shellPath(took)], { env });
+    try {
+      expect(await until(() => fs.existsSync(waiting)), `the second caller never started, stderr: ${second.stderr()}`).toBeTruthy();
+      expect(!(await until(() => fs.existsSync(took), 500)), 'the second caller took a lock the holder still holds').toBeTruthy();
+      const dropped = inPlatform('wk_drop_lock "$L"', env);
+      expect(dropped.code, `the holder dropped it, stderr: ${dropped.err}`).toBe(0);
+      expect(await until(() => fs.existsSync(took)), `the second caller never took the dropped lock, stderr: ${second.stderr()}`).toBeTruthy();
+    } finally {
+      await second.end('SIGKILL');
+    }
+  });
 });
 
 // The test library's own seam rather than platform.sh: the `.exe` launcher

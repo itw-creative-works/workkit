@@ -327,9 +327,13 @@
     - It gives nothing and 1 when none fits.
     - It is the node the `gh` shim's gate and the git hooks' judge run under.
   - The one mutex shape:
-    - `wk_take_lock <dir>`: a `mkdir` of `<dir>`, its parent made first.
+    - `wk_claim_dir <dir>`: 0 only for the one caller that creates `<dir>/claim`.
+      - A `mkdir` may answer 0 to two racing callers, so the one whose `mkdir` answered 0 must also create `<dir>/claim` under noclobber, which opens it create-only.
+      - One caller alone gets the file, whatever `mkdir` answered.
+    - `wk_take_lock <dir>`: a `wk_claim_dir` of `<dir>`, its parent made first.
     - It is 0 holding it, and 1 after a 5-second wait, its caller going ahead either way.
-    - `wk_drop_lock <dir>`, beside it: the `rmdir` only a caller that took it runs.
+    - `wk_drop_lock <dir>`, beside it, run only by a caller that took it: an `rm` of the claim, then an `rmdir` of the folder, never one removal of both.
+      - A taker that claims the folder between the two keeps it, since the `rmdir` then fails.
     - The state mutex (`lib/state.sh`) and the package record's write (`lib/suite.sh`) both take it.
 - `lib/run.js`:
   - CJS, requiring nothing beyond Node, the Node twin of `lib/platform.sh`.
@@ -568,8 +572,8 @@
 - `lib/detach.sh`:
   - Sourced by `script-shell.sh`, by `prove.sh`, by `supervise.sh`, by `watch.sh` and by `ship/watch.sh`.
   - `wk_run_detached <log> <lock> [--root <root>] -- <cmd> [args...]` takes `<lock>`.
-    - The lock is a directory made by `mkdir`, with the supervisor's pid written inside as `pid`.
-    - Until the supervisor's pid is written, a HUP, INT or TERM removes the empty lock and exits 129, 130 or 143 (an INT also sets `WK_RAN_INT`), so the next call takes it at once. On a failed launch the caller's own traps come back. Once the pid is written its HUP and TERM traps come back, and its INT trap once the attached call returns.
+    - The lock is a directory taken by `wk_claim_dir` (`lib/platform.sh`), with the supervisor's pid written inside as `pid`.
+    - Until the supervisor's pid is written, a HUP, INT or TERM removes the lock, no pid in it yet, and exits 129, 130 or 143 (an INT also sets `WK_RAN_INT`), so the next call takes it at once. On a failed launch the caller's own traps come back. Once the pid is written its HUP and TERM traps come back, and its INT trap once the attached call returns.
     - It launches through `detach.js`, passing `--root` on, so the run is checked.
     - With `--root` that is the first node `wk_node` finds at the kit's floor, which the settings loader needs; without it, plain `node`.
     - A launcher that fails (a bad `tests.check` is 2) drops the lock, prints `detach: could not start <cmd> (log <log>)` and returns the launcher's code.
@@ -608,8 +612,8 @@
     - So a run that took it over keeps it.
   - A lock a live run holds answers 3 with nothing run.
     - Since a command may return 3 itself, `WK_HELD_PID` is set, to the holder's pid, only then.
-  - A lock whose run is over is taken over: its done file written, its pid gone, or no pid five seconds after the `mkdir`.
-    - So a KILL before the supervisor's pid is written, which no trap sees, leaves an empty lock that the next call takes after those five seconds.
+  - A lock whose run is over is taken over: its done file written, its pid gone, or no pid five seconds after the take.
+    - So a KILL before the supervisor's pid is written, which no trap sees, leaves a lock with no pid that the next call takes after those five seconds.
     - With a done file, it waits up to two seconds for the directory to go, since its own foreground is collecting it.
   - INT, a human's Ctrl-C on the call that started the run, ends the whole run and exits 130.
     - It writes the end request and waits through `wk_ask_end`, so the supervisor ends the run's processes, a child in its own session included, and the log ends with its request line.

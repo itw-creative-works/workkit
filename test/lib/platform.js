@@ -331,6 +331,16 @@ const crlfJq = (dir) => {
 };
 
 /**
+ * A `mkdir` on PATH that answers 0 for a folder already there, as a `mkdir`
+ * racing another for one folder may, so a lock built on it is tested against
+ * two callers that each read "I made it". It runs the system's own with `-p`.
+ * @param {string} dir - the PATH directory, which must exist
+ * @returns {string} the stub that was written
+ */
+const lenientMkdir = (dir) => stubTool(dir, 'mkdir',
+  ['#!/bin/bash', `exec "${shellPath(which('mkdir', SYSTEM_PATH))}" -p "$@"`]);
+
+/**
  * A `cygpath` on PATH answering the mixed form Git Bash answers with, so a suite
  * drives the engine's Windows branch (`OSTYPE=msys`) from a Mac: `/c/Users/x`
  * becomes `C:/Users/x`, any other path gets `C:` prefixed. `-u` strips a leading
@@ -639,7 +649,7 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
-  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
+  lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.

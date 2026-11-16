@@ -15,6 +15,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 - (no issue) - workkit-core's runner now starts `claude` for the mod half through `run.js`. On Windows a `claude` installed by npm is a `claude.cmd`, which a raw start never finds, so the mod half was skipped as `no claude binary on PATH` on a machine that has claude.
 - (no issue) - workkit-core's `alive` and `groupLives`, and the engine's `wk_pid_alive`, now read a process that ended and is not yet collected as gone. It still answers signal 0, so in a Linux container that never collects orphans an ended grandchild read as alive and `end()` failed with `survived SIGKILL`.
 - (no issue) - An installed workkit-core now reads the kit files it ships from its own packed copies. A consumer repo holding its own `workflow/lib/expand-workspaces.js` had that file loaded to list its workspace members; the kit's `workflow/lib` files are now read only in the kit's own checkout.
+- (no issue) - The kit's shell locks now go to the one taker that creates the lock's `claim` file, not every `mkdir` answering 0. On a Linux whose `mkdir` answers two racing callers alike (Ubuntu 26.04's does), a package's proof line could be lost and two supervised runs could start at once.
 
 ## [0.96.0] - 2026-11-15
 

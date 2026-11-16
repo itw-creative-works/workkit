@@ -3,7 +3,7 @@
 # command that outlives the shell that started it, one per lock, its output
 # tailed to this shell while it runs. Sourced, functions only, by
 # script-shell.sh, prove.sh, supervise.sh, watch.sh and ship/watch.sh; it reads
-# wk_pid_alive, wk_end_run, wk_node and wk_native_path from platform.sh, and
+# wk_claim_dir, wk_pid_alive, wk_end_run, wk_node and wk_native_path from platform.sh, and
 # wk_color_on from voice.sh, which it sources when the caller has not.
 
 # wk_body_traps <prefix> [<before-exit command>]: a detached body's traps. Its
@@ -56,18 +56,18 @@ wk_run_held() {
 
 # wk_take_run_lock <lock>: 0 holding <lock>, 3 when a live run holds it (its
 # pid in WK_HELD_PID), 1 when it cannot be made. A run that is over (its done
-# file written, its pid gone, or no pid 5s after the mkdir) is taken over; a
+# file written, its pid gone, or no pid 5s after the take) is taken over; a
 # done file gets 2s first, for the foreground that is collecting it.
 wk_take_run_lock() {
   local lock="$1" tries=0 waited
   mkdir -p "${lock%/*}" || return 1
-  until mkdir "$lock" 2>/dev/null; do
+  until wk_claim_dir "$lock"; do
     tries=$(( tries + 1 ))
     if [ "$tries" -gt 3 ] || { [ -e "$lock" ] && [ ! -d "$lock" ]; }; then
       printf 'detach: could not take the lock %s\n' "$lock" >&2
       return 1
     fi
-    # Gone between the failed mkdir and this look: its run just ended.
+    # Gone between the failed take and this look: its run just ended.
     [ -e "$lock" ] || continue
     waited=0
     while [ -d "$lock" ] && [ ! -f "$lock/pid" ] && [ "$waited" -lt 50 ]; do
@@ -208,7 +208,7 @@ wk_run_detached() {
     return
   fi
   wk_take_run_lock "$lock" || return
-  # Until the supervisor's pid is written, a signal removes the empty lock, so
+  # Until the supervisor's pid is written, a signal removes the pidless lock, so
   # the next call takes it at once. The caller's traps come back after.
   saved_int=$(trap -p INT)
   saved_hup_term=$(trap -p HUP TERM)

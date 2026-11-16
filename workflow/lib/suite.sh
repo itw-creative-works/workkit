@@ -76,7 +76,7 @@ wk_log_path() {
 }
 
 # The root suite's log and lock, the supervised run's (supervise.sh) and the
-# CI watch's twins. The lock is a directory taken by mkdir (lib/detach.sh).
+# CI watch's twins. The lock is a directory taken by wk_take_run_lock (lib/detach.sh).
 wk_suite_log_path() { wk_log_path "$1" suite.log; }
 wk_suite_lock_path() { wk_marker_path claude-suite-lock "$1"; }
 wk_run_log_path() { wk_log_path "$1" run.log; }

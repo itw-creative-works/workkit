@@ -291,14 +291,21 @@ wk_pid_alive() {
   esac
 }
 
-# wk_take_lock <dir>: a mutex taken by mkdir of <dir>, its parent made first.
+# wk_claim_dir <dir>: 0 only for the one caller that creates <dir>/claim. A
+# `mkdir` may answer 0 to two racing callers, so its winner must also create
+# the claim, which noclobber opens create-only: one caller alone gets the file.
+wk_claim_dir() {
+  mkdir "$1" 2>/dev/null && ( set -C; : > "$1/claim" ) 2>/dev/null
+}
+
+# wk_take_lock <dir>: a mutex taken by wk_claim_dir of <dir>, its parent made first.
 # Returns 0 holding it, 1 after a 5s wait. Callers proceed either way, and only
 # a caller that took it drops it (wk_drop_lock), or a third writer races the holder.
 wk_take_lock() {
   local waited=0
   mkdir -p "$(dirname "$1")" 2>/dev/null || return 1
   while [ "$waited" -lt 50 ]; do
-    if mkdir "$1" 2>/dev/null; then return 0; fi
+    if wk_claim_dir "$1"; then return 0; fi
     sleep 0.1
     # Never `(( waited++ ))`: its first pass evaluates to 0, a non-zero status
     # that errexit ends the run on under bash 4.1 and later.
@@ -307,7 +314,10 @@ wk_take_lock() {
   return 1
 }
 
+# The claim goes first, then the folder, never both at once: a taker may claim
+# the folder between the two, and the rmdir then fails and leaves it holding.
 wk_drop_lock() {
+  rm -f "$1/claim" 2>/dev/null || true
   rmdir "$1" 2>/dev/null || true
 }
 
