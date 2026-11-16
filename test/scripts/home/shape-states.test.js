@@ -4,9 +4,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const { WORKFLOW_DIR, KIT_DIR, cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
 const { settingsAt } = require('../../../workflow/lib/settings');
 
@@ -14,7 +13,7 @@ describe('workflow/home: shape', () => {
   test('the three libraries parse and run nothing at load', () => {
     for (const lib of ['lib.sh', 'lib/discussions.sh', 'home.sh']) {
       const file = path.join(WORKFLOW_DIR, lib);
-      expect(spawnSync(BASH, [...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, `bash -n is clean for ${lib}`).toBe(0);
+      expect(spawnBash([...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, `bash -n is clean for ${lib}`).toBe(0);
     }
     const world = mkWorld();
     // Sourcing all three prints nothing: a library that acted at load would

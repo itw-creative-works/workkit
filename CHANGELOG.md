@@ -7,6 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- (no issue) - The kit's CI no longer sets `FORCE_COLOR` on its test step. The variable reached every program a suite starts, so Node colored what they printed and a suite reading that output failed in CI. A CI log is plain again.
+- (no issue) - workkit-core's runner prints nothing more once a signal is ending the run. A suite that ended while the signal was still reaching its group could print its block and a totals line before the runner exited, which showed on Linux.
+- (no issue) - workkit-core's `run` and `start` now start their children through `run.js`. On Windows every argument goes quoted and verbatim, so one holding single quotes and no space reaches Git Bash whole, and a given `env` keeps what Windows needs to start a child.
+- (no issue) - workkit-core's runner now starts `claude` for the mod half through `run.js`. On Windows a `claude` installed by npm is a `claude.cmd`, which a raw start never finds, so the mod half was skipped as `no claude binary on PATH` on a machine that has claude.
+- (no issue) - workkit-core's `alive` and `groupLives`, and the engine's `wk_pid_alive`, now read a process that ended and is not yet collected as gone. It still answers signal 0, so in a Linux container that never collects orphans an ended grandchild read as alive and `end()` failed with `survived SIGKILL`.
+- (no issue) - An installed workkit-core now reads the kit files it ships from its own packed copies. A consumer repo holding its own `workflow/lib/expand-workspaces.js` had that file loaded to list its workspace members; the kit's `workflow/lib` files are now read only in the kit's own checkout.
+
 ## [0.96.0] - 2026-11-15
 
 ### Added

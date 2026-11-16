@@ -67,6 +67,7 @@ npm i -D workkit-core
   - The run ends with a row per member, `✓ <name>` or `✗ <name> (exit <code>)`, and its totals add the members' counts and name them: `(Ns, K suites, P members)`.
   - A signal that ends the run while a member runs prints no row for it and no totals line; the exit is 128 plus the signal's number. A member's run has no deadline of its own.
 - The run ends with `N passed, M failed (Ns, K suites)` and a `slowest:` line, then names every skipped suite and case, then every failure; any failure exits 1.
+  - Off Windows a `SIGINT`, `SIGTERM` or `SIGHUP` that ends the run prints nothing more: no block for a suite that ends meanwhile and no totals line; the exit is 128 plus the signal's number.
 - Its lines are plain text, with no time stamp, painted as they print by Node's own rule for stdout (`util.styleText`): color at a terminal or under `FORCE_COLOR`, none on a pipe, in a file or under `NO_COLOR`, which wins over `FORCE_COLOR`.
   - A `✓` mark is green, a `✗` line red, a `⊘` line and `slowest:` gray, a `▶` line, a `[outer › inner]` heading, the totals line and `Failures:` bold; any other line is left as it is.
   - `node node_modules/workkit-core/test/lib/paint.js` is the same painter as a filter: it reads standard input and writes each whole line painted, so a plain log shows in color.
@@ -138,11 +139,12 @@ describe('render', { skip: needs('ffmpeg') }, () => {
     - A bare `needs('hugo');` statement throws the same way outside a cloud session; in one it does nothing, so the value goes in a `skip` option.
   - `hasLaunchd()`: whether this machine runs launchd.
 - Printing: `indentRest` and `indentWriter`, a quoted text or a child's output kept off column zero, at `CASE_INDENT`. A case's own note is Node's `t.diagnostic()`.
-- Scratch and worlds: `mkTmp(prefix)`, a temp folder removed at exit; `seeded(build)`, a folder built once per process and copied per case.
+- Scratch and worlds: `mkTmp(prefix)`, a temp folder removed at exit; `seeded(build)`, a folder built once per process and copied per case. A seed holds no Windows junction (npm's link to a workspace package is one): the copy turns it into a real folder, so make such a link in each copy.
 - The runner's per-file deadline: `SUITE_DEADLINE`; the grace it waits for a suite's output after its exit: `PIPE_GRACE_MS`.
 - Processes on one deadline (`SPAWN_DEADLINE`): `run`, `start` (with `end()` climbing SIGINT, SIGTERM, SIGKILL), `endTree`, `endGroup` (the same ladder over a detached leader's group), `groupLives` (whether that group still has a member), `until`, `elapsedUntil`, `alive`, `readPid`, `pidIn` (the pid a file holds, or 0 while it is absent, empty or not yet a whole number).
+  - `run` and `start` launch through `workkit-core/run`: on Windows every argument goes quoted and verbatim, and a given `env` keeps what Windows needs to start a child (`ComSpec`, `SystemRoot`, `PATHEXT`, `TEMP`, `TMP`).
   - `endTree(pid, signal, seams)` on Windows runs `taskkill.exe` from `System32` under `SystemRoot`, never through PATH, and throws when it cannot start. Its seams are the platform, the program runner and `SystemRoot`.
-  - `alive(pid)` is false for anything but a positive integer.
+  - `alive(pid)` is false for anything but a positive integer, and for a process that ended and is not yet collected. `groupLives(pid)` is false once every member of the group is.
 - Suite discovery: `findSuites(root)` (every suite under the start folder, absolute paths, sorted), `suiteName(root, file)` (its printed name), `modDir(root)` (`<root>/test/mods`), `findModSuites(dir)`, `POOL`.
 - Assertions: `expect(actual, message?)`, with Jest's names and behaviour (its `expect` 29.7) plus Vitest's `toBeTypeOf`.
   - The matchers: `toBe`, `toEqual`, `toStrictEqual`, `toMatchObject`, `toBeTruthy`, `toBeFalsy`, `toBeDefined`, `toBeUndefined`, `toBeNull`, `toBeNaN`, `toContain`, `toHaveLength`, `toHaveProperty`, `toMatch`, `toBeInstanceOf`, `toBeTypeOf`.

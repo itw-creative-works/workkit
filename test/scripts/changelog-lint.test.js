@@ -10,7 +10,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  SYSTEM_BASH, NO_RC, shellPath, systemPathWith,
+  NO_RC, shellPath, systemPathWith, spawnSystemBash,
 } = require('../lib/platform');
 
 // The gate and the npm wrapper both lint through this one function, sourced
@@ -18,7 +18,7 @@ const {
 // take the CHANGELOG check out of both at once.
 const CHANGELOG_LIB = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'changelog.sh'));
 const lint = (root, env = {}) => {
-  const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${CHANGELOG_LIB}"\nwk_changelog_lint "$1" CHANGELOG.md`, 'bash', shellPath(root)], {
+  const res = spawnSystemBash([...NO_RC, '-c', `. "${CHANGELOG_LIB}"\nwk_changelog_lint "$1" CHANGELOG.md`, 'bash', shellPath(root)], {
     env: { PATH: systemPathWith(path.dirname(process.execPath)), HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,

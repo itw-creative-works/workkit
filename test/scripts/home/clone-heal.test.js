@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, kitCommitted,
@@ -121,7 +121,7 @@ describe('workflow/home: the clone’s own heal', () => {
     const other = path.join(world.root, 'other');
     fs.mkdirSync(other, { recursive: true });
     spawnSync('git', ['init', '-q', other], { encoding: 'utf8' });
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--home', shellPath(other)], {
+    const res = spawnBash([...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--home', shellPath(other)], {
       env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     expect(res.status, 'it refuses').toBe(1);

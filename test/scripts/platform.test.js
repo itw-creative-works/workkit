@@ -8,12 +8,13 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { describe, test, expect, mkTmp, until, alive, pidIn, start, endTree, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, until, alive, pidIn, start, endTree, needs, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
-  stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, skipWithoutFileLink,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub,
+  stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, skipWithoutFileLink, spawnBash,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const { startNeverCollects, childOf } = require('../lib/never-collects');
 const { proofBase } = require('../lib/workflow-home');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
@@ -23,7 +24,7 @@ const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** Source platform.sh and run one line of shell in it, the way every caller does. */
 const inPlatform = (script, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(PLATFORM)}\n${script}`], {
+  const res = spawnBash([...NO_RC, '-c', `. ${JSON.stringify(PLATFORM)}\n${script}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
@@ -70,6 +71,8 @@ const netstatWorld = () => {
 // `netstat` in system32 and the `kill.exe` beside bash) are not one directory,
 // and a real run of the tower has the whole PATH anyway.
 const PORT_TOOL_PATH = { PATH: process.env.PATH };
+// Off Windows the port read asks lsof alone.
+const noPortTool = !IS_WINDOWS && needs('lsof');
 
 /**
  * A child process listening on a free port, as the harness `start()` handle, and
@@ -326,7 +329,7 @@ describe("platform.sh: npm's script shell", () => {
 });
 
 describe('platform.sh: wk_port_pids and wk_end_pid', () => {
-  test('a port a real listener holds answers with its pid, and a free one answers nothing', async () => {
+  test('a port a real listener holds answers with its pid, and a free one answers nothing', { skip: noPortTool }, async () => {
     // A listener this process owns, so the pid the seam prints is one the case
     // already knows. Both halves of the answer are here: the pid while it
     // listens, and nothing at all once it does not, which is what the tower's
@@ -361,7 +364,7 @@ describe('platform.sh: wk_port_pids and wk_end_pid', () => {
     }
   });
 
-  test('the pid a port answered with is ended by the seam, politely and forced alike', async () => {
+  test('the pid a port answered with is ended by the seam, politely and forced alike', { skip: noPortTool }, async () => {
     // The takeover the tower runs, in its two passes, against a child since the
     // point is that it dies. The forced pass gets a child that ignores SIGTERM:
     // one that dies on the polite signal would answer the same whether `-9` was
@@ -491,6 +494,21 @@ describe('platform.sh: wk_end_run and wk_pid_alive', () => {
     const gone = inPlatform(`wk_pid_alive ${dead}`, env);
     expect(gone.code !== 0 && gone.code !== null, `a pid that has ended answers non-zero, got: ${gone.code}`).toBeTruthy();
   });
+
+  test(
+    'wk_pid_alive: non-zero for a child that ended while its parent, which never collects it, still lives',
+    { skip: IS_WINDOWS && 'Windows asks Node, and has no ended process left for its parent to collect' },
+    async () => {
+      const parent = startNeverCollects();
+      try {
+        const child = await childOf(parent);
+        expect(await until(() => inPlatform(`wk_pid_alive ${child}`).code !== 0), `wk_pid_alive ${child} turned non-zero once the child ended`).toBe(true);
+        expect(alive(parent.pid), 'the parent that never collects it still lives').toBe(true);
+      } finally {
+        await parent.end('SIGKILL');
+      }
+    },
+  );
 });
 
 // The test library's own seam rather than platform.sh: the `.exe` launcher

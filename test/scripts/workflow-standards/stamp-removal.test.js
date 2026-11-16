@@ -4,11 +4,10 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect, WORKKIT_DIR: W, SPAWN_DEADLINE,
 } = require('../../lib/harness');
-const { SYSTEM_BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnSystemBash } = require('../../lib/platform');
 const {
   SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript, readFile,
 } = require('./helpers');
@@ -47,7 +46,7 @@ describe('standards.sh: the version key is removed, never stamped', () => {
     const dir = makeRepo({ settings: text });
     const mtime = backdate(settingsOf(dir));
     const binDir = binDirWithout('jq');
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(dir)], {
+    const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(dir)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')) },
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,

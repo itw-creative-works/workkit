@@ -5,12 +5,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv,
+  IS_WINDOWS, BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const { mkRepo, mkOriginRepo } = require('../lib/git-repo');
@@ -103,7 +102,7 @@ const viaShim = (w, args, { fails = false } = {}) => {
   const env = homeEnv(w.home, { PATH: systemPathWith(shimDir(), bin, NODE_DIR), CLAUDECODE: '1' });
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
-  const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(shimDir(), 'gh')), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(path.join(shimDir(), 'gh')), ...args], {
     cwd: w.here, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status, `the shim's exit is the real gh's (stderr: ${res.stderr})`).toBe(fails ? 1 : 0);
@@ -132,7 +131,7 @@ const mkWorld = (prefix = 'snapshot-') => {
  * `envPath` when given, any `extra` env on top.
  */
 const mode = (w, name, args = [], envPath = null, extra = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SNAPSHOT), name, shellPath(fs.realpathSync(w.repo)), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(SNAPSHOT), name, shellPath(fs.realpathSync(w.repo)), ...args], {
     env: { ...w.env, ...(envPath ? { PATH: envPath } : {}), ...extra }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };

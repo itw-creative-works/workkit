@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
+const { spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { copyEngine, mkTowerRemote } = require('../publish/helpers');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -141,7 +141,7 @@ const inHome = (world, script, { env = {} } = {}) => {
     ),
     script,
   ].join('\n');
-  const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
+  const res = spawnBash([...NO_RC, '-c', driver], {
     env: { ...world.env, ...env }, input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
@@ -304,7 +304,7 @@ const mkPublishWorld = ({
 // from wherever it woke up, and a shim that keys anything off the cwd must key
 // it off a scratch directory rather than this checkout.
 const publish = (world, args = []) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
     cwd: world.root, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `publish finished (no timeout): ${res.error || ''}`).toBeTruthy();

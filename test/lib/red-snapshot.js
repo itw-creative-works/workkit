@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { BASH, NO_RC, shellPath } = require('./platform');
+const { NO_RC, shellPath, spawnBash } = require('./platform');
 const { homeOf, cacheBase } = require('./workflow-home');
 
 /**
@@ -24,7 +24,7 @@ const snapshotBase = (home) => path.join(cacheBase(home), 'snapshot');
  * @returns {string}
  */
 const snapshotKey = (root) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', 'cd -P "$1" && pwd -P', '_', shellPath(root)], {
+  const res = spawnBash([...NO_RC, '-c', 'cd -P "$1" && pwd -P', '_', shellPath(root)], {
     env: { PATH: process.env.PATH }, encoding: 'utf8',
   });
   if (res.status !== 0 || !res.stdout.trim()) throw new Error(`pwd -P failed: ${res.stderr}`);

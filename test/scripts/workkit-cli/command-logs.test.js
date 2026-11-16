@@ -91,14 +91,15 @@ const readOr = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : 
 const linesOf = (text) => (text === '' ? [] : text.replace(/\n$/, '').split('\n'));
 
 /**
- * <log> is the call's printed lines, each stream in its order and the two in the
- * order written, then <closing>: so the same lines as the call, sorted, and one more.
+ * <log> is the call's printed lines as a terminal leaves them, a CRLF's end
+ * dropped, then <closing>: the same lines as the call, sorted, and one more.
+ * A tee per stream writes the log, so how the two interleave goes unasserted.
  */
 const holdsTheCall = (log, { out, err }, closing, what) => {
   expect(log !== null, `${what}: the log was written`).toBeTruthy();
   const lines = linesOf(log);
   expect(lines[lines.length - 1], `${what}: the log's last line, got: ${JSON.stringify(log)}`).toBe(closing);
-  const printed = [...linesOf(out), ...linesOf(err)].sort();
+  const printed = [...linesOf(out), ...linesOf(err)].map((line) => line.replace(/\r$/, '')).sort();
   expect(JSON.stringify(lines.slice(0, -1).sort()), `${what}: the log holds the lines the call printed and no other, log: ${JSON.stringify(log)}, call: ${JSON.stringify(out + err)}`)
     .toBe(JSON.stringify(printed));
 };

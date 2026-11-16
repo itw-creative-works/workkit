@@ -7,7 +7,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
-const { BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith } = require('../lib/platform');
+const { NO_RC, shellPath, homeEnv, stubTool, pathWith, spawnBash } = require('../lib/platform');
 const { mkPluginCopy } = require('../lib/plugin-copy');
 const { mkOriginRepo } = require('../lib/git-repo');
 
@@ -82,8 +82,8 @@ const mkWorld = ({
   };
 };
 
-const install = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
-const check = (world) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), '--check'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+const install = (world) => spawnBash([...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+const check = (world) => spawnBash([...NO_RC, shellPath(SCRIPT), '--check'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
 
 // A copy of the engine somewhere else: no git, no plugin cache around it.
 const strayKit = () => {
@@ -180,7 +180,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       fs.symlinkSync(path.join(cloneRoot, 'workflow'), path.join(claude, 'workkit'));
       const cache = path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0');
       mkPluginCopy(cache, { dirs: ['workflow', 'jobs'] });
-      const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(cache, 'jobs', 'install.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+      const res = spawnBash([...NO_RC, shellPath(path.join(cache, 'jobs', 'install.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       const said = `${res.stdout}${res.stderr}`;
       expect(!said.includes('⚠'), `the clone outranks the cache copy, so nothing is wrong: ${said}`).toBeTruthy();
@@ -289,7 +289,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       install(world);
       const before = world.calls().length;
 
-      const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
+      const res = spawnBash([...NO_RC, shellPath(SCRIPT)], {
         encoding: 'utf8',
         timeout: SPAWN_DEADLINE,
         env: { ...world.env, WORKKIT_LAUNCHD_OK: '' },

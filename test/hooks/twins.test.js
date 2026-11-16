@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash,
 } = require('../lib/platform');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods, runResult } = require('../lib/mods-inputs');
@@ -35,7 +35,7 @@ const lib = (...parts) => shellPath(path.join(KIT, ...parts));
 const bashAnswers = (files, fn, fixtures, env = {}) => {
   const sources = [].concat(files).map((f) => `. "${f}"\n`).join('');
   const script = `${sources}while IFS= read -r p; do if ${fn} "$p"; then echo 1; else echo 0; fi; done <<<"$FIXTURES"`;
-  const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], {
+  const res = spawnSystemBash([...NO_RC, '-c', script], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), FIXTURES: fixtures.join('\n'), ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
@@ -51,7 +51,7 @@ const bashAnswers = (files, fn, fixtures, env = {}) => {
  */
 const bashLines = (file, fn, fixtures, env = {}) => {
   const script = `. "${file}"\nwhile IFS= read -r p; do printf '%s\\n' "$(${fn} "$p")"; done <<<"$FIXTURES"`;
-  const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], {
+  const res = spawnSystemBash([...NO_RC, '-c', script], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), FIXTURES: fixtures.join('\n'), ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
@@ -328,7 +328,7 @@ describe('twins: one setting, wk_setting in workflow/lib/participation.sh agains
         if (body !== undefined) fs.writeFileSync(files[layer], `${JSON.stringify(body)}\n`);
       }
       const root = path.join(dir, 'repo');
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"\n. "${lib('workflow', 'lib', 'participation.sh')}"\nwk_setting "$1" "$2"`, 'bash', shellPath(root), key], {
+      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"\n. "${lib('workflow', 'lib', 'participation.sh')}"\nwk_setting "$1" "$2"`, 'bash', shellPath(root), key], {
         env: { PATH: SYSTEM_PATH, HOME: shellPath(path.join(dir, 'home')), WORKFLOW_HOME: shellPath(path.dirname(files.user)) },
         encoding: 'utf8',
         timeout: SPAWN_DEADLINE,
@@ -354,7 +354,7 @@ describe('twins: the machine folder, wk_user_dir against userDir in hooks/mods/l
   test('wk_user_dir, log.js userDir and user-dir.js userDir agree on every WORKFLOW_HOME and HOME', () => {
     for (const [workflowHome, home] of HOMES) {
       const env = { PATH: SYSTEM_PATH, HOME: home, ...(workflowHome === undefined ? {} : { WORKFLOW_HOME: workflowHome }) };
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_user_dir`], {
+      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_user_dir`], {
         env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const shell = (res.stdout || '').replace(/\r?\n$/, '');
@@ -404,7 +404,7 @@ describe('twins: the hooks log, wk_hooks_log in workflow/lib/platform.sh against
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, text);
       const shellEnv = { PATH: SYSTEM_PATH, HOME: shellPath(env.HOME), ...(env.WORKFLOW_HOME ? { WORKFLOW_HOME: shellPath(env.WORKFLOW_HOME) } : {}) };
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_hooks_log; printf '%s\\n' "$WK_HOOKS_LOG"; cat "$WK_HOOKS_LOG"`], {
+      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_hooks_log; printf '%s\\n' "$WK_HOOKS_LOG"; cat "$WK_HOOKS_LOG"`], {
         env: shellEnv, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const [where, ...rest] = (res.stdout || '').split('\n');
@@ -456,7 +456,7 @@ describe('twins: the Proof pattern, workflow/ship/items.sh against PROOF_RE in h
     const src = fs.readFileSync(path.join(KIT, 'workflow', 'ship', 'items.sh'), 'utf8');
     const found = src.match(/test\("([^"]*Proof:[^"]*)"\)/);
     expect(found, 'items.sh tests each comment against a Proof: pattern').toBeTruthy();
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', 'jq -c "map(test(\\"$PATTERN\\"))"'], {
+    const res = spawnSystemBash([...NO_RC, '-c', 'jq -c "map(test(\\"$PATTERN\\"))"'], {
       env: { PATH: SYSTEM_PATH, PATTERN: found[1] }, input: JSON.stringify(BODIES), encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     expect(res.status, `jq ran the ship's pattern, stderr: ${res.stderr}`).toBe(0);
@@ -474,7 +474,7 @@ describe('twins: the lint block, wk_changelog_lint in workflow/lib/changelog.sh 
   test('a failed lint reads the same sentence and findings from the shell and from the gate', async () => {
     const node = mkTmp('twins-node-');
     stubTool(node, 'node', ['#!/bin/bash', `printf '%b\\n' '${SAID.replace(/\n/g, '\\n')}' >&2`, 'exit 1']);
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'changelog.sh')}"; wk_changelog_lint /w/repo --staged CHANGELOG.md`], {
+    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'changelog.sh')}"; wk_changelog_lint /w/repo --staged CHANGELOG.md`], {
       env: { PATH: systemPathWith(node), HOME: shellPath(os.homedir()), WORKFLOW_DIR: lib('workflow') }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     expect(res.status, `the shell lint fails, stderr: ${res.stderr}`).toBe(1);
@@ -494,7 +494,7 @@ describe('twins: the working diff, hook_working_paths in hooks/lib/tree.sh again
     const kinds = headed ? 'rev-parse, diff, ls-files' : 'rev-parse, ls-files, ls-files';
     test(`hook_working_paths and the qa check make the same reads in the same order, ${headed ? 'a repo with a commit' : 'a repo with no commit'}: ${kinds}`, async () => {
       const git = recordingTool('git', '', headed ? [] : ['[[ " $* " == *" --verify "* ]] && exit 1']);
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('hooks', 'lib', 'tree.sh')}"; hook_working_paths /w/repo`], {
+      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('hooks', 'lib', 'tree.sh')}"; hook_working_paths /w/repo`], {
         env: { PATH: git.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       expect(res.status, `the shell reads ran, stderr: ${res.stderr}`).toBe(0);
@@ -570,7 +570,7 @@ describe('twins: the status:building list, wk_issues_building in workflow/lib/ho
   test('wk_issues_building and buildingList ask gh with the same argv, with and without a repo', async () => {
     for (const repo of ['', 'acme/widgets']) {
       const gh = recordingTool('gh', '[]');
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; . "${lib('workflow', 'lib', 'hold.sh')}"; wk_issues_building ${repo}`], {
+      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; . "${lib('workflow', 'lib', 'hold.sh')}"; wk_issues_building ${repo}`], {
         env: { PATH: gh.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const shell = gh.calls();
@@ -593,7 +593,7 @@ describe('twins: the public slug, PUBLIC_SLUG_RE in workflow/standards/labels.sh
   test('the heal and the verbs take the same values as a slug, and the Public: link reads those alone', () => {
     const script = `. "${lib('workflow', 'standards', 'labels.sh')}"
 while IFS= read -r p; do if [[ "$p" =~ $PUBLIC_SLUG_RE ]]; then echo 1; else echo 0; fi; done <<<"$FIXTURES"`;
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', script], {
+    const res = spawnSystemBash([...NO_RC, '-c', script], {
       env: { PATH: SYSTEM_PATH, FIXTURES: PUBLIC_KEYS.join('\n') }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     const shell = (res.stdout || '').split('\n').filter(Boolean).map((a) => a === '1');
@@ -608,7 +608,7 @@ while IFS= read -r p; do if [[ "$p" =~ $PUBLIC_SLUG_RE ]]; then echo 1; else ech
 describe('twins: git\'s value-taking global options, VALUE_FLAGS in workflow/gitshim/git against GIT_VALUE_FLAGS in hooks/mods/tree-guard.js', () => {
   test('the shim\'s list and the exported set name the same options', () => {
     const pieces = scriptPieces(path.join(KIT, 'workflow', 'gitshim', 'git'), ['VALUE_FLAGS']);
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', `. "${pieces}"; printf '%s\\n' "\${VALUE_FLAGS[@]}"`],
+    const res = spawnSystemBash([...NO_RC, '-c', `. "${pieces}"; printf '%s\\n' "\${VALUE_FLAGS[@]}"`],
       { env: { PATH: SYSTEM_PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     expect(res.status, `the shell printed its list, stderr: ${res.stderr}`).toBe(0);
     const listed = res.stdout.replace(/\r/g, '').split('\n').filter(Boolean);
@@ -702,7 +702,7 @@ describe('twins: the shims\' shared readers, norm_dir, in_list, real_path and th
     ];
     const [git, gh] = walks.map(({ tool, entries, file }) => ROWS.map(([names]) => {
       // PATH is set inside bash, so it reads the spellings as written on every platform.
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, '-c', 'PATH="$1"; . "$2"', 'walk', names.map((n) => entries[n]).join(':'), file], {
+      const res = spawnSystemBash([...NO_RC, '-c', 'PATH="$1"; . "$2"', 'walk', names.map((n) => entries[n]).join(':'), file], {
         cwd: root, env: { PATH: SYSTEM_PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const pick = (res.stdout || '').replace(/\r/g, '').trim();

@@ -4,10 +4,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { BASH, NO_RC, shellPath, skipWithoutNodeStub } = require('../../lib/platform');
+const { NO_RC, shellPath, skipWithoutNodeStub, spawnBash } = require('../../lib/platform');
 const {
   SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, mkWorld, withoutJq, runJob,
 } = require('./helpers');
@@ -48,7 +47,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     // so the gap under test is the engine and nothing else.
     const copy = path.join(seeded, 'jobs', 'morning.sh');
     fs.cpSync(path.dirname(SCRIPT), path.join(seeded, 'jobs'), { recursive: true });
-    const res = spawnSync(BASH, [...NO_RC, shellPath(copy)], {
+    const res = spawnBash([...NO_RC, shellPath(copy)], {
       encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env,
     });
     expect(res.status, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`).toBe(1);
@@ -62,7 +61,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     // refusals have to say which of them happened.
     const world = mkWorld();
     const env = { ...world.env, PATH: withoutJq(world.root, path.join(world.root, 'bin')) };
-    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
+    const res = spawnBash([...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
     expect(res.status, 'the run refuses').toBe(1);
     expect(/jq is not installed/.test(res.stderr), `and names the tool: ${res.stderr}`).toBeTruthy();
     expect(!/names no home repo/.test(res.stderr), 'never the key, which is right there').toBeTruthy();

@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath, spawnSync: runSync,
+  SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath, spawnSync: runSync, spawnBash,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
@@ -233,8 +233,9 @@ const skipWithoutPty = () => !HAS_PTY && 'this machine has neither expect nor sc
 // stdin is a pipe, never a terminal: a prompt that forgot to check hangs here
 // rather than in production. `script` runs another entry point (the world's
 // symlink, or a partial checkout's copy) to ask where a run thinks it stands.
+// Started through run.js, so a Windows child keeps the ComSpec npm's own script shell is.
 const runCli = (world, args, { cwd, script, env } = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(script || CLI), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(script || CLI), ...args], {
     cwd: cwd || world.root,
     env: { ...world.env, ...(env || {}) },
     input: '',
@@ -296,7 +297,7 @@ const signInEnv = (world, { node = true, extra = {} } = {}) => ({
   ...extra,
 });
 
-const installSchedule = (world) => spawnSync(BASH, [...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+const installSchedule = (world) => spawnBash([...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
 
 // The machine's hand-edited settings file, written the way a heal seeds it.
 // `site` is whatever the test wants the site options to be: a `publish` of
@@ -321,7 +322,7 @@ const inCli = (world, script, { input = '', env, entry = CLI } = {}) => {
   const stdinFile = path.join(world.root, 'inCli-stdin');
   fs.writeFileSync(stdinFile, input);
   const fd = fs.openSync(stdinFile, 'r');
-  const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
+  const res = spawnBash([...NO_RC, '-c', driver], {
     cwd: world.root,
     // `env` for the values the CLI reads at source time, which a line prepended
     // to the script would be too late for.

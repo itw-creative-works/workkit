@@ -400,6 +400,15 @@ const joinPath = (...entries) => entries.filter(Boolean).join(path.delimiter);
 const spawnBash = (args, options = {}) => run.spawnSync(BASH, args, options);
 
 /**
+ * spawnBash for SYSTEM_BASH: the start a case needs when its child PATH
+ * resolves nothing (EMPTY_PATH), since the spawn searches that PATH too.
+ * @param {string[]} args
+ * @param {object} [options] - spawnSync's
+ * @returns {object} spawnSync's result
+ */
+const spawnSystemBash = (args, options = {}) => run.spawnSync(SYSTEM_BASH, args, options);
+
+/**
  * Whether two spellings name one path. On `win32` a Git Bash drive mount
  * (`/d/x`) reads as `D:/x`, `\` folds to `/` and case is ignored; elsewhere the
  * strings are compared as they are.
@@ -628,8 +637,8 @@ const windowsTables = (processes, { onSignal = () => {}, onRead = () => {}, answ
 const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 
 module.exports = {
-  IS_WINDOWS, BASH, SH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, jsPath, gitPath, which, spawnBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
+  IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
+  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,

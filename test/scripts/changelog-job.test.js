@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const { BASH, SYSTEM_PATH, NO_RC, shellPath, stubTool, joinPath } = require('../lib/platform');
+const { SYSTEM_PATH, NO_RC, shellPath, stubTool, joinPath, spawnBash } = require('../lib/platform');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SEAM = shellPath(path.join(ROOT, 'workflow', 'changelog', 'changelog-job.sh'));
@@ -17,8 +17,7 @@ const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** Source the seam and run one line of shell in it, the way every caller does. */
 const inSeam = (script, args = []) => {
-  const res = spawnSync(
-    BASH,
+  const res = spawnBash(
     [...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\n${script}`, 'bash', ...args],
     { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE },
   );
@@ -47,7 +46,7 @@ describe('changelog-job.sh: sourcing it', () => {
     expect(fns.code, `it sources clean, stderr: ${fns.err}`).toBe(0);
     expect(fns.out, `the functions, got: ${fns.out}`).toBe('wk_checks_heal_rewrite wk_checks_template wk_default_branch wk_has_core_package wk_linter_copies '
       + 'wk_names_linter_copy wk_workflows_run_copy ');
-    const vars = (first) => spawnSync(BASH, [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
+    const vars = (first) => spawnBash([...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE }).stdout;
     expect(vars(`. ${JSON.stringify(SEAM)}`), 'the same variables as a shell that sourced nothing').toBe(vars(':'));
   });
@@ -61,7 +60,7 @@ describe('changelog-job.sh: sourcing it', () => {
 
 describe('changelog-job.sh: what runs the copy', () => {
   test('a comment naming the copy is not a run of it; a run: line is', () => {
-    const names = (text) => spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\nwk_names_linter_copy`],
+    const names = (text) => spawnBash([...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\nwk_names_linter_copy`],
       { input: text, env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE }).status;
     expect(names('# changelog.js the heal vendors to .github/changelog-lint.js on every run.\njobs:\n'), 'a column-0 comment').toBe(1);
     expect(names('jobs:\n  x:\n    steps:\n      # node .github/changelog-lint.cjs was here\n      - run: npm test\n'), 'an indented comment').toBe(1);
@@ -70,7 +69,7 @@ describe('changelog-job.sh: what runs the copy', () => {
   });
 
   test('`changelog-job.sh names -` reads the text from its own stdin; a file argument, the file', () => {
-    const entry = (text, ...copy) => spawnSync(BASH, [...NO_RC, SEAM, 'names', '-', ...copy],
+    const entry = (text, ...copy) => spawnBash([...NO_RC, SEAM, 'names', '-', ...copy],
       { input: text, env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const runs = 'jobs:\n  x:\n    steps:\n      - run: node .github/changelog-lint.cjs CHANGELOG.md\n';
     const hit = entry(runs, '.github/changelog-lint.cjs');
@@ -124,7 +123,7 @@ describe('changelog-job.sh: the default branch the caller and branch protection 
       stubTool(bin, 'gh', ['#!/usr/bin/env bash', `printf '%s\\n' "$*" >> ${JSON.stringify(shellPath(log))}`,
         ...(answer === 'fail' ? ['exit 1'] : [`echo ${JSON.stringify(answer)}`])]);
     }
-    const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\nwk_default_branch`], {
+    const res = spawnBash([...NO_RC, '-c', `. ${JSON.stringify(SEAM)}\nwk_default_branch`], {
       cwd: repo, env: { PATH: joinPath(bin, SYSTEM_PATH), HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     const asked = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';

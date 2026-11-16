@@ -1,21 +1,22 @@
 // Tests for packages/core/test/lib/spawn.js through the one entry: run() keeps both
 // streams and the exit, start() streams while its child runs and end() ends its
 // group, climbing INT, TERM, KILL only while the child lives, its stdin carries
-// the input given, else is empty, a deadline ends a
-// child that never exits, and endTree() ends a group, refuses a pid that is
-// not a positive integer and throws on a signal the system refuses; on its
+// the input given, else is empty, a deadline ends a child that never exits, and endTree() ends a group,
+// refuses a pid that is not a positive integer and throws on a signal the system refuses; on its
 // Windows arm, reached through its seams, it runs taskkill from System32 and
-// throws when that cannot start or SystemRoot is unset. alive() is false for any pid but a positive integer.
+// throws when that cannot start or SystemRoot is unset. alive() is false for any pid but a positive integer
+// and for one that ended uncollected, groupLives() for a group whose every member did.
 
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const {
   describe, test, expect,
-  run, start, endTree, alive, until, readPid, mkTmp,
+  run, start, endTree, alive, groupLives, until, readPid, mkTmp,
 } = require('./lib/harness');
-const { IS_WINDOWS, recordingRun, signalsRefused, samePath } = require('./lib/platform');
+const { IS_WINDOWS, BASH, NO_RC, recordingRun, signalsRefused, samePath } = require('./lib/platform');
 const { caught } = require('./lib/caught');
+const { startNeverCollects, childOf } = require('./lib/never-collects');
 
 // Writes one line to each stream, stdout first, then exits 3.
 const BOTH = 'process.stdout.write("to stdout\\n", () => { process.stderr.write("to stderr\\n", () => process.exit(3)); });';
@@ -87,12 +88,15 @@ const settle = async (promise) => {
   return value;
 };
 
-// The first process owned by root with a pid above 1, or null. Never pid 1: a
-// user that is not root is refused kill(1), but where pid 1 is this user's own
-// entrypoint the case's TERM would be real.
+// The first pid above 1 whose real and saved uid are root's, as are those of every
+// member of the group it leads, or null: the system lets a signal through by those
+// two uids, and a group's once one member may be signalled. Pid 1 is never picked,
+// since it may be this user's own entrypoint.
 const rootOwnedPid = (skip = []) => {
-  const rows = run('ps', ['-A', '-o', 'pid=,uid=']).stdout.trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
-  const row = rows.find(([pid, uid]) => uid === 0 && pid > 1 && !skip.includes(pid));
+  const rows = run('ps', ['-A', '-o', 'pid=,pgid=,ruid=,svuid=']).stdout.trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
+  const root = ([, , ruid, svuid]) => ruid === 0 && svuid === 0;
+  const row = rows.find((r) => root(r) && r[0] > 1 && !skip.includes(r[0])
+    && rows.every((member) => member[1] !== r[0] || root(member)));
   return row ? row[0] : null;
 };
 
@@ -112,6 +116,12 @@ describe('spawn: run()', () => {
     const late = run(process.execPath, ['-e', FOREVER], { deadline: SHORT });
     expect(late.timedOut, `the deadline ended it, got: ${JSON.stringify(late)}`).toBe(true);
     expect(late.signal, `a signal is set, got: ${JSON.stringify(late)}`).toBeTruthy();
+  });
+
+  test('run hands the test bash an argument holding single quotes and no space whole', () => {
+    const quoted = "console.log('kept')";
+    const done = run(BASH, [...NO_RC, '-c', 'printf %s "$1"', 'bash', quoted]);
+    expect(done.stdout, `the argument as given, got: ${JSON.stringify(done)}`).toBe(quoted);
   });
 });
 
@@ -279,6 +289,19 @@ describe('spawn: start()', () => {
     expect(rejected?.code, `done rejects with the spawn error, got: ${rejected?.message}`).toBe('ENOENT');
   });
 
+  test(
+    'a launch run.js refuses (bash on an empty PATH): done rejects naming Git Bash, end() resolves',
+    { skip: !IS_WINDOWS && 'run.js refuses a launch only on Windows' },
+    async () => {
+      const refused = start('bash', [], { env: { PATH: '' } });
+      await refused.end();
+      let rejected;
+      await refused.done.catch((err) => { rejected = err; });
+      expect(rejected?.code, `done rejects with the refusal, got: ${rejected?.message}`).toBe('ENOENT');
+      expect(/Git Bash not found/.test(rejected?.message), `the refusal names Git Bash, got: ${rejected?.message}`).toBeTruthy();
+    },
+  );
+
   test('end() rejects a signal off the ladder before it sends anything', async () => {
     const child = start(process.execPath, ['-e', FOREVER]);
     try {
@@ -355,7 +378,7 @@ describe('spawn: endTree()', () => {
     {
       skip: rootPid === null && (IS_WINDOWS ? 'Windows ends a tree through taskkill, not a signal'
         : process.getuid() === 0 ? 'root may signal any process, so nothing refuses the signal'
-          : 'no process owned by root, pid above 1, is listed here'),
+          : 'no process owned by root, pid above 1, is listed whose signal would reach only root\'s processes'),
     },
     async () => {
       let threw;
@@ -379,4 +402,36 @@ describe('spawn: alive()', () => {
     for (const pid of [0, -1, NaN]) expect(alive(pid), `alive(${pid})`).toBe(false);
     expect(alive(process.pid), 'alive(process.pid)').toBe(true);
   });
+
+  test(
+    'alive turns false for a child that ended while its parent, which never collects it, still lives',
+    { skip: IS_WINDOWS && 'Windows has no ended process left for its parent to collect' },
+    async () => {
+      const parent = startNeverCollects();
+      try {
+        const child = await childOf(parent);
+        expect(await until(() => !alive(child)), `alive(${child}) turned false once the child ended`).toBe(true);
+        expect(alive(parent.pid), 'the parent that never collects it still lives').toBe(true);
+      } finally {
+        await parent.end('SIGKILL');
+      }
+    },
+  );
+});
+
+describe('spawn: groupLives()', () => {
+  test(
+    'groupLives turns false for a group whose one member ended while its parent, which never collects it, still lives',
+    { skip: IS_WINDOWS && 'Windows has no process group' },
+    async () => {
+      const parent = startNeverCollects('set -m; ');
+      try {
+        const leader = await childOf(parent);
+        expect(await until(() => !groupLives(leader)), `groupLives(${leader}) turned false once its member ended`).toBe(true);
+        expect(alive(parent.pid), 'the parent that never collects it still lives').toBe(true);
+      } finally {
+        await parent.end('SIGKILL');
+      }
+    },
+  );
 });

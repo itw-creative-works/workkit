@@ -8,12 +8,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync, spawn } = require('child_process');
 const {
   describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, shellPath, jsPath, gitPath, joinPath,
+  IS_WINDOWS, BASH, NO_RC, shellPath, jsPath, gitPath, joinPath, spawnBash, spawn,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { skipWithoutNpm } = require('../lib/core-repo');
@@ -155,7 +154,7 @@ const mkBuilt = () => {
 };
 
 const runScript = (w, args, cwd = w.repo, env = w.env) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
     cwd, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();

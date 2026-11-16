@@ -4,10 +4,9 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv,
+  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv, spawnBash,
 } = require('../../lib/platform');
 const { WORKFLOW_DIR, SCRIPT, cleanup } = require('./helpers');
 
@@ -28,7 +27,7 @@ const mkMachine = ({ localBin = true } = {}) => {
 // with stdin closed, so any prompt or wizard step would have no one to answer.
 const runCommandLink = (machine) => {
   const cwd = mkTmp('wf-std-');
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), '--command-link'], {
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), '--command-link'], {
     cwd,
     env: homeEnv(machine.home, {
       ...process.env,

@@ -274,7 +274,8 @@
     - Where no node fits it prints `wk_end_run: no node at or above <floor> is installed, so the tree of <pid> was not ended` and returns 1.
     - Elsewhere it ends its process group, and returns 0: INT so the body logs its own code, then TERM and KILL.
     - Each comes 1.5 seconds after the last, while the group lives.
-  - `wk_pid_alive <pid>`: whether a pid still runs (`kill -0`).
+  - `wk_pid_alive <pid>`: whether a pid still runs (`kill -0`), a process that ended and waits for its parent to collect it (a state starting with `Z`) not.
+    - The state is `/proc/<pid>/stat`'s where the system has `/proc`, an entry gone since `kill -0` read as ended; elsewhere (macOS) `ps -o stat=`'s, no line leaving `kill -0`'s answer.
     - On Windows it asks Node, where a pid Node printed is a Windows pid bash's kill cannot see.
   - `wk_mv_link <from> <to>`: the rename that never follows a link at its destination (`-T` where mv is GNU, `-h` where it is BSD).
     - `wk_link` in `lib/flows.sh` renames a fresh link through it, so an address is replaced atomically.
@@ -365,8 +366,9 @@
   - A name found nowhere is left as given, so the start fails with ENOENT.
   - The platform is read once at load, so a test that fakes `process.platform` never hands a real program the win32 launch.
   - Every shipped file that starts a program requires it.
-  - `test/scripts/run-home.test.js` fails any other `child_process` import but two and a list:
-    - the published workkit-core runner's `packages/core/test/run.js` and `packages/core/test/lib/spawn.js`, since that package cannot require the kit's run.js;
+  - `test/scripts/run-home.test.js` fails any other `child_process` import but one and a list:
+    - the published workkit-core runner's `packages/core/test/run.js`: run.js has no fork for its suite workers, and its one other raw start (each member's `npm` through the shell) starts no Git Bash program, so none of its arguments meets Git Bash's splitting and globbing;
+      - its `packages/core/test/lib/spawn.js` starts through run.js, which `kit-module.js` loads: the kit's file in the kit's checkout, else the packed `run.cjs`;
       - its `packages/core/test/lib/members.js` starts each member's `npm` through the starter `packages/core/test/run.js` hands it, so it imports none;
     - the root `test/` files still on the check's list, which only shrinks.
 - `lib/participation.sh`:

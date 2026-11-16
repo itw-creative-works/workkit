@@ -618,6 +618,46 @@ test('holds its worker', () => new Promise(() => { setInterval(() => {}, 1000); 
     }
   });
 
+  // The worker ends on the ladder's SIGINT while the child in its group ignores
+  // it, so the worker's end reaches the runner while its signal is still ending the run.
+  test('a worker that ends while the signal\'s ladder still climbs: no block for its suite, no totals line, exit 143', { skip: IS_WINDOWS && 'a Windows worker shares the runner\'s console, not a process group' }, async () => {
+    const { root } = mkFixture({
+      'leaver.test.js': SUITE(`
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const out = (name) => path.join(__dirname, '..', name);
+const script = [
+  "process.on('SIGINT', () => {});",
+  \`require('fs').writeFileSync(\${JSON.stringify(out('child.pid'))}, String(process.pid));\`,
+  'setInterval(() => {}, 1000);',
+].join('\\n');
+spawn(process.execPath, ['-e', script], { stdio: 'ignore' });
+test('holds its worker', () => new Promise(() => {
+  fs.writeFileSync(out('worker.pid'), String(process.pid));
+  setInterval(() => {}, 1000);
+}));
+`),
+    });
+    const pidOf = (name) => pidIn(path.join(root, name));
+    const runner = start(process.execPath, [RUNNER], { cwd: root, env: aloneEnv() });
+    try {
+      expect(await until(() => pidOf('worker.pid') > 0 && pidOf('child.pid') > 0), 'the worker and its child wrote their pids').toBeTruthy();
+      runner.child.kill('SIGTERM');
+      const { status } = await runner.done;
+      const output = runner.output();
+      expect(status, `the runner's exit, got: ${output}`).toBe(143);
+      expect(linesOf(output).some((line) => line.startsWith('▶ test/leaver.test.js')), `no block for the suite, got: ${output}`).toBe(false);
+      expect(linesOf(output).some((line) => TOTALS_LINE.test(line)), `no totals line, got: ${output}`).toBe(false);
+    } finally {
+      await runner.end('SIGKILL');
+      // A pid of 0 would signal this process group, so only a written pid is ended.
+      const child = pidOf('child.pid');
+      if (child > 0 && alive(child)) endTree(child, 'SIGKILL');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // Known counts across three workers, one failing case among them.
   const COUNTED = {
     'alpha.test.js': SUITE("test('alpha case', () => {});"),
@@ -1311,6 +1351,24 @@ describe('run.js: the mod half', () => {
     expect(!output.includes('the mod case'), 'the mod suite did not run').toBeTruthy();
     const skipLine = output.split('\n').find((l) => /mod half/.test(l) && /skipped|\u2298/.test(l) && /claude/.test(l));
     expect(skipLine, `a skip line names the mod half and claude as the reason, got: ${output}`).toBeTruthy();
+  });
+
+  test('a claude on PATH only as a script (a claude.cmd on Windows) runs the mod half with its count', () => {
+    const tmp = mkTmp('runner-fakeclaude-');
+    const bin = path.join(tmp, 'bin');
+    fs.mkdirSync(bin);
+    // On Windows a raw start finds only claude.exe, so this .cmd is the npm-installed claude it never found.
+    if (IS_WINDOWS) {
+      fs.writeFileSync(path.join(bin, 'claude.cmd'), ['@echo off', 'echo 2 pass', 'echo 0 fail', 'exit /b 0', ''].join('\r\n'));
+    } else {
+      fs.writeFileSync(path.join(bin, 'claude'), ['#!/bin/sh', "echo ' 2 pass'", "echo ' 0 fail'", 'exit 0', ''].join('\n'), { mode: 0o755 });
+    }
+    const { code, output } = runModHalf(joinPath(bin, basePathWithout(tmp, 'claude'), NODE_DIR));
+    fs.rmSync(tmp, { recursive: true, force: true });
+    expect(code, `exit 0, got: ${output}`).toBe(0);
+    const totals = linesOf(output).find((line) => TOTALS_LINE.test(line));
+    expect(totals, `the node case and the fake's two count, got: ${output}`).toMatch(/^3 passed, 0 failed \(/);
+    expect(output.split('\n').some((l) => /skipped|⊘/.test(l) && /claude/.test(l)), `no skip line names claude, got: ${output}`).toBe(false);
   });
 });
 

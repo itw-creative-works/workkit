@@ -4,10 +4,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const {
   skipUnlessDarwin, SCRIPT, INSTRUCTION, cleanup, mkWorld, runJob, skipOnUsrLocalBin, withBarePath,
 } = require('./helpers');
@@ -22,7 +21,7 @@ describe('jobs/morning (local)', { skip: skipUnlessDarwin() }, () => {
       fs.symlinkSync(path.join(path.dirname(SCRIPT), '..', 'workflow'), path.join(world.home, '.claude', 'workkit'));
       fs.mkdirSync(path.join(world.home, '.claude', 'jobs'));
       const viaLink = `${shellPath(world.home)}/.claude/workkit/../jobs/morning.sh`;
-      const res = spawnSync(BASH, [...NO_RC, viaLink, '--now'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+      const res = spawnBash([...NO_RC, viaLink, '--now'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       const calls = world.calls();
       expect(calls.length, `the brief was composed and sent: ${fmtCalls(calls)}`).toBe(1);

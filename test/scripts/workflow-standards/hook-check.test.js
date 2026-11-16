@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  SYSTEM_BASH, NO_RC, shellPath, stubTool, joinPath,
+  NO_RC, shellPath, stubTool, joinPath, spawnSystemBash,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
@@ -110,7 +110,7 @@ describe('standards.sh: the hook layer self-check', () => {
     // The mirror's sha1sum is a bash shim with its launcher beside it on Windows: both go.
     for (const name of ['sha1sum', 'sha1sum.exe']) fs.rmSync(path.join(binDir, name), { force: true });
     const check = () => {
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+      const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
         env: {
           PATH: joinPath(stub.binDir, binDir),
           WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')),

@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const {
   KIT_DIR, cleanup, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
   dropRunnerLine,
@@ -61,7 +61,7 @@ describe('workflow/home: the cloud brief runner', () => {
     const engine = path.join(world.tower, 'brief', 'workflow');
     const driver = ['lib.sh', 'lib/discussions.sh', 'home.sh']
       .map((lib) => `. ${JSON.stringify(shellPath(path.join(engine, lib)))}`).concat('declare -F wk_home_setup >/dev/null').join('\n');
-    const res = spawnSync(BASH, [...NO_RC, '-c', `set -euo pipefail\n${driver}`], { cwd: '/', encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const res = spawnBash([...NO_RC, '-c', `set -euo pipefail\n${driver}`], { cwd: '/', encoding: 'utf8', timeout: SPAWN_DEADLINE });
     expect(res.status, `the seeded engine loads from the clone alone: ${res.stderr}`).toBe(0);
     cleanup(world.root);
   });

@@ -133,8 +133,6 @@ const LOOK_LINE = /^detach: the run goes on; read (.+), then run workkit watch t
 const BAD_VALUE_LINE = /^detach: tests\.check must be a number of minutes above 0 \(got (.+)\)$/m;
 
 const REQUEST_LINE = 'detach: the run was ended on request (exit 143)';
-// A pid that still runs: a zombie waiting on a stopped parent is gone.
-const running = (pid) => alive(pid) && !/^Z/.test(run('ps', ['-o', 'stat=', '-p', String(pid)]).stdout.trim());
 
 describe('detach: the argument list', () => {
   test('a bad argument list: exit 2, nothing launched', () => {
@@ -584,7 +582,7 @@ describe('detach.sh: an INT to the attached call ends the whole run', () => {
       expect(await until(() => ended(runner.child)), `the call never returned after the INT, output: ${runner.output()}`).toBeTruthy();
       await runner.done;
       expect(runner.child.exitCode, `the call exits 130, output: ${runner.output()}`).toBe(130);
-      expect(await until(() => !running(cmd)), `the command ${cmd} outlived the INT`).toBeTruthy();
+      expect(await until(() => !alive(cmd)), `the command ${cmd} outlived the INT`).toBeTruthy();
     } finally {
       reap(pidIn(pidFile), supervisor);
       await runner.end('SIGKILL');

@@ -6,10 +6,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, gitPath, systemPathWith,
+  spawnBash, SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, gitPath, systemPathWith,
 } = require('../lib/platform');
 const { mkOriginRepo } = require('../lib/git-repo');
 
@@ -20,8 +19,7 @@ const SLUG = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'slug
  * A `home` makes the run that scratch home, with node on the PATH as a hook has it.
  */
 const inSeam = (script, args = [], home = null) => {
-  const res = spawnSync(
-    BASH,
+  const res = spawnBash(
     [...NO_RC, '-c', `. ${JSON.stringify(SLUG)}\n${script}`, 'bash', ...args],
     {
       env: home ? { PATH: systemPathWith(NODE_DIR), HOME: shellPath(home) } : { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) },
@@ -58,8 +56,7 @@ describe('slug.sh: sourcing it', () => {
     // A seam that set something would change the shell of every caller. The
     // control runs `:` where the other sources the file, so the comparison is
     // against a command that does nothing (bash sets PIPESTATUS at the first).
-    const vars = (first) => spawnSync(
-      BASH,
+    const vars = (first) => spawnBash(
       [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE },
     );

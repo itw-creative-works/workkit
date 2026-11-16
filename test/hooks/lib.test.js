@@ -5,13 +5,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   describe, test, before, expect, mkTmp,
 } = require('../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NO_RC,
-  shellPath, digestTool, stubTool, crlfJq, systemPathWith,
+  SYSTEM_PATH, NO_RC,
+  shellPath, digestTool, stubTool, crlfJq, systemPathWith, spawnBash,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
 const { mods } = require('../lib/mods-inputs');
@@ -203,7 +202,7 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
   });
 
   describe('_lib.sh: the marker paths', () => {
-    const sha1 = (text) => spawnSync(BASH, [...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],
+    const sha1 = (text) => spawnBash([...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],
       { encoding: 'utf8' }).stdout.split(' ')[0];
 
     // TMPDIR is handed over explicitly: a session marker lives under whatever

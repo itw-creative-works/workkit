@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  BASH, NO_RC, shellPath, which, toolStem, basePathWithout,
+  NO_RC, shellPath, which, toolStem, basePathWithout, spawnBash,
 } = require('../lib/platform');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 
@@ -44,7 +44,7 @@ const mkWorld = ({ tracked = true } = {}) => {
 };
 
 const spawnIn = (w, script, cwd = w.repo, args = []) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(script), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(script), ...args], {
     cwd, env: w.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();
@@ -278,7 +278,7 @@ describe('review covers: usage', () => {
       if (toolStem(name) === 'sha1sum') fs.rmSync(path.join(bin, name));
     }
     expect(!which('shasum', bin) && !which('sha1sum', bin), 'the PATH holds neither hash command').toBeTruthy();
-    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
+    const res = spawnBash([...NO_RC, shellPath(SCRIPT)], {
       cwd: w.repo, env: { ...w.env, PATH: bin }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     expect(res.status, `exit 2: ${res.stdout}${res.stderr}`).toBe(2);

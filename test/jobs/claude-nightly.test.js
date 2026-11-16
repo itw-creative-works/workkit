@@ -5,13 +5,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE, until,
 } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath,
+  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath, spawnBash,
 } = require('../lib/platform');
 const { skipOnJobPathNode, skipOnUsrLocalBin, NO_NODE_LINE } = require('../lib/job-path');
 
@@ -166,7 +165,7 @@ const mkWorld = ({
   };
 };
 
-const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
+const runJob = (world, args = []) => spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,
   env: world.env,

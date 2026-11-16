@@ -3,11 +3,10 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
-const { BASH, SYSTEM_BASH, NO_RC, shellPath, systemPathWith } = require('../../lib/platform');
+const { NO_RC, shellPath, systemPathWith, spawnBash, spawnSystemBash } = require('../../lib/platform');
 const { isCall } = require('../../lib/argv-log');
 const {
   SCRIPT, IGNORE_GLOB, cleanup, makeRepo, makeGhStub, readFile, ghCalls, binDirWithout,
@@ -21,7 +20,7 @@ describe('standards.sh: offline and unauthenticated', () => {
     // PATH entry, and a machine that keeps gh in /usr/bin (a CI runner does)
     // would otherwise reach the authentication check instead of this one.
     const binDir = binDirWithout('gh');
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+    const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')) },
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
@@ -39,7 +38,7 @@ describe('standards.sh: offline and unauthenticated', () => {
   test('no jq on PATH: only the label step is skipped, local heals run', () => {
     const repo = makeRepo();
     const binDir = binDirWithout('jq');
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+    const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')) },
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
@@ -79,7 +78,7 @@ describe('standards.sh: runs from anywhere', () => {
   test('defaults to the current directory when given no argument', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
-    const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], {
+    const res = spawnBash([...NO_RC, shellPath(SCRIPT)], {
       cwd: repo,
       env: {
         ...process.env, PATH: systemPathWith(stub.binDir),

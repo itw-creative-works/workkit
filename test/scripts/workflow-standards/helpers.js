@@ -8,7 +8,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, basePathWithout,
+  IS_WINDOWS, spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, basePathWithout,
   joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
@@ -199,7 +199,7 @@ const runScript = (repoDir, {
   // CHANGELOGs with it), so the default PATH carries it; a test proving a
   // missing tool builds its own PATH with binDirWithout().
   const basePath = joinPath(SYSTEM_PATH, NODE_DIR);
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args, shellPath(repoDir)], {
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args, shellPath(repoDir)], {
     env: {
       ...process.env,
       PATH: pathPrefix ? joinPath(pathPrefix, basePath) : basePath,

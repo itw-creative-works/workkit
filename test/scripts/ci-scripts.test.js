@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, WORKKIT_DIR, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, shellPath, stubTool, joinPath, homeEnv, basePathWithout, spawnSync,
+  NO_RC, NODE_DIR, shellPath, stubTool, joinPath, homeEnv, basePathWithout, spawnBash,
 } = require('../lib/platform');
 
 const SCRIPTS = path.join(__dirname, '..', '..', '.github', 'scripts');
@@ -46,7 +46,7 @@ const basePath = () => {
 
 /** `bash .github/scripts/<name> <repo>` from a folder outside the repo; `all` is stdout then stderr. */
 const run = (w, name, { PATH = basePath(), env = {} } = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(SCRIPTS, name)), shellPath(w.repo)], {
+  const res = spawnBash([...NO_RC, shellPath(path.join(SCRIPTS, name)), shellPath(w.repo)], {
     cwd: w.away,
     env: homeEnv(w.home, { ...env, PATH, NPM_CONFIG_UPDATE_NOTIFIER: 'false' }),
     encoding: 'utf8',

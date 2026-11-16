@@ -3,10 +3,9 @@
 // case reads the bytes a real bash printed; WORKKIT_COLOR lets a pipe read the
 // styled shape back, and nothing else is stubbed.
 
-const { spawnSync } = require('child_process');
 const path = require('path');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../lib/harness');
-const { BASH, SYSTEM_PATH, NO_RC, shellPath } = require('../lib/platform');
+const { SYSTEM_PATH, NO_RC, shellPath, spawnBash } = require('../lib/platform');
 
 const LIB = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib.sh'));
 const ESCAPE = '\u001b';
@@ -21,7 +20,7 @@ const EVERY_LEVEL = 'wk_ok "engine: linked"\nwk_skip "engine: current"\nwk_info 
  * rather than the dumb-TERM check answering for it.
  */
 const inLib = (script, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(LIB)}\n${script}`], {
+  const res = spawnBash([...NO_RC, '-c', `. ${JSON.stringify(LIB)}\n${script}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(process.env.HOME), TERM: 'xterm-256color', ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,

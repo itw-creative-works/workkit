@@ -22,6 +22,7 @@ export const seeded = (build) => {
       seeds.set(key, seed);
     }
     // A relative link in a seed copies as the link it is, the way cp -R copies it.
+    // A Windows junction copies as a real folder, so a seed must hold none.
     fs.cpSync(seeds.get(key), dir, { recursive: true, verbatimSymlinks: true });
   };
 };

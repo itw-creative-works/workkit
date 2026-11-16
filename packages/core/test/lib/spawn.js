@@ -4,11 +4,14 @@
  * the deadline), and the end of the process group a child leads.
  */
 
-import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { inspect } from 'node:util';
 import { SPAWN_DEADLINE, PIPE_GRACE_MS, until } from './process.js';
+import { kitModule } from './kit-module.js';
+import { groupEnded } from './proc-state.js';
 
+// The kit's program starter: on Windows every argument goes quoted and verbatim.
+const { spawn, spawnSync } = kitModule('run');
 const IS_WINDOWS = process.platform === 'win32';
 
 // The rungs `end()` climbs, INT first so the child can log its own end, then
@@ -69,13 +72,14 @@ const checkPid = (who, pid) => {
 };
 
 /**
- * Whether the process group <pid> leads still has a member. A group whose
- * members exited but are not yet reaped answers EPERM on macOS, so the zero
- * probe reads it as gone, as `_wk_group_gone` does; a real rung's refusal throws.
+ * Whether the process group <pid> leads still has a member that has not ended;
+ * false when every member ended and is not yet collected. Such a group answers
+ * EPERM on macOS, so the zero probe reads it as gone, as `_wk_group_gone` does;
+ * a real rung's refusal throws.
  * @param {number} pid
  * @returns {boolean}
  */
-export const groupLives = (pid) => trySignal(-pid, 0) === 'sent';
+export const groupLives = (pid) => trySignal(-pid, 0) === 'sent' && !groupEnded(pid);
 
 /**
  * End the tree a raw <pid> heads: the group it leads, else the pid; on Windows
@@ -157,13 +161,18 @@ export const run = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE } = 
  */
 export const start = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE, detached = false } = {}) => {
   const child = spawn(cmd, args, { cwd, env, detached, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+  // A launch run.js refuses (Git Bash needed, found nowhere) is a child with no
+  // streams that only emits its 'error', so `done` rejects with it.
+  const refused = child.stdout === undefined;
   let out = '';
   let err = '';
   let all = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk) => { out += chunk; all += chunk; });
-  child.stderr.on('data', (chunk) => { err += chunk; all += chunk; });
+  if (!refused) {
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { out += chunk; all += chunk; });
+    child.stderr.on('data', (chunk) => { err += chunk; all += chunk; });
+  }
 
   let timedOut = false;
   let exit = {};
@@ -181,7 +190,7 @@ export const start = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE, d
   });
   const { promise: done, resolve: settleDone, reject: failDone } = Promise.withResolvers();
   child.once('error', failDone);
-  if (input !== undefined) {
+  if (input !== undefined && !refused) {
     // A child that exits without reading it all leaves the write unfinished: its exit answers, the broken pipe
     // (EPIPE, or EOF on Windows) does not.
     child.stdin.on('error', (error) => { if (error.code !== 'EPIPE' && error.code !== 'EOF') failDone(error); });

@@ -3,9 +3,8 @@
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
-const { IS_WINDOWS, BASH, NO_RC, NO_EXEC_BIT, shellPath } = require('../../lib/platform');
+const { IS_WINDOWS, NO_RC, NO_EXEC_BIT, shellPath, spawnBash } = require('../../lib/platform');
 const { CLI, cleanup, mkWorld, runCli } = require('./helpers');
 
 describe('workkit: the map', () => {
@@ -51,6 +50,6 @@ describe('workkit: the map', () => {
     // eslint-disable-next-line no-bitwise
     if (IS_WINDOWS) await t.test('workkit.sh carries the executable bit', { skip: NO_EXEC_BIT });
     else expect((fs.statSync(CLI).mode & 0o111) !== 0, 'the executable bit is set').toBeTruthy();
-    expect(spawnSync(BASH, [...NO_RC, '-n', shellPath(CLI)], { encoding: 'utf8' }).status, 'bash -n is clean').toBe(0);
+    expect(spawnBash([...NO_RC, '-n', shellPath(CLI)], { encoding: 'utf8' }).status, 'bash -n is clean').toBe(0);
   });
 });

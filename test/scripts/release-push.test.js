@@ -6,11 +6,10 @@
 
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../lib/platform');
+const { NO_RC, shellPath, spawnBash } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 
 const KIT = path.join(__dirname, '..', '..');
@@ -71,7 +70,7 @@ const mkShallow = (files) => {
 
 /** The script at `w`'s root, given `args`. */
 const run = (w, args) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
     cwd: w.repo, env: w.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };

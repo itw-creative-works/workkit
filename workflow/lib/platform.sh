@@ -268,12 +268,26 @@ wk_end_run() {
   kill -KILL -- "-$1" 2>/dev/null || true
 }
 
-# wk_pid_alive <pid>: <pid> is running. A pid Node printed is a Windows pid
-# there, which bash's kill cannot see, so Node is asked.
+# wk_pid_alive <pid>: <pid> answers kill -0 and its state does not start with Z
+# (ended, waiting for its parent to collect it): /proc's where it exists, an entry
+# gone since then read as ended; else ps's, no line leaving kill -0's answer.
+# On Windows bash's kill cannot see the Windows pid Node printed, so Node is asked.
 wk_pid_alive() {
+  local state
   case "${OSTYPE:-}" in
     msys*|cygwin*) node -e 'process.kill(Number(process.argv[1]), 0)' "$1" 2>/dev/null ;;
-    *) kill -0 "$1" 2>/dev/null ;;
+    *)
+      kill -0 "$1" 2>/dev/null || return
+      if [ -r /proc/self/stat ]; then
+        # The state follows the command name, which may hold spaces and brackets.
+        [ -e "/proc/$1/stat" ] || return 1
+        IFS= read -r state 2>/dev/null <"/proc/$1/stat" || state=
+        state="${state##*') '}"
+      else
+        state=$(ps -o stat= -p "$1" 2>/dev/null)
+      fi
+      [[ ! "$state" =~ ^[[:space:]]*Z ]]
+      ;;
   esac
 }
 

@@ -11,7 +11,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath, spawnBash,
 } = require('../lib/platform');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
@@ -24,7 +24,7 @@ const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** Source participation.sh and run one line of shell in it, the way every caller does. */
 const inSeam = (script, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(PARTICIPATION)}\n${script}`], {
+  const res = spawnBash([...NO_RC, '-c', `. ${JSON.stringify(PARTICIPATION)}\n${script}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
@@ -57,8 +57,7 @@ describe('participation.sh: sourcing it', () => {
     // A seam that set something would change the shell of every caller. The
     // control runs `:` where the other sources the file, so the comparison is
     // against a command that does nothing (bash sets PIPESTATUS at the first).
-    const vars = (first) => spawnSync(
-      BASH,
+    const vars = (first) => spawnBash(
       [...NO_RC, '-c', `${first}\ncompgen -v | sort`],
       { env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE },
     );
@@ -261,7 +260,7 @@ describe('participation.sh: wk_setting', () => {
       fs.mkdirSync(path.join(kit, 'defaults'));
       if (body !== null) fs.writeFileSync(path.join(kit, 'defaults', 'settings.json'), body);
       const script = `. ${JSON.stringify(PLATFORM)}\n. ${JSON.stringify(shellPath(path.join(lib, 'participation.sh')))}\nwk_setting ${JSON.stringify(shellPath(kit))} findings.file`;
-      const res = spawnSync(BASH, [...NO_RC, '-c', script], {
+      const res = spawnBash([...NO_RC, '-c', script], {
         env: { PATH: SYSTEM_PATH, HOME: shellPath(kit), WORKFLOW_HOME: shellPath(kit) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       const said = `${res.stdout || ''}${res.stderr || ''}`;

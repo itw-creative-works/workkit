@@ -8,8 +8,8 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  BASH, NO_RC, shellPath, gitPath, homeEnv, stubTool, basePathWithout,
-  systemPathWith, joinPath,
+  NO_RC, shellPath, gitPath, homeEnv, stubTool, basePathWithout,
+  systemPathWith, joinPath, spawnBash,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
@@ -95,7 +95,7 @@ const spawnOpts = (cwd, { home, bin }, extraEnv = {}) => ({
 });
 
 const runScript = (cwd, args, t, extraEnv = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], spawnOpts(cwd, t, extraEnv));
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], spawnOpts(cwd, t, extraEnv));
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -104,7 +104,7 @@ const runScript = (cwd, args, t, extraEnv = {}) => {
 // string cannot carry them, since every encoding of one repairs them first.
 // `$0` is the script, so the literal is the only thing interpolated.
 const runScriptBytes = (cwd, noteLiteral, t, extraEnv = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', `"$0" note ${noteLiteral}`, shellPath(SCRIPT)],
+  const res = spawnBash([...NO_RC, '-c', `"$0" note ${noteLiteral}`, shellPath(SCRIPT)],
     spawnOpts(cwd, t, extraEnv));
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };

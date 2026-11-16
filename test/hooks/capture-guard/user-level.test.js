@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, shellPath, joinPath,
+  NO_RC, shellPath, joinPath, spawnBash,
 } = require('../../lib/platform');
 const { workkitBin } = require('../../lib/workkit-bin');
 const { mods } = require('../../lib/mods-inputs');
@@ -31,7 +31,7 @@ const TMP = mkTmp('capture-guard-tmp-');
 const SCRATCH_HOME = mkTmp('capture-guard-home-');
 const SCRATCH_WH = path.join(SCRATCH_HOME, '.workkit');
 const BIN = workkitBin();
-const runSkillLine = (cwd) => spawnSync(BASH, [...NO_RC, '-c', skillLine()], {
+const runSkillLine = (cwd) => spawnBash([...NO_RC, '-c', skillLine()], {
   cwd,
   env: {
     ...process.env, HOME: shellPath(SCRATCH_HOME), WORKFLOW_HOME: shellPath(SCRATCH_WH), TMPDIR: shellPath(TMP), PATH: joinPath(BIN, process.env.PATH),

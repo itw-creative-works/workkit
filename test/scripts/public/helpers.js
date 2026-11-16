@@ -5,12 +5,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   WORKKIT_DIR: W, mkTmp, seeded, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, gitPath, homeEnv, joinPath,
+  spawnBash, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, gitPath, homeEnv, joinPath,
 } = require('../../lib/platform');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const { mkGhWorld } = require('../../lib/gh-world');
@@ -70,7 +69,7 @@ const mkPublicWorld = ({ paired = true, issues = {}, fail = [] } = {}) => {
     WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
   });
   const run = (args) => {
-    const res = spawnSync(BASH, [...NO_RC, shellPath(CLI), 'public', ...args], {
+    const res = spawnBash([...NO_RC, shellPath(CLI), 'public', ...args], {
       cwd: repo, env, input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     return { code: res.status, out: res.stdout || '', err: res.stderr || '' };

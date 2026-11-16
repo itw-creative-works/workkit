@@ -7,12 +7,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  NODE_DIR, SYSTEM_PATH, BASH, NO_RC, shellPath, joinPath,
+  NODE_DIR, SYSTEM_PATH, NO_RC, shellPath, joinPath, spawnBash,
 } = require('../lib/platform');
 const { mkRepo: mkGitRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { suiteMarkerPath, plantRecord, kitIndexTree } = require('../lib/suite-record');
@@ -68,7 +67,7 @@ const assertRefused = (res, text, label) => {
 const LIBS = ['platform', 'participation', 'slug', 'suite', 'hold'].map((n) => path.join(__dirname, '..', '..', 'workflow', 'lib', `${n}.sh`));
 const holdWith = (root, name, body, env) => {
   const script = `${LIBS.map((_, i) => `. "$${i + 1}"`).join('; ')}; ${name}() { ${body}; }; wk_suite_hold "$${LIBS.length + 1}" ${name}`;
-  const res = spawnSync(BASH, [...NO_RC, '-c', script, 'bash', ...LIBS.map(shellPath), shellPath(root)],
+  const res = spawnBash([...NO_RC, '-c', script, 'bash', ...LIBS.map(shellPath), shellPath(root)],
     { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return { code: res.status, err: res.stderr || '' };
 };

@@ -13,7 +13,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath, stubTool, joinPath } = require('../../lib/platform');
+const { NO_RC, shellPath, stubTool, joinPath, spawnBash } = require('../../lib/platform');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo, FIXTURE_ORIGIN, OPT_IN_SHAPES } = require('../../lib/git-repo');
 
@@ -226,7 +226,7 @@ const rewriteRoot = (branch) => {
  */
 const realRewrite = (template, branch = 'main') => {
   const { root, PATH } = rewriteRoot(branch);
-  const res = spawnSync(BASH, [...NO_RC, shellPath(JOB), 'rewrite', ...(template ? [shellPath(template)] : [])],
+  const res = spawnBash([...NO_RC, shellPath(JOB), 'rewrite', ...(template ? [shellPath(template)] : [])],
     { cwd: root, env: { ...process.env, PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
 };
@@ -246,7 +246,7 @@ const readWork = (r, p) => {
 // One of the kit's own scripts run for real, from a real folder.
 const realRun = (argv, init) => {
   const cwd = init.cwd && fs.existsSync(init.cwd) ? init.cwd : os.tmpdir();
-  const res = spawnSync(BASH, [...NO_RC, ...argv.slice(1)], { cwd, input: init.stdin, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+  const res = spawnBash([...NO_RC, ...argv.slice(1)], { cwd, input: init.stdin, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return runResult({ exitCode: res.status ?? 1, stdout: res.stdout || '', stderr: res.stderr || '' });
 };
 

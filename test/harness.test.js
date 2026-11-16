@@ -289,7 +289,7 @@ describe('harness: needs', () => {
 
   test('needs with no argument or a non-string one throws its TypeError', () => {
     for (const args of [[], [42], ['node', 42]]) {
-      expect(() => needs(...args), `needs(${args.map((a) => JSON.stringify(a)).join(', ')})`).toThrow(TypeError);
+      expect(() => door.needs(...args), `needs(${args.map((a) => JSON.stringify(a)).join(', ')})`).toThrow(TypeError);
     }
   });
 

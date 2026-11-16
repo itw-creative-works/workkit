@@ -3,8 +3,7 @@
 // and holds no plain value with a colon; checks.yml runs a push on main only, its scope answer
 // gates suite and changelog, and release runs on a push only; ci.yml's Scope step
 // decides before setup and gates the rest, and is checks.yml's but name and path;
-// ci.yml's test job and checks.yml's suite job each carry a 60 minute limit, and
-// each one's Test step runs under FORCE_COLOR=1.
+// ci.yml's test job and checks.yml's suite job each carry a 60 minute limit.
 
 const path = require('path');
 const fs = require('fs');
@@ -77,34 +76,6 @@ const scopeStep = (file, job) => {
   return step.filter((line) => isContent(line) && !name.test(line))
     .map((line) => line.trim().replace(/"[^"\s]*release-push\.sh"|\S*release-push\.sh/, 'RELEASE_PUSH')).join('\n');
 };
-
-// The value <key> takes in the step named <name> of jobs.<job> in <file>: the step's
-// own env, else the job's, else the workflow's; null when none of them sets it.
-const stepEnv = (file, job, name, key) => {
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-  const jobs = block(lines, 'jobs', 0);
-  const jobBlock = jobs && block(jobs, job, childIndent(jobs));
-  expect(jobBlock, `${path.basename(file)} has jobs.${job}`).toBeTruthy();
-  const at = childIndent(jobBlock);
-  const step = listItems(block(jobBlock, 'steps', at) || []).find((item) => {
-    const found = block(item, 'name', indentOf(item[0]));
-    return found && unquote(inlineValue(found)) === name;
-  });
-  expect(step, `${path.basename(file)} jobs.${job} has a ${name} step`).toBeTruthy();
-  const valueIn = (scope, indent) => {
-    const env = block(scope, 'env', indent);
-    const found = env && block(env, key, childIndent(env));
-    return found ? unquote(inlineValue(found)) : null;
-  };
-  return valueIn(step, indentOf(step[0])) ?? valueIn(jobBlock, at) ?? valueIn(lines, 0);
-};
-
-describe('workflows: a CI log keeps its color', () => {
-  test('ci.yml\'s Test step and checks.yml\'s suite Test step each run under FORCE_COLOR 1', () => {
-    expect(stepEnv(CI, 'test', 'Test', 'FORCE_COLOR'), 'ci.yml jobs.test Test: FORCE_COLOR').toBe('1');
-    expect(stepEnv(WORKFLOW, 'suite', 'Test', 'FORCE_COLOR'), 'checks.yml jobs.suite Test: FORCE_COLOR').toBe('1');
-  });
-});
 
 describe('workflows: a plain value holding a colon', () => {
   test('names a run line whose plain value holds `: `, and only that line', () => {

@@ -9,7 +9,7 @@ const vm = require('vm');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
+  spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { copySettingsKit } = require('../../lib/settings-kit');
@@ -224,7 +224,7 @@ const binDirWithout = (excluded) => {
 };
 
 const publish = (world, args = []) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
     env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `publish finished (no timeout): ${res.error || ''}`).toBeTruthy();

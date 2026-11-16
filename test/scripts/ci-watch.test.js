@@ -10,7 +10,7 @@ const {
   describe, test, expect, mkTmp, alive, until, pidIn, start, endTree, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, systemPathWith,
+  IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, systemPathWith, spawnBash,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 const { ciLockPath, suiteLogPath } = require('../lib/suite-record');
@@ -121,7 +121,7 @@ const watchEnv = (w, env = {}) => homeEnv(w.home, {
 });
 
 const runWatch = (w, args, { cwd = w.repo, env = {} } = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
     cwd, env: watchEnv(w, env), encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -675,7 +675,7 @@ describe('ship watch: the script itself', () => {
     copySettingsKit(path.dirname(kit));
     const copy = path.join(kit, 'ship', 'watch.sh');
     fs.writeFileSync(path.join(w.fx, 'rewrite'), shellPath(copy));
-    const res = spawnSync(BASH, [...NO_RC, shellPath(copy), SHA], { cwd: w.repo, env: watchEnv(w), encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const res = spawnBash([...NO_RC, shellPath(copy), SHA], { cwd: w.repo, env: watchEnv(w), encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const r = { code: res.status, out: res.stdout || '', err: res.stderr || '' };
     expect(fs.readFileSync(copy, 'utf8').split('\n')[0], 'the script on disk was rewritten while it ran').toBe('# a line added while the watch ran');
     expect(r.code, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`).toBe(0);

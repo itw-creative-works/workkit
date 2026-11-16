@@ -5,11 +5,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  BASH, NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
+  NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath, spawnBash,
 } = require('../lib/platform');
 
 const LIB = path.join(__dirname, '..', '..', 'jobs', 'brief-dispatch.sh');
@@ -70,16 +69,16 @@ const mkWorld = ({
 const dispatch = (world, lib = LIB) => {
   const script = `. ${JSON.stringify(shellPath(lib))}
 if dispatch_brief; then printf 'ok\\n%s\\n' "$DISPATCH_LINE"; else printf 'refused\\n%s\\n' "$DISPATCH_REASON"; fi`;
-  const res = spawnSync(BASH, [...NO_RC, '-c', script], { encoding: 'utf8', env: world.env, timeout: SPAWN_DEADLINE });
+  const res = spawnBash([...NO_RC, '-c', script], { encoding: 'utf8', env: world.env, timeout: SPAWN_DEADLINE });
   const [verdict, ...rest] = (res.stdout || '').split('\n');
   return { verdict, said: rest.join('\n').trim(), stderr: res.stderr || '' };
 };
 
 describe('jobs/brief-dispatch: shape', () => {
   test('bash -n: no syntax errors, and nothing runs at load', () => {
-    const res = spawnSync(BASH, [...NO_RC, '-n', shellPath(LIB)], { encoding: 'utf8' });
+    const res = spawnBash([...NO_RC, '-n', shellPath(LIB)], { encoding: 'utf8' });
     expect(res.status, `bash -n: ${res.stderr}`).toBe(0);
-    const sourced = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(shellPath(LIB))}`], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const sourced = spawnBash([...NO_RC, '-c', `. ${JSON.stringify(shellPath(LIB))}`], { encoding: 'utf8', timeout: SPAWN_DEADLINE });
     expect(sourced.status, 'sourcing it is free').toBe(0);
     expect(sourced.stdout, 'and silent').toBe('');
   });

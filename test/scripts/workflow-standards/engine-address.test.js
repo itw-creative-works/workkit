@@ -8,7 +8,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE, start,
 } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, joinPath,
+  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, joinPath, spawnBash,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith, copyDefaults,
@@ -182,7 +182,7 @@ describe("standards.sh: the engine's address", () => {
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
     copyDefaults(copyRoot);
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
+    const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
         PATH: joinPath(SYSTEM_PATH, NODE_DIR),
@@ -208,7 +208,7 @@ describe("standards.sh: the engine's address", () => {
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
     copyDefaults(copyRoot);
     mkOriginRepo(copyRoot, 'https://github.com/someone/not-the-kit.git');
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
+    const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
         PATH: joinPath(SYSTEM_PATH, NODE_DIR),
@@ -233,7 +233,7 @@ describe("standards.sh: the engine's address", () => {
     copyDefaults(copyRoot);
     mkOriginRepo(copyRoot, 'git@github.com:ITW-Creative-Works/workkit.git');
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
+    const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
         PATH: joinPath(SYSTEM_PATH, NODE_DIR),
@@ -251,7 +251,7 @@ describe("standards.sh: the engine's address", () => {
   // A plugin install is a copy with no git under it: Claude's plugin cache,
   // `<claude home>/plugins/cache/<marketplace>/<plugin>/<version>/`, whose
   // manifest names the kit. That place, not an origin, makes it the engine.
-  const engineLinkFrom = (copy, claude) => spawnSync(BASH, [...NO_RC, shellPath(path.join(copy, 'standards.sh')), '--engine-link'], {
+  const engineLinkFrom = (copy, claude) => spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), '--engine-link'], {
     env: {
       ...process.env,
       PATH: joinPath(SYSTEM_PATH, NODE_DIR),

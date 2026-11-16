@@ -8,12 +8,11 @@
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { spawnSync } = require('child_process');
 const { mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
-  BASH, NO_RC, shellPath, which, homeEnv, linkTool,
-  stubTool, pathWith, joinPath,
+  NO_RC, shellPath, which, homeEnv, linkTool,
+  stubTool, pathWith, joinPath, spawnBash,
 } = require('../../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
@@ -204,7 +203,7 @@ const withoutJq = (root, bin) => {
   return joinPath(bin, farm);
 };
 
-const runJob = (world, args = []) => spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
+const runJob = (world, args = []) => spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,
   env: world.env,

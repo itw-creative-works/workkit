@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { mkTmp, SPAWN_DEADLINE } = require('./harness');
-const { BASH, NO_RC, shellPath } = require('./platform');
+const { NO_RC, shellPath, spawnBash } = require('./platform');
 
 const TREE_HASH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'tree-hash.sh');
 
@@ -55,7 +55,7 @@ const treeHash = (dir, excluded = []) => {
 
 /** The index's tree id as the kit takes it, `bash tree-hash.sh <dir> -i`, under <env> over this process's (a GIT_INDEX_FILE names another index). */
 const kitIndexTree = (dir, env = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(TREE_HASH), shellPath(dir), '-i'],
+  const res = spawnBash([...NO_RC, shellPath(TREE_HASH), shellPath(dir), '-i'],
     { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   const id = (res.stdout || '').trim();
   if (!/^[0-9a-f]{40,64}$/.test(id)) throw new Error(`tree-hash.sh -i gave no tree id: ${res.stdout}|${res.stderr}`);

@@ -5,10 +5,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, joinPath,
+  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, joinPath, spawnBash,
 } = require('../../lib/platform');
 const { REPO_ROOT, writeStub, readJson5 } = require('./helpers');
 
@@ -88,7 +87,7 @@ const mkProject = ({
 // Run from the scratch root, never the project, so a step that lands in the
 // project got there by entering it.
 const build = (world, args) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
     cwd: world.root, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `build.sh finished (no timeout): ${res.error || ''}`).toBeTruthy();

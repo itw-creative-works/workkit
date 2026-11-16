@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 // Aliased: `seeded` here is the runner-seeded world below.
 const { expect, mkTmp, seeded: seedOnce, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
+const { spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { STAMP } = require('../../lib/version-stamp');
 
@@ -292,7 +292,7 @@ const inHome = (world, script, { input = '' } = {}) => {
   // From the world's own root, never the caller's: a shim that keys anything
   // off the cwd (as npm does) must key it off a scratch directory rather
   // than this checkout.
-  const res = spawnSync(BASH, [...NO_RC, '-c', driver], {
+  const res = spawnBash([...NO_RC, '-c', driver], {
     cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();

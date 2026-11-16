@@ -6,10 +6,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  BASH, NO_RC, shellPath, homeEnv, stubTool, pathWith,
+  NO_RC, shellPath, homeEnv, stubTool, pathWith, spawnBash,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
@@ -53,7 +52,7 @@ const mkWorld = ({ qa = [], complete = [], fail = false } = {}) => {
 };
 
 const runScript = (w, args = []) => {
-  const res = spawnSync(BASH, [...NO_RC, shellPath(SCRIPT), ...args], {
+  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
     cwd: w.dir,
     env: homeEnv(w.home, { PATH: pathWith(w.bin) }),
     encoding: 'utf8',

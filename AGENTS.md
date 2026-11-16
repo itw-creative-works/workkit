@@ -138,7 +138,7 @@
   - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutFileLink` in `test/lib/`.
 - The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
 - This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
-  - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`).
+  - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`).
 - A suite keeps to its own temp folder through `mkTmp` and touches no fixed shared path.
   - One that must is added to `SERIAL`, with the path named in a one-line comment beside its entry.
 - Then the mod half: `claude plugin test` on the kit root runs the hooks module's wiring suites, `test/mods/*.test.ts`, inside the engine.
@@ -158,7 +158,8 @@
     - So no child of a test reads the developer's own home or reaches GitHub as them.
   - A child a case starts goes through `workflow/lib/run.js` too.
     - `test/lib/platform.js` re-exports its `spawnSync`, `spawn` and `execFileSync`.
-    - `spawnBash()`, the one way a case starts the test bash, launches through it.
+    - `spawnBash()`, the one way a case starts the test bash, launches through it, as does `spawnSystemBash()` for a case whose child PATH resolves nothing.
+    - So do the harness's `run` and `start` (workkit-core's `test/lib/spawn.js`).
     - A test file still importing `child_process` sits on `test/scripts/run-home.test.js`'s list, which only shrinks.
   - `samePath(a, b, platform)` is the one compare of two spellings of a path.
     - On `win32` a Git Bash `/d/x` reads as `D:/x`, `\` folds to `/` and case is ignored.
@@ -206,7 +207,7 @@
   - A spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms).
   - The hooks module resolves the kit through `$.plugin.root`; the engine's stable address is `~/.claude/workkit`.
   - Every program the shipped Node code starts goes through `workflow/lib/run.js`, the Node twin of `platform.sh`.
-    - `test/scripts/run-home.test.js` fails any other shipped `child_process` import but the published workkit-core runner's two files.
+    - `test/scripts/run-home.test.js` fails any other shipped `child_process` import but the published workkit-core runner's `test/run.js`.
     - The rules: `workflow/README.md`, the `lib/run.js` row.
   - A path a shell line prints for a person, and every roster key, goes through `wk_native_path` in `platform.sh`, so Windows output never mixes `/d/a` and `D:/a`.
   - No shipped text (skills, agents, briefs, docs, the hook, workflow, jobs and tower READMEs) may carry a machine-specific absolute path or name the owner's own repo.

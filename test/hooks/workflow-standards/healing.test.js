@@ -5,11 +5,10 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 const {
   describe, test, after, expect, mkTmp,
 } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath, homeEnv } = require('../../lib/platform');
+const { NO_RC, shellPath, homeEnv, spawnBash } = require('../../lib/platform');
 const { runResult } = require('../../lib/mods-inputs');
 const {
   WORKFLOW_DIR, BASE_PATH, cleanup, makeRepo, heal, say, dropPathWithoutGh,
@@ -48,7 +47,7 @@ describe('workflow:standards: healing a repo', () => {
   // drift from the shape the engine prints.
   test('the relay\'s pattern matches a line the engine really prints', () => {
     const lib = shellPath(path.join(WORKFLOW_DIR, 'lib.sh'));
-    const said = spawnSync(BASH, [...NO_RC, '-c', `. ${JSON.stringify(lib)}; WK_LOG_INDENT='  '; WK_LOG_STDERR=1 wk_ok 'engine: linked a to b'`], {
+    const said = spawnBash([...NO_RC, '-c', `. ${JSON.stringify(lib)}; WK_LOG_INDENT='  '; WK_LOG_STDERR=1 wk_ok 'engine: linked a to b'`], {
       encoding: 'utf8', env: homeEnv(mkTmp('wf-hook-'), { PATH: BASE_PATH, WORKKIT_COLOR: '0' }),
     });
     expect(said.status, `the logger ran, got: ${said.stderr}`).toBe(0);

@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const {
   SCRIPT, HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');
@@ -81,7 +81,7 @@ describe('jobs/morning (cloud): a runner only', () => {
 
     const env = { ...world.env };
     delete env.GITHUB_ACTIONS;
-    spawnSync(BASH, [...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
+    spawnBash([...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
 
     expect(fs.readFileSync(roster, 'utf8'), 'the roster is byte-identical: nothing was registered or dropped').toBe(before);
     expect(world.calls().length, 'and nothing was sent: the day is dispatched from a machine, never composed on it').toBe(0);

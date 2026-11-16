@@ -6,7 +6,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_BASH, SYSTEM_PATH, NO_RC, shellPath, gitPath, which, linkTool, systemPathWith,
+  SYSTEM_PATH, NO_RC, shellPath, gitPath, which, linkTool, systemPathWith, spawnBash, spawnSystemBash,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, copyDefaults,
@@ -22,7 +22,7 @@ describe('standards.sh: it fails loudly, never silently', () => {
     fs.rmSync(path.join(engine, 'templates', 'session.md'));
     const repo = makeRepo();
     const stub = makeGhStub();
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
+    const res = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env, PATH: systemPathWith(stub.binDir),
         WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
@@ -50,13 +50,13 @@ describe('standards.sh: it fails loudly, never silently', () => {
       ...process.env, PATH: SYSTEM_PATH,
       WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
     };
-    const state = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const state = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     expect(state.status, '--state answers without the manifest').toBe(0);
     expect((state.stdout || '').trim(), 'and answers correctly').toBe('enabled');
-    const announce = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--announce', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const announce = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--announce', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     expect(announce.status, '--announce answers without the manifest').toBe(0);
     expect((announce.stdout || '').includes('--enable'), 'and still offers').toBeTruthy();
-    const heal = spawnSync(BASH, [...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const heal = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
     const out = (heal.stdout || '') + (heal.stderr || '');
     expect(out.includes('labels.json missing'), `the heal names the broken install, got: ${out}`).toBeTruthy();
     expect(heal.status, 'and exits non-zero so the caller retries').toBe(1);
@@ -162,7 +162,7 @@ describe('standards.sh: it fails loudly, never silently', () => {
     }
     for (const [settings, want] of [['{ "version": 1, "enabled": false }\n', 'disabled'], ['{ "version": 1 }\n', 'undecided']]) {
       const repo = makeRepo({ settings });
-      const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
+      const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
         env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       expect((res.stdout || '').trim(), `${settings.trim()} on a jq-less machine, stderr: ${res.stderr}`).toBe(want);

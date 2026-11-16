@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import { constants } from 'node:os';
-import { fork, spawn, spawnSync } from 'node:child_process';
+import { fork, spawn } from 'node:child_process';
 import { suiteName, POOL } from './lib/suites.js';
 import { readFilter, writtenPaths } from './lib/suite-path.js';
 import { pickSuites, SKIP_FILE } from './lib/pick.js';
@@ -20,6 +20,10 @@ import { PIPE_GRACE_MS, SUITE_DEADLINE } from './lib/process.js';
 import { endTree, endGroup, groupLives } from './lib/spawn.js';
 import { indentRest, indentWriter } from './lib/log.js';
 import { paint } from './lib/paint.js';
+import { kitModule } from './lib/kit-module.js';
+
+// The kit's program starter: on Windows it finds a `claude.cmd` a raw start misses.
+const { spawnSync } = kitModule('run');
 
 const SLOWEST = 5;
 // Why the mod half and the members do not start under a filter.
@@ -183,8 +187,8 @@ const runWorker = (suite, { root, filter }, deadline) => new Promise((resolve) =
 });
 
 // Off Windows each worker leads its own group, which a signal to the runner's
-// never reaches: on one the runner ends every live worker's group, starts no more,
-// and exits as the signal would, 128 plus its number. A second KILLs each group the
+// never reaches: on one the runner ends every live worker's group, starts and prints
+// no more, and exits as the signal would, 128 plus its number. A second KILLs each group the
 // first began to end that still lives, before any await, so a KILL to the runner after it cannot land first.
 const passSignalsOn = () => {
   for (const signal of PASSED_ON) {
@@ -265,8 +269,10 @@ export const main = async (argv) => {
   if (membersHeld) skippedSuites.push({ name: 'members', reason: NOT_UNDER_FILTER });
 
   // One finished suite: its block printed whole, its counts and time added.
-  // Under a filter, a suite whose every case was left out prints and counts nothing.
+  // Under a filter, a suite whose every case was left out prints and counts nothing,
+  // and so does one that ends while a signal is ending the run.
   const report = (suite, outcome) => {
+    if (stopping) return;
     const rel = suiteName(root, suite);
     const res = outcome.result;
     if (filter !== null && res && !outcome.timedOut && res.passed + res.failed + res.skips.length === 0) return;
@@ -315,6 +321,10 @@ export const main = async (argv) => {
   for (const suite of serial.filter((s) => suites.includes(s))) {
     report(suite, await runWorker(suite, args, deadline));
   }
+
+  // A worker that ended while a signal is ending the run lets the wave finish:
+  // the signal's handler exits the run, so no mod half, member or totals follow.
+  if (stopping) return;
 
   if (withMods) {
     showLine('\n▶ mod half: claude plugin test');

@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('./harness');
 const {
-  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, which, joinPath, homeEnv, spawnSync,
+  NO_RC, NODE_DIR, SYSTEM_PATH, which, joinPath, homeEnv, spawnSync, spawnBash,
 } = require('./platform');
 
 const CORE = path.join(__dirname, '..', '..', 'packages', 'core');
@@ -47,7 +47,7 @@ const npmEnv = (home, extra = {}) => {
  * @returns {{code: ?number, output: string}}
  */
 const npmIn = (cwd, args) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', ...args], {
+  const res = spawnBash([...NO_RC, '-c', 'exec npm "$@"', 'npm', ...args], {
     cwd,
     env: npmEnv(mkTmp('core-npm-home-')),
     encoding: 'utf8',
@@ -71,19 +71,19 @@ const copyCoreRepo = seeded((seed) => {
   write('test/b.test.js', SUITE('b case'));
   const installed = npmIn(seed, ['install', '--offline', '--no-audit', '--no-fund', '--no-package-lock']);
   expect(installed.code, `npm install links workkit-core, got: ${installed.output}`).toBe(0);
-  // npm links relative, which a copy at another depth would break.
-  const link = path.join(seed, 'node_modules', 'workkit-core');
-  if (!path.isAbsolute(fs.readlinkSync(link))) {
-    fs.unlinkSync(link);
-    fs.symlinkSync(path.resolve(CORE), link, 'junction');
-  }
+  // Each copy links the package itself: npm links relative here, which a copy at
+  // another depth breaks, and on Windows a copy of npm's junction is a copy of the
+  // package's files, away from the kit checkout its runner reads.
+  fs.unlinkSync(path.join(seed, 'node_modules', 'workkit-core'));
 });
 
-/** A git repo holding a copy of the seeded repo on the package. */
+/** A git repo holding a copy of the seeded repo, its workkit-core a link to the kit's package. */
 const mkCoreRepo = () => {
   const repo = mkTmp('core-repo-');
   spawnSync('git', ['init', '-q'], { cwd: repo });
   copyCoreRepo(repo);
+  // A junction on Windows, which needs no privilege; elsewhere the type is ignored.
+  fs.symlinkSync(path.resolve(CORE), path.join(repo, 'node_modules', 'workkit-core'), 'junction');
   return repo;
 };
 

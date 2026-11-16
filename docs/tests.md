@@ -95,11 +95,12 @@
 - The package holds:
   - `test/run.js`;
   - `test/tools.js` (the `tools` verb) and `test/convert.js` (the `convert` verb);
-  - its library beside them in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `pick.js`, `members.js`, `paint.js`, `convert-read.js`, `convert-map.js`);
-    - `pick.js` picks a run's suites, the serial tail's order and the skip lists' leftovers; `members.js` reads a monorepo root's members and runs one member's `npm test`;
+  - its library beside them in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `proc-state.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `pick.js`, `members.js`, `kit-module.js`, `paint.js`, `convert-read.js`, `convert-map.js`);
+    - `pick.js` picks a run's suites, the serial tail's order and the skip lists' leftovers; `members.js` reads a monorepo root's members and runs one member's `npm test`; `kit-module.js` loads a kit file the package ships a copy of (`kitModule(stem)`); `proc-state.js` reads whether a process, or every member of a group, ended and waits uncollected, for `alive` and `groupLives`;
   - the export `workkit-core/test`, the entry `harness.js` builds: Node's case functions, its own `test`, `it`, `needs`, `hasLaunchd` and `WORKKIT_DIR`, and every export of `process.js`, `scratch.js`, `seed.js`, `suites.js`, `log.js`, `spawn.js` and `expect.js`;
-  - plus `workkit-core/run`, the kit's `workflow/lib/run.js` its prepack copies in as `run.cjs`;
-  - plus the kit's `workflow/lib/expand-workspaces.js`, copied in as `expand-workspaces.cjs`, the expansion of `workspaces` the publish plan, the package record and the runner share. In the kit's own checkout the runner reads the kit's file, so a copy a local `npm pack` left there never wins; elsewhere it reads the packed copy.
+  - plus `workkit-core/run`, the kit's `workflow/lib/run.js` its prepack copies in as `run.cjs`, which the library's `run` and `start` launch through;
+  - plus the kit's `workflow/lib/expand-workspaces.js`, copied in as `expand-workspaces.cjs`, the expansion of `workspaces` the publish plan, the package record and the runner share.
+  - `kit-module.js` reads each of the two: in the kit's own checkout the kit's file, so a copy a local `npm pack` left there never wins; elsewhere the packed copy.
 - It is ES, and a CommonJS suite `require()`s it alike.
 - Its README (`packages/core/README.md`) lists the exports.
 - The door, `workkit-core/test`, hands out Node's own `describe`, `before`, `after`, `beforeEach`, `afterEach` and `mock`, untouched.
@@ -175,6 +176,7 @@
     - It takes the platform, the program runner and `SystemRoot` as seams (`endTree(pid, signal, seams)`), so a case reaches that arm on any machine.
     - It ends a test's own child. The kit's own end, `endTreeOf` in `workflow/lib/tree.js`, ends a whole supervised run instead: it reads the Windows and the Git Bash process tables and ends each process of the tree, so it reaches what `taskkill /T` misses. The package cannot require it, since it is published alone.
   - `alive(pid)` is false for anything but a positive integer, since 0 or a negative pid reaches a whole group.
+    - It is false, and `groupLives(pid)` too once every member is, for a process that ended and is not yet collected.
   - A real signal the system refuses for the pid itself rejects `end()` (and throws from `endTree`), naming the pid and `EPERM`.
     - A refused group falls through to the pid, since a leader that exited unreaped refuses its group.
     - The zero probe reads a refused group as gone.
@@ -249,6 +251,7 @@
     - So a child the suite left running, still holding that output, never holds the run, and is left alive.
   - A suite whose own process stays alive (an open server, a live timer) waits for the deadline and fails as timed out.
   - Off Windows a signal to the runner's group reaches no worker, so on `SIGINT`, `SIGTERM` or `SIGHUP` the runner ends every live worker's group the same way, then exits 128 plus the signal's number.
+    - Meanwhile it prints nothing more: no block for a suite that ends while it waits, and no mod half, member or totals line.
     - A second of the three while it is ending sends `SIGKILL` at once, before anything else runs, to every group the first began to end that still lives, its worker exited or not, then exits 128 plus that second signal's number.
       - So `workkit prove`'s ladder on the runner (`wk_end_run`) leaves no worker behind: its `SIGTERM` has the runner KILL every worker before its own `SIGKILL` comes.
     - A runner ended by `SIGKILL` cannot; a worker then ends its own tree only once its event loop notices the parent gone.
@@ -291,7 +294,7 @@
   - A line is painted by how it starts after its indent: a `✓` mark green, a `✗` line red, a `⊘` line and `slowest:` gray, a `▶` line, a `[outer › inner]` heading, the totals line and `Failures:` bold. Any other line is left byte for byte.
   - `node test/lib/paint.js` is the same painter as a filter: standard input to standard output, each whole line painted once its line end arrives, what follows the last line end written when the input ends.
   - So a run's log file is plain, and the kit's terminal view of a long run paints it as it shows it (`workflow/README.md` § `lib/detach.sh`).
-  - With `FORCE_COLOR` in the run's environment the parent paints into its log file too: that is how a CI log keeps its color.
+  - With `FORCE_COLOR` in the run's environment the parent paints into its log file too. Every program a suite starts inherits it as well, and Node then colors what they print (`console.log` of a number), so set it for a run only when no suite reads such output.
 - A run a case starts (`workkit test` in a scratch folder) is a run of its own.
   - Node's runner runs nothing under `NODE_TEST_CONTEXT`, the variable its own test files inherit, so the runner drops it from its environment as it starts.
   - A case that starts a suite file with `node <file>` passes an env without that variable.
@@ -324,8 +327,8 @@
   - It deliberately lacks Jest's asymmetric matchers (`expect.any`), snapshots and mocks.
 - CI fetches the runner like any dependency.
   - The install brings the package, so no step clones the kit for it.
-  - The test step of the kit's CI (`ci.yml`, and the kit's own `checks.yml`) sets `FORCE_COLOR=1`, so a CI log keeps its color.
-  - The heal's rewrite of `checks.yml` to the kit's caller drops the one an older copy carries.
+  - The test step of the kit's CI (`ci.yml`, and the kit's own `checks.yml`) sets no `FORCE_COLOR`, so a CI log is plain and a suite's own programs print as they do on a pipe.
+  - The heal's rewrite of `checks.yml` to the kit's caller drops a `FORCE_COLOR` an older copy carries.
 - The standards heal names a participating repo whose test script does not run this runner.
   - It is one line: `npm i -D workkit-core` and `"test": "workkit test"`.
   - It is skipped when the repo's devDependencies name `workkit-core`, whatever its test script.

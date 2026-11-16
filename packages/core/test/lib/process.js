@@ -6,6 +6,7 @@
  */
 
 import fs from 'node:fs';
+import { ended } from './proc-state.js';
 
 /**
  * The cap every spawn a suite makes carries (`timeout:` on spawnSync, the
@@ -29,11 +30,13 @@ const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 /**
  * Whether <pid> names a live process this user may signal; false for anything
- * but a positive integer, since 0 or a negative pid reaches a whole group.
+ * but a positive integer, since 0 or a negative pid reaches a whole group, and
+ * for a process that ended and is not yet collected.
  */
 export const alive = (pid) => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0); } catch { return false; }
+  return !ended(pid);
 };
 
 /**

@@ -8,7 +8,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_BASH, NO_RC, gitPath, shellPath, samePath,
+  IS_WINDOWS, NO_RC, gitPath, shellPath, samePath, spawnSystemBash,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const {
@@ -279,7 +279,7 @@ describe('standards.sh: participation', () => {
     fs.writeFileSync(file, OPT_IN_SHAPES.current);
     fs.chmodSync(file, 0o000);
     const binDir = binDirWithout('jq');
-    const res = spawnSync(SYSTEM_BASH, [
+    const res = spawnSystemBash([
       ...NO_RC, '-c', '. "$1"; . "$2"; repo_enabled_flag "$3"', 'bash',
       shellPath(path.join(WORKFLOW_DIR, 'lib', 'participation.sh')),
       shellPath(path.join(WORKFLOW_DIR, 'standards', 'state.sh')),

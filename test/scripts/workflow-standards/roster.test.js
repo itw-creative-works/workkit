@@ -8,7 +8,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, start,
 } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, cygpathStub, joinPath,
+  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, cygpathStub, joinPath, spawnSystemBash,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, binDirWithout,
@@ -264,7 +264,7 @@ describe('standards.sh: the roster', () => {
     // A PATH with no jq anywhere on it: the roster edit is a jq edit, and a
     // machine without it must lose the index, never the heal.
     const binDir = binDirWithout('jq');
-    const res = spawnSync(SYSTEM_BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
+    const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(home), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')) },
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,

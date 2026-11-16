@@ -4,10 +4,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
 
 describe('jobs/morning (local): the brief is the cloud’s', { skip: skipUnlessDarwin() }, () => {
@@ -65,7 +64,7 @@ describe('jobs/morning (local): the brief is the cloud’s', { skip: skipUnlessD
     const stray = path.join(world.root, 'stray-jobs');
     fs.mkdirSync(stray, { recursive: true });
     fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
-    const res = spawnSync(BASH, [...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+    const res = spawnBash([...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
     expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
     expect(world.dispatched().length, 'nothing was triggered').toBe(0);
     expect(/kit is incomplete/.test(world.log()), `the reason names the missing lib: ${world.log()}`).toBeTruthy();

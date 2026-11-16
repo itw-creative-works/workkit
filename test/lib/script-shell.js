@@ -14,7 +14,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, SPAWN_DEADLINE } = require('./harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, WINDOWS_CSC, shellPath, gitPath, which, joinPath, homeEnv,
+  IS_WINDOWS, NODE_DIR, NO_RC, SYSTEM_PATH, WINDOWS_CSC, shellPath, gitPath, which, joinPath, homeEnv,
+  spawnBash,
 } = require('./platform');
 const { suiteMarkerPath, pkgRecord } = require('./suite-record');
 const { FIXTURE_ORIGIN } = require('./git-repo');
@@ -33,7 +34,7 @@ fs.mkdirSync(EXE_HOME, { recursive: true });
 const buildExe = () => {
   if (!fs.existsSync(WINDOWS_CSC)) return null;
   const cli = path.join(WORKFLOW_DIR, 'workkit.sh');
-  const res = spawnSync(BASH, [...NO_RC, '-c', `. "${shellPath(cli)}" help >/dev/null; script_shell_exe`], {
+  const res = spawnBash([...NO_RC, '-c', `. "${shellPath(cli)}" help >/dev/null; script_shell_exe`], {
     env: { ...process.env, WORKFLOW_HOME: shellPath(EXE_HOME) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   // A compile error must never read as a machine without a compiler.
@@ -134,10 +135,11 @@ const mkWorld = () => {
 /**
  * npm run in <cwd> with <args>, through the world's script shell unless `shell`
  * names another, with <extra> merged over the world's env. The flag goes first:
- * after a `--` npm hands it to the script instead.
+ * after a `--` npm hands it to the script instead. Started through run.js, so a
+ * Windows child keeps the ComSpec a member's `npm test` starts through.
  */
 const npm = (world, cwd, args, shell = world.wrapper, extra = {}) => {
-  const res = spawnSync(BASH, [...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${shell}`, ...args], {
+  const res = spawnBash([...NO_RC, '-c', 'exec npm "$@"', 'npm', `--script-shell=${shell}`, ...args], {
     cwd, env: { ...world.env, ...extra }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `npm ${args.join(' ')} finished: ${res.error || ''}`).toBeTruthy();

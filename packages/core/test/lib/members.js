@@ -5,20 +5,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { suiteName } from './suites.js';
 import { mkTmp } from './scratch.js';
+import { kitModule } from './kit-module.js';
 
-const require = createRequire(import.meta.url);
 const IS_WINDOWS = process.platform === 'win32';
 
-// The expansion: in the kit's own checkout the kit's file, so a copy a local
-// `npm pack` left beside it never wins; elsewhere the packed copy at the
-// package's root.
-const PACKAGE_ROOT = path.join(import.meta.dirname, '..', '..');
-const PACKED = path.join(PACKAGE_ROOT, 'expand-workspaces.cjs');
-const IN_KIT = path.join(PACKAGE_ROOT, '..', '..', 'workflow', 'lib', 'expand-workspaces.js');
-const { expandWorkspaces, PlanError } = require(fs.existsSync(IN_KIT) ? IN_KIT : PACKED);
+const { expandWorkspaces, PlanError } = kitModule('expand-workspaces');
 
 // The row and failure text of a member whose run wrote no summary line.
 const NOT_ON_RUNNER = 'its test script did not run workkit\'s runner';
