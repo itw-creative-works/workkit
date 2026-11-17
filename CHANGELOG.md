@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-11-17
+
 ### Changed
 
-- [#556](../../issues/556) - workkit-core's runner runs Node suites only and reads no list file. A plugin's `claude plugin test` runs as one case through the new `modCase`, which replaces `modDir` and `findModSuites`, both gone from `workkit-core/test`; a suite that runs alone is named `*.serial.test.js`, and a leftover `test/lib/serial.js` or `test/lib/skip.js` stops the run.
+- [#556](../../issues/556) [`eacd887`](../../commit/eacd887) Thanks [@ianwieds]! - workkit-core's runner runs Node suites only and reads no list file. A plugin's `claude plugin test` runs as one case through the new `modCase`, which replaces `modDir` and `findModSuites`, both gone from `workkit-core/test`; a suite that runs alone is named `*.serial.test.js`, and a leftover `test/lib/serial.js` or `test/lib/skip.js` stops the run.
 
 ## [0.98.1] - 2026-11-17
 
