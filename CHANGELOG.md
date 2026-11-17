@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.99.2] - 2026-11-17
+
 ### Changed
 
-- [#562](../../issues/562) - The tree id and the suite and package records each live in one Node file, `workflow/lib/tree-hash.js` or `workflow/lib/records.js`. The hooks run it, and the CHANGELOG linter, under their own Node, with no bash. With no Node 22.12 or newer, a green run records nothing, says why and exits 1.
+- [#562](../../issues/562) [`f76308a`](../../commit/f76308a) Thanks [@ianwieds]! - The tree id and the suite and package records each live in one Node file, `workflow/lib/tree-hash.js` or `workflow/lib/records.js`. The hooks run it, and the CHANGELOG linter, under their own Node, with no bash. With no Node 22.12 or newer, a green run records nothing, says why and exits 1.
 
 ## [0.99.1] - 2026-11-17
 
