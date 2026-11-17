@@ -34,9 +34,15 @@ collect() {
 
 # end_run <log> <lock> <pid>: the end request and its wait (wk_ask_end), for
 # the done file or the lock dropped by the call attached to the run once it read it.
+# A supervisor gone with no answer has its own line, apart from a wait that ran out.
 end_run() {
-  local log="$1" lock="$2" pid="$3"
-  wk_ask_end "$lock" "$pid" || fail "the run did not end; its supervisor is pid $pid"
+  local log="$1" lock="$2" pid="$3" rc=0
+  wk_ask_end "$lock" "$pid" || rc=$?
+  case "$rc" in
+    0) ;;
+    2) fail "the run's supervisor (pid $pid) is gone and left no answer" ;;
+    *) fail "the run did not end; its supervisor is pid $pid" ;;
+  esac
   [ ! -f "$lock/done" ] || collect "$log" "$lock" "$pid"
   tail -n 1 "$log"
 }

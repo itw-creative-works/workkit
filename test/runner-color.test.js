@@ -6,6 +6,7 @@
 const { stripVTControlCharacters } = require('util');
 const { describe, test, expect } = require('./lib/harness');
 const { SUITE, mkWorld } = require('./lib/runner-world');
+const { failureLinesOf } = require('./lib/run-lists');
 
 const ESC = '\u001b';
 const GREEN = `${ESC}[32m`;
@@ -43,9 +44,6 @@ const shapeOf = (output) => output.split(/\r?\n/).map((line) => line.replace(/\d
 
 const markLine = (output, mark) => output.split(/\r?\n/).find((line) => stripVTControlCharacters(line).includes(mark));
 
-// The lines after `Failures:`, whatever wraps that heading.
-const failuresOf = (lines) => lines.slice(lines.findIndex((line) => stripVTControlCharacters(line) === 'Failures:') + 1);
-
 // A line with the painter's own wrap taken off, by the painter's rule (paint.js): only a line
 // that starts as the rule says, so a code Node wrote inside a message stays.
 const unpaint = (line) => line
@@ -58,7 +56,7 @@ const unpaint = (line) => line
 const failedParts = (lines) => {
   const at = lines.findIndex((line) => stripVTControlCharacters(line).trim().startsWith('✗ differs'));
   const end = lines.findIndex((line, i) => i > at && line.trim() === '');
-  return { block: lines.slice(at, end), failures: failuresOf(lines) };
+  return { block: lines.slice(at, end), failures: failureLinesOf(lines) };
 };
 
 describe('run.js: color by Node\'s rule', () => {
@@ -93,9 +91,9 @@ describe('run.js: a failure reads the same under FORCE_COLOR=1', () => {
     const [plain, forced] = runSuite(UNPARSED, {}, { FORCE_COLOR: '1' });
     const plainFailures = shapeOf(plain.output).filter(Boolean);
     const forcedFailures = shapeOf(stripVTControlCharacters(forced.output)).filter(Boolean);
-    const named = failuresOf(forcedFailures);
+    const named = failureLinesOf(forcedFailures);
     expect(named.some((line) => line.trim().startsWith('- load test/x.test.js: ')), `named load test/x.test.js, got: ${forced.output}`).toBe(true);
-    expect(named, `the plain run's Failures: lines, plain: ${plain.output}`).toEqual(failuresOf(plainFailures));
+    expect(named, `the plain run's Failures: lines, plain: ${plain.output}`).toEqual(failureLinesOf(plainFailures));
   });
 
   test('a case failing on assert.deepStrictEqual, under FORCE_COLOR=1: its block and its Failures: lines, the painter\'s wrap off, are the plain run\'s', () => {

@@ -148,7 +148,7 @@
 - One suite runs alone as `npm test -- test/<path>.test.js`, or as `node test/<path>.test.js` with no line added.
   - The runner takes suite paths after `--`, and exits 1 naming a path that matches no suite.
   - A case that starts the runner, or a suite file with `node`, passes `aloneEnv()` (`test/lib/alone-env.js`), its env without `NODE_TEST_CONTEXT`, `WORKKIT_TEST_SUMMARY` and `WORKKIT_TEST_NO_MATCH`.
-  - `test/lib/run-lists.js` reads a run's end (`TOTALS_LINE`, `linesOf`, `listsOf`, `marksOf`, `totalsOf`, `failuresOf`), and `caught(fn)` (`test/lib/caught.js`) what a call threw or rejected with, or `null`.
+  - `test/lib/run-lists.js` reads a run's end (`TOTALS_LINE`, `linesOf`, `listsOf`, `marksOf`, `totalsOf`, `failuresOf`, `failureLinesOf`), and `caught(fn)` (`test/lib/caught.js`) what a call threw or rejected with, or `null`.
 - Every suite runs on macOS and on Windows under Git Bash, or skips whole by name on the platform it cannot answer.
 - Everything that differs lives in `test/lib/platform.js`, every export the identity on macOS and Linux.
   - What differs: the shell a case spawns, a PATH it controls, the POSIX spelling a shell script sees, how a tool reaches a stub PATH.

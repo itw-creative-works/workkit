@@ -3,7 +3,7 @@
 # command that outlives the shell that started it, one per lock, its output
 # tailed to this shell while it runs. Sourced, functions only, by
 # script-shell.sh, prove.sh, supervise.sh, watch.sh and ship/watch.sh; it reads
-# wk_claim_dir, wk_pid_alive, wk_end_run, wk_node and wk_native_path from platform.sh, and
+# wk_claim_dir, _wk_lock_tag (its WK_LOCK_TAG), wk_retire_judged, wk_retire_lock, wk_pid_alive, wk_end_run, wk_node and wk_native_path from platform.sh, and
 # wk_color_on from voice.sh, which it sources when the caller has not.
 
 # wk_body_traps <prefix> [<before-exit command>]: a detached body's traps. Its
@@ -27,19 +27,41 @@ _wk_write_pid() {
   printf '%s\n' "$2" > "$1/pid.tmp" && mv -f "$1/pid.tmp" "$1/pid"
 }
 
-# _wk_drop_run_lock <lock> <pid>: remove <lock> only while <pid> holds it; a
-# run that took it over has written its own pid there.
+# _wk_lock_pid <lock>: the supervisor's pid <lock>/pid holds, printed; 1 with no file.
+_wk_lock_pid() {
+  cat "$1/pid" 2>/dev/null
+}
+
+# _wk_lock_wait <path> <tenths> [pid]: wait up to <tenths> of a second while
+# <path> (a lock, or one file in it) stands; with `pid`, only while the lock
+# stands with no pid file.
+_wk_lock_wait() {
+  local waited=0
+  while [ -e "$1" ] && { [ "${3:-}" != pid ] || [ ! -f "$1/pid" ]; } && [ "$waited" -lt "$2" ]; do
+    sleep 0.1
+    waited=$(( waited + 1 ))
+  done
+}
+
+# _wk_drop_run_lock <lock> <pid>: retire <lock> only while <pid> holds it; a
+# run that took it over has written its own pid there. The mark is read before
+# the pid, so a lock taken over after that read keeps its own; none is adopted.
 _wk_drop_run_lock() {
+  wk_retire_judged "$1" _wk_held_by "$2" || :
+}
+
+# _wk_held_by <lock> <pid>: 0 while <lock>/pid holds <pid>.
+_wk_held_by() {
   local held
-  held=$(cat "$1/pid" 2>/dev/null) || held=""
-  if [ "$held" = "$2" ]; then rm -rf "$1"; fi
+  held=$(_wk_lock_pid "$1") || held=""
+  [ "$held" = "$2" ]
 }
 
 # wk_run_live <lock>: 0, printing the supervisor's pid, while <lock> holds a run
 # that is going: a pid file, no done file, and that pid alive. 1 otherwise.
 wk_run_live() {
   local pid
-  pid=$(cat "$1/pid" 2>/dev/null) || return 1
+  pid=$(_wk_lock_pid "$1") || return 1
   if [ -z "$pid" ] || [ -f "$1/done" ] || ! wk_pid_alive "$pid"; then return 1; fi
   printf '%s\n' "$pid"
 }
@@ -49,19 +71,33 @@ wk_run_live() {
 # file written. 1 otherwise.
 wk_run_held() {
   local pid
-  pid=$(cat "$1/pid" 2>/dev/null) || return 1
+  pid=$(_wk_lock_pid "$1") || return 1
   if [ -z "$pid" ] || { [ ! -f "$1/done" ] && ! wk_pid_alive "$pid"; }; then return 1; fi
   printf '%s\n' "$pid"
 }
 
-# wk_take_run_lock <lock>: 0 holding <lock>, 3 when a live run holds it (its
-# pid in WK_HELD_PID), 1 when it cannot be made. A run that is over (its done
-# file written, its pid gone, or no pid 5s after the take) is taken over; a
-# done file gets 2s first, for the foreground that is collecting it.
+# _wk_run_over <lock>: wk_take_run_lock's judge. 0 when <lock>'s run is over: its
+# done file written (the folder given 2s first to go), its pid gone, or no pid
+# 5s on. 3 with WK_HELD_PID set while a live run holds it; 1 when it went meanwhile.
+_wk_run_over() {
+  _wk_lock_wait "$1" 50 pid
+  if WK_HELD_PID=$(wk_run_live "$1"); then return 3; fi
+  WK_HELD_PID=""
+  [ -f "$1/done" ] || return 0
+  # The foreground collecting the done file drops the lock itself.
+  _wk_lock_wait "$1" 20
+  [ -d "$1" ]
+}
+
+# wk_take_run_lock <lock>: 0 holding <lock> (its mark in WK_LOCK_MARK), 3 when
+# a live run holds it (its pid in WK_HELD_PID), 1 when it cannot be made. A run
+# that is over (its done file written, its pid gone, or no pid 5s after the take)
+# is taken over by its mark; a done file gets 2s first, for the foreground collecting it.
 wk_take_run_lock() {
-  local lock="$1" tries=0 waited
+  local lock="$1" tries=0 own found mark
+  WK_LOCK_MARK=""
   mkdir -p "${lock%/*}" || return 1
-  until wk_claim_dir "$lock"; do
+  until _wk_lock_tag && own="$WK_LOCK_TAG" && wk_claim_dir "$lock" "$own"; do
     tries=$(( tries + 1 ))
     if [ "$tries" -gt 3 ] || { [ -e "$lock" ] && [ ! -d "$lock" ]; }; then
       printf 'detach: could not take the lock %s\n' "$lock" >&2
@@ -69,23 +105,24 @@ wk_take_run_lock() {
     fi
     # Gone between the failed take and this look: its run just ended.
     [ -e "$lock" ] || continue
-    waited=0
-    while [ -d "$lock" ] && [ ! -f "$lock/pid" ] && [ "$waited" -lt 50 ]; do
-      sleep 0.1
-      waited=$(( waited + 1 ))
-    done
-    if WK_HELD_PID=$(wk_run_live "$lock"); then return 3; fi
-    WK_HELD_PID=""
-    if [ -f "$lock/done" ]; then
-      waited=0
-      while [ -d "$lock" ] && [ "$waited" -lt 20 ]; do
-        sleep 0.1
-        waited=$(( waited + 1 ))
-      done
-      [ -d "$lock" ] || continue
+    # Any answer but 3 and 4 (a removal lost to another caller included) is judged again.
+    found=0
+    wk_retire_judged "$lock" _wk_run_over || found=$?
+    [ "$found" -ne 3 ] || return 3
+    if [ "$found" -eq 4 ]; then
+      # A live remover's gone mark gets the 5s a pid gets to go, at no try's cost;
+      # whatever stands after it (none, a new lock) is judged on the next pass.
+      tries=$(( tries - 1 ))
+      mark=$(wk_lock_mark "$lock") || mark=""
+      case "$mark" in gone.*) ;; *) continue ;; esac
+      _wk_lock_wait "$lock/$mark" 50
+      if [ -e "$lock/$mark" ]; then
+        printf 'detach: could not take the lock %s\n' "$lock" >&2
+        return 1
+      fi
     fi
-    rm -rf "$lock"
   done
+  WK_LOCK_MARK="id.$own"
   # The last run's record is no answer for the new one.
   rm -f "$lock.done"
 }
@@ -110,20 +147,36 @@ _wk_recorded_code() {
 # The seconds wk_ask_end waits on an end request.
 WK_END_WAIT=30
 
+# _wk_gone_answer <lock> <pid>: wk_ask_end's answer once supervisor <pid> is
+# gone, the lock read once more: 0 for a done file or a lock holding another pid
+# or none, 2 for neither. A gone supervisor wrote any done file it will, so the
+# done file is looked at before the pid, which the drop that follows it clears.
+_wk_gone_answer() {
+  local held
+  [ ! -f "$1/done" ] || return 0
+  held=$(_wk_lock_pid "$1") || held=""
+  [ "$held" != "$2" ] || return 2
+}
+
 # wk_ask_end <lock> <pid>: while <lock> holds <pid>, write the end request, then
 # wait up to WK_END_WAIT seconds; 0 once the done file is written or <lock> holds
-# another pid or none, 1 when the wait runs out or <pid> is gone with no done
-# file. Prints nothing.
+# another pid or none, 1 when the wait runs out, 2 when <pid> is gone, <lock>
+# still holds it and no done file is there. Prints nothing.
 wk_ask_end() {
   local lock="$1" pid="$2" deadline=$(( SECONDS + WK_END_WAIT )) held
-  held=$(cat "$lock/pid" 2>/dev/null) || held=""
+  held=$(_wk_lock_pid "$lock") || held=""
   [ "$held" = "$pid" ] || return 0
+  # A supervisor gone already gets no end request: its lock stays as it was.
+  wk_pid_alive "$pid" || { _wk_gone_answer "$lock" "$pid"; return; }
   { : > "$lock/end"; } 2>/dev/null
   while :; do
-    held=$(cat "$lock/pid" 2>/dev/null) || held=""
+    held=$(_wk_lock_pid "$lock") || held=""
     if [ -f "$lock/done" ] || [ "$held" != "$pid" ]; then return 0; fi
-    # The done file may land between the look above and the supervisor's exit.
-    if ! wk_pid_alive "$pid"; then [ -f "$lock/done" ]; return; fi
+    # The run may have ended and its lock been dropped between the look above and this one.
+    if ! wk_pid_alive "$pid"; then
+      _wk_gone_answer "$lock" "$pid"
+      return
+    fi
     [ "$SECONDS" -lt "$deadline" ] || return 1
     sleep 0.2
   done
@@ -189,7 +242,7 @@ _wk_run_foreground() {
 # 3 with WK_HELD_PID set is a live holder of <lock>. INT ends the run, setting
 # WK_RAN_INT; under WORKKIT_SUPERVISED=1 it runs here (_wk_run_foreground).
 wk_run_detached() {
-  local log="$1" lock="$2" root=() checked=0 detach node=node pid rc=0 saved_int saved_hup_term
+  local log="$1" lock="$2" root=() checked=0 detach node=node pid rc=0 saved_int saved_hup_term mark retire
   # shellcheck disable=SC2034  # read by the caller
   WK_HELD_PID="" WK_RAN_CODE="" WK_RAN_LOOK="" WK_RAN_INT=""
   if [ "$#" -ge 4 ] && [ "$3" = --root ]; then
@@ -208,16 +261,18 @@ wk_run_detached() {
     return
   fi
   wk_take_run_lock "$lock" || return
-  # Until the supervisor's pid is written, a signal removes the pidless lock, so
-  # the next call takes it at once. The caller's traps come back after.
+  # Until the supervisor's pid is written, a signal retires the pidless lock by
+  # its mark, so the next call takes it at once. The caller's traps come back after.
+  mark="$WK_LOCK_MARK"
+  retire="wk_retire_lock $(printf '%q' "$lock") $(printf '%q' "$mark") || :"
   saved_int=$(trap -p INT)
   saved_hup_term=$(trap -p HUP TERM)
-  # shellcheck disable=SC2064  # the lock is fixed for this run
-  trap "rm -rf $(printf '%q' "$lock"); exit 129" HUP
+  # shellcheck disable=SC2064  # the lock and its mark are fixed for this run
+  trap "$retire; exit 129" HUP
   # shellcheck disable=SC2064
-  trap "rm -rf $(printf '%q' "$lock"); WK_RAN_INT=1; exit 130" INT
+  trap "$retire; WK_RAN_INT=1; exit 130" INT
   # shellcheck disable=SC2064
-  trap "rm -rf $(printf '%q' "$lock"); exit 143" TERM
+  trap "$retire; exit 143" TERM
   detach="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/detach.js"
   # A root's settings loader needs the kit's node floor; a run without one, any node.
   if ! mkdir -p "${log%/*}"; then
@@ -230,7 +285,7 @@ wk_run_detached() {
     pid=$(WK_RUN_LOCK="$lock" "$node" "$detach" "$log" "$lock/done" ${root[@]+"${root[@]}"} -- "$@") || rc=$?
   fi
   if [ "$rc" -ne 0 ]; then
-    rm -rf "$lock"
+    wk_retire_lock "$lock" "$mark" || :
     trap - HUP INT TERM
     eval "$saved_int"
     eval "$saved_hup_term"

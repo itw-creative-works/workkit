@@ -1,11 +1,11 @@
-// Tests for packages/core/test/lib/spawn.js through the one entry: run() keeps both
-// streams and the exit, start() streams while its child runs and end() ends its
-// group, climbing INT, TERM, KILL only while the child lives, its stdin carries
-// the input given, else is empty, a deadline ends a child that never exits, and endTree() ends a group,
-// refuses a pid that is not a positive integer and throws on a signal the system refuses; on its
-// Windows arm, reached through its seams, it runs taskkill from System32 and
-// throws when that cannot start or SystemRoot is unset. alive() is false for any pid but a positive integer
-// and for one that ended uncollected, groupLives() for a group whose every member did.
+// Tests for packages/core/test/lib/spawn.js through the one entry: run() keeps both streams and the
+// exit, start() streams while its child runs and end() ends its group, climbing INT, TERM, KILL only
+// while the child lives, its stdin carries the input given, else is empty, or with stdin 'open'
+// stays open until the case ends it (any other stdin value throws), a deadline ends a child that
+// never exits, and endTree() ends a group, refuses a pid that is not a positive integer and throws
+// on a signal the system refuses; on its Windows arm, reached through its seams, it runs taskkill
+// from System32 and throws when that cannot start or SystemRoot is unset. alive() is false for any
+// pid but a positive integer and for one that ended uncollected, groupLives() for a group whose every member did.
 
 const fs = require('fs');
 const path = require('path');
@@ -73,6 +73,15 @@ const EXITS = 'process.exit(4);';
 
 // Writes all its stdin back to stdout, then exits 0 once stdin ends.
 const ECHOES = 'process.stdin.pipe(process.stdout);';
+
+// Prints `ready`, then `echo <line>` for each line it reads, and exits 0 once stdin ends.
+const ECHO_LINES = `
+  require("readline").createInterface({ input: process.stdin }).on("line", (l) => process.stdout.write(\`echo \${l}\\n\`));
+  process.stdout.write("ready\\n");
+`;
+
+// Prints `ready`, then lives until its stdin ends and exits 0.
+const WAITS_ON_STDIN = 'process.stdout.write("ready\\n"); process.stdin.resume();';
 
 // More than a pipe buffer holds, so a child that never reads leaves a write pending.
 const BIG_INPUT = 'x'.repeat(1 << 20);
@@ -312,6 +321,72 @@ describe('spawn: start()', () => {
     } finally {
       await child.end('SIGKILL');
     }
+  });
+});
+
+describe('spawn: start() with stdin open', () => {
+  test('stdin open: a line written, a later one written, then stdin ended; both echo in order and done reports 0', async (t) => {
+    const child = start(process.execPath, ['-e', ECHO_LINES], { stdin: 'open' });
+    t.after(() => child.end('SIGKILL'));
+    expect(await until(() => child.stdout().includes('ready')), `the child is ready, got: ${child.output()}`).toBeTruthy();
+    child.child.stdin.write('a\n');
+    expect(await until(() => child.stdout().includes('echo a')), `the first line came back, got: ${child.output()}`).toBeTruthy();
+    child.child.stdin.write('b\n');
+    child.child.stdin.end();
+    const exit = await settle(child.done);
+    expect(exit?.status, `the child exited 0 once its stdin ended, got: ${JSON.stringify(exit)}`).toBe(0);
+    expect(child.stdout(), 'both lines echoed, in order').toBe('ready\necho a\necho b\n');
+  });
+
+  test('stdin open with nothing written: the child still runs after its ready line, and exits 0 once the case ends stdin', async (t) => {
+    const child = start(process.execPath, ['-e', WAITS_ON_STDIN], { stdin: 'open' });
+    t.after(() => child.end('SIGKILL'));
+    let exit;
+    child.done.then((value) => { exit = value; });
+    expect(await until(() => child.stdout().includes('ready')), `the child is ready, got: ${child.output()}`).toBeTruthy();
+    expect(await until(() => exit !== undefined, SHORT), `done stayed pending while stdin is open, got: ${JSON.stringify(exit)}`).toBe(false);
+    expect(alive(child.pid), 'the child is still running').toBe(true);
+    child.child.stdin.end();
+    expect(await until(() => exit !== undefined), 'done resolved once stdin ended').toBe(true);
+    expect(exit.status, `the child's own exit, got: ${JSON.stringify(exit)}`).toBe(0);
+  });
+
+  test('input with stdin open: the child reads the input, and a line written after it reaches the child too', async (t) => {
+    const child = start(process.execPath, ['-e', ECHO_LINES], { input: 'x\n', stdin: 'open' });
+    t.after(() => child.end('SIGKILL'));
+    expect(await until(() => child.stdout().includes('echo x')), `the child read the input, got: ${child.output()}`).toBeTruthy();
+    child.child.stdin.write('y\n');
+    expect(await until(() => child.stdout().includes('echo y')), `the later line reached the child, got: ${child.output()}`).toBeTruthy();
+    child.child.stdin.end();
+    const exit = await settle(child.done);
+    expect(exit?.status, `the child exited 0 once its stdin ended, got: ${JSON.stringify(exit)}`).toBe(0);
+    expect(child.stdout(), 'the input, then the later line').toBe('ready\necho x\necho y\n');
+  });
+
+  test('stdin open and a child that exits without reading: a large write right after the start does not fail done, which reports its own status', async (t) => {
+    const child = start(process.execPath, ['-e', EXITS], { stdin: 'open' });
+    t.after(() => child.end('SIGKILL'));
+    child.child.stdin.write(BIG_INPUT);
+    const exit = await settle(child.done.catch((err) => ({ rejected: err.message })));
+    expect(exit?.rejected, 'done does not reject over the write').toBe(undefined);
+    expect(exit?.status, `the child's own exit status, got: ${JSON.stringify(exit)}`).toBe(4);
+  });
+
+  test('stdin open, a child waiting on its stdin, and a short deadline: done reports timedOut and the signal that ended the child, which is gone', async (t) => {
+    const child = start(process.execPath, ['-e', WAITS_ON_STDIN], { stdin: 'open', deadline: SHORT });
+    t.after(() => endAll(child.pid));
+    const exit = await settle(child.done);
+    expect(exit?.timedOut, `the deadline ended it, got: ${JSON.stringify(exit)}`).toBe(true);
+    // A deadline that ended stdin instead would leave the child to exit 0 with no signal.
+    expect(exit.signal, `a signal ended the process, got: ${JSON.stringify(exit)}`).toBeTruthy();
+    expect(alive(child.pid), 'the child is gone').toBe(false);
+  });
+
+  test('a stdin value other than open: start throws, naming stdin', async (t) => {
+    let child;
+    t.after(() => child?.end('SIGKILL'));
+    const threw = await caught(() => { child = start(process.execPath, ['-e', WAITS_ON_STDIN], { stdin: 'bogus' }); });
+    expect(/\bstdin\b/.test(threw?.message), `the throw names stdin, got: ${threw?.message}`).toBe(true);
   });
 });
 

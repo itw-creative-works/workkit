@@ -6,9 +6,8 @@
 const path = require('path');
 const { Writable } = require('stream');
 const {
-  describe, test, expect, before, after, until,
+  describe, test, expect, before, after, until, start,
 } = require('./lib/harness');
-const { spawn } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
 
 const PAINT = path.join(__dirname, '..', 'packages', 'core', 'test', 'lib', 'paint.js');
@@ -75,31 +74,25 @@ describe('paint: a line on a stream that takes color', () => {
 
 describe('paint.js run as the filter', () => {
   test('under FORCE_COLOR=1: lines split mid-line arrive whole and painted, once each; a last line with no line end is written at the end of input', async (t) => {
-    const child = spawn(process.execPath, [PAINT], {
+    const filter = start(process.execPath, [PAINT], {
       env: aloneEnv({ FORCE_COLOR: '1', NO_COLOR: undefined, NODE_DISABLE_COLORS: undefined }),
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdin: 'open',
     });
-    let out = '';
-    let err = '';
-    let closed = null;
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => { out += chunk; });
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.once('close', (code) => { closed = { code }; });
-    t.after(() => { if (!closed) child.kill('SIGKILL'); });
+    t.after(() => filter.end('SIGKILL'));
+    let exit = null;
+    filter.done.then((value) => { exit = value; });
 
     // The first chunk ends inside the mark's bytes, the second inside the ✗ line.
     const first = Buffer.from('  ✓ adds\n');
-    child.stdin.write(first.subarray(0, 4));
-    child.stdin.write(Buffer.concat([first.subarray(4), Buffer.from('  ✗ br')]));
-    expect(await until(() => out.includes('adds\n')), `the first line never came out; stdout: ${JSON.stringify(out)}, stderr: ${err}`).toBeTruthy();
-    expect(JSON.stringify(out), 'the first line alone, painted, nothing of the second yet').toBe(JSON.stringify(`  ${GREEN}✓${COLOR_OFF} adds\n`));
+    filter.child.stdin.write(first.subarray(0, 4));
+    filter.child.stdin.write(Buffer.concat([first.subarray(4), Buffer.from('  ✗ br')]));
+    expect(await until(() => filter.stdout().includes('adds\n')), `the first line never came out; stdout: ${JSON.stringify(filter.stdout())}, stderr: ${filter.stderr()}`).toBeTruthy();
+    expect(JSON.stringify(filter.stdout()), 'the first line alone, painted, nothing of the second yet').toBe(JSON.stringify(`  ${GREEN}✓${COLOR_OFF} adds\n`));
 
-    child.stdin.end('oke\nsupervise: exit 0');
-    expect(await until(() => closed !== null), `the filter never ended at the end of its input; stderr: ${err}`).toBeTruthy();
-    expect(closed.code, `the filter's exit, stderr: ${err}`).toBe(0);
-    expect(JSON.stringify(out), 'each line once, whole; the last one at the end of input')
+    filter.child.stdin.end('oke\nsupervise: exit 0');
+    expect(await until(() => exit !== null), `the filter never ended at the end of its input; stderr: ${filter.stderr()}`).toBeTruthy();
+    expect(exit.status, `the filter's exit, stderr: ${filter.stderr()}`).toBe(0);
+    expect(JSON.stringify(filter.stdout()), 'each line once, whole; the last one at the end of input')
       .toBe(JSON.stringify(`  ${GREEN}✓${COLOR_OFF} adds\n  ${RED}✗ broke${COLOR_OFF}\nsupervise: exit 0`));
   });
 });

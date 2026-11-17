@@ -5,8 +5,8 @@
 # kept, and the tree ids they are compared with, plus the paths of the detached
 # runs' logs and locks. Sourced, functions only, by script-shell.sh (the records'
 # writer), supervise.sh, watch.sh, ship/watch.sh, tree-hash.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
-# wk_marker_path, wk_sweep_markers, wk_native_path, wk_node, WK_NODE_FLOOR, wk_take_lock
-# and wk_drop_lock from platform.sh, wk_setting from participation.sh, and runs workspaces.js.
+# wk_marker_path, wk_sweep_markers, wk_native_path, wk_node, WK_NODE_FLOOR, wk_take_lock,
+# wk_drop_lock, wk_retire_judged and wk_lock_mark from platform.sh, wk_setting from participation.sh, and runs workspaces.js.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
 # non-empty string. Consumers: prove.sh, cmd_test, hook_test_package_dir; the module's
@@ -118,17 +118,23 @@ wk_test_slot_clear() {
 }
 
 # wk_test_slots_sweep <repo_root>: remove the repo's narrowed-run slots (lock
-# folder, log, done record) whose done file is over TEST_SLOT_KEEP_DAYS old: a
-# run whose wrapper was cut off, its answer never collected.
+# folder, log, done record) left behind (_wk_slot_left). The lock goes through
+# wk_retire_judged (platform.sh), the log and record only once it went.
 wk_test_slots_sweep() {
   local slot lock
   while IFS= read -r slot; do
     lock=$(wk_test_lock_path "$1" "$slot") || return 1
-    if [ -n "$(find "$lock/done" -mmin "+$((TEST_SLOT_KEEP_DAYS * 1440))" 2>/dev/null)" ]; then
-      wk_test_slot_clear "$1" "$slot"
-      rm -rf "$lock"
-    fi
+    wk_retire_judged "$lock" _wk_slot_left || continue
+    wk_test_slot_clear "$1" "$slot"
   done < <(wk_test_pids "$1")
+}
+
+# _wk_slot_left <lock>: the sweep's judge, 0 for a run whose wrapper was cut off,
+# its done file over TEST_SLOT_KEEP_DAYS old, or a gone mark at any age: a live
+# remover's never reaches here (wk_retire_judged), and it left no done file.
+_wk_slot_left() {
+  case "$(wk_lock_mark "$1")" in gone.*) return 0 ;; esac
+  [ -n "$(find "$1/done" -mmin "+$((TEST_SLOT_KEEP_DAYS * 1440))" 2>/dev/null)" ]
 }
 
 # wk_index_write_tree <repo_root> <index> [<path>...]: drop `.workkit` and each

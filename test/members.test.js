@@ -8,7 +8,7 @@ const {
   describe, test, expect, until, pidIn, alive, endTree,
 } = require('./lib/harness');
 const { IS_WINDOWS } = require('./lib/platform');
-const { TOTALS_LINE, linesOf } = require('./lib/run-lists');
+const { TOTALS_LINE, linesOf, totalsOf } = require('./lib/run-lists');
 const { TOTALS, skipWithoutNpm } = require('./lib/core-repo');
 const { coreBin } = require('./lib/workkit-bin');
 const {
@@ -53,9 +53,6 @@ const at = (output, text) => trimmed(output).indexOf(text);
 const has = (output, text) => at(output, text) >= 0;
 // How many lines read exactly `text`.
 const count = (output, text) => trimmed(output).filter((line) => line === text).length;
-
-// The root run's totals line: the last one, since each member's own run prints one above it.
-const totalsOf = (output) => trimmed(output).filter((line) => TOTALS_LINE.test(line)).pop() || '';
 
 describe('run.js: workspace members', { skip: skipWithoutNpm() }, () => {
   describe('a bare root run runs each member after its own suites', () => {

@@ -17,7 +17,9 @@ const {
   which, basePathWithout, joinPath, homeEnv, NODE_DIR, IS_WINDOWS,
 } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
-const { TOTALS_LINE, linesOf, listsOf } = require('./lib/run-lists');
+const {
+  TOTALS_LINE, linesOf, listsOf, totalsOf, failuresOf,
+} = require('./lib/run-lists');
 const { treeOf } = require('./lib/red-snapshot');
 const { MOD_FILES } = require('./lib/runner-world');
 
@@ -124,7 +126,6 @@ const blockOf = (output, name) => {
   const end = lines.findIndex((line, i) => i > at && (line.startsWith('▶ ') || TOTALS_LINE.test(line)));
   return lines.slice(at + 1, end < 0 ? undefined : end);
 };
-const failuresOf = (output) => stripVTControlCharacters(output).split('Failures:')[1];
 
 // Fixture-side helpers for suites that meet across processes: the fixture
 // root, a sleep, a marker file, and a wait for another suite's marker that
@@ -648,7 +649,7 @@ test('holds its worker', () => new Promise(() => {
       const output = runner.output();
       expect(status, `the runner's exit, got: ${output}`).toBe(143);
       expect(linesOf(output).some((line) => line.startsWith('▶ test/leaver.test.js')), `no block for the suite, got: ${output}`).toBe(false);
-      expect(linesOf(output).some((line) => TOTALS_LINE.test(line)), `no totals line, got: ${output}`).toBe(false);
+      expect(totalsOf(output) === '', `no totals line, got: ${output}`).toBe(true);
     } finally {
       await runner.end('SIGKILL');
       // A pid of 0 would signal this process group, so only a written pid is ended.
@@ -707,7 +708,7 @@ test('never ends', () => new Promise(() => { setInterval(() => {}, 1000); }));
     expect(code, `exit 1, got: ${output}`).toBe(1);
     expect(plain.includes('after case'), `the file after it ran, got: ${output}`).toBeTruthy();
     expect(/^1 passed, 1 failed \(/m.test(plain), `the hung file is one failure, got: ${output}`).toBeTruthy();
-    const failures = plain.split('Failures:')[1];
+    const failures = failuresOf(output);
     expect(failures, `a Failures: list, got: ${output}`).toBeTruthy();
     const timedOut = failures.split('\n').find((line) => line.includes('timed out after 2s without a result'));
     expect(timedOut && timedOut.includes('test/a-hang.test.js'), `names test/a-hang.test.js as timed out after 2s, got: ${failures}`).toBeTruthy();
@@ -777,7 +778,7 @@ describe('run.js: the summary file', () => {
 
   // The counts line a run's totals line reads as.
   const countsOf = (output) => {
-    const totals = linesOf(output).find((line) => TOTALS_LINE.test(line));
+    const totals = totalsOf(output);
     expect(totals, `a totals line, got: ${output}`).toBeTruthy();
     const [, passed, failed] = totals.match(/^(\d+) passed, (\d+) failed/);
     return `{"passed":${passed},"failed":${failed}}`;
@@ -1366,7 +1367,7 @@ describe('run.js: the mod half', () => {
     const { code, output } = runModHalf(joinPath(bin, basePathWithout(tmp, 'claude'), NODE_DIR));
     fs.rmSync(tmp, { recursive: true, force: true });
     expect(code, `exit 0, got: ${output}`).toBe(0);
-    const totals = linesOf(output).find((line) => TOTALS_LINE.test(line));
+    const totals = totalsOf(output);
     expect(totals, `the node case and the fake's two count, got: ${output}`).toMatch(/^3 passed, 0 failed \(/);
     expect(output.split('\n').some((l) => /skipped|⊘/.test(l) && /claude/.test(l)), `no skip line names claude, got: ${output}`).toBe(false);
   });

@@ -106,7 +106,7 @@ describe('run.js: launchOf on win32', () => {
     const cmd = put(path.join(root, 'cmd-only'), 'npm.cmd');
     const batch = onWin32('npm', ['--version'], { env: { PATH: path.join(root, 'cmd-only') } });
     expect(batch.file, "the parent's ComSpec").toBe('C:\\Windows\\system32\\cmd.exe');
-    expect(batch.args.join(' '), 'one quoted line for cmd.exe').toBe(`/d /s /c "${cmd} ^"--version^""`);
+    expect(batch.args.join(' '), 'one quoted line for cmd.exe, the argument escaped twice').toBe(`/d /s /c "${cmd} ^^^"--version^^^""`);
     expect(batch.options.windowsVerbatimArguments, 'handed over verbatim').toBe(true);
   });
 
@@ -151,14 +151,14 @@ describe('run.js: launchOf on win32', () => {
     expect(onWin32('bash', ['-c', 'true'], { env: { PATH: cmdDir } }).file, 'Git\\cmd gives Git\\bin\\bash.exe').toBe(bash);
   });
 
-  test('with Git Bash nowhere, a #! npm is passed over for the npm.cmd beside it', () => {
+  test('with Git Bash nowhere, a #! npm is passed over for the npm.cmd beside it, its argument escaped twice', () => {
     const root = mkTmp('wk-run-');
     const both = path.join(root, 'both');
     put(both, 'npm', SH_SCRIPT);
     const cmd = put(both, 'npm.cmd');
     const launch = onWin32('npm', ['--version'], { env: { PATH: both } });
     expect(launch.file, 'cmd.exe starts the npm.cmd').toBe(WIN_PARENT.ComSpec);
-    expect(launch.args[3], 'the npm.cmd line').toBe(`"${cmd} ^"--version^""`);
+    expect(launch.args[3], 'the npm.cmd line').toBe(`"${cmd} ^^^"--version^^^""`);
   });
 
   test('with Git Bash nowhere, bash by name and a #! file by path fail loudly, naming Git Bash', async () => {
@@ -250,9 +250,32 @@ describe('run.js: launchOf on win32', () => {
     expect(line, 'each metacharacter carries a doubled caret escape').toBe('"C:\\p\\node_modules\\.bin\\tool.cmd ^^^"a\\^^^"b ^^^& calc^^^""');
   });
 
+  test("npm.cmd's argument is escaped twice, since its %* parses the line again", () => {
+    const line = onWin32('C:\\Program Files\\nodejs\\npm.cmd', ['a"b & calc'], {}).args[3];
+    expect(line, 'the command escaped once, the argument twice').toBe('"C:\\Program^ Files\\nodejs\\npm.cmd ^^^"a\\^^^"b ^^^& calc^^^""');
+  });
+
+  test("npx.cmd's argument is escaped twice, since its %* parses the line again", () => {
+    const line = onWin32('C:\\Program Files\\nodejs\\npx.cmd', ['a"b & calc'], {}).args[3];
+    expect(line, 'the command escaped once, the argument twice').toBe('"C:\\Program^ Files\\nodejs\\npx.cmd ^^^"a\\^^^"b ^^^& calc^^^""');
+  });
+
+  test('npm.cmd is matched by file name in any folder and any letter case', () => {
+    const line = onWin32('D:\\tools\\NPM.CMD', ['a"b & calc'], {}).args[3];
+    expect(line, 'the argument escaped twice').toBe('"D:\\tools\\NPM.CMD ^^^"a\\^^^"b ^^^& calc^^^""');
+  });
+
+  test('a name only like npm.cmd, npm.bat, and another .cmd beside npm.cmd keep the single escape', () => {
+    // A batch file that reads %1 itself would see a second escape's carets.
+    for (const file of ['C:\\nodejs\\xnpm.cmd', 'C:\\nodejs\\npm.bat', 'C:\\nodejs\\tool.cmd']) {
+      const line = onWin32(file, ['a"b & calc'], {}).args[3];
+      expect(line, `${file}: escaped once`).toBe(`"${file} ^"a\\^"b ^& calc^""`);
+    }
+  });
+
   test('a .cmd in a folder with a space stays one command word: each space and metacharacter escaped, no quotes', () => {
     const line = onWin32('C:\\Program Files (x86)\\nodejs\\npm.cmd', ['a b'], {}).args[3];
-    expect(line, 'the command escaped, the argument quoted').toBe('"C:\\Program^ Files^ ^(x86^)\\nodejs\\npm.cmd ^"a b^""');
+    expect(line, 'the command escaped, the argument quoted and escaped twice').toBe('"C:\\Program^ Files^ ^(x86^)\\nodejs\\npm.cmd ^^^"a b^^^""');
   });
 
   test('argv0 is the quoted program unless the caller passes one', () => {
@@ -356,4 +379,18 @@ describe('run.js: real starts on this machine', () => {
     expect(res.status, `npm answered, error: ${res.error || ''} stderr: ${res.stderr}`).toBe(0);
     expect(/^\d+\.\d+\.\d+/.test(res.stdout.trim()), `a version, got: ${JSON.stringify(res.stdout)}`).toBeTruthy();
   });
+
+  test('with Git Bash hidden, npm.cmd sets a value holding a quote and an ampersand whole',
+    { skip: !IS_WINDOWS && 'npm.cmd and cmd.exe run only on Windows' }, () => {
+      // Node's folder alone: no bash.exe or git.exe, so the starter falls to npm.cmd.
+      const dir = mkTmp('wk-run-');
+      const pkg = put(dir, 'package.json', `${JSON.stringify({ name: 'scratch', version: '1.0.0' })}\n`);
+      const options = { cwd: dir, env: { PATH: NODE_DIR, NODE_DISABLE_COMPILE_CACHE: '1' }, encoding: 'utf8', timeout: SPAWN_DEADLINE };
+      const args = ['pkg', 'set', 'k=a"b & c'];
+      const launch = launchOf('npm', args, options, { platform: 'win32', parentEnv: process.env });
+      expect(/cmd\.exe$/i.test(launch.file), `cmd.exe starts npm.cmd, got: ${launch.file}`).toBeTruthy();
+      const res = spawnSync('npm', args, options);
+      expect(res.status, `npm pkg set ran, error: ${res.error || ''} stderr: ${res.stderr}`).toBe(0);
+      expect(JSON.parse(fs.readFileSync(pkg, 'utf8')).k, 'the value as given').toBe('a"b & c');
+    });
 });

@@ -6,7 +6,6 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { stripVTControlCharacters } = require('util');
 const {
   describe, test, expect,
 } = require('../../lib/harness');
@@ -18,6 +17,7 @@ const {
   wiredNpmEnv, skipWithoutWrapper, recorded, assertRecord, packaged,
 } = require('../../lib/script-shell');
 const { TOTALS, mkCoreRepo } = require('../../lib/core-repo');
+const { linesOf } = require('../../lib/run-lists');
 const {
   CLI, cleanup, writeStub, mkWorld, runCli,
 } = require('./helpers');
@@ -33,7 +33,7 @@ const runTest = (world, args = [], { cwd, env = {} } = {}) => {
     cwd,
     env: { ...wiredNpmEnv(world), ...env },
   });
-  return { ...res, lines: stripVTControlCharacters(res.said).split(/\r?\n/) };
+  return { ...res, lines: linesOf(res.said) };
 };
 
 const ran = (lines, name) => lines.some((line) => line.includes(name));

@@ -2,14 +2,13 @@
 // a usage error, and a command it launches outlives the process that launched
 // it, leaving its output in the log and its exit code in the done file. And for
 // detach.sh's `wk_run_detached` on top of it: whose lock a run drops, and when
-// a lock a finished run left is taken over, the code two attached calls get,
-// and the whole run an INT to the call ends. Then the supervisor's checks: a frozen run ended whole, a busy one never,
-// an unclear one given a look, an end on request and one that fails, a failed process read, and
-// the awake hold on a Mac.
+// a lock a finished run left is taken over, the code two attached calls get, the
+// whole run an INT to the call ends, the lock's mark and wk_ask_end's answers. Then the
+// supervisor's checks: a frozen run ended whole, a busy one never, an unclear one given
+// a look, an end on request and one that fails, a failed process read, the awake hold.
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
@@ -18,7 +17,7 @@ const {
 } = require('../lib/platform');
 const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, pidOf, reap,
-  writesPid, silent, busy, ended, read, lastLine, realOf,
+  writesPid, silent, busy, ended, read, lastLine, realOf, handLock, claimNaming, tagOf, deadPid, holding,
 } = require('../lib/supervise');
 const { scratchWorkflowHome } = require('../lib/workflow-home');
 
@@ -59,6 +58,21 @@ const attachArgs = (dir, pid, marker) => [...NO_RC, '-c', [
   'printf "rc=%s\\n" "$rc"',
 ].join('\n'), 'wk', shellPath(path.join(dir, 'log')), shellPath(path.join(dir, 'lock')), String(pid), shellPath(marker)];
 const RUN_ENV = { PATH: systemPathWith(NODE_DIR) };
+
+/**
+ * <script> in a shell that sourced the same two files, `$1` naming <lock> and
+ * <args> after it; the shell's code is the script's.
+ */
+const withLock = (lock, script, ...args) => run(BASH, [...NO_RC, '-c', [...SOURCED, script].join('\n'),
+  'wk', shellPath(lock), ...args.map(String)], { env: RUN_ENV });
+// A take of the lock `$1` names; its last stdout lines are `mark=<WK_LOCK_MARK>`, `held=<WK_HELD_PID>` and `rc=<code>`.
+const TAKE = 'wk_take_run_lock "$1"; rc=$?; printf "mark=%s\\nheld=%s\\nrc=%s\\n" "$WK_LOCK_MARK" "$WK_HELD_PID" "$rc"';
+const fieldOf = (out, name) => { const m = new RegExp(`(?:^|\\n)${name}=(.*)\\n`).exec(out); return m ? m[1] : null; };
+// A run lock's mark file, beside its claim: held by a take's tag, or being removed.
+const MARK = /^(id|gone)\..+$/;
+const marksIn = (lock) => fs.readdirSync(lock).filter((name) => MARK.test(name)).join(' ');
+/** The mark <lock>'s claim names, `id.<the tag it holds>`, or '' while it has no claim or an empty one. */
+const namedIn = (lock) => { const tag = read(path.join(lock, 'claim')).trim(); return tag ? `id.${tag}` : ''; };
 
 const rcOf = (out) => { const m = /rc=(\d+)\n$/.exec(out); return m ? Number(m[1]) : null; };
 const ranOf = (out) => { const m = /(?:^|\n)ran=(\d*)\nrc=\d+\n$/.exec(out); return m ? m[1] : null; };
@@ -222,21 +236,18 @@ describe('detach.sh: wk_run_detached and its lock', () => {
     const dir = mkTmp('detach-done-');
     const lock = path.join(dir, 'lock');
     const ran = path.join(dir, 'ran');
-    const dead = spawnSync(process.execPath, ['-e', '0']).pid;
-    expect(!alive(dead), `the stale pid ${dead} is gone`).toBeTruthy();
-    fs.mkdirSync(lock);
-    fs.writeFileSync(path.join(lock, 'pid'), `${dead}\n`);
-    fs.writeFileSync(path.join(lock, 'done'), '0\n');
+    handLock(lock, { claim: claimNaming('old'), 'id.old': '', pid: `${deadPid()}\n`, done: '0\n' });
     const script = `require('fs').writeFileSync(${jsPath(ran)},'');process.exit(6)`;
     const res = run(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
     expect(rcOf(res.stdout || ''), `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(6);
     expect(fs.existsSync(ran), 'the command ran').toBeTruthy();
   });
 
-  test('a mkdir that answers 0 for a folder already there: a take of the lock a live run holds answers 3 with its supervisor\'s pid', async () => {
+  test('a mkdir that answers 0 for a folder already there: a take of the lock a live run holds answers 3 with its supervisor\'s pid, the holder\'s claim, its tag, and mark unchanged', async () => {
     const dir = mkTmp('detach-held-');
     const go = path.join(dir, 'go');
-    const lockPid = path.join(dir, 'lock', 'pid');
+    const lock = path.join(dir, 'lock');
+    const lockPid = path.join(lock, 'pid');
     const bin = path.join(dir, 'bin');
     fs.mkdirSync(bin);
     lenientMkdir(bin);
@@ -244,11 +255,15 @@ describe('detach.sh: wk_run_detached and its lock', () => {
     const first = start(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
     try {
       const supervisor = await pidOf(lockPid);
+      const mark = marksIn(lock);
+      expect(/^id\.\S+$/.test(mark) && namedIn(lock) === mark, `the holder's claim names its one mark, it holds: ${holding(lock)}, claim names: ${namedIn(lock)}`).toBeTruthy();
       const take = run(BASH, [...NO_RC, '-c', [...SOURCED, 'wk_take_run_lock "$1"; rc=$?', 'printf "held=%s\\nrc=%s\\n" "$WK_HELD_PID" "$rc"'].join('\n'),
-        'wk', shellPath(path.join(dir, 'lock'))], { env: { PATH: systemPathWith(bin, NODE_DIR) } });
+        'wk', shellPath(lock)], { env: { PATH: systemPathWith(bin, NODE_DIR) } });
       const out = take.stdout || '';
       expect(rcOf(out), `the take answers 3, stdout: ${JSON.stringify(out)}, stderr: ${take.stderr}`).toBe(3);
       expect(/(?:^|\n)held=(\d*)\n/.exec(out)[1], `WK_HELD_PID names the supervisor, stdout: ${JSON.stringify(out)}`).toBe(String(supervisor));
+      expect(namedIn(lock), `the holder's claim still holds its tag, it holds: ${holding(lock)}`).toBe(mark);
+      expect(marksIn(lock), 'the holder\'s mark alone, unchanged').toBe(mark);
       fs.writeFileSync(go, '');
       expect(await until(() => first.child.exitCode !== null), `the run never returned, stdout: ${first.stdout()}`).toBeTruthy();
     } finally {
@@ -386,6 +401,122 @@ describe('detach.sh: wk_run_detached and its lock', () => {
       reap(pidIn(lockPid));
       await Promise.all([first.end('SIGKILL'), second && second.end('SIGKILL')]);
     }
+  });
+});
+
+describe('detach.sh: the run lock\'s mark', () => {
+  const lockIn = (prefix) => path.join(mkTmp(prefix), 'lock');
+
+  /**
+   * A take of <lock> (after <before>, given <args>) that answers 0, the folder holding
+   * its claim, which holds the take's tag, and that one mark, the id.<tag> in WK_LOCK_MARK: that mark.
+   */
+  const tookHolding = (lock, before = '', ...args) => {
+    const res = withLock(lock, `${before}\n${TAKE}`, ...args);
+    expect(rcOf(res.stdout || ''), `the take answers 0, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(0);
+    const mark = fieldOf(res.stdout, 'mark');
+    expect(/^id\..+$/.test(mark), `WK_LOCK_MARK is id.<tag>, got: ${JSON.stringify(mark)}`).toBeTruthy();
+    expect(namedIn(lock), `the folder's claim holds the take's tag, it holds: ${holding(lock)}`).toBe(mark);
+    expect(marksIn(lock), `the folder's one mark is the take's, it holds: ${holding(lock)}`).toBe(mark);
+    return mark;
+  };
+
+  test('no lock: the take answers 0, the folder holding claim with its tag and one mark, id.<tag>, named in WK_LOCK_MARK; a retire and a second take give another tag', () => {
+    const lock = lockIn('detach-mark-');
+    const mark = tookHolding(lock);
+    const next = tookHolding(lock, 'wk_retire_lock "$1" "$2" || exit 9', mark);
+    expect(next !== mark, `the second take's own tag, got ${next} after ${mark}`).toBeTruthy();
+  });
+
+  test('a lock whose run is over, a done file and a gone pid: the take answers 0, the folder holding its new claim and mark and no file of the old run', () => {
+    const lock = handLock(lockIn('detach-mark-over-'), { claim: claimNaming('old'), 'id.old': '', pid: `${deadPid()}\n`, done: '0\n' });
+    const mark = tookHolding(lock);
+    expect(mark !== 'id.old', 'a new tag, not the old run\'s').toBeTruthy();
+    expect(holding(lock), 'the new claim and mark alone').toBe(`claim ${mark}`);
+  });
+
+  test('a lock whose run is over and whose mark is gone.<tag> of a gone remover, with its claim and without, or gone.x naming no pid: the take answers 0', () => {
+    const gone = `gone.${tagOf(deadPid())}`;
+    tookHolding(handLock(lockIn('detach-mark-gone-'), { claim: claimNaming('a'), [gone]: '', pid: `${deadPid()}\n`, done: '0\n' }));
+    tookHolding(handLock(lockIn('detach-mark-gone-'), { [gone]: '' }));
+    tookHolding(handLock(lockIn('detach-mark-gone-'), { claim: claimNaming('a'), 'gone.x': '', pid: `${deadPid()}\n`, done: '0\n' }));
+  });
+
+  test('a lock whose run is over and whose mark is gone.<tag> of a live remover: a retire of that mark and a take each answer 1, the folder as it was', () => {
+    const gone = `gone.${tagOf(process.pid)}`;
+    const dead = deadPid();
+    const lock = handLock(lockIn('detach-mark-remover-'), { claim: claimNaming('a'), [gone]: '', pid: `${dead}\n`, done: '0\n' });
+    const asItWas = () => {
+      expect(holding(lock), 'the folder\'s files as they were').toBe(['claim', 'done', gone, 'pid'].sort().join(' '));
+      expect(namedIn(lock) === 'id.a' && pidIn(path.join(lock, 'pid')) === dead && read(path.join(lock, 'done')) === '0\n',
+        `the claim, pid and done files as they were, it holds: ${holding(lock)}`).toBeTruthy();
+    };
+    const retire = withLock(lock, 'wk_retire_lock "$1" "$2"', gone);
+    expect(retire.status, `a live remover's mark is not taken, so 1, output: ${retire.output}`).toBe(1);
+    asItWas();
+    const take = withLock(lock, TAKE);
+    expect(rcOf(take.stdout || ''), `the take gives up after its wait, so 1, stdout: ${JSON.stringify(take.stdout)}, stderr: ${take.stderr}`).toBe(1);
+    asItWas();
+  });
+
+  test('a folder holding only an empty claim, as an older kit leaves it: the take answers 0 after the pid wait', () => {
+    tookHolding(handLock(lockIn('detach-mark-claim-'), { claim: '' }));
+  });
+
+  test('an empty lock folder, no claim and no mark: the take answers 0 after the pid wait', () => {
+    tookHolding(handLock(lockIn('detach-mark-empty-'), {}));
+  });
+
+  test('a folder holding only the pid of a gone process, no claim and no mark: the take answers 0', () => {
+    tookHolding(handLock(lockIn('detach-mark-cut-'), { pid: `${deadPid()}\n` }));
+  });
+
+  test('a lock whose run is over, its claim naming id.a, beside a leftover id.b: the take answers 0, the new folder holding no id.b', () => {
+    const lock = handLock(lockIn('detach-mark-leftover-'), {
+      claim: claimNaming('a'), 'id.a': '', 'id.b': '', pid: `${deadPid()}\n`, done: '0\n',
+    });
+    tookHolding(lock);
+    expect(!fs.existsSync(path.join(lock, 'id.b')), `no leftover id.b, it holds: ${holding(lock)}`).toBeTruthy();
+  });
+
+  test('an older kit\'s lock, an empty claim and a gone pid, with an id.orphan another caller left: the take answers 0', () => {
+    tookHolding(handLock(lockIn('detach-mark-orphan-'), { claim: '', 'id.orphan': '', pid: `${deadPid()}\n` }));
+  });
+
+  test('a lock a live run holds: the take answers 3 with its pid in WK_HELD_PID, the claim and the mark unchanged', () => {
+    const lock = handLock(lockIn('detach-mark-live-'), { claim: claimNaming('live'), 'id.live': '', pid: `${process.pid}\n` });
+    const res = withLock(lock, TAKE);
+    expect(rcOf(res.stdout || ''), `the take answers 3, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(3);
+    expect(fieldOf(res.stdout, 'held'), `WK_HELD_PID names the live run, stdout: ${JSON.stringify(res.stdout)}`).toBe(String(process.pid));
+    expect(holding(lock), 'the live run\'s lock as it was').toBe('claim id.live pid');
+    expect(namedIn(lock), 'its claim still names its mark').toBe('id.live');
+  });
+
+  test('the owner\'s drop on a lock another run took over, another tag in claim, another mark and another pid: the folder stays whole', () => {
+    const lock = lockIn('detach-mark-drop-other-');
+    const old = deadPid();
+    // The caller takes the lock for its run; another run then takes it over by hand.
+    const res = withLock(lock, [
+      'wk_take_run_lock "$1" || exit 9',
+      'printf "%s\\n" "$2" > "$1/pid"',
+      'rm -rf "$1" && mkdir "$1" && : > "$1/id.other" && printf "%s" "$4" > "$1/claim" && printf "%s\\n" "$3" > "$1/pid" || exit 8',
+      '_wk_drop_run_lock "$1" "$2"',
+    ].join('\n'), old, process.pid, claimNaming('other'));
+    expect(res.status !== 9 && res.status !== 8 && res.status !== null, `the take and the takeover ran, code ${res.status}, stderr: ${res.stderr}`).toBeTruthy();
+    expect(holding(lock), 'the other run\'s lock is whole').toBe('claim id.other pid');
+    expect(namedIn(lock), 'its claim still names the other run\'s mark').toBe('id.other');
+    expect(pidIn(path.join(lock, 'pid')), 'its pid file names the other run').toBe(process.pid);
+  });
+
+  test('the owner\'s drop on the lock of its own run: the folder is gone', () => {
+    const lock = lockIn('detach-mark-drop-own-');
+    const res = withLock(lock, [
+      'wk_take_run_lock "$1" || exit 9',
+      'printf "%s\\n" "$2" > "$1/pid"',
+      '_wk_drop_run_lock "$1" "$2"',
+    ].join('\n'), process.pid);
+    expect(res.status !== 9 && res.status !== null, `the take ran, code ${res.status}, stderr: ${res.stderr}`).toBeTruthy();
+    expect(holding(lock), 'the drop removed the folder').toBe('(none)');
   });
 });
 
@@ -530,6 +661,58 @@ describe('detach: an end request', () => {
       expect(alive(cmd), `the command ${cmd} still runs`).toBeTruthy();
     } finally {
       reap(pidIn(pidFile), supervisor);
+    }
+  });
+});
+
+describe('detach.sh: wk_ask_end', () => {
+  // A wait far past the shared deadline unless a case sets its own, so a call that
+  // waited it out never returns in time.
+  const ask = (lock, pid, before = 'WK_END_WAIT=600') => withLock(lock, `${before}\nwk_ask_end "$1" "$2"`, pid);
+  /** A lock a take claimed, its `claim` naming its mark `id.held`, holding <files> besides. */
+  const claimedLockOf = (files) => handLock(path.join(mkTmp('detach-ask-'), 'lock'), { claim: claimNaming('held'), 'id.held': '', ...files });
+
+  test('a live pid in the lock, no done file, and the folder dropped inside the wait: 0', () => {
+    const lock = claimedLockOf({ pid: `${process.pid}\n` });
+    const asked = path.join(path.dirname(lock), 'asked');
+    // The one seam: alive at the first look, so the wait runs; at the next the lock is
+    // dropped, as the attached call does once the run ended, and the pid is gone.
+    const seam = `wk_pid_alive() { if [ ! -e "$A" ]; then : > "$A"; return 0; fi; rm -rf "$L"; return 1; }`;
+    const res = ask(lock, process.pid, ['WK_END_WAIT=600', 'L="$1"', `A=${JSON.stringify(shellPath(asked))}`, seam].join('\n'));
+    expect(res.status, `the run ended and its lock was dropped, so 0, output: ${res.output}`).toBe(0);
+    expect(fs.existsSync(asked) && !fs.existsSync(lock), 'the pid was alive at the first look and the folder dropped at a later one').toBeTruthy();
+  });
+
+  test('a gone pid in the lock and no done file: 2 well inside the wait, the lock folder as it was', () => {
+    const dead = deadPid();
+    const lock = claimedLockOf({ pid: `${dead}\n` });
+    const res = ask(lock, dead);
+    expect(res.status, `a supervisor gone with no answer is 2, output: ${res.output}`).toBe(2);
+    expect(holding(lock), 'the lock folder as it was').toBe('claim id.held pid');
+    expect(pidIn(path.join(lock, 'pid')), 'still holding the gone pid').toBe(dead);
+  });
+
+  test('a gone pid in the lock and its done file there: 0', () => {
+    const dead = deadPid();
+    const res = ask(claimedLockOf({ pid: `${dead}\n`, done: '3\n' }), dead);
+    expect(res.status, `the run ended, so 0, output: ${res.output}`).toBe(0);
+  });
+
+  test('a live pid that never writes a done file and a one second wait: 1', () => {
+    const res = ask(claimedLockOf({ pid: `${process.pid}\n` }), process.pid, 'WK_END_WAIT=1');
+    expect(res.status, `the wait ran out, so 1, output: ${res.output}`).toBe(1);
+  });
+
+  test('a lock holding another pid than the one asked about, both alive: 0 at once, no end file written', async () => {
+    const other = start(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30);']);
+    try {
+      expect(alive(other.pid), `the other process ${other.pid} lives`).toBeTruthy();
+      const lock = claimedLockOf({ pid: `${other.pid}\n` });
+      const res = ask(lock, process.pid);
+      expect(res.status, `the lock is another run's, so 0, output: ${res.output}`).toBe(0);
+      expect(!fs.existsSync(path.join(lock, 'end')), `no end request in the other run's lock, it holds: ${holding(lock)}`).toBeTruthy();
+    } finally {
+      await other.end('SIGKILL');
     }
   });
 });

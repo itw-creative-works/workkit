@@ -14,7 +14,7 @@ const { BASH, NO_RC, NODE_DIR, SYSTEM_PATH, joinPath } = require('../lib/platfor
 const {
   CORE, TOTALS, skipWithoutNpm, npmIn, mkCoreRepo,
 } = require('../lib/core-repo');
-const { TOTALS_LINE, linesOf } = require('../lib/run-lists');
+const { linesOf, totalsOf } = require('../lib/run-lists');
 
 const KIT = path.join(CORE, '..', '..');
 // What the kit's workflow/lib/run.js exports, sorted: the one source `workkit-core/run` must match.
@@ -111,7 +111,7 @@ describe('workkit-core', { skip: skipWithoutNpm() }, () => {
       expect(code, `exit 2, got: ${output}`).toBe(2);
       expect(output, 'the global command\'s error shape').toMatch(/^\u2716 setup: /);
       expect(/global/i.test(output) && output.includes('workkit'), `names the global workkit command, got: ${output}`).toBe(true);
-      expect(!ran(output, 'a case') && !linesOf(output).some((line) => TOTALS_LINE.test(line)), `no suite ran, got: ${output}`).toBe(true);
+      expect(!ran(output, 'a case') && totalsOf(output) === '', `no suite ran, got: ${output}`).toBe(true);
     });
 
     test('the bin with no verb exits 2, naming the global command, running nothing', () => {
@@ -120,7 +120,7 @@ describe('workkit-core', { skip: skipWithoutNpm() }, () => {
       expect(code, `exit 2, got: ${output}`).toBe(2);
       expect(output, 'the global command\'s error shape').toMatch(/^\u2716 workkit: /);
       expect(output, 'names the global workkit command').toMatch(/global/i);
-      expect(!ran(output, 'a case') && !linesOf(output).some((line) => TOTALS_LINE.test(line)), `no suite ran, got: ${output}`).toBe(true);
+      expect(!ran(output, 'a case') && totalsOf(output) === '', `no suite ran, got: ${output}`).toBe(true);
     });
   });
 

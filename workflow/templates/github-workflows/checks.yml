@@ -2,7 +2,9 @@
 # branch, run by the workkit kit's reusable workflow (.github/workflows/ci.yml),
 # and on a push the GitHub release of each release commit it brings (release.yml).
 # The kit owns this file and its standards step rewrites it, so no edit here
-# survives: a repo's own setup commands go in .workkit/settings.json hooks.ciSetup.
+# survives: a repo's own setup commands go in .workkit/settings.json, in
+# hooks.ciSetup to run before the dependency install, or in hooks.ciPostInstall
+# to run after it and before the tests.
 name: checks
 
 on:

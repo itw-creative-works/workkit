@@ -23,9 +23,10 @@ const WINDOWS_KEPT = ['ComSpec', 'SystemRoot', 'PATHEXT', 'TEMP', 'TMP'];
 // What cmd.exe reads as its own in an argument, each escaped with `^`.
 const CMD_META = /[()%!^"<>&|]/g;
 
-// An npm cmd-shim, by cross-spawn's rule: its `%*` hands the line to cmd.exe a
-// second time, so each argument's escaping must survive two parses.
-const NPM_CMD_SHIM = /node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i;
+// An npm cmd-shim by cross-spawn's rule, or a file named npm.cmd or npx.cmd: its
+// `%*` hands the line to cmd.exe a second time, so each argument's escaping
+// must survive two parses.
+const NPM_CMD_SHIM = /(?:node_modules[\\/]\.bin[\\/][^\\/]+|(?:^|[\\/])np[mx])\.cmd$/i;
 
 // What cmd.exe reads as its own in the command word, each escaped with `^`: an
 // escaped quote opens no quoted run, so a space or `;` `,` would end the word.
@@ -42,7 +43,7 @@ const windowsQuoted = (value) => `"${String(value).replace(/(\\*)"/g, '$1$1\\"')
 /** One argument of a cmd.exe line: quoted, then each of `()%!^"<>&|` escaped with `^`. */
 const cmdQuoted = (value) => windowsQuoted(value).replace(CMD_META, '^$&');
 
-/** One argument of an npm cmd-shim's line: cmdQuoted, then each metacharacter escaped again. */
+/** One argument of a line NPM_CMD_SHIM matches, whose %* is parsed again: cmdQuoted, then each metacharacter escaped again. */
 const cmdShimQuoted = (value) => cmdQuoted(value).replace(CMD_META, '^$&');
 
 /** The command word of a cmd.exe line: unquoted, each of `()][%!^"<>&|;,*?`, the backtick and the space escaped with `^`. */

@@ -332,11 +332,31 @@
     - `wk_claim_dir <dir>`: 0 only for the one caller that creates `<dir>/claim`.
       - A `mkdir` may answer 0 to two racing callers, so the one whose `mkdir` answered 0 must also create `<dir>/claim` under noclobber, which opens it create-only.
       - One caller alone gets the file, whatever `mkdir` answered.
+    - `wk_claim_dir <dir> <tag>`, the run lock's form: a folder that holds anything is another caller's, 1. In an empty one it writes `id.<tag>`, creates `claim` create-only holding `<tag>`, and writes `id.<tag>` once more, since a removal still running in that folder may have deleted it. A lost claim takes its own `id.<tag>` back, 1.
     - `wk_take_lock <dir>`: a `wk_claim_dir` of `<dir>`, its parent made first.
     - It is 0 holding it, and 1 after a 5-second wait, its caller going ahead either way.
     - `wk_drop_lock <dir>`, beside it, run only by a caller that took it: an `rm` of the claim, then an `rmdir` of the folder, never one removal of both.
       - A taker that claims the folder between the two keeps it, since the `rmdir` then fails.
     - The state mutex (`lib/state.sh`) and the package record's write (`lib/suite.sh`) both take it.
+  - A run lock's marks, beside it:
+    - A run lock folder holds two things for the lock's whole life: `claim`, created create-only and holding the taker's tag, which decides who made the lock, so a `mkdir` that answers 0 for a folder already there still gives it to one caller; and that taker's mark file, `id.<tag>`.
+    - A tag is no other take's on the machine: the pid of the shell that made it (a subshell's own), a count of the tags it made, and a random part, dot-separated.
+      - The pid is the one `wk_pid_alive` answers for on every platform: in Git Bash the shell's Windows pid (`/proc/<pid>/winpid`).
+    - `wk_lock_mark <lock>` prints the lock's mark, in this order: the `id.<tag>` that `claim` names, when that file is there; else the `gone.<tag>` file (a removal under way); else `id.orphan` (an adopted folder); else nothing, 1.
+      - Any other `id.*` is the leftover of a taker that lost the claim: ignored, and gone with the folder.
+    - `wk_retire_lock <lock> <mark>` is the one removal of a run lock that holds files: it renames that exact `id.*` or `gone.*` mark to `gone.<its own tag>`. Only then it deletes the lock's other files, then `claim`, then its `gone` file, then the folder with `rmdir`. `claim` is not a mark it takes. An empty folder holds no lock, and goes by `wk_adopt_lock`'s `rmdir`.
+      - So a removal cut off mid-way leaves a folder that still holds its `gone` mark, or an empty one, never files with no mark.
+      - A rename is atomic, so of two callers that name one mark, one wins. The other, its mark no longer there, gets 1 with the folder as it was, and judges the lock again from the start.
+      - A `gone.<tag>` mark belongs to the removal that made it: `wk_retire_lock` answers 1, the folder as it was, while the pid in its tag lives (`wk_remover_lives`). A tag whose first field is no number (`gone.x`) counts as a remover that is gone. So two removals never run in one folder, and a slow remover never deletes files of a lock made after it.
+    - `wk_adopt_lock <lock> <seen>` takes a folder with no mark once its run is over, never removing it as it is. `<seen>` is the folder's file names as the caller read them with the absent mark, before it judged: one line, one space apart, in glob order (`_wk_lock_files`; a lock file's name holds no space).
+      - An empty folder (a taker that ended right after its `mkdir`) goes by `rmdir`, which fails once anything is in it.
+      - A folder with files and no mark is an older kit's lock (`claim` empty or alone), or what a `mkdir` that answers 0 for a folder already there can leave. The caller creates `id.orphan` create-only and looks again.
+      - When a mark other than `id.orphan` has appeared, or the folder holds anything but exactly `<seen>` and `id.orphan`, it removes its own `id.orphan`, 1. A folder made in the old one's place always differs: a new taker's first file is its own `id.<tag>`.
+      - Else it retires the lock by `id.orphan`, like any mark, also when another adopting caller made that file.
+    - `wk_retire_judged <lock> <judge> [args...]` is the steps every remover shares: it reads the mark first (with none, the file names too), then runs `<judge> <lock> [args...]`, and on its 0 retires the lock by that mark, or adopts it against those names. Any other answer of the judge comes back with nothing removed. It is the one place that reads `<seen>`.
+      - A `gone.<tag>` mark whose remover lives is answered 4 at once, the judge never asked and nothing touched.
+      - So a caller acting on an old judgment never removes a lock made after it: that lock holds another mark.
+    - The callers: `wk_take_run_lock`'s takeover and the owner's drop, a foreground run's too (`lib/detach.sh`), and `wk_test_slots_sweep` (`lib/suite.sh`) go through `wk_retire_judged`; the traps and the failed launch of `wk_run_detached` retire by the run's own mark.
 - `lib/run.js`:
   - CJS, requiring nothing beyond Node, the Node twin of `lib/platform.sh`.
   - workkit-core ships it as `workkit-core/run`; its prepack copies it to `run.cjs`.
@@ -362,8 +382,8 @@
     - That is because an escaped quote opens no quoted run, and a space would split the command word (`C:\Program Files`).
     - Each argument is quoted, then every `()%!^"<>&|` in it is escaped with `^`.
     - So an argument can neither end early nor chain a command.
-  - An npm cmd-shim (a `.cmd` under `node_modules\.bin`, cross-spawn's rule `NPM_CMD_SHIM`) gets each argument's escaping twice.
-    - The shim's `%*` parses the line again. Any other `.cmd` or `.bat` gets it once.
+  - An npm cmd-shim (a `.cmd` under `node_modules\.bin`, cross-spawn's rule) or a file named `npm.cmd` or `npx.cmd` in any folder and any letter case (together `NPM_CMD_SHIM`) gets each argument's escaping twice.
+    - Its `%*` parses the line again. Any other `.cmd` or `.bat` gets it once, since a batch file that reads `%1` itself would see the extra carets.
   - Every argument and the program name (`argv0`, unless the caller passes one) go through `windowsQuoted`, verbatim.
     - So Git Bash never globs or splits one.
   - A given env lacking one of `WINDOWS_KEPT` takes it from the parent.
@@ -493,6 +513,8 @@
     - `wk_test_pids <root>` prints the pid of each slot whose lock folder stands, live or not;
     - `wk_test_slot_clear <root> <pid>` removes a slot's log and its lock's record once a call has read its end.
     - `wk_test_slots_sweep <root>` removes each slot (lock folder, log, record) whose done file is older than one day (`TEST_SLOT_KEEP_DAYS`): a run whose answer no call collected. Every narrowed run runs it at its start.
+      - It removes the lock through `wk_retire_judged`, so the mark is read before the look; the log and the record go only once that worked.
+      - It also clears a slot whose lock holds a `gone` mark of a remover that is gone, whatever its age, since no done file is left there for the age to be read from. A live remover's slot stays.
   - The hook library's scripts call these by their engine names.
   - The hooks module reads the records through `hooks/mods/suite.js`.
     - It takes a tree id through `tree-hash.sh`, the index's with `-i` as its only flag.
@@ -574,11 +596,11 @@
 - `lib/detach.sh`:
   - Sourced by `script-shell.sh`, by `prove.sh`, by `supervise.sh`, by `watch.sh` and by `ship/watch.sh`.
   - `wk_run_detached <log> <lock> [--root <root>] -- <cmd> [args...]` takes `<lock>`.
-    - The lock is a directory taken by `wk_claim_dir` (`lib/platform.sh`), with the supervisor's pid written inside as `pid`.
-    - Until the supervisor's pid is written, a HUP, INT or TERM removes the lock, no pid in it yet, and exits 129, 130 or 143 (an INT also sets `WK_RAN_INT`), so the next call takes it at once. On a failed launch the caller's own traps come back. Once the pid is written its HUP and TERM traps come back, and its INT trap once the attached call returns.
+    - The lock is a directory taken by `wk_take_run_lock`, with the supervisor's pid written inside as `pid`.
+    - Until the supervisor's pid is written, a HUP, INT or TERM retires the lock by its mark (`wk_retire_lock`), no pid in it yet, and exits 129, 130 or 143 (an INT also sets `WK_RAN_INT`), so the next call takes it at once. On a failed launch the caller's own traps come back. Once the pid is written its HUP and TERM traps come back, and its INT trap once the attached call returns.
     - It launches through `detach.js`, passing `--root` on, so the run is checked.
     - With `--root` that is the first node `wk_node` finds at the kit's floor, which the settings loader needs; without it, plain `node`.
-    - A launcher that fails (a bad `tests.check` is 2) drops the lock, prints `detach: could not start <cmd> (log <log>)` and returns the launcher's code.
+    - A launcher that fails (a bad `tests.check` is 2) retires the lock by its mark, prints `detach: could not start <cmd> (log <log>)` and returns the launcher's code.
     - Then it attaches through `wk_attach_run <log> <lock> <pid>`, whose answer is its own.
     - The launcher is started with `WK_RUN_LOCK` set to `<lock>`, so the run's own command inherits it.
   - Under a supervisor already (`wk_supervised`: `WORKKIT_SUPERVISED=1`, which `detach.js` sets), `wk_run_detached` starts no second supervisor.
@@ -609,12 +631,21 @@
   - `wk_run_live <lock>` is 0, printing the supervisor's pid, while `<lock>` holds a pid file, no done file, and that pid is alive; 1 otherwise.
     - `wk_take_run_lock` asks it whether a lock's run is going.
   - `wk_run_held <lock>` is 0, printing the pid, while `<lock>` holds a pid file and that pid is alive or its done file is written: a run whose answer no call has collected yet. `watch.sh` chooses its run by it.
-  - The lock is dropped only by its owner.
-    - The normal end, the INT trap and the supervisor-gone path each remove it only while `<lock>/pid` still holds this run's pid.
+  - `wk_take_run_lock <lock>` takes the lock through `wk_claim_dir <lock> <tag>` (`lib/platform.sh`), and sets `WK_LOCK_MARK` to its `id.<tag>`.
+    - A folder that holds anything, or a lost claim, sends the taker to judge the lock that is there, through `wk_retire_judged` with `_wk_run_over` as the judge.
+    - It answers 0 holding the lock, 3 when a live run holds it, 1 when it cannot be made.
+  - The lock is dropped only by its owner (`_wk_drop_run_lock <lock> <pid>`, through `wk_retire_judged`).
+    - The normal end, the INT trap and the supervisor-gone path each read the mark, then retire the lock by it only while `<lock>/pid` still holds this run's pid.
+    - The owner finds its own mark through `claim`; a folder with no mark that still holds its pid is adopted (`wk_adopt_lock`), never left behind.
     - So a run that took it over keeps it.
   - A lock a live run holds answers 3 with nothing run.
     - Since a command may return 3 itself, `WK_HELD_PID` is set, to the holder's pid, only then.
   - A lock whose run is over is taken over: its done file written, its pid gone, or no pid five seconds after the take.
+    - The taker reads the mark before it judges, and retires the lock by that mark (`wk_retire_lock`). So of two takers on one old judgment, the second finds its mark gone and judges again, and never removes the first one's new lock.
+    - A lock holding a `gone.<tag>` mark is taken over so too, by that mark, once its remover is gone: a caller that ended between its rename and its removal leaves nothing stuck.
+    - While that remover lives, the taker waits for that `gone` mark to go, up to the five seconds a pid gets, and that wait costs none of its tries. Whatever stands once the mark is gone (no folder, or a new lock another taker made meanwhile) is judged on the next pass, so an ordinary removal never makes a take fail, and a new live run still answers 3.
+    - Only the same `gone` mark still there after the wait is `detach: could not take the lock <lock>`, 1.
+    - A folder with no mark is adopted (`wk_adopt_lock`): an empty one, an older kit's lock, and files a `mkdir` that answered 0 left.
     - So a KILL before the supervisor's pid is written, which no trap sees, leaves a lock with no pid that the next call takes after those five seconds.
     - With a done file, it waits up to two seconds for the directory to go, since its own foreground is collecting it.
   - INT, a human's Ctrl-C on the call that started the run, ends the whole run and exits 130.
@@ -622,10 +653,13 @@
     - Once the done file holds a code, it leaves the record, so a second call attached to the run gets 143.
     - A run still going when the wait runs out is ended by process group (`wk_end_run` in `platform.sh`).
     - Then it drops the lock, unless that end by process group failed (`wk_end_run` returns 1): the run still goes, so its lock stays. Either way it sets `WK_RAN_INT` to 1, for the caller's EXIT trap, and exits 130.
-  - `wk_ask_end <lock> <pid>` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>`, then waits up to `WK_END_WAIT` seconds (30).
-    - With another pid or none there it is 0 at once, nothing written.
+  - `wk_ask_end <lock> <pid>` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30).
+    - With another pid or none there it is 0 at once, nothing written; the lock is read before `<pid>`'s life is looked at.
+    - With `<pid>` gone already it writes nothing and answers as for a supervisor gone during the wait (below), so the lock stays as it was.
     - It is 0 once the done file is written or `<lock>/pid` holds another pid or none, 1 when the wait runs out. It prints nothing.
-    - A supervisor gone with no done file ends the wait at once with 1; the done file is looked at once more first, since it may land just before the supervisor exits.
+    - A supervisor gone ends the wait at once. The lock is read once more first, the done file before the pid, since the run may have ended and its lock been dropped between the looks.
+      - A done file there, or a lock that no longer holds `<pid>` (dropped, or taken by another run), is 0.
+      - A lock that still holds `<pid>` with no done file is 2: the supervisor is gone and left no answer.
     - `watch.sh`'s `--end` waits through it too.
   - Any other signal ends only the foreground.
     - The run goes on to its done file, and the lock stands until a later call finds it over.
@@ -1114,6 +1148,7 @@
     - When it finds the done file it collects the answer through `wk_attach_run` too, so the lock drops, and a call still attached reads the code from its record.
     - A run that ended already prints `watch: the run ended already (exit <code>)`, drops the lock and exits 0.
     - A run that has not ended 30 seconds later prints `watch: the run did not end; its supervisor is pid <N>`, exit 1.
+    - A supervisor gone that left no answer (`wk_ask_end`'s 2) prints `watch: the run's supervisor (pid <N>) is gone and left no answer`, exit 1.
     - On a narrowed run it clears the slot only when the slot's wrapper is gone (`drop_slot`); a call still attached to the run clears its own slot and exits 143.
   - An allow rule ships for the verb, `Bash(workkit watch:*)` (`ALLOW_RULES` in `workkit/allow.sh`), so it runs as its own Bash call: the rule matches the bare call alone.
 - `githooks/`:

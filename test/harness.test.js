@@ -10,7 +10,7 @@ const { stripVTControlCharacters } = require('util');
 const door = require('./lib/harness');
 const { IS_WINDOWS, NO_EXEC_BIT, stubTool } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
-const { listsOf } = require('./lib/run-lists');
+const { listsOf, marksOf } = require('./lib/run-lists');
 
 const { describe, test, expect, mkTmp, run, needs } = door;
 
@@ -159,12 +159,6 @@ const mkRepo = (suites) => {
   return root;
 };
 
-// How many case lines in `output` carry the pass mark, and the fail mark.
-const marks = (output) => {
-  const lines = output.split(/\r?\n/).map((l) => l.trim());
-  return { passed: lines.filter((l) => l.startsWith('✓')).length, failed: lines.filter((l) => l.startsWith('✗')).length };
-};
-
 describe('harness: Node\'s own words', () => {
   test('describe, before, after, beforeEach, afterEach and mock from the door are node:test\'s own', () => {
     for (const word of NODE_WORDS) expect(door[word], `${word} is node:test's own`).toBe(nodeTest[word]);
@@ -246,7 +240,7 @@ describe('harness: the one entry', () => {
     expect(alone.output, 'by file, no failure').toMatch(/^# fail 0$/m);
     const pooled = node(root, [RUNNER]);
     expect(pooled.code, `under the runner exits 0, got:\n${pooled.output}`).toBe(0);
-    expect(marks(pooled.output), `under the runner, the same three, got:\n${pooled.output}`).toEqual({ passed: 3, failed: 0 });
+    expect(marksOf(pooled.output).map((mark) => mark[0]), `under the runner, the same three, got:\n${pooled.output}`).toEqual(['✓', '✓', '✓']);
     expect(pooled.output, 'the runner\'s totals agree').toContain('3 passed, 0 failed');
   });
 });

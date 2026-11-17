@@ -22,7 +22,7 @@ const {
 } = require('../lib/script-shell');
 const { runLib } = require('../lib/hook-lib');
 const {
-  CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, reap, realOf, ended, silent,
+  CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, reap, realOf, ended, silent, deadPid,
 } = require('../lib/supervise');
 const { COLOR_ON, linesToLast, prints } = require('../lib/supervise-world');
 const { RUNNER, SUITE } = require('../lib/runner-world');
@@ -250,7 +250,7 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
       const tree = treeHash(repo);
       const lock = suiteLockPath(world.workflowHome, repo);
       // A pid that was real a moment ago and has ended: the supervisor that died mid-run.
-      const dead = spawnSync(process.execPath, ['-e', '0']).pid;
+      const dead = deadPid();
       fs.mkdirSync(lock, { recursive: true });
       fs.writeFileSync(path.join(lock, 'pid'), `${dead}\n`);
       const res = npm(world, repo, ['test']);

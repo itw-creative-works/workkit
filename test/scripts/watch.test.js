@@ -3,8 +3,8 @@
 // prints the log's last 20 lines and follows it to the run's code; a run that ended
 // with no call attached still gives its code once; with no live run it says so;
 // `--end` ends the named run on request; a narrowed run's start clears this repo's
-// day-old leftover slots; the color gate paints what it prints. The world is
-// test/lib/supervise-world.js.
+// day-old leftover slots and those a gone remover left; the color gate paints what
+// it prints. The world is test/lib/supervise-world.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +18,7 @@ const { runLib } = require('../lib/hook-lib');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
 const { suiteLockPath } = require('../lib/suite-record');
 const {
-  CHECK_MINUTES, skipOnWindows, pidOf, reap, silent, writesPid, ended, read, realOf,
+  CHECK_MINUTES, skipOnWindows, pidOf, reap, silent, writesPid, ended, read, realOf, handLock, claimNaming, tagOf, deadPid,
 } = require('../lib/supervise');
 const {
   LONG_CHECK, COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor,
@@ -346,6 +346,27 @@ describe('workkit watch: attaching to the live run', () => {
       reap(...['old', 'recent', 'fresh'].map((name) => pidIn(world.pidFile(name))));
     }
   });
+
+  test('a narrowed run at its start clears a slot whose lock holds only the gone mark of a gone remover and no done file, and keeps one whose remover lives', { skip: skipOnWindows() || skipWithoutWrapper() }, async () => {
+    const world = narrowedWorld();
+    const [abandoned, removing] = [deadPid(), deadPid()].map((pid) => slotOf(world, pid));
+    for (const [slot, remover] of [[abandoned, deadPid()], [removing, process.pid]]) {
+      fs.mkdirSync(path.dirname(slot.log), { recursive: true });
+      fs.writeFileSync(slot.log, '');
+      handLock(slot.lock, { [`gone.${tagOf(remover)}`]: '' });
+    }
+    try {
+      // Its go file first, so the new run ends at once.
+      fs.writeFileSync(world.go('fresh'), '');
+      const fresh = narrowedCall(world, 'fresh');
+      const { status } = await fresh.done;
+      expect(status, `the new narrowed run ran to its own code, got: ${fresh.output()}`).toBe(3);
+      expect(!fs.existsSync(abandoned.lock), `the gone remover's slot lock is cleared: ${abandoned.lock}`).toBeTruthy();
+      expect(fs.readdirSync(removing.lock).join(' '), `the live remover's slot lock stays: ${removing.lock}`).toBe(`gone.${tagOf(process.pid)}`);
+    } finally {
+      reap(pidIn(world.pidFile('fresh')));
+    }
+  });
 });
 
 describe('workkit watch: no run to attach to', () => {
@@ -585,6 +606,24 @@ describe('workkit watch --end', () => {
       expect(!fs.existsSync(path.join(lock, 'end')), 'no end request was written').toBeTruthy();
     });
   }
+
+  test('a run lock holding a plain process that ends on the end file and writes no done file: watch --end run exits 1 on the gone line with its pid, never the did-not-end line', async () => {
+    const w = mkWorld();
+    const lock = lockFolders(w).run;
+    const end = path.join(lock, 'end');
+    const plain = start(process.execPath, ['-e', `const fs = require('fs'); setInterval(() => { if (fs.existsSync(${jsPath(end)})) process.exit(0); }, 50);`]);
+    try {
+      handLock(lock, { claim: claimNaming('plain'), 'id.plain': '', pid: `${plain.pid}\n` });
+      const res = await workkit(['watch', '--end', 'run'], { cwd: w.repo, env: w.env });
+      expect(res.code, `exit 1, got: ${res.output}`).toBe(1);
+      const said = linesToLast(res.output);
+      const goneLine = `watch: the run's supervisor (pid ${plain.pid}) is gone and left no answer`;
+      expect(said.includes(goneLine), `the line ${goneLine}, got: ${res.output}`).toBeTruthy();
+      expect(!said.some((line) => line.includes('did not end')), `not the line for a wait that ran out, got: ${res.output}`).toBeTruthy();
+    } finally {
+      await plain.end('SIGKILL');
+    }
+  });
 
   test('two live runs: watch --end with no name is refused, exit 2, both live; watch --end run ends the supervised one alone', { skip: skipWithoutWrapper() }, async () => {
     const both = bothWorld();

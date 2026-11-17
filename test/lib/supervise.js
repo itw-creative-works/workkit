@@ -2,18 +2,19 @@
  * What the suites of the detached supervisor's checks share: the check length a
  * case sets, the settings that set it, the frozen line, the reason a process
  * read is skipped and the skip value of a case that needs one, the fake commands and the reads
- * of what they leave, whether a started call has ended, and the end of whatever
- * a red case left running.
+ * of what they leave, whether a started call has ended, the end of whatever
+ * a red case left running, a run lock folder made by hand and read back, and a pid that has ended.
  * Consumers: test/scripts/detach.test.js, script-shell-detached.test.js,
- * prove.test.js, supervise.test.js, watch.test.js, tree.test.js and
+ * prove.test.js, supervise.test.js, watch.test.js, tree.test.js, platform.test.js and
  * test/lib/supervise-world.js.
  */
 
 const fs = require('fs');
+const path = require('path');
 const {
-  endTree, until, expect, pidIn,
+  endTree, until, expect, pidIn, alive,
 } = require('./harness');
-const { IS_WINDOWS, jsPath } = require('./platform');
+const { IS_WINDOWS, jsPath, spawnSync } = require('./platform');
 
 // A check of about a second, so two checks pass well inside the spawn deadline.
 const CHECK_MINUTES = 0.02;
@@ -58,7 +59,30 @@ const lastLine = (text) => text.replace(/\n$/, '').split('\n').pop();
 /** <file>'s real path, so two spellings of one file compare equal. */
 const realOf = (file) => { try { return fs.realpathSync(file); } catch { return `(unresolved) ${file}`; } };
 
+/** A run lock folder made by hand at <lock>, holding each file <files> names (its claim and mark among them) with its text. */
+const handLock = (lock, files) => {
+  fs.mkdirSync(lock, { recursive: true });
+  for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(lock, name), text);
+  return lock;
+};
+
+/** A lock's `claim` text naming the mark `id.<tag>`: the taker's tag. */
+const claimNaming = (tag) => `${tag}\n`;
+
+/** A take's tag whose first field is <pid>, the process that made it. */
+const tagOf = (pid) => `${pid}.1.1`;
+
+/** A pid that was real a moment ago and has ended. */
+const deadPid = () => {
+  const pid = spawnSync(process.execPath, ['-e', '0']).pid;
+  expect(!alive(pid), `the pid ${pid} is gone`).toBeTruthy();
+  return pid;
+};
+
+/** The names <lock> holds, sorted, as one comparable string; `(none)` once the folder is gone. */
+const holding = (lock) => (fs.existsSync(lock) ? fs.readdirSync(lock).sort().join(' ') : '(none)');
+
 module.exports = {
   CHECK_MINUTES, NO_PROCESS_READ, skipOnWindows, FROZEN_LINE, checkSettings, pidOf, reap,
-  writesPid, silent, busy, ended, read, lastLine, realOf,
+  writesPid, silent, busy, ended, read, lastLine, realOf, handLock, claimNaming, tagOf, deadPid, holding,
 };

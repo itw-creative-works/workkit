@@ -76,17 +76,15 @@ const runApp = (lines, after, place) => runHost(HOST(after, place), {
 const WAITING_HOST = SUITE(`
 const readline = require('readline');
 const path = require('path');
-const { appCases, afterEach } = require(${JSON.stringify(HARNESS)});
-const { spawn } = require(${JSON.stringify(path.join(__dirname, 'lib', 'platform.js'))});
+const { appCases, afterEach, start } = require(${JSON.stringify(HARNESS)});
 const alphaSettled = Promise.withResolvers();
 afterEach((t) => { if (t.name === 'alpha') alphaSettled.resolve(); });
 const drive = async (onLine) => {
-  const app = spawn(process.execPath, [path.join(__dirname, '..', 'app.js')], { stdio: ['pipe', 'pipe', 'inherit'] });
-  readline.createInterface({ input: app.stdout }).on('line', onLine);
-  const closed = new Promise((resolve) => { app.once('close', resolve); });
+  const app = start(process.execPath, [path.join(__dirname, '..', 'app.js')], { stdin: 'open' });
+  readline.createInterface({ input: app.child.stdout }).on('line', onLine);
   await alphaSettled.promise;
-  app.stdin.end();
-  await closed;
+  app.child.stdin.end();
+  await app.done;
 };
 appCases(${CASES}, drive);
 `);

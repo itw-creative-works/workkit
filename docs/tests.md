@@ -166,6 +166,11 @@
     - as a last guard, a file whose converted text would hold an `expect` with no matcher: `the converted text would hold an expect with no matcher`.
   - A repo on the package runs it, then converts by hand each file it lists.
   - The global verb runs the kit's own copy of this bin at the repo root, as `workkit tools` does.
+- `start()`'s child has its stdin ignored; with `input` the text is written to it, then it is closed.
+  - With `stdin: 'open'` it is a pipe `start` never ends: `input`, if given, is written first, and the caller writes and ends it through `child.stdin`.
+  - A closed pipe (EPIPE, EOF) is ignored, as it is for `input`; any other stream error fails `done`.
+  - Node closes it once the child is gone, so `start` adds no close of its own. `end()` and the deadline end the process, and close no stream first.
+  - Any other `stdin` value throws at the call, naming `stdin`, so a misspelt one never starts a child with no stdin.
 - `start()`'s `end(signal)` climbs the shell's ladder (`wk_end_run`): `SIGINT` then `SIGTERM` then `SIGKILL`.
   - It starts from the rung named, and the rungs are 1.5 s apart.
   - Each rung is sent only while the child (a detached child's whole process group) still lives.
@@ -266,7 +271,7 @@
   - Each is handed a summary file of its own (`WORKKIT_TEST_SUMMARY`), and the kit's runner writes its counts there.
     - A member whose run writes no line did not run the kit's runner, so it fails by name, whatever its exit: `✗ <name>: its test script did not run workkit's runner`, with ` (exit <code>)` after it when it exited other than 0.
   - Under a filter each runs `npm test -- --filter=<text>`, the text one argument, whole.
-    - On Windows it arrives whole through Git Bash, which the starter uses when Git for Windows is there. Without it the starter runs `npm.cmd`, whose `%*` reads the line again, so a text with an odd `"` before an `&` can split.
+    - On Windows it arrives whole through Git Bash, which the starter uses when Git for Windows is there. Without it the starter runs `npm.cmd`, whose `%*` reads the line again, so the starter escapes each argument twice and the text arrives whole there too.
     - npm appends it to the member's script, so a script that ends in the runner takes it (`node pre.js && workkit test`). A script that ends in another command does not, and its cases all run.
     - Each is handed a no-match file of its own too (`WORKKIT_TEST_NO_MATCH`). A member whose run ends with no matching case prints its own `No case matches <text>` under its heading and writes one line there.
     - Such a member is the row `⊘ <name>: no case matches`, with no count and no failure, whatever its exit. One that exits 1 without the line fails as on a bare run.

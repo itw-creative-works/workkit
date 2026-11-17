@@ -16,6 +16,9 @@ const {
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const { startNeverCollects, childOf } = require('../lib/never-collects');
 const { proofBase } = require('../lib/workflow-home');
+const {
+  handLock, claimNaming, deadPid, holding,
+} = require('../lib/supervise');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 const DETACH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'detach.js');
@@ -490,7 +493,7 @@ describe('platform.sh: wk_end_run and wk_pid_alive', () => {
     const env = { PATH: systemPathWith(NODE_DIR) };
     const live = inPlatform(`wk_pid_alive ${process.pid}`, env);
     expect(live.code, `this process is alive, stderr: ${live.err}`).toBe(0);
-    const dead = spawnSync(process.execPath, ['-e', '0']).pid;
+    const dead = deadPid();
     const gone = inPlatform(`wk_pid_alive ${dead}`, env);
     expect(gone.code !== 0 && gone.code !== null, `a pid that has ended answers non-zero, got: ${gone.code}`).toBeTruthy();
   });
@@ -533,6 +536,71 @@ describe('platform.sh: wk_take_lock and wk_drop_lock', () => {
     } finally {
       await second.end('SIGKILL');
     }
+  });
+});
+
+describe('platform.sh: wk_lock_mark, wk_retire_lock and wk_adopt_lock', () => {
+  /** A run lock folder made by hand in a scratch folder, holding <files>. */
+  const lockOf = (files) => handLock(path.join(mkTmp('wf-platform-runlock-'), 'lock'), files);
+
+  test('wk_retire_lock of an old mark on a lock made since: 1, and its claim naming id.new, the mark and its pid file stay', () => {
+    const lock = lockOf({ claim: claimNaming('new'), 'id.new': '', pid: '4242\n' });
+    const res = inPlatform('wk_retire_lock "$L" id.old', { L: shellPath(lock) });
+    expect(res.code, `1 for a mark the folder does not hold, stderr: ${res.err}`).toBe(1);
+    expect(holding(lock), 'the new lock is whole').toBe('claim id.new pid');
+    expect(fs.readFileSync(path.join(lock, 'claim'), 'utf8'), 'its claim still names the new mark').toBe(claimNaming('new'));
+    expect(fs.readFileSync(path.join(lock, 'pid'), 'utf8'), 'its pid file still names the new run').toBe('4242\n');
+  });
+
+  test('wk_retire_lock of the mark the folder\'s claim names: 0, and the folder is gone', () => {
+    const lock = lockOf({ claim: claimNaming('a'), 'id.a': '', pid: '4242\n', done: '0\n' });
+    const res = inPlatform('wk_retire_lock "$L" id.a', { L: shellPath(lock) });
+    expect(res.code, `0 for the mark the folder holds, stderr: ${res.err}`).toBe(0);
+    expect(holding(lock), 'the folder was removed').toBe('(none)');
+  });
+
+  test('wk_retire_lock of a mark another caller already renamed to gone.x: 1, and the folder stays', () => {
+    const lock = lockOf({ claim: claimNaming('a'), 'gone.x': '', pid: '4242\n' });
+    const res = inPlatform('wk_retire_lock "$L" id.a', { L: shellPath(lock) });
+    expect(res.code, `1 for a mark already retired, stderr: ${res.err}`).toBe(1);
+    expect(holding(lock), 'the folder is as the other caller left it').toBe('claim gone.x pid');
+  });
+
+  test('wk_lock_mark: the id claim names, a leftover id beside it or not; else gone.x; else id.orphan; 1 and nothing printed for an empty claim alone', () => {
+    for (const [files, mark, what] of [
+      [{ claim: claimNaming('a'), 'id.a': '', pid: '4242\n' }, 'id.a', 'a claim naming id.a'],
+      [{ claim: claimNaming('a'), 'id.a': '', 'id.b': '', pid: '4242\n' }, 'id.a', 'a claim naming id.a and a leftover id.b'],
+      [{ claim: claimNaming('a'), 'gone.x': '', pid: '4242\n' }, 'gone.x', 'gone.x and no named id'],
+      [{ claim: '', 'id.orphan': '', pid: '4242\n' }, 'id.orphan', 'id.orphan alone'],
+    ]) {
+      const res = inPlatform('wk_lock_mark "$L"', { L: shellPath(lockOf(files)) });
+      expect(res.code, `${what} answers 0, stderr: ${res.err}`).toBe(0);
+      expect(res.out.trim(), `${what}: the mark's name, got: ${JSON.stringify(res.out)}`).toBe(mark);
+    }
+    const bare = inPlatform('wk_lock_mark "$L"', { L: shellPath(lockOf({ claim: '', pid: '4242\n' })) });
+    expect(bare.code, `an empty claim and no mark answers 1, stderr: ${bare.err}`).toBe(1);
+    expect(bare.out, `and prints nothing, got: ${JSON.stringify(bare.out)}`).toBe('');
+  });
+
+  // The folder's file names as a caller reads them before it judges: wk_adopt_lock's <seen>.
+  const SEEN = 'seen=$(_wk_lock_files "$L") || exit 9';
+
+  test('wk_adopt_lock on a lock a live run holds, given its own file names: 1, no id.orphan left, its claim and mark unchanged', () => {
+    const lock = lockOf({ claim: claimNaming('live'), 'id.live': '', pid: `${process.pid}\n` });
+    const res = inPlatform(`${SEEN}\nwk_adopt_lock "$L" "$seen"`, { L: shellPath(lock) });
+    expect(res.code, `a mark is there, so 1, stderr: ${res.err}`).toBe(1);
+    expect(holding(lock), 'no id.orphan, the live lock whole').toBe('claim id.live pid');
+    expect(fs.readFileSync(path.join(lock, 'claim'), 'utf8'), 'its claim still names its mark').toBe(claimNaming('live'));
+  });
+
+  test('wk_adopt_lock on a folder that held only a gone pid when the caller looked and holds one more file now: 1, no id.orphan left, the rest as it was', () => {
+    const dead = deadPid();
+    const lock = lockOf({ pid: `${dead}\n` });
+    const res = inPlatform(`${SEEN}\nprintf '0\\n' > "$L/done"\nwk_adopt_lock "$L" "$seen"`, { L: shellPath(lock) });
+    expect(res.code, `the files differ from what the caller read, so 1, stderr: ${res.err}`).toBe(1);
+    expect(holding(lock), 'no id.orphan, the folder otherwise as it was').toBe('done pid');
+    expect(fs.readFileSync(path.join(lock, 'pid'), 'utf8'), 'its pid file untouched').toBe(`${dead}\n`);
+    expect(fs.readFileSync(path.join(lock, 'done'), 'utf8'), 'the file that appeared untouched').toBe('0\n');
   });
 });
 
