@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.98.1] - 2026-11-17
+
 ### Fixed
 
-- [#551](../../issues/551) - The kit's own case for `start` with `stdin: 'open'` and a deadline now passes on Windows. It checked for a signal, and Windows ends a child through `taskkill`, which leaves status 1 and no signal.
+- [#551](../../issues/551) [`b70c644`](../../commit/b70c644) Thanks [@ianwieds]! - The kit's own case for `start` with `stdin: 'open'` and a deadline now passes on Windows. It checked for a signal, and Windows ends a child through `taskkill`, which leaves status 1 and no signal.
 
 ## [0.98.0] - 2026-11-16
 
