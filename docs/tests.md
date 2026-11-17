@@ -94,8 +94,8 @@
 - The package holds:
   - `test/run.js`;
   - `test/tools.js` (the `tools` verb) and `test/convert.js` (the `convert` verb);
-  - its library beside them in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `proc-state.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `pick.js`, `members.js`, `kit-module.js`, `paint.js`, `convert-read.js`, `convert-map.js`, `events.js`, `app-cases.js`, `mods.js`, `suite-deadline.js`);
-    - `pick.js` picks a run's suites and its serial tail by name, and stops a run on a leftover list file; `mods.js` is `modCase`; `suite-deadline.js` reads the suite deadline a run holds, for the runner and `modCase`;
+  - its library in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `proc-state.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `pick.js`, `serial-name.js`, `members.js`, `kit-module.js`, `paint.js`, `convert-read.js`, `convert-map.js`, `events.js`, `app-cases.js`, `mods.js`, `suite-deadline.js`, `on-path.js`);
+    - `pick.js` picks a run's suites and its serial tail by name (`serial-name.js`, importing nothing so `safety:test-bar` reads it too), and stops a run on a leftover list file; `mods.js` is `modCase`; `suite-deadline.js` reads the suite deadline a run holds, for the runner and `modCase`; `on-path.js` finds a command's files on the PATH, for `needs` and `modCase`;
     - `members.js` reads a monorepo root's members and runs one member's `npm test`; `kit-module.js` loads a kit file the package ships a copy of (`kitModule(stem)`); `proc-state.js` reads whether a process, or every member of a group, ended and waits uncollected, for `alive` and `groupLives`;
   - the export `workkit-core/test`, the entry `harness.js` builds: Node's case functions, its own `test`, `it`, `needs`, `hasLaunchd` and `WORKKIT_DIR`, and every export of `process.js`, `scratch.js`, `seed.js`, `suites.js`, `log.js`, `spawn.js`, `expect.js`, `events.js`, `app-cases.js` and `mods.js`;
   - plus `workkit-core/run`, the kit's `workflow/lib/run.js` its prepack copies in as `run.cjs`, which the library's `run` and `start` launch through;
@@ -344,6 +344,7 @@
   - It passes when the tool exits 0.
   - It fails on any other end. Its message holds how the tool ended (`exited with code 3`), each test the tool named in a `(fail) <name>` line, and the tool's output.
   - With no `claude` on the PATH it is skipped: `no claude binary on PATH`. A `claude` that is found and does not start fails it, with the reason.
+    - Found is any file or link on the PATH named `claude`, or on Windows also `claude` with a `PATHEXT` ending, runnable or not, a link to nothing included, so a missing `#!` program or a broken link fails it rather than skipping.
   - Its deadline is the suite deadline the run holds (`TEST_DEADLINE`, else `SUITE_DEADLINE`), since one case holds the whole tool run.
     - The tool is ended 10 seconds before it, or at half of it when that is less, so a tool that never ends fails the case with `timed out after <seconds>s` and its output.
   - A folder that does not exist throws `modCase: no folder <folder>` at the call, failing the suite.
@@ -436,6 +437,7 @@ describe('the popup', () => {
 - After a look, the next one is asked after six more checks with no output.
 - An `end` file in the run's lock folder is read within a second and ends the run: its log ends `detach: the run was ended on request (exit 143)`, and the run exits 143.
   - Ctrl-C on the call that started the run writes that file, so the whole run ends and the call exits 130 (`workflow/README.md` § `lib/detach.sh`).
+  - The supervisor answers by an `ending` file in the lock folder while it ends the run. The call that asked (Ctrl-C, `workkit watch --end`) waits 30 seconds for that answer, then for as long as the supervisor lives, so a slow end is never reported as a failed one. A failed end removes `ending` with `end`.
 - Ending a run: each of its processes gets a terminate signal, and what still lives 10 seconds later a forced end.
   - A signal the system refuses is passed over, so every other process still gets its own.
   - An ended run exits with its own code once its whole tree is gone, never the code the command's exit would give.

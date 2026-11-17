@@ -2,8 +2,7 @@
 // behind the case deadline, the commands a suite needs as a skip value, and
 // every concern file's exports. AGENTS.md § Tests.
 
-import fs from 'node:fs';
-import path from 'node:path';
+import { onPath } from './on-path.js';
 
 export { describe, before, after, beforeEach, afterEach, mock } from 'node:test';
 export { test, it } from './cases.js';
@@ -21,24 +20,6 @@ export * from './mods.js';
 // The workflow state directory's name for the test layer. The engine and the
 // hooks hold their own copy, so change all three together.
 export const WORKKIT_DIR = '.workkit';
-
-// A file PATH's search would run as `name`: on Windows the name plus each
-// PATHEXT extension (the name alone only when it carries one), elsewhere an
-// executable file of that name.
-const onPath = (name) => {
-  const windows = process.platform === 'win32';
-  const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
-  const names = windows ? [...(path.extname(name) ? [name] : []), ...exts.map((ext) => `${name}${ext}`)] : [name];
-  return (process.env.PATH || '').split(path.delimiter).filter(Boolean).some((dir) => names.some((candidate) => {
-    const file = path.join(dir, candidate);
-    try {
-      fs.accessSync(file, windows ? fs.constants.F_OK : fs.constants.X_OK);
-      return fs.statSync(file).isFile();
-    } catch {
-      return false;
-    }
-  }));
-};
 
 // The commands a suite or case runs, as its `skip` value: false when every
 // one is on the PATH. A missing one skips, the reason naming each, only in a

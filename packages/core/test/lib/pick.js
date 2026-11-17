@@ -6,9 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findSuites } from './suites.js';
 import { namedSuites, unmatchedLine } from './suite-path.js';
-
-// A suite that runs alone, after the parallel wave.
-const SERIAL_NAME = /\.serial\.test\.[cm]?js$/;
+import { SERIAL_NAME } from './serial-name.js';
 
 // List files the runner never reads, each with where its rule belongs, so
 // one left in a repo stops the run rather than lose that rule in silence.

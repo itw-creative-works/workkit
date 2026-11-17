@@ -151,7 +151,7 @@ describe('render', { skip: needs('ffmpeg') }, () => {
 - Suite discovery: `findSuites(root)` (every suite under the start folder, absolute paths, sorted), `suiteName(root, file)` (its printed name), `POOL`.
 - A plugin's own tests: `modCase(folder)` registers one case, `claude plugin test (<the folder's own name>)`, that runs `claude plugin test <folder>` there through the kit's program starter (a `claude.cmd` on Windows too).
   - It passes when the tool exits 0, and fails on any other end, its message holding how it ended, each `(fail) <name>` test and the tool's output.
-  - With no `claude` on the PATH it is skipped, `no claude binary on PATH`; a `claude` that is found but does not start fails it, `claude did not start: <message>`; `--filter` and paths treat it as any case.
+  - With no `claude` on the PATH it is skipped, `no claude binary on PATH`; a `claude` that is found (any file or link on the PATH named `claude`, or on Windows also `claude` with a `PATHEXT` ending, runnable or not, a link to nothing included) but does not start fails it, `claude did not start: <message>`; `--filter` and paths treat it as any case.
   - Its deadline is the run's suite deadline (`TEST_DEADLINE`, else `SUITE_DEADLINE`), since it holds the whole tool run; the tool is ended 10 seconds before it (at half of it when that is less), failing the case with its output.
   - A folder that does not exist throws `modCase: no folder <folder>` at the call, failing the suite.
 - Assertions: `expect(actual, message?)`, with Jest's names and behaviour (its `expect` 29.7) plus Vitest's `toBeTypeOf`.

@@ -502,7 +502,7 @@
 - Stamps the load-time surfaces at a `startup` or `resume` session start, into the session's `$.store` record, digested.
   - `hooks/hooks.json` by content.
   - Plus the file list and mtimes of `agents/*.md`, `skills/*/SKILL.md`, `hooks/register.js` and every file under `hooks/mods/` at any depth.
-  - Plus `packages/core/test/lib/lexer.js`, the one file a mod the session loads reaches outside them.
+  - Plus `packages/core/test/lib/lexer.js` and `packages/core/test/lib/serial-name.js`, the two files a mod the session loads reaches outside them.
   - The list is `surfacePaths` in `hooks/mods/reload-guard.js`.
 - Injects one line when they change.
   - Skill bodies and engine edits are already live, so only these need `/reload-plugins`.
@@ -728,7 +728,7 @@
 - The six rules, read off the text as written, comment lines skipped:
   - `mkTmp`: a `mkdtempSync(` or `tmpdir(` outside the scratch writer (`test/lib/scratch.js` or `tests/lib/scratch.js`, or the kit's `packages/core/test/lib/scratch.js`);
     - one inside a quoted span or a template literal spanning lines is left alone: a fixture's text, never this test's call;
-  - `serial`: a literal `/tmp/<name>` path or a literal port (`localhost:<n>`, `port: <n>`, `.listen(<n>`);
+  - `serial`: a literal `/tmp/<name>` path or a literal port (`localhost:<n>`, `port: <n>`, `.listen(<n>`), never in a suite the runner runs alone, named `*.serial.test.js` (`.mjs`, `.cjs`; the runner's own rule, `SERIAL_NAME` in `packages/core/test/lib/serial-name.js`), which has already said so;
   - `worth`: a case whose every assertion is an `existsSync`, a mode or exec-bit check, `assert(true)`, `assert.ok(true)` or `expect(true)`, named at its first;
     - a case is a line opening with `test(` or `it(`, or its `.skip`, `.todo` or `.only` form, `await` before it or not;
     - an assertion is an `assert(`, an `assert.<name>(` or an `expect(` call;

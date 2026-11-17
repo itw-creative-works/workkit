@@ -10,8 +10,9 @@ import { test } from './cases.js';
 import { start } from './spawn.js';
 import { suiteDeadline } from './suite-deadline.js';
 import { howEnded } from './node-test.js';
+import { filesOnPath } from './on-path.js';
 
-// Why the case skips when there is no claude to start.
+// Why the case skips when no file named claude is on the PATH.
 const NO_CLAUDE = 'no claude binary on PATH';
 
 // How long before the suite deadline the tool is ended, so its own watchdog reports first:
@@ -57,7 +58,8 @@ export const modCase = (folder) => {
     } catch (err) {
       // A tool with a pid started, so its rejection (a watchdog end that failed) is no start failure.
       if (tool.pid !== undefined) throw err;
-      if (err.code !== 'ENOENT') throw new Error(`claude did not start: ${err.message}`);
+      // A found claude can fail ENOENT too (a `#!` line naming a missing program), so the PATH decides.
+      if (filesOnPath('claude').length > 0) throw new Error(`claude did not start: ${err.message}`);
       t.skip(NO_CLAUDE);
       return;
     }

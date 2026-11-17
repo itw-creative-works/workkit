@@ -206,9 +206,10 @@ const holdAwake = (say) => {
  * then records its exit code. A command killed by a signal records 128 plus
  * the signal's number, the way a shell reports it. With a check it ends a
  * frozen run (FROZEN_CODE) and writes a look for an unclear one; an `end` file
- * ends the run (ENDED_CODE). An ended run records its own code, never the
- * command's, once its whole tree is gone; an end that fails with the command
- * alive records nothing, and the run goes on.
+ * ends the run (ENDED_CODE). An end writes an `ending` file beside the done
+ * file first. An ended run records its own code, never the command's, once its
+ * whole tree is gone; an end that fails with the command alive records nothing,
+ * removes `end` and `ending`, and the run goes on.
  * @param {string[]} argv
  * @returns {number|undefined} a usage code, or nothing while the command runs
  */
@@ -246,10 +247,12 @@ const supervise = (argv) => {
     if (!ending) finish(code === null ? 128 + os.constants.signals[signal] : code);
   });
   // The timers run on through an end, so a failed one leaves the end poll and
-  // the checks as they were; finish() clears them.
+  // the checks as they were; finish() clears them. The `ending` file answers an
+  // end request: the caller waits on while it stands and this supervisor lives.
   const end = (code, line) => {
     if (ending || finished) return;
     ending = true;
+    fs.writeFileSync(beside('ending'), '');
     endTreeOf(child.pid)
       .catch((err) => {
         if (child.exitCode === null && child.signalCode === null) throw err;
@@ -261,6 +264,7 @@ const supervise = (argv) => {
       }, (err) => {
         say(`detach: the run could not be ended (${err.message}), so it goes on`);
         fs.rmSync(beside('end'), { force: true });
+        fs.rmSync(beside('ending'), { force: true });
         ending = false;
       });
   };

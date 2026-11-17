@@ -116,6 +116,43 @@ describe('test-bar: each mechanical miss names its line and rule', () => {
     names(out, rel, 4, 'serial');
   });
 
+  test('the same /tmp/ path and port in a suite named *.serial.test.js: no serial line', () => {
+    const out = write('tests/server.serial.test.js', [
+      "const { test, expect } = require('workkit-core/test');",
+      "const LOG = '/tmp/server-test.log';",
+      "const { get } = require('./lib/client');",
+      "const URL = 'http://localhost:8080/health';",
+      "test('answers', async () => expect((await get(URL, LOG)).status, 'ok').toBe(200));",
+    ]);
+    expect(ruleLines(out, 'serial').join('\n'), 'the suite\'s name already says it runs alone').toBe('');
+  });
+
+  test('a /tmp/ path and port in *.serial.spec.ts, which the runner never runs alone: the serial rule on each line', () => {
+    const rel = 'tests/server.serial.spec.ts';
+    const out = write(rel, [
+      "import { test, expect } from 'workkit-core/test';",
+      "const LOG = '/tmp/server-test.log';",
+      "import { get } from './lib/client';",
+      "const URL = 'http://localhost:8080/health';",
+      "test('answers', async () => expect((await get(URL, LOG)).status, 'ok').toBe(200));",
+    ]);
+    names(out, rel, 2, 'serial');
+    names(out, rel, 4, 'serial');
+  });
+
+  test('a .serial suite with a literal port and a fixed delay: the deadline rule still on its line', () => {
+    const rel = 'tests/server.serial.test.js';
+    const out = write(rel, [
+      "const { test, expect } = require('workkit-core/test');",
+      "const { get } = require('./lib/client');",
+      "test('answers', async () => {",
+      '  await new Promise((resolve) => { setTimeout(resolve, 500); });',
+      "  expect((await get('http://localhost:8080/health')).status, 'ok').toBe(200);",
+      '});',
+    ]);
+    names(out, rel, 4, 'deadline');
+  });
+
   test('a case whose only assertion is existsSync: the worth rule', () => {
     const rel = 'tests/install.test.js';
     const out = write(rel, [

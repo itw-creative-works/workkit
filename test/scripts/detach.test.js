@@ -129,6 +129,26 @@ const parentOf = (pidFile, childScript, detached) => [
 const TICKS = "let n = 0; setInterval(() => { console.log('tick'); n += 1; if (n === 40) process.exit(3); }, 300);";
 
 /**
+ * A node process that runs the JS statements <action> <ms> after <trigger> appears;
+ * it lives on when <stays>.
+ */
+const actsAfter = (trigger, ms, action, stays = false) => start(process.execPath, ['-e', [
+  "const fs = require('fs');",
+  `const seen = setInterval(() => { if (!fs.existsSync(${jsPath(trigger)})) return; clearInterval(seen);`,
+  `setTimeout(() => { ${action} }, ${ms}); }, 50);`,
+  stays ? 'setInterval(() => {}, 1 << 30);' : '',
+].join('\n')]);
+
+/**
+ * A node process that writes the JS expression <text> to <file> <ms> after <trigger>
+ * appears, whole through a rename from outside <file>'s folder; it lives on when <stays>.
+ */
+const writesAfter = (trigger, file, ms, text, stays = false) => {
+  const next = path.join(path.dirname(path.dirname(file)), `${path.basename(file)}.next`);
+  return actsAfter(trigger, ms, `fs.writeFileSync(${jsPath(next)}, ${text}); fs.renameSync(${jsPath(next)}, ${jsPath(file)});`, stays);
+};
+
+/**
  * detach.js launching node -e <script> with its log and done file in <dir>, under a
  * scratch machine folder unless <env> names one, the run's settings read from
  * <root> when given; the supervisor's pid it printed.
@@ -492,6 +512,43 @@ describe('detach.sh: the run lock\'s mark', () => {
     expect(namedIn(lock), 'its claim still names its mark').toBe('id.live');
   });
 
+  // A lock a take claimed, its taker <pid> by the tag's first field, and no pid file yet.
+  const startingLock = (prefix, pid) => {
+    const tag = tagOf(pid);
+    return { lock: handLock(lockIn(prefix), { claim: claimNaming(tag), [`id.${tag}`]: '' }), mark: `id.${tag}` };
+  };
+
+  test('a lock whose taker is alive and no pid file, a live pid written about seven seconds after the take began: the take answers 3 with that pid in WK_HELD_PID', async () => {
+    const { lock } = startingLock('detach-mark-starting-', process.pid);
+    const began = path.join(path.dirname(lock), 'began');
+    // The supervisor's pid, its own, lands past the five seconds a lock with no taker gets.
+    const supervisor = writesAfter(began, path.join(lock, 'pid'), 7000, '`${process.pid}\\n`', true);
+    try {
+      const res = withLock(lock, `: > "$2"\n${TAKE}`, shellPath(began));
+      expect(rcOf(res.stdout || ''), `a starting run keeps its lock, so 3, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(3);
+      expect(fieldOf(res.stdout, 'held'), `WK_HELD_PID names the pid written late, stdout: ${JSON.stringify(res.stdout)}`).toBe(String(supervisor.pid));
+    } finally {
+      await supervisor.end('SIGKILL');
+    }
+  });
+
+  test('a lock whose taker is gone and no pid file, a live pid written about four seconds after the take began: the take answers 0 holding the lock, judged before the pid landed', async () => {
+    const { lock } = startingLock('detach-mark-taker-gone-', deadPid());
+    const began = path.join(path.dirname(lock), 'began');
+    // A take that waited for a pid, as a lock with no taker gets, would see this one live and answer 3.
+    const late = writesAfter(began, path.join(lock, 'pid'), 4000, '`${process.pid}\\n`', true);
+    try {
+      tookHolding(lock, ': > "$2"', shellPath(began));
+    } finally {
+      await late.end('SIGKILL');
+    }
+  });
+
+  test('a lock whose taker is alive and no pid file, under a one second launch wait: the take takes it over, answering 0 holding the lock with its own mark', () => {
+    const { lock, mark } = startingLock('detach-mark-still-', process.pid);
+    expect(tookHolding(lock, 'WK_LAUNCH_WAIT=1') !== mark, 'a new tag, not the starting run\'s').toBeTruthy();
+  });
+
   test('the owner\'s drop on a lock another run took over, another tag in claim, another mark and another pid: the folder stays whole', () => {
     const lock = lockIn('detach-mark-drop-other-');
     const old = deadPid();
@@ -713,6 +770,105 @@ describe('detach.sh: wk_ask_end', () => {
       expect(!fs.existsSync(path.join(lock, 'end')), `no end request in the other run's lock, it holds: ${holding(lock)}`).toBeTruthy();
     } finally {
       await other.end('SIGKILL');
+    }
+  });
+
+  // The same ask started without waiting, so a child of the case is collected the moment it ends.
+  const askStarted = (lock, pid, before = 'WK_END_WAIT=600') => start(BASH, [...NO_RC, '-c', [...SOURCED, `${before}\nwk_ask_end "$1" "$2"`].join('\n'),
+    'wk', shellPath(lock), String(pid)], { env: RUN_ENV });
+  /** The code of an ask askStarted began, once it returned. */
+  const answerOf = async (asking) => {
+    expect(await until(() => ended(asking.child)), `the ask never returned, output: ${asking.output()}`).toBeTruthy();
+    await asking.done;
+    return asking.child.exitCode;
+  };
+  // A writer of 0 to <lock>'s done file about three seconds after the end request is there.
+  const doneLater = (lock) => writesAfter(path.join(lock, 'end'), path.join(lock, 'done'), 3000, "'0\\n'");
+  /** A claimed lock holding a real supervisor's log, done file and pid; its command, its pid in <pidFile>, ignores the terminate signal. */
+  const supervisedLock = (pidFile) => {
+    const lock = claimedLockOf({});
+    const supervisor = launch(lock, ignoresTerm(pidFile));
+    fs.writeFileSync(path.join(lock, 'pid'), `${supervisor}\n`);
+    return { lock, supervisor };
+  };
+
+  test('a live pid and an ending file, a one second wait, the done file written about three seconds after the request: 0', async () => {
+    const lock = claimedLockOf({ pid: `${process.pid}\n`, ending: '' });
+    const writer = doneLater(lock);
+    try {
+      const res = ask(lock, process.pid, 'WK_END_WAIT=1');
+      expect(res.status, `a supervisor that answered is waited for, so 0, output: ${res.output}`).toBe(0);
+    } finally {
+      await writer.end('SIGKILL');
+    }
+  });
+
+  test('a live pid and no ending file, a one second wait, the done file written about three seconds after the request: 1', async () => {
+    const lock = claimedLockOf({ pid: `${process.pid}\n` });
+    const writer = doneLater(lock);
+    try {
+      const res = ask(lock, process.pid, 'WK_END_WAIT=1');
+      expect(res.status, `a supervisor that never answered, so 1 when the wait runs out, output: ${res.output}`).toBe(1);
+    } finally {
+      await writer.end('SIGKILL');
+    }
+  });
+
+  test('a live pid and an ending file removed about two seconds after the request, a one second wait: 1', async () => {
+    const lock = claimedLockOf({ pid: `${process.pid}\n`, ending: '' });
+    // The end failed: the supervisor takes its ending file back, the run going on.
+    const remover = actsAfter(path.join(lock, 'end'), 2000, `fs.rmSync(${jsPath(path.join(lock, 'ending'))});`);
+    try {
+      const res = ask(lock, process.pid, 'WK_END_WAIT=1');
+      expect(res.status, `a failed end is back on the wait counted from the request, so 1, output: ${res.output}`).toBe(1);
+    } finally {
+      await remover.end('SIGKILL');
+    }
+  });
+
+  test('an ending file and a pid that goes with no done file written: 2', async () => {
+    const lock = claimedLockOf({ ending: '' });
+    const end = path.join(lock, 'end');
+    const plain = start(process.execPath, ['-e', `const fs = require('fs'); setInterval(() => { if (fs.existsSync(${jsPath(end)})) process.exit(0); }, 50);`]);
+    let asking;
+    try {
+      fs.writeFileSync(path.join(lock, 'pid'), `${plain.pid}\n`);
+      asking = askStarted(lock, plain.pid);
+      expect(await answerOf(asking), `a supervisor gone with no answer is 2, output: ${asking.output()}`).toBe(2);
+    } finally {
+      await Promise.all([plain.end('SIGKILL'), asking && asking.end('SIGKILL')]);
+    }
+  });
+
+  test('a real supervisor whose end outlasts a three second wait, its command ignoring the terminate signal: 0, and the done file holds 143', async () => {
+    const pidFile = path.join(mkTmp('detach-ask-cmd-'), 'cmd.pid');
+    let supervisor;
+    try {
+      let lock;
+      ({ lock, supervisor } = supervisedLock(pidFile));
+      await pidOf(pidFile);
+      const res = ask(lock, supervisor, 'WK_END_WAIT=3');
+      expect(res.status, `the run ended on the request, so 0, output: ${res.output}`).toBe(0);
+      expect(read(path.join(lock, 'done')), 'the done file holds the ended code').toBe('143\n');
+    } finally {
+      reap(pidIn(pidFile), supervisor);
+    }
+  });
+
+  test('that supervisor ending its run on the request, before its done file: the lock folder holds ending', async () => {
+    const pidFile = path.join(mkTmp('detach-ask-cmd-'), 'cmd.pid');
+    let supervisor;
+    let asking;
+    try {
+      let lock;
+      ({ lock, supervisor } = supervisedLock(pidFile));
+      await pidOf(pidFile);
+      asking = askStarted(lock, supervisor);
+      const ending = () => fs.existsSync(path.join(lock, 'ending')) && !fs.existsSync(path.join(lock, 'done'));
+      expect(await until(ending), `no ending file while the run ended, it holds: ${holding(lock)}`).toBeTruthy();
+    } finally {
+      reap(pidIn(pidFile), supervisor);
+      if (asking) await asking.end('SIGKILL');
     }
   });
 });

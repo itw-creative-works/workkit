@@ -8,7 +8,8 @@ const NOTICE = 'workkit changed since this session loaded. /reload-plugins picks
 /**
  * The load-time surface files, relative to the plugin root: `agents/*.md`,
  * each skill's SKILL.md, hooks/register.js, every file under hooks/mods
- * at any depth, and the one file a session's mod loads from outside it, the lexer.
+ * at any depth, and the two files a session's mod loads from outside it, the
+ * lexer and serial-name.js.
  * @param {function} list async, a folder's entries (`{ name, kind }`) by its
  *   path from the root, [] when it cannot be read
  * @returns {Promise<string[]>}
@@ -22,6 +23,7 @@ export async function surfacePaths(list) {
     ...skills.map((f) => `skills/${f.name}/SKILL.md`),
     'hooks/register.js',
     'packages/core/test/lib/lexer.js',
+    'packages/core/test/lib/serial-name.js',
     ...mods,
   ];
 }

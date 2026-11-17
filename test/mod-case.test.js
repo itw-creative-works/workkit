@@ -1,7 +1,7 @@
 // Tests for `modCase(folder)` from the door: a host suite's one case that runs
-// `claude plugin test <folder>`, passing on the tool's exit 0, failing with the
-// failed tests' names and the exit code otherwise, or with its output when it outlasts
-// its deadline, skipped with no claude on PATH; a missing folder fails the suite.
+// `claude plugin test <folder>`, passing on exit 0, failing with the failed tests'
+// names and the exit code, its output past its deadline, or a claude found that does
+// not start; skipped with no claude on PATH; a missing folder fails the suite.
 
 const fs = require('fs');
 const path = require('path');
@@ -26,6 +26,17 @@ const pluginWorld = () => {
 
 // The failure message the run lists under the case `name`.
 const messageOf = (output, name) => failuresOf(output).split(name)[1] || '';
+
+// A PATH whose one claude is what `make` puts at the path it is given, beside node's own folder.
+const pathWithClaude = (make) => {
+  const tmp = mkTmp('mod-case-broken-');
+  const bin = path.join(tmp, 'bin');
+  fs.mkdirSync(bin);
+  make(path.join(bin, 'claude'));
+  return joinPath(bin, basePathWithout(tmp, 'claude'), NODE_DIR);
+};
+// A PATH whose one claude is a file holding `lines` with `mode`.
+const pathWithClaudeFile = (lines, mode) => pathWithClaude((file) => fs.writeFileSync(file, `${lines.join('\n')}\n`, { mode }));
 
 describe('modCase: the tool\'s exit decides the case', () => {
   test('a claude that prints 2 pass and 0 fail and exits 0: one passed case named for the folder, the tool started with plugin test <folder>', () => {
@@ -112,4 +123,43 @@ describe('modCase: finding claude', () => {
     expect(code, `exit 0, got: ${output}`).toBe(0);
     expect(marksOf(output), `the one case passed, got: ${output}`).toEqual([`✓ ${w.name}`]);
   });
+
+  test(
+    'a claude on PATH that is a file without the execute bit: the case fails, its message starting claude did not start:',
+    { skip: IS_WINDOWS && 'Windows starts a file by its extension, not an execute bit' },
+    () => {
+      const w = pluginWorld();
+      const PATH = pathWithClaudeFile(['#!/bin/sh', 'exit 0'], 0o644);
+      const { code, output } = w.run([], { env: { PATH } });
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(marksOf(output), `the one case failed, got: ${output}`).toEqual([`✗ ${w.name}`]);
+      expect(messageOf(output, w.name), `the message, got: ${output}`).toMatch(/^: claude did not start:/);
+    },
+  );
+
+  test(
+    'an executable claude on PATH whose #! line names a program that does not exist: the case fails, its message starting claude did not start:',
+    { skip: IS_WINDOWS && 'Windows reads no #! line' },
+    () => {
+      const w = pluginWorld();
+      const PATH = pathWithClaudeFile([`#!${path.join(mkTmp('mod-case-noprog-'), 'no-such-program')}`, 'exit 0'], 0o755);
+      const { code, output } = w.run([], { env: { PATH } });
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(marksOf(output), `the one case failed, got: ${output}`).toEqual([`✗ ${w.name}`]);
+      expect(messageOf(output, w.name), `the message, got: ${output}`).toMatch(/^: claude did not start:/);
+    },
+  );
+
+  test(
+    'a claude on PATH that is a link to a file that does not exist: the case fails, its message starting claude did not start:',
+    { skip: IS_WINDOWS && 'a link on Windows needs a privilege the run may not have' },
+    () => {
+      const w = pluginWorld();
+      const PATH = pathWithClaude((file) => fs.symlinkSync(path.join(mkTmp('mod-case-nolink-'), 'no-such-file'), file));
+      const { code, output } = w.run([], { env: { PATH } });
+      expect(code, `exit 1, got: ${output}`).toBe(1);
+      expect(marksOf(output), `the one case failed, got: ${output}`).toEqual([`✗ ${w.name}`]);
+      expect(messageOf(output, w.name), `the message, got: ${output}`).toMatch(/^: claude did not start:/);
+    },
+  );
 });

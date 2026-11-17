@@ -317,7 +317,7 @@ const attentionCount = (said) => {
 /** The warnings a doctor run printed on stderr, its closing attention line left out. */
 const doctorWarnings = (res) => res.err.split('\n').filter((l) => /^ *⚠ /.test(l) && !l.includes('need attention'));
 
-const shQuote =(s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+const shQuote = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 
 // `script` hands a command a terminal: BSD takes the command after the file,
 // util-linux takes it in -c and needs -e to return its status. Null: none here.

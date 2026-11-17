@@ -334,12 +334,19 @@ _wk_lock_tag() {
   WK_LOCK_TAG="$pid.$_WK_LOCK_TAGS.$RANDOM"
 }
 
-# wk_remover_lives <mark>: 0 while the remover that made a gone.<tag> mark lives,
-# by the pid that is its tag's first field; a tag with no pid (gone.x) is gone.
-wk_remover_lives() {
-  local pid="${1#gone.}"
-  pid="${pid%%.*}"
+# wk_tag_pid <tag>: the pid that is a lock tag's first field, printed; 1 for a
+# tag with none (orphan, x).
+wk_tag_pid() {
+  local pid="${1%%.*}"
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$pid"
+}
+
+# wk_remover_lives <mark>: 0 while the remover that made a gone.<tag> mark lives,
+# by its tag's pid; a tag with no pid (gone.x) is gone.
+wk_remover_lives() {
+  local pid
+  pid=$(wk_tag_pid "${1#gone.}") || return 1
   wk_pid_alive "$pid"
 }
 

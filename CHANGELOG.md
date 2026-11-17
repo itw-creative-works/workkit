@@ -7,6 +7,13 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- [#558](../../issues/558) - `modCase` now fails, `claude did not start: <message>`, when a `claude` found on the PATH cannot start, as a broken link or one whose `#!` names a missing program. It used to skip; `no claude binary on PATH` now means none is found.
+- [#559](../../issues/559) - `safety:test-bar` no longer names the `serial` rule in a suite the runner runs alone, named `*.serial.test.js` (`.mjs`, `.cjs`), whose name already says so. A `.serial` name the runner does not run alone, as `*.serial.spec.ts`, still gets it, and every other rule still applies.
+- [#560](../../issues/560) - A detached run slower than 5 seconds to start keeps its lock. A second run waits up to 60 seconds (`WK_LAUNCH_WAIT`) while the shell that took the lock lives, then takes it over, never failing. A launch killed before it wrote a pid is taken over at once.
+- [#561](../../issues/561) - `workkit watch --end` and Ctrl-C now wait for a run whose end takes more than 30 seconds, as a Windows end can. The supervisor writes `ending` in the lock folder as it ends the run, and the caller waits while it lives.
+
 ## [0.99.0] - 2026-11-17
 
 ### Changed

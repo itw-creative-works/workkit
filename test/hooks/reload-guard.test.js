@@ -26,7 +26,7 @@ describe('reload-guard: a change nags', () => {
 });
 
 describe('reload-guard.js: surfacePaths', () => {
-  test('surfacePaths lists agents/*.md, each SKILL.md, hooks/register.js, the lexer test-bar loads, and every file under hooks/mods at any depth', async () => {
+  test('surfacePaths lists agents/*.md, each SKILL.md, hooks/register.js, the lexer and serial-name files a mod reaches outside hooks/, and every file under hooks/mods at any depth', async () => {
     const tree = {
       agents: [{ name: 'worker.md', kind: 'file' }, { name: 'notes.txt', kind: 'file' }],
       skills: [{ name: 'ship', kind: 'dir' }],
@@ -35,8 +35,8 @@ describe('reload-guard.js: surfacePaths', () => {
       'hooks/mods/commit-gate/deep': [{ name: 'prompt.md', kind: 'file' }],
     };
     const paths = await mods('reload-guard').surfacePaths(async (dir) => tree[dir] ?? []);
-    const want = ['agents/worker.md', 'skills/ship/SKILL.md', 'hooks/register.js', 'packages/core/test/lib/lexer.js', 'hooks/mods/a.js',
-      'hooks/mods/commit-gate/checks.js', 'hooks/mods/commit-gate/deep/prompt.md'];
+    const want = ['agents/worker.md', 'skills/ship/SKILL.md', 'hooks/register.js', 'packages/core/test/lib/lexer.js',
+      'packages/core/test/lib/serial-name.js', 'hooks/mods/a.js', 'hooks/mods/commit-gate/checks.js', 'hooks/mods/commit-gate/deep/prompt.md'];
     expect(JSON.stringify([...paths].sort()), 'the surfaces, a non-.md agent file left out').toBe(JSON.stringify([...want].sort()));
   });
 });

@@ -7,6 +7,7 @@
 
 import { escaped, isTestName, isTestPath } from './test-reminder.js';
 import { lexLine } from '../../packages/core/test/lib/lexer.js';
+import { SERIAL_NAME } from '../../packages/core/test/lib/serial-name.js';
 
 // The scratch writer's homes: a consumer repo's (`test/` or `tests/`) and the kit's own.
 const SCRATCH = new Set(['test/lib/scratch.js', 'tests/lib/scratch.js', 'packages/core/test/lib/scratch.js']);
@@ -92,8 +93,9 @@ export function quoteFree(lines) {
 }
 
 /**
- * The `[line, rule]` findings of the one-line rules: serial, and mkTmp and
- * deadline, which read the quote-free lines (quoted text is a fixture's).
+ * The `[line, rule]` findings of the one-line rules: serial, never in a suite
+ * the runner runs alone (serial-name.js's `SERIAL_NAME`), and mkTmp and deadline,
+ * which read the quote-free lines (quoted text is a fixture's).
  * @param {string[]} lines the file's lines
  * @param {string[]} free the same lines through `quoteFree`
  * @param {string} rel the file, repo-relative
@@ -101,10 +103,11 @@ export function quoteFree(lines) {
  */
 function lineFindings(lines, free, rel) {
   const found = [];
+  const serial = SERIAL_NAME.test(rel);
   lines.forEach((line, i) => {
     if (COMMENT.test(line)) return;
     if (!SCRATCH.has(rel) && TMP_DIR.test(free[i])) found.push([i + 1, 'mkTmp']);
-    if (FIXED_PATH.test(line) || FIXED_PORT.test(line)) found.push([i + 1, 'serial']);
+    if (!serial && (FIXED_PATH.test(line) || FIXED_PORT.test(line))) found.push([i + 1, 'serial']);
     const bound = (wait) => Number(free[i].match(wait)?.[1].replace(/_/g, '')) > 0;
     if (!DEADLINE_HOME.has(rel) && WAITS.some(bound)) found.push([i + 1, 'deadline']);
   });

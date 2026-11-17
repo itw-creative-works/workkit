@@ -342,6 +342,7 @@
     - A run lock folder holds two things for the lock's whole life: `claim`, created create-only and holding the taker's tag, which decides who made the lock, so a `mkdir` that answers 0 for a folder already there still gives it to one caller; and that taker's mark file, `id.<tag>`.
     - A tag is no other take's on the machine: the pid of the shell that made it (a subshell's own), a count of the tags it made, and a random part, dot-separated.
       - The pid is the one `wk_pid_alive` answers for on every platform: in Git Bash the shell's Windows pid (`/proc/<pid>/winpid`).
+      - `wk_tag_pid <tag>` prints that pid, the tag's first field; a first field that is no number (`orphan`, `x`) is 1, nothing printed. It is the one reader of a tag's pid: `wk_remover_lives` and the run lock's taker (`lib/detach.sh`) read it so.
     - `wk_lock_mark <lock>` prints the lock's mark, in this order: the `id.<tag>` that `claim` names, when that file is there; else the `gone.<tag>` file (a removal under way); else `id.orphan` (an adopted folder); else nothing, 1.
       - Any other `id.*` is the leftover of a taker that lost the claim: ignored, and gone with the folder.
     - `wk_retire_lock <lock> <mark>` is the one removal of a run lock that holds files: it renames that exact `id.*` or `gone.*` mark to `gone.<its own tag>`. Only then it deletes the lock's other files, then `claim`, then its `gone` file, then the folder with `rmdir`. `claim` is not a mark it takes. An empty folder holds no lock, and goes by `wk_adopt_lock`'s `rmdir`.
@@ -640,13 +641,18 @@
     - So a run that took it over keeps it.
   - A lock a live run holds answers 3 with nothing run.
     - Since a command may return 3 itself, `WK_HELD_PID` is set, to the holder's pid, only then.
-  - A lock whose run is over is taken over: its done file written, its pid gone, or no pid five seconds after the take.
+  - A lock whose run is over is taken over: its done file written, its pid gone, or no pid once its taker is gone or its wait has run out.
+    - A lock with no pid file is judged by its taker, the shell that took it: the pid that is the first field of the tag its claim names (`wk_tag_pid`).
+      - A taker that lives is waited for, up to `WK_LAUNCH_WAIT` seconds (60), while the lock has no pid file. Once the pid file is there, the lock is judged by it, so a launch slower than five seconds keeps its lock and the second call answers 3.
+      - Still no pid file when that wait runs out: the run is over, and the take takes the lock, as for a lock with no taker. A live taker only makes the take wait longer, never fail, so a launcher ended before its pid write whose pid another process now holds blocks nothing.
+      - A taker that is gone: the run is over, and the lock is taken at once.
+      - No taker to read (no claim, an empty claim, a `gone` or `id.orphan` mark): no pid five seconds after the take is over.
     - The taker reads the mark before it judges, and retires the lock by that mark (`wk_retire_lock`). So of two takers on one old judgment, the second finds its mark gone and judges again, and never removes the first one's new lock.
     - A lock holding a `gone.<tag>` mark is taken over so too, by that mark, once its remover is gone: a caller that ended between its rename and its removal leaves nothing stuck.
-    - While that remover lives, the taker waits for that `gone` mark to go, up to the five seconds a pid gets, and that wait costs none of its tries. Whatever stands once the mark is gone (no folder, or a new lock another taker made meanwhile) is judged on the next pass, so an ordinary removal never makes a take fail, and a new live run still answers 3.
+    - While that remover lives, the taker waits for that `gone` mark to go, up to five seconds, and that wait costs none of its tries. Whatever stands once the mark is gone (no folder, or a new lock another taker made meanwhile) is judged on the next pass, so an ordinary removal never makes a take fail, and a new live run still answers 3.
     - Only the same `gone` mark still there after the wait is `detach: could not take the lock <lock>`, 1.
     - A folder with no mark is adopted (`wk_adopt_lock`): an empty one, an older kit's lock, and files a `mkdir` that answered 0 left.
-    - So a KILL before the supervisor's pid is written, which no trap sees, leaves a lock with no pid that the next call takes after those five seconds.
+    - So a KILL before the supervisor's pid is written, which no trap sees, leaves a lock with no pid and a taker gone, which the next call takes at once.
     - With a done file, it waits up to two seconds for the directory to go, since its own foreground is collecting it.
   - INT, a human's Ctrl-C on the call that started the run, ends the whole run and exits 130.
     - It writes the end request and waits through `wk_ask_end`, so the supervisor ends the run's processes, a child in its own session included, and the log ends with its request line.
@@ -654,6 +660,9 @@
     - A run still going when the wait runs out is ended by process group (`wk_end_run` in `platform.sh`).
     - Then it drops the lock, unless that end by process group failed (`wk_end_run` returns 1): the run still goes, so its lock stays. Either way it sets `WK_RAN_INT` to 1, for the caller's EXIT trap, and exits 130.
   - `wk_ask_end <lock> <pid>` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30).
+    - While `<lock>/ending` stands, the supervisor's answer that it is ending the run (`lib/detach.js`), the wait has no end of its own: it goes on while `<pid>` lives, and answers as below.
+      - An `ending` file that goes again (the end failed) puts the wait back on its `WK_END_WAIT` clock, counted from the request.
+      - So 1 is a supervisor that never answered, or whose end failed: one that is ending its run is waited for, however long its end takes.
     - With another pid or none there it is 0 at once, nothing written; the lock is read before `<pid>`'s life is looked at.
     - With `<pid>` gone already it writes nothing and answers as for a supervisor gone during the wait (below), so the lock stays as it was.
     - It is 0 once the done file is written or `<lock>/pid` holds another pid or none, 1 when the wait runs out. It prints nothing.
@@ -691,10 +700,11 @@
   - A look is the evidence written whole to a `look` file beside `<done>`, for `wk_attach_run` to print.
   - An `end` file beside `<done>` is read every second (`END_POLL_MS`) and ends the run's tree; `<done>` gets 143.
     - Without `--root` too, so every supervised run can be ended so.
-  - An end that rejects with the command alive writes no `<done>`, removes the `end` file, and leaves the end poll and the checks running.
+  - Every end, on request or for a frozen run, first writes an `ending` file beside `<done>`: the answer `wk_ask_end` waits on for as long as the supervisor lives.
+  - An end that rejects with the command alive writes no `<done>`, removes the `end` and `ending` files, and leaves the end poll and the checks running.
   - On Windows `treeOf` is null, so nothing is checked; `endTreeOf` reads two process tables and ends each process of the tree it finds once, forced (`process.kill(<pid>, 'SIGKILL')`).
     - A read of both tables takes seconds there, so between reads it asks each signalled pid through `process.kill(<pid>, 0)` every `POLL_MS`, until all are gone or `GRACE_MS` has passed since the last signal, then reads again. It resolves when a read finds no member: a tree that goes at its signal costs two reads.
-    - What bounds the whole end: two reads for a run that goes at its signal, `GRACE_MS` after the last signal for one that does not, each read given 60 seconds. `workkit watch --end` waits 30 seconds (`WK_END_WAIT`) for it.
+    - What bounds the whole end: two reads for a run that goes at its signal, `GRACE_MS` after the last signal for one that does not, each read given 60 seconds. `workkit watch --end` and Ctrl-C wait 30 seconds (`WK_END_WAIT`) for the supervisor's `ending` answer, then for as long as it lives, so this bound is theirs too.
     - The Windows table is one PowerShell call, run from `System32\WindowsPowerShell\v1.0` under `SystemRoot`, never through PATH, its script through `-EncodedCommand`.
       - The script is a WMI query (`[wmisearcher]`) on `Win32_Process` for `ProcessId`, `ParentProcessId` and `CreationDate` alone, its JSON array written by hand.
       - It uses no cmdlet: a cmdlet makes PowerShell load a module, which is slow under a home folder PowerShell has not seen.
@@ -1147,7 +1157,7 @@
     - Once the done file is written, it prints the log's last line (the supervisor's closing line) and exits 0.
     - When it finds the done file it collects the answer through `wk_attach_run` too, so the lock drops, and a call still attached reads the code from its record.
     - A run that ended already prints `watch: the run ended already (exit <code>)`, drops the lock and exits 0.
-    - A run that has not ended 30 seconds later prints `watch: the run did not end; its supervisor is pid <N>`, exit 1.
+    - Once 30 seconds have passed since the request, a supervisor that never answered (no `ending` file) or whose end failed (its `ending` file gone again) prints `watch: the run did not end; its supervisor is pid <N>`, exit 1. One that is ending its run is waited for while it lives.
     - A supervisor gone that left no answer (`wk_ask_end`'s 2) prints `watch: the run's supervisor (pid <N>) is gone and left no answer`, exit 1.
     - On a narrowed run it clears the slot only when the slot's wrapper is gone (`drop_slot`); a call still attached to the run clears its own slot and exits 143.
   - An allow rule ships for the verb, `Bash(workkit watch:*)` (`ALLOW_RULES` in `workkit/allow.sh`), so it runs as its own Bash call: the rule matches the bare call alone.
