@@ -1,9 +1,10 @@
 // A scratch repo the kit's runner (packages/core/test/run.js) runs in, as a case
-// starts it: suites on the door, the serial and skip lists, a recording `claude`
-// for the mod half, and the run with its exit and output. Consumers:
+// starts it: suites on the door, a leftover list file, a plugin's files, a recording
+// `claude`, and the run with its exit and output. Consumers:
 // test/runner-folders.test.js, runner-filter.test.js, runner-skip.test.js, runner-color.test.js,
 // members.test.js, app-cases.test.js, test/scripts/script-shell.test.js and script-shell-detached.test.js
-// (SUITE, RUNNER) and test/runner.test.js (MOD_FILES).
+// (SUITE, RUNNER), runner-skip.test.js (listFile), test/runner.test.js (MOD_FILES, listFile, claudeStub)
+// and test/mod-case.test.js (MOD_FILES, claudeStub).
 
 const fs = require('fs');
 const path = require('path');
@@ -20,10 +21,10 @@ const HARNESS = path.join(CORE_TEST, 'lib', 'harness.js');
 /** A suite on the door, its top level `inner`. */
 const SUITE = (inner) => `const { describe, test, expect } = require(${JSON.stringify(HARNESS)});\n${inner}\n`;
 
-/** A list file's text, `test/lib/serial.js` or `test/lib/skip.js`, exporting `lists`. */
+/** A list file's text, a leftover `test/lib/serial.js` or `test/lib/skip.js`, exporting `lists`. */
 const listFile = (lists) => `module.exports = ${JSON.stringify(lists)};\n`;
 
-// The hooks module the mod half runs over, beside one test/mods suite.
+// A plugin: its manifest and hooks module, beside one test/mods suite.
 const MOD_FILES = {
   '.claude-plugin/plugin.json': '{ "name": "fixture", "version": "0.0.1" }\n',
   'hooks/hooks.json': '{ "modules": ["./register.js"] }\n',
@@ -80,12 +81,29 @@ const mkWorld = ({ git = true } = {}) => {
   };
 };
 
-/** A scratch bin holding a `claude` that only notes it was started; `started()` says whether it was. */
-const claudeStub = () => {
+/**
+ * A scratch bin holding a `claude` that prints `lines`, exits `code`, and notes each
+ * argument it was started with; `started()` says whether it was, `args()` is the last start's.
+ * With `hang` it never ends after its lines until `release()` (a case's `t.after`), or until it is ended.
+ */
+const claudeStub = ({ lines = [], code = 0, hang = false } = {}) => {
   const bin = mkTmp('runner-claude-');
   const marker = path.join(bin, 'started');
-  stubTool(bin, 'claude', ['#!/usr/bin/env bash', `echo "$*" >> "${shellPath(marker)}"`, 'exit 0']);
-  return { bin, started: () => fs.existsSync(marker) };
+  const stop = path.join(bin, 'stop');
+  stubTool(bin, 'claude', [
+    '#!/usr/bin/env bash',
+    `printf '%s\\n' "$@" > "${shellPath(marker)}"`,
+    ...lines.map((line) => `printf '%s\\n' ${JSON.stringify(line)}`),
+    ...(hang ? ["trap 'exit 130' INT", `while [ ! -e "${shellPath(stop)}" ]; do sleep 0.1; done`] : []),
+    `exit ${code}`,
+  ]);
+  const started = () => fs.existsSync(marker);
+  return {
+    bin,
+    started,
+    args: () => (started() ? fs.readFileSync(marker, 'utf8').split('\n').slice(0, -1) : null),
+    release: () => fs.writeFileSync(stop, ''),
+  };
 };
 
 module.exports = {

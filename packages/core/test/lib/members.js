@@ -44,7 +44,7 @@ export const membersOf = (root) => {
   if (!fs.existsSync(file)) return [];
   return expandWorkspaces(root, readJson(file).workspaces, [])
     .map((listed) => {
-      // Resolved, so `packages/a/` and a skip entry `packages/a` name one folder.
+      // Resolved: the absolute folder the member's own run starts in.
       const dir = path.resolve(listed);
       const pkg = readJson(path.join(dir, 'package.json'));
       const rel = suiteName(root, dir);

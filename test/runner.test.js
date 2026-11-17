@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 // Tests for packages/core/test/run.js, the kit's suite runner the workkit bin
-// runs: paths narrow a run, suites run whole in a worker pool with a serial tail
-// after the wave, a crashed, unloadable, empty, late-failing or old-shape suite
+// runs: paths narrow a run, suites run whole in a worker pool with the *.serial.test.js
+// suites after the wave, a crashed, unloadable, empty, late-failing or old-shape suite
 // fails loudly, a suite past TEST_DEADLINE is ended with its process group, a
 // suite's block prints one line per case under its describe path, suites are
 // found by name anywhere under the start folder, and a suite runs alone by file.
@@ -14,14 +14,14 @@ const {
   describe, test, expect, suiteName, POOL, mkTmp, SPAWN_DEADLINE, until, alive, pidIn, start, endTree,
 } = require('./lib/harness');
 const {
-  which, basePathWithout, joinPath, homeEnv, NODE_DIR, IS_WINDOWS,
+  joinPath, homeEnv, IS_WINDOWS,
 } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
 const {
   TOTALS_LINE, linesOf, listsOf, totalsOf, failuresOf,
 } = require('./lib/run-lists');
 const { treeOf } = require('./lib/red-snapshot');
-const { MOD_FILES } = require('./lib/runner-world');
+const { MOD_FILES, listFile, claudeStub } = require('./lib/runner-world');
 
 const KIT = path.join(__dirname, '..');
 const KIT_TEST = path.join(KIT, 'packages', 'core', 'test');
@@ -41,26 +41,24 @@ const writeFiles = (root, files) => {
   }
 };
 
-// The suite folder `folder` under `root`, holding `suites` (file name to body)
-// and, for test/, `serial` as the tail: its lib/ holds the harness as a repo
-// keeps it, a re-export of the kit's.
-const writeSuiteDir = (root, folder, suites, serial) => {
+// The suite folder `folder` under `root`, holding `suites` (file name to body):
+// its lib/ holds the harness as a repo keeps it, a re-export of the kit's.
+const writeSuiteDir = (root, folder, suites) => {
   const dir = path.join(root, folder);
   writeFiles(dir, { 'lib/harness.js': `module.exports = require(${JSON.stringify(HARNESS)});\n`, ...suites });
-  if (folder === 'test') writeFiles(dir, { 'lib/serial.js': `module.exports = { SERIAL: ${JSON.stringify(serial)} };\n` });
   return dir;
 };
 
 // A throwaway repo, a git work tree unless `git` is false, whose `folder` (test/
-// unless named, none when null) holds `suites` and `serial`, with `files` beside.
+// unless named, none when null) holds `suites`, with `files` beside.
 // Every git call, the runner's included, sees the scratch `home` alone.
 const mkFixture = (suites, {
-  serial = [], folder = 'test', files = {}, git = true,
+  folder = 'test', files = {}, git = true,
 } = {}) => {
   const root = mkTmp('runner-');
   const home = mkTmp('runner-home-');
   if (git) spawnSync('git', ['init', '-q'], { cwd: root, env: homeEnv(home, { PATH: process.env.PATH }) });
-  const dir = folder === null ? null : writeSuiteDir(root, folder, suites, serial);
+  const dir = folder === null ? null : writeSuiteDir(root, folder, suites);
   writeFiles(root, files);
   return { root, home, dir };
 };
@@ -70,10 +68,10 @@ const mkFixture = (suites, {
 // runner's; with no git, no folder above the root is a work tree either. `prepare`
 // gets the root and the scratch home before the run. `stderr` is the runner's alone.
 const runSuites = (suites, {
-  args = () => [], serial = [], read = [], folder = 'test', files: extra = {}, git = true, cwd = '', env = {}, prepare = () => {},
+  args = () => [], read = [], folder = 'test', files: extra = {}, git = true, cwd = '', env = {}, prepare = () => {},
 } = {}) => {
   const { root, home } = mkFixture(suites, {
-    serial, folder, files: extra, git,
+    folder, files: extra, git,
   });
   prepare(root, home);
   const ceiling = git ? {} : { GIT_CEILING_DIRECTORIES: path.dirname(root) };
@@ -107,16 +105,6 @@ const OLD_SHAPE = (runsAlone) => [
   ...(runsAlone ? [`if (require.main === module) ${SELF_RUN}(module.exports);`] : []),
   '',
 ].join('\n');
-
-// A throwaway plugin repo for the mod half: one Node suite under test/, and a
-// hooks module with one passing test/mods/*.test.ts, run whole through the real runner
-// on `PATH`.
-const runModHalf = (PATH) => {
-  const { root } = mkFixture({ 'node.test.js': SUITE("test('the node case', () => {});") }, { files: MOD_FILES });
-  const res = spawnSync('node', [RUNNER], { cwd: root, encoding: 'utf8', env: aloneEnv({ PATH }), timeout: SPAWN_DEADLINE });
-  fs.rmSync(root, { recursive: true, force: true });
-  return { code: res.status, output: (res.stdout || '') + (res.stderr || '') };
-};
 
 // The lines under the suite `name`'s heading, up to the next heading or the totals.
 const blockOf = (output, name) => {
@@ -173,19 +161,28 @@ for (const n of [1, 2, 3, 4]) test(\`gamma case \${n}\`, () => {});
     expect(output.includes('1 suite)'), `names one suite, got: ${output}`).toBeTruthy();
   });
 
-  // The tail suite sorts first, so it sees the wave's mark only when held until the wave ends.
-  test('a serial entry written with a backslash runs that suite after the parallel wave', () => {
+  test('of a.test.js, b.serial.test.js and c.serial.test.js, the path test/b.serial.test.js runs that suite alone, exit 0', () => {
     const { code, output } = runSuites({
-      'a-tail.test.js': SUITE(`${MEET}
+      'a.test.js': SUITE("test('case of a', () => {});"),
+      'b.serial.test.js': SUITE("test('case of b', () => {});"),
+      'c.serial.test.js': SUITE("test('case of c', () => {});"),
+    }, { args: () => ['test/b.serial.test.js'] });
+    expect(code, `exit 0, got: ${output}`).toBe(0);
+    expect(output.includes('case of b'), `b ran, got: ${output}`).toBe(true);
+    expect(output.includes('case of a') || output.includes('case of c'), `a and c never ran, got: ${output}`).toBe(false);
+  });
+
+  // A tail suite sorts first, so it sees the wave's mark only when held until the wave ends.
+  test('a narrowed run naming a.serial.test.js and a wave suite runs the serial one after the wave', () => {
+    const { code, output } = runSuites({
+      'a.serial.test.js': SUITE(`${MEET}
 test('the tail sees the wave done', () => { expect(fs.existsSync(path.join(root, 'wave.done')), 'the wave had not finished').toBe(true); });
 `),
       'wave.test.js': SUITE(`${MEET}
 test('the wave writes its file', async () => { await sleep(400); mark('wave.done'); });
 `),
-    }, { serial: ['test\\a-tail.test.js'] });
-    expect(code, `exit 0, got: ${output}`).toBe(0);
-    const lines = linesOf(output);
-    expect(lines.indexOf('▶ test/a-tail.test.js') > lines.indexOf('▶ test/wave.test.js'), `the tail prints after the wave, got: ${output}`).toBeTruthy();
+    }, { args: () => ['test/a.serial.test.js', 'test/wave.test.js'] });
+    expect(code, `exit 0, so the serial suite saw the wave done, got: ${output}`).toBe(0);
   });
 
   // _fixtures/x.test.js is a file, but under a folder no suite is read from.
@@ -229,14 +226,14 @@ test('sleeper case', async () => { await new Promise((resolve) => { setTimeout(r
       `names both suites, the sleeper first, got: ${output}`).toBeTruthy();
   });
 
-  test('a SERIAL entry naming no suite exits 1 with the serial No suite matches line before any suite runs', () => {
-    const { code, output, stderr } = runSuites({
+  test('a repo with a test/lib/serial.js: exit 1 with the line naming the file rule, and no suite runs', () => {
+    const { code, output } = runSuites({
       'alpha.test.js': SUITE("test('alpha case', () => {});"),
-    }, { serial: ['test/gone.test.js'] });
+    }, { files: { 'test/lib/serial.js': listFile({ SERIAL: ['test/alpha.test.js'] }) } });
     expect(code, `exit 1, got: ${output}`).toBe(1);
-    expect(linesOf(stderr).some((line) => line.endsWith('No suite matches test/gone.test.js (test/lib/serial.js)')), `names the stale entry and the list on stderr, got: ${stderr}`).toBeTruthy();
-    expect(!output.includes('▶'), `no suite header printed, got: ${output}`).toBeTruthy();
-    expect(!output.includes('alpha case'), `no suite ran, got: ${output}`).toBeTruthy();
+    const line = 'test/lib/serial.js is no longer read: name a suite *.serial.test.js to run it alone';
+    expect(linesOf(output).some((l) => l.endsWith(line)), `the leftover line, got: ${output}`).toBe(true);
+    expect(output.includes('▶') || output.includes('alpha case'), `no suite ran, got: ${output}`).toBe(false);
   });
 });
 
@@ -304,41 +301,22 @@ test('fast ends first', () => {
     expect(order.every((at, i) => i === 0 || at > order[i - 1]), `the slow block prints whole before the fast one, got: ${output}`).toBeTruthy();
   });
 
-  // The tail suites sort before the wave, so only a runner that holds them
-  // until the wave ends sees the wave's files. Its entries are paths from the start folder.
-  test('the serial tail test/lib/serial.js names runs after the whole wave, one suite at a time', () => {
-    const wave = (name) => SUITE(`${MEET}
-test('${name} writes its file', async () => {
-  await sleep(400);
-  mark('${name}.done');
-});
-`);
-    const tail = (name) => SUITE(`${MEET}
-test('${name} sees the wave done', async () => {
-  expect(fs.existsSync(path.join(root, 'wave-one.done')), 'wave-one had not finished').toBe(true);
-  expect(fs.existsSync(path.join(root, 'wave-two.done')), 'wave-two had not finished').toBe(true);
+  // The wave suite pauses inside its span, so a tail suite started beside it stamps inside a's span.
+  test('of a.test.js, b.serial.test.js and c.serial.test.js: b and c start only after a has ended, and c only after b has ended', () => {
+    const stamped = (name, ms) => SUITE(`${MEET}
+test('${name} stamps its span', async () => {
   mark('stamps.txt', 'start ${name}\\n');
-  await sleep(300);
+  await sleep(${ms});
   mark('stamps.txt', 'end ${name}\\n');
 });
 `);
     const { code, output, files } = runSuites({
-      'a-tail-one.test.js': tail('a-tail-one'),
-      'a-tail-two.test.js': tail('a-tail-two'),
-      'wave-one.test.js': wave('wave-one'),
-      'wave-two.test.js': wave('wave-two'),
-    }, { serial: ['test/a-tail-one.test.js', 'test/a-tail-two.test.js'], read: ['stamps.txt'] });
+      'a.test.js': stamped('a', 400),
+      'b.serial.test.js': stamped('b', 200),
+      'c.serial.test.js': stamped('c', 200),
+    }, { read: ['stamps.txt'] });
     expect(code, `exit 0, got: ${output}`).toBe(0);
-    const spans = [
-      'start a-tail-one\nend a-tail-one\nstart a-tail-two\nend a-tail-two\n',
-      'start a-tail-two\nend a-tail-two\nstart a-tail-one\nend a-tail-one\n',
-    ];
-    expect(spans.includes(files['stamps.txt']), `the two tail suites ran as two closed spans, got: ${JSON.stringify(files['stamps.txt'])}`).toBeTruthy();
-    const lines = linesOf(output);
-    const lastWave = Math.max(lines.indexOf('▶ test/wave-one.test.js'), lines.indexOf('▶ test/wave-two.test.js'));
-    for (const header of ['▶ test/a-tail-one.test.js', '▶ test/a-tail-two.test.js']) {
-      expect(lines.indexOf(header) > lastWave, `"${header}" prints after the wave's blocks, got: ${output}`).toBeTruthy();
-    }
+    expect(files['stamps.txt'], `three closed spans in order, got: ${output}`).toBe('start a\nend a\nstart b\nend b\nstart c\nend c\n');
   });
 
   test('a worker that exits without reporting fails the run as "run <suite>"', () => {
@@ -701,9 +679,9 @@ test('never ends', () => new Promise(() => { setInterval(() => {}, 1000); }));
   // The tail runs one suite at a time, so the later file runs only once the hung one has ended.
   test('a suite that never exits under TEST_DEADLINE=2 is one timed-out failure and the next file still runs', () => {
     const { code, output } = runSuites({
-      'a-hang.test.js': HANGS(),
-      'b-after.test.js': SUITE("test('after case', () => {});"),
-    }, { serial: ['test/a-hang.test.js', 'test/b-after.test.js'], env: { TEST_DEADLINE: '2' } });
+      'a-hang.serial.test.js': HANGS(),
+      'b-after.serial.test.js': SUITE("test('after case', () => {});"),
+    }, { env: { TEST_DEADLINE: '2' } });
     const plain = stripVTControlCharacters(output);
     expect(code, `exit 1, got: ${output}`).toBe(1);
     expect(plain.includes('after case'), `the file after it ran, got: ${output}`).toBeTruthy();
@@ -711,7 +689,7 @@ test('never ends', () => new Promise(() => { setInterval(() => {}, 1000); }));
     const failures = failuresOf(output);
     expect(failures, `a Failures: list, got: ${output}`).toBeTruthy();
     const timedOut = failures.split('\n').find((line) => line.includes('timed out after 2s without a result'));
-    expect(timedOut && timedOut.includes('test/a-hang.test.js'), `names test/a-hang.test.js as timed out after 2s, got: ${failures}`).toBeTruthy();
+    expect(timedOut && timedOut.includes('test/a-hang.serial.test.js'), `names test/a-hang.serial.test.js as timed out after 2s, got: ${failures}`).toBeTruthy();
     expect(failures.includes('still waiting'), `quotes the last thing it wrote, got: ${failures}`).toBeTruthy();
   });
 
@@ -1322,54 +1300,23 @@ describe('run.js: finding suites', () => {
   });
 });
 
-// `npm test` runs the Node suites, then `claude plugin test` over the hooks
-// module's *.test.ts files, and reports both halves.
-describe('run.js: the mod half', () => {
-  test('a whole run reports the mod half beside the Node suites', { skip: !which('claude') && 'no claude binary on this machine' }, () => {
-    const { code, output } = runModHalf(process.env.PATH);
+// A plugin's test/mods/*.test.ts runs only through a host suite's modCase, so a repo with none runs Node suites alone.
+describe('run.js: a plugin repo with no host suite', () => {
+  test('test/mods/a.test.ts, a claude on PATH and no host suite: a bare run never starts claude', () => {
+    const claude = claudeStub({ lines: [' 1 pass', ' 0 fail'] });
+    const { code, output } = runSuites({ 'node.test.js': SUITE("test('the node case', () => {});") }, {
+      files: MOD_FILES, env: { PATH: joinPath(claude.bin, process.env.PATH) },
+    });
     expect(code, `exit 0, got: ${output}`).toBe(0);
-    expect(output.includes('the node case'), `the Node half ran, got: ${output}`).toBeTruthy();
-    expect(/mod half/.test(output), `the mod half is named, got: ${output}`).toBeTruthy();
-    expect(output.includes('the mod case'), `the mod suite ran, got: ${output}`).toBeTruthy();
-    const lines = linesOf(output);
-    for (const said of ['    (pass) the mod case', '    Ran 1 test across 1 file.']) {
-      expect(lines.some((line) => line.startsWith(said)), `"${said.trim()}" at the case indent, got: ${output}`).toBeTruthy();
-    }
-    const half = lines.slice(lines.findIndex((line) => line.includes('▶ mod half')) + 1, lines.findIndex((line) => TOTALS_LINE.test(line)));
-    expect(half.length && half.every((line) => line === '' || /^\s/.test(line)), `no mod half line at column zero, got: ${output}`).toBeTruthy();
+    expect(claude.started(), `claude was never started, got: ${output}`).toBe(false);
   });
 
-  test('with no claude binary the mod half reads skipped with its reason and the Node half still runs', () => {
-    const tmp = mkTmp('runner-noclaude-');
-    // node's own folder beside the built PATH, so the runner's node is the real
-    // one on either platform (the gh-stub world without gh does the same).
-    const PATH = joinPath(basePathWithout(tmp, 'claude'), NODE_DIR);
-    expect(!which('claude', PATH), 'the fixture PATH holds no claude').toBeTruthy();
-    const { code, output } = runModHalf(PATH);
-    fs.rmSync(tmp, { recursive: true, force: true });
-    expect(code, `a skip keeps the run green, got: ${output}`).toBe(0);
-    expect(output.includes('the node case'), `the Node half ran, got: ${output}`).toBeTruthy();
-    expect(!output.includes('the mod case'), 'the mod suite did not run').toBeTruthy();
-    const skipLine = output.split('\n').find((l) => /mod half/.test(l) && /skipped|\u2298/.test(l) && /claude/.test(l));
-    expect(skipLine, `a skip line names the mod half and claude as the reason, got: ${output}`).toBeTruthy();
-  });
-
-  test('a claude on PATH only as a script (a claude.cmd on Windows) runs the mod half with its count', () => {
-    const tmp = mkTmp('runner-fakeclaude-');
-    const bin = path.join(tmp, 'bin');
-    fs.mkdirSync(bin);
-    // On Windows a raw start finds only claude.exe, so this .cmd is the npm-installed claude it never found.
-    if (IS_WINDOWS) {
-      fs.writeFileSync(path.join(bin, 'claude.cmd'), ['@echo off', 'echo 2 pass', 'echo 0 fail', 'exit /b 0', ''].join('\r\n'));
-    } else {
-      fs.writeFileSync(path.join(bin, 'claude'), ['#!/bin/sh', "echo ' 2 pass'", "echo ' 0 fail'", 'exit 0', ''].join('\n'), { mode: 0o755 });
-    }
-    const { code, output } = runModHalf(joinPath(bin, basePathWithout(tmp, 'claude'), NODE_DIR));
-    fs.rmSync(tmp, { recursive: true, force: true });
-    expect(code, `exit 0, got: ${output}`).toBe(0);
-    const totals = totalsOf(output);
-    expect(totals, `the node case and the fake's two count, got: ${output}`).toMatch(/^3 passed, 0 failed \(/);
-    expect(output.split('\n').some((l) => /skipped|⊘/.test(l) && /claude/.test(l)), `no skip line names claude, got: ${output}`).toBe(false);
+  test('the path test/mods/a.test.ts: exit 1 with No suite matches test/mods/a.test.ts', () => {
+    const { code, output } = runSuites({ 'node.test.js': SUITE("test('the node case', () => {});") }, {
+      files: MOD_FILES, args: () => ['test/mods/a.test.ts'],
+    });
+    expect(code, `exit 1, got: ${output}`).toBe(1);
+    expect(linesOf(output).some((line) => line.endsWith('No suite matches test/mods/a.test.ts')), `the line naming it, got: ${output}`).toBe(true);
   });
 });
 

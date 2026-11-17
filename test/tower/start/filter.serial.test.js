@@ -1,3 +1,4 @@
+// Runs alone: it reclaims the fixed ports 18693 and 14300 through the machine's process table.
 //
 // Tests for tower/start.sh: the log filter (the quiet default, the refusals it never
 // swallows, the phase boundary, the doors to the whole wall). Prologue: ./helpers.js.

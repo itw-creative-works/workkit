@@ -265,7 +265,7 @@
   - `register.js` hands them the engine calls as plain functions (`ioOf`), so no mods file touches `$`.
 - Each hook's logic is plain functions over plain data in `hooks/mods/<name>.js`.
   - So the logic suites under `test/hooks/` `require()` them straight.
-  - Only the wiring suites need the engine: `test/mods/*.test.ts`, run by `claude plugin test` (`npm test`'s mod half, AGENTS.md § Tests).
+  - Only the wiring suites need the engine: `test/mods/*.test.ts`, run by `claude plugin test` (one `modCase` case of the host suite `test/mods.test.js`, AGENTS.md § Tests).
 - An edit to the module reaches a session only on `/reload-plugins`.
   - That is why `workflow:reload-guard` counts its files among the load-time surfaces.
 - The `hooks/` folder carries its own `package.json` (`{ "type": "module" }`).

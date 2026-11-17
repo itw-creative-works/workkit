@@ -11,9 +11,7 @@ const {
 const {
   linesOf, listsOf, marksOf, totalsOf,
 } = require('./lib/run-lists');
-const {
-  SUITE, MOD_FILES, mkWorld, claudeStub,
-} = require('./lib/runner-world');
+const { SUITE, mkWorld } = require('./lib/runner-world');
 
 // alpha and beta under describe('outer'), gamma outside it.
 const OUTER = SUITE(`
@@ -149,14 +147,6 @@ describe('outer', () => {
     const lines = linesOf(output);
     const at = lines.findIndex((line) => line.trim() === 'filter: alpha');
     expect(at >= 0 && at < lines.findIndex((line) => line.startsWith('▶ ')), `the filter line first, got: ${output}`).toBe(true);
-  });
-
-  test('a bare run with --filter in a repo with a mod suite never starts the mod half, and its skip line names the flag', () => {
-    const claude = claudeStub();
-    const { code, output } = runWith({ 'test/x.test.js': OUTER, ...MOD_FILES }, ['--filter=alpha'], { bins: [claude.bin] });
-    expect(code, `exit 0, got: ${output}`).toBe(0);
-    expect(claude.started(), `claude was never started, got: ${output}`).toBe(false);
-    expect(listsOf(output).some((line) => line.includes('mod half') && line.includes('--filter')), `the skip line names the flag, got: ${output}`).toBe(true);
   });
 
   test('a filtered run under WORKKIT_TEST_SUMMARY adds the counts of the cases that ran', () => {

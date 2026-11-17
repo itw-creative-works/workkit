@@ -16,6 +16,7 @@ export * from './spawn.js';
 export * from './expect.js';
 export * from './events.js';
 export * from './app-cases.js';
+export * from './mods.js';
 
 // The workflow state directory's name for the test layer. The engine and the
 // hooks hold their own copy, so change all three together.

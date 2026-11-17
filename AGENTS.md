@@ -88,7 +88,7 @@
 - Agent-agnostic: shell + Node, which is why the hooks call it rather than contain it.
 - It calls the `claude` CLI in one place only: the setup commands in `workflow/workkit/`.
   - Those are the plugin's install and list, and `claude setup-token`.
-  - The test runner's mod half (`claude plugin test`) lives in `workkit-core`.
+  - The test library's `modCase` (`claude plugin test`) lives in `workkit-core`.
 - `workkit.sh` is the one command and the from-zero entry point:
   - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths] [--filter=<text>]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`;
   - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
@@ -131,20 +131,18 @@
   - A path after `--` is a suite file or a folder, every suite under it; `--filter=<text>` runs only the cases whose full name holds the text, and records no proof.
   - The kit's root lists `packages/*` as workspaces, and `packages/core` has no `test` script, so the root run starts no member.
 - `test/lib/harness.js` is a one-line re-export of `workkit-core/test`, which carries the whole library.
-- `test/lib/serial.js` is this repo's serial list, its entries suite files or folders from the repo root, run in the list's order.
-  - The kit has no `test/lib/skip.js`, the runner's lists of suites a run leaves out unless a path names them narrowly (`docs/tests.md` § The kit's runner).
+- The runner reads no list file: a suite that runs alone says so in its name, `*.serial.test.js`, and runs in the serial tail after the parallel wave (`docs/tests.md` § The kit's runner).
 - Every suite is Node's own shape, `describe`, `test` and `expect` from `test/lib/harness.js` (`docs/tests.md` § The shape).
 - A suite or case this machine cannot answer states a `skip` value, `false` or the reason; the runner names the skip.
   - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutFileLink` in `test/lib/`.
 - The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
 - This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
-  - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`, `events`, `app-cases`).
+  - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`, `events`, `app-cases`, `mod-case`).
 - A suite keeps to its own temp folder through `mkTmp` and touches no fixed shared path.
-  - One that must is added to `SERIAL`, with the path named in a one-line comment beside its entry.
-- Then the mod half: `claude plugin test` on the kit root runs the hooks module's wiring suites, `test/mods/*.test.ts`, inside the engine.
-  - The runner adds its counts beside the Node suites'.
-  - With no `claude` on PATH it is a named skip and the Node half still runs.
-  - A named `test/mods/<name>.test.ts` after `--` runs the whole mod half, since `claude plugin test` takes a folder.
+  - One that must is named `*.serial.test.js`, with the path named in a one-line comment at its top.
+- The hooks module's wiring suites, `test/mods/*.test.ts`, run inside the engine through `claude plugin test` on the kit root: one case, `modCase`, of the host suite `test/mods.test.js`.
+  - With no `claude` on PATH that case is a named skip, and every other suite still runs.
+  - `npm test -- test/mods.test.js` runs them alone; a `test/mods/<name>.test.ts` after `--` is no suite, since `claude plugin test` takes a folder.
 - One suite runs alone as `npm test -- test/<path>.test.js`, or as `node test/<path>.test.js` with no line added.
   - The runner takes suite paths after `--`, and exits 1 naming a path that matches no suite.
   - A case that starts the runner, or a suite file with `node`, passes `aloneEnv()` (`test/lib/alone-env.js`), its env without `NODE_TEST_CONTEXT`, `WORKKIT_TEST_SUMMARY` and `WORKKIT_TEST_NO_MATCH`.

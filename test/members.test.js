@@ -11,9 +11,7 @@ const { IS_WINDOWS } = require('./lib/platform');
 const { TOTALS_LINE, linesOf, totalsOf } = require('./lib/run-lists');
 const { TOTALS, skipWithoutNpm } = require('./lib/core-repo');
 const { coreBin } = require('./lib/workkit-bin');
-const {
-  RUNNER, SUITE, MOD_FILES, listFile, mkWorld, claudeStub,
-} = require('./lib/runner-world');
+const { RUNNER, SUITE, mkWorld } = require('./lib/runner-world');
 
 // The kit's program starter, which a member's suite starts a run of its own through.
 const RUN_JS = path.join(__dirname, '..', 'workflow', 'lib', 'run.js');
@@ -263,17 +261,6 @@ describe('run.js: workspace members', { skip: skipWithoutNpm() }, () => {
       expect(misses.filter((name) => output.includes(name)), `no near miss ran, got: ${output}`).toEqual([]);
     });
 
-    test('a root with a mod half and a member: the member\'s case runs, the mod half is not started, and its skip line names the filter', () => {
-      const claude = claudeStub();
-      const { code, output } = runWith({
-        ...ROOT(['packages/*']), ...MOD_FILES, ...member('a', { cases: [CASE('alpha one')] }),
-      }, ['--filter=alpha'], { bins: [claude.bin] });
-      expect(code, `exit 0, got: ${output}`).toBe(0);
-      expect(has(output, '✓ alpha one'), `the member's case ran, got: ${output}`).toBe(true);
-      expect(claude.started(), `claude was never started, got: ${output}`).toBe(false);
-      expect(trimmed(output).some((line) => line.includes('mod half') && line.includes('--filter')), `the skip line names the flag, got: ${output}`).toBe(true);
-    });
-
     // The inner run starts in a folder with its own package.json, which the member's run never reads.
     test('a member suite that starts a run of its own matching nothing: that run writes no no-match line, so the member\'s row reads ✓ a', () => {
       const { code, output } = runWith({
@@ -357,54 +344,6 @@ test('alpha starts a run of its own', () => {
       }, ['test/root.test.js', '--filter=case']);
       expect(code, `exit 0, got: ${output}`).toBe(0);
       expect(has(output, '▶ a: npm test') || has(output, '✓ the a case'), `a never started, got: ${output}`).toBe(false);
-    });
-  });
-
-  describe('a member on a skip list', () => {
-    const MEMBER_LINE = 'skip: 1 member left out (test/lib/skip.js)';
-    const withList = (lists) => ({
-      ...ROOT(['packages/*']),
-      ...ROOT_SUITE,
-      ...member('a'),
-      ...member('b'),
-      'test/lib/skip.js': listFile(lists),
-    });
-
-    test('CI_SKIP naming a member\'s folder: under CI the member is not started and the member line prints; without CI it runs and no such line prints', () => {
-      const files = withList({ CI_SKIP: ['packages/b'] });
-      const ci = runWith(files, [], { env: { CI: 'true' } });
-      expect(ci.code, `under CI: exit 0, got: ${ci.output}`).toBe(0);
-      expect(has(ci.output, '▶ b: npm test') || ci.output.includes('the b case'), `under CI: b never started, got: ${ci.output}`).toBe(false);
-      expect(has(ci.output, '▶ a: npm test'), `under CI: a still ran, got: ${ci.output}`).toBe(true);
-      expect(has(ci.output, MEMBER_LINE), `under CI: the member line, got: ${ci.output}`).toBe(true);
-      const plain = runWith(files);
-      expect(plain.code, `without CI: exit 0, got: ${plain.output}`).toBe(0);
-      expect(has(plain.output, '▶ b: npm test') && plain.output.includes('the b case'), `without CI: b ran, got: ${plain.output}`).toBe(true);
-      expect(trimmed(plain.output).some((line) => line.startsWith('skip: ') && line.includes('member')), `without CI: no member line, got: ${plain.output}`).toBe(false);
-    });
-
-    test('SKIP naming a member\'s folder: a bare run with CI unset leaves it out and prints the member line', () => {
-      const { code, output } = runWith(withList({ SKIP: ['packages/b'] }));
-      expect(code, `exit 0, got: ${output}`).toBe(0);
-      expect(has(output, '▶ b: npm test') || output.includes('the b case'), `b never started, got: ${output}`).toBe(false);
-      expect(has(output, MEMBER_LINE), `the member line, got: ${output}`).toBe(true);
-    });
-
-    test('SKIP naming a member\'s folder, under a filter: that member is not started and is counted as left out, the other runs', () => {
-      const { code, output } = runWith(withList({ SKIP: ['packages/b'] }), ['--filter=a case']);
-      expect(code, `exit 0, got: ${output}`).toBe(0);
-      expect(has(output, '✓ the a case'), `a ran, got: ${output}`).toBe(true);
-      expect(has(output, '▶ b: npm test') || has(output, '✓ the b case'), `b never started, got: ${output}`).toBe(false);
-      expect(has(output, MEMBER_LINE), `the member line, got: ${output}`).toBe(true);
-    });
-
-    test('workspaces ["packages/a/"] with a trailing / and SKIP [packages/a]: the member is left out and named, exit 0', () => {
-      const { code, output } = runWith({
-        ...ROOT(['packages/a/']), ...ROOT_SUITE, ...member('a'), 'test/lib/skip.js': listFile({ SKIP: ['packages/a'] }),
-      });
-      expect(code, `exit 0, got: ${output}`).toBe(0);
-      expect(has(output, MEMBER_LINE), `the member line, got: ${output}`).toBe(true);
-      expect(has(output, '▶ a: npm test') || output.includes('the a case'), `a never started, got: ${output}`).toBe(false);
     });
   });
 

@@ -1,7 +1,6 @@
 // Suite discovery for the kit's runner (test/run.js), `workkit tools`
 // (test/tools.js) and `workkit convert` (test/convert.js), so which files
-// count as a suite has one home: the suites by name under the start folder,
-// and the mod half's `test/mods/*.test.ts`.
+// count as a suite has one home: the suites by name under the start folder.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -51,13 +50,6 @@ const ignoredUnder = (root) => {
 };
 
 /**
- * The mod half's folder under the start folder, `test/mods`.
- * @param {string} root the folder the runner starts in
- * @returns {string}
- */
-export const modDir = (root) => path.join(root, 'test', 'mods');
-
-/**
  * A suite's printed name: its path from <root> with `/` between parts, on
  * every platform.
  * @param {string} root the folder the runner starts in
@@ -94,13 +86,4 @@ export const findSuites = (root) => {
   };
   walk(root, '');
   return out.sort();
-};
-
-// The mod half's wiring suites: every `*.test.ts` and `*.test.tsx` in the
-// test/mods/ folder, which `claude plugin test` runs; none when there is no folder.
-export const findModSuites = (dir) => {
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.test\.tsx?$/.test(entry.name))
-    .map((entry) => path.join(dir, entry.name));
 };

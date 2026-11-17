@@ -44,24 +44,19 @@ npm i -D workkit-core
   - Outside a git work tree, or with no `git` on the PATH, nothing is skipped as ignored. Any other git failure stops the run with git's message.
   - No folder name is special: `test/`, `tests/` and `lib/` are read like any other.
   - A suite's printed name is its path from the start folder, with `/` on every platform (`test/hooks/x.test.js`).
-- A suite named in the repo's `test/lib/serial.js` (`module.exports = { SERIAL: ['test/x.test.js', 'test/e2e'] }`) runs alone, after the parallel wave.
-  - An entry is a path from the start folder, with either separator: a suite file, or a folder, which puts every suite under it on the list.
-  - The serial suites run in the list's order, a folder's in sorted order; a suite two entries name runs once, at the first.
+- A suite named `*.serial.test.js` (`.mjs` and `.cjs` too) runs alone, after the parallel wave: the serial suites run one at a time, in sorted order.
+- The runner runs Node suites and nothing else, and reads no list file. A case that must not run on a machine skips itself in its own suite.
+  - A `test/lib/serial.js` left in the repo stops the run before any suite, exit 1: `test/lib/serial.js is no longer read: name a suite *.serial.test.js to run it alone`.
+  - A `test/lib/skip.js` does the same: `test/lib/skip.js is no longer read: skip a case in its own suite`.
 - A path after `--` is read from the start folder too, a `\` in it read as `/`: a suite file, or a folder naming every suite under it by the bare run's rule.
-  - A suite named twice runs once, and a folder holding a `test/mods` suite runs the mod half.
-- A path or a list entry that names no suite fails the run before any suite starts.
-  - A path prints `No suite matches <arg>`, a serial entry `No suite matches <entry> (test/lib/serial.js)`, a skip entry `No suite matches <entry> (test/lib/skip.js)`.
+  - A suite named twice runs once.
+- A path that names no suite fails the run before any suite starts: `No suite matches <arg>`.
   - A folder holding no suite, or holding its own `package.json`, is such a path.
 - `--filter=<text>` runs only the cases whose full name (the `describe` path and the case's name, joined by spaces) holds the text as typed, case and every character counting.
   - The run prints `filter: <text>` first. A case left out prints nothing, and a suite with no case left prints nothing and is no failure.
   - No case matching anywhere, the root's own and every member's, is `No case matches <text>`, exit 1. An empty text is `--filter needs a text`, the flag twice `--filter is given once`.
-  - The mod half is not started under it, named in the skip list. The workspace members start as on a bare run, each handed the text (below); a filter with suite paths starts none.
-- `test/lib/skip.js` may export `SKIP`, suites a run leaves out unless a path names them (tests that run only when asked), and `CI_SKIP`, left out as well when `CI` holds any text.
-  - Entries are read as paths after `--` are, and may name a workspace member's folder, which is then not started.
-  - A run that leaves suites out prints `skip: <n> suite[s] left out (test/lib/skip.js)`, and one that leaves members out `skip: <n> member[s] left out (test/lib/skip.js)`. A path named after `--` runs a listed suite only when it names the entry or a path inside it; a wider path (`test`, `.`) leaves the suite out, and the line prints.
-  - A list must be an array of paths: `test/lib/serial.js: SERIAL must be an array of paths` (a `serial.js` with no `SERIAL` included), `test/lib/skip.js: SKIP must be an array of paths` (or `CI_SKIP`), exit 1 before any suite.
+  - The workspace members start as on a bare run, each handed the text (below); a filter with suite paths starts none.
 - A folder with no suite, and no workspace member to start, fails the run: `No test file found (*.test.js, *.test.mjs, *.test.cjs)`.
-- `test/mods/*.test.ts` suites run after that through `claude plugin test`, skipped by name with no `claude` on PATH.
 - A run with no suite path, bare or under `--filter` alone, from a root whose `package.json` lists `workspaces` (a literal folder, or `dir/*`) then runs each member's own `npm test`, one at a time in folder order, under `▶ <member name>: npm test`.
   - A member with no `test` script is not started. Each member must run this runner: one whose run writes no summary line fails as `✗ <name>: its test script did not run workkit's runner`, with ` (exit <code>)` after it when it exited other than 0.
   - Under a filter each runs `npm test -- --filter=<text>`, the text one argument. npm appends it to the member's script, so a script ending in the runner takes it (`node pre.js && workkit test`); one ending in another command does not, and its cases all run.
@@ -71,7 +66,7 @@ npm i -D workkit-core
       - So a script chaining a passing run and one matching nothing (`workkit test a && workkit test b`) exits 1, the row `✗ <name> (exit 1)`.
   - The run ends with a row per member, `✓ <name>`, `⊘ <name>: no case matches` or `✗ <name> (exit <code>)`, and its totals add the members' counts and name them: `(Ns, K suites, P members)`.
   - A signal that ends the run while a member runs prints no row for it and no totals line; the exit is 128 plus the signal's number. A member's run has no deadline of its own.
-- The run ends with `N passed, M failed (Ns, K suites)` and a `slowest:` line, then names every skipped suite and case, then every failure; any failure exits 1.
+- The run ends with `N passed, M failed (Ns, K suites)` and a `slowest:` line, then names every skipped case, then every failure; any failure exits 1.
   - Off Windows a `SIGINT`, `SIGTERM` or `SIGHUP` that ends the run prints nothing more: no block for a suite that ends meanwhile and no totals line; the exit is 128 plus the signal's number.
 - Its lines are plain text, with no time stamp, painted as they print by Node's own rule for stdout (`util.styleText`): color at a terminal or under `FORCE_COLOR`, none on a pipe, in a file or under `NO_COLOR`, which wins over `FORCE_COLOR`.
   - A `✓` mark is green, a `✗` line red, a `⊘` line and `slowest:` gray, a `▶` line, a `[outer › inner]` heading, the totals line and `Failures:` bold; any other line is left as it is.
@@ -153,7 +148,12 @@ describe('render', { skip: needs('ffmpeg') }, () => {
   - `start`'s child has its stdin ignored. With `input` the text is written to it, then it is closed. With `stdin: 'open'` it stays open, after any `input`, for the caller to write and end through `child.stdin`, and Node closes it once the child is gone; `end()` and the deadline end the process, and close no stream first. Any other `stdin` throws at the call.
   - `endTree(pid, signal, seams)` on Windows runs `taskkill.exe` from `System32` under `SystemRoot`, never through PATH, and throws when it cannot start. Its seams are the platform, the program runner and `SystemRoot`.
   - `alive(pid)` is false for anything but a positive integer, and for a process that ended and is not yet collected. `groupLives(pid)` is false once every member of the group is.
-- Suite discovery: `findSuites(root)` (every suite under the start folder, absolute paths, sorted), `suiteName(root, file)` (its printed name), `modDir(root)` (`<root>/test/mods`), `findModSuites(dir)`, `POOL`.
+- Suite discovery: `findSuites(root)` (every suite under the start folder, absolute paths, sorted), `suiteName(root, file)` (its printed name), `POOL`.
+- A plugin's own tests: `modCase(folder)` registers one case, `claude plugin test (<the folder's own name>)`, that runs `claude plugin test <folder>` there through the kit's program starter (a `claude.cmd` on Windows too).
+  - It passes when the tool exits 0, and fails on any other end, its message holding how it ended, each `(fail) <name>` test and the tool's output.
+  - With no `claude` on the PATH it is skipped, `no claude binary on PATH`; a `claude` that is found but does not start fails it, `claude did not start: <message>`; `--filter` and paths treat it as any case.
+  - Its deadline is the run's suite deadline (`TEST_DEADLINE`, else `SUITE_DEADLINE`), since it holds the whole tool run; the tool is ended 10 seconds before it (at half of it when that is less), failing the case with its output.
+  - A folder that does not exist throws `modCase: no folder <folder>` at the call, failing the suite.
 - Assertions: `expect(actual, message?)`, with Jest's names and behaviour (its `expect` 29.7) plus Vitest's `toBeTypeOf`.
   - The matchers: `toBe`, `toEqual`, `toStrictEqual`, `toMatchObject`, `toBeTruthy`, `toBeFalsy`, `toBeDefined`, `toBeUndefined`, `toBeNull`, `toBeNaN`, `toContain`, `toHaveLength`, `toHaveProperty`, `toMatch`, `toBeInstanceOf`, `toBeTypeOf`.
   - Then `toBeGreaterThan`, `toBeGreaterThanOrEqual`, `toBeLessThan`, `toBeLessThanOrEqual`, `toBeCloseTo` and `toThrow`.

@@ -58,7 +58,7 @@ const DOOR_EXPORTS = [
   'describe', 'test', 'it', 'before', 'after', 'beforeEach', 'afterEach', 'mock', 'expect',
   'mkTmp', 'seeded', 'until', 'elapsedUntil', 'alive', 'readPid', 'run', 'start', 'endTree', 'endGroup', 'groupLives',
   'needs', 'hasLaunchd', 'SPAWN_DEADLINE', 'SUITE_DEADLINE', 'CASE_DEADLINE',
-  'CASE_INDENT', 'PIPE_GRACE_MS', 'POOL', 'WORKKIT_DIR', 'findModSuites', 'findSuites', 'modDir', 'pidIn', 'suiteName',
+  'CASE_INDENT', 'PIPE_GRACE_MS', 'POOL', 'WORKKIT_DIR', 'findSuites', 'modCase', 'pidIn', 'suiteName',
   'indentRest', 'indentWriter', 'EVENT_PREFIX', 'eventLine', 'parseEventLine', 'appCases',
 ];
 

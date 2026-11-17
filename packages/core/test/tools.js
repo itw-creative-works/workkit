@@ -4,7 +4,7 @@
 // the suites the runner would run from the cwd; it never loads one.
 
 import fs from 'node:fs';
-import { findSuites, findModSuites, suiteName, modDir } from './lib/suites.js';
+import { findSuites, suiteName } from './lib/suites.js';
 import { maskSpans } from './lib/lexer.js';
 
 // A `needs(` call, not a method of the same name or a longer identifier.
@@ -54,9 +54,8 @@ const literalArgs = (text, from) => {
  *   call whose arguments are not string literals, as `<file>:<line>: ...`
  */
 export const suiteTools = (root) => {
-  const suites = [...findSuites(root), ...findModSuites(modDir(root))].sort();
   const tools = new Set();
-  for (const suite of suites) {
+  for (const suite of findSuites(root)) {
     const text = fs.readFileSync(suite, 'utf8');
     const code = codeOnly(text);
     const uncommented = codeOnly(text, false);

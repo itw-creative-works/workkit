@@ -1,3 +1,4 @@
+// Runs alone: it checks for and removes the kit's live workflow/workflow link.
 // Tests for standards.sh: the roster of enabled and declined repos.
 // The shared prologue is ./helpers.js.
 

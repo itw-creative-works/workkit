@@ -38,7 +38,7 @@ const coreBin = (cwd, args) => {
   return { code: res.status, out: stripVTControlCharacters(res.stdout), said: stripVTControlCharacters(res.output) };
 };
 
-// Two suites naming hugo, a suite under src/, a mod suite naming chrome, and a helper under test/lib/.
+// Two suites naming hugo, a suite under src/, a plugin test the only one naming chrome, and a helper under test/lib/.
 const TWO_HUGO = {
   'test/a.test.js': SUITE("needs('hugo', 'ffmpeg')"),
   'test/deep/b.test.js': SUITE('needs("hugo")'),
@@ -105,11 +105,11 @@ const BAD = 'test/sub/bad.test.js';
 const literalOnly = (line) => `✖ tools: ${BAD}:${line}: needs() takes string literals only`;
 
 describe('workkit-core bin: tools', () => {
-  test('two suites naming hugo print it once; every suite tool, under src/ and mod, sorted one per line; a helper unread', () => {
+  test('two suites naming hugo print it once; every Node suite tool, under src/ too, sorted one per line; a helper and test/mods/c.test.ts unread, so no chrome', () => {
     const root = mkSuites(TWO_HUGO);
     const { code, out, said } = coreBin(root, ['tools']);
     expect(code, `exit 0, got: ${said}`).toBe(0);
-    expect(out, 'each suite tool once, sorted, and nothing from test/lib/seam.js').toBe('chrome\nffmpeg\nhugo\nsrc-tool\n');
+    expect(out, 'each Node suite tool once, sorted, nothing from test/lib/seam.js or test/mods/c.test.ts').toBe('ffmpeg\nhugo\nsrc-tool\n');
   });
 
   test('a needs( in a comment or a string, template included, is never listed and never fails: only the real call prints', () => {

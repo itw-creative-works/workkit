@@ -1,5 +1,5 @@
-// How a suite path someone wrote (a command-line argument, a serial or skip
-// entry) is read, for the runner (test/run.js) and `workkit convert`
+// How a suite path someone wrote (a command-line argument) is read, for the
+// runner (test/run.js) and `workkit convert`
 // (test/convert.js): a suite file, or a folder naming every suite under it.
 // The door does not re-export it.
 
@@ -17,7 +17,7 @@ const FILTER_TWICE = `${FILTER_FLAG} is given once`;
  * @param {string} written the path as typed
  * @returns {string}
  */
-export const fromStart = (root, written) => path.resolve(root, written.replaceAll('\\', '/'));
+const fromStart = (root, written) => path.resolve(root, written.replaceAll('\\', '/'));
 
 /**
  * The suite paths an argument list writes: every argument but `--`.
@@ -45,13 +45,12 @@ export const readFilter = (args) => {
 };
 
 /**
- * Whether an absolute path is <folder> or sits under it: the start folder, or
- * a skip list entry.
+ * Whether an absolute path is <folder> or sits under it: the start folder.
  * @param {string} folder an absolute path
  * @param {string} at an absolute path
  * @returns {boolean}
  */
-export const isWithin = (folder, at) => {
+const isWithin = (folder, at) => {
   const rel = path.relative(folder, at);
   return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
 };
@@ -66,7 +65,7 @@ export const isWithin = (folder, at) => {
  * @param {string} written the path as typed
  * @returns {string[]} absolute paths, in <suites>' order
  */
-export const suitesOf = (root, suites, written) => {
+const suitesOf = (root, suites, written) => {
   const at = fromStart(root, written);
   if (!isWithin(root, at)) return [];
   if (suites.includes(at)) return [at];

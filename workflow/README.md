@@ -3,7 +3,7 @@
 - The agent-agnostic core of the issue workflow.
 - It calls the `claude` CLI in one place only: the setup commands in `workkit/`.
   - Those are the plugin's install and list, and `claude setup-token` for the cloud brief's secret.
-  - The test runner, whose mod half runs `claude plugin test`, is the `workkit-core` package (`../packages/core/`).
+  - The test runner and its library, whose `modCase` runs `claude plugin test`, are the `workkit-core` package (`../packages/core/`).
 - Past that it knows nothing about Claude Code. That is why it lives at the plugin's top level instead of under `hooks/`.
   - The hooks call it, and `~/.claude/workkit` is its stable address for anything else that does.
 
@@ -458,7 +458,7 @@
     - And the full-suite hold (`lib/hold.sh`), through `wk_suite_proved` itself.
   - `wk_ci_set` is the one test of `CI`: it succeeds when `CI` holds any value but the empty string, `CI=false` and `CI=0` included.
     - The kit leaves `CI` in the suite's environment as it came, and nothing else in the kit's shell reads it: the gate, the hold and `safety:proof-guard` read records alone.
-    - workkit-core's runner reads `CI` by the same rule, any text but the empty string, to leave out the suites and members `test/lib/skip.js` lists in `CI_SKIP`.
+    - workkit-core's runner does not read `CI` either.
   - The record's first line is the `git write-tree` id of the tree its writer proved, less `.workkit/`.
   - Its second line is `ms=<n>`, the wall time in milliseconds of the run that wrote it. The gate holds it against `tests.budget`.
   - Every read matches the first line alone, so a record with no second line still proves its tree.

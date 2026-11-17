@@ -244,17 +244,14 @@ flowchart TB
     - With arguments (`npm test -- <what>`) it is narrowed, and the package's runner decides what the arguments mean.
     - A repo's root `test` script is the whole definition of its tests; a nested package's suite is that script's job.
       - On the kit's runner a bare root run starts each workspace member's own `npm test` after the root's suites (`docs/tests.md` § The kit's runner).
-      - Each member's run writes its own package line, and the record of a green bare root run stands for the root's suites and every member not on a skip list.
+      - Each member's run writes its own package line, and the record of a green bare root run stands for the root's suites and every member.
       - Under `workkit proof red` the root run writes one summary line: its own counts plus each member's.
-    - A bare run leaves out the suites the repo's `test/lib/skip.js` lists in `SKIP`, so its record stands for every suite not on that list.
-      - A narrowed run leaves them out too unless a path names the entry or a path inside it, so a wide path's package record stands for the suites off the list.
     - A run under the runner's `--filter=<text>` left cases out, so it writes no record: a green one says so in one `script-shell:` line and exits 0.
   - A tree is proved by running `npm test` at the repo root, by anyone (the owner in a terminal, the agent, a background run), with `CI` unset or empty.
     - The shell records the tree it proved, and the gate checks the record.
     - A run with `CI` set to any other value (`false` and `0` included) writes no record: a repo's root script may run only part of its suite under `CI`, so such a run cannot stand for the whole.
       - The run itself goes as always, `CI` left in its environment as it came; a green one says so in one `script-shell:` line and exits 0.
-      - The kit's runner reads `CI` only to leave out the suites and members `test/lib/skip.js` lists in `CI_SKIP`.
-      - Nothing else reads it, so a tree only a `CI` run proved is refused at the commit for a missing record.
+      - Neither the kit's runner nor anything else reads it, so a tree only a `CI` run proved is refused at the commit for a missing record.
     - Every tree id a record is keyed to (the working tree's, a package's own, the index's) is the tree with `.workkit/` left out.
     - So a write there (the suite log, a marker, `settings.json`) never re-keys a green record.
   - The shell is npm's `script-shell`, which `workkit setup` points at the kit's wrapper.

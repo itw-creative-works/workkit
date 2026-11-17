@@ -1,3 +1,4 @@
+// Runs alone: it reclaims the fixed ports 18693 and 14300 through the machine's process table.
 //
 // Tests for tower/start.sh: the terminal (the colors a half keeps, FORCE_COLOR on and
 // off a terminal, a real Ctrl-C under a pty). Prologue: ./helpers.js.
