@@ -7,20 +7,22 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-11-16
+
 ### Added
 
-- [#551](../../issues/551) - workkit-core's `start` takes `stdin: 'open'`: the child's stdin stays open for the test to write to and end through `child.stdin`, so a child that waits on its stdin starts through `start`.
+- [#551](../../issues/551) [`b2b64fa`](../../commit/b2b64fa) Thanks [@ianwieds]! - workkit-core's `start` takes `stdin: 'open'`: the child's stdin stays open for the test to write to and end through `child.stdin`, so a child that waits on its stdin starts through `start`.
 
 ### Changed
 
-- [#550](../../issues/550) - The kit's runner suites now read a run's totals, marks and failure lists through the one shared helper file, `test/lib/run-lists.js`, instead of their own near-copies.
+- [#550](../../issues/550) [`b2b64fa`](../../commit/b2b64fa) Thanks [@ianwieds]! - The kit's runner suites now read a run's totals, marks and failure lists through the one shared helper file, `test/lib/run-lists.js`, instead of their own near-copies.
 
 ### Fixed
 
-- [#553](../../issues/553) - The header of an installed `checks.yml` now names both CI hook lists: `hooks.ciSetup`, run before the dependency install, and `hooks.ciPostInstall`, run after it and before the tests.
-- [#552](../../issues/552) - On Windows without Git Bash, an argument the kit's starter hands to `npm.cmd` or `npx.cmd` now arrives whole. Each argument is escaped twice there, as for a shim under `node_modules\.bin`, so a text with an odd `"` before an `&` no longer splits.
-- [#549](../../issues/549) - Two calls taking over one ended run at once can no longer both take its lock and start two supervised runs. A run lock now holds a mark file beside its claim, and only the call that renames that mark first removes the lock.
-- [#554](../../issues/554) - `workkit watch --end` no longer says a run did not end when it ended and its lock was dropped while it looked, as seen on Windows. A supervisor gone with no answer now gets its own line, apart from a wait that ran out.
+- [#553](../../issues/553) [`b2b64fa`](../../commit/b2b64fa) Thanks [@ianwieds]! - The header of an installed `checks.yml` now names both CI hook lists: `hooks.ciSetup`, run before the dependency install, and `hooks.ciPostInstall`, run after it and before the tests.
+- [#552](../../issues/552) [`b2b64fa`](../../commit/b2b64fa) Thanks [@ianwieds]! - On Windows without Git Bash, an argument the kit's starter hands to `npm.cmd` or `npx.cmd` now arrives whole. Each argument is escaped twice there, as for a shim under `node_modules\.bin`, so a text with an odd `"` before an `&` no longer splits.
+- [#549](../../issues/549) [`b2b64fa`](../../commit/b2b64fa) Thanks [@ianwieds]! - Two calls taking over one ended run at once can no longer both take its lock and start two supervised runs. A run lock now holds a mark file beside its claim, and only the call that renames that mark first removes the lock.
+- [#554](../../issues/554) [`b2b64fa`](../../commit/b2b64fa) Thanks [@ianwieds]! - `workkit watch --end` no longer says a run did not end when it ended and its lock was dropped while it looked, as seen on Windows. A supervisor gone with no answer now gets its own line, apart from a wait that ran out.
 
 ## [0.97.0] - 2026-11-16
 
