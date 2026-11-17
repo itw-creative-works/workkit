@@ -3,17 +3,17 @@
 // lock's) under a workflow home's markers folder, the package record's lines, the working tree's hash
 // by the temp-index recipe, and the suite and package records planted as a green
 // `npm test` would leave them. `kitIndexTree` is the one read through the kit, the
-// index's id as tree-hash.sh -i takes it. Consumers: the script-shell wrapper's suites
-// (script-shell, suite-hold), prove, githooks, and the commit-gate, proof-guard and _lib suites.
+// index's id as tree-hash.js -i takes it. Consumers: the script-shell wrapper's suites
+// (script-shell, suite-hold), prove, githooks, tree-hash, records, and the commit-gate, proof-guard and _lib suites.
 
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { mkTmp, SPAWN_DEADLINE } = require('./harness');
-const { NO_RC, shellPath, spawnBash } = require('./platform');
+const { spawnSync: startSync } = require('./platform');
 
-const TREE_HASH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'tree-hash.sh');
+const TREE_HASH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'tree-hash.js');
 
 const repoRoot = (dir) => spawnSync('git', ['rev-parse', '--show-toplevel'],
   { cwd: dir, encoding: 'utf8' }).stdout.trim();
@@ -53,12 +53,12 @@ const treeHash = (dir, excluded = []) => {
   return spawnSync('git', ['write-tree'], { cwd: dir, env, encoding: 'utf8' }).stdout.trim();
 };
 
-/** The index's tree id as the kit takes it, `bash tree-hash.sh <dir> -i`, under <env> over this process's (a GIT_INDEX_FILE names another index). */
+/** The index's tree id as the kit takes it, `node tree-hash.js <dir> -i`, under <env> over this process's (a GIT_INDEX_FILE names another index). */
 const kitIndexTree = (dir, env = {}) => {
-  const res = spawnBash([...NO_RC, shellPath(TREE_HASH), shellPath(dir), '-i'],
+  const res = startSync(process.execPath, [TREE_HASH, dir, '-i'],
     { cwd: dir, env: { ...process.env, ...env }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   const id = (res.stdout || '').trim();
-  if (!/^[0-9a-f]{40,64}$/.test(id)) throw new Error(`tree-hash.sh -i gave no tree id: ${res.stdout}|${res.stderr}`);
+  if (!/^[0-9a-f]{40,64}$/.test(id)) throw new Error(`tree-hash.js -i gave no tree id: ${res.stdout}|${res.stderr}`);
   return id;
 };
 

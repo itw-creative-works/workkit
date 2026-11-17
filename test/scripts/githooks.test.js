@@ -317,14 +317,13 @@ describe('githooks: who is judged', () => {
     expect(res.err.includes('did not run (no node 22.12 or newer found)'), `stderr names the stand-down, got: ${res.err}`).toBeTruthy();
   });
 
-  test('the hook\'s node found but none on PATH: a CHANGELOG commit lands, check 3 standing down out loud', () => {
+  test('the hook\'s node found but none on PATH: the CHANGELOG check runs under the hook\'s node and judges', () => {
     const w = mkWorld();
-    w.write('CHANGELOG.md', CHANGELOG('- [#1](https://github.com/owner/repo/issues/1) - The thing the issue asked for.'));
+    w.write('CHANGELOG.md', CHANGELOG('- An essay entry with no issue link.'));
     w.git('add', 'CHANGELOG.md');
     const res = commit(w, ['-m', 'docs: changelog'], { env: { WORKKIT_NODE: process.execPath, PATH: systemPathWith(w.ghDir) } });
-    landed(res, 'a linter that did not start');
-    expect(/^commit-gate: check 3 stood down: the CHANGELOG linter did not start \(.+\)$/m.test(res.err), `the one stand-down line, got: ${res.err}`).toBeTruthy();
-    expect(!res.err.includes('does not match the format'), `never a format verdict, got: ${res.err}`).toBeTruthy();
+    bounced(res, 'does not match the format', 'the linter ran with no node on PATH');
+    expect(!res.err.includes('check 3 stood down'), `never a stand-down, got: ${res.err}`).toBeTruthy();
   });
 
   test('--no-verify skips the hooks: case 1\'s bad commit lands', () => {

@@ -23,7 +23,11 @@ const OTHER_ID = '2222222222222222222222222222222222222222';
 
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex');
 
-const TREE_HASH = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'tree-hash.sh'));
+// The node every record function runs through, handed over so no machine's own node decides.
+const NODE = { WORKKIT_NODE: shellPath(process.execPath) };
+
+// The one line a shell with no node at the floor says in place of a tree id.
+const NO_NODE = 'tree-hash: no node 22.12 or newer found, so no tree id was taken';
 
 // A committed workspaces repo: members a, b and c under packages/, c depending on a.
 const WORKSPACES = {
@@ -54,12 +58,12 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
   });
 
   const git = (dir, ...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' }).stdout.trim();
-  const treeHash = (dir) => runLib(`wk_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+  const treeHash = (dir) => runLib(`wk_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...NODE }).stdout.trim();
 
   // The id of <pkg> (the whole tree with none), always a tree id.
   const idOf = (dir, pkg) => {
     const out = runLib(`wk_tree_hash "${shellPath(dir)}"${pkg ? ` "${pkg}"` : ''}`,
-      { TMPDIR: shellPath(TMP), WORKKIT_NODE: shellPath(process.execPath) });
+      { TMPDIR: shellPath(TMP), ...NODE });
     const id = out.stdout.trim();
     expect(/^[0-9a-f]{40,64}$/.test(id), `a tree id for ${pkg || 'the whole tree'}, got: ${out.stdout}|${out.stderr}`).toBeTruthy();
     return id;
@@ -136,16 +140,27 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       expect(idOf(dir, 'packages/foo'), "packages/foo's id is the whole tree's").toBe(idOf(dir));
     });
 
-    test('wk_tree_hash <root> <pkg> with no node at the floor: the whole tree, and one line saying so', () => {
+    test('wk_tree_hash with no node at the floor, for the whole tree and for a package: the one no-node line, exit 1, no id', () => {
       const dir = mkWorkspaces();
       const old = stubNode(path.join(mkTmp('lib-old-node-'), 'bin'), '20.15.1');
+      for (const pkg of ['', ' packages/a']) {
+        // HOME is the scratch one, so no node a machine's nvm keeps is found instead.
+        const out = runLib(`wk_tree_hash "${shellPath(dir)}"${pkg}`,
+          { ...HOME.env, TMPDIR: shellPath(TMP), WORKKIT_NODE: shellPath(old) });
+        expect(out.code, `${pkg || 'the whole tree'}: exit 1, got: ${out.stdout}|${out.stderr}`).toBe(1);
+        expect(out.stdout, `${pkg || 'the whole tree'}: no id`).toBe('');
+        expect(JSON.stringify(out.stderr.split('\n').filter(Boolean)), `${pkg || 'the whole tree'}: the one line naming the missing node`)
+          .toBe(JSON.stringify([NO_NODE]));
+      }
+    });
+
+    test('wk_suite_proved with no node at the floor: the one records no-node line, exit 1', () => {
+      const old = stubNode(path.join(mkTmp('lib-old-node-'), 'bin'), '20.15.1');
       // HOME is the scratch one, so no node a machine's nvm keeps is found instead.
-      const out = runLib(`wk_tree_hash "${shellPath(dir)}" packages/a`,
-        { ...HOME.env, TMPDIR: shellPath(TMP), WORKKIT_NODE: shellPath(old) });
-      expect(out.stdout.trim(), "packages/a's id is the whole tree's").toBe(idOf(dir));
-      const said = out.stderr.split('\n').filter(Boolean);
-      expect(said.length, `one stderr line, got: ${out.stderr}`).toBe(1);
-      expect(said[0].includes('no node') && said[0].includes('keyed to the whole tree'), `it names the missing node and the whole tree, got: ${said[0]}`).toBeTruthy();
+      const out = runLib(`wk_suite_proved /repos/thing "${ID}"`, { ...HOME.env, WORKKIT_NODE: shellPath(old) });
+      expect(out.code, `exit 1, got: ${out.stdout}|${out.stderr}`).toBe(1);
+      expect(JSON.stringify(out.stderr.split('\n').filter(Boolean)), 'the one line naming the missing node')
+        .toBe(JSON.stringify(['records: no node 22.12 or newer found, so no record was read or written']));
     });
 
     test("wk_suite_index_tree: the real index's write-tree id, never the edit on disk", () => {
@@ -155,14 +170,14 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       git(dir, 'add', '-A');
       const staged = git(dir, 'write-tree');
       fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
-      const out = runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+      const out = runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...NODE }).stdout.trim();
       expect(out, 'the staged content names the tree').toBe(staged);
       expect(out !== treeHash(dir), 'and the unstaged edit is not in it').toBeTruthy();
     });
   });
 
   describe('_lib.sh: a proof id leaves .workkit/ out', () => {
-    const indexTree = (dir) => runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP) }).stdout.trim();
+    const indexTree = (dir) => runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...NODE }).stdout.trim();
 
     test('wk_tree_hash: the settings losing its version key and a suite log written leave the whole and the package id as recorded', () => {
       const dir = mkWorkspaces(STAMPED);
@@ -173,7 +188,7 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       expect(idOf(dir, 'packages/a'), "and so does packages/a's own id").toBe(before.a);
     });
 
-    test('wk_suite_index_tree and tree-hash.sh -i: a staged settings edit leaves the index id as it was', () => {
+    test('wk_suite_index_tree and tree-hash.js -i: a staged settings edit leaves the index id as it was', () => {
       const dir = mkRepo({ private: true }, STAMPED);
       const before = indexTree(dir);
       expect(/^[0-9a-f]{40,64}$/.test(before), `a tree id, got: ${before}`).toBeTruthy();
@@ -181,18 +196,8 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       git(dir, 'add', '-A');
       expect(git(dir, 'diff', '--cached', '--name-only'), 'the edit is staged').toBe('.workkit/settings.json');
       expect(indexTree(dir), 'the index id the record holds stands').toBe(before);
-      expect(kitIndexTree(dir, { TMPDIR: shellPath(TMP) }), "tree-hash.sh -i prints wk_suite_index_tree's id").toBe(before);
+      expect(kitIndexTree(dir, { TMPDIR: shellPath(TMP) }), "tree-hash.js -i prints wk_suite_index_tree's id").toBe(before);
       expect(git(dir, 'diff', '--cached', '--name-only'), 'and the real index still holds the staged edit').toBe('.workkit/settings.json');
-    });
-
-    test('tree-hash.sh: -i with anything after it, or anywhere but second, exits 1 with no id', () => {
-      const dir = mkRepo({ private: true }, STAMPED);
-      for (const flags of ['-i extra', '. -i']) {
-        const res = runLib(`"$BASH" "${TREE_HASH}" "${shellPath(dir)}" ${flags}`, { TMPDIR: shellPath(TMP) });
-        expect(res.code, `${flags}: exit 1`).toBe(1);
-        expect(res.stdout, `${flags}: nothing on stdout`).toBe('');
-        expect(res.stderr, `${flags}: the one stderr line`).toBe('tree-hash: -i takes no other flag or package\n');
-      }
     });
 
     test('wk_tree_hash: an edit to .gitignore, CHANGELOG.md or the checks workflow changes the id, only .workkit/ is left out', () => {
@@ -214,7 +219,7 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       // The root as a hook hands it over, and the record planted at its native
       // path: the lib answers a shell path, which Node on Windows cannot open.
       const root = git(dir, 'rev-parse', '--show-toplevel');
-      const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, HOME.env).code === 0;
+      const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, { ...HOME.env, ...NODE }).code === 0;
       expect(!proved(ID), 'no marker proves nothing').toBeTruthy();
       const marker = plantRecord(HOME.workflowHome, dir, ID);
       expect(proved(ID), 'the recorded tree is proved').toBeTruthy();
@@ -229,7 +234,8 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
     const pkgWorld = () => {
       const dir = mkTmp('lib-pkg-');
       git(dir, 'init', '-q');
-      const { workflowHome: wh, env } = scratchWorkflowHome('lib-pkg-home-');
+      const { workflowHome: wh, env: homeEnv } = scratchWorkflowHome('lib-pkg-home-');
+      const env = { ...homeEnv, ...NODE };
       const root = git(dir, 'rev-parse', '--show-toplevel');
       const ask = (fn, ...args) => runLib(`${fn} "${root}" ${args.map((a) => `"${a}"`).join(' ')}`, env).code === 0;
       return { dir, wh, root, env, ask, lines: () => JSON.stringify(pkgRecord(wh, dir)) };

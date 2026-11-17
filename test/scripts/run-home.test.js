@@ -94,7 +94,6 @@ const STILL_IMPORTING = [
   'test/scripts/workkit-cli/cache.test.js',
   'test/scripts/workkit-cli/helpers.js',
   'test/scripts/workkit-cli/test-verb.test.js',
-  'test/scripts/workspaces.test.js',
   'test/spawn.test.js',
   'test/tower/health.test.js',
   'test/tower/log.test.js',

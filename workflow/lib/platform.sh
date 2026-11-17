@@ -504,7 +504,7 @@ wk_marker_path() {
 
 # wk_sweep_markers: remove each regular file one folder under the markers dir
 # whose mtime is older than MARKER_KEEP_DAYS. A folder there (a run lock) is
-# never entered. Every marker writer calls it; it never fails one.
+# never entered. Every shell marker writer calls it; it never fails one.
 wk_sweep_markers() {
   local dir
   dir=$(wk_markers_dir)

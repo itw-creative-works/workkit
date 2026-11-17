@@ -1,35 +1,30 @@
 /**
- * hooks/mods/suite.js: the proved-tree records as the guards read them (the
- * suite record and the package record), the tree id they are compared with,
- * the tested-package read, the lazy fact the guards hand their verdicts, and
- * the long-run ceiling. The module's side of workflow/lib/suite.sh, whose
- * writers keep the records' format.
+ * hooks/mods/suite.js: the proved-tree records' pure rules: the text each
+ * record holds and the reads of it, the tree id they are compared with, the
+ * tested-package read, the lazy fact the guards hand their verdicts, and the
+ * long-run ceiling. workflow/lib/records.js binds the records to the disk for
+ * the writers and the shell.
  */
 
 /** The ceiling of a program run that can take long on a big repo: a tree hash, a copy, the heal. */
 export const LONG_RUN_MS = 600000;
 
 /**
- * The working tree's id through `bash <kit>/workflow/lib/tree-hash.sh <root>`,
- * wk_tree_hash's one home, or the real index's under `-i`
- * (wk_suite_index_tree), each less `.workkit/`, under the long-run ceiling.
- * The child runs with the variables handed in, so wk_node finds node the way
- * the record writer did; a package keyed to the whole tree leaves its note.
+ * The working tree's id through `node <kit>/workflow/lib/tree-hash.js <root>`,
+ * or the real index's under `-i`, each less `.workkit/`, under the long-run ceiling.
  * @param {function} run runs `(argv, init)`, resolving `{ exitCode, stdout, stderr }`
  * @param {string} kit the plugin root
  * @param {string} root the repo root
- * @param {object} env the variables the child runs with (HOME, PATH, TMPDIR and WORKKIT_NODE among them)
- * @param {...string} flags `-i` alone for the index's id; else a package
- *   folder for that package's own id
- * @returns {Promise<{id: string|null, note: string|null}>} the id, null when it
- *   could not be taken; the child's `tree-hash:` and `workspaces:` stderr
- *   lines in order, joined by newlines, else null
+ * @param {object} env the variables the child runs with (HOME, PATH and TMPDIR among them)
+ * @param {...string} flags `-i` alone for the index's id; else a package folder for its own id
+ * @returns {Promise<{id: string|null, note: string|null}>} the id, null when it could
+ *   not be taken; the child's `workspaces:` stderr lines, joined, else null
  */
 export async function treeHash(run, kit, root, env, ...flags) {
-  const tree = await run(['bash', `${kit}/workflow/lib/tree-hash.sh`, root, ...flags], { cwd: root, env, timeoutMs: LONG_RUN_MS });
+  const tree = await run(['node', `${kit}/workflow/lib/tree-hash.js`, root, ...flags], { cwd: root, env, timeoutMs: LONG_RUN_MS });
   if (tree.exitCode !== 0) return { id: null, note: null };
   const notes = String(tree.stderr ?? '').split('\n').map((line) => line.trim())
-    .filter((line) => line.startsWith('tree-hash:') || line.startsWith('workspaces:'));
+    .filter((line) => line.startsWith('workspaces:'));
   return { id: tree.stdout.trim() || null, note: notes.length > 0 ? notes.join('\n') : null };
 }
 
@@ -45,8 +40,35 @@ export async function factOf(fact, ...args) {
 }
 
 /**
- * Whether the suite record holds the tree: wk_suite_proved's read, the first
- * line equal to a non-empty tree id.
+ * The suite record's text: the tree id hashed before the green run, then
+ * `ms=<ms>`, the run's wall time.
+ * @param {string} tree the tree id
+ * @param {number|string} ms the milliseconds
+ * @returns {string}
+ */
+export function suiteRecordText(tree, ms) {
+  return `${tree}\nms=${ms}\n`;
+}
+
+/**
+ * The package record's text with `<tree> <pkg>` written: every other
+ * package's line kept in order, then this one's, last. A piece past the last
+ * newline is dropped, as a line read would drop it.
+ * @param {string|null} record the record's text, null when there is none
+ * @param {string} tree the package's own tree id
+ * @param {string} pkg the package folder relative to the root, `.` for the root
+ * @returns {string}
+ */
+export function pkgRecordText(record, tree, pkg) {
+  const lines = typeof record === 'string' ? record.split('\n') : [''];
+  lines.pop();
+  const kept = lines.filter((line) => (line.includes(' ') ? line.slice(line.indexOf(' ') + 1) : line) !== pkg);
+  return [...kept, `${tree} ${pkg}`].map((line) => `${line}\n`).join('');
+}
+
+/**
+ * Whether the suite record holds the tree: the first line equal to a
+ * non-empty tree id.
  * @param {string|null} record the suite record's text
  * @param {string|null} tree the tree id
  * @returns {boolean}
@@ -59,7 +81,7 @@ export function suiteProved(record, tree) {
 
 /**
  * The recorded root run's wall time: the suite record's `ms=<n>` line, which
- * wk_suite_marker_write adds and an older record may lack.
+ * suiteRecordText writes and an older record may lack.
  * @param {string|null} record the suite record's text
  * @returns {number|null} the milliseconds, null when the record carries none
  */
@@ -70,7 +92,7 @@ export function suiteRecordMs(record) {
 }
 
 /**
- * Whether a line of the package record is `<tree> <pkg>`: wk_pkg_proved's read.
+ * Whether a line of the package record is `<tree> <pkg>`.
  * @param {string|null} record the package record's text
  * @param {string|null} tree the package's own tree id
  * @param {string} pkg the package folder relative to the root, `.` for the root
@@ -98,7 +120,7 @@ export function hasTestScript(pkg) {
 /**
  * The nearest folder at or above `rel`, short of the root, that `tested`
  * says declares a test script; '' for the root's, and under node_modules
- * always the root's (hook_test_package_dir).
+ * always the root's.
  * @param {string} rel a path relative to the root
  * @param {function} tested async, whether a folder relative to the root has a test script
  * @returns {Promise<string>}

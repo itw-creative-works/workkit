@@ -51,7 +51,6 @@ WK_HOME_RUNNER_FILES=(
   'workflow/lib/slug.sh:brief/workflow/lib/slug.sh'
   'workflow/lib/suite.sh:brief/workflow/lib/suite.sh'
   'workflow/lib/hold.sh:brief/workflow/lib/hold.sh'
-  'workflow/lib/tree-hash.sh:brief/workflow/lib/tree-hash.sh'
   'workflow/lib/changelog.sh:brief/workflow/lib/changelog.sh'
   'workflow/lib/detach.sh:brief/workflow/lib/detach.sh'
   'workflow/slug.js:brief/workflow/slug.js'

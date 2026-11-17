@@ -191,6 +191,15 @@ const digestTool = (searchPath = process.env.PATH) => ['shasum', 'sha1sum']
 const toolStem = (file) => (IS_WINDOWS ? file.replace(/\.(exe|cmd|bat|com)$/i, '') : file);
 
 /**
+ * Whether a child's argv starts the program `name`, however argv[0] spells it:
+ * a bare name, a path, or on Windows with its extension.
+ * @param {string[]} argv
+ * @param {string} name - without an extension
+ * @returns {boolean}
+ */
+const runsProgram = (argv, name) => toolStem(path.basename(argv[0])) === name;
+
+/**
  * Compile the stub launcher's filled `source` into `exe`: a build beside it,
  * hard linked into place, so a parallel suite never runs a half-written file. A
  * build that fails throws with csc's output, never reading as no compiler.
@@ -648,7 +657,7 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, linkTool, stubTool, stubNode, crlfJq,
+  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubNode, crlfJq,
   lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,

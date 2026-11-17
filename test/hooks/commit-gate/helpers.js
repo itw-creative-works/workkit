@@ -284,9 +284,9 @@ function runStub(r, cwd) {
       for (const p of argv.slice(1).filter((a) => !a.startsWith('-') && a.startsWith(fs.realpathSync(os.tmpdir())))) fs.rmSync(p, { recursive: true, force: true });
       return runResult();
     }
-    // `bash <kit>/workflow/lib/tree-hash.sh <root> -i`, the gate's tree: the index's id.
-    const hash = argv.findIndex((a) => a.endsWith('tree-hash.sh'));
-    if (tool === 'bash' && hash >= 0 && argv[hash + 2] === '-i') return runResult({ stdout: `${indexTree(r)}\n` });
+    // `node <kit>/workflow/lib/tree-hash.js <root> -i`, the gate's tree: the index's id.
+    const hash = argv.findIndex((a) => a.endsWith('tree-hash.js'));
+    if (hash >= 0 && argv[hash + 2] === '-i') return runResult({ stdout: `${indexTree(r)}\n` });
     if (tool === 'bash' && argv.slice(1).some((a) => a.startsWith(KIT))) return realRun(argv, init);
     return runResult({ exitCode: 127, stderr: `${tool}: command not found\n` });
   };

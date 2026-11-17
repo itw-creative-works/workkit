@@ -166,21 +166,6 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
   });
 
   describe('_lib.sh: the test package', () => {
-    test('hook_test_package_dir: the nearest package declaring a test script, below the root', () => {
-      const root = mkTmp('lib-pkgdir-');
-      for (const d of ['pkg/src/deep', 'pkg/bare/src', 'other', 'node_modules/x']) fs.mkdirSync(path.join(root, d), { recursive: true });
-      const tested = JSON.stringify({ scripts: { test: 'node --test' } });
-      for (const d of ['', 'pkg', 'node_modules/x']) fs.writeFileSync(path.join(root, d, 'package.json'), tested);
-      fs.writeFileSync(path.join(root, 'pkg', 'bare', 'package.json'), '{"name":"bare"}');
-      const ask = (p) => runLib(`hook_test_package_dir "${shellPath(root)}" "${p}"`).stdout.trim();
-      expect(ask('pkg/src/deep/a.js'), 'a file under a package with a script names it').toBe('pkg');
-      expect(ask('pkg/bare/src/a.js'), 'a package without a script never hides the tested one above it').toBe('pkg');
-      expect(ask('other/x.js'), 'a file under no package names nothing').toBe('');
-      expect(ask('app.js'), "a file at the root names nothing, the root's own package included").toBe('');
-      expect(ask('node_modules/x/index.js'), 'a vendored package names nothing, script or not').toBe('');
-      fs.rmSync(root, { recursive: true, force: true });
-    });
-
     test('wk_has_test_script: a package.json that defines scripts.test, and nothing else', () => {
       const root = mkTmp('lib-testscript-');
       for (const d of ['tested', 'bare', 'none']) fs.mkdirSync(path.join(root, d));

@@ -28,10 +28,6 @@ const skipped = ghSkipped('proof-guard', 'proof gate');
 const unproved = (n, what) => `proof-guard: BLOCKED this command. Issue #${n} carries no comment whose line starts with "Proof:", so it cannot ${what} (docs/project-state.md, "The proof": the proof is a hard gate).\nThe proof is written at the PARK by the agent that built the item, from the layers it actually ran (skills/feature/SKILL.md section 6): comment the Proof: line on the issue first, one entry per layer with the command or the reason that layer was skipped, then run this again. It is never invented at ship time and never written on the owner's behalf.`;
 const label = (pkg) => (pkg === '.' ? 'the repo root' : pkg);
 const unreadDiff = (root, read) => `proof-guard: BLOCKED this flip to status:qa: the working diff of ${root} could not be read (${read}), so the touched test files are unknown. Fix git, then flip again.`;
-// Only a tree-hash: line naming node gets the fix; a workspaces: line prints as it is.
-const wholeTree = (note) => note.split('\n')
-  .map((line) => (line.startsWith('tree-hash:') && /\bnode\b/.test(line) ? `${line}; put the node it names on the gate's PATH, or set WORKKIT_NODE.` : line))
-  .join('\n');
 
 // The folders proof.rootOnly declares, a trailing / dropped; null when the
 // value is not an array of strings (undefined declares nothing).
@@ -109,7 +105,7 @@ async function checkQa(root, facts) {
     else {
       missing.push(`${label(pkg)}: ${files.join(' ')}`);
       missingCount += files.length;
-      if (note) keyed.push(wholeTree(note));
+      if (note) keyed.push(note);
     }
   }
   if (missing.length > 0) {

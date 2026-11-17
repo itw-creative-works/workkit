@@ -840,22 +840,7 @@ describe('detach.sh: wk_ask_end', () => {
     }
   });
 
-  test('a real supervisor whose end outlasts a three second wait, its command ignoring the terminate signal: 0, and the done file holds 143', async () => {
-    const pidFile = path.join(mkTmp('detach-ask-cmd-'), 'cmd.pid');
-    let supervisor;
-    try {
-      let lock;
-      ({ lock, supervisor } = supervisedLock(pidFile));
-      await pidOf(pidFile);
-      const res = ask(lock, supervisor, 'WK_END_WAIT=3');
-      expect(res.status, `the run ended on the request, so 0, output: ${res.output}`).toBe(0);
-      expect(read(path.join(lock, 'done')), 'the done file holds the ended code').toBe('143\n');
-    } finally {
-      reap(pidIn(pidFile), supervisor);
-    }
-  });
-
-  test('that supervisor ending its run on the request, before its done file: the lock folder holds ending', async () => {
+  test('a real supervisor whose end outlasts a three second wait, its command ignoring the terminate signal: the lock folder holds ending meanwhile, then 0, and the done file holds 143', async () => {
     const pidFile = path.join(mkTmp('detach-ask-cmd-'), 'cmd.pid');
     let supervisor;
     let asking;
@@ -863,9 +848,11 @@ describe('detach.sh: wk_ask_end', () => {
       let lock;
       ({ lock, supervisor } = supervisedLock(pidFile));
       await pidOf(pidFile);
-      asking = askStarted(lock, supervisor);
+      asking = askStarted(lock, supervisor, 'WK_END_WAIT=3');
       const ending = () => fs.existsSync(path.join(lock, 'ending')) && !fs.existsSync(path.join(lock, 'done'));
       expect(await until(ending), `no ending file while the run ended, it holds: ${holding(lock)}`).toBeTruthy();
+      expect(await answerOf(asking), `the run ended on the request, so 0, output: ${asking.output()}`).toBe(0);
+      expect(read(path.join(lock, 'done')), 'the done file holds the ended code').toBe('143\n');
     } finally {
       reap(pidIn(pidFile), supervisor);
       if (asking) await asking.end('SIGKILL');

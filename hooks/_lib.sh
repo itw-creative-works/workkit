@@ -72,8 +72,6 @@ hook_sha1() { wk_sha1 "$@"; }
 # nothing and every name they read is defined above.
 # shellcheck source=./lib/markers.sh
 . "$HOOK_LIB_DIR/lib/markers.sh"
-# shellcheck source=./lib/paths.sh
-. "$HOOK_LIB_DIR/lib/paths.sh"
 # shellcheck source=./lib/tree.sh
 . "$HOOK_LIB_DIR/lib/tree.sh"
 # shellcheck source=./lib/snapshot.sh

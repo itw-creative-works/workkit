@@ -5,7 +5,7 @@
 // The check's stand-downs run the real gate over a real scratch repo (test/lib/real-gate.js).
 
 const { describe, test, expect, mkTmp } = require('../../lib/harness');
-const { SYSTEM_PATH } = require('../../lib/platform');
+const { basePathWithout } = require('../../lib/platform');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
 const { gateOn } = require('../../lib/real-gate');
 const {
@@ -59,18 +59,29 @@ describe('commit-gate: CHANGELOG entry format', () => {
   });
 });
 
-describe('commit-gate: check 3 stands down out loud', () => {
-  test('a linter that did not start (no node on PATH): no deny, one check 3 stood down line; the linter file absent: no line, no deny', async () => {
-    const stoodDown = (out) => out.context.split('\n').filter((l) => l.startsWith('commit-gate: check 3 stood down: '));
-    const entryStaged = () => {
-      const w = mkGitRepo('cg-lint-start-', { 'CHANGELOG.md': CHANGELOG() });
-      w.write('CHANGELOG.md', ENTRY);
-      w.git('add', 'CHANGELOG.md');
-      return w;
-    };
+// A real scratch repo whose CHANGELOG.md has <entry> staged over an empty one.
+const entryStaged = (entry = ENTRY) => {
+  const w = mkGitRepo('cg-lint-start-', { 'CHANGELOG.md': CHANGELOG() });
+  w.write('CHANGELOG.md', entry);
+  w.git('add', 'CHANGELOG.md');
+  return w;
+};
 
-    const noNode = entryStaged();
-    const unstarted = await gateOn(noNode.repo, { ...noNode.env, PATH: SYSTEM_PATH });
+describe('commit-gate: check 3 under the gate\'s own node', () => {
+  test('no node on the PATH: the linter still runs under the gate\'s node and gives its verdict', async () => {
+    const w = entryStaged(CHANGELOG(`- ${ISSUE} - ${new Array(61).fill('word').join(' ')} end.`));
+    const v = await gateOn(w.repo, { ...w.env, PATH: basePathWithout(mkTmp('cg-lint-no-node-'), 'node') });
+    const deny = lintBlocks(v, 'the linter ran and blocked');
+    expect(deny.includes('[word-cap] 62 words (max 50)'), `with the linter's line, got: ${deny}`).toBeTruthy();
+  });
+});
+
+describe('commit-gate: check 3 stands down out loud', () => {
+  test('a linter that did not start: no deny, one check 3 stood down line; the linter file absent: no line, no deny', async () => {
+    const stoodDown = (out) => out.context.split('\n').filter((l) => l.startsWith('commit-gate: check 3 stood down: '));
+
+    const noStart = entryStaged();
+    const unstarted = await gateOn(noStart.repo, noStart.env, { unstarted: (argv) => argv.some((a) => a.endsWith('lint.js')) });
     expect(unstarted.deny, 'a linter that never started is no deny').toBe(null);
     const lines = stoodDown(unstarted);
     expect(lines.length, `one stand-down line, got: ${unstarted.context}`).toBe(1);

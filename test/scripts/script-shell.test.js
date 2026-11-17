@@ -11,7 +11,7 @@ const {
   describe, test, expect,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, shellPath, which, joinPath, stubTool, NODE_DIR, SYSTEM_PATH,
+  IS_WINDOWS, shellPath, which, joinPath, stubTool, stubNode, NODE_DIR, SYSTEM_PATH,
 } = require('../lib/platform');
 const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
 const {
@@ -44,10 +44,12 @@ const isOurs = (value) => value !== '' && fs.existsSync(value) && fs.realpathSyn
 const install = (world, repo) => npm(world, repo, ['install', '--no-audit', '--no-fund'], world.wrapper, { CLAUDECODE: undefined });
 
 // What the wrapper's run reaches in the kit, by its path from the kit root: its
-// libs, and the settings reader the launcher loads for a run's root.
+// libs, the settings reader the launcher loads for a run's root, and the record
+// rules records.js binds.
 const WRAPPER_PARTS = [
   'workflow/script-shell.sh', 'workflow/lib', 'workflow/user-dir.js',
-  'hooks/package.json', 'hooks/mods/settings.js', 'hooks/mods/log.js', 'defaults/settings.json',
+  'hooks/package.json', 'hooks/mods/settings.js', 'hooks/mods/log.js', 'hooks/mods/markers.js', 'hooks/mods/suite.js',
+  'defaults/settings.json',
 ];
 
 // The wrapper and what it reaches, copied in the kit's layout to <world.root>/kit
@@ -133,6 +135,28 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       expect(res.out.includes('script-shell: the suite passed, but the tree of ')
         && res.out.includes(' could not be hashed, so no record was written\n'), `the line names the hash, got: ${res.out}`).toBeTruthy();
       expect(!res.out.includes('the tree changed during the run'), `never read as a changed tree, got: ${res.out}`).toBeTruthy();
+      expect(recorded(world, repo), 'no record was written').toBe(undefined);
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('a green supervised root run on a machine with no node at the floor: exit 1, the suite ran, no record, the output names the missing node', () => {
+      const world = mkWorld();
+      // The suite prints `ran-2`, a token npm's echo of the script line never holds.
+      const repo = mkRepo({ scripts: { test: 'echo ran-$((1+1))' } });
+      // npm runs on this suite's node by its absolute path, so the only node the run's PATH holds is a 20.
+      const bin = path.join(world.root, 'npm-bin');
+      fs.mkdirSync(bin);
+      const cli = IS_WINDOWS ? path.join(NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js') : fs.realpathSync(which('npm', NODE_DIR));
+      stubTool(bin, 'npm', ['#!/bin/bash', `exec "${shellPath(process.execPath)}" "${shellPath(cli)}" "$@"`]);
+      const old = path.join(world.root, 'old-node');
+      stubNode(old, '20.15.1');
+      // A detached run needs node at the floor to start its supervisor, so the run that passes is a supervised one.
+      const res = npm(world, repo, ['test'], world.wrapper, { PATH: joinPath(bin, old, SYSTEM_PATH), WORKKIT_SUPERVISED: '1' });
+      const said = `${res.out}\n${res.err}`;
+      expect(said.includes('ran-2'), `the suite ran, got: ${said}`).toBeTruthy();
+      expect(res.code, `a green run with no tree id is not green, got: ${res.code} ${said}`).toBe(1);
+      expect(said.includes('no record was written') && said.includes('no node 22.12 or newer found'),
+        `the output says no record was written and names the missing node, got: ${said}`).toBeTruthy();
       expect(recorded(world, repo), 'no record was written').toBe(undefined);
       cleanup(world.root); cleanup(repo);
     });

@@ -120,7 +120,6 @@ const sessionOf = (dir, prefix) => {
 const BLOCK = (n, what) => `proof-guard: BLOCKED this command. Issue #${n} carries no comment whose line starts with "Proof:", so it cannot ${what} (docs/project-state.md, "The proof": the proof is a hard gate).\nThe proof is written at the PARK by the agent that built the item, from the layers it actually ran (skills/feature/SKILL.md section 6): comment the Proof: line on the issue first, one entry per layer with the command or the reason that layer was skipped, then run this again. It is never invented at ship time and never written on the owner's behalf.`;
 const SKIPPED = (n) => `proof-guard: could not read issue #${n} (gh could not answer), so the proof gate did not run on this command.`;
 const QA_BLOCK = (count, ...lines) => `proof-guard: BLOCKED this flip to status:qa: the ${count} touched test file(s) below have no green test run recorded on this tree. In each package named, run its own tests narrowed to those files (\`npm test -- <files>\` from that folder, with the paths in the form its runner takes), then flip again.\n${lines.join('\n')}`;
-const WHOLE_TREE = (note) => `${note}; put the node it names on the gate's PATH, or set WORKKIT_NODE.`;
 // <why> is `exited <rc>`, or `did not start`.
 const DIFF_BLOCK = (root, args, why) => `proof-guard: BLOCKED this flip to status:qa: the working diff of ${root} could not be read (git ${args} ${why}), so the touched test files are unknown. Fix git, then flip again.`;
 const HASH_BLOCK = (root) => `proof-guard: BLOCKED this flip to status:qa: the working tree of ${root} could not be hashed, so the park's test record cannot be read. Fix what stops git hashing the tree (git add -A into a throwaway index, then git write-tree), then flip again.`;
@@ -137,5 +136,5 @@ const passText = (r, what) => {
 
 module.exports = {
   ROOT, TREE, OTHER_TREE, WORLD, comments, viewer, packagesOf, pkgRecord, suiteRecord, step, judge, denyOf, textOf,
-  QA, VIEW, flip, sessionOf, BLOCK, SKIPPED, QA_BLOCK, WHOLE_TREE, DIFF_BLOCK, HASH_BLOCK, ROOT_ONLY, assertBlocks, passText,
+  QA, VIEW, flip, sessionOf, BLOCK, SKIPPED, QA_BLOCK, DIFF_BLOCK, HASH_BLOCK, ROOT_ONLY, assertBlocks, passText,
 };

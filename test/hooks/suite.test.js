@@ -1,6 +1,6 @@
 // Tests for hooks/mods/suite.js, the one home of the record reads the suite,
 // proof and commit guards share: factOf, suiteProved and pkgProved over the
-// record text as workflow/lib/suite.sh writes it, hasTestScript over a parsed
+// record text as workflow/lib/records.js writes it, hasTestScript over a parsed
 // package.json, and testPackageDir over a `tested` predicate.
 
 const { describe, test, expect } = require('../lib/harness');
@@ -13,36 +13,29 @@ const OTHER_ID = '2222222222222222222222222222222222222222';
 const suite = () => mods('suite');
 
 describe('suite.js: treeHash', () => {
-  test('treeHash runs bash <kit>/workflow/lib/tree-hash.sh <root> [flags] in the root, under the env handed in and the long timeout', async () => {
+  test('treeHash runs node <kit>/workflow/lib/tree-hash.js <root> [flags] in the root, under the env handed in and the long timeout', async () => {
     const { treeHash, LONG_RUN_MS } = suite();
     const env = { HOME: '/h/me', PATH: '/usr/bin:/bin', TMPDIR: '/t' };
     const calls = [];
     const answerer = (answer) => async (argv, init) => { calls.push({ argv: [...argv], init }); return answer; };
     const ok = { exitCode: 0, stdout: `${ID}\n`, stderr: '' };
     expect(JSON.stringify(await treeHash(answerer(ok), '/k', '/w/repo', env)), 'the id, trimmed, and no note').toBe(JSON.stringify({ id: ID, note: null }));
-    expect(JSON.stringify(calls[0].argv), 'the entry over the root').toBe(JSON.stringify(['bash', '/k/workflow/lib/tree-hash.sh', '/w/repo']));
+    expect(JSON.stringify(calls[0].argv), 'the entry over the root').toBe(JSON.stringify(['node', '/k/workflow/lib/tree-hash.js', '/w/repo']));
     expect(calls[0].init?.cwd, 'run in the root').toBe('/w/repo');
     expect(JSON.stringify(calls[0].init?.env), 'under the env handed in').toBe(JSON.stringify(env));
     expect(calls[0].init?.timeoutMs, 'under the long-run timeout').toBe(LONG_RUN_MS);
     await treeHash(answerer(ok), '/k', '/w/repo', env, '-i');
-    expect(JSON.stringify(calls[1].argv), 'the flags after the root').toBe(JSON.stringify(['bash', '/k/workflow/lib/tree-hash.sh', '/w/repo', '-i']));
+    expect(JSON.stringify(calls[1].argv), 'the flags after the root').toBe(JSON.stringify(['node', '/k/workflow/lib/tree-hash.js', '/w/repo', '-i']));
   });
 
-  test("treeHash's note is every stderr line of the child starting tree-hash:, trimmed, in order; a failed or empty hash has no id", async () => {
+  test("treeHash's note is every stderr line of the child starting workspaces:, trimmed, in order; a failed or empty hash has no id", async () => {
     const { treeHash } = suite();
     const answer = (res) => async () => res;
-    const said = 'tree-hash: no node 22.12 or newer found; packages/a keyed to the whole tree';
-    const fellBack = { exitCode: 0, stdout: `${ID}\n`, stderr: `npm warn something else\n${said}  \ntree-hash: a later line\n` };
-    expect(JSON.stringify(await treeHash(answer(fellBack), '/k', '/w/repo', {}, 'packages/a')), 'the id and both tree-hash lines').toBe(JSON.stringify({ id: ID, note: `${said}\ntree-hash: a later line` }));
+    const said = 'workspaces: package.json does not parse; packages/a keyed to the whole tree';
+    const fellBack = { exitCode: 0, stdout: `${ID}\n`, stderr: `npm warn something else\n${said}  \nworkspaces: a later line\n` };
+    expect(JSON.stringify(await treeHash(answer(fellBack), '/k', '/w/repo', {}, 'packages/a')), 'the id and both workspaces lines').toBe(JSON.stringify({ id: ID, note: `${said}\nworkspaces: a later line` }));
     expect(JSON.stringify(await treeHash(answer({ exitCode: 1, stdout: '', stderr: 'fatal\n' }), '/k', '/w/repo', {})), 'a failed hash is no id and no note').toBe(JSON.stringify({ id: null, note: null }));
     expect((await treeHash(answer({ exitCode: 0, stdout: '\n', stderr: '' }), '/k', '/w/repo', {})).id, 'an empty answer is no id').toBe(null);
-  });
-
-  test("treeHash's note carries a workspaces: line too, in its place among the tree-hash: lines", async () => {
-    const { treeHash } = suite();
-    const reason = 'workspaces: package.json does not parse; packages/a keyed to the whole tree';
-    const res = { exitCode: 0, stdout: `${ID}\n`, stderr: `tree-hash: first\nnpm warn other\n${reason}\n` };
-    expect(JSON.stringify(await treeHash(async () => res, '/k', '/w/repo', {}, 'packages/a')), 'the id, and the workspaces fallback beside the tree-hash line').toBe(JSON.stringify({ id: ID, note: `tree-hash: first\n${reason}` }));
   });
 });
 

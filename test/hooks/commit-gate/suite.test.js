@@ -1,11 +1,18 @@
 // Tests for safety:commit-gate's logic, preCommitVerdict(facts) in hooks/mods/commit-gate.js, check 5:
 // a commit carrying code needs the record a green root `npm test` wrote for the tree it carries
-// (`treeId`, the commit's index tree as tree-hash.sh -i takes it); the gate runs no suite. The script-shell compare
-// reads physical paths through `real`. The prologue is ./helpers.js.
+// (`treeId`, the commit's index tree as tree-hash.js -i takes it); the gate runs no suite. The script-shell compare
+// reads physical paths through `real`. The prologue is ./helpers.js; the tree id case reads the real facts (test/lib/real-gate.js's io).
 
 const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, mkTmp } = require('../../lib/harness');
+const {
+  NODE_DIR, joinPath, basePathWithout, runsProgram,
+} = require('../../lib/platform');
+const { mods } = require('../../lib/mods-inputs');
+const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
+const { ioIn } = require('../../lib/real-gate');
+const { treeHash } = require('../../lib/suite-record');
 const {
   T, NOTICE, ROOT, stage, write, commit, touchMarker, proveTree, judge, denyOf, blocks, passes, recordBlocks,
   suiteRan, pkg, mkReleaseRepo,
@@ -329,5 +336,43 @@ describe('commit-gate: the suite record', () => {
     stage(r, 'app.js', 'const x = 2;\n');
     touchMarker(r);
     passes(await judge(r, 'feat: thing'), '', 'there is no suite to prove, and nothing said about one');
+  });
+});
+
+describe('commit-gate: the tree ids, through the real gate', () => {
+  test('the gate takes the index\'s and the disk\'s tree ids with node running tree-hash.js, and starts no bash', async () => {
+    const w = mkGitRepo('cg-tree-ids-', { 'package.json': pkg('1.0.0'), 'app.js': 'const x = 1;\n' });
+    w.write('app.js', 'const x = 2;\n');
+    w.git('add', 'app.js');
+    const staged = treeHash(w.repo);
+    w.write('extra.js', 'const y = 1;\n');
+    const env = { ...w.env, PATH: joinPath(NODE_DIR, w.env.PATH) };
+    const io = ioIn(env);
+    const calls = [];
+    const run = (argv, init) => { calls.push([...argv]); return io.run(argv, init); };
+    const root = await io.top(w.repo);
+    const facts = mods('commit-gate').commitFacts(mods('facts').bashFacts({ ...io, run }, env, { cwd: root }), root);
+    expect(await facts.treeId, 'the commit\'s tree: the index, the untracked file out').toBe(staged);
+    expect(await facts.diskTreeId, 'the folder\'s tree: the untracked file in').toBe(treeHash(w.repo));
+    const hashes = calls.filter((argv) => argv.some((a) => a.endsWith('tree-hash.js')));
+    expect(hashes.some((argv) => argv.includes('-i')) && hashes.some((argv) => !argv.includes('-i')),
+      `a tree-hash.js child for the index and one for the disk, got: ${JSON.stringify(calls)}`).toBeTruthy();
+    expect(hashes.every((argv) => runsProgram(argv, 'node')), `each tree-hash.js child is node, got: ${JSON.stringify(hashes)}`).toBeTruthy();
+    expect(JSON.stringify(calls.filter((argv) => runsProgram(argv, 'bash'))), 'no child is bash').toBe('[]');
+  });
+
+  test('a gate under real node with no node on its PATH still takes the tree id, through tree-hash.js', async () => {
+    const w = mkGitRepo('cg-no-node-', { 'package.json': pkg('1.0.0'), 'app.js': 'const x = 1;\n' });
+    w.write('app.js', 'const x = 2;\n');
+    w.git('add', 'app.js');
+    // The machine as a program with no node on its PATH sees it: git and the system tools, a scratch HOME, no WORKKIT_NODE.
+    const env = { ...w.env, PATH: basePathWithout(mkTmp('cg-no-node-path-'), 'node') };
+    const io = ioIn(env);
+    const calls = [];
+    const run = (argv, init) => { calls.push([...argv]); return io.run(argv, init); };
+    const root = await io.top(w.repo);
+    const facts = mods('commit-gate').commitFacts(mods('facts').bashFacts({ ...io, run }, env, { cwd: root }), root);
+    expect(await facts.treeId, `the commit's tree id, got children: ${JSON.stringify(calls)}`).toBe(treeHash(w.repo));
+    expect(calls.some((argv) => argv.some((a) => a.endsWith('tree-hash.js'))), `taken by tree-hash.js, got: ${JSON.stringify(calls)}`).toBeTruthy();
   });
 });

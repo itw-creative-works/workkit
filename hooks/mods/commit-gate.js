@@ -310,7 +310,7 @@ function gatherFacts(g, root) {
     if (started(head) && head.exitCode === 1) return null;
     throw held('HEAD time', 'git log -1 --format=%ct', exitOf(r), r.stderr);
   });
-  // The commit's tree: the index's, less `.workkit/` (wk_suite_index_tree, through tree-hash.sh -i).
+  // The commit's tree: the index's, less `.workkit/` (tree-hash.js -i).
   const treeId = once(async () => (await treeHash(g.run, kit, root, g.env, '-i')).id);
   const diskTreeId = once(async () => (await treeHash(g.run, kit, root, g.env)).id);
   const reviewMarker = once(async () => g.stat(await reviewMarkerPath(root, home)));

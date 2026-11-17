@@ -1,7 +1,7 @@
 // Tests for the staleness of the records safety:proof-guard reads at the flip to
 // status:qa: the suite record and the root's `.` line are keyed by the working
 // tree's id, so proofVerdict passes them only while they hold `treeId`. How an
-// edit changes the id is tree-hash.sh's; a package's own id, ./qa-groups.test.js
+// edit changes the id is tree-hash.js's; a package's own id, ./qa-groups.test.js
 // (stubbed) and ./pkg-tree.test.js (real facts).
 
 const path = require('path');

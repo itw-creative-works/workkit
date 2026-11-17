@@ -23,7 +23,9 @@
 | `lib/run.js` | The one Node home for starting a program |
 | `lib/participation.sh` | The sibling of `platform.sh` for what the KIT means rather than for what a platform spells |
 | `lib/slug.sh` | The third of the seams beside `platform.sh` and `participation.sh`: what a repo is CALLED |
-| `lib/suite.sh` | The proved-tree records |
+| `lib/suite.sh` | The shell's names for the proved-tree records (the tree ids and the records' writes and reads, each a call into Node), the records' paths, the has-a-test-script read, and the detached runs' log and lock paths |
+| `lib/tree-hash.js` | The one home of the tree ids the records hold: the working tree's, a package's own and the real index's, CJS, requiring `lib/run.js` and, for a package, `lib/workspaces.js` |
+| `lib/records.js` | The suite and package records' writes and reads, the rules in `hooks/mods/suite.js` bound to the disk, CJS |
 | `lib/workspaces.js` | The workspace members a package's tree id leaves out |
 | `lib/expand-workspaces.js` | The expansion of a root's `workspaces` the publish plan, `lib/workspaces.js` and workkit-core's runner share |
 | `lib/hold.sh` | The full-suite hold |
@@ -288,7 +290,7 @@
     - It serves the suite and package records here, and the hooks' review and triage markers alike.
     - The hooks reach the digest as `hook_sha1`.
   - `wk_markers_dir`: that base, `markers/` in `wk_user_dir`'s folder, out of reach of a system temp cleaner.
-  - `wk_sweep_markers`: the kit's own cleaner. Every marker writer calls it.
+  - `wk_sweep_markers`: the kit's own cleaner. Every shell marker writer calls it; the two record writers in `lib/records.js` run the same sweep in Node.
     - It removes each regular file one folder under the base whose mtime is older than `MARKER_KEEP_DAYS` (7 days, set here).
     - It never enters a folder there.
   - `wk_tower_dir`: the tower clone, `tower/` in the same folder, the one spelling `lib.sh`'s `WK_HOME_DIR` reads.
@@ -337,7 +339,7 @@
     - It is 0 holding it, and 1 after a 5-second wait, its caller going ahead either way.
     - `wk_drop_lock <dir>`, beside it, run only by a caller that took it: an `rm` of the claim, then an `rmdir` of the folder, never one removal of both.
       - A taker that claims the folder between the two keeps it, since the `rmdir` then fails.
-    - The state mutex (`lib/state.sh`) and the package record's write (`lib/suite.sh`) both take it.
+    - The state mutex (`lib/state.sh`) is its one caller; the package record's write (`lib/records.js`) takes its own lock by the same steps.
   - A run lock's marks, beside it:
     - A run lock folder holds two things for the lock's whole life: `claim`, created create-only and holding the taker's tag, which decides who made the lock, so a `mkdir` that answers 0 for a folder already there still gives it to one caller; and that taker's mark file, `id.<tag>`.
     - A tag is no other take's on the machine: the pid of the shell that made it (a subshell's own), a count of the tags it made, and a random part, dot-separated.
@@ -451,52 +453,30 @@
     - That is how `safety:proof-guard`, `workflow:snapshot` and `workflow:public-mirror` find the repo a flip names.
 - `lib/suite.sh`:
   - Sourced by `script-shell.sh`, by `supervise.sh`, by `watch.sh`, by `ship/watch.sh`, by `workkit.sh` and by the hooks' `_lib.sh` alike.
+  - It holds the shell's names for the tree ids and the records' writes and reads, each one line that finds node (`wk_node`) and runs `lib/tree-hash.js` or `lib/records.js`.
+    - The tree ids: `wk_tree_hash <root> [<pkg>]`, `wk_suite_index_tree <root>` (`-i`), `wk_index_copy <root> <dir>` (`--copy-index`), `wk_index_write_tree <root> <index>` (`--index`).
+    - The records: `wk_suite_marker_write <root> <tree> <ms>`, `wk_pkg_marker_write <root> <tree> <pkg>`, `wk_suite_proved <root> <tree>`, `wk_pkg_proved <root> <tree> <pkg>`.
+    - With no node at `WK_NODE_FLOOR`, each says so on stderr and returns 1: `tree-hash: no node <WK_NODE_FLOOR> or newer found, so no tree id was taken`, or `records: no node <WK_NODE_FLOOR> or newer found, so no record was read or written`.
+    - So a supervised root run (`WORKKIT_SUPERVISED=1`) on such a machine still runs its suite, but a green one writes no record: its `script-shell:` line says why and it exits 1.
+    - An unsupervised root run there stops before the suite, in `lib/detach.sh`, which needs that node to start the run's supervisor.
+  - The records' paths stay shell: `wk_suite_marker_path` and `wk_pkg_marker_path`, each `wk_marker_path` of its marker folder (`claude-suite-marker`, `claude-package-marker`); `lib/records.js` names the same files through `markerPath`.
+  - The has-a-test-script read and the log paths stay shell too, so a run and a `workkit` command need no node to find them.
   - The suite record is the engine-agnostic contract between whatever runs a repo's root suite and the gate.
     - It has two writers. `script-shell.sh` is npm's adapter, recording the working tree a root run started on.
     - `prove.sh` records the index's tree, proved in a copy.
     - Neither writes a record for a run with `CI` set (`wk_ci_set`), since a repo's root script may run only part of its suite then.
-    - Its readers are `safety:commit-gate`, through `suiteProved` in `hooks/mods/suite.js` (`wk_suite_proved`'s read).
-    - And the full-suite hold (`lib/hold.sh`), through `wk_suite_proved` itself.
+    - Its readers are `safety:commit-gate`, through `suiteProved` in `hooks/mods/suite.js`.
+    - And the full-suite hold (`lib/hold.sh`), through `wk_suite_proved`.
   - `wk_ci_set` is the one test of `CI`: it succeeds when `CI` holds any value but the empty string, `CI=false` and `CI=0` included.
     - The kit leaves `CI` in the suite's environment as it came, and nothing else in the kit's shell reads it: the gate, the hold and `safety:proof-guard` read records alone.
     - workkit-core's runner does not read `CI` either.
-  - The record's first line is the `git write-tree` id of the tree its writer proved, less `.workkit/`.
-  - Its second line is `ms=<n>`, the wall time in milliseconds of the run that wrote it. The gate holds it against `tests.budget`.
-  - Every read matches the first line alone, so a record with no second line still proves its tree.
-  - It lives in `~/.workkit/markers/claude-suite-marker/<sha1 of the repo root>` (`wk_suite_marker_path`).
-  - `wk_tree_hash` computes it with `git add -A` into a throwaway index under `mktemp -d`.
-    - That index is seeded from a copy of `$git_dir/index`, never `$GIT_INDEX_FILE` (`cp -p`, keeping the mtime git's racy check reads).
-    - So untracked files count, and ignored ones never. Only changed files are re-hashed, and the real index is never touched.
-  - `wk_index_write_tree <root> <index> [<path>...]` then drops `.workkit` and each path from that scratch index (`git rm -r -f --cached`).
-    - Then it takes its `write-tree`.
-    - So a write under `.workkit/` (a log, a marker, `settings.json`) never re-keys a record.
-  - `wk_suite_index_tree <root>` is the real index's id the same way: a scratch copy of the index, through the same helper.
-    - The copy is `wk_index_copy <root> <dir>`, which honours `$GIT_INDEX_FILE` in a commit hook and prints the copy.
-    - `prove.sh` shares that step.
   - `wk_suite_marker_write` writes the id its writer hashed BEFORE the run. It checks nothing itself: its two writers call it only when the tree hashed after the run is the same and `CI` is not set.
     - So an edit made while it runs is never proved.
   - `wk_suite_proved` compares a tree id with it: the hold the working tree's, or the real index's for `workkit prove`.
     - What the gate compares is `docs/hooks.md` § `safety:commit-gate`'s.
-  - The package record is its sibling: the packages a green `npm test` other than the bare root run proved.
-    - It has its own file, `~/.workkit/markers/claude-package-marker/<sha1 of the repo root>` (`wk_pkg_marker_path`), never the suite's.
-    - It holds one line per package, `<id> <pkg>`.
-    - That is the package folder relative to the root (`.` for the root), after its own tree id hashed before the run.
-  - A package's id is `wk_tree_hash <root> <pkg>`.
-    - After the `git add`, each folder `lib/workspaces.js` prints is dropped from the throwaway index with `.workkit` (`wk_index_write_tree`), then `write-tree`.
-    - `.` or no `<pkg>` is the whole tree.
-    - So is no node found (`wk_node`), said on stderr as `tree-hash: no node <WK_NODE_FLOOR> or newer found; <pkg> keyed to the whole tree`.
-    - That is the line `safety:proof-guard`'s qa block names for a package with no line.
-    - Which members it leaves out, so which code the id covers, is the id rule in `docs/hooks.md` § `safety:proof-guard`, its package id bullet.
-  - `script-shell.sh` is its one writer: `wk_pkg_marker_write <root> <tree> <pkg>`.
-    - It works under the record's lock, `<marker>.lock` taken by `wk_take_lock`.
-    - It copies every line whose package is not `<pkg>`, and appends `<tree> <pkg>`.
-    - It moves the result onto the record from `<marker>.tmp.<pid>`, so overlapping package runs each keep their line.
-  - `safety:proof-guard` is its one reader, at the flip to `status:qa`.
-    - It reads through `pkgProved` in `hooks/mods/suite.js`, the read of `wk_pkg_proved <root> <tree> <pkg>`, 0 when a line is `<tree> <pkg>`.
-  - The suite record keeps the fresh write (`_wk_record_write`).
-  - The two records share the marker path rule (`wk_marker_path`), and the sweep each of their two writers runs first (`wk_sweep_markers`).
-  - The package record's locked line write and its read (`wk_pkg_proved`) are its own, here in `lib/suite.sh`.
-  - `wk_has_test_script` is the one has-a-test-script predicate (a non-empty string `scripts.test`).
+  - `script-shell.sh` is the package record's one writer, through `wk_pkg_marker_write`.
+  - `safety:proof-guard` is its one reader, at the flip to `status:qa`, through `pkgProved` in `hooks/mods/suite.js`.
+  - `wk_has_test_script` is the one has-a-test-script predicate (a non-empty string `scripts.test`); its module twin is `hasTestScript` in `hooks/mods/suite.js`.
   - `wk_log_dir <root>` is the repo's log folder: `logs.dir` (`wk_setting`), a path from the root, default `.workkit`.
     - Each `.` and `..` in it is walked, so `./logs/` reads as `logs`, and `.` is the root itself; an empty value reads as `.workkit`, as it does with no jq.
     - An absolute value (`/`, `\` or a drive letter first), or one whose `..` leaves the repo, is `workkit: logs.dir must be a folder inside the repo, written from its root (got <value>)` on stderr, and 1.
@@ -518,10 +498,40 @@
       - It also clears a slot whose lock holds a `gone` mark of a remover that is gone, whatever its age, since no done file is left there for the age to be read from. A live remover's slot stays.
   - The hook library's scripts call these by their engine names.
   - The hooks module reads the records through `hooks/mods/suite.js`.
-    - It takes a tree id through `tree-hash.sh`, the index's with `-i` as its only flag.
+    - It takes a tree id through `node lib/tree-hash.js`, the index's with `-i` as its only flag, with no bash between.
+- `lib/tree-hash.js`:
+  - The one home of the tree ids the records hold, CJS: `treeId(root, pkg)` and `indexTreeId(root)`.
+  - `node tree-hash.js <root> [<pkg>]` prints the working tree's id, or a package's own.
+    - It runs `git add -A` into a scratch index in a new temp folder, removed after.
+    - That index is seeded from a copy of `<git dir>/index`, never `$GIT_INDEX_FILE`, its times kept, since git's racy check reads them: a file edited in the index's own second is re-hashed.
+    - So untracked files count, and ignored ones never. Only changed files are re-hashed, and the real index is never touched.
+    - Then `.workkit` is dropped from the scratch index (`git rm -r -f --cached`), and the `write-tree` taken.
+    - So a write under `.workkit/` (a log, a marker, `settings.json`) never re-keys a record.
+  - A package's id also drops each folder `excludedFor` in `lib/workspaces.js` answers: the members it neither holds, sits in nor depends on.
+    - `.` or no `<pkg>` is the whole tree, and so is a workspace read that fails, said in its `workspaces:` line.
+    - Which members it leaves out, so which code the id covers, is the id rule in `docs/hooks.md` § `safety:proof-guard`, its package id bullet.
+  - `-i` is the real index's id the same way, from a scratch copy of it.
+    - `--copy-index <dir>` is that copy alone, at `<dir>/index`, its path printed; it honours `$GIT_INDEX_FILE` in a commit hook, absolute or from the root.
+    - `--index <file>` is the tree of that index less `.workkit`, the file rewritten. `prove.sh` takes the copy's whole tree and the record's id through the two.
+  - The id goes to stdout. A call it cannot answer exits 1 with nothing there: `tree-hash: a repo root is required`, `tree-hash: -i takes no other flag or package`.
+- `lib/records.js`:
+  - The records' rules in `hooks/mods/suite.js` bound to the disk, CJS, the way `lib/settings.js` binds the settings loader.
+  - The suite record's first line is the `git write-tree` id of the tree its writer proved, less `.workkit/`.
+    - Its second line is `ms=<n>`, the wall time in milliseconds of the run that wrote it (`suiteRecordText`). The gate holds it against `tests.budget`.
+    - Every read matches the first line alone, so a record with no second line still proves its tree.
+    - It lives in `~/.workkit/markers/claude-suite-marker/<sha1 of the repo root>` (`suiteRecordPath`, through `markerPath` in `hooks/mods/markers.js`).
+    - `writeSuiteRecord(root, tree, ms)` writes it afresh; an empty tree is refused, nothing written.
+  - The package record is its sibling: the packages a green `npm test` other than the bare root run proved.
+    - It has its own file, `~/.workkit/markers/claude-package-marker/<sha1 of the repo root>` (`pkgRecordPath`), never the suite's.
+    - It holds one line per package, `<id> <pkg>`: the package folder relative to the root (`.` for the root), after its own tree id hashed before the run.
+    - `writePkgRecord(root, tree, pkg)` works under the record's lock, `<record>.lock`, taken as `wk_take_lock` takes one (the folder, then its `claim` create-only).
+    - It keeps every line whose package is not `<pkg>` and appends `<tree> <pkg>` (`pkgRecordText`), moved onto the record from `<record>.tmp.<pid>`, so overlapping package runs each keep their line.
+  - Each write first removes every regular file one folder under the markers folder older than 7 days, as `wk_sweep_markers` does; a lock folder there is left alone.
+  - `suiteHolds(root, tree)` and `pkgHolds(root, tree, pkg)` are the reads, through `suiteProved` and `pkgProved`.
+  - As a command, `node records.js <verb> ...`: `suite-write`, `pkg-write`, `suite-proved`, `pkg-proved`.
+    - A yes or no is the exit code. A failed write prints `records: <reason>` and exits 1; a record that cannot be read reads as no record.
 - `lib/workspaces.js`:
-  - Run by `wk_tree_hash` (`lib/suite.sh`) under `wk_node`, CJS.
-  - `node workspaces.js <root> <pkg>` prints them, one folder per line.
+  - A library, CJS, with no command form: `lib/tree-hash.js` requires `excludedFor` for a package's id.
   - `membersOf(root)` is `[{ name, dir, deps }]`.
     - `dir` is relative to the root, from the root `package.json` `workspaces` expanded in one call of `lib/expand-workspaces.js`'s `expandWorkspaces`.
     - `deps` is the member names its `depNamesOf` reads across the dependency fields.
@@ -912,7 +922,7 @@
     - a close (not `--reason "not planned"`, not `--duplicate-of`), or a flip adding `status:qa` or `status:complete`, through `proofVerdict` (`proof-guard.js`);
     - a flip adding `status:specced` through `specVerdict` (`spec-guard.js`);
     - an `issue create` with a title through `findingsVerdict` (`findings-guard.js`);
-    - each with its facts from `lib/io.js`.
+    - each with its facts from `lib/io.js`, whose run starts a child named `node` under the gate's own Node (`process.execPath`), so the tree id needs no node on PATH.
   - The repo is `WORKKIT_GATE_REPO`, the one the shim resolved, so no `--repo` is ever unreadable.
   - Every `gh` read runs `WORKKIT_REAL_GH`: the real gh the shim found, in git's spelling of its path.
     - That spelling is `wk_native_path`, the one Node starts on Windows.
@@ -1040,7 +1050,7 @@
     - `-z` makes a path with a space read as it is.
     - A failing entry exits 1 with `script-shell:` and the gate's own message, before any suite starts and with no record written.
     - A tree with no modified CHANGELOG runs no lint.
-    - With no node or no linter the check stands aside, as the gate's does.
+    - With no node or no linter the check stands aside, as the gate's does with no linter.
   - The root suite then runs detached (`lib/detach.sh`), in its own session.
     - It runs as this file again, with `--suite-body <root>` ahead of npm's arguments.
     - Under a supervisor already (`WORKKIT_SUPERVISED=1`) it runs in the foreground, the suite's one slot (`wk_suite_lock_path`) still held for its length.

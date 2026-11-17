@@ -98,6 +98,7 @@
   - macOS ships `shasum` and no `sha1sum`, a Linux machine often the reverse, and a key computed with a different tool is a different key.
   - Every marker and cache name goes through the same digest.
   - The four markers go through `hook_review_marker_path`, `hook_triage_marker_path` (above it) and the suite and package record paths in the engine's `workflow/lib/suite.sh`, each built by `wk_marker_path`.
+    - The record writes and reads in `workflow/lib/records.js` name the same files through `markerPath`, its twin.
     - A skill writes the first two.
     - The engine's npm `script-shell` wrapper (`workflow/script-shell.sh`) and `workkit prove` (`workflow/prove.sh`) write the suite marker.
     - The same wrapper writes the package record (`wk_pkg_marker_path`): the packages a green `npm test` other than the bare root run proved on a tree.
@@ -110,12 +111,12 @@
     - `hook_sha1` is one line pointing at it, the way `hook_jq` points at `wk_jq`.
   - Every marker kind lives at `markers/<kind>/<sha1>` in the machine folder (`${WORKFLOW_HOME:-$HOME/.workkit}/markers`, `wk_markers_dir`).
     - It never lives in the temp folder a system cleaner empties, and nothing reads a marker anywhere else.
-  - The kit sweeps its own: each writer runs `wk_sweep_markers`.
-    - The writers are `_hook_write_marker` (through `hook_sweep_markers`), the suite and package record writers, and the `gh` shim's journal append (`journal_append` in `workflow/identity/gh`).
-    - The two record writers sweep before they write; `_hook_write_marker` and the shim sweep after theirs.
+  - The kit sweeps its own: each writer runs the sweep.
+    - The shell writers run `wk_sweep_markers`: `_hook_write_marker` (through `hook_sweep_markers`) and the `gh` shim's journal append (`journal_append` in `workflow/identity/gh`), each after it writes.
+    - The suite and package record writers (`workflow/lib/records.js`) run the same sweep in Node, before they write.
     - The sweep removes every regular file one folder under that base whose mtime is older than `MARKER_KEEP_DAYS` (7 days).
     - It never enters a folder there (a run lock).
-  - The sweep is shell-only because every other marker writer is shell.
+  - The hooks module runs no sweep.
     - The module reads markers, and writes and removes one: the gh journal mark (`journalMarkPath` in `hooks/mods/markers.js`).
     - A Bash call's `tool.call` writes that mark, and its `PostToolUse` or `PostToolUseFailure` removes it.
     - So the sweep finds only a mark no call came back to.
@@ -404,10 +405,11 @@
   - Every other handler's `.catch` passes the event on.
 - **The parity suite.** Some rules keep a shell home beside the module's, because a script still reads it there.
   - For those, `test/hooks/twins.test.js` runs both on the same inputs and holds them to one answer:
-    - the tested package (`hook_test_package_dir`, `testPackageDir` in `hooks/mods/suite.js`);
     - the opt-in read (`wk_opted_in`, `settingsOptedIn` in `hooks/mods/gate.js`);
       - the shell twin reads the top-level key through node, and only `"enabled": true` reads opted in on both;
     - the machine folder (`wk_user_dir`, `userDir` in `hooks/mods/log.js` and `workflow/user-dir.js`);
+    - the marker path (`wk_marker_path` in `workflow/lib/platform.sh`, `markerPath` in `hooks/mods/markers.js`);
+    - the test-script read (`wk_has_test_script` in `workflow/lib/suite.sh`, `hasTestScript` in `hooks/mods/suite.js`);
     - the CHANGELOG path test (`wk_is_changelog`, `isChangelog` in `hooks/mods/changelog-guard.js`);
     - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/slug.js`);
     - the `Proof:` pattern (`workflow/ship/items.sh`, `PROOF_RE` in `hooks/mods/proof.js`);
@@ -833,7 +835,7 @@
 - The hooks read the commit itself, never a command's text.
   - `workflow/githooks/judge.js` builds the facts from the real machine (`workflow/lib/io.js`) in the hook's environment.
   - There git sets `GIT_INDEX_FILE` to the commit's index.
-  - So the staged list (`git diff --cached --name-only`) and the tree (`tree-hash.sh -i`, a scratch copy of that index) are what the commit carries.
+  - So the staged list (`git diff --cached --name-only`) and the tree (`tree-hash.js -i`, a scratch copy of that index) are what the commit carries.
   - That holds under `-a`, a pathspec, `git -C`, a `cd` or `sh -c` alike.
 - `commit-msg` reads the message file git hands it, `-m` and `-F` the same, as their cleanup leaves it.
   - Every line is kept, `#` lines included, so check 7 reads a `#N`-led line.
@@ -902,15 +904,16 @@
   - It is the linter `wk_changelog_lint` in `workflow/lib/changelog.sh` runs for `script-shell.sh`, with the same message.
   - It lints every `CHANGELOG.md` the commit carries, as its index holds it.
   - `WORKFLOW_DIR` names another engine folder. With no linter there the check has nothing to run.
-  - A linter that did not start (no `node` to start, a run past its timeout) stands check 3 down out loud, never a deny.
+  - The linter runs under the gate's own Node (`workflow/lib/io.js`), whatever node PATH holds; a run that did not finish (past its timeout) stands check 3 down out loud, never a deny.
   - The notice line: `commit-gate: check 3 stood down: the CHANGELOG linter did not start (<reason>)`.
 - Check 5 runs no tests; it reads the record.
   - A green `npm test` at the repo root records the id of the working tree it started on, through npm's `script-shell`.
   - A green `workkit prove` records the index's tree.
   - A run with `CI` set (any value but the empty string) records nothing, and the gate never reads `CI`: a tree only such a run proved is refused for a missing record.
-  - The record's shape and home, and its two writers: `workflow/README.md`, the `lib/suite.sh`, `script-shell.sh` and `prove.sh` rows.
+  - The record's shape and home, and its two writers: `workflow/README.md`, the `lib/records.js`, `lib/suite.sh`, `script-shell.sh` and `prove.sh` rows.
   - The gate compares it with the tree the commit carries (`treeId`): the commit's index's tree less `.workkit/`.
-  - That id comes through `bash workflow/lib/tree-hash.sh <root> -i` (`wk_suite_index_tree`).
+  - That id comes through `node workflow/lib/tree-hash.js <root> -i`, with no bash started.
+    - The judge runs that `node` child under its own Node (`process.execPath`, `workflow/lib/io.js`), so a commit made from a program whose PATH holds no node still takes the id.
   - It hashes a scratch copy of the index, which in the hook is the `-a` or pathspec commit's own. So the real one is never written.
   - So a commit whose content differs from what ran is not proved, and one that differs only under `.workkit/` is.
   - On a match check 5 stands down in one line.
@@ -921,7 +924,7 @@
     - Past it, one more line sits beside the proved one: `test-budget: the root run took Nm, the budget is Mm`.
     - Minutes are rounded up (`budgetLine` in `hooks/mods/commit-gate/budget.js`), and the commit still passes.
     - No budget, or a record with no `ms=` line, adds nothing.
-  - The record may prove the tree on disk (`bash workflow/lib/tree-hash.sh <root>`, `wk_tree_hash`'s one home) while the commit carries another.
+  - The record may prove the tree on disk (`node workflow/lib/tree-hash.js <root>`, the tree id's one home) while the commit carries another.
     - That is an untracked file or an unstaged edit the commit leaves out.
     - The bounce names that gap and its two fixes: `git add -A`, or `workkit prove`.
     - `workkit prove` runs the suite on a copy of the index and records the staged tree, leaving the folder as it is.
@@ -1185,11 +1188,11 @@
   - A failed `git diff HEAD` or `git ls-files` read, or one that did not start, denies the flip naming the read.
 - Every test-shaped path (`*.test.*`, `*.spec.*`, `*_test.*`: `isTestName` in `hooks/mods/test-reminder.js`) counts, whatever its extension.
 - A file's package is the nearest folder at or above it, short of the root, whose `package.json` declares a test script.
-  - It is found by `testPackageDir` in `hooks/mods/suite.js`, the rule of `hook_test_package_dir`.
+  - It is found by `testPackageDir` in `hooks/mods/suite.js`.
   - A file in no such folder is the root's, `.`.
 - The flip passes when either of these holds:
   - the suite record holds this tree, since a green whole root run covers every package (`suiteProved`);
-  - the package record holds a line `<id> <pkg>` for every package that owns a touched test file, each on that package's own id (`pkgProved`, `wk_pkg_proved`'s read).
+  - the package record holds a line `<id> <pkg>` for every package that owns a touched test file, each on that package's own id (`pkgProved`).
 - Each package must hold its own line: the root's `.` never covers a nested package's file, nor a nested package's line the root's.
 - A package with no line blocks the flip, listing each such package with its touched files as a hint, never a ready command.
   - The block asks for that package's own tests: `npm test -- <files>` run from its folder, with the paths in the form its runner takes.
@@ -1206,10 +1209,10 @@
   - The suite record keeps its two writers, the script shell and `workkit prove`.
   - A green bare root `npm test` writes the suite record (`workflow/README.md`, `script-shell.sh`).
 - Every other green `test` event, a narrowed run anywhere or a nested package's bare run, writes the package record, unless it ran under the runner's `--filter` or with `CI` set: those write none.
-  - The writer is `wk_pkg_marker_write`. The file is `~/.workkit/markers/claude-package-marker/<sha1 of the repo root>`, named here by `pkgMarkerPath` in `hooks/mods/markers.js`.
+  - The writer is `writePkgRecord` in `workflow/lib/records.js` (`wk_pkg_marker_write`). The file is `~/.workkit/markers/claude-package-marker/<sha1 of the repo root>`, named here by `pkgMarkerPath` in `hooks/mods/markers.js`.
   - It holds one line per package, `<id> <pkg>`.
   - `<id>` is the package's own tree id, hashed before the run. `<pkg>` after it is the package folder relative to the root (`.` for the root).
-  - The hash is `wk_tree_hash <root> <pkg>`: untracked files in, ignored ones and `.workkit/` out.
+  - The hash is `node workflow/lib/tree-hash.js <root> <pkg>`: untracked files in, ignored ones and `.workkit/` out.
     - So a write there (the suite log, a marker, `settings.json`) never voids a record.
 - A package's id is the working tree less the workspace members it neither is, holds, sits in, nor depends on, directly or through other members.
   - A member whose folder holds a kept member's folder is kept too.
@@ -1218,22 +1221,19 @@
   - Each of these keys the package to the whole tree:
     - `.`;
     - a repo with no `workspaces` field;
-    - anything the publish plan refuses (a pattern it does not expand, a `package.json` that does not parse), with one stderr line in the plan's own words;
-    - a machine with no node, with one stderr line that says so.
+    - anything the publish plan refuses (a pattern it does not expand, a `package.json` that does not parse), with one stderr line in the plan's own words.
   - So a package's record dies when its own files, a member it depends on, or a file outside every member changes.
   - A repo with no workspaces keys every package to the whole tree.
 - A package's run rewrites the record under its lock, every other package's line copied and its own appended.
   - So overlapping runs each keep their line.
   - A red run, a run that changed its id, or a run with `CI` set (any value but the empty string), writes nothing.
-- The guard hashes each package the same way before it reads, through `bash workflow/lib/tree-hash.sh <root> [<pkg>]` with a 600-second `timeoutMs`.
+- The guard hashes each package the same way before it reads, through `node workflow/lib/tree-hash.js <root> [<pkg>]` with a 600-second `timeoutMs`, no bash started.
   - The root's `.` is hashed on the whole tree.
-  - It runs with the variables the gate read (HOME, PATH, TMPDIR and WORKKIT_NODE among them). So its `wk_node` finds node the way the record's writer did.
+  - It runs with the variables the gate read (HOME, PATH and TMPDIR among them), under the gate's own Node (`workflow/lib/io.js`), whatever node PATH holds.
   - An edit voids only the records of the packages that can see it. An edit undone byte for byte is the recorded id again.
   - A tree that cannot be hashed blocks the flip, naming the cause.
 - A package with no line whose own id the child still keyed to the whole tree gets one sentence after the block's head.
-  - That sentence is its `tree-hash:` and `workspaces:` stderr lines, in order (`note` of `treeHash` in `hooks/mods/suite.js`).
-  - A `tree-hash:` line naming node is followed by the fix: `<line>; put the node it names on the gate's PATH, or set WORKKIT_NODE.`
-  - A `workspaces:` line prints as it is.
+  - That sentence is its `workspaces:` stderr lines, in order, as they are (`note` of `treeHash` in `hooks/mods/suite.js`).
 - A file under a `test`, `tests` or `__tests__` folder that is not test-shaped (a helper such as `test/lib/harness.js`, a data file) is never required.
 - Nor is a test file the root owns while the root has no test script, since no `npm test` there can record a run.
 - The committed leg reads the commits since `origin`'s default branch, else since this branch's upstream.

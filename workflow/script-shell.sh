@@ -49,7 +49,8 @@ recorded_run() {
     printf 'script-shell: the %s passed, but %s\n' "$what" "$ci" >&2
     exit 0
   fi
-  after=$(wk_tree_hash "$root" "$pkg") || hashed=0
+  # A failed first hash already decides the answer, so it is not asked twice.
+  [ "$hashed" -eq 0 ] || after=$(wk_tree_hash "$root" "$pkg") || hashed=0
   if [ "$hashed" -eq 0 ]; then
     printf 'script-shell: the %s passed, but the tree of %s could not be hashed, so no record was written\n' "$what" "$root" >&2
     exit 1

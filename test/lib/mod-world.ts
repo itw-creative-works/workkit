@@ -81,7 +81,7 @@ const touchedGit = (args: string[], branch: any, status: string | undefined) => 
 
 // The git reads behind a commit the gate judges, from `opts.git`: `staged`, `changed` (`diff [--cached] --name-only`,
 // `added`/`deleted` their A and D), `headTime`, `blobs` by `HEAD:<path>` and `:<path>`, `conflicts` (the paths
-// `ls-files --stage` answers with stages 1 to 3), `indexTree` (tree-hash.sh -i's answer); `broken` makes the staged read
+// `ls-files --stage` answers with stages 1 to 3), `indexTree` (tree-hash.js -i's answer); `broken` makes the staged read
 // resolve to nothing; `unstarted` makes the HEAD reads answer as a timed-out run. Null for any other read.
 const commitGit = (args: string[], git: any) => {
   let sub = args
@@ -336,8 +336,8 @@ export const mkWorld = (on: any, opts: any = {}) => {
       if (world.npm.known.includes(spec.slice(0, spec.lastIndexOf('@')))) return ok()
       return ok('', 'npm error code E404\n', 1)
     }
-    // `tree-hash.sh <root> -i` is the index's tree, any other form the working tree's.
-    const hash = argv.findIndex((a) => a.endsWith('tree-hash.sh'))
+    // `node tree-hash.js <root> -i` is the index's tree, any other form the working tree's.
+    const hash = argv.findIndex((a) => a.endsWith('tree-hash.js'))
     if (hash >= 0) return ok(`${argv[hash + 2] === '-i' ? world.git.indexTree : world.treeId}\n`)
     // `opts.rewrite`: the rewrite entry's stdout; `opts.scriptShell`: npm's value, npm missing when unset.
     if (argv.some((a) => a.endsWith('changelog-job.sh'))) return ok(opts.rewrite ?? '')

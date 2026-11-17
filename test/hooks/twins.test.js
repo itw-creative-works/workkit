@@ -1,7 +1,7 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the test package, the
-// package record's read, the tree hash, the suite log's path, the opt-in read (the gate's and the heal's), one setting, the machine folder, the
-// CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
+// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the tree hash, the
+// suite log's path, the test script, the marker path, the opt-in read (the gate's and the heal's), one setting, the machine folder,
+// the CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
 // version-only change, the status:building list, the public slug, git's value-taking global options. Plus one
 // JavaScript pair, the plain-object test, and one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
 
@@ -20,8 +20,7 @@ const { mods, runResult } = require('../lib/mods-inputs');
 const { recordArgv, readArgv } = require('../lib/argv-log');
 const commitGate = require('./commit-gate/helpers');
 const { runLib } = require('../lib/hook-lib');
-const { pkgMarkerPath, treeHash } = require('../lib/suite-record');
-const { scratchWorkflowHome } = require('../lib/workflow-home');
+const { treeHash } = require('../lib/suite-record');
 const { readOrNull } = require('../../workflow/lib/read');
 const { makeRepo: healRepo, runScript: healRun, cleanup: healCleanup } = require('../scripts/workflow-standards/helpers');
 
@@ -124,59 +123,13 @@ const recordingTool = (tool, out = '', lines = []) => {
   return { path: systemPathWith(bin), calls: () => readArgv(logFile) };
 };
 
-describe('twins: the test package, hook_test_package_dir in hooks/lib/paths.sh against testPackageDir in hooks/mods/suite.js', () => {
-  test('hook_test_package_dir and testPackageDir name the same package for every path', async () => {
-    const root = mkTmp('twins-pkgdir-');
-    for (const d of ['pkg/src/deep', 'pkg/bare/src', 'pkg/empty', 'other', 'node_modules/x']) fs.mkdirSync(path.join(root, d), { recursive: true });
-    const tested = JSON.stringify({ scripts: { test: 'node --test' } });
-    for (const d of ['', 'pkg', 'node_modules/x']) fs.writeFileSync(path.join(root, d, 'package.json'), tested);
-    fs.writeFileSync(path.join(root, 'pkg', 'bare', 'package.json'), '{"name":"bare"}');
-    fs.writeFileSync(path.join(root, 'pkg', 'empty', 'package.json'), JSON.stringify({ scripts: { test: '' } }));
-    const fixtures = ['pkg/src/deep/a.js', 'pkg/bare/src/a.js', 'pkg/empty/a.js', 'pkg/a.js', 'pkg', 'other/x.js',
-      'app.js', 'node_modules/x/index.js', 'pkg/node_modules/y/z.js'];
-    const shell = bashLines(lib('hooks', '_lib.sh'), 'hook_test_package_dir "$ROOT"', fixtures, { ROOT: shellPath(root) });
-    const { testPackageDir, hasTestScript } = mods('suite');
-    const read = (d) => JSON.parse(readOrNull(path.join(root, d, 'package.json')) ?? 'null');
-    const js = await Promise.all(fixtures.map((p) => testPackageDir(p, async (d) => hasTestScript(read(d)))));
-    const differ = fixtures.flatMap((f, i) => (shell[i] === js[i] ? [] : [`${f}: bash ${JSON.stringify(shell[i])}, js ${JSON.stringify(js[i])}`]));
-    expect(differ.join('; '), 'the paths bash and JavaScript place in different packages').toBe('');
-    expect(shell[0], 'and a file under a tested package names it').toBe('pkg');
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-});
-
-describe('twins: the package record\'s read, wk_pkg_proved in workflow/lib/suite.sh against pkgProved in hooks/mods/suite.js', () => {
-  test('wk_pkg_proved and pkgProved answer every tree and package alike on one planted record', () => {
-    const dir = mkTmp('twins-pkg-record-');
-    spawnSync('git', ['init', '-q'], { cwd: dir });
-    const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
-    const { workflowHome, env } = scratchWorkflowHome('twins-pkg-home-');
-    const [T1, T2, T3] = ['1', '2', '3'].map((ch) => ch.repeat(40));
-    const record = `${T1} .\n${T2} packages/a\n${T3} packages/b\n`;
-    const marker = pkgMarkerPath(workflowHome, dir);
-    fs.mkdirSync(path.dirname(marker), { recursive: true });
-    fs.writeFileSync(marker, record);
-    const fixtures = [
-      [T1, '.'], [T2, 'packages/a'], [T3, 'packages/b'], [T2, '.'], [T1, 'packages/a'], [T3, 'packages/a'],
-      [T2, 'packages/c'], [T2, 'packages'], [T2, 'packages/a/x'], ['4'.repeat(40), '.'],
-    ];
-    const script = 'while read -r t p; do if wk_pkg_proved "$ROOT" "$t" "$p"; then echo 1; else echo 0; fi; done <<<"$FIXTURES"';
-    const res = runLib(script, { ...env, ROOT: root, FIXTURES: fixtures.map((f) => f.join(' ')).join('\n') });
-    const shell = res.stdout.split('\n').filter(Boolean).map((a) => a === '1');
-    expect(shell.length, `one answer per fixture from wk_pkg_proved, stderr: ${res.stderr}`).toBe(fixtures.length);
-    const { pkgProved } = mods('suite');
-    agree(fixtures.map((_, i) => i), shell, (i) => pkgProved(record, ...fixtures[i]), 'the (tree, package) fixtures by index');
-    expect(shell.slice(0, 3).join(), 'and each line proves its own package on its own tree').toBe('true,true,true');
-  });
-});
-
 describe('twins: the tree hash, wk_tree_hash in workflow/lib/suite.sh against treeHash in test/lib/suite-record.js', () => {
   test('wk_tree_hash and treeHash print one id for a repo whose .workkit/ holds a tracked settings file and an untracked log', () => {
     const w = mkRepo('twins-tree-', { 'app.js': 'module.exports = 1;\n' });
     w.write('app.js', 'module.exports = 2;\n');
     w.write('.workkit/settings.json', OPT_IN_SHAPES.current);
     w.write('.workkit/suite.log', 'script-shell: exit 0\n');
-    const res = runLib(`wk_tree_hash "${shellPath(w.repo)}"`, { TMPDIR: shellPath(w.tmp) });
+    const res = runLib(`wk_tree_hash "${shellPath(w.repo)}"`, { TMPDIR: shellPath(w.tmp), WORKKIT_NODE: shellPath(process.execPath) });
     const shell = res.stdout.trim();
     expect(/^[0-9a-f]{40,64}$/.test(shell), `a tree id from wk_tree_hash, got: ${res.stdout}|${res.stderr}`).toBeTruthy();
     expect(treeHash(w.repo), 'the twin prints the kit\'s id').toBe(shell);
@@ -234,6 +187,41 @@ describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh aga
       'markers/claude-suite.log/<sha>', 'markers/claude-suite.log/<sha>',
       '<root>/logs/suite.log', '<root>/logs/suite.log', '<root>/logs/sub/suite.log', '<root>/.workkit/suite.log',
     ]));
+  });
+});
+
+describe('twins: the test script, wk_has_test_script in workflow/lib/suite.sh against hasTestScript in hooks/mods/suite.js', () => {
+  // package.json texts; null writes none.
+  const PACKAGES = [
+    '{"scripts":{"test":"node --test"}}', '{"scripts":{"test":""}}', '{"name":"bare","scripts":{"lint":"x"}}', '{"scripts":{"test":1}}',
+    '{"scripts":null}', '{}', 'not json', null,
+  ];
+
+  test('wk_has_test_script and hasTestScript answer every package.json alike, and only a non-empty string scripts.test is one', () => {
+    const dirs = PACKAGES.map((text) => {
+      const dir = mkTmp('twins-testscript-');
+      if (text !== null) fs.writeFileSync(path.join(dir, 'package.json'), text);
+      return dir;
+    });
+    const shell = bashAnswers(lib('hooks', '_lib.sh'), 'wk_has_test_script', dirs.map(shellPath));
+    const parsed = (text) => { try { return JSON.parse(text); } catch { return null; } };
+    agree(PACKAGES.map((_, i) => i), shell, (i) => mods('suite').hasTestScript(parsed(PACKAGES[i])), 'the package.json texts by index');
+    expect(JSON.stringify(shell.slice(0, 3)), 'a test script is one, an empty one and none are not').toBe(JSON.stringify([true, false, false]));
+  });
+});
+
+describe('twins: the marker path, wk_marker_path in workflow/lib/platform.sh against markerPath in hooks/mods/markers.js', () => {
+  // The anchor spellings the shell must hash byte for byte as the module does: a space, a drive, backslashes, a trailing
+  // slash, a call id, none at all. The plain root through each marker kind is test/hooks/lib.test.js's.
+  const ANCHORS = ['/w/a b/repo', 'C:/Users/x/repo', 'C:\\Users\\x\\repo', '/repos/thing/', 'toolu_01AbC', ''];
+  const HOMES = { HOME: '/w/home', WORKFLOW_HOME: '/w/moved' };
+
+  test('wk_marker_path and markerPath give one path for one root and one marker folder', async () => {
+    const dir = 'claude-gh-journal';
+    const shell = bashLines(lib('workflow', 'lib', 'platform.sh'), `wk_marker_path ${dir}`, ANCHORS, HOMES);
+    const js = await Promise.all(ANCHORS.map((anchor) => mods('markers').markerPath(dir, anchor, HOMES.WORKFLOW_HOME)));
+    agree(ANCHORS.map((_, i) => i), shell, (i) => js[i], `the anchors by index, the module's paths ${JSON.stringify(js)}`);
+    expect(shell[0].startsWith(`${HOMES.WORKFLOW_HOME}/markers/${dir}/`), `under the machine folder's markers, got: ${shell[0]}`).toBeTruthy();
   });
 });
 

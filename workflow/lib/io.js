@@ -20,11 +20,13 @@ const runResult = ({ exitCode = 0, stdout = '', stderr = '' } = {}) => ({
 });
 
 // A program run the way $.process.run runs it: the env merged over the session's.
+// A child named `node` runs under this process's own Node, so a caller whose
+// PATH holds no node still runs the kit's Node files.
 const runIn = (env) => async (argv, init = {}) => {
   const opts = {
     cwd: init.cwd, input: init.stdin, env: { ...env, ...(init.env || {}) }, encoding: 'utf8', timeout: init.timeoutMs,
   };
-  const res = spawnSync(argv[0], argv.slice(1), opts);
+  const res = spawnSync(argv[0] === 'node' ? process.execPath : argv[0], argv.slice(1), opts);
   // A run that did not start (isStarted false) carries its error as stderr, as the
   // engine's does; a null exitCode means that, or a child ended by a signal.
   const stderr = res.stderr || (res.error ? res.error.message : '');

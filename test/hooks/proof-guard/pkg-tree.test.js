@@ -5,15 +5,15 @@
 
 const path = require('path');
 const fs = require('fs');
+const { describe, test, expect } = require('../../lib/harness');
 const {
-  describe, test, expect, mkTmp,
-} = require('../../lib/harness');
-const { shellPath, basePathWithout } = require('../../lib/platform');
+  NODE_DIR, shellPath, joinPath, runsProgram,
+} = require('../../lib/platform');
 const { mkRepo } = require('../../lib/script-shell');
 const { treeHash, plantPkgRecord } = require('../../lib/suite-record');
 const { scratchWorkflowHome } = require('../../lib/workflow-home');
 const {
-  flip, QA_BLOCK, WHOLE_TREE, assertBlocks, passText, denyOf,
+  flip, QA_BLOCK, assertBlocks, passText,
 } = require('./helpers');
 
 // A committed workspaces repo: members a, b and c under packages/, c depending on a, a with a test script.
@@ -25,9 +25,6 @@ const WORKSPACES = {
   'packages/c/package.json': { name: 'c', version: '1.0.0', dependencies: { a: '1.0.0' } },
   'packages/c/index.js': 'module.exports = 3;\n',
 };
-
-// The child's own line when it finds no node and keys packages/a to the whole tree.
-const NO_NODE = 'tree-hash: no node 22.12 or newer found; packages/a keyed to the whole tree';
 
 // The repo every case reads, never edited, so one serves them all; each case plants its own record.
 let world;
@@ -41,16 +38,9 @@ const repo = () => {
   return world;
 };
 
-// The suite's own session (HOME and PATH as it runs, WORKKIT_NODE dropped) over a scratch workflow home.
+// The suite's own session (HOME as it runs, node first on PATH, WORKKIT_NODE dropped) over a scratch workflow home.
 const ownSession = (workflowHome) => {
-  const env = { ...process.env, WORKFLOW_HOME: shellPath(workflowHome) };
-  delete env.WORKKIT_NODE;
-  return env;
-};
-
-// A session whose node is out of reach: the system PATH mirrored less node, a scratch HOME with no nvm.
-const noNodeSession = (homeEnv) => {
-  const env = { ...process.env, ...homeEnv, PATH: basePathWithout(mkTmp('pkg-tree-'), 'node') };
+  const env = { ...process.env, WORKFLOW_HOME: shellPath(workflowHome), PATH: joinPath(NODE_DIR, process.env.PATH) };
   delete env.WORKKIT_NODE;
   return env;
 };
@@ -69,24 +59,15 @@ describe('proof-guard: a package\'s record line read against its own id, through
     assertBlocks(await flip(dir, env), QA_BLOCK(1, 'packages/a: test/a.test.js'), 'the line on the whole tree\'s id is stale for a');
   });
 
-  test('a session that cannot reach node keys packages/a to the whole tree: the flip on a\'s own id is denied, the denial saying why and naming the fix', async () => {
+  test('the flip takes packages/a\'s id with node running tree-hash.js, and starts no bash', async () => {
     const { dir, ownId } = repo();
-    const { workflowHome, env: homeEnv } = scratchWorkflowHome('pkg-tree-nonode-');
+    const { workflowHome } = scratchWorkflowHome('pkg-tree-node-');
     plantPkgRecord(workflowHome, dir, ['packages/a'], ownId);
-    const deny = denyOf(await flip(dir, noNodeSession(homeEnv)));
-    expect(deny !== null, 'the flip is denied').toBeTruthy();
-    const [head] = QA_BLOCK(1).split('\n');
-    expect(deny.split('\n')[0].startsWith(head), `the qa denial's head first, got: ${deny}`).toBeTruthy();
-    expect(deny.includes(WHOLE_TREE(NO_NODE)), `the sentence carries the child's line, got: ${deny}`).toBeTruthy();
-    expect(deny.indexOf(WHOLE_TREE(NO_NODE)) < deny.indexOf('packages/a: test/a.test.js'), `the sentence comes after the head, before the files, got: ${deny}`).toBeTruthy();
-  });
-
-  test('the whole-tree fallback on both sides, the record written on the whole tree\'s id and read by a session that cannot reach node: the flip passes, no sentence', async () => {
-    const { dir, wholeId } = repo();
-    const { workflowHome, env: homeEnv } = scratchWorkflowHome('pkg-tree-both-');
-    plantPkgRecord(workflowHome, dir, ['packages/a'], wholeId);
-    const msg = passText(await flip(dir, noNodeSession(homeEnv)), 'the writer and the gate agree on the whole tree');
-    expect(msg.includes('packages/a (1 file(s))'), `the notice names packages/a, got: ${msg}`).toBeTruthy();
-    expect(!msg.includes('keyed to the whole tree'), `no fallback sentence on a pass, got: ${msg}`).toBeTruthy();
+    const calls = [];
+    passText(await flip(dir, ownSession(workflowHome), (argv) => { calls.push([...argv]); }), 'the line on a\'s own id');
+    const hashes = calls.filter((argv) => argv.some((a) => a.endsWith('tree-hash.js')));
+    expect(hashes.some((argv) => argv.includes('packages/a')), `a tree-hash.js child for packages/a, got: ${JSON.stringify(calls)}`).toBeTruthy();
+    expect(hashes.every((argv) => runsProgram(argv, 'node')), `each tree-hash.js child is node, got: ${JSON.stringify(hashes)}`).toBeTruthy();
+    expect(JSON.stringify(calls.filter((argv) => runsProgram(argv, 'bash'))), 'no child is bash').toBe('[]');
   });
 });

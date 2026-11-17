@@ -1,17 +1,14 @@
-#!/usr/bin/env node
 /* eslint-disable no-console */
 // workflow/lib/workspaces.js: a repo's npm workspace members and their links,
 // read by the one expansion the publish plan uses (expand-workspaces.js), and
 // the members a package cannot see, which its record's tree id leaves out
-// (wk_tree_hash in suite.sh).
-// Usage: node workspaces.js <root> <pkg>   prints one excluded folder per line
+// (treeId in tree-hash.js).
+// Usage: const { membersOf, excludedFor } = require('./workspaces');
 
 const fs = require('fs');
 const path = require('path');
 const { expandWorkspaces, PlanError } = require('./expand-workspaces');
 const { depNamesOf, readJson } = require('../ship/plan');
-
-const USAGE = 'usage: workspaces.js <root> <pkg>';
 
 /** Whether folder `outer` is folder `inner` or holds it, both relative to the root. */
 const holds = (outer, inner) => outer === inner || inner.startsWith(`${outer}/`);
@@ -74,25 +71,5 @@ const excludedFor = (root, pkg) => {
     .map((m) => m.dir)
     .sort();
 };
-
-/**
- * The CLI: one excluded folder per line.
- * @param {string[]} argv `<root> <pkg>`
- * @returns {number} the exit code
- */
-const main = (argv) => {
-  const [root, pkg] = argv;
-  if (!root || !pkg) {
-    console.error(USAGE);
-    return 2;
-  }
-  for (const dir of excludedFor(root, pkg)) console.log(dir);
-  return 0;
-};
-
-if (require.main === module) {
-  // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  process.exitCode = main(process.argv.slice(2));
-}
 
 module.exports = { membersOf, excludedFor };
