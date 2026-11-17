@@ -372,13 +372,14 @@ describe('spawn: start() with stdin open', () => {
     expect(exit?.status, `the child's own exit status, got: ${JSON.stringify(exit)}`).toBe(4);
   });
 
-  test('stdin open, a child waiting on its stdin, and a short deadline: done reports timedOut and the signal that ended the child, which is gone', async (t) => {
+  test('stdin open, a child waiting on its stdin, and a short deadline: done reports timedOut and no exit 0 of the child\'s own, and the child is gone', async (t) => {
     const child = start(process.execPath, ['-e', WAITS_ON_STDIN], { stdin: 'open', deadline: SHORT });
     t.after(() => endAll(child.pid));
     const exit = await settle(child.done);
     expect(exit?.timedOut, `the deadline ended it, got: ${JSON.stringify(exit)}`).toBe(true);
-    // A deadline that ended stdin instead would leave the child to exit 0 with no signal.
-    expect(exit.signal, `a signal ended the process, got: ${JSON.stringify(exit)}`).toBeTruthy();
+    // A deadline that ended stdin instead would leave the child to exit 0.
+    // A signal leaves no status; the Windows tree end leaves status 1.
+    expect(exit.status, `the child did not exit 0 on its own, got: ${JSON.stringify(exit)}`).not.toBe(0);
     expect(alive(child.pid), 'the child is gone').toBe(false);
   });
 
