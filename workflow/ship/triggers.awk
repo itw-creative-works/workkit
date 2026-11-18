@@ -3,7 +3,7 @@
 # go and single quotes read as double, so a quoted `"on":` key and a CRLF file
 # answer the same as the plain one. One nested deeper is not a trigger.
 # Usage: awk -v ev=<event> -f triggers.awk <workflow file>
-# Read by ship/watch.sh and .github/scripts/ci-release.js.
+# Read through ship/triggers.js, its one Node caller.
 
 { gsub(/\r/, ""); gsub(/\047/, "\"") }
 /^[[:space:]]*(#|$)/ { next }

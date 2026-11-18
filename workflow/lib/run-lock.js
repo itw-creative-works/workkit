@@ -3,7 +3,7 @@
  * take and its judge (a run that is over, a live holder, a launch still under
  * way), the supervisor's pid file, the record beside the lock, the live and held
  * reads, the end request and its wait, the end of a run's processes, and the
- * sweep of the narrowed runs' slots. The folder's own rules are lib/lock.js's.
+ * listing and sweep of the narrowed runs' slots. The folder's own rules are lib/lock.js's.
  * Usage: const { takeRunLock, dropRunLock } = require('./run-lock');
  */
 
@@ -47,10 +47,17 @@ const GROUP_POLL_MS = 100;
 // The days a narrowed run's slot outlives its done file.
 const SLOT_KEEP_DAYS = 1;
 
-/** The seconds an environment variable names, <fallback> when it is unset or empty. */
+/**
+ * The seconds environment variable <name> holds: <fallback> when it is unset,
+ * empty, or not a finite number of 0 or more.
+ * @param {string} name
+ * @param {number} fallback
+ * @returns {number}
+ */
 const secondsOf = (name, fallback) => {
   const value = process.env[name];
-  return value === undefined || value === '' ? fallback : Number(value);
+  const seconds = value === undefined || value.trim() === '' ? NaN : Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : fallback;
 };
 
 /** Wait while <holds()> does, up to <ms>, looking every TAKE_POLL_MS. */
@@ -208,7 +215,7 @@ const takeRunLock = async (lock) => {
   }
 };
 
-/** wk_ask_end's answer once supervisor <pid> is gone: 0 for a done file or a lock holding another pid or none, else 2. */
+/** askEnd's answer once supervisor <pid> is gone: 0 for a done file or a lock holding another pid or none, else 2. */
 const goneAnswer = (lock, pid) => (hasDone(lock) || lockPid(lock) !== String(pid) ? 0 : 2);
 
 /**
@@ -289,12 +296,12 @@ const slotLeft = (lock) => {
 };
 
 /**
- * Remove each narrowed run's lock folder left behind, `<base><slot>`: a run
- * whose wrapper was cut off (slotLeft). A live remover's slot stays.
+ * The narrowed runs' slots whose lock folder `<base><slot>` stands, live or
+ * not, in name order: the one listing of a repo's slots.
  * @param {string} base the slots' lock path less the slot
- * @returns {Promise<string[]>} the slots whose lock went, for their log and record to go too
+ * @returns {string[]}
  */
-const sweepSlots = async (base) => {
+const slotsAt = (base) => {
   const dir = path.dirname(base);
   const prefix = path.basename(base);
   let names = [];
@@ -303,15 +310,24 @@ const sweepSlots = async (base) => {
   } catch {
     return [];
   }
+  return names.filter((name) => isDir(path.join(dir, name))).map((name) => name.slice(prefix.length));
+};
+
+/**
+ * Remove each narrowed run's lock folder left behind, `<base><slot>`: a run
+ * whose wrapper was cut off (slotLeft). A live remover's slot stays.
+ * @param {string} base the slots' lock path less the slot
+ * @returns {Promise<string[]>} the slots whose lock went, for their log and record to go too
+ */
+const sweepSlots = async (base) => {
   const swept = [];
-  for (const name of names) {
-    const lock = path.join(dir, name);
-    if (isDir(lock) && await retireJudged(lock, slotLeft) === true) swept.push(name.slice(prefix.length));
+  for (const slot of slotsAt(base)) {
+    if (await retireJudged(path.join(path.dirname(base), `${path.basename(base)}${slot}`), slotLeft) === true) swept.push(slot);
   }
   return swept;
 };
 
 module.exports = {
-  takeRunLock, runLive, runHeld, writePid, leaveRecord, recordedCode, dropRunLock, askEnd, sweepSlots,
-  endRun, pidAlive, doneCode,
+  takeRunLock, runLive, runHeld, writePid, leaveRecord, recordedCode, dropRunLock, askEnd, slotsAt, sweepSlots,
+  endRun, pidAlive, doneCode, secondsOf,
 };

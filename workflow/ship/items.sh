@@ -19,7 +19,7 @@ fail() {
   exit 1
 }
 
-# A usage error is exit 2, the code watch.sh beside it uses for one.
+# A usage error is exit 2, the code watch.js beside it uses for one.
 usage() {
   printf 'ship-items: %s (usage: workkit ship items [--repo owner/name])\n' "$1" >&2
   exit 2

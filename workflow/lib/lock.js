@@ -14,6 +14,7 @@ const path = require('path');
 const { setTimeout: sleep } = require('timers/promises');
 const { spawnSync } = require('./run');
 const { readOrNull } = require('./read');
+const { ended } = require('./proc-state');
 
 // The days a marker outlives its last write: MARKER_KEEP_DAYS in platform.sh.
 const MARKER_KEEP_DAYS = 7;
@@ -84,20 +85,10 @@ const lockFiles = (dir) => {
   }
 };
 
-/** Whether <pid> is a zombie: ended, its parent yet to collect it; a /proc entry gone reads as ended. */
-const ended = (pid) => {
-  if (fs.existsSync('/proc/self/stat')) {
-    const stat = readOrNull(`/proc/${pid}/stat`);
-    // The state follows the command name, which may hold spaces and brackets.
-    return stat === null || stat.slice(stat.lastIndexOf(') ') + 2).startsWith('Z');
-  }
-  const ps = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', windowsHide: true });
-  return /^\s*Z/.test(ps.stdout || '');
-};
-
 /**
  * Whether <pid> still runs: it answers a zero signal, and off Windows its state
- * is no zombie's. Any refusal reads as gone, as the shell's `kill -0` does.
+ * is no zombie's (`ended` in lib/proc-state.js). Any refusal reads as gone, as
+ * the shell's `kill -0` does.
  * @param {number|string} pid
  * @returns {boolean}
  */
@@ -109,7 +100,7 @@ const pidAlive = (pid) => {
   } catch {
     return false;
   }
-  return process.platform === 'win32' || !ended(n);
+  return !ended(n, spawnSync);
 };
 
 /**

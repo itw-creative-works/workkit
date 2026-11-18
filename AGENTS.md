@@ -30,7 +30,7 @@
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
 ├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards/, workkit.sh + workkit/, home.sh + home/, publish.sh + publish/ (build.sh, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, gitshim/ (the `git` shim), templates)
 ├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
-├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run` and its `workflow/lib/expand-workspaces.js` packed for the runner, a workspace member at the kit's version
+├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run` and its `workflow/lib/expand-workspaces.js` and `workflow/lib/proc-state.js` packed for the runner and its library, a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
 ├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · tests.md (the test bar and runner) · setup.md (the install walkthrough) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
@@ -94,7 +94,7 @@
   - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
 - Beside it live:
   - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
-  - the ship's steps in `ship/`: `items.sh`, `release.js`, `watch.sh`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, and `hooks.js`;
+  - the ship's steps in `ship/`: `items.sh`, `release.js`, `watch.js`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, and `hooks.js`;
     - `hooks.js` holds the hooks a repo declares for the release, the publish and the deploy, which those steps run;
   - the review and triage markers and the review tier in `review/` and `triage/`, the verifier's red run in `proof/`;
   - the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle.

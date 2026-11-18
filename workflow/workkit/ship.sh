@@ -16,6 +16,8 @@ cmd_ship() {
     # ask), the deploy script or a ship hook (ship/publish.js, deploy.js, hooks.js).
     case "$sub" in
       cut|publish|deploy) wk_terminal_step "ship $sub" run_verb ship "$sub" "$@" ;;
+      # It requires the kit's ES modules, so it runs under a node at the floor.
+      watch) run_at_floor "ship watch" "$SCRIPT_DIR/ship/watch.js" "$@" ;;
       *) run_verb ship "$sub" "$@" ;;
     esac
     return

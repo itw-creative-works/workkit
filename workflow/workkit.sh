@@ -22,8 +22,8 @@ STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
 PROVE="$SCRIPT_DIR/prove.sh"
-SUPERVISE="$SCRIPT_DIR/supervise.sh"
-WATCH="$SCRIPT_DIR/watch.sh"
+SUPERVISE="$SCRIPT_DIR/supervise.js"
+WATCH="$SCRIPT_DIR/watch.js"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
 TOWER_START="$KIT_DIR/tower/start.sh"
 # The same two files the 9am schedule runs, so `workkit brief` is that morning
@@ -117,6 +117,19 @@ run_verb() {
     return 1
   fi
   exec node "$base.js" "$@"
+}
+
+# run_at_floor <verb> <file> [args]: a Node verb that requires the kit's ES
+# modules, run under the first node at the kit's floor (wk_node). Exec'd, so
+# the file's output and exit code are the command's; with no such node, one line and 1.
+run_at_floor() {
+  local verb="$1" file="$2" node
+  shift 2
+  if ! node="$(wk_node)"; then
+    printf '%s: no node at or above %s is installed\n' "$verb" "$WK_NODE_FLOOR" >&2
+    exit 1
+  fi
+  exec "$node" "$file" "$@"
 }
 
 usage() {
@@ -359,8 +372,8 @@ case "${1:-help}" in
   state)   shift; exec bash "$STANDARDS" --state "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;
   prove)   shift; exec bash "$PROVE" "$@" ;;
-  supervise) shift; exec bash "$SUPERVISE" "$@" ;;
-  watch)   shift; exec bash "$WATCH" "$@" ;;
+  supervise) shift; run_at_floor supervise "$SUPERVISE" "$@" ;;
+  watch)   shift; run_at_floor watch "$WATCH" "$@" ;;
   *)
     wk_error "unknown command $1"
     printf '\n' >&2

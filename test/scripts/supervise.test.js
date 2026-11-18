@@ -1,6 +1,7 @@
 // Tests for `workkit supervise -- <command>`: the command runs detached under the
 // supervisor, its output the call's and in `.workkit/run.log`, the call exiting with
-// its code, 124 on a frozen end or 125 on a look; one supervised run per repo,
+// its code, 124 on a frozen end or 125 on a look, a script with no #! line run by the
+// shell, 126 and 127 for a file it cannot run or find; one supervised run per repo,
 // inside a git repo only; a narrowed npm test or a second supervise inside it
 // runs under it alone, and a root npm test inside it holds the suite slot; the call
 // paints the plain log's lines when the color gate says yes.
@@ -12,7 +13,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  BASH, NO_RC, jsPath, joinPath,
+  IS_WINDOWS, NO_EXEC_BIT, BASH, NO_RC, jsPath, joinPath,
 } = require('../lib/platform');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
 const { workkitBin } = require('../lib/workkit-bin');
@@ -36,6 +37,52 @@ const supervise = (world, script, cwd = world.repo) => workkit(['supervise', '--
 // The live supervisor processes of a world's runs: each detach.js whose command line names the world's folder.
 const supervisorsIn = (w) => run('ps', ['-A', '-ww', '-o', 'command=']).stdout
   .split('\n').filter((line) => line.includes('detach.js') && line.includes(path.basename(w.dir))).length;
+
+describe('workkit supervise: a command node cannot start itself', () => {
+  /** A script in <w>'s out folder printing `ran-by-the-shell` and exiting 5, with no `#!` line, its mode <mode>. */
+  const bareScript = (w, mode) => {
+    const file = path.join(w.out, 'bare-script');
+    fs.writeFileSync(file, 'echo ran-by-the-shell\nexit 5\n');
+    fs.chmodSync(file, mode);
+    return file;
+  };
+
+  test('an executable script with no #! line: run as a shell script, its line printed, the call exits 5, the log ends supervise: exit 5', {
+    skip: IS_WINDOWS && NO_EXEC_BIT,
+  }, async () => {
+    const w = mkWorld();
+    const res = await workkit(['supervise', '--', bareScript(w, 0o755)], { cwd: w.repo, env: w.env });
+    expect(res.code, `the script's own code, got: ${res.output}`).toBe(5);
+    expect(linesToLast(res.output).includes('ran-by-the-shell'), `the script's line, got: ${res.output}`).toBeTruthy();
+    expect(lastLine(read(runLog(w))), 'the run log ends with the exit line').toBe('supervise: exit 5');
+  });
+
+  test('a script with no #! line reached by a bare name on PATH: run by the shell with its arguments, the call exits 6, the log ends supervise: exit 6', {
+    skip: IS_WINDOWS && 'Node on Windows starts a bare name only as a .com or .exe, and a file there carries no executable bit',
+  }, async () => {
+    const w = mkWorld();
+    const bin = mkTmp('supervise-bare-bin-');
+    const file = path.join(bin, 'bare-on-path');
+    fs.writeFileSync(file, 'echo "bare-args:$1,$2"\nexit 6\n');
+    fs.chmodSync(file, 0o755);
+    const res = await workkit(['supervise', '--', 'bare-on-path', 'one', 'two'], { cwd: w.repo, env: { ...w.env, PATH: joinPath(bin, w.env.PATH) } });
+    expect(res.code, `the script's own code, got: ${res.output}`).toBe(6);
+    expect(linesToLast(res.output).includes('bare-args:one,two'), `the script ran with its arguments, got: ${res.output}`).toBeTruthy();
+    expect(lastLine(read(runLog(w))), 'the run log ends with the exit line').toBe('supervise: exit 6');
+  });
+
+  for (const [label, command, code, skip] of [
+    ['a file that is not executable', (w) => bareScript(w, 0o644), 126, IS_WINDOWS && NO_EXEC_BIT],
+    ['a command that is not found', () => 'workkit-no-such-command', 127, false],
+  ]) {
+    test(`${label}: the call exits ${code}, the log ends supervise: exit ${code}`, { skip }, async () => {
+      const w = mkWorld();
+      const res = await workkit(['supervise', '--', command(w)], { cwd: w.repo, env: w.env });
+      expect(res.code, `exit ${code}, got: ${res.output}`).toBe(code);
+      expect(lastLine(read(runLog(w))), 'the run log ends with the exit line').toBe(`supervise: exit ${code}`);
+    });
+  }
+});
 
 describe('workkit supervise: the run and its code', () => {
   test('a command that exits 3: the call exits 3, the output is the call\'s, and .workkit/run.log holds it and its exit line', async () => {

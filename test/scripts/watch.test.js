@@ -4,7 +4,8 @@
 // with no call attached still gives its code once; with no live run it says so;
 // `--end` ends the named run on request; a narrowed run's start clears this repo's
 // day-old leftover slots and those a gone remover left; the color gate paints what
-// it prints. The world is test/lib/supervise-world.js.
+// it prints; with no node at the floor, watch and supervise say so. The world is
+// test/lib/supervise-world.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -12,16 +13,17 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  BASH, NO_RC, jsPath, cygpathStub, joinPath, nodeEnv,
+  IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath, nodeEnv, stubNode, systemPathWith,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
 const { suiteLockPath } = require('../lib/suite-record');
+const { runPathsUnder } = require('../lib/run-paths');
 const {
   CHECK_MINUTES, skipOnWindows, pidOf, reap, silent, writesPid, ended, read, realOf, handLock, claimNaming, tagOf, deadPid,
 } = require('../lib/supervise');
 const {
-  LONG_CHECK, COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor,
+  LONG_CHECK, COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor, touches,
 } = require('../lib/supervise-world');
 
 const USAGE = 'usage: workkit watch [--end] [suite|run|<pid>]';
@@ -105,14 +107,16 @@ const slotOf = ({ w, env }, pid) => {
 };
 
 /**
- * The suite lock and the run lock of <w>'s repo from the suite library's own paths,
- * under <env>: the shell's spelling, which a run writes in a `foreground` file.
+ * The suite lock of <w>'s repo from the suite library's own path and the run lock
+ * from runPaths, each under <env>: the spelling the run holding it writes in a
+ * `foreground` file.
  */
 const lockPaths = (w, env = w.env) => {
   const root = run('git', ['rev-parse', '--show-toplevel'], { cwd: w.repo }).stdout.trim();
-  const res = runLib(`wk_suite_lock_path "${root}" && wk_run_lock_path "${root}"`, { ...env, ...nodeEnv });
-  const [suite, runLock] = res.stdout.trim().split('\n');
-  expect(res.code === 0 && suite && runLock, `the repo's two locks, got: ${res.stdout} ${res.stderr}`).toBeTruthy();
+  const res = runLib(`wk_suite_lock_path "${root}"`, { ...env, ...nodeEnv });
+  const suite = res.stdout.trim();
+  expect(res.code === 0 && suite, `the repo's suite lock, got: ${res.stdout} ${res.stderr}`).toBeTruthy();
+  const [{ lock: runLock }] = runPathsUnder(env, [[root, 'run']]);
   return { suite, run: runLock };
 };
 
@@ -412,6 +416,23 @@ describe('workkit watch: no run to attach to', () => {
   });
 });
 
+describe('workkit watch and workkit supervise: no node at the floor', () => {
+  test('each prints one line naming the floor 22.12 and exits 1; the supervised command never runs', async () => {
+    const w = mkWorld();
+    const ran = path.join(w.out, 'ran');
+    const old = stubNode(path.join(w.dir, 'old-node'), '20.15.1');
+    // The world's home is a scratch one, so no node a machine's nvm keeps is found instead.
+    const env = { ...w.env, PATH: systemPathWith(path.dirname(old)), WORKKIT_NODE: shellPath(old) };
+    for (const args of [['watch'], ['supervise', '--', 'node', '-e', touches(ran)]]) {
+      const res = await workkit(args, { cwd: w.repo, env });
+      expect(res.code, `workkit ${args[0]} exits 1, got: ${res.output}`).toBe(1);
+      const said = linesToLast(res.output);
+      expect(said.length === 1 && said[0].includes('22.12'), `workkit ${args[0]}: one line naming the floor, got: ${res.output}`).toBeTruthy();
+    }
+    expect(fs.existsSync(ran), 'the supervised command never ran').toBe(false);
+  });
+});
+
 describe('workkit watch --end', () => {
   test('a live run and watch --end: the request line, exit 0, the command is gone, the attached call exits 143, the lock dropped', async () => {
     const w = mkWorld();
@@ -585,10 +606,12 @@ describe('workkit watch --end', () => {
   }
 
   // On Windows a run writes the enclosing lock in another spelling of the folder
-  // watch computes. An inherited OSTYPE and the seam's cygpath give that second
-  // spelling off Windows; there the real cygpath gives it.
+  // watch computes, which the real cygpath gives here. Node's watch folds spellings
+  // by the platform it runs on, never by OSTYPE, so no other platform can stage it.
   for (const [typed, enclosing] of [['suite', 'run'], ['run', 'suite']]) {
-    test(`the ${typed} lock held in the foreground under the ${enclosing} lock spelled another way: watch --end ${typed} exits 1 on one line naming the foreground hold and workkit watch --end ${enclosing}, no end file`, async () => {
+    test(`the ${typed} lock held in the foreground under the ${enclosing} lock spelled another way: watch --end ${typed} exits 1 on one line naming the foreground hold and workkit watch --end ${enclosing}, no end file`, {
+      skip: !IS_WINDOWS && 'the second spelling of a path is Windows\' own, and watch reads the platform it runs on',
+    }, async () => {
       const w = mkWorld();
       const cyg = mkTmp('watch-cygpath-');
       cygpathStub(cyg);

@@ -64,7 +64,8 @@
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
 - A suite or a case that cannot run here states a `skip` value, its reason, and the run lists every skip after the totals.
   - A whole file skips through its outer `describe`'s `skip` option: `describe('supervise', { skip: skipOnWindows() }, () => { ... })`, the kit's helper in `test/lib/supervise.js`. A suite that needs a tool states `needs` there (its bullets below).
-    - `test/lib/supervise.js` also holds the detached-run suites' shared fakes and worlds: `actsAfter`, `writesAfter`, `rootHolding`, `rootWith`, `handLock`, `claimNaming`, `tagOf`, `deadPid`, `holding`.
+    - `test/lib/supervise.js` also holds the detached-run suites' shared fakes and worlds: `actsAfter`, `writesAfter`, `rootHolding`, `rootWith`, `handLock`, `claimNaming`, `tagOf`, `deadPid`, `holding`, `attachArgv`, `underEndWait`, `ridesSignals`, `nodeBody`, `shellBody`, `launchBody`.
+    - A run's paths as a case names them: `runPathsUnder` in `test/lib/run-paths.js`, and `repoMarkerPath` beside the record paths in `test/lib/suite-record.js`.
   - A skip value is `false` or the reason text, never another falsy value: `false` and `undefined` run the case, and `true` or a reason skips it.
     - For `''`, `0` or `null`, Node runs a case's body anyway and labels it skipped, and on a `describe` it cancels the children, which fails the run.
   - A helper that decides a skip (the kit's, a repo's own) returns `false` or the reason. `needs` alone also throws for a missing tool outside a cloud session (its bullets below).
@@ -97,10 +98,11 @@
   - `test/tools.js` (the `tools` verb) and `test/convert.js` (the `convert` verb);
   - its library in `test/lib/` (`harness.js`, `cases.js`, `expect.js`, `lexer.js`, `log.js`, `node-test.js`, `process.js`, `proc-state.js`, `scratch.js`, `seed.js`, `spawn.js`, `suites.js`, `suite-path.js`, `pick.js`, `serial-name.js`, `members.js`, `kit-module.js`, `paint.js`, `convert-read.js`, `convert-map.js`, `events.js`, `app-cases.js`, `mods.js`, `suite-deadline.js`, `on-path.js`);
     - `pick.js` picks a run's suites and its serial tail by name (`serial-name.js`, importing nothing so `safety:test-bar` reads it too), and stops a run on a leftover list file; `mods.js` is `modCase`; `suite-deadline.js` reads the suite deadline a run holds, for the runner and `modCase`; `on-path.js` finds a command's files on the PATH, for `needs` and `modCase`;
-    - `members.js` reads a monorepo root's members and runs one member's `npm test`; `kit-module.js` loads a kit file the package ships a copy of (`kitModule(stem)`); `proc-state.js` reads whether a process, or every member of a group, ended and waits uncollected, for `alive` and `groupLives`;
+    - `members.js` reads a monorepo root's members and runs one member's `npm test`; `kit-module.js` loads a kit file the package ships a copy of (`kitModule(stem)`); `proc-state.js` reads whether a process, or every member of a group, ended and waits uncollected, for `alive` and `groupLives`, through the kit's `workflow/lib/proc-state.js` (`ended` handed the starter of `workkit-core/run`);
   - the export `workkit-core/test`, the entry `harness.js` builds: Node's case functions, its own `test`, `it`, `needs`, `hasLaunchd` and `WORKKIT_DIR`, and every export of `process.js`, `scratch.js`, `seed.js`, `suites.js`, `log.js`, `spawn.js`, `expect.js`, `events.js`, `app-cases.js` and `mods.js`;
   - plus `workkit-core/run`, the kit's `workflow/lib/run.js` its prepack copies in as `run.cjs`, which the library's `run` and `start` launch through;
-  - plus the kit's `workflow/lib/expand-workspaces.js`, copied in as `expand-workspaces.cjs`, the expansion of `workspaces` the publish plan, the package record and the runner share.
+  - plus the kit's `workflow/lib/expand-workspaces.js`, copied in as `expand-workspaces.cjs`, the expansion of `workspaces` the publish plan, the package record and the runner share;
+  - plus the kit's `workflow/lib/proc-state.js`, copied in as `proc-state.cjs`, the process-state reads `lib/lock.js` and the library's `proc-state.js` share.
   - `kit-module.js` reads each of the two: in the kit's own checkout the kit's file, so a copy a local `npm pack` left there never wins; elsewhere the packed copy.
 - It is ES, and a CommonJS suite `require()`s it alike.
 - Its README (`packages/core/README.md`) lists the exports.

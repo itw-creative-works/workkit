@@ -103,7 +103,7 @@
     - The engine's npm `script-shell` wrapper (`workflow/script-shell.sh`) and `workkit prove` (`workflow/prove.sh`) write the suite marker.
     - The same wrapper writes the package record (`wk_pkg_marker_path`): the packages a green `npm test` other than the bare root run proved on a tree.
     - `safety:proof-guard` reads the package record at the qa flip.
-  - The same derivation names the three run locks and the fallback logs of the detached suite run, supervised run and CI watch (`workflow/lib/suite.sh`).
+  - The same derivation names the run locks and fallback logs of the detached suite run, supervised run, CI watch and narrowed runs' slots: `runPaths` in `workflow/lib/run-paths.js` names them all, and `workflow/lib/suite.sh` keeps the shell names of the suite's and the slot's.
   - A machine with neither tool is refused loudly rather than keyed to an empty string.
     - An empty string would be one marker shared by every repo on it.
   - The engine keys the suite record with the same digest, so the body is `wk_sha1` in `workflow/lib/platform.sh`.
@@ -409,6 +409,8 @@
       - the shell twin reads the top-level key through node, and only `"enabled": true` reads opted in on both;
     - the machine folder (`wk_user_dir`, `userDir` in `hooks/mods/log.js` and `workflow/user-dir.js`);
     - the marker path (`wk_marker_path` in `workflow/lib/platform.sh`, `markerPath` in `hooks/mods/markers.js`);
+    - the run paths (`wk_suite_log_path`, `wk_suite_lock_path`, `wk_test_log_path` and `wk_test_lock_path` in `workflow/lib/suite.sh`, `runPaths` in `workflow/lib/run-paths.js`), which name one log and one lock for the suite and for a slot on one root, for every `logs.dir` and `.gitignore`;
+    - a detached body's end (`wk_body_traps` in `workflow/lib/detach.sh`, `bodyEnd` in `workflow/lib/body.js`), which give one last line and one code for a body's own exit and for HUP, INT and TERM;
     - the plain mutex (`wk_take_lock` in `workflow/lib/platform.sh`, `takeLock` in `workflow/lib/lock.js`), which exclude each other on one folder;
     - the markers' sweep (`wk_sweep_markers`, `sweepMarkers` in `workflow/lib/lock.js`), which remove the same files from one marker tree;
     - the color gate (`wk_color_on` in `workflow/lib/voice.sh`, `colorOn` in `tower/api/lib/log.js`), which answer alike for one environment and one stdout;

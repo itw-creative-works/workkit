@@ -96,15 +96,24 @@ function logDirOf(settings) {
   return { dir: kept.join('/') };
 }
 
+// wk_log_path's rule without its two reads: the log <name> as `{ rel }` from
+// the root, kept there where git ignores it, else under the marker folder
+// `{ marker }` with `{ suffix }` after it (`.<id>` ends both); or logDirOf's `{ error }`.
+export function logPlaceOf(settings, name, id = '') {
+  const folder = logDirOf(settings);
+  if ('error' in folder) return folder;
+  const suffix = id === '' ? '' : `.${id}`;
+  return { rel: `${folder.dir ? `${folder.dir}/` : ''}${name}${suffix}`, marker: `claude-${name}`, suffix };
+}
+
 // Where a root run logs: suite.log in the log folder where git ignores it,
 // else its marker path (wk_suite_log_path); a bad logs.dir is its line.
 async function suiteLogOf(facts, root) {
   const settings = await loadSettings(facts.read, { kit: facts.kitRoot, root, user: facts.userSettings });
-  const folder = logDirOf(settings);
-  if ('error' in folder) return folder;
-  const name = `${folder.dir ? `${folder.dir}/` : ''}suite.log`;
-  const ignored = await facts.run(['git', 'check-ignore', '-q', name], { cwd: root });
-  return { path: ignored.exitCode === 0 ? `${root}/${name}` : await markerPath('claude-suite.log', root, facts.home) };
+  const place = logPlaceOf(settings, 'suite.log');
+  if ('error' in place) return place;
+  const ignored = await facts.run(['git', 'check-ignore', '-q', place.rel], { cwd: root });
+  return { path: ignored.exitCode === 0 ? `${root}/${place.rel}` : await markerPath(place.marker, root, facts.home) };
 }
 
 // The git list a read answers, one path per line; a failed read is the hold

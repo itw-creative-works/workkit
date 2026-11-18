@@ -1,9 +1,10 @@
 // Tests for workflow/lib/runs.js, the one Node command that takes a run's lock, launches,
 // attaches and ends it: a free lock, the take's judge (a run that is over, a live holder, a
 // launch under way, a removal under way), two takers on one lock, a launch that fails, a signal
-// before the pid, an end that fails, an attach to a run that ended without its code, ask-end, a run
+// before the pid, an end that fails, run's answers in process beside the answer file, a run
 // under a supervisor already, a painted and a plain view whose reader goes away, and the
-// supervisor's parent. Then run-lock.js's drop, end and liveness read.
+// supervisor's parent. Then attach.js's attach to a run that ended without its code, and
+// run-lock.js's end request, its wait setting, drop, end and liveness read.
 
 const fs = require('fs');
 const path = require('path');
@@ -14,7 +15,8 @@ const {
   IS_WINDOWS, NODE_DIR, jsPath, systemPathWith, homeEnv, samePath,
 } = require('../lib/platform');
 const {
-  checkSettings, rootHolding, pidOf, reap, writesPid, silent, ended, read, handLock, claimNaming, tagOf, actsAfter, writesAfter, deadPid, holding,
+  CHECK_MINUTES, skipOnWindows, checkSettings, rootHolding, rootWith, pidOf, reap, writesPid, silent, busy, ended, read, handLock, claimNaming, tagOf,
+  actsAfter, writesAfter, deadPid, holding, attachArgv, underEndWait, launchBody,
 } = require('../lib/supervise');
 const { startNeverCollects, childOf } = require('../lib/never-collects');
 const { COLOR_ON } = require('../lib/supervise-world');
@@ -22,7 +24,6 @@ const { COLOR_ON } = require('../lib/supervise-world');
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 const RUNS = path.join(LIB, 'runs.js');
 const RUN_LOCK = path.join(LIB, 'run-lock.js');
-const DETACH = path.join(LIB, 'detach.js');
 
 // A run lock's mark file, beside its claim: held by a take's tag, or being removed.
 const MARK = /^(id|gone)\..+$/;
@@ -55,6 +56,23 @@ const runOn = (lock, script, { env = envOf(), root } = {}) => {
   const res = run(process.execPath, call.args, { env });
   return { res, answer: answerOf(call.answer), log: call.log };
 };
+
+/**
+ * A node script that runs <job> (`{ log, lock, root, argv }`) through runs.js's run in process,
+ * writes what run resolved to <out> as JSON and exits with its rc; <launch> is the source of a
+ * launch seam, the real launch when null.
+ */
+const runInProcess = (job, out, launch = null) => [
+  `const { run } = require(${jsPath(RUNS)});`,
+  launch ? `const launch = ${launch};` : '',
+  `run(${JSON.stringify(job)}${launch ? ', { launch }' : ''}).then((answers) => {`,
+  `  require('fs').writeFileSync(${jsPath(out)}, JSON.stringify(answers));`,
+  '  process.exit(answers.rc);',
+  '});',
+].join('\n');
+
+/** What a runInProcess script wrote to <out>, or null when it wrote nothing. */
+const resolvedOf = (out) => (read(out) === '' ? null : JSON.parse(read(out)));
 
 /** A command that writes <ran> and exits 0: whether a run launched it. */
 const writesRan = (ran) => `require('fs').writeFileSync(${jsPath(ran)}, '')`;
@@ -274,26 +292,65 @@ describe('runs.js run: a launch that fails', () => {
   });
 });
 
+describe('runs.js run: its answers to a caller in process', () => {
+  /** A run of <argv> on a fresh lock in <dir>, its root <root>: the job runInProcess takes. */
+  const jobIn = (dir, argv, root = null) => ({ log: path.join(dir, 'log'), lock: path.join(dir, 'lock'), root, argv });
+
+  test('a free lock: run resolves the command\'s code as rc and code, no held, look or int; the command\'s answer file holds that code alone', () => {
+    const dir = mkTmp('runs-answers-free-');
+    const out = path.join(dir, 'resolved.json');
+    const res = run(process.execPath, ['-e', runInProcess(jobIn(dir, [process.execPath, '-e', 'process.exit(4)']), out)], { env: envOf() });
+    expect(res.status, `the command's own code, output: ${res.output}`).toBe(4);
+    const resolved = resolvedOf(out);
+    expect(Boolean(resolved) && resolved.rc === 4 && resolved.code === 4, `rc and code 4, got: ${read(out) || 'nothing'}`).toBe(true);
+    expect(Boolean(resolved.held || resolved.look || resolved.int), `no held, look or int, got: ${read(out)}`).toBe(false);
+    expect(runOn(lockIn('runs-answers-cmd-'), 'process.exit(4)').answer, 'the command writes the same answer to its file').toEqual({ code: '4' });
+  });
+
+  test('a lock a live run holds: run resolves rc 3 and held naming that run\'s pid, nothing launched', () => {
+    const dir = mkTmp('runs-answers-held-');
+    const out = path.join(dir, 'resolved.json');
+    const ran = path.join(dir, 'ran');
+    handLock(path.join(dir, 'lock'), { claim: claimNaming('live'), 'id.live': '', pid: `${process.pid}\n` });
+    const res = run(process.execPath, ['-e', runInProcess(jobIn(dir, [process.execPath, '-e', writesRan(ran)]), out)], { env: envOf() });
+    expect(res.status, `a live holder, so 3, output: ${res.output}`).toBe(3);
+    const resolved = resolvedOf(out);
+    expect(Boolean(resolved) && resolved.rc === 3 && Number(resolved.held) === process.pid, `rc 3, held ${process.pid}, got: ${read(out) || 'nothing'}`).toBe(true);
+    expect(fs.existsSync(ran), 'nothing was launched').toBe(false);
+  });
+
+  test('a run that asks for a look: run resolves rc 125 and look with no code, the run going on', { skip: skipOnWindows() }, () => {
+    const dir = mkTmp('runs-answers-look-');
+    const out = path.join(dir, 'resolved.json');
+    const pidFile = path.join(dir, 'cmd.pid');
+    const lockPid = path.join(dir, 'lock', 'pid');
+    try {
+      const job = jobIn(dir, [process.execPath, '-e', busy(pidFile)], rootWith(CHECK_MINUTES));
+      const res = run(process.execPath, ['-e', runInProcess(job, out)], { env: envOf() });
+      expect(res.status, `the look's code, output: ${res.output}`).toBe(125);
+      const resolved = resolvedOf(out);
+      expect(Boolean(resolved) && resolved.rc === 125 && Boolean(resolved.look), `rc 125 and look, got: ${read(out) || 'nothing'}`).toBe(true);
+      expect(resolved.code ?? null, 'no code: the run goes on').toBe(null);
+      expect(alive(pidIn(pidFile)), `the run ${pidIn(pidFile)} still lives`).toBe(true);
+    } finally {
+      reap(pidIn(pidFile), pidIn(lockPid));
+    }
+  });
+});
+
 describe('runs.js run: a signal before the pid is written', () => {
-  /**
-   * A node script that runs <job> through runs.js's run and exits with run's code; its launch
-   * never settles, and holds a timer so the process lives on while it hangs.
-   */
-  const holdsLaunch = (job) => [
-    `const { run } = require(${jsPath(RUNS)});`,
-    'const launch = () => new Promise(() => { setInterval(() => {}, 1 << 30); });',
-    `run(${JSON.stringify(job)}, { launch }).then((code) => process.exit(code));`,
-  ].join('\n');
+  // A launch that never settles, holding a timer so the process lives on while it hangs.
+  const holdsLaunch = (job, out) => runInProcess(job, out, '() => new Promise(() => { setInterval(() => {}, 1 << 30); })');
 
   for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
-    test(`a ${signal} after the lock is taken and before any pid: exit ${code}${signal === 'SIGINT' ? ', int=1 in the answer' : ''}, the pidless lock retired, the next run takes it at once`, {
+    test(`a ${signal} after the lock is taken and before any pid: exit ${code}${signal === 'SIGINT' ? ', int in what run resolves' : ''}, the pidless lock retired, the next run takes it at once`, {
       skip: IS_WINDOWS && 'Windows delivers no signal to one process',
     }, async () => {
       const dir = mkTmp('runs-window-');
       const lock = path.join(dir, 'lock');
-      const answer = path.join(dir, 'answer');
-      const job = { log: path.join(dir, 'log'), lock, root: null, answer, argv: [process.execPath, '-e', 'process.exit(0)'] };
-      const caller = start(process.execPath, ['-e', holdsLaunch(job)], { env: envOf() });
+      const answer = path.join(dir, 'answer.json');
+      const job = { log: path.join(dir, 'log'), lock, root: null, argv: [process.execPath, '-e', 'process.exit(0)'] };
+      const caller = start(process.execPath, ['-e', holdsLaunch(job, answer)], { env: envOf() });
       try {
         expect(await until(() => fs.existsSync(path.join(lock, 'claim'))), `the lock was never taken, output: ${caller.output()}`).toBeTruthy();
         expect(fs.existsSync(path.join(lock, 'pid')), 'no pid while the launch hangs').toBe(false);
@@ -301,7 +358,10 @@ describe('runs.js run: a signal before the pid is written', () => {
         expect(await until(() => ended(caller.child)), `the call never ended after the ${signal}, output: ${caller.output()}`).toBeTruthy();
         await caller.done;
         expect(caller.child.exitCode, `the call exits ${code}, output: ${caller.output()}`).toBe(code);
-        if (signal === 'SIGINT') expect(answerOf(answer).int, `the answer holds int=1, got: ${read(answer)}`).toBe('1');
+        if (signal === 'SIGINT') {
+          const resolved = resolvedOf(answer);
+          expect(Boolean(resolved && resolved.int), `run resolved int to its caller, got: ${read(answer) || 'nothing'}`).toBe(true);
+        }
         expect(holding(lock), 'the pidless lock was retired').toBe('(none)');
         expect(runOn(lock, 'process.exit(4)').res.status, 'the next run takes the lock with its own code').toBe(4);
       } finally {
@@ -309,6 +369,37 @@ describe('runs.js run: a signal before the pid is written', () => {
       }
     });
   }
+
+  test('the run command, a SIGINT after the lock is taken and before any pid: exit 130, int=1 in its answer file, the pidless lock retired', {
+    skip: IS_WINDOWS && 'Windows delivers no signal to one process',
+  }, async () => {
+    const dir = mkTmp('runs-window-cmd-');
+    const lock = path.join(dir, 'lock');
+    const launcherPid = path.join(dir, 'launcher.pid');
+    // Preloaded into every node of the call: the launcher, detach.js, leaves its pid and blocks, so no pid is ever written.
+    const hold = path.join(dir, 'hold-launch.js');
+    fs.writeFileSync(hold, [
+      "if (/detach\\.js$/.test(process.argv[1] || '')) {",
+      `  require('fs').writeFileSync(${jsPath(launcherPid)}, String(process.pid));`,
+      '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);',
+      '}',
+    ].join('\n'));
+    const call = runCall(lock, 'process.exit(0)', { dir });
+    const caller = start(process.execPath, call.args, { env: envOf({ NODE_OPTIONS: `--require ${JSON.stringify(hold)}` }) });
+    try {
+      await pidOf(launcherPid);
+      expect(fs.existsSync(path.join(lock, 'claim')) && !fs.existsSync(path.join(lock, 'pid')), `the lock taken and no pid, it holds: ${holding(lock)}`).toBe(true);
+      process.kill(caller.pid, 'SIGINT');
+      expect(await until(() => ended(caller.child)), `the call never ended after the SIGINT, output: ${caller.output()}`).toBeTruthy();
+      await caller.done;
+      expect(caller.child.exitCode, `the call exits 130, output: ${caller.output()}`).toBe(130);
+      expect(answerOf(call.answer).int, `the answer file holds int=1, got: ${read(call.answer)}`).toBe('1');
+      expect(holding(lock), 'the pidless lock was retired').toBe('(none)');
+    } finally {
+      reap(pidIn(launcherPid));
+      await caller.end('SIGKILL');
+    }
+  });
 });
 
 describe('runs.js endOnInt: an end of the run that fails', () => {
@@ -317,28 +408,25 @@ describe('runs.js endOnInt: an end of the run that fails', () => {
     const holder = start(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30);']);
     const lock = handLock(lockIn('runs-endfails-'), { claim: claimNaming('held'), 'id.held': '', pid: `${holder.pid}\n` });
     // The holder never answers, so a one second wait runs out and the end is tried.
-    const saved = process.env.WK_END_WAIT;
-    process.env.WK_END_WAIT = '1';
     let ends = 0;
     try {
-      const done = await endOnInt(lock, holder.pid, { endRun: () => { ends += 1; return false; } });
+      const done = await underEndWait(1, () => endOnInt(lock, holder.pid, { endRun: () => { ends += 1; return false; } }));
       expect(done, 'an end that failed').toBe(false);
       expect(ends > 0, 'the end of the run was tried').toBeTruthy();
       expect(pidIn(path.join(lock, 'pid')), 'the lock is kept, still holding the supervisor').toBe(holder.pid);
     } finally {
-      if (saved === undefined) delete process.env.WK_END_WAIT; else process.env.WK_END_WAIT = saved;
       await holder.end('SIGKILL');
     }
   });
 });
 
-describe('runs.js attach: a run that ended without its code', () => {
-  /** `runs.js attach <log> <lock> <pid> --answer <file>` on a lock holding <files>, its log there. */
+describe('attach.js attachRun: a run that ended without its code', () => {
+  /** attachRun to supervisor <pid> in a node of its own, on a lock holding <files>, its log there. */
   const attachTo = (pid, files) => {
     const dir = mkTmp('runs-attach-');
     const lock = handLock(path.join(dir, 'lock'), { claim: claimNaming('a'), 'id.a': '', ...files });
     fs.writeFileSync(path.join(dir, 'log'), '');
-    return run(process.execPath, [RUNS, 'attach', path.join(dir, 'log'), lock, String(pid), '--answer', path.join(dir, 'answer')], { env: envOf() });
+    return run(process.execPath, attachArgv(path.join(dir, 'log'), lock, pid), { env: envOf() });
   };
 
   test('a supervisor gone, no done file and no record: exit 1, the line naming its pid', () => {
@@ -355,8 +443,9 @@ describe('runs.js attach: a run that ended without its code', () => {
   });
 });
 
-describe('runs.js ask-end', () => {
+describe('run-lock.js askEnd', () => {
   test('a live pid in the lock, no done file, and the lock dropped inside the wait: 0, the end request written first, the pid still alive', async () => {
+    const { askEnd } = require(RUN_LOCK);
     const lock = handLock(lockIn('runs-ask-'), { claim: claimNaming('held'), 'id.held': '' });
     const asked = path.join(path.dirname(lock), 'asked');
     const holder = start(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30);']);
@@ -366,12 +455,34 @@ describe('runs.js ask-end', () => {
     try {
       fs.writeFileSync(path.join(lock, 'pid'), `${holder.pid}\n`);
       // A wait far past the shared deadline, so only the drop answers in time.
-      const res = run(process.execPath, [RUNS, 'ask-end', lock, String(holder.pid)], { env: envOf({ WK_END_WAIT: '600' }) });
-      expect(res.status, `the lock no longer holds the pid, so 0, output: ${res.output}`).toBe(0);
+      const answer = await underEndWait(600, () => askEnd(lock, holder.pid));
+      expect(answer, 'the lock no longer holds the pid, so 0').toBe(0);
       expect(fs.existsSync(asked) && !fs.existsSync(lock), 'the request was written, then the lock dropped').toBeTruthy();
       expect(alive(holder.pid), 'the pid itself still lives').toBe(true);
     } finally {
       await Promise.all([holder.end('SIGKILL'), dropper.end('SIGKILL')]);
+    }
+  });
+});
+
+describe('run-lock.js secondsOf', () => {
+  test('unset, empty, a word, a negative and an infinite number give the fallback; 0 gives 0; 2.5 gives 2.5', () => {
+    const { secondsOf } = require(RUN_LOCK);
+    const saved = process.env.WK_END_WAIT;
+    try {
+      delete process.env.WK_END_WAIT;
+      expect(secondsOf('WK_END_WAIT', 30), 'unset').toBe(30);
+      for (const value of ['', 'abc', '-1', 'Infinity']) {
+        process.env.WK_END_WAIT = value;
+        expect(secondsOf('WK_END_WAIT', 30), JSON.stringify(value)).toBe(30);
+      }
+      process.env.WK_END_WAIT = '0';
+      expect(secondsOf('WK_END_WAIT', 30), '"0"').toBe(0);
+      process.env.WK_END_WAIT = '2.5';
+      expect(secondsOf('WK_END_WAIT', 30), '"2.5"').toBe(2.5);
+    } finally {
+      if (saved === undefined) delete process.env.WK_END_WAIT;
+      else process.env.WK_END_WAIT = saved;
     }
   });
 });
@@ -544,9 +655,7 @@ describe('run-lock.js: the owner\'s drop, the end of a run and the liveness read
     const dir = mkTmp('runs-end-');
     const pidFile = path.join(dir, 'cmd.pid');
     const script = `${writesPid(pidFile)}\nprocess.on('SIGINT', () => {}); process.on('SIGTERM', () => {});\nsetInterval(() => {}, 1000);`;
-    const launched = run(process.execPath, [DETACH, path.join(dir, 'log'), path.join(dir, 'done'), '--', process.execPath, '-e', script]);
-    expect(launched.status, `detach.js launched the run, stderr: ${launched.stderr}`).toBe(0);
-    const supervisor = Number(launched.stdout.trim());
+    const supervisor = launchBody(dir, [process.execPath, '-e', script]);
     let command;
     try {
       command = await pidOf(pidFile);

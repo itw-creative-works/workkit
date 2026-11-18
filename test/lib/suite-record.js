@@ -4,7 +4,7 @@
 // by the temp-index recipe, and the suite and package records planted as a green
 // `npm test` would leave them. `kitIndexTree` is the one read through the kit, the
 // index's id as tree-hash.js -i takes it. Consumers: the script-shell wrapper's suites
-// (script-shell, suite-hold), prove, githooks, tree-hash, records, and the commit-gate, proof-guard and _lib suites.
+// (script-shell, suite-hold), prove, githooks, tree-hash, records, run-paths, and the commit-gate, proof-guard and _lib suites.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -18,7 +18,7 @@ const TREE_HASH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'tree-hash
 const repoRoot = (dir) => spawnSync('git', ['rev-parse', '--show-toplevel'],
   { cwd: dir, encoding: 'utf8' }).stdout.trim();
 
-// <workflow home>/markers/<name>/<sha1 of the repo root>, every per-repo marker's shape.
+// <workflow home>/markers/<name>/<sha1 of the repo root>, every per-repo marker's shape; exported as repoMarkerPath.
 const perRepo = (home, name, dir) => path.join(home, 'markers', name,
   crypto.createHash('sha1').update(repoRoot(dir)).digest('hex'));
 
@@ -80,5 +80,5 @@ const plantPkgRecord = (home, dir, pkgs, tree = treeHash(dir)) => {
 
 module.exports = {
   suiteMarkerPath, pkgMarkerPath, pkgRecord, reviewMarkerPath, suiteLogPath, suiteLockPath, ciLockPath, treeHash, kitIndexTree,
-  plantRecord, plantPkgRecord,
+  plantRecord, plantPkgRecord, repoMarkerPath: perRepo,
 };

@@ -1,6 +1,6 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the tree hash, the
-// suite log's path, the test script, the marker path, the color gate, the plain mutex, the marker sweep, the opt-in read (the gate's and the heal's), one setting, the machine folder,
+// suite log's path, a run's log and lock, a detached body's end, the test script, the marker path, the color gate, the plain mutex, the marker sweep, the opt-in read (the gate's and the heal's), one setting, the machine folder,
 // the CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
 // version-only change, the status:building list, the public slug, git's value-taking global options. Plus one
 // JavaScript pair, the plain-object test, and one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
@@ -10,11 +10,15 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, until, pidIn, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash, nodeEnv,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash, nodeEnv, homeEnv, samePath,
 } = require('../lib/platform');
+const { runPathsUnder } = require('../lib/run-paths');
+const {
+  pidOf, reap, read, lastLine, ridesSignals, nodeBody, shellBody, launchBody,
+} = require('../lib/supervise');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods, runResult } = require('../lib/mods-inputs');
 const { recordArgv, readArgv } = require('../lib/argv-log');
@@ -138,14 +142,15 @@ describe('twins: the tree hash, wk_tree_hash in workflow/lib/suite.sh against tr
   });
 });
 
+// [logs.dir, the repo's .gitignore]: undefined sets no logs.dir. The last four are
+// spellings two hand-written path walkers could read apart.
+const LOG_DIRS = [
+  [undefined, '.workkit/*\n'], ['logs', 'logs/\n'], ['out/logs', 'out/\n'], ['logs', '.workkit/*\n'], ['logs', ''],
+  ['./logs/', 'logs/\n'], ['x/../logs', 'logs/\n'], ['logs\\sub', 'logs*\n'], ['', '.workkit/*\nlogs/\n'],
+];
+const settingsOf = (dir) => `${JSON.stringify({ enabled: true, ...(dir === undefined ? {} : { logs: { dir } }) }, null, 2)}\n`;
+
 describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh against the path the commit gate\'s record block names', () => {
-  // [logs.dir, the repo's .gitignore]: undefined sets no logs.dir. The last four are
-  // spellings two hand-written path walkers could read apart.
-  const LOG_DIRS = [
-    [undefined, '.workkit/*\n'], ['logs', 'logs/\n'], ['out/logs', 'out/\n'], ['logs', '.workkit/*\n'], ['logs', ''],
-    ['./logs/', 'logs/\n'], ['x/../logs', 'logs/\n'], ['logs\\sub', 'logs*\n'], ['', '.workkit/*\nlogs/\n'],
-  ];
-  const settingsOf = (dir) => `${JSON.stringify({ enabled: true, ...(dir === undefined ? {} : { logs: { dir } }) }, null, 2)}\n`;
   // One spelling for both sides: the root as <root>, a markers path from markers/ on, its repo key as <sha>.
   const norm = (p, root) => {
     const at = p.indexOf('/markers/');
@@ -188,6 +193,68 @@ describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh aga
       'markers/claude-suite.log/<sha>', 'markers/claude-suite.log/<sha>',
       '<root>/logs/suite.log', '<root>/logs/suite.log', '<root>/logs/sub/suite.log', '<root>/.workkit/suite.log',
     ]));
+  });
+});
+
+describe('twins: a run\'s log and lock, wk_suite_log_path, wk_suite_lock_path, wk_test_log_path and wk_test_lock_path in workflow/lib/suite.sh against runPaths in workflow/lib/run-paths.js', () => {
+  const SLOT = 4242;
+  const NAMES = ['the suite log', 'the suite lock', 'the slot log', 'the slot lock'];
+
+  test('the shell names and runPaths give one log and one lock for the suite and for a slot, for every logs.dir and .gitignore', () => {
+    const home = mkTmp('twins-runpaths-home-');
+    const workflowHome = path.join(home, '.workkit');
+    const roots = LOG_DIRS.map(([dir, ignore]) => mkRepo('twins-runpaths-', { '.gitignore': ignore, '.workkit/settings.json': settingsOf(dir) }, undefined, { optIn: false })
+      .git('rev-parse', '--show-toplevel').trim());
+    const shell = roots.map((root) => {
+      const res = runLib(`wk_suite_log_path "${root}" && wk_suite_lock_path "${root}" && wk_test_log_path "${root}" ${SLOT} && wk_test_lock_path "${root}" ${SLOT}`,
+        { HOME: shellPath(home), WORKFLOW_HOME: shellPath(workflowHome), ...nodeEnv });
+      expect(res.code, `the shell names answer for ${root}, stderr: ${res.stderr}`).toBe(0);
+      return res.stdout.trim().split('\n');
+    });
+    const js = runPathsUnder(homeEnv(home, { PATH: process.env.PATH, WORKFLOW_HOME: workflowHome }),
+      roots.flatMap((root) => [[root, 'suite'], [root, 'test', SLOT]]));
+    const differ = roots.flatMap((_, i) => {
+      const paths = [js[2 * i].log, js[2 * i].lock, js[2 * i + 1].log, js[2 * i + 1].lock];
+      return paths.flatMap((p, k) => (samePath(p, shell[i][k], process.platform)
+        ? [] : [`${JSON.stringify(LOG_DIRS[i])} ${NAMES[k]}: bash ${shell[i][k]}, runPaths ${p}`]));
+    });
+    expect(differ.join('; '), 'bash and runPaths name the same files').toBe('');
+  });
+});
+
+describe('twins: a detached body\'s end, wk_body_traps in workflow/lib/detach.sh against bodyEnd in workflow/lib/body.js', () => {
+  // [how the body ends, its code]: its command's own 7, or a signal to the body while the command runs.
+  const ENDS = [['own', 7], ['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 143]]
+    .filter(([end]) => end === 'own' || !IS_WINDOWS);
+
+  /** The body <bodyOf> builds, run under the supervisor and ended by <end>: `<done code> | <the log's last line>`. */
+  const endOf = async (bodyOf, end) => {
+    const dir = mkTmp('twins-body-');
+    const [pidFile, go, done] = ['body.pid', 'go', 'done'].map((name) => path.join(dir, name));
+    if (end === 'own') fs.writeFileSync(go, '');
+    const supervisor = launchBody(dir, bodyOf(pidFile, ridesSignals(go, path.join(dir, 'ended'), end === 'own' ? 7 : 0)));
+    try {
+      if (end !== 'own') {
+        process.kill(await pidOf(pidFile), end);
+        expect(!(await until(() => read(done) !== '', 500)), `the body ended before its command did, log: ${JSON.stringify(read(path.join(dir, 'log')))}`).toBeTruthy();
+        fs.writeFileSync(go, '');
+      }
+      expect(await until(() => read(done) !== ''), `the done file never appeared at ${done}`).toBeTruthy();
+      return `${read(done).trim()} | ${lastLine(read(path.join(dir, 'log')))}`;
+    } finally {
+      reap(pidIn(pidFile), supervisor);
+    }
+  };
+
+  test(`wk_body_traps and bodyEnd end a body alike: its own code, ${IS_WINDOWS ? 'no signal on Windows, which delivers none to one process' : 'and 129, 130 and 143 on HUP, INT and TERM once its command has ended'}`, async () => {
+    const shell = [];
+    const js = [];
+    for (const [end] of ENDS) {
+      shell.push(await endOf(shellBody, end));
+      js.push(await endOf(nodeBody, end));
+    }
+    agree(ENDS.map((_, i) => i), shell, (i) => js[i], `the ends by index, bodyEnd's answers ${JSON.stringify(js)}`);
+    expect(JSON.stringify(shell), 'the code and the closing line of each end').toBe(JSON.stringify(ENDS.map(([, code]) => `${code} | probe: exit ${code}`)));
   });
 });
 

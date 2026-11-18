@@ -1,4 +1,4 @@
-// A kit file the package ships a copy of (`run`, `expand-workspaces`): in the
+// A kit file the package ships a copy of (`run`, `expand-workspaces`, `proc-state`): in the
 // kit's own checkout (the folder two above the package, its package.json named
 // `workkit`) the kit's file, so a copy a local `npm pack` left never wins;
 // elsewhere the packed copy at the package's root, never a consumer repo's file.

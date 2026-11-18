@@ -17,15 +17,12 @@ const {
   sectionBody, noSection, releaseCommits, isReleased, missingBefore, ReleaseViewError,
 } = require('../../workflow/ship/cut');
 const { compareVersions } = require('../../workflow/ship/semver');
+const { listensTo } = require('../../workflow/ship/triggers');
 
-const TRIGGERS = path.join(__dirname, '../../workflow/ship/triggers.awk');
 const INPUTS = path.join(__dirname, '../../workflow/ship/dispatch-input.awk');
 const WORKFLOWS = '.github/workflows';
 
 const say = sayAs('ci-release');
-
-/** Whether the workflow file's top-level `on:` names the event (triggers.awk). */
-const listensTo = (file, event) => spawnSync('awk', ['-v', `ev=${event}`, '-f', TRIGGERS, file], { stdio: 'ignore' }).status === 0;
 
 /** Whether the workflow file's `workflow_dispatch` declares the input (dispatch-input.awk). */
 const takesInput = (file, input) => spawnSync('awk', ['-v', `input=${input}`, '-f', INPUTS, file], { stdio: 'ignore' }).status === 0;

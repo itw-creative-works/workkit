@@ -4,10 +4,11 @@
  * read is skipped and the skip value of a case that needs one, the fake commands and the reads
  * of what they leave, whether a started call has ended, the end of whatever
  * a red case left running, a run lock folder made by hand and read back, a
- * process that acts on a lock once a file appears, and a pid that has ended.
- * Consumers: test/scripts/detach.test.js, runs.test.js, lock.test.js, script-shell-detached.test.js,
- * prove.test.js, supervise.test.js, watch.test.js, tree.test.js, logs-dir.test.js and
- * test/lib/supervise-world.js.
+ * process that acts on a lock once a file appears, a pid that has ended, a node
+ * attached to a run through attachRun, the end wait a case sets in process, and a
+ * detached body in Node and in bash with a command that rides out signals.
+ * Consumers: test/scripts/detach.test.js, runs.test.js, lock.test.js, script-shell-detached.test.js, prove.test.js,
+ * supervise.test.js, watch.test.js, tree.test.js, logs-dir.test.js, test/hooks/twins.test.js and test/lib/supervise-world.js.
  */
 
 const fs = require('fs');
@@ -15,7 +16,12 @@ const path = require('path');
 const {
   endTree, until, expect, pidIn, alive, start, mkTmp,
 } = require('./harness');
-const { IS_WINDOWS, jsPath, spawnSync } = require('./platform');
+const {
+  IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, spawnSync,
+} = require('./platform');
+
+const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
+const ATTACH = path.join(LIB, 'attach.js');
 
 // A check of about a second, so two checks pass well inside the spawn deadline.
 const CHECK_MINUTES = 0.02;
@@ -114,7 +120,70 @@ const deadPid = () => {
 /** The names <lock> holds, sorted, as one comparable string; `(none)` once the folder is gone. */
 const holding = (lock) => (fs.existsSync(lock) ? fs.readdirSync(lock).sort().join(' ') : '(none)');
 
+/**
+ * The node argv of a call attached to supervisor <pid>'s run through attachRun
+ * (workflow/lib/attach.js), in its own process, <marker> touched first when
+ * given; it exits with the attach's rc.
+ */
+const attachArgv = (log, lock, pid, marker = null) => ['-e', [
+  `const { attachRun } = require(${jsPath(ATTACH)});`,
+  marker ? `require('fs').writeFileSync(${jsPath(marker)}, '');` : '',
+  `attachRun(${jsPath(log)}, ${jsPath(lock)}, ${Number(pid)}).then((done) => { process.exitCode = done.rc; });`,
+].join('\n')];
+
+/** What <fn> resolves to, awaited with WK_END_WAIT at <seconds> in this process, the variable put back after. */
+const underEndWait = async (seconds, fn) => {
+  const saved = process.env.WK_END_WAIT;
+  process.env.WK_END_WAIT = String(seconds);
+  try {
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.WK_END_WAIT; else process.env.WK_END_WAIT = saved;
+  }
+};
+
+/** The node source of a command that rides out HUP, INT and TERM and, once <go> exists, writes <ended> and exits <code>. */
+const ridesSignals = (go, ended, code = 0) => [
+  "const fs = require('fs');",
+  "for (const s of ['SIGHUP', 'SIGINT', 'SIGTERM']) process.on(s, () => {});",
+  `setInterval(() => { if (fs.existsSync(${jsPath(go)})) { fs.writeFileSync(${jsPath(ended)}, ''); process.exit(${code}); } }, 50);`,
+].join('\n');
+
+/**
+ * The argv of a Node body under bodyEnd('probe') (workflow/lib/body.js): it writes its pid
+ * to <pidFile>, runs `node -e <command>` and takes its code; <cleanup> is bodyEnd's cleanup, as source.
+ */
+const nodeBody = (pidFile, command, cleanup = '() => {}') => [process.execPath, '-e', [
+  `const { bodyEnd } = require(${jsPath(path.join(LIB, 'body.js'))});`,
+  `const { spawn } = require(${jsPath(path.join(LIB, 'run.js'))});`,
+  `bodyEnd('probe', ${cleanup});`,
+  writesPid(pidFile),
+  `spawn(process.execPath, ['-e', ${JSON.stringify(command)}], { stdio: 'ignore' }).on('close', (code) => { process.exitCode = code; });`,
+].join('\n')];
+
+/** The argv of the same body in bash under `wk_body_traps probe` (workflow/lib/detach.sh). */
+const shellBody = (pidFile, command) => [BASH, ...NO_RC, '-c', [
+  `. ${JSON.stringify(shellPath(path.join(LIB, 'platform.sh')))}`,
+  `. ${JSON.stringify(shellPath(path.join(LIB, 'detach.sh')))}`,
+  'wk_body_traps probe',
+  `printf '%s' "$$" > ${JSON.stringify(shellPath(pidFile))}`,
+  '"$2" -e "$1"',
+  'exit $?',
+].join('\n'), 'body', command, shellPath(process.execPath)];
+
+/**
+ * detach.js launching <argv> with its log and done file in <dir>, under <env>, from <cwd>, the
+ * run's settings read from <root> when given; the supervisor's pid it printed.
+ */
+const launchBody = (dir, argv, { root, env = process.env, cwd } = {}) => {
+  const res = spawnSync(process.execPath, [path.join(LIB, 'detach.js'), path.join(dir, 'log'), path.join(dir, 'done'),
+    ...(root ? ['--root', root] : []), '--', ...argv], { env, cwd, encoding: 'utf8' });
+  expect(res.status, `detach.js exits 0, stderr: ${res.stderr}`).toBe(0);
+  return Number(res.stdout.trim());
+};
+
 module.exports = {
   CHECK_MINUTES, NO_PROCESS_READ, skipOnWindows, FROZEN_LINE, checkSettings, rootHolding, rootWith, pidOf, reap,
   writesPid, silent, busy, ended, read, lastLine, realOf, handLock, claimNaming, tagOf, actsAfter, writesAfter, deadPid, holding,
+  attachArgv, underEndWait, ridesSignals, nodeBody, shellBody, launchBody,
 };

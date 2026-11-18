@@ -126,5 +126,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  suiteRecordPath, pkgRecordPath, writeSuiteRecord, writePkgRecord, suiteHolds, pkgHolds,
+  home, suiteRecordPath, pkgRecordPath, writeSuiteRecord, writePkgRecord, suiteHolds, pkgHolds,
 };

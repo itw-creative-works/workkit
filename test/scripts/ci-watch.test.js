@@ -1,7 +1,7 @@
-// Tests for workflow/ship/watch.sh (`workkit ship watch`): the ship's CI watch, a
-// sha in and one answer out as an exit code, so every case asserts the code and
-// the line together. `gh` is a stub answering from fixture files the case writes,
-// and the retries are env overrides set to two tries with no wait.
+// Tests for workflow/ship/watch.js (`workkit ship watch`), started under the suite's
+// own node: the ship's CI watch, a sha in and one answer out as an exit code, so every
+// case asserts the code and the line together. `gh` is a stub answering from fixture
+// files the case writes, and the retries are env overrides set to two tries with no wait.
 
 const path = require('path');
 const fs = require('fs');
@@ -10,13 +10,12 @@ const {
   describe, test, expect, mkTmp, alive, until, pidIn, start, endTree, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, systemPathWith, spawnBash,
+  IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, systemPathWith, spawnSync: startSync,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 const { ciLockPath, suiteLogPath } = require('../lib/suite-record');
-const { copySettingsKit } = require('../lib/settings-kit');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'watch.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'watch.js');
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const OTHER_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
 const LIST_ARGV = ['run', 'list', '--commit', SHA, '--json', 'databaseId,name,status,conclusion,url'];
@@ -28,18 +27,15 @@ const runRow = (id, name) => ({
 });
 
 /**
- * A scratch world: a git repo (with `workflows`, a map of file name to body,
- * under its `.github/workflows/`), and a `gh` stub answering from fixtures.
- * `runs` is the list `gh run list` answers once it answers anything, after
+ * A scratch world: a git repo (`workflows` a map of file name to body under its
+ * `.github/workflows/`) and a `gh` stub answering from fixtures. `runs` is the list `gh run list` answers once it answers anything, after
  * `empty` empty answers; `red` the run ids whose watch exits 1; `views` and
  * `logs` a run id's `--json conclusion,jobs` answer and `--log-failed` text;
  * `down` the run ids whose watch AND view fail the way an unreachable GitHub
  * does; `listFails` a `gh run list` that fails, and `listRaw` one that answers
- * that text instead of a list. `prs` is what `gh pr list` answers, and
- * `prFails` a `gh pr list` that fails, and `prRaw` one that answers that text instead. `watchSleep` seconds hang every `gh run watch`
- * before it answers, and each watch writes its pid to `watch-<id>.pid` first.
- * A case that writes a path into the `rewrite` fixture has every watch rewrite
- * that file in place, one line added on top, before it answers. The repo
+ * that text instead of a list. `prs` is what `gh pr list` answers, `prFails` one that fails,
+ * `prRaw` one that answers that text instead. `watchSleep` seconds hang every `gh run watch`
+ * before it answers, and each watch writes its pid to `watch-<id>.pid` first. The repo
  * gitignores `.workkit/*`, so the watch log is `.workkit/ci.log`.
  */
 const makeWorld = ({
@@ -88,7 +84,6 @@ const makeWorld = ({
     '  "run watch")',
     '    cat >/dev/null; printf "%s" "$$" > "$F/watch-$3.pid"',
     '    if [[ -f "$F/watch-sleep" ]]; then sleep "$(cat "$F/watch-sleep")"; fi',
-    '    if [[ -f "$F/rewrite" ]]; then r="$(cat "$F/rewrite")"; c="$(cat "$r")"; printf "# a line added while the watch ran\\n%s\\n" "$c" > "$r"; fi',
     '    printf "watching %s\\n" "$3"',
     '    if [[ -f "$F/down-$3" ]]; then printf "error connecting to api.github.com\\n" >&2; fi',
     '    exit "$(cat "$F/watch-$3.exit")" ;;',
@@ -110,8 +105,8 @@ const makeWorld = ({
   };
 };
 
-// Node joins PATH because the watch runs detached through a Node supervisor;
-// HOME and TMPDIR are the world's, so the watch lock never lands on the machine.
+// The suite's node on PATH, as a shell that runs workkit has one; HOME and TMPDIR
+// are the world's, so the watch lock never lands on the machine.
 const watchEnv = (w, env = {}) => homeEnv(w.home, {
   PATH: systemPathWith(w.bin, NODE_DIR),
   TMPDIR: shellPath(w.tmp),
@@ -121,7 +116,7 @@ const watchEnv = (w, env = {}) => homeEnv(w.home, {
 });
 
 const runWatch = (w, args, { cwd = w.repo, env = {} } = {}) => {
-  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
+  const res = startSync(process.execPath, [SCRIPT, ...args], {
     cwd, env: watchEnv(w, env), encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
@@ -129,10 +124,10 @@ const runWatch = (w, args, { cwd = w.repo, env = {} } = {}) => {
 
 // The same run, started without waiting as the harness `start()` handle: a case
 // that signals it or races it. `result()` resolves once it exits (null when the
-// spawn deadline ended it), with what it printed; `detached` makes it a process
-// group leader, so a case can end the group.
-const startWatch = (w, args = [SHA], { bashArgs = [...NO_RC, shellPath(SCRIPT), ...args], detached = false } = {}) => {
-  const handle = start(BASH, bashArgs, { cwd: w.repo, env: watchEnv(w), detached });
+// spawn deadline ended it), with what it printed; `cmd` and `argv` start it another
+// way; `detached` makes it a process group leader, so a case can end the group.
+const startWatch = (w, args = [SHA], { cmd = process.execPath, argv = [SCRIPT, ...args], detached = false } = {}) => {
+  const handle = start(cmd, argv, { cwd: w.repo, env: watchEnv(w), detached });
   const result = () => handle.done.then(({ status, signal, timedOut }) => (timedOut
     ? null
     : { code: status, signal, out: handle.stdout(), err: handle.stderr() }));
@@ -560,9 +555,10 @@ describe('ship watch: the detached watch', () => {
   }, async (t) => {
     const w = makeWorld({ runs: [runRow(82, 'Checks')], watchSleep: 2 });
     // The invoking shell leads its own group and the TERM goes to the whole
-    // group, watch.sh included, the way a tool's cut ends a call.
+    // group, watch.js included, the way a tool's cut ends a call.
     const shell = startWatch(w, [], {
-      bashArgs: [...NO_RC, '-c', 'bash --noprofile --norc "$0" "$1"; exit $?', shellPath(SCRIPT), SHA],
+      cmd: BASH,
+      argv: [...NO_RC, '-c', '"$0" "$1" "$2"; exit $?', process.execPath, SCRIPT, SHA],
       detached: true,
     });
     t.after(() => shell.end('SIGKILL'));
@@ -622,31 +618,22 @@ describe('ship watch: the detached watch', () => {
     cleanup(w.dir);
   });
 
-  // A node ahead of the real one that fails, so the Node supervisor never runs;
-  // the second world holds the log an earlier red watch left, whose last line
-  // would read as this watch's own red unless the log is emptied first.
-  const noRunner = [
-    ['a runner that cannot start', null],
-    ['a runner that cannot start, over the log an earlier red watch left', `ci-watch: watching ${OTHER_SHA}\nci-watch: exit 1\n`],
-  ];
-  for (const [label, staleLog] of noRunner) {
-    test(`${label} is no answer, never red: exit 4 and the line naming the log`, async () => {
-      const w = makeWorld({ runs: [runRow(85, 'Checks')] });
-      stubTool(w.bin, 'node', ['#!/bin/bash', 'exit 1']);
-      if (staleLog !== null) {
-        fs.mkdirSync(path.dirname(w.ciLog), { recursive: true });
-        fs.writeFileSync(w.ciLog, staleLog);
-      }
-      const r = runWatch(w, [SHA]);
-      expect(r.code !== null, `the watch finished (no timeout), stderr: ${r.err}`).toBeTruthy();
-      expect(r.code !== 1, `never the red code, stderr: ${r.err}`).toBeTruthy();
-      expect(r.code, `exit 4 (stdout: ${r.out}, stderr: ${r.err})`).toBe(4);
-      expect(r.err.includes('ci-watch: the watch did not finish, so there is no answer; its output is in '),
-        `the line says there is no answer, got: ${JSON.stringify(r.err)}`).toBeTruthy();
-      expect(watchCalls(w).length, 'no watch ran').toBe(0);
-      cleanup(w.dir);
-    });
-  }
+  test('a runner that cannot start is no answer, never red: exit 4 and the line naming the log', async () => {
+    const w = makeWorld({ runs: [runRow(85, 'Checks')] });
+    // logs.dir names a folder git ignores, and a plain file stands where it goes, so the run's log cannot be made.
+    fs.writeFileSync(path.join(w.repo, '.gitignore'), '.workkit/*\nlogs/\n');
+    fs.mkdirSync(path.join(w.repo, '.workkit'), { recursive: true });
+    fs.writeFileSync(path.join(w.repo, '.workkit', 'settings.json'), `${JSON.stringify({ logs: { dir: 'logs' } })}\n`);
+    fs.writeFileSync(path.join(w.repo, 'logs'), 'not a folder\n');
+    const r = runWatch(w, [SHA]);
+    expect(r.code !== null, `the watch finished (no timeout), stderr: ${r.err}`).toBeTruthy();
+    expect(r.code !== 1, `never the red code, stderr: ${r.err}`).toBeTruthy();
+    expect(r.code, `exit 4 (stdout: ${r.out}, stderr: ${r.err})`).toBe(4);
+    expect(r.err.includes('ci-watch: the watch did not finish, so there is no answer; its output is in '),
+      `the line says there is no answer, got: ${JSON.stringify(r.err)}`).toBeTruthy();
+    expect(watchCalls(w).length, 'no watch ran').toBe(0);
+    cleanup(w.dir);
+  });
 
   test('a lock that cannot be taken, over the log an earlier red watch left, is no answer, never red: exit 4', async () => {
     const w = makeWorld({ runs: [runRow(87, 'Checks')] });
@@ -661,28 +648,6 @@ describe('ship watch: the detached watch', () => {
     expect(r.code, `exit 4 (stdout: ${r.out}, stderr: ${r.err})`).toBe(4);
     expect(r.err.includes('the watch did not finish'), `the line says the watch did not finish, got: ${JSON.stringify(r.err)}`).toBeTruthy();
     expect(watchCalls(w).length, 'no watch ran').toBe(0);
-    cleanup(w.dir);
-  });
-});
-
-describe('ship watch: the script itself', () => {
-  test('an in-place rewrite of the script during the watch changes nothing: the green answer, no fragment read', async () => {
-    // The twin of script-shell.test.js's case: a copy of the kit, rewritten by
-    // the watch itself while the foreground waits and the body runs.
-    const w = makeWorld({ runs: [runRow(86, 'Checks')] });
-    const kit = path.join(w.dir, 'kit', 'workflow');
-    fs.cpSync(path.join(__dirname, '..', '..', 'workflow'), kit, { recursive: true });
-    copySettingsKit(path.dirname(kit));
-    const copy = path.join(kit, 'ship', 'watch.sh');
-    fs.writeFileSync(path.join(w.fx, 'rewrite'), shellPath(copy));
-    const res = spawnBash([...NO_RC, shellPath(copy), SHA], { cwd: w.repo, env: watchEnv(w), encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    const r = { code: res.status, out: res.stdout || '', err: res.stderr || '' };
-    expect(fs.readFileSync(copy, 'utf8').split('\n')[0], 'the script on disk was rewritten while it ran').toBe('# a line added while the watch ran');
-    expect(r.code, `exit 0 (stdout: ${r.out}, stderr: ${r.err})`).toBe(0);
-    expect(!/command not found|syntax error/.test(`${r.out}${r.err}`), `the running shells read no fragment, got: ${r.out} ${r.err}`).toBeTruthy();
-    expect(answered(r), 'the one green line').toBe('ci-watch: green: Checks https://github.com/o/r/actions/runs/86\n');
-    const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n').filter((l) => l.trim() !== '');
-    expect(lines[lines.length - 1], 'the file ends on the one call that runs it').toBe('main "$@"');
     cleanup(w.dir);
   });
 });

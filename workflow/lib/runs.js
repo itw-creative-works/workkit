@@ -1,33 +1,29 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// workflow/lib/runs.js: the command over a detached run, one Node process from
-// the lock to the answer: `run` takes the lock (lib/run-lock.js), launches the
-// supervisor (lib/detach.js) and attaches (lib/attach.js). lib/detach.sh's
-// names run it, and read its answers from the answer file, a line each.
-// Usage: node runs.js <verb> ...   (USAGE below; a yes or no is the exit code)
+// workflow/lib/runs.js: a detached run, one Node process from the lock to the
+// answer: `run` takes the lock (lib/run-lock.js), launches the supervisor
+// (lib/detach.js) and attaches (lib/attach.js), its answers handed back in
+// process; as a command, lib/detach.sh's names run it and read them from the answer file.
+// Usage: node runs.js <verb> ...   (USAGE below), or const { run } = require('./runs');
 
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('./run');
-const { signalCode } = require('./detach');
+const { signalCode, END_SIGNALS, INT_CODE } = require('./detach');
 const { attachRun, runForeground } = require('./attach');
 const { retireLock } = require('./lock');
 const runLock = require('./run-lock');
 
 const {
-  takeRunLock, runLive, runHeld, writePid, leaveRecord, dropRunLock, askEnd, sweepSlots, doneCode,
+  takeRunLock, writePid, leaveRecord, dropRunLock, askEnd, sweepSlots, doneCode,
 } = runLock;
 
 const DETACH = path.join(__dirname, 'detach.js');
 
 const USAGE = [
   'usage: runs.js run <log> <lock> [--root <root>] --answer <file> -- <cmd> [args...]',
-  '     | runs.js attach <log> <lock> <pid> [<offset>] --answer <file>',
-  '     | runs.js ask-end <lock> <pid> | runs.js live <lock> | runs.js held <lock> | runs.js sweep-slots <base>',
+  '     | runs.js sweep-slots <base>',
 ].join('\n');
-
-// The code an interrupted call exits with: a shell's for a command INT ended.
-const INT_CODE = signalCode('SIGINT');
 
 /**
  * The answer file written: one `<name>=<digits>` line per answer that applies,
@@ -81,17 +77,6 @@ const runArgs = ([log, lock, ...rest]) => {
   };
 };
 
-/** `attach`'s arguments, or null when they are not its shape. */
-const attachArgs = (args) => {
-  const at = args.indexOf('--answer');
-  if (at < 3 || at > 4 || args.length !== at + 2) return null;
-  const [log, lock, pid, offset = '0'] = args.slice(0, at);
-  if (!log || !lock || !/^\d+$/.test(pid) || !/^\d+$/.test(offset)) return null;
-  return {
-    log, lock, pid: Number(pid), offset: Number(offset), answer: args[at + 1],
-  };
-};
-
 /**
  * An interrupt of an attached call: the supervisor asked to end the run, its
  * code left as a record for another attached call; a run still going when the
@@ -113,99 +98,90 @@ const endOnInt = async (lock, pid, { endRun = runLock.endRun } = {}) => {
   return true;
 };
 
+/** A run's answers: its exit code, then the rest, each empty unless given. */
+const answered = (rc, answers = {}) => ({
+  rc, held: null, code: null, look: false, int: false, ...answers,
+});
+
 /**
- * `run`: the lock taken, the supervisor launched and attached to from the
- * log's first byte. Until the pid is written a HUP, INT or TERM retires the
- * pidless lock by its mark and exits; after it, INT ends the whole run, HUP and
- * TERM end this call alone. Under a supervisor already the command runs here.
- * @param {{log: string, lock: string, root: (string|null), answer: string, argv: string[]}} job
+ * `run`: the lock taken, the supervisor launched and attached to from the log's first byte.
+ * Until the pid is written a HUP, INT or TERM retires the pidless lock and ends the process
+ * with its code, an INT once run has handed its caller `int`; after it, INT ends the whole
+ * run, HUP and TERM the process alone. Under a supervisor already the command runs here.
+ * @param {{log: string, lock: string, root: (string|null), argv: string[]}} job
  * @param {{launch?: function(string[], object): ({code: number, pid?: number}|Promise<object>), endRun?: function}} [seams]
  *   the launcher, `node detach.js` apart by default (one that answers a promise holds the run
  *   between the take and the pid write), and the interrupt's endRun (endOnInt's)
- * @returns {Promise<number>} the exit code, the answers in the answer file
+ * @returns {Promise<{rc: number, held: (number|null), code: (number|null), look: boolean, int: boolean}>}
+ *   the exit code; a live holder's pid with 3; the code the command recorded; a look; an interrupt
  */
 const run = async ({
-  log, lock, root, answer, argv,
+  log, lock, root, argv,
 }, { launch = launchApart, endRun = runLock.endRun } = {}) => {
   if (process.env.WORKKIT_SUPERVISED === '1') {
     const done = await runForeground(log, lock, argv);
-    answerTo(answer, { held: done.held, code: done.code });
-    return done.rc;
+    return answered(done.rc, { held: done.held ?? null, code: done.code });
   }
   const state = { mark: null, pid: null, ending: null };
   const stop = new AbortController();
+  let interrupt;
+  const interrupted = new Promise((resolve) => { interrupt = resolve; });
   const onSignal = (signal) => {
     if (state.pid === null) {
       if (state.mark !== null) retireLock(lock, state.mark);
-      answerTo(answer, { int: signal === 'SIGINT' });
-      process.exit(signalCode(signal));
+      if (signal !== 'SIGINT') process.exit(signalCode(signal));
+      // The caller's answer first, then the process ends at the loop's next check phase; a
+      // take or launch in flight may still finish a step before then, and nothing waits for it.
+      setImmediate(() => process.exit(INT_CODE));
+      interrupt(answered(INT_CODE, { int: true }));
+      return;
     }
     if (signal !== 'SIGINT') process.exit(signalCode(signal));
     if (state.ending !== null) return;
     state.ending = endOnInt(lock, state.pid, { endRun });
     stop.abort();
   };
-  for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM']) process.on(signal, onSignal);
-  const taken = await takeRunLock(lock);
-  if (taken.code !== 0) {
-    answerTo(answer, { held: taken.held });
-    return taken.code;
-  }
-  state.mark = taken.mark;
-  let started = { code: 1 };
-  try {
-    fs.mkdirSync(path.dirname(log), { recursive: true });
-    // The run's own lock, so a call inside it under the same lock runs in its stead.
-    started = await launch([log, path.join(lock, 'done'), ...(root === null ? [] : ['--root', root]), '--', ...argv],
-      { ...process.env, WK_RUN_LOCK: lock });
-  } catch (err) {
-    console.error(`detach: ${err.message}`);
-  }
-  if (started.code !== 0) {
-    retireLock(lock, state.mark);
-    console.error(`detach: could not start ${argv[0]} (log ${log})`);
-    return started.code;
-  }
-  writePid(lock, started.pid);
-  state.pid = started.pid;
-  const done = await attachRun(log, lock, started.pid, 0, { signal: stop.signal });
-  if (state.ending !== null) {
-    await state.ending;
-    answerTo(answer, { int: true });
-    return INT_CODE;
-  }
-  answerTo(answer, { code: done.code, look: done.look });
-  return done.rc;
+  for (const signal of END_SIGNALS) process.on(signal, onSignal);
+  const attached = async () => {
+    const taken = await takeRunLock(lock);
+    if (taken.code !== 0) return answered(taken.code, { held: taken.held ?? null });
+    state.mark = taken.mark;
+    let started = { code: 1 };
+    try {
+      fs.mkdirSync(path.dirname(log), { recursive: true });
+      // The run's own lock, so a call inside it under the same lock runs in its stead.
+      started = await launch([log, path.join(lock, 'done'), ...(root === null ? [] : ['--root', root]), '--', ...argv],
+        { ...process.env, WK_RUN_LOCK: lock });
+    } catch (err) {
+      console.error(`detach: ${err.message}`);
+    }
+    if (started.code !== 0) {
+      retireLock(lock, state.mark);
+      console.error(`detach: could not start ${argv[0]} (log ${log})`);
+      return answered(started.code);
+    }
+    writePid(lock, started.pid);
+    state.pid = started.pid;
+    const done = await attachRun(log, lock, started.pid, 0, { signal: stop.signal });
+    if (state.ending !== null) {
+      await state.ending;
+      return answered(INT_CODE, { int: true });
+    }
+    return answered(done.rc, { code: done.code, look: done.look });
+  };
+  return Promise.race([attached(), interrupted]);
 };
 
-/**
- * `attach`: a call attached again to a run going, or one that ended with no
- * call attached. An INT ends this call alone, the run and its lock as they are.
- */
-const attach = async ({
-  log, lock, pid, offset, answer,
-}) => {
-  const stop = new AbortController();
-  process.on('SIGINT', () => stop.abort());
-  const done = await attachRun(log, lock, pid, offset, { signal: stop.signal });
-  answerTo(answer, { code: done.code, look: done.look });
-  return done.stopped ? INT_CODE : done.rc;
-};
-
-/** A read's answer: the pid printed and 0, or 1. */
-const printed = (pid) => {
-  if (pid === null) return 1;
-  console.log(pid);
-  return 0;
+/** The `run` command: run's answers written to the answer file for the shell. */
+const runCommand = async ({ answer, ...job }) => {
+  const { rc, ...answers } = await run(job);
+  answerTo(answer, answers);
+  return rc;
 };
 
 // Each verb: its argument check and its call.
 const VERBS = {
-  run: [runArgs, run],
-  attach: [attachArgs, attach],
-  'ask-end': [(args) => (args.length === 2 && args[0] && args[1] ? args : null), ([lock, pid]) => askEnd(lock, pid)],
-  live: [(args) => (args.length === 1 && args[0] ? args : null), ([lock]) => printed(runLive(lock))],
-  held: [(args) => (args.length === 1 && args[0] ? args : null), ([lock]) => printed(runHeld(lock))],
+  run: [runArgs, runCommand],
   'sweep-slots': [(args) => (args.length === 1 && args[0] ? args : null), async ([base]) => {
     for (const slot of await sweepSlots(base)) console.log(slot);
     return 0;
@@ -213,10 +189,9 @@ const VERBS = {
 };
 
 /**
- * The CLI. Exit codes: `run` and `attach` the run's own code, 125 on a look,
- * 130 on an interrupt, 3 for a live holder, 1 when the lock or the run cannot
- * be made; `ask-end` 0, 1 or 2 (askEnd); `live` and `held` 0 with the pid
- * printed, else 1; 2 for a call it does not take.
+ * The CLI. Exit codes: `run` the run's own code, 125 on a look, 130 on an
+ * interrupt, 3 for a live holder, 1 when the lock or the run cannot be made;
+ * `sweep-slots` 0; 2 for a call it does not take.
  * @param {string[]} argv `<verb> <args...>`
  * @returns {Promise<number>} the exit code
  */

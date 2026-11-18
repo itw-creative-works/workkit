@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp,
 } = require('../../lib/harness');
 const {
-  NODE_DIR, skipWithoutNodeStub, joinPath, shellPath,
+  NODE_DIR, skipWithoutNodeStub, joinPath, shellPath, stubNode,
 } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
@@ -79,9 +79,22 @@ describe('workkit ship', () => {
 
   test('ship watch hands its sha to the script: one that is no sha is usage, exit 2, gh never asked', () => {
     const world = mkWorld();
-    const { code, out, err } = runCli(world, ['ship', 'watch', 'main']);
+    const { code, out, err } = runCli(world, ['ship', 'watch', 'main'], { env: withNode(world) });
     expect(code, `exit 2, got: ${out}${err}`).toBe(2);
     expect(/usage: .*<sha>/.test(err), `the script's usage, got: ${err}`).toBeTruthy();
+    expect(world.ghCalls().length, `gh never asked, got: ${fmtCalls(world.ghCalls())}`).toBe(0);
+    cleanup(world.root);
+  });
+
+  test('ship watch with no node at or above the floor: one line naming 22.12 on stderr, nothing on stdout, exit 1, gh never asked', () => {
+    const world = mkWorld();
+    const old = stubNode(path.join(world.root, 'old-node'), '20.15.1');
+    // The world's home is a scratch one, so no node a machine's nvm keeps is found instead.
+    const env = { PATH: joinPath(path.dirname(old), world.env.PATH), WORKKIT_NODE: shellPath(old) };
+    const { code, out, err } = runCli(world, ['ship', 'watch', 'main'], { env });
+    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one floor line').toBe('ship watch: no node at or above 22.12 is installed\n');
     expect(world.ghCalls().length, `gh never asked, got: ${fmtCalls(world.ghCalls())}`).toBe(0);
     cleanup(world.root);
   });

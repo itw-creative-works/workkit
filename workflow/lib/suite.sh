@@ -2,9 +2,9 @@
 # workflow/lib/suite.sh: the shell's names for the proved-tree records: the
 # tree ids (lib/tree-hash.js) and the records' writes and reads (lib/records.js),
 # each a call into Node; the records' paths, the has-a-test-script read and the
-# paths of the detached runs' logs and locks, and the sweep of the narrowed runs' slots
-# (lib/runs.js). Sourced, functions only, by script-shell.sh, supervise.sh, watch.sh,
-# ship/watch.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq, wk_marker_path,
+# paths of the root suite's and the narrowed runs' logs and locks, and the sweep of
+# the narrowed runs' slots (lib/runs.js). Sourced, functions only, by script-shell.sh,
+# workkit.sh and the hooks' _lib.sh; it reads wk_jq, wk_marker_path,
 # wk_node and WK_NODE_FLOOR from platform.sh, wk_setting from participation.sh, and
 # _wk_runs from detach.sh, which it sources when the caller has not.
 
@@ -88,14 +88,10 @@ wk_log_path() {
   fi
 }
 
-# The root suite's log and lock, the supervised run's (supervise.sh) and the
-# CI watch's twins. The lock is a directory taken by takeRunLock (lib/run-lock.js).
+# The root suite's log and lock. The lock is a directory taken by takeRunLock
+# (lib/run-lock.js). These and the slot's two below are runPaths' twins (lib/run-paths.js).
 wk_suite_log_path() { wk_log_path "$1" suite.log; }
 wk_suite_lock_path() { wk_marker_path claude-suite-lock "$1"; }
-wk_run_log_path() { wk_log_path "$1" run.log; }
-wk_run_lock_path() { wk_marker_path claude-run-lock "$1"; }
-wk_ci_log_path() { wk_log_path "$1" ci.log; }
-wk_ci_lock_path() { wk_marker_path claude-ci-watch-lock "$1"; }
 
 # wk_test_log_path <repo_root> <pid> and wk_test_lock_path <repo_root> <pid>: a
 # narrowed run's slot, named by its wrapper's pid, so several run at once in one
@@ -107,17 +103,6 @@ wk_test_lock_path() {
   printf '%s.%s\n' "$lock" "$2"
 }
 
-# wk_test_pids <repo_root>: the pid of each narrowed run whose lock folder
-# stands, one per line, live or not.
-wk_test_pids() {
-  local base lock
-  base=$(wk_test_lock_path "$1" "") || return 1
-  for lock in "$base"*; do
-    [ -d "$lock" ] && printf '%s\n' "${lock#"$base"}"
-  done
-  return 0
-}
-
 # wk_test_slot_clear <repo_root> <pid>: a narrowed run's log and its lock's
 # record removed, once a call has read its end (the lock is dropped already).
 wk_test_slot_clear() {
@@ -127,9 +112,9 @@ wk_test_slot_clear() {
 }
 
 # wk_test_slots_sweep <repo_root>: remove the repo's narrowed-run slots (lock
-# folder, log, done record) left behind. `runs.js sweep-slots`, under any node,
-# retires each lock whose run was cut off and names its slot; the log and record go
-# only once it went.
+# folder, log, done record) left behind. `runs.js sweep-slots`, under the node
+# wk_node picks or else any node, retires each lock whose run was cut off and
+# names its slot; the log and record go only once it went.
 wk_test_slots_sweep() {
   local base slot
   base=$(wk_test_lock_path "$1" "") || return 1

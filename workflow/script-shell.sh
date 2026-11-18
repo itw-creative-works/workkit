@@ -88,7 +88,7 @@ package_run() {
   wk_test_slots_sweep "$root"
   log=$(wk_test_log_path "$root" "$$") || exit 1
   lock=$(wk_test_lock_path "$root" "$$") || exit 1
-  # shellcheck disable=SC2034  # read by wk_attach_run's look line
+  # shellcheck disable=SC2034  # read by attachRun's look line (lib/attach.js)
   WK_WATCH_NAME=$$
   # Ctrl-C ends the run and this call inside wk_run_detached; the slot goes too,
   # once the lock is gone: a run whose end failed keeps its lock and its log.

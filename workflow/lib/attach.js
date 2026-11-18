@@ -3,7 +3,8 @@
  * tailed from an offset to the run's done file, painted for a terminal by the
  * runner's painter (packages/core/test/lib/paint.js, required in process), the
  * look the supervisor asks for, and the run under a supervisor already, its
- * command in the foreground on stdout and in the log.
+ * command in the foreground on stdout and in the log; the view, the log reads
+ * and the path compare `workkit watch` shares.
  * Usage: const { attachRun, runForeground } = require('./attach');
  */
 
@@ -13,7 +14,7 @@ const { StringDecoder } = require('string_decoder');
 const { setTimeout: sleep } = require('timers/promises');
 const { spawn } = require('./run');
 const { readOrNull } = require('./read');
-const { writeWhole, signalCode } = require('./detach');
+const { writeWhole, signalCode, END_SIGNALS } = require('./detach');
 const {
   takeRunLock, writePid, leaveRecord, recordedCode, dropRunLock, doneCode, pidAlive,
 } = require('./run-lock');
@@ -102,6 +103,23 @@ const sizeOf = (log) => {
   }
 };
 
+/**
+ * <bytes> from the start of their last <count> lines, `tail -n`'s rule: a
+ * final newline closes the last line, it opens none.
+ * @param {Buffer} bytes
+ * @param {number} count
+ * @returns {Buffer}
+ */
+const lastLines = (bytes, count) => {
+  let at = bytes.length - (bytes[bytes.length - 1] === 0x0a ? 1 : 0);
+  for (let n = 0; n < count; n += 1) {
+    if (at <= 0) return bytes;
+    at = bytes.lastIndexOf(0x0a, at - 1);
+    if (at < 0) return bytes;
+  }
+  return bytes.subarray(at + 1);
+};
+
 /** <log>'s bytes from <from> to <to>. */
 const bytesOf = (log, from, to) => {
   const fd = fs.openSync(log, 'r');
@@ -178,12 +196,11 @@ const follow = async (log, lock, pid, from, view, signal) => {
  * @param {string} lock
  * @param {number|string} pid the supervisor's
  * @param {number} [offset]
- * @param {{signal?: AbortSignal}} [options] an abort ends the tail with nothing dropped
- * @returns {Promise<{rc: (number|null), code: (number|null), look: boolean, stopped?: boolean}>}
- *   the exit code, the code the command recorded (null: the runner failed), a look
+ * @param {{signal?: AbortSignal, view?: object}} [options] an abort ends the tail, nothing dropped; a view given goes on from the caller's writes
+ * @returns {Promise<{rc: (number|null), code: (number|null), look: boolean, stopped?: boolean}>} the
+ *   exit code, the code the command recorded (null: the runner failed), a look
  */
-const attachRun = async (log, lock, pid, offset = 0, { signal } = {}) => {
-  const view = viewOf();
+const attachRun = async (log, lock, pid, offset = 0, { signal, view = viewOf() } = {}) => {
   try {
     return await follow(log, lock, pid, Number(offset) || 0, view, signal);
   } finally {
@@ -192,8 +209,34 @@ const attachRun = async (log, lock, pid, offset = 0, { signal } = {}) => {
 };
 
 /**
+ * <cmd> started. A file the system will not start as a program (ENOEXEC, a
+ * script with no `#!` line) is started again by `sh -c`, which finds it as a
+ * shell does, on PATH for a bare name, and runs it as a script, as bash does.
+ */
+const startOf = (cmd, args, options) => {
+  try {
+    return spawn(cmd, args, options);
+  } catch (err) {
+    if (err.code !== 'ENOEXEC') throw err;
+    return spawn('sh', ['-c', '"$0" "$@"', cmd, ...args], options);
+  }
+};
+
+/**
+ * A shell's answer for a command that cannot start: 127 and its line for one
+ * not found, 126 for one found that cannot run (not executable, a folder). A
+ * refusal of lib/run.js's own (no `syscall`) keeps its message.
+ */
+const unstartedOf = (cmd, err) => {
+  const code = err.code === 'ENOENT' ? 127 : 126;
+  const why = err.syscall === undefined ? err.message : code === 127 ? 'command not found' : `cannot be run (${err.code})`;
+  return { code, line: `detach: ${cmd}: ${why}\n` };
+};
+
+/**
  * <argv> run here, its code once every holder of its output is gone: its
  * output on stdout and in <log> when <teed>, else on this process's own stdio.
+ * A start that fails, thrown or as an `error`, is one line and a shell's code.
  */
 const runHere = ([cmd, ...args], log, teed) => new Promise((resolve) => {
   const out = teed ? fs.openSync(log, 'w') : null;
@@ -203,7 +246,6 @@ const runHere = ([cmd, ...args], log, teed) => new Promise((resolve) => {
     process.stdout.write(bytes);
     fs.writeSync(out, bytes);
   };
-  const child = spawn(cmd, args, { stdio: teed ? ['inherit', 'pipe', 'pipe'] : 'inherit', windowsHide: true });
   let settled = false;
   const settle = (code) => {
     if (settled) return;
@@ -211,16 +253,24 @@ const runHere = ([cmd, ...args], log, teed) => new Promise((resolve) => {
     if (out !== null) fs.closeSync(out);
     resolve(code);
   };
-  if (teed) {
-    child.stdout.on('data', both);
-    child.stderr.on('data', both);
-  }
-  child.on('error', (err) => {
-    const line = `detach: ${cmd}: ${err.message}\n`;
+  const unstarted = (err) => {
+    const { code, line } = unstartedOf(cmd, err);
     if (teed) both(line);
     else process.stderr.write(line);
-    settle(127);
-  });
+    settle(code);
+  };
+  let child;
+  try {
+    child = startOf(cmd, args, { stdio: teed ? ['inherit', 'pipe', 'pipe'] : 'inherit', windowsHide: true });
+  } catch (err) {
+    unstarted(err);
+    return;
+  }
+  if (teed) {
+    child.stdout?.on('data', both);
+    child.stderr?.on('data', both);
+  }
+  child.on('error', unstarted);
   child.on('close', (code, sig) => settle(code === null ? signalCode(sig) : code));
 });
 
@@ -244,7 +294,7 @@ const samePath = (a, b) => {
  */
 const runForeground = async (log, lock, argv) => {
   const enclosing = process.env.WK_RUN_LOCK || '';
-  for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM']) process.on(signal, () => {});
+  for (const signal of END_SIGNALS) process.on(signal, () => {});
   if (samePath(lock, enclosing)) {
     const rc = await runHere(argv, log, false);
     return { rc, code: rc };
@@ -264,4 +314,6 @@ const runForeground = async (log, lock, argv) => {
   return { rc, code: rc };
 };
 
-module.exports = { attachRun, runForeground };
+module.exports = {
+  attachRun, runForeground, runHere, viewOf, samePath, sizeOf, bytesOf, lastLines,
+};

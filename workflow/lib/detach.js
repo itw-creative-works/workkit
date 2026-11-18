@@ -46,6 +46,10 @@ const signalCode = (signal) => {
 // The code a requested end records: the one a shell gives a terminated command.
 const ENDED_CODE = signalCode('SIGTERM');
 
+// The signals that end a run's caller, and the code of an interrupted call.
+const END_SIGNALS = ['SIGHUP', 'SIGINT', 'SIGTERM'];
+const INT_CODE = signalCode('SIGINT');
+
 /**
  * The argument list, or null when it is not
  * `<log> <done> [<flag> <value>] -- <cmd> [args...]`.
@@ -318,5 +322,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  awakeCommand, writeWhole, signalCode,
+  awakeCommand, writeWhole, signalCode, END_SIGNALS, INT_CODE,
 };

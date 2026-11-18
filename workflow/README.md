@@ -31,10 +31,13 @@
 | `lib/hold.sh` | The full-suite hold |
 | `lib/changelog.sh` | The shell home of the CHANGELOG format check, the linter's resolution and the message |
 | `lib/detach.sh` | A command that outlives the shell that started it, one per lock: the shell's names for it, each a call into `lib/runs.js` |
-| `lib/runs.js` | The command over a detached run, one Node process from the lock to the answer: the take, the launch, the attach and the end, CJS |
-| `lib/run-lock.js` | The run lock: the take and its judge, the pid file, the record beside the lock, the live and held reads, the end request, the end of a run's processes and the sweep of the narrowed runs' slots, CJS |
-| `lib/lock.js` | The lock folder's rules: the claim, a run lock's mark, its retire and adopt, the plain mutex and the markers' sweep, CJS, requiring `lib/run.js` and `lib/read.js`, and `hooks/mods/markers.js` only for the sweep |
-| `lib/attach.js` | A call attached to a run: the tail of its log, painted in process, its look, and the run under a supervisor already, CJS |
+| `lib/runs.js` | A detached run, one Node process from the lock to the answer: the take, the launch, the attach and the end, its answers handed back in process, and the command `lib/detach.sh` runs, CJS |
+| `lib/run-lock.js` | The run lock: the take and its judge, the pid file, the record beside the lock, the live and held reads, the end request, the end of a run's processes and the listing and sweep of the narrowed runs' slots, CJS |
+| `lib/run-paths.js` | Where a detached run logs and locks, the suite's, the supervised run's, the CI watch's and a narrowed run's slot; the slots a repo holds, and a slot cleared, CJS |
+| `lib/body.js` | A detached Node body's end: its last line `<prefix>: exit <code>`, and its signal codes, CJS |
+| `lib/lock.js` | The lock folder's rules: the claim, a run lock's mark, its retire and adopt, the plain mutex and the markers' sweep, CJS, requiring `lib/run.js`, `lib/read.js` and `lib/proc-state.js`, and `hooks/mods/markers.js` only for the sweep |
+| `lib/proc-state.js` | A process's state: its `/proc` fields, and whether it ended and waits uncollected, CJS, requiring nothing beyond Node; a program it starts goes through the starter its caller hands it |
+| `lib/attach.js` | A call attached to a run: the tail of its log, painted in process, its look, the run under a supervisor already, and the view, the log reads and the path compare `watch.js` shares, CJS |
 | `lib/detach.js` | The detached runner's launcher (`node detach.js`, which `lib/runs.js` runs as a process of its own) and its supervisor: its checks and its ends, requiring `lib/run.js`, `lib/pulse.js` and `lib/tree.js`, and `lib/settings.js` only with `--root` |
 | `lib/command-log.sh` | The command log: a `workkit` command that does work runs again with its two streams teed to the terminal, and its run kept plain in its log file |
 | `lib/pulse.js` | The supervisor's verdict on a run from one reading per check, CJS, requiring nothing: `judge`, and the counts, the work floor and the two codes |
@@ -67,8 +70,8 @@
 | `script-shell.sh` | npm's script shell, once `npm config set script-shell` names it |
 | `script-shell.cs` | npm's script shell on Windows, a C# 5 console program |
 | `prove.sh` | `workkit prove`, the root suite on exactly the staged tree, the suite record's second writer |
-| `supervise.sh` | `workkit supervise -- <command>`, any command run detached under the supervisor, as the root suite runs |
-| `watch.sh` | `workkit watch [--end] [suite\|run\|<pid>]`, the call attached again to the repo's live run, given the code of one that ended with no call attached, or that run ended on request |
+| `supervise.js` | `workkit supervise -- <command>`, any command run detached under the supervisor, as the root suite runs |
+| `watch.js` | `workkit watch [--end] [suite\|run\|<pid>]`, the call attached again to the repo's live run, given the code of one that ended with no call attached, or that run ended on request |
 | `githooks/` | Git's own hooks, set as a repo's `core.hooksPath` by the heal |
 | `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right capture file |
 | `changelog/lint.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call (`linterPath` in `hooks/mods/changelog-guard.js`) and the npm wrapper calls through `lib/changelog.sh`: `workkit changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]` |
@@ -81,8 +84,9 @@
 | `ship/deploy.js` | The ship's deploy: `workkit ship deploy`, from inside the repo, run at its root |
 | `ship/hooks.js` | The ship hooks, a library with no CLI |
 | `ship/entries.js` | The one shape of a `hooks.<event>` declaration and its check, CJS with no imports so a CI runner's older Node loads it: `commandsOf(settings, event)` answers `[{ command, local }]` or throws `HooksError` naming the first misshapen entry; `ship/hooks.js` and `.github/scripts/ci-hooks.sh` (`hooks.ciSetup`, `hooks.ciPostInstall`) both call it |
-| `ship/watch.sh` | The ship's CI watch: `workkit ship watch <sha>` |
+| `ship/watch.js` | The ship's CI watch: `workkit ship watch <sha>`, under a node at the kit's floor |
 | `ship/triggers.awk` | Whether one workflow file's top-level `on:` names an event, exit 0 yes and 1 no |
+| `ship/triggers.js` | The one Node caller of `ship/triggers.awk`: `listensTo(file, event)`, which `ship/watch.js` and `.github/scripts/ci-release.js` require |
 | `ship/dispatch-input.awk` | Whether one workflow file declares a dispatch input, exit 0 yes and 1 no |
 | `ship/semver.js` | The kit's one version comparison, `compareVersions(a, b)` in semver's order (a missing part reads as 0, a prerelease sorts below its release), and `isSemver(v)` beside it. Required by `plan.js`, `release.js` and `cut.js` for the version shape and by `jobs/morning/brief/cc-news.js` for the upstream releases; it requires nothing |
 | `ship/items.sh` | The ship's Step 0c read: every open issue at `status:qa` or `status:complete`, one line each |
@@ -217,6 +221,7 @@
   - A verb with subcommands follows one rule: `workkit <verb> <sub>` runs `<verb>/<sub>.sh` or `.js` (`run_verb`).
     - It is exec'd, so the script's output and exit code are the command's.
     - An unknown or missing subcommand exits 1 with one line naming the ones there are.
+  - `supervise`, `watch` and `ship watch` require the kit's ES modules, so each starts through `run_at_floor` instead, under the first node `wk_node` finds at the kit's floor; with none, `<verb>: no node at or above <floor> is installed` and exit 1.
 - `workkit/`:
   - Functions only, each sourced by the entry and never executed; `links.sh` by `standards.sh --command-link` as well.
   - `links.sh`: the engine's address, the two `~/.local/bin` symlinks (`workkit` and the `gh` shim), and npm's `script-shell` and its Windows executable.
@@ -235,7 +240,7 @@
     - It prints one skip line when there is no log yet.
   - `public.sh`: `public`, each subcommand handed to its `public/` script.
   - `allow.sh`: the kit's allow rules in the global `~/.claude/settings.json`, setup's step and doctor's lines.
-  - `ship.sh`, `review.sh`, `triage.sh`, `proof.sh` and `changelog.sh`: each its verb's subcommand list, handed to `run_verb`.
+  - `ship.sh`, `review.sh`, `triage.sh`, `proof.sh` and `changelog.sh`: each its verb's subcommand list, handed to `run_verb`, but `ship watch`, handed to `run_at_floor`.
 - `lib.sh`:
   - The global layer's addresses: `~/.workkit`, the tower clone in it, its config and its build output.
   - A safe JSON edit.
@@ -249,7 +254,9 @@
     - `state.sh`: the safe JSON edit and the state mutex.
   - Six are seams the hooks and the entries source directly as well, each with its own row: `platform.sh`, `participation.sh`, `slug.sh`, `suite.sh`, `hold.sh` and `discussions.sh`.
   - Two more are the npm wrapper's, with rows of their own too: `changelog.sh`, and `detach.sh`.
-    - `detach.sh` names `runs.js`, the Node command over a detached run (with `run-lock.js`, `lock.js`, `attach.js` and `detach.js`), which the CI watch shares.
+    - `detach.sh` names `runs.js`, the Node command over a detached run (with `run-lock.js`, `lock.js`, `attach.js` and `detach.js`).
+    - `supervise.js` and the CI watch (`ship/watch.js`) call `runs.js`'s `run` in process.
+    - `watch.js` calls no `runs.js`: it reads and follows a run through `attach.js`, `run-lock.js` and `run-paths.js`.
   - One is `workkit.sh`'s alone, with a row of its own: `command-log.sh`.
 - `lib/platform.sh`:
   - Sourced by `lib.sh`, by `standards.sh` and by the hooks' `_lib.sh` alike.
@@ -370,7 +377,7 @@
   - A name the env spells in more than one case (`Path` and `PATH`) is read under the key Node hands the child, the first in sorted order.
   - A name found nowhere is left as given, so the start fails with ENOENT.
   - The platform is read once at load, so a test that fakes `process.platform` never hands a real program the win32 launch.
-  - Every shipped file that starts a program requires it.
+  - Every shipped file that starts a program requires it, or is handed its starter by a caller that does (`ended` in `lib/proc-state.js`).
   - `test/scripts/run-home.test.js` fails any other `child_process` import but one and a list:
     - the published workkit-core runner's `packages/core/test/run.js`, for one reason: the fork of its suite workers, which run.js does not have;
       - its `packages/core/test/lib/spawn.js` starts through run.js, which `kit-module.js` loads: the kit's file in the kit's checkout, else the packed `run.cjs`;
@@ -428,7 +435,7 @@
     - The hooks module follows it as `rosterPath` in `hooks/mods/optin.js`.
     - That is how `safety:proof-guard`, `workflow:snapshot` and `workflow:public-mirror` find the repo a flip names.
 - `lib/suite.sh`:
-  - Sourced by `script-shell.sh`, by `supervise.sh`, by `watch.sh`, by `ship/watch.sh`, by `workkit.sh` and by the hooks' `_lib.sh` alike.
+  - Sourced by `script-shell.sh`, by `workkit.sh` and by the hooks' `_lib.sh` alike.
   - It holds the shell's names for the tree ids and the records' writes and reads, each one line that finds node (`wk_node`) and runs `lib/tree-hash.js` or `lib/records.js`.
     - The tree ids: `wk_tree_hash <root> [<pkg>]`, `wk_suite_index_tree <root>` (`-i`), `wk_index_copy <root> <dir>` (`--copy-index`), `wk_index_write_tree <root> <index>` (`--index`).
     - The records: `wk_suite_marker_write <root> <tree> <ms>`, `wk_pkg_marker_write <root> <tree> <pkg>`, `wk_suite_proved <root> <tree>`, `wk_pkg_proved <root> <tree> <pkg>`.
@@ -436,7 +443,7 @@
     - So a supervised root run (`WORKKIT_SUPERVISED=1`) on such a machine still runs its suite, but a green one writes no record: its `script-shell:` line says why and it exits 1.
     - An unsupervised root run there stops before the suite, in `lib/detach.sh`, which needs that node to start the run's supervisor.
   - The records' paths stay shell: `wk_suite_marker_path` and `wk_pkg_marker_path`, each `wk_marker_path` of its marker folder (`claude-suite-marker`, `claude-package-marker`); `lib/records.js` names the same files through `markerPath`.
-  - The has-a-test-script read and the log paths stay shell too, so a run and a `workkit` command need no node to find them.
+  - The has-a-test-script read and the suite's and the slots' log and lock paths stay shell too, so npm's script shell needs no node to find them.
   - The suite record is the engine-agnostic contract between whatever runs a repo's root suite and the gate.
     - It has two writers. `script-shell.sh` is npm's adapter, recording the working tree a root run started on.
     - `prove.sh` records the index's tree, proved in a copy.
@@ -458,22 +465,22 @@
     - An absolute value (`/`, `\` or a drive letter first), or one whose `..` leaves the repo, is `workkit: logs.dir must be a folder inside the repo, written from its root (got <value>)` on stderr, and 1.
     - Every caller of a log path stops on that line: a root or narrowed `npm test`, `workkit prove`, `supervise` and `watch` exit 1, `workkit ship watch` 4 (no answer).
     - Its twin is `logDirOf` in `hooks/mods/commit-gate.js`, so the gate's bounce names the same `suite.log`.
+    - `logPlaceOf(settings, name, id)` beside it is `wk_log_path`'s rule with no read: the log's place from the root, and its marker folder. The gate's suite log and `lib/run-paths.js` both go through it, each asking git whether the place is ignored.
   - `wk_log_path <root> <name> [<id>]` is where a detached run logs.
     - That is `<root>/<log folder>/<name>` when git ignores it there, else `~/.workkit/markers/claude-<name>/<sha1 of the repo root>`.
     - An `<id>` keeps one of several runs apart: `.<id>` ends the name in both places.
     - So a log never changes the tree hash.
-    - `wk_suite_log_path`, `wk_run_log_path` and `wk_ci_log_path` are it for `suite.log`, `run.log` and `ci.log`.
-  - `wk_suite_lock_path`, `wk_run_lock_path` and `wk_ci_lock_path` are the three run locks, the `claude-suite-lock`, `claude-run-lock` and `claude-ci-watch-lock` marker paths.
+    - `wk_suite_log_path` is it for `suite.log`, and `wk_suite_lock_path` is the suite's run lock, the `claude-suite-lock` marker path.
   - A narrowed run's slot is named by its wrapper's pid, so several run at once in one repo:
     - `wk_test_log_path <root> <pid>` is `test.log` with that id (`wk_log_path`);
     - `wk_test_lock_path <root> <pid>` is the `claude-test-lock` marker path with `.<pid>` after it, one folder down where `wk_sweep_markers` reaches a leftover file;
-    - `wk_test_pids <root>` prints the pid of each slot whose lock folder stands, live or not;
     - `wk_test_slot_clear <root> <pid>` removes a slot's log and its lock's record once a call has read its end.
     - `wk_test_slots_sweep <root>` removes each slot (lock folder, log, record) whose done file is older than one day: a run whose answer no call collected. Every narrowed run runs it at its start.
       - It hands the slots' lock path to `runs.js sweep-slots` (`sweepSlots` in `lib/run-lock.js`), which removes each such lock through `retireJudged`, so the mark is read before the look, and names its slot; the log and the record go here only once that worked.
-      - That call starts as every `runs.js` call without a root does, under any `node` (`_wk_runs` in `lib/detach.sh`, sourced when the caller has not).
+      - That call starts as every `runs.js` call without a root does, under `wk_node`'s pick when one fits, else any `node` (`_wk_runs` in `lib/detach.sh`, sourced when the caller has not).
       - It also clears a slot whose lock holds a `gone` mark of a remover that is gone, whatever its age, since no done file is left there for the age to be read from. A live remover's slot stays.
       - With no `node` at all it sweeps nothing: `detach: no node is installed to run <lib>/runs.js`.
+  - The suite's and the slot's log and lock paths have a Node twin, `runPaths` in `lib/run-paths.js`, held to the same answers by the parity suite.
   - The hook library's scripts call these by their engine names.
   - The hooks module reads the records through `hooks/mods/suite.js`.
     - It takes a tree id through `node lib/tree-hash.js`, the index's with `-i` as its only flag, with no bash between.
@@ -522,7 +529,7 @@
   - Anything the plan refuses is `[]` and one stderr line, `workspaces: <plan.js's message>; <pkg> keyed to the whole tree`.
     - The plan refuses with `PlanError`: a pattern it does not expand, a `package.json` that does not parse.
 - `lib/expand-workspaces.js`:
-  - CJS, requiring nothing beyond Node, so workkit-core can ship it: its prepack copies it in as `expand-workspaces.cjs`, as it does `lib/run.js`.
+  - CJS, requiring nothing beyond Node, so workkit-core can ship it: its prepack copies it in as `expand-workspaces.cjs`, as it does `lib/run.js` and `lib/proc-state.js`.
   - `expandWorkspaces(root, workspaces, notes)` is the absolute member folders: a literal folder, or `dir/*`'s folders that hold a `package.json`.
     - A `dir/*` that matches nothing pushes a `publish-plan:` note onto `notes`.
     - Any other pattern, and a literal member with no `package.json`, throw `PlanError` with the plan's own line.
@@ -583,33 +590,35 @@
   - The wrapper prints it after `script-shell:`.
   - Commit-gate check 3 prints the same sentence after `commit-gate: BLOCKED this commit:`.
 - `lib/detach.sh`:
-  - Sourced by `script-shell.sh`, by `prove.sh`, by `supervise.sh`, by `watch.sh` and by `ship/watch.sh`.
-  - The shell's names for a detached run, each a call into `node lib/runs.js <verb>` that hands back what it answered. It holds no lock rule, no loop and no trap but `wk_body_traps`' own and the one forward below.
-  - `_wk_runs <verb> <arg>...` is the one start of a `runs.js` command, for the five names below and for `wk_test_slots_sweep` in `lib/suite.sh`, and the one place that chooses its node.
-    - A `run` with `--root` runs under the first node `wk_node` finds at the kit's floor, which the settings loader needs; every other call under `node` on PATH. So `wk_attach_run`, `wk_ask_end`, `wk_run_live` and `wk_run_held` need a `node` too.
-    - With no `node` at all it prints `detach: no node is installed to run <lib>/runs.js` and returns 1.
-    - For `run` and `attach` it places `--answer <file>` and reads the answers back, a line each: `held=<pid>`, `code=<n>`, `look=1`, `int=1`, into `WK_HELD_PID`, `WK_RAN_CODE`, `WK_RAN_LOOK` and `WK_RAN_INT`.
+  - Sourced by `script-shell.sh`, by `prove.sh` and by `wk_test_slots_sweep` in `lib/suite.sh`.
+  - The shell's names for a detached run, each a call into `node lib/runs.js <verb>` that hands back what it answered. It holds four names: `wk_body_traps`, `wk_supervised`, `_wk_runs` and `wk_run_detached`, no lock rule, no loop and no trap but `wk_body_traps`' own and the one forward below.
+  - `_wk_runs <verb> <arg>...` is the one start of a `runs.js` command, for `wk_run_detached` and for `wk_test_slots_sweep` in `lib/suite.sh`, and the one place that chooses its node.
+    - A `run` with `--root` runs under the first node `wk_node` finds at the kit's floor, which the settings loader needs; every other call under that node when one fits, else under `node` on PATH, whatever its version.
+    - With no `node` at all it prints `detach: no node is installed to run <lib>/runs.js` and returns 1; a `run` then also prints `detach: could not start <cmd> (log <log>)` and returns 127, its command never run and `WK_RAN_CODE` empty.
+    - For `run` it places `--answer <file>` and reads the answers back, a line each: `held=<pid>`, `code=<n>`, `look=1`, `int=1`, into `WK_HELD_PID`, `WK_RAN_CODE`, `WK_RAN_LOOK` and `WK_RAN_INT`.
     - Its HUP, INT and TERM traps are set before the command starts, so this shell can pass a signal on: each is sent on once, the next ignored, and the caller's own traps come back after. No Node command outlives the shell that started it.
     - After a HUP or a TERM it exits 129 or 143. After an INT it exits 130 when the run answered `int=1`, so the caller's EXIT trap reads `WK_RAN_INT`; a run in the foreground that answered its command's code returns that code; any other INT goes on to the caller's own INT disposition. Else it returns the command's code.
     - It hands `WK_WATCH_NAME`, `WK_END_WAIT` and `WK_LAUNCH_WAIT` to Node, set or not, so a caller's plain shell variable counts.
   - `wk_run_detached <log> <lock> [--root <root>] -- <cmd> [args...]` is `runs.js run`.
     - With `--root` and no node at the floor it stops before the run: `detach: no node at or above <floor> is installed to run <lib>/detach.js`, then `detach: could not start <cmd> (log <log>)`, and 1.
     - Under a supervisor already (`WORKKIT_SUPERVISED=1`), a `--root` run with no node at the floor runs its command in this shell, with no lock and no log of its own: `detach: no node at or above <floor> is installed, so <cmd> runs here without its lock`, and its code back.
-  - `wk_attach_run <log> <lock> <pid> [<offset>]` is `runs.js attach`, its code returned, `WK_RAN_CODE` and `WK_RAN_LOOK` set from the answer file. An INT ends the call alone, through the caller's own INT disposition; the run and its lock go on.
-  - `wk_ask_end <lock> <pid>` is `runs.js ask-end`, `wk_run_live <lock>` `runs.js live`, `wk_run_held <lock>` `runs.js held`: each prints and returns what the command does.
-  - `wk_view_paints` and `wk_view_paint` stay for `watch.sh`, which paints a log's last lines through them.
-    - `wk_view_paints` is the kit's color gate (`wk_color_on`, `lib/voice.sh`, sourced when the caller has not) on the call's stdout, then the painter's filter, `packages/core/test/lib/paint.js` beside this engine, and a node `wk_node` finds at the kit's floor.
-    - `wk_view_paint` runs the filter with `FORCE_COLOR=1`, since the gate judged the stdout already. Its rules per line: `docs/tests.md` § The kit's runner.
-  - `wk_body_traps <prefix> [<before-exit command>]` is a detached body's traps: the suite's, prove's and the CI watch's alike.
+  - `wk_body_traps <prefix> [<before-exit command>]` is a shell body's traps: the suite's and prove's alike.
     - On EXIT the optional command runs, and `<prefix>: exit <code>` is the last line.
     - HUP, INT and TERM exit 129, 130 and 143, since bash runs the EXIT trap on a fatal signal with a stale status.
+    - Its Node twin is `bodyEnd` in `lib/body.js`, the supervised run's and the CI watch's body.
+- `lib/body.js`:
+  - `bodyEnd(prefix, cleanup)` sets a detached Node body's end, CJS.
+    - After the call the process always prints `<prefix>: exit <code>` as its last line, `cleanup` run before it.
+    - A HUP, INT or TERM ends nothing at once: the body ends as it would once its command has ended, with the first signal's code, 129, 130 or 143 (`signalCode` in `lib/detach.js`).
+    - It answers an `AbortSignal` aborted at that signal, so a body starts no command after it.
 - `lib/runs.js`:
-  - The command over a detached run, CJS: `node runs.js <verb> ...`.
-    - `run <log> <lock> [--root <root>] --answer <file> -- <cmd> [args...]`, `attach <log> <lock> <pid> [<offset>] --answer <file>`, `ask-end <lock> <pid>`, `live <lock>`, `held <lock>`, `sweep-slots <base>`.
-    - Exit codes: the run's own code; 125 on a look; 130 on an interrupt; 3 with `held=<pid>` for a live holder; 1 when the lock or the run cannot be made; `ask-end` 0, 1 or 2 (`askEnd`); `live` and `held` 0 with the pid printed, else 1; 2 and the usage line for a call it does not take.
+  - A detached run, CJS. In process, `run(job, { launch, endRun })` takes `{ log, lock, root, argv }` and resolves `{ rc, held, code, look, int }`: the exit code, a live holder's pid with 3, the code the command recorded, a look, an interrupt. `supervise.js` and `ship/watch.js` call it so.
+  - As a command, `node runs.js <verb> ...`, for `lib/detach.sh`:
+    - `run <log> <lock> [--root <root>] --answer <file> -- <cmd> [args...]`, `run`'s answers written to `<file>`, and `sweep-slots <base>`.
+    - Exit codes: the run's own code; 125 on a look; 130 on an interrupt; 3 with `held=<pid>` for a live holder; 1 when the lock or the run cannot be made; 2 and the usage line for a call it does not take.
   - `run` takes `<lock>` (`takeRunLock`), with the supervisor's pid written inside as `pid` (`writePid`).
     - The tag's pid is this Node process's own and the pid file's the supervisor's, each as Node reads it, so on Windows a Windows pid with no Git Bash translation.
-    - Until the supervisor's pid is written, a HUP, INT or TERM retires the lock by its mark (`retireLock`), no pid in it yet, and exits 129, 130 or 143 (an INT with `int=1`), so the next call takes it at once.
+    - Until the supervisor's pid is written, a HUP, INT or TERM retires the lock by its mark (`retireLock`), no pid in it yet, and ends the process 129, 130 or 143, so the next call takes it at once. An INT ends it only once `run` has handed its caller `int`, which the command writes as `int=1`.
     - It launches through `node detach.js` in a process of its own, passing `--root` on, so the run is checked, with `WK_RUN_LOCK` set to `<lock>` so the run's own command inherits it.
     - That launcher is gone once it printed the supervisor's pid, so the supervisor has no live parent: no end of a process tree by parent links (a tool cutting off the call, `taskkill /T`) reaches the run through this call.
     - A launch that fails (a bad `tests.check` is 2) retires the lock by its mark, prints `detach: could not start <cmd> (log <log>)` and exits with the launcher's code.
@@ -621,12 +630,18 @@
     - A run still going when the wait runs out is ended by process group (`endRun`).
     - Then it drops the lock, unless that end failed: the run still goes, so its lock stays.
   - Under a supervisor already (`WORKKIT_SUPERVISED=1`, which `detach.js` sets), `run` starts no second supervisor: it runs `<cmd>` in the foreground (`runForeground`), its code in `code=`.
-  - Every answer is a whole number; a value that is not one (an unknown signal's code) throws rather than reach the shell.
-  - `attach` is `attachRun` from `<offset>`; an INT stops the tail and exits 130, the run and its lock going on.
-  - In process it exports `run(job, { launch, endRun })` and `endOnInt(lock, pid, { endRun })`, the launcher and the end of a run's processes injectable and the real ones by default.
+  - Every answer the command writes is a whole number; a value that is not one (an unknown signal's code) throws rather than reach the shell.
+  - It also exports `endOnInt(lock, pid, { endRun })`; the launcher and the end of a run's processes are injectable, the real ones by default.
   - `sweep-slots <base>` prints each slot `sweepSlots` removed, one a line.
+- `lib/run-paths.js`:
+  - `runPaths(root, which, slot)` answers `{ log, lock }` for `which` of `suite`, `run`, `ci` or `test` (a `test` takes the slot's pid), keyed by the root as `git rev-parse --show-toplevel` prints it, the key `script-shell.sh` uses.
+    - The log is `wk_log_path`'s rule (`lib/suite.sh`): `suite.log`, `run.log`, `ci.log` or `test.log.<pid>` in the log folder (`logPlaceOf` in `hooks/mods/commit-gate.js`) where git ignores it, else the `claude-<name>` marker path; a bad `logs.dir` throws `LogsDirError`, its message the line that names the key.
+    - The lock is the `claude-suite-lock`, `claude-run-lock`, `claude-ci-watch-lock` marker path, or `claude-test-lock`'s with `.<pid>` after it; `lockPathOf(root, which, slot)` answers it alone.
+  - `testSlots(root)` is the pid of each narrowed run whose lock folder stands, live or not, through `slotsAt` in `lib/run-lock.js`, the one listing of a repo's slots.
+  - `clearSlot(root, pid)` removes a slot's log and its lock's record, once a call has read its end.
 - `lib/attach.js`:
-  - `attachRun(log, lock, pid, offset)` tails `<log>` to stdout from byte `<offset>` (0), so a later verb attaches to a run already going.
+  - `attachRun(log, lock, pid, offset, { signal, view })` tails `<log>` to stdout from byte `<offset>` (0), so a later verb attaches to a run already going.
+    - Its view is `viewOf()`, the painted or the plain view, made at the call unless one is given: `watch.js` writes the log's last lines through its own view first, so one painter paints both.
     - The log is plain text. When the kit's color gate says yes, each whole line is painted on its way to stdout by the painter, `packages/core/test/lib/paint.js` beside this engine, required in process with `FORCE_COLOR=1`; otherwise stdout gets the log's bytes.
       - The gate is `colorOn` in `tower/api/lib/log.js`, the Node home of `wk_color_on`'s rule (`lib/voice.sh`), on stdout: `WORKKIT_COLOR=0`, `NO_COLOR` or a dumb `TERM` is no, `WORKKIT_COLOR=1` stands in for a terminal.
       - A kit copy without the gate or the painter (the engine alone) is the plain view, and so is a call whose own Node is below the kit's floor (`WK_NODE_FLOOR`, read from `lib/platform.sh`), since the painter is an ES module. A painter that is there and fails to load throws.
@@ -646,6 +661,7 @@
     - A done file that holds no number is `detach: the done file held no exit code (<text>)`, the lock dropped, and 1.
     - The code it answers is empty whenever the runner itself failed (no lock, no start, no done file), so a caller can tell the command's own 1 from the runner's.
   - `runForeground(log, lock, argv)` is a run under a supervisor already: `<cmd>` runs here, its stdout and stderr each copied to stdout and to `<log>` as they arrive, and its code comes back once every holder of that output is gone.
+    - `<cmd>` starts through `runHere`: a file with no `#!` line is started again by `sh -c`, which finds it as a shell does (on PATH for a bare name) and runs it as a script, as bash does, and a start that fails, thrown or as an `error`, is one `detach: <cmd>:` line in both places and 127 (not found) or 126 (found, cannot run), never a crash.
     - It holds `<lock>` for the command's length, unless `<lock>` is the enclosing run's own (`WK_RUN_LOCK`, the two paths compared resolved, and on Windows without regard to case). A lock another live run holds is 3, as ever.
     - A HUP, INT or TERM is the command's to answer: this process never ends before its command, and always writes the done file and the record and drops the lock.
     - Its lock holds a `foreground` file, the enclosing run's lock path, before the pid: no supervisor reads its end file. The pid is this Node process's.
@@ -663,7 +679,7 @@
     - Since a command may return 3 itself, `held=` is answered, the holder's pid, only then.
   - A lock whose run is over is taken over: its done file written, its pid gone, or no pid once its taker is gone or its wait has run out.
     - A lock with no pid file is judged by its taker, the process that took it: the pid that is the first field of the tag its claim names (`tagPid`).
-      - A taker that lives is waited for, up to `WK_LAUNCH_WAIT` seconds (60), while the lock has no pid file. Once the pid file is there, the lock is judged by it, so a launch slower than five seconds keeps its lock and the second call answers 3.
+      - A taker that lives is waited for, up to `WK_LAUNCH_WAIT` seconds (60; a value that is not a finite number of 0 or more counts as unset, `secondsOf`), while the lock has no pid file. Once the pid file is there, the lock is judged by it, so a launch slower than five seconds keeps its lock and the second call answers 3.
       - Still no pid file when that wait runs out: the run is over, and the take takes the lock, as for a lock with no taker. A live taker only makes the take wait longer, never fail, so a launcher ended before its pid write whose pid another process now holds blocks nothing.
       - A taker that is gone: the run is over, and the lock is taken at once.
       - No taker to read (no claim, an empty claim, a `gone` or `id.orphan` mark): no pid five seconds after the take is over.
@@ -680,13 +696,13 @@
     - So a run that took it over keeps it.
   - `writePid(lock, pid)` writes the pid whole through a rename, so a second run never reads a half-written one.
   - `runLive(lock)` is the supervisor's pid while `<lock>` holds a pid file, no done file, and that pid is alive; null otherwise. The take asks it whether a lock's run is going.
-  - `runHeld(lock)` is the pid while `<lock>` holds a pid file and that pid is alive or its done file is written: a run whose answer no call has collected yet. `watch.sh` chooses its run by it.
-  - `pidAlive(pid)` (`lib/lock.js`'s): whether a pid answers a zero signal, any refusal read as gone; off Windows a process that ended and waits for its parent to collect it (a state starting with `Z`) is not alive.
-    - The state is `/proc/<pid>/stat`'s where the system has `/proc`, an entry gone since the signal read as ended; elsewhere (macOS) `ps -o stat=`'s, no line leaving the signal's answer.
+  - `runHeld(lock)` is the pid while `<lock>` holds a pid file and that pid is alive or its done file is written: a run whose answer no call has collected yet. `watch.js` chooses its run by it.
+  - `pidAlive(pid)` (`lib/lock.js`'s): whether a pid answers a zero signal, any refusal read as gone; off Windows a process that ended and waits for its parent to collect it is not alive (`ended` in `lib/proc-state.js`, handed `lib/run.js`'s `spawnSync`).
+    - An entry gone since the signal reads as ended; one that cannot be read, or a `ps` that prints no line, leaves the signal's answer.
   - `endRun(pid)`: a detached run's supervisor ended with what it started.
     - Elsewhere than Windows the supervisor leads its own group: INT so the body logs its own code, then TERM and KILL, each 1.5 seconds after the last while the group lives.
     - On Windows its process tree, through `endTreeOf` in `lib/tree.js`. A table reader (PowerShell or Git Bash's `ps`) that cannot start, runs past 60 seconds, exits nonzero or prints a table it cannot read, an unset `SystemRoot`, a refused signal (`could not signal <pids> (<message>)`), or a process left after the forced end is its one stderr line and a failed end.
-  - `askEnd(lock, pid)` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30).
+  - `askEnd(lock, pid)` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30; a value that is not a finite number of 0 or more counts as unset, `secondsOf`).
     - While `<lock>/ending` stands, the supervisor's answer that it is ending the run (`lib/detach.js`), the wait has no end of its own: it goes on while `<pid>` lives, and answers as below.
       - An `ending` file that goes again (the end failed) puts the wait back on its `WK_END_WAIT` clock, counted from the request.
       - So 1 is a supervisor that never answered, or whose end failed: one that is ending its run is waited for, however long its end takes.
@@ -696,8 +712,9 @@
     - A supervisor gone ends the wait at once. The lock is read once more first, the done file before the pid, since the run may have ended and its lock been dropped between the looks.
       - A done file there, or a lock that no longer holds `<pid>` (dropped, or taken by another run), is 0.
       - A lock that still holds `<pid>` with no done file is 2: the supervisor is gone and left no answer.
-    - `watch.sh`'s `--end` waits through it too.
-  - `sweepSlots(base)` removes each narrowed run's lock folder `<base><slot>` whose run was cut off, through `retireJudged`: its done file over a day old, or a `gone` mark at any age. A live remover's slot stays. It answers the slots it removed.
+    - `watch.js`'s `--end` waits through it too.
+  - `slotsAt(base)` is each slot whose lock folder `<base><slot>` stands, in name order, live or not.
+  - `sweepSlots(base)` removes each of those whose run was cut off, through `retireJudged`: its done file over a day old, or a `gone` mark at any age. A live remover's slot stays. It answers the slots it removed.
 - `lib/lock.js`:
   - The lock folder's rules, CJS, the one home of the run lock's.
   - `claimDir(dir, tag)`: true only for the one caller that makes `<dir>` and then creates `<dir>/claim` create-only, since a `mkdir` may answer 0 to two racing callers.
@@ -723,8 +740,14 @@
     - The callers: the take's takeover and the owner's drop, a foreground run's too, and `sweepSlots`; a signal before the pid and a failed launch retire by the run's own mark.
   - `takeLock(dir)` and `dropLock(dir)` are the plain mutex, `wk_take_lock` and `wk_drop_lock`'s twins: its parent made, then `claimDir(dir)` tried 50 times 100 ms apart; the claim dropped before the folder. The package record's write takes its lock so.
   - `sweepMarkers(home)` is `wk_sweep_markers`'s twin: every regular file one folder under the markers folder (`markersDir` in `hooks/mods/markers.js`) older than 7 days removed, a folder there never entered.
+- `lib/proc-state.js`:
+  - A process's state, CJS, requiring nothing beyond Node, so workkit-core can ship it: its prepack copies it in as `proc-state.cjs`, and its `alive` and `groupLives` read through it.
+  - `procStat(pid)` is the fields of `/proc/<pid>/stat` after the command name, `[state, ppid, pgrp, ...]`: null once the entry is gone, undefined when it cannot be read.
+  - `ended(pid, spawnSync)` is whether `<pid>` has ended and waits for its parent to collect it. Never on Windows.
+    - With `/proc`: an entry gone, or a state starting with `Z`. An entry that cannot be read is not ended, since it may be a living process.
+    - Elsewhere (macOS) `ps -o stat= -p <pid>`, started through the caller's `spawnSync` from `lib/run.js` and ended after 60 seconds: ended only when `ps` ran and printed a state starting with `Z`.
 - `lib/detach.js`:
-  - `node detach.js <log> <done> [--root <root>] -- <cmd> [args...]`, which `lib/runs.js` runs as a process of its own; `signalCode(signal)` the one code a shell gives a command a signal ended (an unknown name throws).
+  - `node detach.js <log> <done> [--root <root>] -- <cmd> [args...]`, which `lib/runs.js` runs as a process of its own; `signalCode(signal)` the one code a shell gives a command a signal ended (an unknown name throws), `END_SIGNALS` the three signals that end a run's caller (HUP, INT, TERM) and `INT_CODE` the code of an interrupted call.
   - The rule it runs (the checks, the verdicts, the evidence, the ends and every line they write): `../docs/tests.md` § The checks.
   - With `--root` the launcher first reads that root's `tests.check` (`checkMinutes` in `hooks/mods/settings.js`); a bad value exits 2 with nothing run.
   - The launcher truncates `<log>`, drops a stale `<done>`, and starts a supervisor copy of itself (`--supervise`, the minutes passed as `--check`) with `detached: true` and ignored stdio.
@@ -741,10 +764,10 @@
     - Each read of the processes is `treeOf` in `lib/tree.js`, `SAMPLE_MS` apart at most and `MIN_SAMPLES` to a check.
     - On Linux `treeOf` reads `/proc/<pid>/stat`, in hundredths; elsewhere `ps`.
   - A frozen run's tree is ended (`endTreeOf` in `lib/tree.js`), and `<done>` gets 124 (`FROZEN_CODE`).
-  - A look is the evidence written whole to a `look` file beside `<done>`, for `wk_attach_run` to print.
+  - A look is the evidence written whole to a `look` file beside `<done>`, for `attachRun` to print.
   - An `end` file beside `<done>` is read every second (`END_POLL_MS`) and ends the run's tree; `<done>` gets 143.
     - Without `--root` too, so every supervised run can be ended so.
-  - Every end, on request or for a frozen run, first writes an `ending` file beside `<done>`: the answer `wk_ask_end` waits on for as long as the supervisor lives.
+  - Every end, on request or for a frozen run, first writes an `ending` file beside `<done>`: the answer `askEnd` waits on for as long as the supervisor lives.
   - An end that rejects with the command alive writes no `<done>`, removes the `end` and `ending` files, and leaves the end poll and the checks running.
   - On Windows `treeOf` is null, so nothing is checked; `endTreeOf` reads two process tables and ends each process of the tree it finds once, forced (`process.kill(<pid>, 'SIGKILL')`).
     - A read of both tables takes seconds there, so between reads it asks each signalled pid through `process.kill(<pid>, 0)` every `POLL_MS`, until all are gone or `GRACE_MS` has passed since the last signal, then reads again. It resolves when a read finds no member: a tree that goes at its signal costs two reads.
@@ -1155,55 +1178,61 @@
     - a failed add or fill, a changed copy, an unwritable record.
   - Before the detach, the full-suite hold (`wk_suite_hold` in `lib/hold.sh`) judges it against the index's tree.
     - A refusal exits 1 with nothing run.
-- `supervise.sh`:
+- `supervise.js`:
   - `workkit supervise -- <command> [args...]` runs any command the way the root `npm test` runs: detached, read by the supervisor, its output tailed to the call.
     - A lane or a build started in the background goes through it (`../docs/agents.md` § Watching a run).
+  - `workkit.sh` runs it under the first node `wk_node` finds at the kit's floor; with none it prints `supervise: no node at or above <floor> is installed`, exit 1.
   - A call with no `--` or no command prints `usage: workkit supervise -- <command> [args...]`, exit 2.
   - Outside a git repo it prints `supervise: not inside a git repository`, exit 1.
   - A command that is supervised itself (an `npm test`, `workkit test`, `workkit prove`, another `workkit supervise`) still runs under it.
     - The command sees `WORKKIT_SUPERVISED=1`, so it runs in the foreground inside this run and starts no second supervisor (`runForeground` in `lib/attach.js`).
     - So `workkit supervise -- npm test -- <files>` is one supervised run, and `workkit supervise -- workkit supervise -- <command>` exits with the command's code.
     - A root `npm test` under it still holds the suite's one slot.
-  - It runs `supervise.sh --body -- <command> [args...]` through `wk_run_detached` (`lib/detach.sh`), passed `--root <root>`.
+  - It runs `supervise.js --body -- <command> [args...]` through `run` (`lib/runs.js`) in process, passed the root.
     - The body runs the command in the folder the call was made in, and exits with its code.
-    - The body's last line is always `supervise: exit <code>`.
-  - It has its own log and lock (`wk_run_log_path`, `wk_run_lock_path` in `lib/suite.sh`), beside the root run's.
+    - The body's last line is always `supervise: exit <code>` (`bodyEnd` in `lib/body.js`).
+    - The command is a program, started as `runHere` (`lib/attach.js`) starts one: a file with no `#!` line is started again by `sh -c`, found as a shell finds it and run as a script; one that cannot start is one line naming it and a shell's code, `detach: <cmd>: command not found` and 127, or `detach: <cmd>: cannot be run (<reason>)` and 126 for a file that is not executable or a folder.
+    - A shell builtin is no program, so `workkit supervise -- exit 3` is `command not found`, 127.
+  - It has its own log and lock (`runPaths(root, 'run')` in `lib/run-paths.js`), beside the root run's.
     - The log is `run.log` in the repo's log folder (`logs.dir`, default `.workkit`) where git ignores it, else under `~/.workkit/markers`.
     - So one supervised run goes at a time per repo, beside the suite's own.
     - A second prints `supervise: a supervised run is already running (pid <N>); its output is in <log>`, exit 1.
   - The call exits with the command's own code, 124 after a frozen end, or 125 on a look with the run going on (`lib/detach.js`).
   - An INT ends the whole run, a child in its own session included, and exits 130 (`lib/runs.js`); a kill of the calling shell leaves it running to its end.
   - No allow rule ships for it: it runs any command, so it is permitted the way that command is.
-- `watch.sh`:
+- `watch.js`:
   - `workkit watch [--end] [suite|run|<pid>]` attaches the call again to the repo's live run.
+    - `workkit.sh` runs it under the first node `wk_node` finds at the kit's floor; with none it prints `watch: no node at or above <floor> is installed`, exit 1.
     - Any other argument prints `usage: workkit watch [--end] [suite|run|<pid>]`, exit 2.
     - Outside a git repo it prints `watch: not inside a git repository`, exit 1.
-  - With no name it follows the suite's run (`wk_suite_log_path`, `wk_suite_lock_path`) when that run is live, else the supervised one, else the one live narrowed run.
-    - `suite` names the suite's run, `run` the supervised one, and a pid a narrowed run (`wk_test_log_path`, `wk_test_lock_path`), the pid its look line names.
-    - Live is `wk_run_held` (`lib/detach.sh`): a pid file in the lock, and the pid alive or the done file written.
+  - With no name it follows the suite's run when that run is live, else the supervised one, else the one live narrowed run, each run's log and lock `runPaths`' (`lib/run-paths.js`).
+    - `suite` names the suite's run, `run` the supervised one, and a pid a narrowed run (`testSlots` lists them), the pid its look line names.
+    - Live is `runHeld` (`lib/run-lock.js`): a pid file in the lock, and the pid alive or the done file written.
     - So a run that ended with no call attached, after a look, still counts as live until a call collects its answer.
     - With no live run, or the named one not live, it prints `watch: no run is live in <root>`, exit 1.
   - It never guesses between live runs.
     - A follow with no name, no suite run and no supervised run, but several live narrowed runs, follows none.
-    - `--end` with no name counts only the runs still running (`wk_run_live`), the suite's, the supervised one and each narrowed one, but a run held in the foreground (below), which ends with the run that holds it. With more than one it ends none.
+    - `--end` with no name counts only the runs still running (`runLive`), the suite's, the supervised one and each narrowed one, but a run held in the foreground (below), which ends with the run that holds it. With more than one it ends none.
     - With none still running, it takes a run that finished with its answer uncollected.
     - Each refusal prints `watch: <count> runs are live; name one:` and the call for each, `workkit watch [--end] <name>` joined by `, or `, exit 2.
   - A run inside another run's supervisor holds its slot in the foreground, with no supervisor of its own: a root `npm test` inside `workkit supervise` holds the suite's, a `workkit supervise` inside a root `npm test` or `workkit prove` the supervised one's.
     - `runForeground` (`lib/attach.js`) marks its lock so: a `foreground` file holding the enclosing run's lock path (`WK_RUN_LOCK`).
     - `--end <name>` on a lock so marked writes no `end` file and waits on nothing: it prints `watch: workkit watch --end <name> cannot end a run held in the foreground inside another run; <how>`, exit 1.
     - `<how>` is `workkit watch --end run ends it` when the marker names the supervised run's lock, `workkit watch --end suite ends it` when it names the suite's, and otherwise `end the run that started it`.
-  - A narrowed run's slot is cleared (`drop_slot`) once the call reads its end or ends it, and only when the slot's wrapper is gone. A look keeps it.
-  - It prints the log's last 20 lines, painted when `wk_view_paints` says yes (`lib/detach.sh`), then tails it from there through `wk_attach_run`, painted when `colorOn` says yes and the call's own Node is at the kit's floor (`lib/attach.js`). The two gates are one rule, held equal by the parity suite.
+    - The marker's path is folded from a Git Bash spelling (`shellDirOf` in `hooks/mods/markers.js`), then compared with each lock by `samePath` (`lib/attach.js`): resolved, and on Windows without regard to case.
+  - A narrowed run's slot is cleared (`clearSlot`) once the call reads its end or ends it, and only when the slot's wrapper is gone. A look keeps it.
+    - The wrapper is the pid naming the slot, `script-shell.sh`'s `$$`: on Windows Git Bash's own id, so it is asked through `bash` (`kill -0`), the one shell call `watch.js` makes; elsewhere through `pidAlive`.
+  - It prints the log's last 20 lines up to a size measured first, then tails it from that size through `attachRun` (`lib/attach.js`), both through one view (`viewOf`): no line shows twice, and each whole line is painted when `colorOn` says yes.
     - It ends at the run's end, a frozen end or the next look, with the same exit codes as the call that started the run.
     - A run that ended already gets its answer at once: the last 20 lines, the run's code as the exit, and the lock dropped, so a second `workkit watch` prints the no-run line.
     - Ctrl-C ends the call only: the run goes on, and its lock stays held.
-  - `--end` writes the `end` file in the run's lock folder, the supervisor's end request, and waits through `wk_ask_end` (`lib/detach.sh`).
+  - `--end` writes the `end` file in the run's lock folder, the supervisor's end request, and waits through `askEnd` (`lib/run-lock.js`).
     - Once the done file is written, it prints the log's last line (the supervisor's closing line) and exits 0.
-    - When it finds the done file it collects the answer through `wk_attach_run` too, so the lock drops, and a call still attached reads the code from its record.
+    - When it finds the done file it collects the answer through `attachRun` too, so the lock drops, and a call still attached reads the code from its record.
     - A run that ended already prints `watch: the run ended already (exit <code>)`, drops the lock and exits 0.
     - Once 30 seconds have passed since the request, a supervisor that never answered (no `ending` file) or whose end failed (its `ending` file gone again) prints `watch: the run did not end; its supervisor is pid <N>`, exit 1. One that is ending its run is waited for while it lives.
-    - A supervisor gone that left no answer (`wk_ask_end`'s 2) prints `watch: the run's supervisor (pid <N>) is gone and left no answer`, exit 1.
-    - On a narrowed run it clears the slot only when the slot's wrapper is gone (`drop_slot`); a call still attached to the run clears its own slot and exits 143.
+    - A supervisor gone that left no answer (`askEnd`'s 2) prints `watch: the run's supervisor (pid <N>) is gone and left no answer`, exit 1.
+    - On a narrowed run it clears the slot only when the slot's wrapper is gone; a call still attached to the run clears its own slot and exits 143.
   - An allow rule ships for the verb, `Bash(workkit watch:*)` (`ALLOW_RULES` in `workkit/allow.sh`), so it runs as its own Bash call: the rule matches the bare call alone.
 - `githooks/`:
   - The heal (`standards/githooks.sh`) sets them as `~/.claude/workkit/githooks`, through the engine link.
@@ -1400,11 +1429,12 @@
     - in an enabled repo, either of two shape faults:
       - a `hooks` in any layer that is no object;
       - a `hooks.<event>` of the wrong shape: not an array, an entry with no non-empty string `command`, or a `local` that is not `true` or `false`.
-- `ship/watch.sh`:
+- `ship/watch.js`:
+  - It requires the kit's ES modules, so `workflow/workkit/ship.sh` starts it as `supervise` and `watch` start, through `run_at_floor` (`workkit.sh`), under the first node `wk_node` finds at the kit's floor; with none it prints `ship watch: no node at or above <floor> is installed`, exit 1, before its usage is read.
   - It expands a sha shorter than 40 characters to the full commit id, since `gh run list --commit` matches only that.
     - It uses `git rev-parse --verify --quiet <sha>^{commit}` from the repo root.
     - A full sha is used as given.
-  - Then it finds the sha's runs (`gh run list --commit`).
+  - Then it finds the sha's runs (`gh run list --commit`), each `gh` call started through `lib/run.js` and its JSON read in process.
     - An empty list is asked again six times, ten seconds apart.
     - `WORKKIT_CI_WATCH_TRIES` and `WORKKIT_CI_WATCH_WAIT` override both.
   - With none, it may look for a PR, when some workflow's top-level `on:` names `pull_request`.
@@ -1417,29 +1447,29 @@
     - 1 red, `ci-watch: RED: <workflow>, job <failing job>: <url>` and the last 40 lines of `gh run view --log-failed`;
     - it is red only when `gh run view --json conclusion,jobs` says the run finished.
   - With no run after the retries:
-    - 0 and `ci-watch: no CI configured for push`, when no workflow under the repo's `.github/workflows/` names `push` in its top-level `on:` (`ship/triggers.awk`);
+    - 0 and `ci-watch: no CI configured for push`, when no workflow under the repo's `.github/workflows/` names `push` in its top-level `on:` (`listensTo` in `ship/triggers.js`);
     - 3 and `ci-watch: run not queued yet for <sha>`, when one does.
   - A usage error is 2.
     - So is a short sha the clone cannot resolve, with a line on stderr before any `gh` call.
     - That line is `ci-watch: <sha> is not a commit this clone knows; fetch it or pass the full sha`.
   - gh failing is 4 with the line:
-    - a `gh run list` that failed or answered no run list;
+    - a `gh run list` that failed or answered no run list (an answer that is not a JSON list is gh failing, never an empty list);
     - a `gh pr list` that failed (`ci-watch: gh pr list --head <branch> failed: <its first error line>`);
     - a `gh pr list` that answered no PR list (`ci-watch: gh pr list --head <branch> answered no PR list: <its first line>`);
     - a watch that exited non-zero on a run gh cannot then show as finished (GitHub unreachable, the login refused).
     - That is no answer rather than a red.
-  - The watch runs detached through `wk_run_detached` (`lib/detach.sh`), as this file again in its `--watch-body <sha>` mode.
+  - The watch runs detached through `run` (`lib/runs.js`) in process, as this file again in its `--watch-body <sha>` mode under the same node.
     - So a kill of the invoking shell leaves it going to its answer.
     - Its output, stdout and stderr alike, goes to the CI log, truncated per call.
-    - The log is `wk_ci_log_path`: `ci.log` in the repo's log folder (`logs.dir`, default `.workkit`) where git ignores it, else under `~/.workkit/markers`.
-    - A bad `logs.dir` is `wk_log_dir`'s line and exit 4, no answer, nothing watched.
+    - The log is `runPaths(root, 'ci')`'s (`lib/run-paths.js`): `ci.log` in the repo's log folder (`logs.dir`, default `.workkit`) where git ignores it, else under `~/.workkit/markers`.
+    - A bad `logs.dir` is `logDirOf`'s line and exit 4, no answer, nothing watched.
     - The output reaches the terminal on stdout through the tail, every line above included.
     - Its first line is `ci-watch: watching <sha>`.
-    - Its last is `ci-watch: exit <code>`, the code the foreground exits with, but after an INT.
+    - Its last is `ci-watch: exit <code>` (`bodyEnd` in `lib/body.js`), the code the foreground exits with, but after an INT.
+    - A signal to the body ends it once its `gh` call has ended, and it starts no `gh` call or wait after it.
   - A run that fails non-zero while that last line does not carry its code is the runner failing, never a red.
     - That is when the runner could not start, or the supervisor died.
     - It prints `ci-watch: the watch did not finish, so there is no answer; its output is in <log>` on stderr, exit 4.
-  - The file is functions only, `main "$@"` its last line, so an edit to the kit during a long watch never runs a fragment.
   - A second watch while one runs starts nothing.
     - It prints `ci-watch: a watch is already running for <sha> (pid <pid>); its output is in <log>` on stderr, exit 5.
   - INT ends the watch through the end request (`lib/runs.js`), exit 130: the log ends with the request line, under `ci-watch: exit 143`.
@@ -1448,7 +1478,8 @@
   - The call: `awk -v ev=<event> -f triggers.awk <file>`.
   - Carriage returns are dropped, and single quotes read as double.
   - An event nested deeper is never one.
-  - `ship/watch.sh` asks it for `push` and `pull_request`.
+  - Its one Node caller is `listensTo(file, event)` in `ship/triggers.js`.
+  - `ship/watch.js` asks it for `push` and `pull_request`.
   - `.github/scripts/ci-release.js` asks it for `release` and `workflow_dispatch`.
 - `ship/dispatch-input.awk`:
   - The call: `awk -v input=<name> -f dispatch-input.awk <file>`.
@@ -1556,10 +1587,10 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 | `workkit tools` | prints every command this repo's suites name through `needs()`, one per line, sorted and unique, for a setup to install |
 | `workkit convert [paths...]` | rewrites this repo's suites in the old shape in place onto Node's test functions, one `converted` or `left` line per file (`docs/tests.md` § The kit's runner) |
 | `workkit prove` | `prove.sh`: the root suite on exactly the staged tree, in a copy outside the repo, recorded on green (refused with `CI` set), so a commit of it passes the gate while other work stays in the folder unstaged |
-| `workkit supervise -- <command> [args...]` | `supervise.sh`: the command run detached under the supervisor, as the root suite runs, its output tailed to the call and kept in the run log; it exits with the command's code, 124 after a frozen end, 125 on a look |
-| `workkit watch [--end] [suite\|run\|<pid>]` | `watch.sh`: the call attached again to the live run, the suite's before the supervised one before the one narrowed run, or the one named (a narrowed run by its pid); `--end` asks the supervisor to end it, and with several runs live and no name it refuses, exit 2 |
+| `workkit supervise -- <command> [args...]` | `supervise.js`, under a node at the kit's floor: the command run detached under the supervisor, as the root suite runs, its output tailed to the call and kept in the run log; it exits with the command's code, 124 after a frozen end, 125 on a look |
+| `workkit watch [--end] [suite\|run\|<pid>]` | `watch.js`, under a node at the kit's floor: the call attached again to the live run, the suite's before the supervised one before the one narrowed run, or the one named (a narrowed run by its pid); `--end` asks the supervisor to end it, and with several runs live and no name it refuses, exit 2 |
 | `workkit public intake` · `mirror <N>... \| --all` · `close <version> <N>...` | the public pairing, run from the private repo: `public/intake.js`, `public/mirror.js`, `public/close.js` (the `public/` row above); the triage drain runs the intake, `workflow:public-mirror` and the daily heal the mirror, the ship's close step the close |
-| `workkit ship items` · `release <x.y.z> [--keep N,M]` · `watch <sha>` · `cut <x.y.z>` · `plan` · `publish` · `deploy` | the ship's steps, run by `workkit:ship`: `ship/items.sh`, `ship/release.js`, `ship/watch.sh`, `ship/cut.js`, `ship/plan.js`, `ship/publish.js`, `ship/deploy.js` (their rows above) |
+| `workkit ship items` · `release <x.y.z> [--keep N,M]` · `watch <sha>` · `cut <x.y.z>` · `plan` · `publish` · `deploy` | the ship's steps, run by `workkit:ship`: `ship/items.sh`, `ship/release.js`, `ship/watch.js`, `ship/cut.js`, `ship/plan.js`, `ship/publish.js`, `ship/deploy.js` (their rows above) |
 | `workkit review covers` · `mark [full]` | the review tier and the review marker: `review/covers.sh`, `review/mark.sh` |
 | `workkit triage mark` | the triage marker: `triage/mark.sh` |
 | `workkit proof red [--live] <path>... -- <command>...` | the verifier's red run: `proof/red.sh` |
