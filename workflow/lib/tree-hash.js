@@ -3,8 +3,9 @@
 // workflow/lib/tree-hash.js: the one home of the tree ids the suite and package
 // records hold: the working tree's, a package's own (less the workspace members
 // it cannot see, lib/workspaces.js), and the real index's, each less `.workkit`.
-// Run by the hooks (treeHash in hooks/mods/suite.js) and by lib/suite.sh's names.
-// Usage: node tree-hash.js <root> [<pkg>] | <root> -i | <root> --index <file> | <root> --copy-index <dir>
+// Run by the hooks (treeHash in hooks/mods/suite.js) and by lib/suite.sh's names;
+// workflow/prove.js requires it for the index's scratch copy and its tree.
+// Usage: node tree-hash.js <root> [<pkg>] | <root> -i
 
 const fs = require('fs');
 const os = require('os');
@@ -115,9 +116,9 @@ const indexTreeId = (root) => inScratch((dir) => {
 });
 
 /**
- * The CLI: the id, or the copy's path, on stdout; 1 with nothing there when
- * it cannot be taken or the call is refused.
- * @param {string[]} argv `<root> [<pkg> | -i | --index <file> | --copy-index <dir>]`
+ * The CLI: the id on stdout; 1 with nothing there when it cannot be taken or
+ * the call is refused.
+ * @param {string[]} argv `<root> [<pkg> | -i]`
  * @returns {number} the exit code
  */
 const main = (argv) => {
@@ -131,9 +132,7 @@ const main = (argv) => {
   else if (rest.includes('-i')) {
     console.error('tree-hash: -i takes no other flag or package');
     return 1;
-  } else if (rest[0] === '--index') out = rest[1] ? writeTree(root, rest[1]) : null;
-  else if (rest[0] === '--copy-index') out = rest[1] ? copyIndex(root, rest[1]) : null;
-  else out = treeId(root, rest[0]);
+  } else out = treeId(root, rest[0]);
   if (!out) return 1;
   console.log(out);
   return 0;
@@ -144,4 +143,6 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { treeId, indexTreeId };
+module.exports = {
+  treeId, indexTreeId, copyIndex, writeTree,
+};

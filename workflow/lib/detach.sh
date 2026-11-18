@@ -2,8 +2,8 @@
 # workflow/lib/detach.sh: the shell's names for a detached run (lib/runs.js): a
 # command that outlives the shell that started it, one per lock, its output
 # tailed to this shell while it runs; each name is a call into Node, through
-# _wk_runs, that hands back its answers. Sourced, functions only, by script-shell.sh,
-# prove.sh and suite.sh's sweep; it reads wk_node, WK_NODE_FLOOR and wk_native_path from platform.sh.
+# _wk_runs, that hands back its answers. Sourced, functions only, by script-shell.sh
+# and suite.sh's sweep; it reads wk_node, WK_NODE_FLOOR and wk_native_path from platform.sh.
 
 # wk_body_traps <prefix> [<before-exit command>]: a detached body's traps. Its
 # last line is always `<prefix>: exit <code>`, after the optional command; bash

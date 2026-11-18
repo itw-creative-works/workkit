@@ -10,5 +10,7 @@ cmd_proof() {
     red) shift ;;
     *) wk_error "proof: unknown subcommand ${sub:-(none)}; use red"; return 1 ;;
   esac
-  run_verb proof "$sub" "$@"
+  # It requires the kit's ES modules, so it runs under a node at the floor; its
+  # 1 means green, so a missing node is a stop, 2.
+  run_at_floor red-proof 2 "$SCRIPT_DIR/proof/red.js" "$@"
 }

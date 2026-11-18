@@ -14,7 +14,7 @@ const { StringDecoder } = require('string_decoder');
 const { setTimeout: sleep } = require('timers/promises');
 const { spawn } = require('./run');
 const { readOrNull } = require('./read');
-const { writeWhole, signalCode, END_SIGNALS } = require('./detach');
+const { writeWhole, exitOf, END_SIGNALS } = require('./detach');
 const {
   takeRunLock, writePid, leaveRecord, recordedCode, dropRunLock, doneCode, pidAlive,
 } = require('./run-lock');
@@ -271,7 +271,7 @@ const runHere = ([cmd, ...args], log, teed) => new Promise((resolve) => {
     child.stderr?.on('data', both);
   }
   child.on('error', unstarted);
-  child.on('close', (code, sig) => settle(code === null ? signalCode(sig) : code));
+  child.on('close', (code, sig) => settle(exitOf(code, sig)));
 });
 
 /** Whether two spellings of a path name one: resolved, and on Windows without regard to case. */

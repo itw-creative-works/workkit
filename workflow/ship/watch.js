@@ -13,7 +13,7 @@ const { setTimeout: sleep } = require('timers/promises');
 const { spawn, spawnSync } = require('../lib/run');
 const { repoRoot, headSha } = require('../lib/git');
 const { readOrNull } = require('../lib/read');
-const { signalCode } = require('../lib/detach');
+const { exitOf } = require('../lib/detach');
 const { lastLines } = require('../lib/attach');
 const { run } = require('../lib/runs');
 const { bodyEnd } = require('../lib/body');
@@ -80,7 +80,7 @@ const gh = (args) => new Promise((resolve) => {
     resolve({ code, out: Buffer.concat(out).toString(), err: `${Buffer.concat(err).toString()}${extra}` });
   };
   child.on('error', (error) => settle(127, `${error.message}\n`));
-  child.on('close', (code, signal) => settle(code === null ? signalCode(signal) : code));
+  child.on('close', (code, signal) => settle(exitOf(code, signal)));
 });
 
 /**

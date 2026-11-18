@@ -350,9 +350,9 @@ export const mkWorld = (on: any, opts: any = {}) => {
       const view = world.gh.views[n]
       return view === undefined ? ok('', `GraphQL: Could not resolve to an issue or pull request with the number of ${n}.\n`, 1) : ok(JSON.stringify(view))
     }
-    // `bash <kit>/hooks/lib/snapshot.sh <mode> <root> ...`: `opts.snapshot[mode]`'s answer, a success else.
+    // `node <kit>/workflow/lib/snapshot.js <mode> <root> ...`: `opts.snapshot[mode]`'s answer, a success else.
     // A root in `opts.snapshotDirs` keeps its folder in `files` as a successful take, add or drop leaves it.
-    const snap = argv.findIndex((a) => a.endsWith('snapshot.sh'))
+    const snap = argv.findIndex((a) => a.endsWith('/workflow/lib/snapshot.js'))
     if (snap >= 0) {
       const [mode, root, ...nums] = argv.slice(snap + 1)
       const r = (opts.snapshot || {})[mode] || {}

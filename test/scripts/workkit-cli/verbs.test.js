@@ -172,11 +172,43 @@ describe('workkit review', () => {
 describe('workkit proof', () => {
   test('proof red hands its arguments to the script: outside a git repo it is not runnable, exit 2', () => {
     const world = mkWorld();
-    const { code, out, err } = runCli(world, ['proof', 'red', 'src/x.js', '--', 'true']);
+    const { code, out, err } = runCli(world, ['proof', 'red', 'src/x.js', '--', 'true'], { env: withNode(world) });
     expect(code, `exit 2, got: ${out}${err}`).toBe(2);
     expect(out, 'no verdict').toBe('');
     expect(lines(err).length, `one line, got: ${err}`).toBe(1);
-    expect(err.startsWith('red-proof: '), `the script's own line, got: ${err}`).toBeTruthy();
+    expect(err.startsWith('red-proof: ') && !err.includes('no node at or above'), `the script's own line, got: ${err}`).toBeTruthy();
+    cleanup(world.root);
+  });
+});
+
+// A repo whose test script passes, and a node older than the floor first on PATH:
+// the world's home is a scratch one, so no node a machine's nvm keeps is found instead.
+const belowFloor = (world) => {
+  const g = mkGitRepo('wk-floor-', { 'package.json': '{ "name": "scratch", "scripts": { "test": "true" } }\n' });
+  const old = stubNode(path.join(world.root, 'old-node'), '20.15.1');
+  return { g, env: { PATH: joinPath(path.dirname(old), world.env.PATH), WORKKIT_NODE: shellPath(old) } };
+};
+
+describe('workkit prove and proof red: the node floor', () => {
+  test('prove with no node at or above the floor: one line naming 22.12 on stderr, nothing on stdout, exit 1', () => {
+    const world = mkWorld();
+    const { g, env } = belowFloor(world);
+    const { code, out, err } = runCli(world, ['prove'], { cwd: g.repo, env });
+    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one floor line').toBe('prove: no node at or above 22.12 is installed\n');
+    cleanup(g.dir);
+    cleanup(world.root);
+  });
+
+  test('proof red with no node at or above the floor: one line naming 22.12 on stderr, nothing on stdout, exit 2, never 1 (green)', () => {
+    const world = mkWorld();
+    const { g, env } = belowFloor(world);
+    const { code, out, err } = runCli(world, ['proof', 'red', 'src/x.js', '--', 'true'], { cwd: g.repo, env });
+    expect(code, `exit 2, got: ${out}${err}`).toBe(2);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one floor line').toBe('red-proof: no node at or above 22.12 is installed\n');
+    cleanup(g.dir);
     cleanup(world.root);
   });
 });

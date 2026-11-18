@@ -17,7 +17,7 @@ cmd_ship() {
     case "$sub" in
       cut|publish|deploy) wk_terminal_step "ship $sub" run_verb ship "$sub" "$@" ;;
       # It requires the kit's ES modules, so it runs under a node at the floor.
-      watch) run_at_floor "ship watch" "$SCRIPT_DIR/ship/watch.js" "$@" ;;
+      watch) run_at_floor "ship watch" 1 "$SCRIPT_DIR/ship/watch.js" "$@" ;;
       *) run_verb ship "$sub" "$@" ;;
     esac
     return

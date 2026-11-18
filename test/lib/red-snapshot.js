@@ -7,7 +7,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { NO_RC, shellPath, spawnBash } = require('./platform');
 const { homeOf, cacheBase } = require('./workflow-home');
 
 /**
@@ -18,17 +17,16 @@ const { homeOf, cacheBase } = require('./workflow-home');
 const snapshotBase = (home) => path.join(cacheBase(home), 'snapshot');
 
 /**
- * The name of the snapshot folder of the repo at `root`: the SHA-1 of the root
- * spelled as `pwd -P` prints it in the shell.
+ * The name of the snapshot folder of the repo at `root`: the SHA-1 of the root as
+ * git's own `rev-parse --show-toplevel` spells it there, the key the hook and
+ * `workkit proof red` both use.
  * @param {string} root - the repo root, native
  * @returns {string}
  */
 const snapshotKey = (root) => {
-  const res = spawnBash([...NO_RC, '-c', 'cd -P "$1" && pwd -P', '_', shellPath(root)], {
-    env: { PATH: process.env.PATH }, encoding: 'utf8',
-  });
-  if (res.status !== 0 || !res.stdout.trim()) throw new Error(`pwd -P failed: ${res.stderr}`);
-  return crypto.createHash('sha1').update(res.stdout.replace(/\n$/, '')).digest('hex');
+  const res = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' });
+  if (res.status !== 0 || !res.stdout.trim()) throw new Error(`git rev-parse --show-toplevel failed in ${root}: ${res.stderr}`);
+  return crypto.createHash('sha1').update(res.stdout.replace(/\r?\n$/, '')).digest('hex');
 };
 
 /**

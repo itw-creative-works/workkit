@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # workflow/lib/hold.sh: the full-suite hold, judged where the root suite runs
-# (script-shell.sh's bare root run, prove.sh) and in the repo it runs in.
+# (script-shell.sh's bare root run, prove.js) and in the repo it runs in.
 # Sourced, functions only, by script-shell.sh and the hooks' _lib.sh; it reads
 # wk_jq (platform.sh), wk_session_judges (participation.sh), wk_repo_slug
 # (slug.sh), wk_suite_proved and wk_suite_marker_path (suite.sh).

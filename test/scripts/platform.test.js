@@ -13,7 +13,6 @@ const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, shellPath, cygpathStub, lenientMkdir,
   stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, skipWithoutFileLink, spawnBash,
 } = require('../lib/platform');
-const { proofBase } = require('../lib/workflow-home');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
 
@@ -182,16 +181,6 @@ describe('platform.sh: wk_native_path', () => {
   });
 });
 
-describe('platform.sh: wk_posix_path', () => {
-  test('this machine answers for itself: unchanged off Windows, Git Bash\'s spelling on it', () => {
-    // No OSTYPE override and no stub: the real cygpath on Windows, whose `-u`
-    // answer the seam's stub does not spell.
-    const { out } = inPlatform('wk_posix_path C:/Users/x/repo; printf "|"');
-    const expected = IS_WINDOWS ? '/c/Users/x/repo|' : 'C:/Users/x/repo|';
-    expect(out, `the platform's own spelling, got: ${JSON.stringify(out)}`).toBe(expected);
-  });
-});
-
 describe('platform.sh: wk_user_dir', () => {
   test('wk_user_dir: WORKFLOW_HOME wins, else ~/.workkit, and an unset HOME never aborts set -u', () => {
     expect(inPlatform('wk_user_dir', { WORKFLOW_HOME: '/w/kit', HOME: '/h' }).out, 'the override').toBe('/w/kit\n');
@@ -199,45 +188,6 @@ describe('platform.sh: wk_user_dir', () => {
     const bare = inPlatform('set -u; unset HOME; wk_user_dir');
     expect(bare.code, `no unbound-variable abort: ${bare.err}`).toBe(0);
     expect(bare.out, 'the default with no HOME').toBe('/.workkit\n');
-  });
-});
-
-describe('platform.sh: wk_proof_dir', () => {
-  test('wk_proof_dir: two calls each make and print their own run folder under <HOME>/.cache/workkit/proof', () => {
-    const dir = mkTmp('wf-platform-');
-    const { code, out, err } = inPlatform('a=$(wk_proof_dir) && b=$(wk_proof_dir) && printf "%s\\n%s\\n" "$a" "$b"',
-      { HOME: shellPath(dir) });
-    expect(code, `both calls answered, stderr: ${err}`).toBe(0);
-    const [a, b] = out.split('\n');
-    for (const made of [a, b]) {
-      expect(made.slice(0, made.lastIndexOf('/')), `a folder under the cache's proof/, got: ${JSON.stringify(out)}`).toBe(`${shellPath(dir)}/.cache/workkit/proof`);
-      expect(fs.statSync(path.join(proofBase(dir), path.basename(made))).isDirectory(), `${made} was made`).toBeTruthy();
-    }
-    expect(a !== b, `two folders, got: ${JSON.stringify(out)}`).toBeTruthy();
-    cleanup(dir);
-  });
-
-  test('wk_proof_dir: WORKFLOW_HOME elsewhere still leaves the run folder under <HOME>/.cache/workkit/proof, no proof in it', () => {
-    const dir = mkTmp('wf-platform-');
-    const home = path.join(dir, 'home');
-    const kit = path.join(dir, 'kit');
-    fs.mkdirSync(home);
-    fs.mkdirSync(kit);
-    const { code, out, err } = inPlatform('wk_proof_dir', { HOME: shellPath(home), WORKFLOW_HOME: shellPath(kit) });
-    expect(code, `a run folder made, stderr: ${err}`).toBe(0);
-    const made = out.trim();
-    expect(made.slice(0, made.lastIndexOf('/')), `under HOME's cache, got: ${JSON.stringify(out)}`).toBe(`${shellPath(home)}/.cache/workkit/proof`);
-    expect(!fs.existsSync(path.join(kit, 'proof')), 'no proof made in the WORKFLOW_HOME folder').toBeTruthy();
-    cleanup(dir);
-  });
-
-  test('wk_proof_dir: 1 when proof/ is a file, so no run folder can be made', () => {
-    const dir = mkTmp('wf-platform-');
-    fs.mkdirSync(path.dirname(proofBase(dir)), { recursive: true });
-    fs.writeFileSync(proofBase(dir), '');
-    const { code } = inPlatform('wk_proof_dir', { HOME: shellPath(dir) });
-    expect(code, 'no run folder').toBe(1);
-    cleanup(dir);
   });
 });
 

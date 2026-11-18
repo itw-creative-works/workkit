@@ -21,7 +21,7 @@ KIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 STANDARDS="$SCRIPT_DIR/standards.sh"
 CAPTURE="$SCRIPT_DIR/wk.sh"
 PUBLISH="$SCRIPT_DIR/publish.sh"
-PROVE="$SCRIPT_DIR/prove.sh"
+PROVE="$SCRIPT_DIR/prove.js"
 SUPERVISE="$SCRIPT_DIR/supervise.js"
 WATCH="$SCRIPT_DIR/watch.js"
 JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
@@ -119,15 +119,16 @@ run_verb() {
   exec node "$base.js" "$@"
 }
 
-# run_at_floor <verb> <file> [args]: a Node verb that requires the kit's ES
-# modules, run under the first node at the kit's floor (wk_node). Exec'd, so
-# the file's output and exit code are the command's; with no such node, one line and 1.
+# run_at_floor <prefix> <code> <file> [args]: a Node verb that requires the kit's
+# ES modules, run under the first node at the kit's floor (wk_node). Exec'd, so
+# the file's output and exit code are the command's; with no such node, one
+# `<prefix>:` line and <code>, the code the verb gives any other stop.
 run_at_floor() {
-  local verb="$1" file="$2" node
-  shift 2
+  local prefix="$1" code="$2" file="$3" node
+  shift 3
   if ! node="$(wk_node)"; then
-    printf '%s: no node at or above %s is installed\n' "$verb" "$WK_NODE_FLOOR" >&2
-    exit 1
+    printf '%s: no node at or above %s is installed\n' "$prefix" "$WK_NODE_FLOOR" >&2
+    exit "$code"
   fi
   exec "$node" "$file" "$@"
 }
@@ -371,9 +372,9 @@ case "${1:-help}" in
   heal)    shift; exec bash "$STANDARDS" "${1:-$PWD}" ;;
   state)   shift; exec bash "$STANDARDS" --state "${1:-$PWD}" ;;
   note)    shift; exec bash "$CAPTURE" note "$@" ;;
-  prove)   shift; exec bash "$PROVE" "$@" ;;
-  supervise) shift; run_at_floor supervise "$SUPERVISE" "$@" ;;
-  watch)   shift; run_at_floor watch "$WATCH" "$@" ;;
+  prove)   shift; run_at_floor prove 1 "$PROVE" "$@" ;;
+  supervise) shift; run_at_floor supervise 1 "$SUPERVISE" "$@" ;;
+  watch)   shift; run_at_floor watch 1 "$WATCH" "$@" ;;
   *)
     wk_error "unknown command $1"
     printf '\n' >&2

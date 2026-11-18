@@ -1,4 +1,4 @@
-// Tests for workflow/lib/git.js: `repoRoot(cwd)` and `headSha(cwd)`, the git
+// Tests for workflow/lib/git.js: `repoRoot(cwd)`, `headSha(cwd)` and `gitIn(root, args, options)`, the git
 // reads the kit's JavaScript scripts share. Every case asks a real git about a
 // real folder in scratch; the expected answer is read from the folder itself
 // (its real path, its branch's ref file), never git's answer read back.
@@ -8,7 +8,7 @@ const path = require('path');
 const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { gitPath } = require('../lib/platform');
 const { mkRepo, mkOriginRepo, FIXTURE_ORIGIN } = require('../lib/git-repo');
-const { repoRoot, headSha } = require('../../workflow/lib/git');
+const { repoRoot, headSha, gitIn } = require('../../workflow/lib/git');
 
 describe('lib/git.js: repoRoot', () => {
   test('inside a repo, from its root or a subfolder, it answers the top level, trimmed', () => {
@@ -39,5 +39,17 @@ describe('lib/git.js: headSha', () => {
   test('a repo with no commit, or a folder outside any repo, answers null', () => {
     expect(headSha(mkOriginRepo(mkTmp('lib-git-empty-'), FIXTURE_ORIGIN)), 'an unborn HEAD has no sha').toBe(null);
     expect(headSha(mkTmp('lib-git-plain-')), 'a plain scratch folder is in no repo').toBe(null);
+  });
+});
+
+describe('lib/git.js: gitIn', () => {
+  test('a read printing more than a megabyte answers status 0 with every byte', () => {
+    const big = 'x'.repeat(2 * 1024 * 1024);
+    const w = mkRepo('lib-git-big-', { 'big.txt': big });
+    const blob = w.git('rev-parse', 'HEAD:big.txt').trim();
+    const res = gitIn(w.repo, ['cat-file', 'blob', blob], { encoding: 'utf8' });
+    expect(res.status, `cat-file exits 0: ${res.error || res.stderr}`).toBe(0);
+    expect(res.stdout.length, 'every byte of the 2 MiB blob').toBe(big.length);
+    expect(res.stdout === big, 'the blob as written').toBe(true);
   });
 });

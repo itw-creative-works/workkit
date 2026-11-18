@@ -4,8 +4,8 @@
  * or adds its number to the live one (replacing it once stale); a release (a
  * complete flip, or a close) leaving no issue there at status:building or
  * status:qa drops it, each read off the gh journal lines the Bash call wrote. The
- * copy, fill and sweep stay in hooks/lib/snapshot.sh, run
- * through its entry; a notice at most, never a block (docs/hooks.md § workflow:snapshot).
+ * copy and sweep are the engine's workflow/lib/snapshot.js, run as a command;
+ * a notice at most, never a block (docs/hooks.md § workflow:snapshot).
  */
 
 import { stageList } from './gh.js';
@@ -19,13 +19,22 @@ import { LONG_RUN_MS } from './suite.js';
 const HOLDING = ['status:building', 'status:qa'];
 
 /**
- * The snapshot folder of a repo root, hook_snapshot_dir's rule: snapshot/ in
- * the kit's cache folder (cacheDirOf), keyed by the root's SHA-1.
- * @param {string} root the repo root, spelled by pwd -P
+ * The folder every snapshot lives in, snapshot/ in the kit's cache folder
+ * (cacheDirOf), which a tree copy leaves out (workflow/lib/tree-copy.js).
+ * @param {object} env the variables the module read
+ * @returns {string}
+ */
+export const snapshotHome = (env) => `${cacheDirOf(env)}/snapshot`;
+
+/**
+ * The snapshot folder of a repo root, the one rule the hook and the engine's
+ * workflow/lib/snapshot.js and proof/red.js share: in the snapshot home, keyed
+ * by the root's SHA-1.
+ * @param {string} root the repo root as git's top level spells it
  * @param {object} env the variables the module read
  * @returns {Promise<string>}
  */
-export const snapshotPath = async (root, env) => `${cacheDirOf(env)}/snapshot/${await sha1Hex(root)}`;
+export const snapshotPath = async (root, env) => `${snapshotHome(env)}/${await sha1Hex(root)}`;
 
 // A journal line that claims its issues: an edit adding status:building.
 const claims = (line) => onIssue(line) && line.sub === 'edit' && line.add.includes('status:building');
@@ -77,12 +86,13 @@ const noRepoNote = (dir, repo, cwd) => (dir === cwd
   ? "the session's folder lies in no git repository, so no snapshot was taken or dropped."
   : `${repo}'s roster folder ${dir} lies in no git repository, so no snapshot was taken or dropped for it.`);
 
-// One take or drop step run through the entry in its repo: a note, or null.
+// One take or drop step run through the engine's command in its repo: a note, or null.
 async function runStep(step, facts, snapOf) {
   const dir = step.take ?? step.drop;
   const root = await facts.top(dir);
   if (!root) return noRepoNote(dir, step.repo, facts.cwd);
-  const entry = (mode, ...args) => facts.run(['bash', `${facts.pluginRoot}/hooks/lib/snapshot.sh`, mode, root, ...args], { cwd: root, timeoutMs: LONG_RUN_MS });
+  const command = `${facts.env.WORKFLOW_DIR || `${facts.pluginRoot}/workflow`}/lib/snapshot.js`;
+  const entry = (mode, ...args) => facts.run(['node', command, mode, root, ...args], { cwd: root, timeoutMs: LONG_RUN_MS });
   if (step.drop) {
     await entry('drop');
     return null;
@@ -106,8 +116,8 @@ async function runStep(step, facts, snapOf) {
 
 /**
  * The hook's run over the Bash facts after the command ran: the plan over the
- * journal lines the call wrote, then each step in order through `bash
- * hooks/lib/snapshot.sh take|add|stale|drop <root>` in the repo it names, the
+ * journal lines the call wrote, then each step in order through `node
+ * <engine>/lib/snapshot.js take|add|stale|drop <root>` in the repo it names, the
  * notes joined into one notice. A claim on a live snapshot adds its numbers
  * unless none of the recorded issues is still building, which takes it afresh.
  * @param {object} facts the chain's facts (guards.js), `lines` among them

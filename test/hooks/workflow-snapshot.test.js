@@ -1,7 +1,7 @@
 // Tests for workflow:snapshot: snapshotPlan({ lines, cwd, roster, slugOf, building }) in hooks/mods/snapshot.js decides,
 // over one Bash call's gh journal lines, a take at a claim and a drop at a release leaving none building or at qa (a real gh
-// call through the shim proves the line read); `bash hooks/lib/snapshot.sh take|add|stale|drop <root>` copies for real
-// in a temp repo with its own home. The wiring, the loader's take, a claim's mode: test/mods/post-tool-use-bash.test.ts.
+// call through the shim proves the line read); `node workflow/lib/snapshot.js take|add|stale|drop <root>` copies for
+// real in a temp repo with its own home. The wiring, the loader's take, a claim's mode: test/mods/post-tool-use-bash.test.ts.
 
 const fs = require('fs');
 const path = require('path');
@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash,
+  IS_WINDOWS, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash, spawnSync,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const { mkRepo, mkOriginRepo } = require('../lib/git-repo');
@@ -17,12 +17,11 @@ const {
   snapshotBase, snapshotKey, snapshotDir, treeOf,
 } = require('../lib/red-snapshot');
 const { homeOf } = require('../lib/workflow-home');
-const { runLib } = require('../lib/hook-lib');
 const { scratchKit, journalFileText } = require('../lib/identity');
 const { mods, ghEntry } = require('../lib/mods-inputs');
 
 const KIT = path.join(__dirname, '..', '..');
-const SNAPSHOT = path.join(KIT, 'hooks', 'lib', 'snapshot.sh');
+const SNAPSHOT = path.join(KIT, 'workflow', 'lib', 'snapshot.js');
 
 // The journal lines a successful gh write leaves, one per call.
 const CLAIM = (n, over = {}) => ghEntry({ numbers: [n], add: ['status:building'], ...over });
@@ -126,12 +125,15 @@ const mkWorld = (prefix = 'snapshot-') => {
   return w;
 };
 
+// The root as the hook hands it to the command: git's own top-level answer.
+const rootOf = (w) => w.git('rev-parse', '--show-toplevel').trim();
+
 /**
- * `bash hooks/lib/snapshot.sh <mode> <root> ...args` for world `w`, its PATH
+ * `node workflow/lib/snapshot.js <mode> <root> ...args` for world `w`, its PATH
  * `envPath` when given, any `extra` env on top.
  */
 const mode = (w, name, args = [], envPath = null, extra = {}) => {
-  const res = spawnBash([...NO_RC, shellPath(SNAPSHOT), name, shellPath(fs.realpathSync(w.repo)), ...args], {
+  const res = spawnSync(process.execPath, [SNAPSHOT, name, rootOf(w), ...args], {
     env: { ...w.env, ...(envPath ? { PATH: envPath } : {}), ...extra }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
@@ -244,18 +246,26 @@ describe('workflow:snapshot: the claim', () => {
       'a node_modules no package owns is copied as it is').toBe('file module.exports = 7;\n');
   });
 
-  test('the Windows branch (OSTYPE msys, the tar copy): the root package\'s node_modules left out, an ignored folder\'s copied', () => {
-    const w = withCache(mkWorld());
-    const bin = mkTmp('snapshot-tar-');
-    const logFile = path.join(bin, 'tar.log');
-    stubTool(bin, 'tar', ['#!/bin/bash', `echo "$*" >> "${shellPath(logFile)}"`,
-      `exec "${shellPath(which('tar', SYSTEM_PATH))}" "$@"`]);
-    const out = mode(w, 'take', ['5'], joinPath(bin, w.env.PATH), { OSTYPE: 'msys' });
-    ok(out, 'take 5 as Windows');
-    expect(fs.existsSync(logFile), `the take copied through tar: ${out.stderr}`).toBeTruthy();
-    const tree = takenTree(w);
-    expect(modulesIn(tree, 'node_modules'), 'no root node_modules path in the snapshot').toBe('');
-    expect(tree[CACHED], 'the ignored folder\'s module is copied as it is').toBe('file module.exports = 9;\n');
+  // A cp ahead on PATH that records each call's arguments and copies for real.
+  const recordingCp = (w) => {
+    const bin = mkTmp('snapshot-cp-');
+    const logFile = path.join(bin, 'cp.log');
+    stubTool(bin, 'cp', ['#!/bin/bash', `printf '%s\\n' "$*" >> "${shellPath(logFile)}"`,
+      `exec "${shellPath(which('cp', SYSTEM_PATH))}" "$@"`]);
+    return { logFile, envPath: joinPath(bin, w.env.PATH) };
+  };
+  const CLONE_FLAG = { darwin: '-c', linux: '--reflink=auto' }[process.platform];
+
+  test('the copy on a Mac or Linux starts cp with the platform\'s clone flag on every call, so a clone stays a clone', {
+    skip: !CLONE_FLAG && 'cp clones only on a Mac or Linux; the Windows copy is Node\'s own',
+  }, () => {
+    const w = mkWorld();
+    const cp = recordingCp(w);
+    ok(mode(w, 'take', ['5'], cp.envPath), 'take 5 through the recording cp');
+    const calls = fs.existsSync(cp.logFile) ? fs.readFileSync(cp.logFile, 'utf8').split('\n').filter(Boolean) : [];
+    expect(calls.length > 0, 'the take copied through cp').toBeTruthy();
+    expect(calls.filter((args) => !args.split(' ').includes(CLONE_FLAG)).join(' | '), `every cp call carries ${CLONE_FLAG}`).toBe('');
+    expect(takenTree(w)[path.join('src', 'x.js')], 'the copy landed').toBe('file module.exports = 1;\n');
   });
 
   // World `w` whose home's .workkit is the repo's dotfiles/.workkit, `ignore`
@@ -304,7 +314,7 @@ describe('workflow:snapshot: the claim', () => {
     expect(fs.existsSync(path.join(snap, 'tree')), `the snapshot is under HOME's cache: ${snapshots(w)}`).toBeTruthy();
     expect(keyedUnder(elsewhere, w), 'nothing of it under WORKFLOW_HOME').toBe('');
     const other = mkTmp('snapshot-other-home-');
-    ok(mode(w, 'take', ['6'], null, { HOME: shellPath(other), WORKFLOW_HOME: shellPath(elsewhere) }), 'take 6 with another HOME');
+    ok(mode(w, 'take', ['6'], null, { HOME: shellPath(other), USERPROFILE: other, WORKFLOW_HOME: shellPath(elsewhere) }), 'take 6 with another HOME');
     expect(json(issuesOf(snapshotDir(other, w.repo))), 'the take under the other HOME records #6').toBe(json(['6']));
     expect(json(issuesOf(snap)), 'the first HOME\'s snapshot is as it was').toBe(json(['5']));
   });
@@ -313,7 +323,7 @@ describe('workflow:snapshot: the claim', () => {
     const w = mkWorld();
     w.write(path.join('.cache', 'other', 'keep.txt'), 'kept\n');
     const tookAt = (n) => {
-      ok(mode(w, 'take', [n], null, { HOME: shellPath(w.repo) }), `take ${n} with HOME the repo`);
+      ok(mode(w, 'take', [n], null, { HOME: shellPath(w.repo), USERPROFILE: w.repo }), `take ${n} with HOME the repo`);
       return treeOf(path.join(snapshotDir(w.repo, w.repo), 'tree'));
     };
     const first = tookAt('5');
@@ -323,17 +333,29 @@ describe('workflow:snapshot: the claim', () => {
     expect(json(tookAt('6')), 'the second take holds what the first did').toBe(json(first));
   });
 
-  test('a finished take leaves the caller\'s traps as they were: a sourced take under a caller\'s HUP and TERM traps, none on INT', () => {
+  test('a finished take leaves the caller\'s signal handlers as they were: the take export under a caller\'s HUP and TERM handlers, none on INT', async () => {
     const w = mkWorld();
-    const out = runLib([
-      "trap 'echo caller hup' HUP",
-      "trap 'echo caller term' TERM",
-      `hook_snapshot_take "${shellPath(fs.realpathSync(w.repo))}" 5 || echo "take failed: $?"`,
-      'trap -p HUP INT TERM',
-    ].join('\n'), w.env);
-    expect(out.stdout, `the caller's traps read back unchanged: ${out.stderr}`)
-      .toBe("trap -- 'echo caller hup' SIGHUP\ntrap -- 'echo caller term' SIGTERM\n");
-    expect(json(issuesOf(snapshotDir(homeOf(w), w.repo))), 'the take happened').toBe(json(['5']));
+    const { take } = require(SNAPSHOT);
+    const signals = ['SIGHUP', 'SIGINT', 'SIGTERM'];
+    const callerHup = () => {};
+    const callerTerm = () => {};
+    process.on('SIGHUP', callerHup);
+    process.on('SIGTERM', callerTerm);
+    const before = signals.map((s) => process.listeners(s));
+    // In process the take reads this process's env, so it gets the world's home.
+    const home = { HOME: homeOf(w), USERPROFILE: homeOf(w), WORKFLOW_HOME: w.workflowHome };
+    const saved = Object.fromEntries(Object.keys(home).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, home);
+    try {
+      await take(rootOf(w));
+    } finally {
+      for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+    const after = signals.map((s) => process.listeners(s));
+    process.off('SIGHUP', callerHup);
+    process.off('SIGTERM', callerTerm);
+    expect(after, 'the handlers on HUP, INT and TERM read back unchanged').toEqual(before);
+    expect(read(snapshotDir(homeOf(w), w.repo), 'head'), 'the take happened').toBe(`${w.git('rev-parse', 'HEAD').trim()}\n`);
   });
 
   test('a second claim while the snapshot is live adds its number and leaves the tree alone: stale answers live, add records the number', () => {
@@ -444,6 +466,17 @@ describe('workflow:snapshot: removal', () => {
     expect(!fs.existsSync(snap), `the snapshot is gone: ${snapshots(w)}`).toBeTruthy();
   });
 
+  test('the command with no root or an unknown mode: one snapshot: line, exit 64, no snapshot', () => {
+    const w = mkWorld();
+    for (const argv of [['take'], ['dance', rootOf(w)]]) {
+      const res = spawnSync(process.execPath, [SNAPSHOT, ...argv], { env: w.env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+      expect(res.status, `exit 64 for ${argv.join(' ')}: ${res.stderr}`).toBe(64);
+      const said = (res.stderr || '').split('\n').filter(Boolean);
+      expect(said.length === 1 && said[0].startsWith('snapshot: '), `one snapshot: line for ${argv.join(' ')}: ${res.stderr}`).toBeTruthy();
+    }
+    expect(json(snapshots(w)), 'no snapshot taken').toBe(json([]));
+  });
+
   test('the complete flip with another issue still building leaves the snapshot', async () => {
     const { plan } = await planOf([COMPLETE(5)], { list: building(6) });
     expect(drops(plan) || takes(plan), 'neither a take nor a drop').toBe(null);
@@ -530,19 +563,20 @@ describe('workflow:snapshot: anything else', () => {
 });
 
 describe('workflow:snapshot: a failed take', () => {
-  // The copy tool each platform's take uses (tar on Git Bash, cp elsewhere),
-  // stubbed ahead on PATH to copy for real and then fail, so a whole tree is
-  // left under the temporary name for the take to clear. Each call is logged.
+  // The cp the take uses off Windows, stubbed ahead on PATH to copy for real and
+  // then fail, so a whole tree is left under the temporary name for the take to
+  // clear. Each call is logged.
   const failingCopy = (w) => {
-    const tool = IS_WINDOWS ? 'tar' : 'cp';
+    const tool = 'cp';
     const bin = mkTmp(`snapshot-${tool}-`);
     const logFile = path.join(bin, `${tool}.log`);
     stubTool(bin, tool, ['#!/bin/bash', `echo "$*" >> "${shellPath(logFile)}"`,
       `"${shellPath(which(tool, SYSTEM_PATH))}" "$@"`, `echo "${tool}: refused" >&2`, 'exit 1']);
     return { tool, logFile, envPath: joinPath(bin, w.env.PATH) };
   };
+  const NODE_COPY = IS_WINDOWS && 'the Windows copy is Node\'s own, so no tool on PATH can fail it';
 
-  test('a take whose copy fails leaves no snapshot folder and no temporary sibling', () => {
+  test('a take whose copy fails leaves no snapshot folder and no temporary sibling', { skip: NODE_COPY }, () => {
     const w = mkWorld();
     const copy = failingCopy(w);
     const out = mode(w, 'take', ['5'], copy.envPath);
@@ -551,7 +585,7 @@ describe('workflow:snapshot: a failed take', () => {
     expect(json(snapshots(w)), 'no snapshot folder and no temporary sibling').toBe(json([]));
   });
 
-  test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', () => {
+  test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', { skip: NODE_COPY }, () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(homeOf(w), w.repo);
@@ -576,14 +610,14 @@ describe('workflow:snapshot: a failed take', () => {
     stubTool(bin, 'cp', ['#!/bin/bash', `: > "${shellPath(started)}"`, 'while :; do sleep 1; done']);
     return { started, envPath: joinPath(bin, w.env.PATH) };
   };
-  const SIGNAL_SKIP = IS_WINDOWS && 'Node cannot deliver TERM, INT or HUP to a Git Bash process on Windows';
+  const SIGNAL_SKIP = IS_WINDOWS && 'Node ends a Windows process outright, with no signal a handler can catch';
 
   for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) {
     test(`a take ended by ${signal} while it copies leaves no temporary sibling and exits ${code}`, { skip: SIGNAL_SKIP }, async (t) => {
       const w = mkWorld();
       const copy = stalledCopy(w);
       // The take leads its own group and the signal goes to the whole group, the way a cut ends a call.
-      const run = start(BASH, [...NO_RC, shellPath(SNAPSHOT), 'take', shellPath(fs.realpathSync(w.repo)), '5'], {
+      const run = start(process.execPath, [SNAPSHOT, 'take', rootOf(w), '5'], {
         env: { ...w.env, PATH: copy.envPath }, detached: true,
       });
       t.after(() => run.end('SIGKILL'));

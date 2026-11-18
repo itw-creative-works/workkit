@@ -811,7 +811,7 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
 - What is left on disk is scratch (the capture inbox, session state, caches, logs), and none of it is a source of truth.
 - Two surfaces, both generic.
   - There is no assumed folder layout anywhere, and no path outside them but one.
-  - The one is the kit's cache folder, `~/.cache/workkit`: scratch, the run folders of `workkit prove` and `workkit proof red` under `proof/`, and the red-proof snapshots under `snapshot/` (`workflow/README.md`, `wk_cache_dir`).
+  - The one is the kit's cache folder, `~/.cache/workkit`: scratch, the run folders of `workkit prove` and `workkit proof red` under `proof/`, and the red-proof snapshots under `snapshot/` (`workflow/README.md`, `cacheDirOf` in `hooks/mods/log.js`).
 - **1. `~/.workkit`**: workkit's user-level home on any machine (`$WORKFLOW_HOME` overrides it).
   - It is a PLAIN FOLDER and never a git repo.
   - Nothing in it is versioned, so nothing in it has to be kept out of a commit.

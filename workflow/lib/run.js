@@ -1,5 +1,5 @@
 /**
- * workflow/lib/run.js: the one Node home for starting a program, the Node twin
+ * workflow/lib/run.js: the one Node home for finding and starting a program, the Node twin
  * of lib/platform.sh. Off Windows every call is child_process's own. On Windows
  * the program is found the way Git Bash finds it, every argument goes quoted and
  * verbatim, and a given env keeps what Windows needs to start a child.
@@ -155,6 +155,35 @@ const foundOn = (name, searchPath, gitBash) => {
 };
 
 /**
+ * The program a bare `name` names on PATH, as a shell's `command -v` finds it:
+ * on Windows foundOn's rule (each ending in turn, a `#!` file with none), else
+ * the first executable file. Null when none.
+ * @param {string} name - a bare name
+ * @param {{ platform?: string, env?: object }} [context] - the platform and env the lookup is for
+ * @returns {string|null}
+ */
+const onPath = (name, { platform = PLATFORM, env = process.env } = {}) => {
+  const searchPath = valueOf(env, 'PATH');
+  if (platform === 'win32') {
+    let bash;
+    return foundOn(name, searchPath, () => {
+      if (bash === undefined) bash = gitBashOf(searchPath, env);
+      return bash;
+    });
+  }
+  for (const dir of (searchPath || '').split(path.posix.delimiter).filter(Boolean)) {
+    const file = path.join(dir, name);
+    try {
+      fs.accessSync(file, fs.constants.X_OK);
+      if (isFile(file)) return file;
+    } catch {
+      // Not here, or not a program: the next folder.
+    }
+  }
+  return null;
+};
+
+/**
  * The real launch of `cmd` with `args` and `options`: on any platform but
  * win32 the input unchanged; on win32 the found program, a `#!` script through
  * node or Git Bash, a `.cmd` or `.bat` through ComSpec, every argument quoted
@@ -239,4 +268,6 @@ const spawn = (cmd, args, options) => {
   return child;
 };
 
-module.exports = { spawnSync, spawn, execFileSync, launchOf, windowsQuoted };
+module.exports = {
+  spawnSync, spawn, execFileSync, launchOf, windowsQuoted, onPath,
+};

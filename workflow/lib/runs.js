@@ -9,7 +9,9 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('./run');
-const { signalCode, END_SIGNALS, INT_CODE } = require('./detach');
+const {
+  signalCode, exitOf, END_SIGNALS, INT_CODE,
+} = require('./detach');
 const { attachRun, runForeground } = require('./attach');
 const { retireLock } = require('./lock');
 const runLock = require('./run-lock');
@@ -57,7 +59,7 @@ const launchApart = (argv, env) => new Promise((resolve) => {
   launcher.on('close', (code, signal) => {
     const pid = Number(out.trim());
     if (code === 0 && Number.isInteger(pid) && pid > 0) resolve({ code: 0, pid });
-    else resolve({ code: code === null ? signalCode(signal) : code || 1 });
+    else resolve({ code: exitOf(code, signal) || 1 });
   });
 });
 

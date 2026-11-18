@@ -1,15 +1,14 @@
 #!/bin/bash
-# hooks/lib/tree.sh: the working diff's path list, the one spelling
-# hooks/lib/snapshot.sh, workflow/proof/red.sh and workflow/review/covers.sh
-# read, and whether a path differs from HEAD in its version alone.
+# hooks/lib/tree.sh: the working diff's path list workflow/review/covers.sh
+# reads (its Node twin is workingPaths in workflow/lib/snapshot.js), and
+# whether a path differs from HEAD in its version alone.
 # SOURCED by hooks/_lib.sh, never executed: it defines functions and sets
 # nothing.
 
-# hook_working_paths <root>: the working diff's root-relative paths, NUL-separated:
-# modified, staged and deleted against HEAD (a rename as both halves), then the
-# untracked files; in a repo with no commit the staged list stands in for the diff
-# against HEAD. Returns 2 when a read failed. Changes with touchedOf's first two
-# reads in hooks/mods/proof-guard.js.
+# hook_working_paths <root>: the working diff's root-relative paths, NUL-separated,
+# by the reads WORKING_READS and UNBORN_READS in hooks/mods/proof-guard.js spell
+# (a rename as both halves, the staged list in a repo with no commit); 2 when a
+# read failed.
 hook_working_paths() {
   local rc=0
   if git -C "$1" rev-parse --verify -q HEAD >/dev/null 2>&1; then

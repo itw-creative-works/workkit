@@ -19,9 +19,11 @@ import { LONG_RUN_MS, factOf, hasTestScript, pkgProved, suiteProved, testPackage
 import { isTestName, isTestPath } from './test-reminder.js';
 
 const SHAPE = 'The key proof.rootOnly in the settings is not an array of folder strings, so no package was taken as proved by the root run alone.';
-const WORKING_READS = [['diff', 'HEAD', '--name-only', '--no-renames', '-z'], ['ls-files', '--others', '--exclude-standard', '-z']];
+// The working diff's two git reads, the one spelling workflow/lib/snapshot.js's
+// workingPaths and hook_working_paths in hooks/lib/tree.sh read too.
+export const WORKING_READS = [['diff', 'HEAD', '--name-only', '--no-renames', '-z'], ['ls-files', '--others', '--exclude-standard', '-z']];
 // With no commit yet the staged list stands in for the diff against HEAD.
-const UNBORN_READS = [['ls-files', '-z'], WORKING_READS[1]];
+export const UNBORN_READS = [['ls-files', '-z'], WORKING_READS[1]];
 const BASELESS = ' Commits since the default branch were not read: origin names no default branch and this branch has no upstream, or HEAD shares no merge base with it.';
 
 const skipped = ghSkipped('proof-guard', 'proof gate');

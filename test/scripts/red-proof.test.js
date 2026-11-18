@@ -1,4 +1,4 @@
-// Tests for workflow/proof/red.sh (`workkit proof red`): the tests run in a copy
+// Tests for workflow/proof/red.js (`workkit proof red`): the tests run in a copy
 // built from the repo's snapshot, where the named source paths are as the
 // snapshot holds them and every other change since is live; with --live they run
 // in the live tree, the named paths swapped for the run. Every case is a real
@@ -8,11 +8,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const { Writable } = require('stream');
 const {
-  describe, test, expect, SPAWN_DEADLINE,
+  describe, test, expect, SPAWN_DEADLINE, alive, pidIn, until,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, shellPath, jsPath, gitPath, joinPath, spawnBash, spawn,
+  IS_WINDOWS, BASH, jsPath, gitPath, joinPath, spawnSync, spawn,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { skipWithoutNpm } = require('../lib/core-repo');
@@ -21,7 +22,7 @@ const { linesOf } = require('../lib/run-lists');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
 const { homeOf, proofBase, runFolders, plantRun } = require('../lib/workflow-home');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'proof', 'red.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'proof', 'red.js');
 // The kit's own runner, the one that writes the summary file a proof run reads.
 const RUNNER = path.join(__dirname, '..', '..', 'packages', 'core', 'test', 'run.js');
 const NO_SNAPSHOT = 'red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)';
@@ -153,8 +154,9 @@ const mkBuilt = () => {
   return w;
 };
 
+// The command under the node running this suite, as `workkit proof red` starts it under one at the floor.
 const runScript = (w, args, cwd = w.repo, env = w.env) => {
-  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
+  const res = spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();
@@ -166,7 +168,7 @@ const runScript = (w, args, cwd = w.repo, env = w.env) => {
  * which the command writes; resolves with its exit once it has gone.
  */
 const termMidRun = (w, args, marker) => new Promise((resolve, reject) => {
-  const child = spawn(BASH, [...NO_RC, shellPath(SCRIPT), ...args], { cwd: w.repo, env: w.env });
+  const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: w.repo, env: w.env });
   let said = '';
   child.stdout.on('data', (d) => { said += d; });
   child.stderr.on('data', (d) => { said += d; });
@@ -188,6 +190,30 @@ const termMidRun = (w, args, marker) => new Promise((resolve, reject) => {
     clearInterval(poll);
     clearTimeout(deadline);
     resolve({ code, signal, said, marked: fs.existsSync(marker) });
+  });
+});
+
+// A command that prints a megabyte to stdout, then fails: a red on an open stdout.
+const LOUD_FAIL = "process.stdout.write('x'.repeat(1 << 20)); process.exitCode = 1;";
+const STDOUT_CLOSED = 'red-proof: stopped: its stdout was closed';
+
+/**
+ * Run the script with its stdout's reading end closed at the start, as a reader
+ * that quits early leaves it; resolves with its exit and its stderr once every
+ * stream has closed.
+ */
+const closedReader = (w, args) => new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: w.repo, env: w.env });
+  child.stdout.destroy();
+  let err = '';
+  child.stderr.on('data', (d) => { err += d; });
+  const deadline = setTimeout(() => {
+    child.kill('SIGKILL');
+    reject(new Error(`the script did not end with its stdout closed: ${err}`));
+  }, SPAWN_DEADLINE);
+  child.on('close', (code, signal) => {
+    clearTimeout(deadline);
+    resolve({ code, signal, err });
   });
 });
 
@@ -253,6 +279,21 @@ describe('proof red: no snapshot', () => {
     expect(code, `exit 2: ${out}${err}`).toBe(2);
     expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
     expect(lines(err).pop(), `the last stderr line: ${err}`).toBe(NO_SNAPSHOT);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a snapshot whose head is a folder, not a file: exit 2 with one red-proof: line last, never a verdict', () => {
+    const w = mkWorld();
+    const snap = takeSnapshot(w);
+    fs.rmSync(path.join(snap, 'head'));
+    fs.mkdirSync(path.join(snap, 'head'));
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/x.test.js', TEST_OF(2));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/x.test.js']);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect((lines(err).pop() || '').startsWith('red-proof: '), `a red-proof: line last: ${err}`).toBeTruthy();
     assertNoWorktree(w);
     cleanup(w.dir);
   });
@@ -582,6 +623,7 @@ describe('proof red: the copy', () => {
     const check = "process.exit(require('fs').lstatSync('src/dead.js').isSymbolicLink() ? 0 : 1)";
     const { code, out, err } = runScript(w, ['src/y.js', '--', 'node', '-e', check]);
     expect(code, `exit 1, the copy holds the dangling link: ${out}${err}`).toBe(1);
+    expect(lines(out).pop(), `the green verdict, never node's own exit 1: ${out}${err}`).toBe('red-proof: green: the tests pass without src/y.js');
     assertNoWorktree(w);
     cleanup(w.dir);
   });
@@ -661,7 +703,8 @@ describe('proof red: naming a path', () => {
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', TEST_OF(2));
-    const abs = shellPath(path.join(w.repo, 'src', 'x.js'));
+    // Git Bash hands a native program a typed path in git's spelling.
+    const abs = gitPath(path.join(w.repo, 'src', 'x.js'));
     const { code, out, err } = runScript(w, [abs, '--', 'node', 'tests/x.test.js']);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
@@ -695,7 +738,7 @@ describe('proof red: naming a path', () => {
   test('a path outside the repo: exit 2, naming it', () => {
     const w = mkWorld();
     takeSnapshot(w);
-    const outside = shellPath(w.tmp);
+    const outside = gitPath(w.tmp);
     const { code, out, err } = runScript(w, [outside, '--', 'node', 'tests/x.test.js']);
     expect(code, `exit 2: ${out}${err}`).toBe(2);
     expect(err, `the one line: ${err}`).toBe(`red-proof: ${outside} is not in this repo's tree or working diff\n`);
@@ -855,7 +898,7 @@ describe('proof red: the test summary', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('tests/x.test.js', NODE_TEST_OF(1));
-    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', 'node --test tests/x.test.js; exit 3']);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', 'node --test tests/x.test.js; exit 3']);
     expect(code, `exit 2: ${out}${err}`).toBe(2);
     expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
     expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: not runnable: no test failed; the command stopped another way');
@@ -967,7 +1010,7 @@ describe('proof red: the kit runner\'s summary file', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('tests/x.test.js', NODE_TEST_OF(1));
-    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', 'node "$1" && exit 3', '_', RUNNER]);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', 'node "$1" && exit 3', '_', RUNNER]);
     expect(totalsAt(`${out}${err}`, 1, 0) >= 0, `the runner passed its one case: ${out}${err}`).toBeTruthy();
     assertStop(code, out, err, NO_TEST_FAILED);
     assertNoWorktree(w);
@@ -1000,7 +1043,7 @@ describe('proof red: the kit runner\'s summary file', () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', NODE_TEST_OF(2));
     const both = 'status=0; node "$1" tests/x.test.js || status=1; node "$1" tests/a.test.js || status=1; exit "$status"';
-    const { code, out, err } = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', both, '_', RUNNER]);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', both, '_', RUNNER]);
     const said = `${out}${err}`;
     const [failing, passing] = [totalsAt(said, 0, 1), totalsAt(said, 1, 0)];
     expect(failing >= 0 && passing > failing, `both runs ran, the failing one first: ${said}`).toBeTruthy();
@@ -1014,7 +1057,7 @@ describe('proof red: the kit runner\'s summary file', () => {
    * `workkit proof red` on src/x.js around the kit's runner, started with `runnerArgs`, at a
    * root holding cases `shared root` and `other root` and member m on `workkit test` holding
    * `shared m`, which fails without the source, and `other m`. The command copies the summary
-   * file before red.sh reads it, so the case sees the run's lines.
+   * file before red.js reads it, so the case sees the run's lines.
    */
   const redOverMember = (runnerArgs) => {
     const memberTestOf = (value) => [
@@ -1038,7 +1081,7 @@ describe('proof red: the kit runner\'s summary file', () => {
     const copy = path.join(w.dir, 'summary.copy');
     const command = 'node "$1" "${@:3}"; s=$?; cp "$WORKKIT_TEST_SUMMARY" "$2"; exit "$s"';
     const env = { ...w.env, PATH: joinPath(coreBin(), w.env.PATH) };
-    const res = runScript(w, ['src/x.js', '--', shellPath(BASH), '-c', command, '_', RUNNER, shellPath(copy), ...runnerArgs], w.repo, env);
+    const res = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', command, '_', RUNNER, gitPath(copy), ...runnerArgs], w.repo, env);
     const summary = fs.existsSync(copy) ? lines(fs.readFileSync(copy, 'utf8')) : null;
     cleanup(w.dir);
     return { ...res, summary };
@@ -1192,7 +1235,7 @@ describe('proof red --live', () => {
     cleanup(w.dir);
   });
 
-  test('--live and a TERM to the script mid-run: the file back', {
+  test('--live and a TERM to the script mid-run: exit 143, the file back', {
     skip: IS_WINDOWS && 'Node ends a Windows process outright, with no signal a trap can catch',
   }, async () => {
     const w = mkWorld();
@@ -1206,7 +1249,131 @@ describe('proof red --live', () => {
     const res = await termMidRun(w, ['--live', 'src/x.js', '--', 'node', '-e', command], marker);
     expect(res.marked, `the command started and wrote its marker: ${res.said}`).toBeTruthy();
     expect(fs.readFileSync(marker, 'utf8'), 'the snapshot\'s version was live when TERM came').toBe('module.exports = 1;\n');
+    expect(res.code, `exit 143: ${JSON.stringify({ code: res.code, signal: res.signal })} ${res.said}`).toBe(143);
     assertRestored(w, 'src/x.js', before);
+    cleanup(w.dir);
+  });
+
+  test('--live naming the repo root: exit 2 with the refusal, never a verdict, the live tree unchanged', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const tree = treeOf(w.repo);
+    const { code, out, err } = runScript(w, ['--live', '.', '--', 'node', 'tests/x.test.js']);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: --live cannot swap the repo root; name the source paths');
+    expect(JSON.stringify(treeOf(w.repo)), 'no file in the live tree added, removed or altered').toBe(JSON.stringify(tree));
+    cleanup(w.dir);
+  });
+
+  test('--live with a node test file the repo lacks: exit 2, naming it, the file back', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const before = liveState(w, 'src/x.js');
+    const { code, out, err } = runScript(w, ['--live', 'src/x.js', '--', 'node', '--test', 'nope.test.js']);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red'), `no verdict: ${out}`).toBeTruthy();
+    expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: test file not in the repo: nope.test.js');
+    assertRestored(w, 'src/x.js', before);
+    cleanup(w.dir);
+  });
+
+  test('--live with a named path that cannot be put back: exit 2 naming it, the run folder kept with its live version', {
+    skip: (IS_WINDOWS || process.getuid() === 0) && 'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)',
+  }, () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    // The command locks src/ against the put-back, then passes.
+    const command = `require('fs').chmodSync('src', 0o555);`;
+    let res;
+    try {
+      res = runScript(w, ['--live', 'src/x.js', '--', 'node', '-e', command]);
+    } finally {
+      fs.chmodSync(path.join(w.repo, 'src'), 0o755);
+    }
+    const { code, out, err } = res;
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(lines(err).some((l) => l.startsWith('red-proof: could not put src/x.js back')), `the line naming src/x.js: ${err}`).toBeTruthy();
+    const runs = runFolders(homeOf(w));
+    expect(runs.length, `one run folder kept: ${runs}`).toBe(1);
+    expect(fs.readFileSync(path.join(proofBase(homeOf(w)), runs[0], 'live', 'src', 'x.js'), 'utf8'), 'the live version is in the kept folder')
+      .toBe('module.exports = 2;\n');
+    cleanup(w.dir);
+  });
+
+  test('--live whose stdout reader has closed: exit 2, the live tree as it was, no run folder left', async () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const before = liveState(w, 'src/x.js');
+    const res = await closedReader(w, ['--live', 'src/x.js', '--', 'node', '-e', LOUD_FAIL]);
+    expect(res.code, `the proof's own exit 2: ${JSON.stringify({ code: res.code, signal: res.signal })} ${res.err}`).toBe(2);
+    expect(lines(res.err).pop(), `the last stderr line: ${res.err}`).toBe(STDOUT_CLOSED);
+    assertRestored(w, 'src/x.js', before);
+    expect(runFolders(homeOf(w)).join(', '), 'no run folder left').toBe('');
+    cleanup(w.dir);
+  });
+});
+
+describe('drained', () => {
+  test('one small chunk still being written: pending until the stream takes it, then settled', async () => {
+    const { drained } = require(SCRIPT);
+    // The first chunk is held until released; any later one is taken at once.
+    let release = null;
+    const stream = new Writable({
+      write: (chunk, encoding, done) => {
+        if (release) done();
+        else release = done;
+      },
+    });
+    expect(stream.write('x'), 'the chunk is under the high-water mark').toBe(true);
+    let settled = false;
+    const flushed = Promise.resolve(drained(stream)).then(() => { settled = true; });
+    for (let i = 0; i < 3; i += 1) await new Promise((resolve) => { setImmediate(resolve); });
+    expect(settled, 'pending while the chunk is held').toBe(false);
+    expect(typeof release, 'the stream holds the chunk').toBe('function');
+    release();
+    expect(await until(() => settled), 'settled once the stream has taken the chunk').toBeTruthy();
+    await flushed;
+  });
+});
+
+describe('proof red: a closed stdout in the copy mode', () => {
+  test('the copy mode whose stdout reader has closed: exit 2, the worktree and the run folder gone', async () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const res = await closedReader(w, ['src/x.js', '--', 'node', '-e', LOUD_FAIL]);
+    expect(res.code, `the proof's own exit 2: ${JSON.stringify({ code: res.code, signal: res.signal })} ${res.err}`).toBe(2);
+    expect(lines(res.err).pop(), `the last stderr line: ${res.err}`).toBe(STDOUT_CLOSED);
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+});
+
+describe('proof red: a signal in the copy mode', () => {
+  test('a TERM to the script mid-run: the command gone, the worktree and the run folder gone, the call ended by TERM', {
+    skip: IS_WINDOWS && 'Node ends a Windows process outright, with no signal a handler can catch',
+  }, async () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const marker = path.join(w.dir, 'running');
+    // The command records its pid, then lives on past the TERM unless it is ended.
+    const command = `require('fs').writeFileSync(${jsPath(marker)}, String(process.pid)); setTimeout(() => {}, 30000);`;
+    const res = await termMidRun(w, ['src/x.js', '--', 'node', '-e', command], marker);
+    const commandPid = pidIn(marker);
+    try {
+      expect(res.marked, `the command started and wrote its marker: ${res.said}`).toBeTruthy();
+      expect(res.signal, `ended by TERM: ${JSON.stringify({ code: res.code, signal: res.signal })} ${res.said}`).toBe('SIGTERM');
+      expect(alive(commandPid), `the command ${commandPid} is gone once the proof has ended`).toBe(false);
+      assertNoWorktree(w);
+    } finally {
+      if (alive(commandPid)) process.kill(commandPid, 'SIGKILL');
+    }
     cleanup(w.dir);
   });
 });

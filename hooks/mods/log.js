@@ -45,7 +45,8 @@ export function userDirOf(env) {
 }
 
 /**
- * The kit's cache folder, wk_cache_dir's rule: <home>/.cache/workkit. HOME
+ * The kit's cache folder, its one home: <home>/.cache/workkit, short and with no
+ * crowded parent, holding the proof run folders and the red-proof snapshots. HOME
  * moves it; WORKFLOW_HOME does not, since ~/.workkit can be a link into a repo.
  * @param {object} env the variables the module read
  * @returns {string}

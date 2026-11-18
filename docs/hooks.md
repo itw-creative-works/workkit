@@ -15,7 +15,7 @@
   - the `git` shim (`workflow/gitshim/git`), which the module's `classic.SessionStart` puts first on a session's PATH (§ `safety:tree-guard`);
   - and git's own hooks (`workflow/githooks/`), set as a repo's `core.hooksPath` by the heal.
 - The shell left under `hooks/` is no hook.
-  - `hooks/_lib.sh` and `hooks/lib/*.sh` are the library the `workflow/review/`, `workflow/triage/` and `workflow/proof/` scripts, `workflow/prove.sh` and the snapshot entry source (§ Platforms).
+  - `hooks/_lib.sh` and `hooks/lib/*.sh` are the library the `workflow/review/` and `workflow/triage/` scripts and the full-suite hold `workflow/prove.js` asks source (§ Platforms).
 
 ### The hooks log
 
@@ -100,7 +100,7 @@
   - The four markers go through `hook_review_marker_path`, `hook_triage_marker_path` (above it) and the suite and package record paths in the engine's `workflow/lib/suite.sh`, each built by `wk_marker_path`.
     - The record writes and reads in `workflow/lib/records.js` name the same files through `markerPath`, its twin.
     - A skill writes the first two.
-    - The engine's npm `script-shell` wrapper (`workflow/script-shell.sh`) and `workkit prove` (`workflow/prove.sh`) write the suite marker.
+    - The engine's npm `script-shell` wrapper (`workflow/script-shell.sh`) and `workkit prove` (`workflow/prove.js`) write the suite marker.
     - The same wrapper writes the package record (`wk_pkg_marker_path`): the packages a green `npm test` other than the bare root run proved on a tree.
     - `safety:proof-guard` reads the package record at the qa flip.
   - The same derivation names the run locks and fallback logs of the detached suite run, supervised run, CI watch and narrowed runs' slots: `runPaths` in `workflow/lib/run-paths.js` names them all, and `workflow/lib/suite.sh` keeps the shell names of the suite's and the slot's.
@@ -144,13 +144,13 @@
   - It is git's spelling too, so a path git printed is in it already, and a roster key is written and looked up through it.
   - Node prints the native spelling already, through `path`.
 - `hook_file_mtime`: BSD `stat -f` against GNU `stat -c`, each spelling accepted only when its output is digits, since the GNU one prints `?` and exits 0 for the flag it does not mean.
-- `_hook_snapshot_copy` in `hooks/lib/snapshot.sh`: the snapshot copy.
-  - macOS clones with `cp -c` and Linux copies with `cp --reflink=auto`, walking into a folder only where it holds a package's `node_modules`.
-  - Windows streams through `tar`, one `--exclude` per such folder.
+- `copyTree` in `workflow/lib/tree-copy.js`: the snapshot copy, in Node, since the copy is the one step whose tool differs per platform.
+  - macOS clones with `cp -c -pPR`, Linux copies with `cp -a --reflink=auto`, any other POSIX system with `cp -pPR`, each walking into a folder only where it holds a package's `node_modules`.
+  - Windows copies with Node's own walk (`copyEntry`), walking the same way, each link made again as a link with its type set: a junction for a folder with an absolute target.
   - Every platform leaves out `.git` and each package's `node_modules`.
-    - A package is a folder whose `package.json` git lists, tracked or untracked and not ignored, outside every `node_modules` (`_hook_snapshot_modules_list`).
+    - A package is a folder whose `package.json` git lists, tracked or untracked and not ignored, outside every `node_modules` (`heldModules`).
     - The fill rebuilds those: § `workflow:snapshot`.
-  - Every platform also leaves out the kit's paths inside the folder copied, by real path (`_hook_snapshot_kit_rels`).
+  - Every platform also leaves out the kit's paths inside the live repo, by real path.
     - Links are resolved, as when `~/.workkit` links into a dotfiles repo.
     - The snapshot home (`~/.cache/workkit/snapshot`), where the snapshot itself is built, is left out when it lies inside the folder (a repo at `$HOME`).
     - So is the kit home's markers folder (`wk_markers_dir`).
@@ -158,14 +158,15 @@
     - So a tracked file there, or an untracked one git does not ignore, is still copied.
   - The copy walks a folder holding one the same way, and a repo's own folder of the same name elsewhere is still copied.
   - Any other `node_modules`, data inside an ignored folder, is copied as it is.
-  - Given paths after its two folders, it copies only those, each one whose parent folder the destination holds.
+  - Given paths (`only`), it copies only those, each one whose parent folder the destination holds.
+  - A link the fill makes is a junction on Windows for a folder, which needs no privilege.
 
 - `hooks/_lib.sh` is the library's entry. It keeps the seam, `hook_jq`, the engine sources and the constants.
   - It sources its helper groups from [`hooks/lib/`](../hooks/lib/), one file per group, so a script still sources `_lib.sh` alone.
-  - The groups: the markers, the tested package a path sits in, the working-diff path list, the red-proof snapshot.
+  - The groups: the markers, the tested package a path sits in, the working-diff path list.
 - Its consumers:
-  - the scripts the skills and agents run through `workkit review`, `workkit triage` and `workkit proof` (`workflow/{review,triage,proof}/*.sh`);
-  - `workflow/prove.sh`, the snapshot entry, the CI's `.github/scripts/release-push.sh` and the dotfiles hooks.
+  - the scripts the skills and agents run through `workkit review` and `workkit triage` (`workflow/{review,triage}/*.sh`);
+  - the full-suite hold `workflow/prove.js` asks, the CI's `.github/scripts/release-push.sh` and the dotfiles hooks.
   - No workkit hook sources it.
 
 - The reads the module's guards share each have one home under `hooks/mods/`:
@@ -174,8 +175,8 @@
   - `slug.js`: the slug rule `slugFromRemote`.
   - `changed.js`: the files a repo's working tree changed since a moment (`changedSince`), and the capture file's path `CAPTURE_PATH`.
   - `gh.js`: the `gh` calls, `issueView`, `stageList`, and the gh guards' `denyAfter` and `ghSkipped`.
-    - It also holds `buildingList`, the `status:building` list no guard reads.
-    - That is kept as the twin of `wk_issues_building` in `workflow/lib/hold.sh`, which `test/hooks/twins.test.js` holds to one argv.
+    - It also holds `buildingList`, the `status:building` list no guard reads: the snapshot's `stale` (`workflow/lib/snapshot.js`) reads it.
+    - It is the twin of `wk_issues_building` in `workflow/lib/hold.sh`, which `test/hooks/twins.test.js` holds to one argv.
   - `proof.js`: the `gh` calls' answers and the `Proof:` pattern.
   - `settings.js`: the settings and the one safe JSON parse (`parseJson`, `isPlain`).
   - `suite.js`: the proved-tree records, the tree hash and the tested package, with `LONG_RUN_MS`, the ceiling of every long program run.
@@ -915,7 +916,7 @@
   - A green `npm test` at the repo root records the id of the working tree it started on, through npm's `script-shell`.
   - A green `workkit prove` records the index's tree.
   - A run with `CI` set (any value but the empty string) records nothing, and the gate never reads `CI`: a tree only such a run proved is refused for a missing record.
-  - The record's shape and home, and its two writers: `workflow/README.md`, the `lib/records.js`, `lib/suite.sh`, `script-shell.sh` and `prove.sh` rows.
+  - The record's shape and home, and its two writers: `workflow/README.md`, the `lib/records.js`, `lib/suite.sh`, `script-shell.sh` and `prove.js` rows.
   - The gate compares it with the tree the commit carries (`treeId`): the commit's index's tree less `.workkit/`.
   - That id comes through `node workflow/lib/tree-hash.js <root> -i`, with no bash started.
     - The judge runs that `node` child under its own Node (`process.execPath`, `workflow/lib/io.js`), so a commit made from a program whose PATH holds no node still takes the id.
@@ -1188,7 +1189,7 @@
   - A repo the roster does not hold, or holds as declined, is not a yes. So its flip is not judged, as no hook judges such a repo.
 - The touched list is the working diff at the repo root plus the committed leg below, deletions excluded.
   - The working diff is `git diff HEAD --name-only --no-renames -z` and `git ls-files --others --exclude-standard -z`.
-  - It is the list `hook_working_paths` in `hooks/lib/tree.sh` prints for `workkit proof red` and `workkit review covers`.
+  - Its two reads are `WORKING_READS` (`UNBORN_READS` with no commit) in `hooks/mods/proof-guard.js`, the reads `workingPaths` in `workflow/lib/snapshot.js` makes for the snapshot and `workkit proof red`, and `hook_working_paths` in `hooks/lib/tree.sh` for `workkit review covers`.
   - In a repo with no commit yet, the staged list, `git ls-files -z`, stands in for the diff against HEAD.
   - A failed `git diff HEAD` or `git ls-files` read, or one that did not start, denies the flip naming the read.
 - Every test-shaped path (`*.test.*`, `*.spec.*`, `*_test.*`: `isTestName` in `hooks/mods/test-reminder.js`) counts, whatever its extension.
@@ -1291,9 +1292,9 @@
 
 - Takes the snapshot `workkit proof red` runs against.
   - After a Bash call whose `gh` write moved an issue to `status:building` (the claim in `skills/feature/SKILL.md`), it copies the whole repo folder.
-  - The copy goes to `tree/` in the repo's snapshot folder, `~/.cache/workkit/snapshot/<sha1 of the repo root>` (`hook_snapshot_dir`), outside every repo even when `~/.workkit` is a link into one.
-    - Its base is the kit's cache folder (`wk_cache_dir`), beside the proof copies (`~/.cache/workkit/proof`). `HOME` moves it; `WORKFLOW_HOME` does not.
-    - The keyed name comes from `wk_keyed_path <folder> <anchor>`, the step `wk_marker_path` shares.
+  - The copy goes to `tree/` in the repo's snapshot folder, `~/.cache/workkit/snapshot/<sha1 of the repo root>` (`snapshotPath` in `hooks/mods/snapshot.js`), outside every repo even when `~/.workkit` is a link into one.
+    - Its base, the snapshot home `snapshotHome`, is `snapshot/` in the kit's cache folder (`cacheDirOf`), beside the proof copies (`~/.cache/workkit/proof`). `HOME` moves it; `WORKFLOW_HOME` does not. A tree copy leaves it out by that one name.
+    - The key is the SHA-1 of the root as git's top level spells it, the root the hook hands the command and `workkit proof red` reads.
   - Gitignored files are included.
   - Left out: `.git`, each package's `node_modules`, the snapshot home when the repo holds it (a repo at `$HOME`), and the kit home's markers folder and git-ignored paths (when the repo holds the kit home).
 - It reads the gh journal lines the call left, each `{ ms, verb, sub, repo, numbers, add, remove, cwd }`, never the command text. The post-call row states the read. On the opt-in, it follows § Where every hook stands down, the Bash call that already ran. So a claim in another opted-in repo is read, whatever `cd`, subshell or script led there.
@@ -1302,8 +1303,8 @@
   - A repeat mirror sets the same label.
   - A repeat claim after the first take finished keeps the snapshot (the re-claim rule below).
   - One that lands while the first take still copies starts a second take.
-  - The take's race rule decides which copy stays: the second to move in records its numbers on the winner (`hook_snapshot_take`).
-- Beside the copy it records `head` (the HEAD it was taken at, one sha line), `paths` (the working-change list at that moment, NUL-separated, as `hook_working_paths` prints it) and `issues` (the claimed issue numbers, one a line).
+  - The take's race rule decides which copy stays: the second to move in records its numbers on the winner (`take` in `workflow/lib/snapshot.js`).
+- Beside the copy it records `head` (the HEAD it was taken at, one sha line), `paths` (the working-change list at that moment, NUL-separated, as `workingPaths` reads it) and `issues` (the claimed issue numbers, one a line).
 - One snapshot per repo. A claim while it is live adds its issue numbers and leaves the copy alone. A snapshot whose recorded issues have all left `status:building` is stale, and a claim of a number it does not record replaces it; a claim of a number it already records keeps it, stale or not, so a re-claim after a block never swaps in a tree that already carries the edits.
 - A release is the flip that ends the work: an add of `status:complete`, or a `gh issue close`.
   - On one, while a snapshot is there, it asks GitHub which issues in that repo are still at `status:building` or `status:qa`.
@@ -1327,16 +1328,12 @@
 - Every line that claims or releases is one step, run in order.
   - So two `gh issue edit` calls in one Bash call record both numbers, and a claim in each of two repos snapshots both.
   - The notices of one call are joined into one.
-- The module plans and `hooks/lib/snapshot.sh` acts.
+- The module plans and the engine's `workflow/lib/snapshot.js` acts.
   - `snapshotPlan` reads the journal lines.
-  - For the copy, `snapshotGuard` runs the file's entry from the repo root with a 600-second `timeoutMs`: `bash hooks/lib/snapshot.sh take|add|stale|drop <root> [args]`.
-  - The entry runs `hook_snapshot_take`, `hook_snapshot_add`, `hook_snapshot_stale` or `hook_snapshot_drop`, their exit status passed through.
-  - The module writes no snapshot file of its own. The `issues` list is appended by the entry, and read whole by the module for the re-claim test.
-  - Sourced, the file defines its functions and runs nothing, as `workflow/proof/red.sh` and `workflow/prove.sh` source it.
-- The copy per platform:
-  - macOS clones (`cp -c`), which costs almost nothing;
-  - Linux copies with `--reflink=auto`;
-  - Windows (Git Bash) streams through `tar`.
+  - For the copy, `snapshotGuard` runs the command from the repo root with a 600-second `timeoutMs`, as `workflow:public-mirror` starts its Node file: `node <engine>/lib/snapshot.js take|add|stale|drop <root> [args]`, the engine `WORKFLOW_DIR` or the plugin's own `workflow/`.
+  - The command runs its export of that name (`take`, `add`, `stale`, `drop`), its code passed through; a usage fault is a `snapshot:` line and 64.
+  - The module writes no snapshot file of its own. The `issues` list is appended by the command, and read whole by the module for the re-claim test.
+- The copy is `copyTree` in `workflow/lib/tree-copy.js`; how each platform copies, a macOS clone costing almost nothing: § Platforms.
 - No platform copies a package's `node_modules` folder.
   - That is one beside a `package.json` git lists, tracked or untracked and not ignored, never one under another `node_modules`.
   - Red-proof's copy makes each one a real folder with its entries linked from the live repo.
@@ -1348,17 +1345,17 @@
   - So two claims racing on one repo never leave a half tree under the final name.
   - A failed take removes the sibling, keeps any snapshot already there, and is a notice naming the error.
   - An old snapshot the take cannot remove is moved aside to a `<dir>.XXXXXX` sibling, named in a notice, and the new one takes its place.
-  - A take ended by `TERM`, `INT` or `HUP` removes its sibling at once and exits non-zero (143, 130 or 129).
+  - A take ended by `TERM`, `INT` or `HUP` exits 143, 130 or 129 once its current step is done, its sibling gone.
   - Siblings older than 10 minutes, left by a take ended without a signal it can catch (a `SIGKILL`), are swept at the next take.
-- The fill that turns a folder into a runnable copy is `hook_snapshot_fill <tree> <root> <dest> [rel]...` in `hooks/lib/snapshot.sh`.
-  - `<dest>` is filled from the folder `<tree>`, only the named paths when any are given.
-  - Each package's `node_modules` the live repo `<root>` holds is rebuilt as above, on every platform.
+- The fill that turns a folder into a runnable copy is `fillCopy(src, root, dest, only)` in `workflow/lib/tree-copy.js`.
+  - `dest` is filled from the folder `src`, only the named paths when any are given.
+  - Each package's `node_modules` the live repo `root` holds is rebuilt as above, on every platform.
 - Red-proof fills from the snapshot's `tree/`.
-- `workkit prove` fills from the live folder, naming only its gitignored paths, with its root spelled through `hook_snapshot_root`.
-  - It does so since the fill compares link targets spelled by `pwd -P`.
+- `workkit prove` fills from the live folder, naming only its gitignored paths.
+  - The fill compares link targets by real path, so the root's spelling does not matter.
 - The copy's worktree is the shared pair both use:
-  - `hook_snapshot_worktree_add <root> <copy>` adds a detached worktree of HEAD with nothing checked out, tried three times against a racing add or prune;
-  - `hook_snapshot_worktree_remove <root> <copy>` removes it, deleting the folder and pruning the list when git cannot.
+  - `worktreeAdd(root, dest)` adds a detached worktree of HEAD with nothing checked out, tried three times against a racing add or prune;
+  - `worktreeRemove(root, dest)` removes it, deleting the folder and pruning the list when git cannot.
 - The other notice with no snapshot taken or dropped: a claim whose roster folder is outside any git repository. A claim made from a folder in no repository is dropped unread, so it draws no notice. A live snapshot that cannot take a later claim's numbers is a notice too. Every notice reaches Claude as context and the owner as one `$.ui.log` line.
 - A failed Bash call (exit non-zero) fires `classic.PostToolUseFailure` and no `classic.PostToolUse`, so the hook runs on both, reading the journal alike: a `gh` write that landed has its line whatever the call's exit, and one that failed has none.
 - Never blocks: neither Bash chain refuses, a failed copy or GitHub read included.

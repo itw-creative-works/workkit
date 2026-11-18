@@ -242,14 +242,6 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
       }
     });
 
-    test('the shell and JS rules name the same cache folder and the same snapshot folder under the scratch HOME', async () => {
-      const cache = runLib('wk_cache_dir', HOME.env);
-      expect(mods('log').cacheDirOf(HOME.env), `cacheDirOf names the folder wk_cache_dir does: ${cache.stderr}`).toBe(cache.stdout.trim());
-      const snap = runLib('hook_snapshot_dir /repos/thing', HOME.env);
-      expect(await mods('snapshot').snapshotPath('/repos/thing', HOME.env), `snapshotPath names the folder hook_snapshot_dir does: ${snap.stderr}`)
-        .toBe(snap.stdout.trim());
-    });
-
     test('writing a marker sweeps the markers folder: a file 8 days old goes, one 6 days old stays', () => {
       const { workflowHome, env } = scratchWorkflowHome('lib-sweep-home-');
       const aged = (kind, name, days) => agedFile(path.join(workflowHome, 'markers', kind, name), days);

@@ -8,13 +8,15 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, run, pidIn,
+  describe, test, expect, run, pidIn, mkTmp, until,
 } = require('../lib/harness');
-const { shellPath } = require('../lib/platform');
+const {
+  IS_WINDOWS, shellPath, basePathWithout, nodeEnv,
+} = require('../lib/platform');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
 const {
-  suiteMarkerPath, reviewMarkerPath, kitIndexTree, plantRecord,
+  suiteMarkerPath, suiteLogPath, reviewMarkerPath, kitIndexTree, plantRecord,
 } = require('../lib/suite-record');
 const {
   skipWithoutWrapper, wiredNpmEnv, assertRecord,
@@ -25,8 +27,9 @@ const {
   homeOf, cacheBase, proofBase, runFolders, plantRun,
 } = require('../lib/workflow-home');
 const {
-  CHECK_MINUTES, skipOnWindows, checkSettings, reap,
+  CHECK_MINUTES, skipOnWindows, checkSettings, reap, realOf,
 } = require('../lib/supervise');
+const { workkitStart } = require('../lib/supervise-world');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -111,6 +114,47 @@ const stateOf = (w) => ({
   tmp: fs.readdirSync(w.tmp).join(', '),
   files: Object.fromEntries(Object.entries(treeOf(w.repo)).map(([rel, body]) => [rel, sha1(body)])),
 });
+
+// The number of worktrees git lists for the world's repo, its own among them.
+const worktreeCount = (w) => w.git('worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).length;
+
+// The last line of <text>, its closing newline aside.
+const lastOf = (text) => text.replace(/\n$/, '').split('\n').pop();
+
+// The repo root as git spells it, the spelling a prove: line prints.
+const topOf = (w) => w.git('rev-parse', '--show-toplevel').trim();
+
+// Whether <fn> threw.
+const threw = (fn) => {
+  try {
+    fn();
+    return false;
+  } catch {
+    return true;
+  }
+};
+
+// A fixture test that marks it started at PROVE_STARTED, then holds the run until PROVE_GO exists.
+const WAITS = [
+  "const fs = require('fs');",
+  "fs.writeFileSync(process.env.PROVE_STARTED, '');",
+  'const t = setInterval(() => { if (fs.existsSync(process.env.PROVE_GO)) clearInterval(t); }, 50);',
+  '',
+].join('\n');
+
+/** The pids from <pid> up to the nearest ancestor whose command line <match> accepts, by `ps`; empty when none does. */
+const chainUpTo = (pid, match) => {
+  const chain = [];
+  for (let at = pid; at > 1;) {
+    const res = run('ps', ['-o', 'ppid=,command=', '-p', String(at)]);
+    const row = /^\s*(\d+)\s+(.*)$/.exec(res.stdout.trim());
+    if (!row) return [];
+    chain.push(at);
+    if (match(row[2])) return chain;
+    at = Number(row[1]);
+  }
+  return [];
+};
 
 const assertUnchanged = (before, after, label) => {
   expect(after.status, `${label}: git status --porcelain is unchanged`).toBe(before.status);
@@ -289,6 +333,148 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
       const line = res.said.split('\n').find((l) => l.startsWith('prove: could not make a run folder under ')) || '';
       expect(line.endsWith('.cache/workkit/proof'), `the line names the folder, got: ${res.said}`).toBeTruthy();
       expect(recorded(w), 'nothing recorded').toBe(undefined);
+      cleanup(w.dir);
+    });
+  });
+
+  describe('workkit prove: the stops before a run', () => {
+    // Nothing started: no run folder, no worktree beside the repo's own, no record.
+    const assertNothingRun = (w, label) => {
+      expect(runFolders(homeOf(w)).join(', '), `${label}: no run folder`).toBe('');
+      expect(worktreeCount(w), `${label}: no worktree added`).toBe(1);
+      expect(recorded(w), `${label}: nothing recorded`).toBe(undefined);
+    };
+
+    test('any argument: the usage line, exit 2', () => {
+      const w = mkWorld();
+      const res = runCli(w, ['prove', 'now'], { cwd: w.repo, env: wiredNpmEnv(w) });
+      expect(res.code, `exit 2, got: ${res.said}`).toBe(2);
+      expect(res.err, 'the usage line').toBe('prove: takes no arguments (usage: workkit prove)\n');
+      assertNothingRun(w, 'usage');
+      cleanup(w.dir);
+    });
+
+    test('outside a git repository, with no test script, with no npm on PATH: its prove: line each, exit 1', () => {
+      const w = mkWorld();
+      const outside = runCli(w, ['prove'], { cwd: mkTmp('prove-outside-'), env: wiredNpmEnv(w) });
+      expect(outside.code, `outside a repo: exit 1, got: ${outside.said}`).toBe(1);
+      expect(lastOf(outside.err), 'outside a repo').toBe('prove: not inside a git repository');
+
+      const bare = mkWorld({ 'package.json': `${JSON.stringify({ name: 'fixture', version: '1.0.0' })}\n` });
+      const noScript = prove(bare);
+      expect(noScript.code, `no test script: exit 1, got: ${noScript.said}`).toBe(1);
+      expect(lastOf(noScript.err), 'no test script')
+        .toBe(`prove: ${topOf(bare)} declares no test script, so there is no suite to prove`);
+      assertNothingRun(bare, 'no test script');
+
+      const noNpm = prove(w, { PATH: basePathWithout(w.dir, 'npm'), ...nodeEnv });
+      expect(noNpm.code, `no npm: exit 1, got: ${noNpm.said}`).toBe(1);
+      expect(lastOf(noNpm.err), 'no npm').toBe('prove: npm is not on PATH');
+      assertNothingRun(w, 'no npm');
+      cleanup(w.dir);
+      cleanup(bare.dir);
+    });
+
+    test('a logs.dir outside the repo: one line naming it, exit 1, nothing written outside', () => {
+      const w = mkWorld({ '.workkit/settings.json': `${JSON.stringify({ enabled: true, logs: { dir: '../x' } })}\n` });
+      stagePassing(w);
+      const res = prove(w);
+      expect(res.code, `exit 1, got: ${res.said}`).toBe(1);
+      expect(res.said.split('\n').filter((l) => l.includes('logs.dir') && l.includes('../x')).length, `one line names logs.dir, got: ${res.said}`).toBe(1);
+      expect(fs.existsSync(path.join(w.dir, 'x')), 'nothing written outside the repo').toBe(false);
+      assertNothingRun(w, 'logs.dir');
+      cleanup(w.dir);
+    });
+  });
+
+  describe('workkit prove: a root suite run already live', () => {
+    test('a second prove while one runs: the line names the pid and the suite log, exit 1; the first goes on green', async () => {
+      const w = mkWorld({ 'test/wait.test.js': WAITS });
+      stagePassing(w);
+      const started = path.join(w.dir, 'started');
+      const go = path.join(w.dir, 'go');
+      const env = { ...wiredNpmEnv(w), PROVE_STARTED: started, PROVE_GO: go };
+      const first = workkitStart(['prove'], { cwd: w.repo, env });
+      try {
+        expect(await until(() => fs.existsSync(started)), `the first suite never started: ${first.output()}`).toBeTruthy();
+        const second = prove(w, { PROVE_STARTED: started, PROVE_GO: go });
+        expect(second.code, `exit 1, got: ${second.said}`).toBe(1);
+        const said = second.err.match(/^prove: a root suite run is already running \(pid (\d+)\); its output is in (.+)$/m);
+        expect(Boolean(said) && Number(said[1]) > 0, `the line with a pid, got: ${second.err}`).toBe(true);
+        expect(realOf(said[2]), `the line names the suite log, got: ${second.err}`).toBe(realOf(suiteLogPath(w.workflowHome, w.repo)));
+        fs.writeFileSync(go, '');
+        const { status } = await first.done;
+        expect(status, `the first run is green: ${first.output()}`).toBe(0);
+      } finally {
+        await first.end('SIGKILL');
+      }
+      cleanup(w.dir);
+    });
+  });
+
+  describe('workkit prove: a body that cannot go on', () => {
+    // A stop inside the body: its line, exit 1, the worktree and the run folder removed, no record.
+    const assertStopped = (w, res, line, label) => {
+      expect(res.code, `${label}: exit 1, got: ${res.said}`).toBe(1);
+      expect(res.said.split('\n').includes(line), `${label}: the line, got: ${res.said}`).toBe(true);
+      expect(runFolders(homeOf(w)).join(', '), `${label}: the run folder is gone`).toBe('');
+      expect(worktreeCount(w), `${label}: the worktree is gone`).toBe(1);
+      expect(recorded(w), `${label}: nothing recorded`).toBe(undefined);
+    };
+
+    test('an unmerged path in the index: the could-not-write line, exit 1, nothing left', () => {
+      const w = mkWorld();
+      w.git('checkout', '-q', '-b', 'other');
+      w.write('app.js', 'module.exports = 5;\n');
+      w.git('commit', '-q', '-am', 'other');
+      w.git('checkout', '-q', 'main');
+      w.write('app.js', 'module.exports = 6;\n');
+      w.git('commit', '-q', '-am', 'main');
+      expect(threw(() => w.git('merge', '-q', 'other')), 'the merge stops on a conflict').toBe(true);
+      const res = prove(w);
+      assertStopped(w, res, "prove: could not write the whole index's tree for the copy (an unmerged path blocks it); resolve it and stage again", 'unmerged');
+      cleanup(w.dir);
+    });
+
+    test('a repo with no commit: the no-commit line, exit 1, nothing left', () => {
+      const w = mkWorld();
+      w.git('update-ref', '-d', 'HEAD');
+      const res = prove(w);
+      assertStopped(w, res, `prove: ${topOf(w)} has no commit to add a worktree of`, 'no commit');
+      cleanup(w.dir);
+    });
+
+    test('a suite that passes but changes the copy\'s tree: its line, exit 1, no record, nothing left', () => {
+      const w = mkWorld({ 'test/make.test.js': "require('fs').writeFileSync(require('path').join(__dirname, '..', 'made.txt'), 'x\\n');\n" });
+      stagePassing(w);
+      const res = prove(w);
+      assertStopped(w, res, "prove: the suite passed, but it changed the copy's tree, so no record was written", 'changed tree');
+      cleanup(w.dir);
+    });
+
+    test('a body ended by TERM: exit 143, prove: exit 143 last, the worktree and the run folder gone, no record', {
+      skip: IS_WINDOWS && 'Node ends a Windows process outright, with no signal a handler can catch',
+    }, async () => {
+      const hang = "require('fs').writeFileSync(process.env.PROVE_PID, String(process.pid));\nsetInterval(() => {}, 1 << 30);\n";
+      const w = mkWorld({ 'test/hang.test.js': hang });
+      const pidFile = path.join(w.dir, 'hang.pid');
+      const call = workkitStart(['prove'], { cwd: w.repo, env: { ...wiredNpmEnv(w), PROVE_PID: pidFile } });
+      try {
+        expect(await until(() => pidIn(pidFile) > 0), `the suite never started: ${call.output()}`).toBeTruthy();
+        // The body and every process between it and the suite, as an end of the run's tree reaches them.
+        const chain = chainUpTo(pidIn(pidFile), (command) => command.includes('prove.js') && command.includes('--body'));
+        expect(chain.length > 1, `the body is among the suite's ancestors: ${call.output()}`).toBe(true);
+        for (const pid of chain) process.kill(pid, 'SIGTERM');
+        const { status } = await call.done;
+        expect(status, `exit 143: ${call.output()}`).toBe(143);
+        expect(lastOf(call.output().replace(/\r/g, '')), 'the last line').toBe('prove: exit 143');
+        expect(runFolders(homeOf(w)).join(', '), 'the run folder is gone').toBe('');
+        expect(worktreeCount(w), 'the worktree is gone').toBe(1);
+        expect(recorded(w), 'nothing recorded').toBe(undefined);
+      } finally {
+        await call.end('SIGKILL');
+        reap(pidIn(pidFile));
+      }
       cleanup(w.dir);
     });
   });

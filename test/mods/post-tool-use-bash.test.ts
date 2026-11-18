@@ -2,7 +2,7 @@
 // blocks: tool.call marks every journal of the gh journal folder (a path line and a length line each, in
 // name order), and the Post hook, or PostToolUseFailure for a call that failed, reads the lines each
 // journal gained past its mark, oldest first, never the command text. workflow:snapshot's take, add
-// and drop through the snapshot.sh entry, and workflow:public-mirror's public/mirror.js after a status
+// and drop through the snapshot.js command, and workflow:public-mirror's public/mirror.js after a status
 // edit in a paired repo, each through $.process.run. The plans' own cases:
 // test/hooks/workflow-snapshot.test.js and public-mirror.test.js.
 
@@ -47,9 +47,9 @@ const ran = async ($: any, w: any, command: string, ...entries: any[]) => {
 const tailed = (w: any) => w.calls.filter((c: any) => c.argv[0].split('/').pop() === 'tail').map((c: any) => c.argv[c.argv.length - 1])
 const world = (on: any, opts: any = {}) => mkWorld(on, { env: { TMPDIR: TMP }, ...opts })
 
-// Each snapshot.sh run as [mode, root, ...args], with its init.
-const snapshotRuns = (w: any) => w.runs('snapshot.sh').map((c: any) => {
-  const at = c.argv.findIndex((a: string) => a.endsWith('snapshot.sh'))
+// Each snapshot.js run as [mode, root, ...args], with its init.
+const snapshotRuns = (w: any) => w.runs('/workflow/lib/snapshot.js').map((c: any) => {
+  const at = c.argv.findIndex((a: string) => a.endsWith('/workflow/lib/snapshot.js'))
   return { args: c.argv.slice(at + 1), init: c.init }
 })
 const modes = (w: any) => snapshotRuns(w).map((r: any) => r.args[0])
@@ -57,7 +57,7 @@ const modes = (w: any) => snapshotRuns(w).map((r: any) => r.args[0])
 const listed = (w: any) => w.ghCalls().filter((c: any) => c.argv[2] === 'list').map((c: any) => c.argv[c.argv.indexOf('--label') + 1])
 
 describe('classic.PostToolUse Bash: workflow:snapshot, the Contract cases', () => {
-  test('given a claim of #5 journaled by the call, then bash snapshot.sh take <root> 5 ran and nothing was denied: the loader routes workflow:snapshot, its 600s timeout', async ($, on) => {
+  test('given a claim of #5 journaled by the call, then snapshot.js take <root> 5 ran and nothing was denied: the loader routes workflow:snapshot, its 600s timeout', async ($, on) => {
     const w = world(on, { gh: { issues: [issue(5, 'status:building')] } })
     const r = await ran($, w, SCRIPTED, CLAIM(5))
     expect(r?.block).toBeUndefined()

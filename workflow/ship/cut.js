@@ -12,7 +12,7 @@ const path = require('path');
 const { spawnSync } = require('../lib/run');
 const { parseEntries, sectionHeadingAt } = require('../changelog/lint');
 const { repoSlug } = require('../changelog/changelog-links');
-const { repoRoot, headSha } = require('../lib/git');
+const { repoRoot, headSha, GIT_MAX_BUFFER } = require('../lib/git');
 const { compareVersions, isSemver } = require('./semver');
 const { runHooks } = require('./hooks');
 const { RELEASE_SUBJECT } = require('../../hooks/mods/release-taken.js');
@@ -55,7 +55,7 @@ const noSection = (version) => `CHANGELOG.md has no [${version}] section with en
 const releaseCommits = (root, revs = ['HEAD']) => {
   const format = '--format=%H%x1f%s%x1f%(trailers:key=Release,valueonly,separator=%x2C)%x1e';
   const res = spawnSync('git', ['log', '--fixed-strings', '--grep=chore(release): ', format, ...revs], {
-    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: GIT_MAX_BUFFER,
   });
   if (res.status !== 0) throw new Error(`ship-cut: git log ${endOf(res)}: ${(res.stderr || '').trim()}`);
   const seen = new Set();

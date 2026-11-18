@@ -43,6 +43,14 @@ const signalCode = (signal) => {
   return 128 + number;
 };
 
+/**
+ * A child's end as a shell's code: its exit code, else its signal's (signalCode).
+ * @param {number|null} code the `close` or `exit` event's code
+ * @param {string|null} signal the event's signal
+ * @returns {number}
+ */
+const exitOf = (code, signal) => (code === null ? signalCode(signal) : code);
+
 // The code a requested end records: the one a shell gives a terminated command.
 const ENDED_CODE = signalCode('SIGTERM');
 
@@ -262,7 +270,7 @@ const supervise = (argv) => {
     finish(127);
   });
   child.on('exit', (code, signal) => {
-    if (!ending) finish(code === null ? signalCode(signal) : code);
+    if (!ending) finish(exitOf(code, signal));
   });
   // The timers run on through an end, so a failed one leaves the end poll and
   // the checks as they were; finish() clears them. The `ending` file answers an
@@ -322,5 +330,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  awakeCommand, writeWhole, signalCode, END_SIGNALS, INT_CODE,
+  awakeCommand, writeWhole, signalCode, exitOf, END_SIGNALS, INT_CODE,
 };

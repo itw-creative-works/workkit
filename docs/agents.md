@@ -152,6 +152,10 @@ flowchart TB
     - It points at the same path inside the copy.
   - A scope folder and `.bin` are filled one level down, so a bin that runs a workspace package runs the copy's.
 - A repo with no snapshot exits 2 with `red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)`.
+- A reader of stdout or stderr that closes while the command runs is a stop: the command is ended, the place restored, exit 2.
+  - A closed stdout says so on stderr: `red-proof: stopped: its stdout was closed`.
+  - A reader that closes once the command has ended leaves the verdict's own code.
+- In the copy mode a HUP, INT or TERM ends the command first, then the worktree and the run folder go, then the proof ends by the signal (129, 130 or 143 as its exit code on Windows).
 - A failed run whose output shows a module that could not load inside the copy exits 2, never red.
   - The signs: node's `Cannot find module` or `Cannot find package`, code `MODULE_NOT_FOUND` or `ERR_MODULE_NOT_FOUND`.
   - Its requiring file or module path is in the copy.
@@ -170,7 +174,7 @@ flowchart TB
   - A failing run whose summary counts no failed test exits 2, never red.
     - The line: `red-proof: not runnable: no test failed; the command stopped another way`.
 - The summary file is workkit-core's runner's (`tests.md` § The kit's runner).
-  - `workkit proof red` names it `summary`, in the run's own folder beside `out` and `err`.
+  - `workkit proof red` names it `summary`, in the run's own folder.
   - It hands the path to the command in `WORKKIT_TEST_SUMMARY`, in the platform's native form.
   - The runner adds one line `{"passed":<n>,"failed":<n>}` per run, on every exit it makes itself.
   - The lines are summed, so a command that starts the runner more than once (a repo with several packages) counts every run.
@@ -219,7 +223,7 @@ flowchart TB
   - Each source path's live version is moved under the run's own folder, `~/.cache/workkit/proof/<id>`.
   - The snapshot's version is put in its place (or none, where the snapshot lacks it).
   - The command runs where the caller stands.
-  - The EXIT trap moves every live version back, once, on red, green, a stop, HUP, INT or TERM.
+  - Its restore moves every live version back, once, on red, green, a stop, HUP, INT or TERM.
     - A signal the command does not share takes effect when the command ends.
 - A named folder holding a package's `node_modules` is refused with exit 2.
   - The line: `red-proof: --live cannot name a folder holding node_modules: <rel>; name the files instead`.

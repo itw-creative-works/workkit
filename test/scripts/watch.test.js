@@ -607,8 +607,8 @@ describe('workkit watch --end', () => {
 
   // On Windows a run may write the enclosing lock in another spelling of the folder
   // watch computes: the native one of a shell path, or the shell one of a native
-  // path, which the real cygpath gives here. Node's watch folds spellings by the
-  // platform it runs on, never by OSTYPE, so no other platform can stage it.
+  // path, which the real cygpath and shellPath give here. Node's watch folds spellings
+  // by the platform it runs on, never by OSTYPE, so no other platform can stage it.
   for (const [typed, enclosing] of [['suite', 'run'], ['run', 'suite']]) {
     test(`the ${typed} lock held in the foreground under the ${enclosing} lock spelled another way: watch --end ${typed} exits 1 on one line naming the foreground hold and workkit watch --end ${enclosing}, no end file`, {
       skip: !IS_WINDOWS && 'the second spelling of a path is Windows\' own, and watch reads the platform it runs on',
@@ -618,8 +618,7 @@ describe('workkit watch --end', () => {
       cygpathStub(cyg);
       const env = { ...w.env, OSTYPE: 'msys', PATH: joinPath(cyg, w.env.PATH) };
       const enclosingShell = lockPaths(w, env)[enclosing];
-      const spelled = ['wk_native_path', 'wk_posix_path']
-        .map((speller) => runLib(`${speller} "${enclosingShell}"`, env).stdout)
+      const spelled = [runLib(`wk_native_path "${enclosingShell}"`, env).stdout, shellPath(enclosingShell)]
         .find((other) => other && other !== enclosingShell);
       expect(spelled, `a second spelling of ${enclosingShell}`).toBeTruthy();
       const lock = lockFolders(w)[typed];

@@ -22,8 +22,8 @@ _wk_lib_node() {
 }
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
-# non-empty string. Consumers: prove.sh, cmd_test; the module's twin is
-# hasTestScript in hooks/mods/suite.js.
+# non-empty string. Consumer: cmd_test; the module's twin is hasTestScript in
+# hooks/mods/suite.js, which workflow/prove.js reads.
 wk_has_test_script() {
   [ -f "$1/package.json" ] \
     && wk_jq -e '.scripts.test | type == "string" and length > 0' "$1/package.json" >/dev/null 2>&1
@@ -125,10 +125,6 @@ wk_test_slots_sweep() {
   done < <(_wk_runs sweep-slots "$base")
 }
 
-# wk_index_write_tree <repo_root> <index>: drop `.workkit` from the scratch
-# <index>, then print its `git write-tree` id.
-wk_index_write_tree() { _wk_lib_node tree-hash.js "${1:-}" --index "${2:-}"; }
-
 # wk_tree_hash <repo_root> [<pkg>]: the WORKING tree's id, untracked files in,
 # ignored ones and `.workkit/` out; a package's own id leaves out the workspace
 # members it cannot see.
@@ -140,13 +136,13 @@ wk_tree_hash() { _wk_lib_node tree-hash.js "${1:-}" ${2:+"$2"}; }
 wk_elapsed_ms() { printf '%s\n' "$(( (SECONDS - $1) * 1000 ))"; }
 
 # wk_ci_set: CI holds any value but the empty string. A root script may run only
-# part of its suite under CI, so a run with it set writes no record. Consumers:
-# script-shell.sh (both records) and prove.sh.
+# part of its suite under CI, so a run with it set writes no record. Consumer:
+# script-shell.sh (both records); workflow/prove.js reads CI alike.
 wk_ci_set() { [ -n "${CI:-}" ]; }
 
 # wk_suite_marker_write <repo_root> <tree> <ms>: record <tree>, the id hashed
-# BEFORE the green run, and `ms=<ms>`, the run's wall time. Consumers:
-# script-shell.sh (the working tree a root run started on) and prove.sh (the staged tree).
+# BEFORE the green run, and `ms=<ms>`, the run's wall time. Consumer:
+# script-shell.sh (the working tree a root run started on).
 wk_suite_marker_write() { _wk_lib_node records.js suite-write "${1:-}" "${2:-}" "${3:-}"; }
 
 # wk_pkg_marker_write <repo_root> <tree> <pkg>: record `<tree> <pkg>`, <pkg> a
@@ -154,13 +150,8 @@ wk_suite_marker_write() { _wk_lib_node records.js suite-write "${1:-}" "${2:-}" 
 # green run, every other package's line kept. Consumer: script-shell.sh.
 wk_pkg_marker_write() { _wk_lib_node records.js pkg-write "${1:-}" "${2:-}" "${3:-}"; }
 
-# wk_index_copy <repo_root> <dir>: copy the REAL index, the one a plain commit
-# carries (`$GIT_INDEX_FILE` in a commit hook), to <dir>/index and print that
-# path, so a write-tree there never writes the real one. Consumer: prove.sh.
-wk_index_copy() { _wk_lib_node tree-hash.js "${1:-}" --copy-index "${2:-}"; }
-
 # wk_suite_index_tree <repo_root>: the real index's tree less `.workkit/`.
-# Consumer: prove.sh, through the hold.
+# Consumer: the hold workflow/prove.js asks.
 wk_suite_index_tree() { _wk_lib_node tree-hash.js "${1:-}" -i; }
 
 # wk_suite_proved <repo_root> <tree>: the suite record's first line is <tree>.
