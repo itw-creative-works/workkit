@@ -313,8 +313,10 @@ describe('detach.sh: wk_run_detached and its lock', () => {
   test('a lock whose parent folder cannot be made: 1 with the could-not-take line, the command never ran', () => {
     const base = mkTmp('detach-no-lock-');
     const ran = path.join(base, 'ran');
-    fs.writeFileSync(path.join(base, 'plain'), '');
-    const res = run(BASH, runDetachedArgs(path.join(base, 'plain', 'under'), `require('fs').writeFileSync(${jsPath(ran)}, '')`), { env: RUN_ENV });
+    // The plain file is made by the shell under test, at the spelling it gave the path.
+    const plain = 'mkdir -p "${1%/*/*/*}" && : > "${1%/*/*}"';
+    const res = run(BASH, runDetachedArgs(path.join(base, 'plain', 'under'), `require('fs').writeFileSync(${jsPath(ran)}, '')`, plain),
+      { env: RUN_ENV });
     expect(rcOf(res.stdout || ''), `the lock cannot be made, so 1, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(1);
     expect(res.stderr.includes('detach: could not take the lock'), `the line, stderr: ${res.stderr}`).toBeTruthy();
     expect(!fs.existsSync(ran), 'the command never ran').toBeTruthy();
