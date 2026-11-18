@@ -7,9 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.99.5] - 2026-11-18
+
 ### Changed
 
-- [#565](../../issues/565) - `workkit prove`, `workkit proof red` and the snapshot are Node files, needing Node 22.12: without it `prove` exits 1, `proof red` 2. Snapshot usage lines open `snapshot:`. On Windows the copy is Node's own, not `tar`, and `proof red` now finds the snapshot the hook took.
+- [#565](../../issues/565) [`982d53a`](../../commit/982d53a) Thanks [@ianwieds]! - `workkit prove`, `workkit proof red` and the snapshot are Node files, needing Node 22.12: without it `prove` exits 1, `proof red` 2. Snapshot usage lines open `snapshot:`. On Windows the copy is Node's own, not `tar`, and `proof red` now finds the snapshot the hook took.
 
 ## [0.99.4] - 2026-11-18
 
