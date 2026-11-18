@@ -1,11 +1,11 @@
 /**
  * workflow/lib/detach.js: the detached runner, a command that outlives the
  * shell that started it. Two stages: the launcher truncates the log, starts a
- * supervisor copy of itself in its own session and exits; the supervisor runs
+ * supervisor copy of itself in its own session, prints its pid and exits; the supervisor runs
  * the command into the log, WORKKIT_SUPERVISED=1 set on it, and writes its exit
  * code to the done file. With a root it reads the run every tests.check minutes
  * (lib/pulse.js); an `end` file beside the done file ends the run.
- * Usage: node detach.js <log> <done> [--root <root>] -- <cmd> [args...]   (detach.sh calls it)
+ * Usage: node detach.js <log> <done> [--root <root>] -- <cmd> [args...]   (lib/runs.js runs it)
  */
 
 const fs = require('fs');
@@ -31,8 +31,20 @@ const END_POLL_MS = 1000;
 const SAMPLE_MS = 5000;
 const MIN_SAMPLES = 4;
 
+/**
+ * The code a shell gives a command that ended on <signal>.
+ * @param {string} signal a signal's name, `SIGTERM`
+ * @returns {number}
+ * @throws {Error} a name the platform does not know
+ */
+const signalCode = (signal) => {
+  const number = os.constants.signals[signal];
+  if (!Number.isInteger(number)) throw new Error(`detach: no signal is named ${signal}`);
+  return 128 + number;
+};
+
 // The code a requested end records: the one a shell gives a terminated command.
-const ENDED_CODE = 128 + os.constants.signals.SIGTERM;
+const ENDED_CODE = signalCode('SIGTERM');
 
 /**
  * The argument list, or null when it is not
@@ -63,7 +75,7 @@ const awakeCommand = (pid, platform) => (platform === 'darwin' ? ['caffeinate', 
  * The launcher: with a root, reads its tests.check first, a bad value exit 2
  * with nothing run; then truncates the log, drops a stale done file, starts
  * the supervisor detached (a new session on POSIX, the parent's death changes
- * nothing) and prints its pid.
+ * nothing) and prints its pid. A supervisor that cannot start says so, and 1.
  * @param {string[]} argv
  * @returns {number} the exit code
  */
@@ -93,7 +105,9 @@ const launch = (argv) => {
     stdio: 'ignore',
     windowsHide: true,
   });
+  supervisor.on('error', (err) => console.error(`detach: ${err.message}`));
   supervisor.unref();
+  if (supervisor.pid === undefined) return 1;
   process.stdout.write(`${supervisor.pid}\n`);
   return 0;
 };
@@ -244,7 +258,7 @@ const supervise = (argv) => {
     finish(127);
   });
   child.on('exit', (code, signal) => {
-    if (!ending) finish(code === null ? 128 + os.constants.signals[signal] : code);
+    if (!ending) finish(code === null ? signalCode(signal) : code);
   });
   // The timers run on through an end, so a failed one leaves the end poll and
   // the checks as they were; finish() clears them. The `ending` file answers an
@@ -303,4 +317,6 @@ if (require.main === module) {
   if (code !== undefined) process.exitCode = code;
 }
 
-module.exports = { awakeCommand };
+module.exports = {
+  awakeCommand, writeWhole, signalCode,
+};

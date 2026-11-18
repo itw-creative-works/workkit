@@ -10,7 +10,9 @@ const { spawnSync } = require('child_process');
 const {
   describe, test, before, expect, mkTmp, until,
 } = require('../lib/harness');
-const { SYSTEM_PATH, shellPath, digestTool, stubNode } = require('../lib/platform');
+const {
+  SYSTEM_PATH, shellPath, digestTool, stubNode, nodeEnv,
+} = require('../lib/platform');
 const { plantRecord, pkgRecord, kitIndexTree } = require('../lib/suite-record');
 const { mkRepo } = require('../lib/script-shell');
 const { runLib } = require('../lib/hook-lib');
@@ -22,9 +24,6 @@ const ID = '1111111111111111111111111111111111111111';
 const OTHER_ID = '2222222222222222222222222222222222222222';
 
 const sha1 = (text) => crypto.createHash('sha1').update(text).digest('hex');
-
-// The node every record function runs through, handed over so no machine's own node decides.
-const NODE = { WORKKIT_NODE: shellPath(process.execPath) };
 
 // The one line a shell with no node at the floor says in place of a tree id.
 const NO_NODE = 'tree-hash: no node 22.12 or newer found, so no tree id was taken';
@@ -58,12 +57,12 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
   });
 
   const git = (dir, ...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' }).stdout.trim();
-  const treeHash = (dir) => runLib(`wk_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...NODE }).stdout.trim();
+  const treeHash = (dir) => runLib(`wk_tree_hash "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...nodeEnv }).stdout.trim();
 
   // The id of <pkg> (the whole tree with none), always a tree id.
   const idOf = (dir, pkg) => {
     const out = runLib(`wk_tree_hash "${shellPath(dir)}"${pkg ? ` "${pkg}"` : ''}`,
-      { TMPDIR: shellPath(TMP), ...NODE });
+      { TMPDIR: shellPath(TMP), ...nodeEnv });
     const id = out.stdout.trim();
     expect(/^[0-9a-f]{40,64}$/.test(id), `a tree id for ${pkg || 'the whole tree'}, got: ${out.stdout}|${out.stderr}`).toBeTruthy();
     return id;
@@ -170,14 +169,14 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       git(dir, 'add', '-A');
       const staged = git(dir, 'write-tree');
       fs.writeFileSync(path.join(dir, 'a.js'), 'two\n');
-      const out = runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...NODE }).stdout.trim();
+      const out = runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...nodeEnv }).stdout.trim();
       expect(out, 'the staged content names the tree').toBe(staged);
       expect(out !== treeHash(dir), 'and the unstaged edit is not in it').toBeTruthy();
     });
   });
 
   describe('_lib.sh: a proof id leaves .workkit/ out', () => {
-    const indexTree = (dir) => runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...NODE }).stdout.trim();
+    const indexTree = (dir) => runLib(`wk_suite_index_tree "${shellPath(dir)}"`, { TMPDIR: shellPath(TMP), ...nodeEnv }).stdout.trim();
 
     test('wk_tree_hash: the settings losing its version key and a suite log written leave the whole and the package id as recorded', () => {
       const dir = mkWorkspaces(STAMPED);
@@ -219,7 +218,7 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       // The root as a hook hands it over, and the record planted at its native
       // path: the lib answers a shell path, which Node on Windows cannot open.
       const root = git(dir, 'rev-parse', '--show-toplevel');
-      const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, { ...HOME.env, ...NODE }).code === 0;
+      const proved = (tree) => runLib(`wk_suite_proved "${root}" "${tree}"`, { ...HOME.env, ...nodeEnv }).code === 0;
       expect(!proved(ID), 'no marker proves nothing').toBeTruthy();
       const marker = plantRecord(HOME.workflowHome, dir, ID);
       expect(proved(ID), 'the recorded tree is proved').toBeTruthy();
@@ -235,7 +234,7 @@ describe('_lib.sh: the records', { skip: NO_DIGEST }, () => {
       const dir = mkTmp('lib-pkg-');
       git(dir, 'init', '-q');
       const { workflowHome: wh, env: homeEnv } = scratchWorkflowHome('lib-pkg-home-');
-      const env = { ...homeEnv, ...NODE };
+      const env = { ...homeEnv, ...nodeEnv };
       const root = git(dir, 'rev-parse', '--show-toplevel');
       const ask = (fn, ...args) => runLib(`${fn} "${root}" ${args.map((a) => `"${a}"`).join(' ')}`, env).code === 0;
       return { dir, wh, root, env, ask, lines: () => JSON.stringify(pkgRecord(wh, dir)) };

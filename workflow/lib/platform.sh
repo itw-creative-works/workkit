@@ -235,204 +235,18 @@ wk_end_pid() {
   esac
 }
 
-# _wk_group_gone <pgid>: wait up to 1.5s for a process group to empty.
-_wk_group_gone() {
-  local waited=0
-  while kill -0 -- "-$1" 2>/dev/null; do
-    [ "$waited" -lt 15 ] || return 1
-    sleep 0.1
-    waited=$(( waited + 1 ))
-  done
-}
-
-# wk_end_run <pid>: end a detached run's supervisor <pid> and its process group.
-# Windows ends its process tree through `tree.js end` under wk_node, returning
-# its code, or 1 where no node fits. Elsewhere the supervisor leads its own group:
-# INT first, so the body logs its own code, then TERM, then KILL, 1.5s apart; 0.
-wk_end_run() {
-  local node
-  case "${OSTYPE:-}" in
-    msys*|cygwin*)
-      if ! node=$(wk_node); then
-        printf 'wk_end_run: no node at or above %s is installed, so the tree of %s was not ended\n' "$WK_NODE_FLOOR" "$1" >&2
-        return 1
-      fi
-      "$node" "$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/tree.js" end "$1"
-      return
-      ;;
-  esac
-  kill -INT -- "-$1" 2>/dev/null || return 0
-  _wk_group_gone "$1" && return 0
-  kill -TERM -- "-$1" 2>/dev/null || return 0
-  _wk_group_gone "$1" && return 0
-  kill -KILL -- "-$1" 2>/dev/null || true
-}
-
-# wk_pid_alive <pid>: <pid> answers kill -0 and its state does not start with Z
-# (ended, waiting for its parent to collect it): /proc's where it exists, an entry
-# gone since then read as ended; else ps's, no line leaving kill -0's answer.
-# On Windows bash's kill cannot see the Windows pid Node printed, so Node is asked.
-wk_pid_alive() {
-  local state
-  case "${OSTYPE:-}" in
-    msys*|cygwin*) node -e 'process.kill(Number(process.argv[1]), 0)' "$1" 2>/dev/null ;;
-    *)
-      kill -0 "$1" 2>/dev/null || return
-      if [ -r /proc/self/stat ]; then
-        # The state follows the command name, which may hold spaces and brackets.
-        [ -e "/proc/$1/stat" ] || return 1
-        IFS= read -r state 2>/dev/null <"/proc/$1/stat" || state=
-        state="${state##*') '}"
-      else
-        state=$(ps -o stat= -p "$1" 2>/dev/null)
-      fi
-      [[ ! "$state" =~ ^[[:space:]]*Z ]]
-      ;;
-  esac
-}
-
-# _wk_lock_files <lock> [<skip>]: the names of the files in <lock> but <skip>, on
-# one line, one space apart, in glob order; a lock file's name holds no space.
-_wk_lock_files() {
-  local f names=()
-  for f in "$1"/* "$1"/.[!.]* "$1"/..?*; do
-    [ -e "$f" ] && [ "${f##*/}" != "${2:-}" ] && names+=("${f##*/}")
-  done
-  printf '%s\n' "${names[*]-}"
-}
-
-# wk_claim_dir <dir> [<tag>]: 0 only for the one caller that creates <dir>/claim
+# wk_claim_dir <dir>: 0 only for the one caller that creates <dir>/claim
 # create-only (noclobber), since a `mkdir` may answer 0 to two racing callers.
-# With a tag (a run lock): only into an empty folder, id.<tag> before the claim
-# that holds <tag> and once more after; a lost claim takes its id.<tag> back.
+# Its Node twin is claimDir in lib/lock.js, which also holds the run lock's form.
 wk_claim_dir() {
   mkdir "$1" 2>/dev/null || return 1
-  if [ -z "${2:-}" ]; then
-    ( set -C; : > "$1/claim" ) 2>/dev/null
-    return
-  fi
-  [ -z "$(_wk_lock_files "$1")" ] || return 1
-  { : > "$1/id.$2"; } 2>/dev/null || return 1
-  if ! ( set -C; printf '%s\n' "$2" > "$1/claim" ) 2>/dev/null; then
-    rm -f "$1/id.$2"
-    return 1
-  fi
-  # A removal still running in this folder may have deleted the mark.
-  { : > "$1/id.$2"; } 2>/dev/null
-}
-
-# _wk_lock_tag: sets WK_LOCK_TAG to a tag no other take on this machine holds:
-# this shell's own pid as wk_pid_alive reads it (a subshell's too; bash 3.2 has
-# no BASHPID, so a child asked for its PPID), a count of the tags it made, and a
-# random part against a pid used again later.
-_wk_lock_tag() {
-  local pid
-  pid=${BASHPID:-$(exec sh -c 'echo "$PPID"')}
-  # Git Bash: wk_pid_alive asks Windows, so the tag holds this shell's Windows pid.
-  if [ -r "/proc/$pid/winpid" ]; then read -r pid < "/proc/$pid/winpid"; fi
-  _WK_LOCK_TAGS=$(( ${_WK_LOCK_TAGS:-0} + 1 ))
-  WK_LOCK_TAG="$pid.$_WK_LOCK_TAGS.$RANDOM"
-}
-
-# wk_tag_pid <tag>: the pid that is a lock tag's first field, printed; 1 for a
-# tag with none (orphan, x).
-wk_tag_pid() {
-  local pid="${1%%.*}"
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  printf '%s\n' "$pid"
-}
-
-# wk_remover_lives <mark>: 0 while the remover that made a gone.<tag> mark lives,
-# by its tag's pid; a tag with no pid (gone.x) is gone.
-wk_remover_lives() {
-  local pid
-  pid=$(wk_tag_pid "${1#gone.}") || return 1
-  wk_pid_alive "$pid"
-}
-
-# wk_lock_mark <lock>: a run lock's mark, printed: the id.<tag> its `claim` names
-# when that file is there, else its gone.<tag>, else id.orphan; 1, nothing
-# printed, for none. Any other id.* is a taker's leftover from a lost claim.
-wk_lock_mark() {
-  local tag="" mark
-  { IFS= read -r tag < "$1/claim"; } 2>/dev/null || :
-  if [ -n "$tag" ] && [ -f "$1/id.$tag" ]; then
-    printf 'id.%s\n' "$tag"
-    return 0
-  fi
-  for mark in "$1"/gone.* "$1/id.orphan"; do
-    if [ -f "$mark" ]; then
-      printf '%s\n' "${mark##*/}"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# wk_retire_lock <lock> <mark>: the one removal of a run lock. It renames that
-# exact mark to gone.<tag>, one caller alone; then it deletes the other files,
-# `claim`, the gone file, the folder, so a cut-off removal leaves its gone mark or
-# nothing. 1, the folder as it was, without <mark> or on a live remover's gone mark.
-wk_retire_lock() {
-  local gone f names=() others=()
-  case "$2" in id.?*|gone.?*) ;; *) return 1 ;; esac
-  [ -f "$1/$2" ] || return 1
-  case "$2" in gone.*) ! wk_remover_lives "$2" || return 1 ;; esac
-  _wk_lock_tag
-  gone="gone.$WK_LOCK_TAG"
-  mv -f "$1/$2" "$1/$gone" 2>/dev/null || return 1
-  IFS=' ' read -r -a names <<<"$(_wk_lock_files "$1")"
-  for f in ${names[@]+"${names[@]}"}; do
-    case "$f" in
-      claim|"$gone") ;;
-      *) others+=("$1/$f") ;;
-    esac
-  done
-  rm -f ${others[@]+"${others[@]}"}
-  rm -f "$1/claim"
-  rm -f "$1/$gone"
-  rmdir "$1" 2>/dev/null
-}
-
-# wk_adopt_lock <lock> <seen>: a folder with no mark, once its run is over; <seen>
-# is its _wk_lock_files line as read with the absent mark. Empty: rmdir. Else
-# id.orphan create-only, then a look: no mark but id.orphan and exactly <seen>
-# besides, retired by id.orphan; else 1, its own id.orphan taken back.
-wk_adopt_lock() {
-  local made=0 mark
-  rmdir "$1" 2>/dev/null && return 0
-  [ -d "$1" ] || return 1
-  if ( set -C; : > "$1/id.orphan" ) 2>/dev/null; then made=1; fi
-  mark=$(wk_lock_mark "$1") || mark=""
-  # A folder made in its place differs: a new taker's first file is its id.<tag>.
-  if [ "$mark" != id.orphan ] || [ "$(_wk_lock_files "$1" id.orphan)" != "${2:-}" ]; then
-    [ "$made" -eq 0 ] || rm -f "$1/id.orphan"
-    return 1
-  fi
-  wk_retire_lock "$1" id.orphan
-}
-
-# wk_retire_judged <lock> <judge> [args...]: the steps every remover shares. The
-# mark (with none, the file names) is read first, then `<judge> <lock> [args...]`
-# judges; on its 0 the lock is retired by that mark, or adopted against those
-# names. Any other answer of the judge comes back; 4, unjudged, is a live remover's.
-wk_retire_judged() {
-  local lock="$1" judge="$2" mark seen=""
-  shift 2
-  mark=$(wk_lock_mark "$lock") || mark=""
-  case "$mark" in gone.*) ! wk_remover_lives "$mark" || return 4 ;; esac
-  [ -n "$mark" ] || seen=$(_wk_lock_files "$lock")
-  "$judge" "$lock" "$@" || return
-  if [ -n "$mark" ]; then
-    wk_retire_lock "$lock" "$mark"
-  else
-    wk_adopt_lock "$lock" "$seen"
-  fi
+  ( set -C; : > "$1/claim" ) 2>/dev/null
 }
 
 # wk_take_lock <dir>: a mutex taken by wk_claim_dir of <dir>, its parent made first.
 # Returns 0 holding it, 1 after a 5s wait. Callers proceed either way, and only
 # a caller that took it drops it (wk_drop_lock), or a third writer races the holder.
+# Its Node twin, takeLock in lib/lock.js, excludes it on the same folder.
 wk_take_lock() {
   local waited=0
   mkdir -p "$(dirname "$1")" 2>/dev/null || return 1
@@ -504,7 +318,8 @@ wk_marker_path() {
 
 # wk_sweep_markers: remove each regular file one folder under the markers dir
 # whose mtime is older than MARKER_KEEP_DAYS. A folder there (a run lock) is
-# never entered. Every shell marker writer calls it; it never fails one.
+# never entered. Every shell marker writer calls it; it never fails one. Its
+# Node twin is sweepMarkers in lib/lock.js, which the record writers run.
 wk_sweep_markers() {
   local dir
   dir=$(wk_markers_dir)

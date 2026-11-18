@@ -12,7 +12,7 @@ const {
   describe, test, expect, until, alive, pidIn, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, jsPath, joinPath, stubTool,
+  IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, jsPath, joinPath, stubTool, nodeEnv,
 } = require('../lib/platform');
 const { suiteLogPath, suiteLockPath, treeHash } = require('../lib/suite-record');
 const { recordArgv, readArgv } = require('../lib/argv-log');
@@ -402,7 +402,7 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
         expect(await until(() => (wrapper = childPid(child.pid, 'script-shell')) !== undefined),
           `npm (pid ${child.pid}) never showed a script-shell child`).toBeTruthy();
         const slot = runLib(`wk_test_log_path "${root}" ${wrapper} && wk_test_lock_path "${root}" ${wrapper}`,
-          { ...world.env, WORKKIT_NODE: shellPath(process.execPath) });
+          { ...world.env, ...nodeEnv });
         const [log, lock] = slot.stdout.trim().split('\n');
         expect(slot.code === 0 && fs.existsSync(log) && fs.existsSync(lock), `the run's slot is there while it runs, got: ${slot.stdout} ${slot.stderr}`).toBeTruthy();
         process.kill(wrapper, 'SIGINT');

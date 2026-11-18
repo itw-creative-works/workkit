@@ -12,7 +12,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath,
+  BASH, NO_RC, jsPath, cygpathStub, joinPath, nodeEnv,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
@@ -98,7 +98,7 @@ const lookedNarrowed = async (world, name) => {
 const slotOf = ({ w, env }, pid) => {
   const root = run('git', ['rev-parse', '--show-toplevel'], { cwd: w.repo }).stdout.trim();
   const res = runLib(`wk_test_log_path "${root}" ${pid} && wk_test_lock_path "${root}" ${pid}`,
-    { ...env, WORKKIT_NODE: shellPath(process.execPath) });
+    { ...env, ...nodeEnv });
   const [log, lock] = res.stdout.trim().split('\n');
   expect(res.code === 0 && log && lock, `the slot of run ${pid}, got: ${res.stdout} ${res.stderr}`).toBeTruthy();
   return { log, lock };
@@ -110,7 +110,7 @@ const slotOf = ({ w, env }, pid) => {
  */
 const lockPaths = (w, env = w.env) => {
   const root = run('git', ['rev-parse', '--show-toplevel'], { cwd: w.repo }).stdout.trim();
-  const res = runLib(`wk_suite_lock_path "${root}" && wk_run_lock_path "${root}"`, { ...env, WORKKIT_NODE: shellPath(process.execPath) });
+  const res = runLib(`wk_suite_lock_path "${root}" && wk_run_lock_path "${root}"`, { ...env, ...nodeEnv });
   const [suite, runLock] = res.stdout.trim().split('\n');
   expect(res.code === 0 && suite && runLock, `the repo's two locks, got: ${res.stdout} ${res.stderr}`).toBeTruthy();
   return { suite, run: runLock };

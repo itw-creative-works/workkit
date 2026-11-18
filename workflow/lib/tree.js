@@ -4,7 +4,7 @@
  * the end of that tree. A child in its own session is in the tree; one whose
  * parent was already gone is not. On Windows the end alone reads processes, from
  * two tables: the Windows one, through PowerShell, and Git Bash's own, `ps -el`.
- * Usage: const { treeOf, endTreeOf } = require('./tree');   or   node tree.js end <pid>   (wk_end_run calls it)
+ * Usage: const { treeOf, endTreeOf } = require('./tree');   (lib/detach.js, endRun in lib/run-lock.js)
  */
 
 const fs = require('fs');
@@ -12,8 +12,6 @@ const path = require('path');
 const { spawnSync } = require('./run');
 
 const PLATFORM = process.platform;
-
-const USAGE = 'usage: tree.js end <pid>';
 
 // How long a terminated tree gets before its forced end, and again after it.
 const GRACE_MS = 10000;
@@ -352,30 +350,5 @@ const endTreeOf = async (pid, { platform = PLATFORM, run = spawnSync, systemRoot
   }
   settled(refused, outlived);
 };
-
-/**
- * The command: `end <pid>` ends that tree, 0 once it is gone and 1 with the
- * rejection's line on stderr; any other argument list is the usage line and 2.
- * @param {string[]} argv
- * @returns {Promise<number>} the exit code
- */
-const main = async (argv) => {
-  const [verb, pid, ...rest] = argv;
-  if (verb !== 'end' || !/^[1-9]\d*$/.test(pid ?? '') || rest.length > 0) {
-    console.error(USAGE);
-    return 2;
-  }
-  try {
-    await endTreeOf(Number(pid));
-    return 0;
-  } catch (err) {
-    console.error(err.message);
-    return 1;
-  }
-};
-
-if (require.main === module) {
-  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
-}
 
 module.exports = { treeOf, endTreeOf };

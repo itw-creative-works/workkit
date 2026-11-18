@@ -11,7 +11,7 @@ const {
   describe, test, expect,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, shellPath, which, joinPath, stubTool, stubNode, NODE_DIR, SYSTEM_PATH,
+  IS_WINDOWS, shellPath, which, joinPath, stubTool, stubNode, NODE_DIR, SYSTEM_PATH, nodeEnv,
 } = require('../lib/platform');
 const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
 const {
@@ -291,7 +291,7 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       expect(JSON.stringify(JSON.parse(packaged(world, repo)).sort()), "a's line unchanged, b's on its new id").toBe(JSON.stringify([`${aId} packages/a`, `${bId} packages/b`].sort()));
       const root = git(repo, 'rev-parse', '--show-toplevel');
       const proved = runLib(`wk_pkg_proved "${root}" "$(wk_tree_hash "${root}" packages/a)" packages/a`,
-        { ...world.env, WORKKIT_NODE: shellPath(process.execPath) });
+        { ...world.env, ...nodeEnv });
       expect(proved.code, `a is still proved on the tree as it is now, got: ${proved.stderr}`).toBe(0);
       cleanup(world.root); cleanup(repo);
     });

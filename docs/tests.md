@@ -64,6 +64,7 @@
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
 - A suite or a case that cannot run here states a `skip` value, its reason, and the run lists every skip after the totals.
   - A whole file skips through its outer `describe`'s `skip` option: `describe('supervise', { skip: skipOnWindows() }, () => { ... })`, the kit's helper in `test/lib/supervise.js`. A suite that needs a tool states `needs` there (its bullets below).
+    - `test/lib/supervise.js` also holds the detached-run suites' shared fakes and worlds: `actsAfter`, `writesAfter`, `rootHolding`, `rootWith`, `handLock`, `claimNaming`, `tagOf`, `deadPid`, `holding`.
   - A skip value is `false` or the reason text, never another falsy value: `false` and `undefined` run the case, and `true` or a reason skips it.
     - For `''`, `0` or `null`, Node runs a case's body anyway and labels it skipped, and on a `describe` it cancels the children, which fails the run.
   - A helper that decides a skip (the kit's, a repo's own) returns `false` or the reason. `needs` alone also throws for a missing tool outside a cloud session (its bullets below).
@@ -171,7 +172,7 @@
   - A closed pipe (EPIPE, EOF) is ignored, as it is for `input`; any other stream error fails `done`.
   - Node closes it once the child is gone, so `start` adds no close of its own. `end()` and the deadline end the process, and close no stream first.
   - Any other `stdin` value throws at the call, naming `stdin`, so a misspelt one never starts a child with no stdin.
-- `start()`'s `end(signal)` climbs the shell's ladder (`wk_end_run`): `SIGINT` then `SIGTERM` then `SIGKILL`.
+- `start()`'s `end(signal)` climbs the kit's ladder (`endRun` in `workflow/lib/run-lock.js`): `SIGINT` then `SIGTERM` then `SIGKILL`.
   - It starts from the rung named, and the rungs are 1.5 s apart.
   - Each rung is sent only while the child (a detached child's whole process group) still lives.
     - So `end('SIGKILL')` is one send.
@@ -245,7 +246,7 @@
   - Off Windows a signal to the runner's group reaches no worker, so on `SIGINT`, `SIGTERM` or `SIGHUP` the runner ends every live worker's group the same way, then exits 128 plus the signal's number.
     - Meanwhile it prints nothing more: no block for a suite that ends while it waits, and no member or totals line.
     - A second of the three while it is ending sends `SIGKILL` at once, before anything else runs, to every group the first began to end that still lives, its worker exited or not, then exits 128 plus that second signal's number.
-      - So `workkit prove`'s ladder on the runner (`wk_end_run`) leaves no worker behind: its `SIGTERM` has the runner KILL every worker before its own `SIGKILL` comes.
+      - So `workkit prove`'s ladder on the runner (`endRun`) leaves no worker behind: its `SIGTERM` has the runner KILL every worker before its own `SIGKILL` comes.
     - A runner ended by `SIGKILL` cannot; a worker then ends its own tree only once its event loop notices the parent gone.
 - A run with no suite path, bare or under `--filter` alone, from a folder whose `package.json` lists `workspaces` also runs each member's own `npm test`, after its own suites.
   - Members are read by the publish plan's rule (`workflow/lib/expand-workspaces.js`): a literal folder, or `dir/*`. Any other pattern stops the run with the plan's own line before any suite.
@@ -295,7 +296,7 @@
     - `NO_COLOR` set to any text wins, `FORCE_COLOR` or not: the painter reads it first, where Node's own rule would let `FORCE_COLOR` win.
   - A line is painted by how it starts after its indent: a `✓` mark green, a `✗` line red, a `⊘` line and `slowest:` gray, a `▶` line, a `[outer › inner]` heading, the totals line and `Failures:` bold. Any other line is left byte for byte.
   - `node test/lib/paint.js` is the same painter as a filter: standard input to standard output, each whole line painted once its line end arrives, what follows the last line end written when the input ends.
-  - So a run's log file is plain, and the kit's terminal view of a long run paints it as it shows it (`workflow/README.md` § `lib/detach.sh`).
+  - So a run's log file is plain, and the kit's terminal view of a long run paints it as it shows it (`workflow/README.md` § `lib/attach.js`).
   - With `FORCE_COLOR` in the run's environment the parent paints into its log file too. Every program a suite starts inherits it as well, and Node then colors what they print (`console.log` of a number), so set it for a run only when no suite reads such output.
 - A run a case starts (`workkit test` in a scratch folder) is a run of its own.
   - Node's runner runs nothing under `NODE_TEST_CONTEXT`, the variable its own test files inherit, so the runner drops it from its environment as it starts.
@@ -436,7 +437,7 @@ describe('the popup', () => {
 - A frozen log ends `detach: no output and no processor use for <N> minutes, so the run was ended (exit 124)`, under the body's own `<prefix>: exit 143`.
 - After a look, the next one is asked after six more checks with no output.
 - An `end` file in the run's lock folder is read within a second and ends the run: its log ends `detach: the run was ended on request (exit 143)`, and the run exits 143.
-  - Ctrl-C on the call that started the run writes that file, so the whole run ends and the call exits 130 (`workflow/README.md` § `lib/detach.sh`).
+  - Ctrl-C on the call that started the run writes that file, so the whole run ends and the call exits 130 (`workflow/README.md` § `lib/runs.js`).
   - The supervisor answers by an `ending` file in the lock folder while it ends the run. The call that asked (Ctrl-C, `workkit watch --end`) waits 30 seconds for that answer, then for as long as the supervisor lives, so a slow end is never reported as a failed one. A failed end removes `ending` with `end`.
 - Ending a run: each of its processes gets a terminate signal, and what still lives 10 seconds later a forced end.
   - A signal the system refuses is passed over, so every other process still gets its own.

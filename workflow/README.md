@@ -30,11 +30,15 @@
 | `lib/expand-workspaces.js` | The expansion of a root's `workspaces` the publish plan, `lib/workspaces.js` and workkit-core's runner share |
 | `lib/hold.sh` | The full-suite hold |
 | `lib/changelog.sh` | The shell home of the CHANGELOG format check, the linter's resolution and the message |
-| `lib/detach.sh` | A command that outlives the shell that started it, one per lock |
-| `lib/detach.js` | The detached runner's Node half: the supervisor, its checks and its ends, requiring `lib/run.js`, `lib/pulse.js` and `lib/tree.js`, and `lib/settings.js` only with `--root` |
+| `lib/detach.sh` | A command that outlives the shell that started it, one per lock: the shell's names for it, each a call into `lib/runs.js` |
+| `lib/runs.js` | The command over a detached run, one Node process from the lock to the answer: the take, the launch, the attach and the end, CJS |
+| `lib/run-lock.js` | The run lock: the take and its judge, the pid file, the record beside the lock, the live and held reads, the end request, the end of a run's processes and the sweep of the narrowed runs' slots, CJS |
+| `lib/lock.js` | The lock folder's rules: the claim, a run lock's mark, its retire and adopt, the plain mutex and the markers' sweep, CJS, requiring `lib/run.js` and `lib/read.js`, and `hooks/mods/markers.js` only for the sweep |
+| `lib/attach.js` | A call attached to a run: the tail of its log, painted in process, its look, and the run under a supervisor already, CJS |
+| `lib/detach.js` | The detached runner's launcher (`node detach.js`, which `lib/runs.js` runs as a process of its own) and its supervisor: its checks and its ends, requiring `lib/run.js`, `lib/pulse.js` and `lib/tree.js`, and `lib/settings.js` only with `--root` |
 | `lib/command-log.sh` | The command log: a `workkit` command that does work runs again with its two streams teed to the terminal, and its run kept plain in its log file |
 | `lib/pulse.js` | The supervisor's verdict on a run from one reading per check, CJS, requiring nothing: `judge`, and the counts, the work floor and the two codes |
-| `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`, on Windows from both the Windows and the Git Bash process tables), CJS, requiring only `lib/run.js`; `node tree.js end <pid>` is the end as a command, which `wk_end_run` runs on Windows |
+| `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`, on Windows from both the Windows and the Git Bash process tables), CJS, requiring only `lib/run.js` |
 | `lib/discussions.sh` | Sourced: the home repo's Discussions API (GraphQL through `gh`), enabling, resolving and caching the repo and category ids, posting a summary or a brief, reading prior posts back |
 | `lib/git.js` | The git reads the kit's Node scripts share, CJS, requiring only `lib/run.js` |
 | `lib/pause.js` | The one blocking wait the kit's synchronous Node commands share, CJS, requiring nothing beyond Node: `pause(seconds)` blocks the process through `Atomics.wait`, a fraction allowed, so a poll loop sleeps with no child process (`identity/rest-pr.js`'s `pr checks --watch`, `ship/cut.js`'s release wait) |
@@ -245,14 +249,14 @@
     - `state.sh`: the safe JSON edit and the state mutex.
   - Six are seams the hooks and the entries source directly as well, each with its own row: `platform.sh`, `participation.sh`, `slug.sh`, `suite.sh`, `hold.sh` and `discussions.sh`.
   - Two more are the npm wrapper's, with rows of their own too: `changelog.sh`, and `detach.sh`.
-    - `detach.sh` has its Node half `detach.js`, which the CI watch shares.
+    - `detach.sh` names `runs.js`, the Node command over a detached run (with `run-lock.js`, `lock.js`, `attach.js` and `detach.js`), which the CI watch shares.
   - One is `workkit.sh`'s alone, with a row of its own: `command-log.sh`.
 - `lib/platform.sh`:
   - Sourced by `lib.sh`, by `standards.sh` and by the hooks' `_lib.sh` alike.
   - It is the shell twin of `test/lib/platform.js`, and of `lib/run.js` on the Node side.
   - A shape sits here beside the spelling it is built on.
     - So one jq read has one home for both of its questions: which jq answers it, and what its default means.
-  - It holds twenty-seven functions, each below.
+  - Its functions, each below.
   - `wk_jq`, since jq on Windows is a native program whose stdout is in TEXT MODE.
     - So a value read bare carries a `\r` into whatever is compared or written next.
     - Every jq call in `standards.sh` and in `lib/state.sh`'s JSON helpers goes through it.
@@ -272,15 +276,6 @@
     - `wk_end_pid [-9] <pid>`: ending one of them (`kill`, and `env kill -f -W` for a Windows pid).
     - There `env` is load bearing: bash's builtin shadows the `kill.exe` that takes a Windows pid.
     - That path is forceful whatever signal it is handed.
-  - `wk_end_run <pid>`, beside them: a detached run's supervisor ended with its process group (on Windows its process tree).
-    - On Windows it runs `node lib/tree.js end <pid>` under `wk_node`, the one home of a tree's end (`endTreeOf`), and returns that command's code.
-    - There a table reader (PowerShell or Git Bash's `ps`) that cannot start, runs past 60 seconds, exits nonzero or prints a table it cannot read, an unset `SystemRoot`, a refused signal (`could not signal <pids> (<message>)`), or a process left after the forced end is the command's one stderr line and 1.
-    - Where no node fits it prints `wk_end_run: no node at or above <floor> is installed, so the tree of <pid> was not ended` and returns 1.
-    - Elsewhere it ends its process group, and returns 0: INT so the body logs its own code, then TERM and KILL.
-    - Each comes 1.5 seconds after the last, while the group lives.
-  - `wk_pid_alive <pid>`: whether a pid still runs (`kill -0`), a process that ended and waits for its parent to collect it (a state starting with `Z`) not.
-    - The state is `/proc/<pid>/stat`'s where the system has `/proc`, an entry gone since `kill -0` read as ended; elsewhere (macOS) `ps -o stat=`'s, no line leaving `kill -0`'s answer.
-    - On Windows it asks Node, where a pid Node printed is a Windows pid bash's kill cannot see.
   - `wk_mv_link <from> <to>`: the rename that never follows a link at its destination (`-T` where mv is GNU, `-h` where it is BSD).
     - `wk_link` in `lib/flows.sh` renames a fresh link through it, so an address is replaced atomically.
   - `wk_sha1`: the one digest (`shasum` or `sha1sum`).
@@ -290,7 +285,7 @@
     - It serves the suite and package records here, and the hooks' review and triage markers alike.
     - The hooks reach the digest as `hook_sha1`.
   - `wk_markers_dir`: that base, `markers/` in `wk_user_dir`'s folder, out of reach of a system temp cleaner.
-  - `wk_sweep_markers`: the kit's own cleaner. Every shell marker writer calls it; the two record writers in `lib/records.js` run the same sweep in Node.
+  - `wk_sweep_markers`: the kit's own cleaner. Every shell marker writer calls it; the two record writers in `lib/records.js` run its Node twin, `sweepMarkers` in `lib/lock.js`.
     - It removes each regular file one folder under the base whose mtime is older than `MARKER_KEEP_DAYS` (7 days, set here).
     - It never enters a folder there.
   - `wk_tower_dir`: the tower clone, `tower/` in the same folder, the one spelling `lib.sh`'s `WK_HOME_DIR` reads.
@@ -334,32 +329,13 @@
     - `wk_claim_dir <dir>`: 0 only for the one caller that creates `<dir>/claim`.
       - A `mkdir` may answer 0 to two racing callers, so the one whose `mkdir` answered 0 must also create `<dir>/claim` under noclobber, which opens it create-only.
       - One caller alone gets the file, whatever `mkdir` answered.
-    - `wk_claim_dir <dir> <tag>`, the run lock's form: a folder that holds anything is another caller's, 1. In an empty one it writes `id.<tag>`, creates `claim` create-only holding `<tag>`, and writes `id.<tag>` once more, since a removal still running in that folder may have deleted it. A lost claim takes its own `id.<tag>` back, 1.
     - `wk_take_lock <dir>`: a `wk_claim_dir` of `<dir>`, its parent made first.
     - It is 0 holding it, and 1 after a 5-second wait, its caller going ahead either way.
     - `wk_drop_lock <dir>`, beside it, run only by a caller that took it: an `rm` of the claim, then an `rmdir` of the folder, never one removal of both.
       - A taker that claims the folder between the two keeps it, since the `rmdir` then fails.
-    - The state mutex (`lib/state.sh`) is its one caller; the package record's write (`lib/records.js`) takes its own lock by the same steps.
-  - A run lock's marks, beside it:
-    - A run lock folder holds two things for the lock's whole life: `claim`, created create-only and holding the taker's tag, which decides who made the lock, so a `mkdir` that answers 0 for a folder already there still gives it to one caller; and that taker's mark file, `id.<tag>`.
-    - A tag is no other take's on the machine: the pid of the shell that made it (a subshell's own), a count of the tags it made, and a random part, dot-separated.
-      - The pid is the one `wk_pid_alive` answers for on every platform: in Git Bash the shell's Windows pid (`/proc/<pid>/winpid`).
-      - `wk_tag_pid <tag>` prints that pid, the tag's first field; a first field that is no number (`orphan`, `x`) is 1, nothing printed. It is the one reader of a tag's pid: `wk_remover_lives` and the run lock's taker (`lib/detach.sh`) read it so.
-    - `wk_lock_mark <lock>` prints the lock's mark, in this order: the `id.<tag>` that `claim` names, when that file is there; else the `gone.<tag>` file (a removal under way); else `id.orphan` (an adopted folder); else nothing, 1.
-      - Any other `id.*` is the leftover of a taker that lost the claim: ignored, and gone with the folder.
-    - `wk_retire_lock <lock> <mark>` is the one removal of a run lock that holds files: it renames that exact `id.*` or `gone.*` mark to `gone.<its own tag>`. Only then it deletes the lock's other files, then `claim`, then its `gone` file, then the folder with `rmdir`. `claim` is not a mark it takes. An empty folder holds no lock, and goes by `wk_adopt_lock`'s `rmdir`.
-      - So a removal cut off mid-way leaves a folder that still holds its `gone` mark, or an empty one, never files with no mark.
-      - A rename is atomic, so of two callers that name one mark, one wins. The other, its mark no longer there, gets 1 with the folder as it was, and judges the lock again from the start.
-      - A `gone.<tag>` mark belongs to the removal that made it: `wk_retire_lock` answers 1, the folder as it was, while the pid in its tag lives (`wk_remover_lives`). A tag whose first field is no number (`gone.x`) counts as a remover that is gone. So two removals never run in one folder, and a slow remover never deletes files of a lock made after it.
-    - `wk_adopt_lock <lock> <seen>` takes a folder with no mark once its run is over, never removing it as it is. `<seen>` is the folder's file names as the caller read them with the absent mark, before it judged: one line, one space apart, in glob order (`_wk_lock_files`; a lock file's name holds no space).
-      - An empty folder (a taker that ended right after its `mkdir`) goes by `rmdir`, which fails once anything is in it.
-      - A folder with files and no mark is an older kit's lock (`claim` empty or alone), or what a `mkdir` that answers 0 for a folder already there can leave. The caller creates `id.orphan` create-only and looks again.
-      - When a mark other than `id.orphan` has appeared, or the folder holds anything but exactly `<seen>` and `id.orphan`, it removes its own `id.orphan`, 1. A folder made in the old one's place always differs: a new taker's first file is its own `id.<tag>`.
-      - Else it retires the lock by `id.orphan`, like any mark, also when another adopting caller made that file.
-    - `wk_retire_judged <lock> <judge> [args...]` is the steps every remover shares: it reads the mark first (with none, the file names too), then runs `<judge> <lock> [args...]`, and on its 0 retires the lock by that mark, or adopts it against those names. Any other answer of the judge comes back with nothing removed. It is the one place that reads `<seen>`.
-      - A `gone.<tag>` mark whose remover lives is answered 4 at once, the judge never asked and nothing touched.
-      - So a caller acting on an old judgment never removes a lock made after it: that lock holds another mark.
-    - The callers: `wk_take_run_lock`'s takeover and the owner's drop, a foreground run's too (`lib/detach.sh`), and `wk_test_slots_sweep` (`lib/suite.sh`) go through `wk_retire_judged`; the traps and the failed launch of `wk_run_detached` retire by the run's own mark.
+    - The machine-state mutex is its caller (`lib/state.sh`, `lib/discussions.sh`, the home options, the site and the standards state).
+    - Its Node twin is `lib/lock.js`'s `claimDir`, `takeLock` and `dropLock`: the package record's write (`lib/records.js`) takes its lock so, and the two sides exclude each other on one folder.
+  - The run lock's own rules (its tagged claim, its mark, its retire and adopt) are Node's alone: `lib/lock.js`, below.
 - `lib/run.js`:
   - CJS, requiring nothing beyond Node, the Node twin of `lib/platform.sh`.
   - workkit-core ships it as `workkit-core/run`; its prepack copies it to `run.cjs`.
@@ -493,9 +469,11 @@
     - `wk_test_lock_path <root> <pid>` is the `claude-test-lock` marker path with `.<pid>` after it, one folder down where `wk_sweep_markers` reaches a leftover file;
     - `wk_test_pids <root>` prints the pid of each slot whose lock folder stands, live or not;
     - `wk_test_slot_clear <root> <pid>` removes a slot's log and its lock's record once a call has read its end.
-    - `wk_test_slots_sweep <root>` removes each slot (lock folder, log, record) whose done file is older than one day (`TEST_SLOT_KEEP_DAYS`): a run whose answer no call collected. Every narrowed run runs it at its start.
-      - It removes the lock through `wk_retire_judged`, so the mark is read before the look; the log and the record go only once that worked.
+    - `wk_test_slots_sweep <root>` removes each slot (lock folder, log, record) whose done file is older than one day: a run whose answer no call collected. Every narrowed run runs it at its start.
+      - It hands the slots' lock path to `runs.js sweep-slots` (`sweepSlots` in `lib/run-lock.js`), which removes each such lock through `retireJudged`, so the mark is read before the look, and names its slot; the log and the record go here only once that worked.
+      - That call starts as every `runs.js` call without a root does, under any `node` (`_wk_runs` in `lib/detach.sh`, sourced when the caller has not).
       - It also clears a slot whose lock holds a `gone` mark of a remover that is gone, whatever its age, since no done file is left there for the age to be read from. A live remover's slot stays.
+      - With no `node` at all it sweeps nothing: `detach: no node is installed to run <lib>/runs.js`.
   - The hook library's scripts call these by their engine names.
   - The hooks module reads the records through `hooks/mods/suite.js`.
     - It takes a tree id through `node lib/tree-hash.js`, the index's with `-i` as its only flag, with no bash between.
@@ -524,9 +502,9 @@
   - The package record is its sibling: the packages a green `npm test` other than the bare root run proved.
     - It has its own file, `~/.workkit/markers/claude-package-marker/<sha1 of the repo root>` (`pkgRecordPath`), never the suite's.
     - It holds one line per package, `<id> <pkg>`: the package folder relative to the root (`.` for the root), after its own tree id hashed before the run.
-    - `writePkgRecord(root, tree, pkg)` works under the record's lock, `<record>.lock`, taken as `wk_take_lock` takes one (the folder, then its `claim` create-only).
+    - `writePkgRecord(root, tree, pkg)` works under the record's lock, `<record>.lock`, taken by `takeLock` in `lib/lock.js`, `wk_take_lock`'s twin (the folder, then its `claim` create-only).
     - It keeps every line whose package is not `<pkg>` and appends `<tree> <pkg>` (`pkgRecordText`), moved onto the record from `<record>.tmp.<pid>`, so overlapping package runs each keep their line.
-  - Each write first removes every regular file one folder under the markers folder older than 7 days, as `wk_sweep_markers` does; a lock folder there is left alone.
+  - Each write first removes every regular file one folder under the markers folder older than 7 days (`sweepMarkers` in `lib/lock.js`, `wk_sweep_markers`'s twin); a lock folder there is left alone.
   - `suiteHolds(root, tree)` and `pkgHolds(root, tree, pkg)` are the reads, through `suiteProved` and `pkgProved`.
   - As a command, `node records.js <verb> ...`: `suite-write`, `pkg-write`, `suite-proved`, `pkg-proved`.
     - A yes or no is the exit code. A failed write prints `records: <reason>` and exits 1; a record that cannot be read reads as no record.
@@ -606,70 +584,109 @@
   - Commit-gate check 3 prints the same sentence after `commit-gate: BLOCKED this commit:`.
 - `lib/detach.sh`:
   - Sourced by `script-shell.sh`, by `prove.sh`, by `supervise.sh`, by `watch.sh` and by `ship/watch.sh`.
-  - `wk_run_detached <log> <lock> [--root <root>] -- <cmd> [args...]` takes `<lock>`.
-    - The lock is a directory taken by `wk_take_run_lock`, with the supervisor's pid written inside as `pid`.
-    - Until the supervisor's pid is written, a HUP, INT or TERM retires the lock by its mark (`wk_retire_lock`), no pid in it yet, and exits 129, 130 or 143 (an INT also sets `WK_RAN_INT`), so the next call takes it at once. On a failed launch the caller's own traps come back. Once the pid is written its HUP and TERM traps come back, and its INT trap once the attached call returns.
-    - It launches through `detach.js`, passing `--root` on, so the run is checked.
-    - With `--root` that is the first node `wk_node` finds at the kit's floor, which the settings loader needs; without it, plain `node`.
-    - A launcher that fails (a bad `tests.check` is 2) retires the lock by its mark, prints `detach: could not start <cmd> (log <log>)` and returns the launcher's code.
-    - Then it attaches through `wk_attach_run <log> <lock> <pid>`, whose answer is its own.
-    - The launcher is started with `WK_RUN_LOCK` set to `<lock>`, so the run's own command inherits it.
-  - Under a supervisor already (`wk_supervised`: `WORKKIT_SUPERVISED=1`, which `detach.js` sets), `wk_run_detached` starts no second supervisor.
-    - It runs `<cmd>` in the foreground instead (`_wk_run_foreground`), its output on stdout and in `<log>`, and returns the command's code.
-    - It holds `<lock>` for the command's length, unless `<lock>` is the enclosing run's own (`WK_RUN_LOCK`). A lock another live run holds is 3, as ever.
-    - Under the enclosing run's own lock it runs bare, without `tee`: that run's log is already its stdout, so a doubly supervised run writes its log once.
-    - When it took `<lock>` itself, at the end it writes the done file and the record, as a detached run ends, so a watch attached to `<lock>` gets the code.
-    - Under the enclosing run's own lock it writes neither: that run's supervisor writes them.
-    - So `workkit prove`, a narrowed `npm test` or a second `workkit supervise` inside a supervised run runs in that run, within the outer supervisor's reach.
-  - `wk_attach_run <log> <lock> <pid> [<offset>]` tails `<log>` to stdout from byte `<offset>` (0), so a later verb attaches to a run already going.
-    - The log is plain text. When `wk_view_paints` says yes, each whole line passes through the painter's filter (`wk_view_paint`) on its way to stdout; otherwise stdout gets the log's bytes.
-      - `wk_view_paints` is the kit's color gate (`wk_color_on`, `lib/voice.sh`, sourced when the caller has not) on the call's stdout, then the filter, `packages/core/test/lib/paint.js` beside this engine, and a node `wk_node` finds at the kit's floor.
-      - The filter runs with `FORCE_COLOR=1`, since the gate judged the stdout already. Its rules per line: `docs/tests.md` § The kit's runner.
-      - A painted tail runs in a pipe's subshell, so its code, `WK_RAN_CODE` and `WK_RAN_LOOK` come back to the call on a file descriptor of their own.
-      - A Ctrl-C ends that subshell by its own INT trap; the call notes it and hands it to the caller's INT disposition once the tail is over, so the run ends and the call exits 130 as with the gate off.
-      - A filter that is gone otherwise ends the tail quietly: `detach: the painted view of the run ended, so this call stops; the run goes on, and workkit watch follows it`, the lock kept for a watch.
+  - The shell's names for a detached run, each a call into `node lib/runs.js <verb>` that hands back what it answered. It holds no lock rule, no loop and no trap but `wk_body_traps`' own and the one forward below.
+  - `_wk_runs <verb> <arg>...` is the one start of a `runs.js` command, for the five names below and for `wk_test_slots_sweep` in `lib/suite.sh`, and the one place that chooses its node.
+    - A `run` with `--root` runs under the first node `wk_node` finds at the kit's floor, which the settings loader needs; every other call under `node` on PATH. So `wk_attach_run`, `wk_ask_end`, `wk_run_live` and `wk_run_held` need a `node` too.
+    - With no `node` at all it prints `detach: no node is installed to run <lib>/runs.js` and returns 1.
+    - For `run` and `attach` it places `--answer <file>` and reads the answers back, a line each: `held=<pid>`, `code=<n>`, `look=1`, `int=1`, into `WK_HELD_PID`, `WK_RAN_CODE`, `WK_RAN_LOOK` and `WK_RAN_INT`.
+    - Its HUP, INT and TERM traps are set before the command starts, so this shell can pass a signal on: each is sent on once, the next ignored, and the caller's own traps come back after. No Node command outlives the shell that started it.
+    - After a HUP or a TERM it exits 129 or 143. After an INT it exits 130 when the run answered `int=1`, so the caller's EXIT trap reads `WK_RAN_INT`; a run in the foreground that answered its command's code returns that code; any other INT goes on to the caller's own INT disposition. Else it returns the command's code.
+    - It hands `WK_WATCH_NAME`, `WK_END_WAIT` and `WK_LAUNCH_WAIT` to Node, set or not, so a caller's plain shell variable counts.
+  - `wk_run_detached <log> <lock> [--root <root>] -- <cmd> [args...]` is `runs.js run`.
+    - With `--root` and no node at the floor it stops before the run: `detach: no node at or above <floor> is installed to run <lib>/detach.js`, then `detach: could not start <cmd> (log <log>)`, and 1.
+    - Under a supervisor already (`WORKKIT_SUPERVISED=1`), a `--root` run with no node at the floor runs its command in this shell, with no lock and no log of its own: `detach: no node at or above <floor> is installed, so <cmd> runs here without its lock`, and its code back.
+  - `wk_attach_run <log> <lock> <pid> [<offset>]` is `runs.js attach`, its code returned, `WK_RAN_CODE` and `WK_RAN_LOOK` set from the answer file. An INT ends the call alone, through the caller's own INT disposition; the run and its lock go on.
+  - `wk_ask_end <lock> <pid>` is `runs.js ask-end`, `wk_run_live <lock>` `runs.js live`, `wk_run_held <lock>` `runs.js held`: each prints and returns what the command does.
+  - `wk_view_paints` and `wk_view_paint` stay for `watch.sh`, which paints a log's last lines through them.
+    - `wk_view_paints` is the kit's color gate (`wk_color_on`, `lib/voice.sh`, sourced when the caller has not) on the call's stdout, then the painter's filter, `packages/core/test/lib/paint.js` beside this engine, and a node `wk_node` finds at the kit's floor.
+    - `wk_view_paint` runs the filter with `FORCE_COLOR=1`, since the gate judged the stdout already. Its rules per line: `docs/tests.md` § The kit's runner.
+  - `wk_body_traps <prefix> [<before-exit command>]` is a detached body's traps: the suite's, prove's and the CI watch's alike.
+    - On EXIT the optional command runs, and `<prefix>: exit <code>` is the last line.
+    - HUP, INT and TERM exit 129, 130 and 143, since bash runs the EXIT trap on a fatal signal with a stale status.
+- `lib/runs.js`:
+  - The command over a detached run, CJS: `node runs.js <verb> ...`.
+    - `run <log> <lock> [--root <root>] --answer <file> -- <cmd> [args...]`, `attach <log> <lock> <pid> [<offset>] --answer <file>`, `ask-end <lock> <pid>`, `live <lock>`, `held <lock>`, `sweep-slots <base>`.
+    - Exit codes: the run's own code; 125 on a look; 130 on an interrupt; 3 with `held=<pid>` for a live holder; 1 when the lock or the run cannot be made; `ask-end` 0, 1 or 2 (`askEnd`); `live` and `held` 0 with the pid printed, else 1; 2 and the usage line for a call it does not take.
+  - `run` takes `<lock>` (`takeRunLock`), with the supervisor's pid written inside as `pid` (`writePid`).
+    - The tag's pid is this Node process's own and the pid file's the supervisor's, each as Node reads it, so on Windows a Windows pid with no Git Bash translation.
+    - Until the supervisor's pid is written, a HUP, INT or TERM retires the lock by its mark (`retireLock`), no pid in it yet, and exits 129, 130 or 143 (an INT with `int=1`), so the next call takes it at once.
+    - It launches through `node detach.js` in a process of its own, passing `--root` on, so the run is checked, with `WK_RUN_LOCK` set to `<lock>` so the run's own command inherits it.
+    - That launcher is gone once it printed the supervisor's pid, so the supervisor has no live parent: no end of a process tree by parent links (a tool cutting off the call, `taskkill /T`) reaches the run through this call.
+    - A launch that fails (a bad `tests.check` is 2) retires the lock by its mark, prints `detach: could not start <cmd> (log <log>)` and exits with the launcher's code.
+    - Then it attaches (`attachRun`) from the log's first byte, whose answer is its own.
+    - Once the pid is written, a HUP or TERM ends only this call: the run goes on to its done file, and the lock stands until a later call finds it over.
+  - INT, a human's Ctrl-C on the call that started the run, ends the whole run and exits 130 with `int=1`.
+    - The tail stops; the end request is written and waited on (`askEnd`), so the supervisor ends the run's processes, a child in its own session included, and the log ends with its request line.
+    - Once the done file holds a code, it leaves the record, so a second call attached to the run gets 143.
+    - A run still going when the wait runs out is ended by process group (`endRun`).
+    - Then it drops the lock, unless that end failed: the run still goes, so its lock stays.
+  - Under a supervisor already (`WORKKIT_SUPERVISED=1`, which `detach.js` sets), `run` starts no second supervisor: it runs `<cmd>` in the foreground (`runForeground`), its code in `code=`.
+  - Every answer is a whole number; a value that is not one (an unknown signal's code) throws rather than reach the shell.
+  - `attach` is `attachRun` from `<offset>`; an INT stops the tail and exits 130, the run and its lock going on.
+  - In process it exports `run(job, { launch, endRun })` and `endOnInt(lock, pid, { endRun })`, the launcher and the end of a run's processes injectable and the real ones by default.
+  - `sweep-slots <base>` prints each slot `sweepSlots` removed, one a line.
+- `lib/attach.js`:
+  - `attachRun(log, lock, pid, offset)` tails `<log>` to stdout from byte `<offset>` (0), so a later verb attaches to a run already going.
+    - The log is plain text. When the kit's color gate says yes, each whole line is painted on its way to stdout by the painter, `packages/core/test/lib/paint.js` beside this engine, required in process with `FORCE_COLOR=1`; otherwise stdout gets the log's bytes.
+      - The gate is `colorOn` in `tower/api/lib/log.js`, the Node home of `wk_color_on`'s rule (`lib/voice.sh`), on stdout: `WORKKIT_COLOR=0`, `NO_COLOR` or a dumb `TERM` is no, `WORKKIT_COLOR=1` stands in for a terminal.
+      - A kit copy without the gate or the painter (the engine alone) is the plain view, and so is a call whose own Node is below the kit's floor (`WK_NODE_FLOOR`, read from `lib/platform.sh`), since the painter is an ES module. A painter that is there and fails to load throws.
+      - A line split across reads waits for its end; what is left is painted when the call ends.
+      - A painted view whose stdout is gone (its reader went away) ends the tail: `detach: the painted view of the run ended, so this call stops; the run goes on, and workkit watch follows it`, the lock kept for a watch, and 1.
+      - A plain view whose reader went away goes on to the run's end: the code comes back and the lock drops.
     - It drops the lock and returns the code the command recorded.
     - That code is read once, from the done file, in the poll that first finds it.
     - A `look` file beside the done file, with no done file yet, is the supervisor asking for a look.
       - It prints the look's evidence, then `detach: the run goes on; read <log>, then run workkit watch to keep waiting or workkit watch --end to end it (exit 125)`.
       - With `WK_WATCH_NAME` set by the caller (a narrowed run's pid), both calls in that line carry it: `workkit watch <pid>`, `workkit watch --end <pid>`.
-      - It removes the look file, keeps the lock, sets `WK_RAN_LOOK` to 1 and returns 125, with the run still going.
-    - Before it drops the lock it leaves `<supervisor pid> <code>` in `<lock>.done`, a file beside the lock folder, written whole and renamed.
-    - A call that finds the lock or the done file gone, its supervisor's pid gone too, returns the code that record holds for its own pid.
+      - It removes the look file, keeps the lock, answers `look=1` and 125, with the run still going.
+    - Before it drops the lock it leaves `<supervisor pid> <code>` in `<lock>.done` (`leaveRecord`), a file beside the lock folder, written whole and renamed.
+    - A call that finds the lock or the done file gone, its supervisor's pid gone too, returns the code that record holds for its own pid (`recordedCode`).
       - So of two calls attached to one run, the one that finds the lock already dropped still gets the run's code, whatever the command printed.
-      - No record, or another run's, is the supervisor-gone line below.
-    - `wk_take_run_lock` removes the record when it takes the lock for a new run.
-  - `wk_run_live <lock>` is 0, printing the supervisor's pid, while `<lock>` holds a pid file, no done file, and that pid is alive; 1 otherwise.
-    - `wk_take_run_lock` asks it whether a lock's run is going.
-  - `wk_run_held <lock>` is 0, printing the pid, while `<lock>` holds a pid file and that pid is alive or its done file is written: a run whose answer no call has collected yet. `watch.sh` chooses its run by it.
-  - `wk_take_run_lock <lock>` takes the lock through `wk_claim_dir <lock> <tag>` (`lib/platform.sh`), and sets `WK_LOCK_MARK` to its `id.<tag>`.
-    - A folder that holds anything, or a lost claim, sends the taker to judge the lock that is there, through `wk_retire_judged` with `_wk_run_over` as the judge.
-    - It answers 0 holding the lock, 3 when a live run holds it, 1 when it cannot be made.
-  - The lock is dropped only by its owner (`_wk_drop_run_lock <lock> <pid>`, through `wk_retire_judged`).
-    - The normal end, the INT trap and the supervisor-gone path each read the mark, then retire the lock by it only while `<lock>/pid` still holds this run's pid.
-    - The owner finds its own mark through `claim`; a folder with no mark that still holds its pid is adopted (`wk_adopt_lock`), never left behind.
-    - So a run that took it over keeps it.
+      - No record, or another run's, is `detach: the run of supervisor <pid> ended without recording an exit code; its output is in <log>`, and 1.
+    - A done file that holds no number is `detach: the done file held no exit code (<text>)`, the lock dropped, and 1.
+    - The code it answers is empty whenever the runner itself failed (no lock, no start, no done file), so a caller can tell the command's own 1 from the runner's.
+  - `runForeground(log, lock, argv)` is a run under a supervisor already: `<cmd>` runs here, its stdout and stderr each copied to stdout and to `<log>` as they arrive, and its code comes back once every holder of that output is gone.
+    - It holds `<lock>` for the command's length, unless `<lock>` is the enclosing run's own (`WK_RUN_LOCK`, the two paths compared resolved, and on Windows without regard to case). A lock another live run holds is 3, as ever.
+    - A HUP, INT or TERM is the command's to answer: this process never ends before its command, and always writes the done file and the record and drops the lock.
+    - Its lock holds a `foreground` file, the enclosing run's lock path, before the pid: no supervisor reads its end file. The pid is this Node process's.
+    - Under the enclosing run's own lock it runs bare, on this process's own stdio: that run's log is already its stdout, so a doubly supervised run writes its log once.
+    - When it took `<lock>` itself, at the end it writes the done file and the record, as a detached run ends, so a watch attached to `<lock>` gets the code.
+    - Under the enclosing run's own lock it writes neither: that run's supervisor writes them.
+    - So `workkit prove`, a narrowed `npm test` or a second `workkit supervise` inside a supervised run runs in that run, within the outer supervisor's reach.
+- `lib/run-lock.js`:
+  - The run lock, CJS, over `lib/lock.js`'s folder rules.
+  - `takeRunLock(lock)` takes the lock through `claimDir(lock, tag)`, a tag of this process's own.
+    - A folder that holds anything, or a lost claim, sends the taker to judge the lock that is there, through `retireJudged` with the run-over judge.
+    - It answers `{ code: 0, mark }` holding the lock, `{ code: 3, held }` when a live run holds it, `{ code: 1 }` when it cannot be made.
+    - It removes the record beside the lock when it takes the lock for a new run: the last run's record is no answer for the new one.
   - A lock a live run holds answers 3 with nothing run.
-    - Since a command may return 3 itself, `WK_HELD_PID` is set, to the holder's pid, only then.
+    - Since a command may return 3 itself, `held=` is answered, the holder's pid, only then.
   - A lock whose run is over is taken over: its done file written, its pid gone, or no pid once its taker is gone or its wait has run out.
-    - A lock with no pid file is judged by its taker, the shell that took it: the pid that is the first field of the tag its claim names (`wk_tag_pid`).
+    - A lock with no pid file is judged by its taker, the process that took it: the pid that is the first field of the tag its claim names (`tagPid`).
       - A taker that lives is waited for, up to `WK_LAUNCH_WAIT` seconds (60), while the lock has no pid file. Once the pid file is there, the lock is judged by it, so a launch slower than five seconds keeps its lock and the second call answers 3.
       - Still no pid file when that wait runs out: the run is over, and the take takes the lock, as for a lock with no taker. A live taker only makes the take wait longer, never fail, so a launcher ended before its pid write whose pid another process now holds blocks nothing.
       - A taker that is gone: the run is over, and the lock is taken at once.
       - No taker to read (no claim, an empty claim, a `gone` or `id.orphan` mark): no pid five seconds after the take is over.
-    - The taker reads the mark before it judges, and retires the lock by that mark (`wk_retire_lock`). So of two takers on one old judgment, the second finds its mark gone and judges again, and never removes the first one's new lock.
+    - The taker reads the mark before it judges, and retires the lock by that mark (`retireLock`). So of two takers on one old judgment, the second finds its mark gone and judges again, and never removes the first one's new lock.
     - A lock holding a `gone.<tag>` mark is taken over so too, by that mark, once its remover is gone: a caller that ended between its rename and its removal leaves nothing stuck.
     - While that remover lives, the taker waits for that `gone` mark to go, up to five seconds, and that wait costs none of its tries. Whatever stands once the mark is gone (no folder, or a new lock another taker made meanwhile) is judged on the next pass, so an ordinary removal never makes a take fail, and a new live run still answers 3.
     - Only the same `gone` mark still there after the wait is `detach: could not take the lock <lock>`, 1.
-    - A folder with no mark is adopted (`wk_adopt_lock`): an empty one, an older kit's lock, and files a `mkdir` that answered 0 left.
-    - So a KILL before the supervisor's pid is written, which no trap sees, leaves a lock with no pid and a taker gone, which the next call takes at once.
+    - A folder with no mark is adopted (`adoptLock`): an empty one, an older kit's lock, and files a `mkdir` that answered 0 left.
+    - So a KILL before the supervisor's pid is written, which no handler sees, leaves a lock with no pid and a taker gone, which the next call takes at once.
     - With a done file, it waits up to two seconds for the directory to go, since its own foreground is collecting it.
-  - INT, a human's Ctrl-C on the call that started the run, ends the whole run and exits 130.
-    - It writes the end request and waits through `wk_ask_end`, so the supervisor ends the run's processes, a child in its own session included, and the log ends with its request line.
-    - Once the done file holds a code, it leaves the record, so a second call attached to the run gets 143.
-    - A run still going when the wait runs out is ended by process group (`wk_end_run` in `platform.sh`).
-    - Then it drops the lock, unless that end by process group failed (`wk_end_run` returns 1): the run still goes, so its lock stays. Either way it sets `WK_RAN_INT` to 1, for the caller's EXIT trap, and exits 130.
-  - `wk_ask_end <lock> <pid>` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30).
+  - The lock is dropped only by its owner (`dropRunLock(lock, pid)`, through `retireJudged`).
+    - The normal end, the interrupt and the supervisor-gone path each read the mark, then retire the lock by it only while `<lock>/pid` still holds this run's pid.
+    - The owner finds its own mark through `claim`; a folder with no mark that still holds its pid is adopted, never left behind.
+    - So a run that took it over keeps it.
+  - `writePid(lock, pid)` writes the pid whole through a rename, so a second run never reads a half-written one.
+  - `runLive(lock)` is the supervisor's pid while `<lock>` holds a pid file, no done file, and that pid is alive; null otherwise. The take asks it whether a lock's run is going.
+  - `runHeld(lock)` is the pid while `<lock>` holds a pid file and that pid is alive or its done file is written: a run whose answer no call has collected yet. `watch.sh` chooses its run by it.
+  - `pidAlive(pid)` (`lib/lock.js`'s): whether a pid answers a zero signal, any refusal read as gone; off Windows a process that ended and waits for its parent to collect it (a state starting with `Z`) is not alive.
+    - The state is `/proc/<pid>/stat`'s where the system has `/proc`, an entry gone since the signal read as ended; elsewhere (macOS) `ps -o stat=`'s, no line leaving the signal's answer.
+  - `endRun(pid)`: a detached run's supervisor ended with what it started.
+    - Elsewhere than Windows the supervisor leads its own group: INT so the body logs its own code, then TERM and KILL, each 1.5 seconds after the last while the group lives.
+    - On Windows its process tree, through `endTreeOf` in `lib/tree.js`. A table reader (PowerShell or Git Bash's `ps`) that cannot start, runs past 60 seconds, exits nonzero or prints a table it cannot read, an unset `SystemRoot`, a refused signal (`could not signal <pids> (<message>)`), or a process left after the forced end is its one stderr line and a failed end.
+  - `askEnd(lock, pid)` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30).
     - While `<lock>/ending` stands, the supervisor's answer that it is ending the run (`lib/detach.js`), the wait has no end of its own: it goes on while `<pid>` lives, and answers as below.
       - An `ending` file that goes again (the end failed) puts the wait back on its `WK_END_WAIT` clock, counted from the request.
       - So 1 is a supervisor that never answered, or whose end failed: one that is ending its run is waited for, however long its end takes.
@@ -680,17 +697,34 @@
       - A done file there, or a lock that no longer holds `<pid>` (dropped, or taken by another run), is 0.
       - A lock that still holds `<pid>` with no done file is 2: the supervisor is gone and left no answer.
     - `watch.sh`'s `--end` waits through it too.
-  - Any other signal ends only the foreground.
-    - The run goes on to its done file, and the lock stands until a later call finds it over.
-  - A supervisor gone with no done file and no record of its own is one `detach:` line and 1.
-  - `WK_RAN_CODE` holds the code the command recorded.
-    - It is empty whenever the runner itself failed (no lock, no start, no done file).
-    - So a caller can tell the command's own 1 from the runner's.
-  - `wk_body_traps <prefix> [<before-exit command>]` is a detached body's traps: the suite's, prove's and the CI watch's alike.
-    - On EXIT the optional command runs, and `<prefix>: exit <code>` is the last line.
-    - HUP, INT and TERM exit 129, 130 and 143, since bash runs the EXIT trap on a fatal signal with a stale status.
+  - `sweepSlots(base)` removes each narrowed run's lock folder `<base><slot>` whose run was cut off, through `retireJudged`: its done file over a day old, or a `gone` mark at any age. A live remover's slot stays. It answers the slots it removed.
+- `lib/lock.js`:
+  - The lock folder's rules, CJS, the one home of the run lock's.
+  - `claimDir(dir, tag)`: true only for the one caller that makes `<dir>` and then creates `<dir>/claim` create-only, since a `mkdir` may answer 0 to two racing callers.
+    - With a tag, the run lock's form: a folder that holds anything is another caller's, false. In an empty one it writes `id.<tag>`, creates `claim` create-only holding `<tag>`, and writes `id.<tag>` once more, since a removal still running in that folder may have deleted it. A lost claim takes its own `id.<tag>` back, false.
+  - A run lock folder holds two things for the lock's whole life: `claim`, holding the taker's tag, which decides who made the lock; and that taker's mark file, `id.<tag>`.
+    - A tag is no other take's on the machine: the pid of the process that made it, a count of the tags it made, and a random part, dot-separated (`lockTag`). `tagPid(tag)` reads the pid back; a first field that is no number (`orphan`, `x`) is null.
+  - `lockMark(dir)` is the lock's mark, in this order: the `id.<tag>` that `claim` names, when that file is there; else the `gone.<tag>` file (a removal under way); else `id.orphan` (an adopted folder); else null.
+    - Any other `id.*` is the leftover of a taker that lost the claim: ignored, and gone with the folder.
+  - `retireLock(dir, mark)` is the one removal of a run lock that holds files: it renames that exact `id.*` or `gone.*` mark to `gone.<its own tag>`. Only then it deletes the lock's other files, then `claim`, then its `gone` file, then the folder. `claim` is not a mark it takes. An empty folder holds no lock, and goes by `adoptLock`'s removal.
+    - So a removal cut off mid-way leaves a folder that still holds its `gone` mark, or an empty one, never files with no mark.
+    - A rename is atomic, so of two callers that name one mark, one wins. The other, its mark no longer there, gets false with the folder as it was, and judges the lock again from the start.
+    - A `gone.<tag>` mark belongs to the removal that made it: `retireLock` answers false, the folder as it was, while the pid in its tag lives. A tag whose first field is no number (`gone.x`) counts as a remover that is gone. So two removals never run in one folder, and a slow remover never deletes files of a lock made after it.
+  - `adoptLock(dir, seen)` takes a folder with no mark once its run is over, never removing it as it is. `<seen>` is the folder's file names as the caller read them with the absent mark, before it judged; with none given they are read at the call.
+    - An empty folder (a taker that ended right after its `mkdir`) is removed, which fails once anything is in it.
+    - A folder with files and no mark is an older kit's lock (`claim` empty or alone), or what a `mkdir` that answers 0 for a folder already there can leave. The caller creates `id.orphan` create-only and looks again.
+    - When a mark other than `id.orphan` has appeared, or the folder holds anything but exactly `<seen>` and `id.orphan`, it removes its own `id.orphan`, false. A folder made in the old one's place always differs: a new taker's first file is its own `id.<tag>`.
+    - Else it retires the lock by `id.orphan`, like any mark, also when another adopting caller made that file.
+  - `retireJudged(dir, judge)` is the steps every remover shares: it reads the mark first (with none, the file names too), then asks `judge(dir)`, and on its `true` (the lock is over) retires the lock by that mark, or adopts it against those names. It is the one place that reads `<seen>`.
+    - It answers `true` when the folder went, `false` when another caller was first. Any other answer of the judge means not over and comes back with nothing removed.
+    - A `gone.<tag>` mark whose remover lives is answered `null` at once, the judge never asked and nothing touched.
+    - The take's judge answers a live holder's pid; every other yes or no of `lib/lock.js` and `lib/run-lock.js` is a boolean.
+    - So a caller acting on an old judgment never removes a lock made after it: that lock holds another mark.
+    - The callers: the take's takeover and the owner's drop, a foreground run's too, and `sweepSlots`; a signal before the pid and a failed launch retire by the run's own mark.
+  - `takeLock(dir)` and `dropLock(dir)` are the plain mutex, `wk_take_lock` and `wk_drop_lock`'s twins: its parent made, then `claimDir(dir)` tried 50 times 100 ms apart; the claim dropped before the folder. The package record's write takes its lock so.
+  - `sweepMarkers(home)` is `wk_sweep_markers`'s twin: every regular file one folder under the markers folder (`markersDir` in `hooks/mods/markers.js`) older than 7 days removed, a folder there never entered.
 - `lib/detach.js`:
-  - `node detach.js <log> <done> [--root <root>] -- <cmd> [args...]`.
+  - `node detach.js <log> <done> [--root <root>] -- <cmd> [args...]`, which `lib/runs.js` runs as a process of its own; `signalCode(signal)` the one code a shell gives a command a signal ended (an unknown name throws).
   - The rule it runs (the checks, the verdicts, the evidence, the ends and every line they write): `../docs/tests.md` § The checks.
   - With `--root` the launcher first reads that root's `tests.check` (`checkMinutes` in `hooks/mods/settings.js`); a bad value exits 2 with nothing run.
   - The launcher truncates `<log>`, drops a stale `<done>`, and starts a supervisor copy of itself (`--supervise`, the minutes passed as `--check`) with `detached: true` and ignored stdio.
@@ -1061,7 +1095,7 @@
   - Its stdout and stderr go to the suite log, truncated per run, which the foreground tails to stdout.
     - The log is `wk_suite_log_path`: `suite.log` in the repo's log folder (`logs.dir`, default `.workkit`) where git ignores it, else under `~/.workkit/markers`.
     - The body's last line is always `script-shell: exit <code>`.
-    - The suite writes to that file, never to a terminal. So a colour or reporter choice that looks for a terminal sees none, and the file is plain; the tail paints it for a terminal (`lib/detach.sh`, `wk_attach_run`).
+    - The suite writes to that file, never to a terminal. So a colour or reporter choice that looks for a terminal sees none, and the file is plain; the tail paints it for a terminal (`lib/attach.js`).
   - npm's exit code is the script's, with one exception.
     - A green run exits 1 when its tree cannot be hashed (on either side of the run), or its record cannot be written.
     - A changed tree, a green run with `CI` set, an unhashable tree and an unwritable record are each one `script-shell:` line in the log.
@@ -1069,7 +1103,7 @@
     - That line reaches the terminal on stdout through the tail, like every body line.
   - A kill of the shell that ran `npm test` leaves the suite running to its record.
     - So a cut-off agent reads the log for the result.
-  - An INT, a human's Ctrl-C, ends the suite, a child in its own session included, and exits 130 with no record (`lib/detach.sh`).
+  - An INT, a human's Ctrl-C, ends the suite, a child in its own session included, and exits 130 with no record (`lib/runs.js`).
   - The run is passed `--root <root>`, so its supervisor checks it (`lib/detach.js`).
     - A frozen suite is ended and exits 124, the log's last line the frozen line.
     - A look exits 125 with the suite still going, and a green end still writes its record.
@@ -1127,7 +1161,7 @@
   - A call with no `--` or no command prints `usage: workkit supervise -- <command> [args...]`, exit 2.
   - Outside a git repo it prints `supervise: not inside a git repository`, exit 1.
   - A command that is supervised itself (an `npm test`, `workkit test`, `workkit prove`, another `workkit supervise`) still runs under it.
-    - The command sees `WORKKIT_SUPERVISED=1`, so it runs in the foreground inside this run and starts no second supervisor (`lib/detach.sh`).
+    - The command sees `WORKKIT_SUPERVISED=1`, so it runs in the foreground inside this run and starts no second supervisor (`runForeground` in `lib/attach.js`).
     - So `workkit supervise -- npm test -- <files>` is one supervised run, and `workkit supervise -- workkit supervise -- <command>` exits with the command's code.
     - A root `npm test` under it still holds the suite's one slot.
   - It runs `supervise.sh --body -- <command> [args...]` through `wk_run_detached` (`lib/detach.sh`), passed `--root <root>`.
@@ -1138,7 +1172,7 @@
     - So one supervised run goes at a time per repo, beside the suite's own.
     - A second prints `supervise: a supervised run is already running (pid <N>); its output is in <log>`, exit 1.
   - The call exits with the command's own code, 124 after a frozen end, or 125 on a look with the run going on (`lib/detach.js`).
-  - An INT ends the whole run, a child in its own session included, and exits 130 (`lib/detach.sh`); a kill of the calling shell leaves it running to its end.
+  - An INT ends the whole run, a child in its own session included, and exits 130 (`lib/runs.js`); a kill of the calling shell leaves it running to its end.
   - No allow rule ships for it: it runs any command, so it is permitted the way that command is.
 - `watch.sh`:
   - `workkit watch [--end] [suite|run|<pid>]` attaches the call again to the repo's live run.
@@ -1155,11 +1189,11 @@
     - With none still running, it takes a run that finished with its answer uncollected.
     - Each refusal prints `watch: <count> runs are live; name one:` and the call for each, `workkit watch [--end] <name>` joined by `, or `, exit 2.
   - A run inside another run's supervisor holds its slot in the foreground, with no supervisor of its own: a root `npm test` inside `workkit supervise` holds the suite's, a `workkit supervise` inside a root `npm test` or `workkit prove` the supervised one's.
-    - `_wk_run_foreground` marks its lock so: a `foreground` file holding the enclosing run's lock path (`WK_RUN_LOCK`).
+    - `runForeground` (`lib/attach.js`) marks its lock so: a `foreground` file holding the enclosing run's lock path (`WK_RUN_LOCK`).
     - `--end <name>` on a lock so marked writes no `end` file and waits on nothing: it prints `watch: workkit watch --end <name> cannot end a run held in the foreground inside another run; <how>`, exit 1.
     - `<how>` is `workkit watch --end run ends it` when the marker names the supervised run's lock, `workkit watch --end suite ends it` when it names the suite's, and otherwise `end the run that started it`.
   - A narrowed run's slot is cleared (`drop_slot`) once the call reads its end or ends it, and only when the slot's wrapper is gone. A look keeps it.
-  - It prints the log's last 20 lines, then tails it from there through `wk_attach_run`, both painted when `wk_view_paints` says yes (`lib/detach.sh`).
+  - It prints the log's last 20 lines, painted when `wk_view_paints` says yes (`lib/detach.sh`), then tails it from there through `wk_attach_run`, painted when `colorOn` says yes and the call's own Node is at the kit's floor (`lib/attach.js`). The two gates are one rule, held equal by the parity suite.
     - It ends at the run's end, a frozen end or the next look, with the same exit codes as the call that started the run.
     - A run that ended already gets its answer at once: the last 20 lines, the run's code as the exit, and the lock dropped, so a second `workkit watch` prints the no-run line.
     - Ctrl-C ends the call only: the run goes on, and its lock stays held.
@@ -1408,7 +1442,7 @@
   - The file is functions only, `main "$@"` its last line, so an edit to the kit during a long watch never runs a fragment.
   - A second watch while one runs starts nothing.
     - It prints `ci-watch: a watch is already running for <sha> (pid <pid>); its output is in <log>` on stderr, exit 5.
-  - INT ends the watch through the end request (`lib/detach.sh`), exit 130: the log ends with the request line, under `ci-watch: exit 143`.
+  - INT ends the watch through the end request (`lib/runs.js`), exit 130: the log ends with the request line, under `ci-watch: exit 143`.
 - `ship/triggers.awk`:
   - It reads `on:` in any of its YAML shapes: a scalar, a flow list, a block of keys or items.
   - The call: `awk -v ev=<event> -f triggers.awk <file>`.
@@ -1627,6 +1661,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - the `task:` the line belongs to is bold;
   - the steps sit indented under the title or the section that opened them.
 - `workflow/lib/voice.sh` (sourced through `lib.sh`) is the shell home, and `tower/api/lib/log.js` the Node one.
+  - Its `colorOn(stream)` is the Node color gate, which `workflow/lib/attach.js` requires for a run's terminal view.
   - The two print the same shape.
 
 | Call | Opens with | Color on a terminal | Stream | `QUIET=1` |

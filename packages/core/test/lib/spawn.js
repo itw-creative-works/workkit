@@ -15,7 +15,7 @@ const { spawn, spawnSync } = kitModule('run');
 const IS_WINDOWS = process.platform === 'win32';
 
 // The rungs `end()` climbs, INT first so the child can log its own end, then
-// TERM, then KILL, END_GRACE apart: the shell's `wk_end_run` ladder.
+// TERM, then KILL, END_GRACE apart: the kit's ladder, `endRun` in workflow/lib/run-lock.js.
 const LADDER = ['SIGINT', 'SIGTERM', 'SIGKILL'];
 const END_GRACE = 1500;
 
@@ -54,7 +54,7 @@ const signalTree = (who, pid, signal) => {
 };
 
 // Climb LADDER from <signal> while <lives()> holds, waiting END_GRACE after each
-// rung as the shell's `_wk_group_gone` polls: a group's rung reaches the group
+// rung as the kit's `endRun` polls: a group's rung reaches the group
 // <pid> leads, else <pid> alone. Alive after SIGKILL throws `<who>: pid <N> survived SIGKILL`.
 const climb = async (who, pid, signal, group, lives) => {
   for (const rung of LADDER.slice(LADDER.indexOf(signal))) {
@@ -74,7 +74,7 @@ const checkPid = (who, pid) => {
 /**
  * Whether the process group <pid> leads still has a member that has not ended;
  * false when every member ended and is not yet collected. Such a group answers
- * EPERM on macOS, so the zero probe reads it as gone, as `_wk_group_gone` does;
+ * EPERM on macOS, so the zero probe reads it as gone, as the kit's `endRun` does;
  * a real rung's refusal throws.
  * @param {number} pid
  * @returns {boolean}

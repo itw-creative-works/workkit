@@ -2,9 +2,11 @@
 # workflow/lib/suite.sh: the shell's names for the proved-tree records: the
 # tree ids (lib/tree-hash.js) and the records' writes and reads (lib/records.js),
 # each a call into Node; the records' paths, the has-a-test-script read and the
-# paths of the detached runs' logs and locks. Sourced, functions only, by script-shell.sh,
-# supervise.sh, watch.sh, ship/watch.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq,
-# wk_marker_path, wk_node, WK_NODE_FLOOR, wk_retire_judged and wk_lock_mark from platform.sh, wk_setting from participation.sh.
+# paths of the detached runs' logs and locks, and the sweep of the narrowed runs' slots
+# (lib/runs.js). Sourced, functions only, by script-shell.sh, supervise.sh, watch.sh,
+# ship/watch.sh, workkit.sh and the hooks' _lib.sh; it reads wk_jq, wk_marker_path,
+# wk_node and WK_NODE_FLOOR from platform.sh, wk_setting from participation.sh, and
+# _wk_runs from detach.sh, which it sources when the caller has not.
 
 # _wk_lib_node <file> [<arg>...]: lib/<file> (tree-hash.js or records.js) run
 # under wk_node with the args. With no node at WK_NODE_FLOOR, that file's one
@@ -87,17 +89,13 @@ wk_log_path() {
 }
 
 # The root suite's log and lock, the supervised run's (supervise.sh) and the
-# CI watch's twins. The lock is a directory taken by wk_take_run_lock (lib/detach.sh).
+# CI watch's twins. The lock is a directory taken by takeRunLock (lib/run-lock.js).
 wk_suite_log_path() { wk_log_path "$1" suite.log; }
 wk_suite_lock_path() { wk_marker_path claude-suite-lock "$1"; }
 wk_run_log_path() { wk_log_path "$1" run.log; }
 wk_run_lock_path() { wk_marker_path claude-run-lock "$1"; }
 wk_ci_log_path() { wk_log_path "$1" ci.log; }
 wk_ci_lock_path() { wk_marker_path claude-ci-watch-lock "$1"; }
-
-# The days a narrowed run's slot outlives its done file, beside the markers'
-# MARKER_KEEP_DAYS (platform.sh); wk_test_slots_sweep removes older.
-TEST_SLOT_KEEP_DAYS=1
 
 # wk_test_log_path <repo_root> <pid> and wk_test_lock_path <repo_root> <pid>: a
 # narrowed run's slot, named by its wrapper's pid, so several run at once in one
@@ -129,23 +127,17 @@ wk_test_slot_clear() {
 }
 
 # wk_test_slots_sweep <repo_root>: remove the repo's narrowed-run slots (lock
-# folder, log, done record) left behind (_wk_slot_left). The lock goes through
-# wk_retire_judged (platform.sh), the log and record only once it went.
+# folder, log, done record) left behind. `runs.js sweep-slots`, under any node,
+# retires each lock whose run was cut off and names its slot; the log and record go
+# only once it went.
 wk_test_slots_sweep() {
-  local slot lock
+  local base slot
+  base=$(wk_test_lock_path "$1" "") || return 1
+  # shellcheck source=./detach.sh
+  declare -F _wk_runs >/dev/null || . "${BASH_SOURCE[0]%/*}/detach.sh"
   while IFS= read -r slot; do
-    lock=$(wk_test_lock_path "$1" "$slot") || return 1
-    wk_retire_judged "$lock" _wk_slot_left || continue
     wk_test_slot_clear "$1" "$slot"
-  done < <(wk_test_pids "$1")
-}
-
-# _wk_slot_left <lock>: the sweep's judge, 0 for a run whose wrapper was cut off,
-# its done file over TEST_SLOT_KEEP_DAYS old, or a gone mark at any age: a live
-# remover's never reaches here (wk_retire_judged), and it left no done file.
-_wk_slot_left() {
-  case "$(wk_lock_mark "$1")" in gone.*) return 0 ;; esac
-  [ -n "$(find "$1/done" -mmin "+$((TEST_SLOT_KEEP_DAYS * 1440))" 2>/dev/null)" ]
+  done < <(_wk_runs sweep-slots "$base")
 }
 
 # wk_index_write_tree <repo_root> <index>: drop `.workkit` from the scratch

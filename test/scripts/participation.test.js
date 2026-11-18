@@ -11,7 +11,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath, spawnBash,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath, spawnBash, nodeEnv,
 } = require('../lib/platform');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
@@ -148,7 +148,7 @@ describe('participation.sh: wk_settings_declined and wk_settings_enabled', () =>
       const dir = mkTmp('wf-participation-');
       const file = settingsFile(dir, body);
       const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nif wk_settings_declined ${JSON.stringify(shellPath(file))}; then printf yes; else printf no; fi`,
-        { WORKKIT_NODE: shellPath(process.execPath) });
+        { ...nodeEnv });
       cleanup(dir);
       return out.out;
     };
@@ -160,7 +160,7 @@ describe('participation.sh: wk_settings_declined and wk_settings_enabled', () =>
       const dir = mkTmp('wf-participation-');
       const file = JSON.stringify(shellPath(settingsFile(dir, body)));
       const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nfor f in wk_settings_declined wk_settings_enabled; do if $f ${file}; then printf yes; else printf no; fi; done`,
-        { WORKKIT_NODE: shellPath(process.execPath) });
+        { ...nodeEnv });
       cleanup(dir);
       return out.out;
     };

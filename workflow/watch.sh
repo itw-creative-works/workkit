@@ -57,7 +57,7 @@ drop_slot() {
 }
 
 # refuse_foreground <root> <lock> <name>: --end <name> on a run held in the
-# foreground (_wk_run_foreground), whose end file no supervisor reads. It names
+# foreground (runForeground in lib/attach.js), whose end file no supervisor reads. It names
 # the call that ends the enclosing run its marker holds; exit 1.
 refuse_foreground() {
   local enclosing how='end the run that started it'
@@ -170,8 +170,9 @@ main() {
     drop_slot "$root" "$slot"
     exit 0
   fi
-  # The size first, so the last lines and the tail from it never overlap; both
-  # painted as wk_attach_run paints.
+  # The size first, so the last lines and the tail from it never overlap; the
+  # lines painted by wk_view_paints' gate, the tail by wk_attach_run's twin of it,
+  # each only under a node at the kit's floor.
   size=$(( $(wc -c < "$log") ))
   if wk_view_paints; then
     head -c "$size" "$log" | tail -n 20 | wk_view_paint

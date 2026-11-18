@@ -84,4 +84,4 @@ function createLogger() {
   };
 }
 
-module.exports = { createLogger };
+module.exports = { createLogger, colorOn };

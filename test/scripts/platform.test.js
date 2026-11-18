@@ -8,20 +8,14 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { describe, test, expect, mkTmp, until, alive, pidIn, start, endTree, needs, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, until, start, needs, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, cygpathStub, lenientMkdir,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, shellPath, cygpathStub, lenientMkdir,
   stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, skipWithoutFileLink, spawnBash,
 } = require('../lib/platform');
-const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
-const { startNeverCollects, childOf } = require('../lib/never-collects');
 const { proofBase } = require('../lib/workflow-home');
-const {
-  handLock, claimNaming, deadPid, holding,
-} = require('../lib/supervise');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
-const DETACH = path.join(__dirname, '..', '..', 'workflow', 'lib', 'detach.js');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -394,126 +388,6 @@ describe('platform.sh: wk_port_pids and wk_end_pid', () => {
   });
 });
 
-describe('platform.sh: wk_end_run and wk_pid_alive', () => {
-  /**
-   * A PATH directory whose named tools only log their argv, one log per tool,
-   * so the Windows arm is answered off Windows and ends nothing real.
-   */
-  const loggingWorld = (...tools) => {
-    const dir = mkTmp('wf-platform-');
-    for (const tool of tools) stubTool(dir, tool, ['#!/bin/bash', recordArgv(path.join(dir, `${tool}.log`))]);
-    return { dir, calls: (tool) => readArgv(path.join(dir, `${tool}.log`)) };
-  };
-
-  /**
-   * A logging `kill` and a `node` new enough for wk_node that logs its argv,
-   * then runs `tail`: the Windows arm's tree command answered off Windows.
-   */
-  const treeCommandWorld = (tail) => {
-    const world = loggingWorld('kill');
-    stubTool(world.dir, 'node', [
-      '#!/bin/bash',
-      'case "$1" in --version|-v) echo v22.16.0; exit 0 ;; esac',
-      recordArgv(path.join(world.dir, 'node.log')),
-      ...tail,
-    ]);
-    return world;
-  };
-
-  test('the Windows arm runs the tree command for the pid, and never kill, on the system PATH', () => {
-    // The system PATH (only Git Bash's own directory on Windows) plus the stub's
-    // folder: the stubbed node's tree command is the one way to end the tree.
-    const world = treeCommandWorld(['exit 0']);
-    try {
-      const res = inPlatform('wk_end_run 4242', { OSTYPE: 'msys', PATH: systemPathWith(world.dir) });
-      expect(res.code, `the call returns the command's 0, stderr: ${res.err}`).toBe(0);
-      const runs = world.calls('node');
-      expect(runs.length, `the tree command ran once, got: ${fmtCalls(runs)}`).toBe(1);
-      const [script, ...args] = runs[0].slice(-3);
-      expect(/workflow[\\/]lib[\\/]tree\.js$/.test(script), `node ran workflow/lib/tree.js, got: ${fmtCalls(runs)}`).toBeTruthy();
-      expect(fmtCalls([args]), 'the end of pid 4242').toBe(fmtCalls([['end', '4242']]));
-      expect(world.calls('kill').length, `and kill never: ${fmtCalls(world.calls('kill'))}`).toBe(0);
-    } finally {
-      cleanup(world.dir);
-    }
-  });
-
-  test('the Windows arm returns 1 when the tree command exits 1, its line on stderr', () => {
-    const line = 'tree.js: powershell could not run (spawnSync powershell.exe ENOENT)';
-    const world = treeCommandWorld([`echo "${line}" >&2`, 'exit 1']);
-    try {
-      const res = inPlatform('wk_end_run 4242', { OSTYPE: 'msys', PATH: systemPathWith(world.dir) });
-      expect(res.code, `the call returns the command's 1, stderr: ${res.err}`).toBe(1);
-      expect(res.err.includes(line), `the command's line reaches stderr, got: ${JSON.stringify(res.err)}`).toBeTruthy();
-    } finally {
-      cleanup(world.dir);
-    }
-  });
-
-  test('the Windows arm with no node that fits returns 1 and says, in one line, the tree of the pid was not ended', () => {
-    const w = nodeWorld({ path: '20.15.1' });
-    const res = inPlatform('wk_end_run 4242', { ...w.env, OSTYPE: 'msys' });
-    expect(res.code, `the call returns 1, stderr: ${res.err}`).toBe(1);
-    const lines = `${res.out}${res.err}`.split('\n').filter(Boolean);
-    expect(lines.length, `one line is printed, got: ${JSON.stringify(lines)}`).toBe(1);
-    expect(lines[0].includes('4242') && /not ended/.test(lines[0]), `the line says the tree of 4242 was not ended, got: ${lines[0]}`).toBeTruthy();
-  });
-
-  test('off Windows a detached run, its command and its supervisor, is gone and the call returns 0', {
-    skip: IS_WINDOWS && 'the process-group arm is the off-Windows one; Windows ends the tree through tree.js reading both process tables',
-  }, async () => {
-    // The command rides out INT and TERM, so only the whole escalation ends it.
-    const dir = mkTmp('wf-platform-');
-    const pidFile = path.join(dir, 'cmd.pid');
-    const cmd = [process.execPath, '-e', [
-      `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
-      "process.on('SIGINT', () => {}); process.on('SIGTERM', () => {});",
-      'setInterval(() => {}, 1000);',
-    ].join(' ')];
-    const launched = spawnSync(process.execPath, [DETACH, path.join(dir, 'log'), path.join(dir, 'done'), '--', ...cmd],
-      { encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    expect(launched.status, `detach.js launched the run, stderr: ${launched.stderr}`).toBe(0);
-    const supervisor = Number(launched.stdout.trim());
-    let command;
-    try {
-      expect(await until(() => pidIn(pidFile) > 0), 'the command never started').toBeTruthy();
-      command = pidIn(pidFile);
-      const res = inPlatform(`wk_end_run ${supervisor}`);
-      expect(res.code, `the call returns 0, stderr: ${res.err}`).toBe(0);
-      expect(await until(() => !alive(command) && !alive(supervisor)),
-        `the command (pid ${command}) or the supervisor (pid ${supervisor}) outlived wk_end_run`).toBeTruthy();
-    } finally {
-      for (const pid of [command, supervisor].filter(Boolean)) endTree(pid, 'SIGKILL');
-      cleanup(dir);
-    }
-  });
-
-  test('wk_pid_alive: 0 for a live pid, non-zero for one that is gone', () => {
-    // Node on PATH, since a pid Node printed is the kind the seam is asked about.
-    const env = { PATH: systemPathWith(NODE_DIR) };
-    const live = inPlatform(`wk_pid_alive ${process.pid}`, env);
-    expect(live.code, `this process is alive, stderr: ${live.err}`).toBe(0);
-    const dead = deadPid();
-    const gone = inPlatform(`wk_pid_alive ${dead}`, env);
-    expect(gone.code !== 0 && gone.code !== null, `a pid that has ended answers non-zero, got: ${gone.code}`).toBeTruthy();
-  });
-
-  test(
-    'wk_pid_alive: non-zero for a child that ended while its parent, which never collects it, still lives',
-    { skip: IS_WINDOWS && 'Windows asks Node, and has no ended process left for its parent to collect' },
-    async () => {
-      const parent = startNeverCollects();
-      try {
-        const child = await childOf(parent);
-        expect(await until(() => inPlatform(`wk_pid_alive ${child}`).code !== 0), `wk_pid_alive ${child} turned non-zero once the child ended`).toBe(true);
-        expect(alive(parent.pid), 'the parent that never collects it still lives').toBe(true);
-      } finally {
-        await parent.end('SIGKILL');
-      }
-    },
-  );
-});
-
 describe('platform.sh: wk_take_lock and wk_drop_lock', () => {
   test('a mkdir that answers 0 for a folder already there: a second caller gets the lock only after the holder drops it', async () => {
     const dir = mkTmp('wf-platform-lock-');
@@ -536,71 +410,6 @@ describe('platform.sh: wk_take_lock and wk_drop_lock', () => {
     } finally {
       await second.end('SIGKILL');
     }
-  });
-});
-
-describe('platform.sh: wk_lock_mark, wk_retire_lock and wk_adopt_lock', () => {
-  /** A run lock folder made by hand in a scratch folder, holding <files>. */
-  const lockOf = (files) => handLock(path.join(mkTmp('wf-platform-runlock-'), 'lock'), files);
-
-  test('wk_retire_lock of an old mark on a lock made since: 1, and its claim naming id.new, the mark and its pid file stay', () => {
-    const lock = lockOf({ claim: claimNaming('new'), 'id.new': '', pid: '4242\n' });
-    const res = inPlatform('wk_retire_lock "$L" id.old', { L: shellPath(lock) });
-    expect(res.code, `1 for a mark the folder does not hold, stderr: ${res.err}`).toBe(1);
-    expect(holding(lock), 'the new lock is whole').toBe('claim id.new pid');
-    expect(fs.readFileSync(path.join(lock, 'claim'), 'utf8'), 'its claim still names the new mark').toBe(claimNaming('new'));
-    expect(fs.readFileSync(path.join(lock, 'pid'), 'utf8'), 'its pid file still names the new run').toBe('4242\n');
-  });
-
-  test('wk_retire_lock of the mark the folder\'s claim names: 0, and the folder is gone', () => {
-    const lock = lockOf({ claim: claimNaming('a'), 'id.a': '', pid: '4242\n', done: '0\n' });
-    const res = inPlatform('wk_retire_lock "$L" id.a', { L: shellPath(lock) });
-    expect(res.code, `0 for the mark the folder holds, stderr: ${res.err}`).toBe(0);
-    expect(holding(lock), 'the folder was removed').toBe('(none)');
-  });
-
-  test('wk_retire_lock of a mark another caller already renamed to gone.x: 1, and the folder stays', () => {
-    const lock = lockOf({ claim: claimNaming('a'), 'gone.x': '', pid: '4242\n' });
-    const res = inPlatform('wk_retire_lock "$L" id.a', { L: shellPath(lock) });
-    expect(res.code, `1 for a mark already retired, stderr: ${res.err}`).toBe(1);
-    expect(holding(lock), 'the folder is as the other caller left it').toBe('claim gone.x pid');
-  });
-
-  test('wk_lock_mark: the id claim names, a leftover id beside it or not; else gone.x; else id.orphan; 1 and nothing printed for an empty claim alone', () => {
-    for (const [files, mark, what] of [
-      [{ claim: claimNaming('a'), 'id.a': '', pid: '4242\n' }, 'id.a', 'a claim naming id.a'],
-      [{ claim: claimNaming('a'), 'id.a': '', 'id.b': '', pid: '4242\n' }, 'id.a', 'a claim naming id.a and a leftover id.b'],
-      [{ claim: claimNaming('a'), 'gone.x': '', pid: '4242\n' }, 'gone.x', 'gone.x and no named id'],
-      [{ claim: '', 'id.orphan': '', pid: '4242\n' }, 'id.orphan', 'id.orphan alone'],
-    ]) {
-      const res = inPlatform('wk_lock_mark "$L"', { L: shellPath(lockOf(files)) });
-      expect(res.code, `${what} answers 0, stderr: ${res.err}`).toBe(0);
-      expect(res.out.trim(), `${what}: the mark's name, got: ${JSON.stringify(res.out)}`).toBe(mark);
-    }
-    const bare = inPlatform('wk_lock_mark "$L"', { L: shellPath(lockOf({ claim: '', pid: '4242\n' })) });
-    expect(bare.code, `an empty claim and no mark answers 1, stderr: ${bare.err}`).toBe(1);
-    expect(bare.out, `and prints nothing, got: ${JSON.stringify(bare.out)}`).toBe('');
-  });
-
-  // The folder's file names as a caller reads them before it judges: wk_adopt_lock's <seen>.
-  const SEEN = 'seen=$(_wk_lock_files "$L") || exit 9';
-
-  test('wk_adopt_lock on a lock a live run holds, given its own file names: 1, no id.orphan left, its claim and mark unchanged', () => {
-    const lock = lockOf({ claim: claimNaming('live'), 'id.live': '', pid: `${process.pid}\n` });
-    const res = inPlatform(`${SEEN}\nwk_adopt_lock "$L" "$seen"`, { L: shellPath(lock) });
-    expect(res.code, `a mark is there, so 1, stderr: ${res.err}`).toBe(1);
-    expect(holding(lock), 'no id.orphan, the live lock whole').toBe('claim id.live pid');
-    expect(fs.readFileSync(path.join(lock, 'claim'), 'utf8'), 'its claim still names its mark').toBe(claimNaming('live'));
-  });
-
-  test('wk_adopt_lock on a folder that held only a gone pid when the caller looked and holds one more file now: 1, no id.orphan left, the rest as it was', () => {
-    const dead = deadPid();
-    const lock = lockOf({ pid: `${dead}\n` });
-    const res = inPlatform(`${SEEN}\nprintf '0\\n' > "$L/done"\nwk_adopt_lock "$L" "$seen"`, { L: shellPath(lock) });
-    expect(res.code, `the files differ from what the caller read, so 1, stderr: ${res.err}`).toBe(1);
-    expect(holding(lock), 'no id.orphan, the folder otherwise as it was').toBe('done pid');
-    expect(fs.readFileSync(path.join(lock, 'pid'), 'utf8'), 'its pid file untouched').toBe(`${dead}\n`);
-    expect(fs.readFileSync(path.join(lock, 'done'), 'utf8'), 'the file that appeared untouched').toBe('0\n');
   });
 });
 

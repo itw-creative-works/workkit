@@ -1,13 +1,14 @@
 // Tests for workflow/lib/tree.js: treeOf, the processes under a pid by parent,
 // a child in its own session included and an unrelated process left out, each
 // with the processor time it has used so far; and endTreeOf, the one home of the
-// Windows tree end, its Windows arm reached on any machine through its seams.
+// Windows tree end, its Windows arm reached on any machine through its seams, and
+// this machine's own arm ending a live process.
 
 const fs = require('fs');
 const path = require('path');
 const {
   describe, test, expect, mkTmp, until, start, pidIn, alive,
-  endTree, run,
+  endTree,
 } = require('../lib/harness');
 const { pathWith, windowsTables, PS_HEADER, samePath, spawn } = require('../lib/platform');
 const { skipOnWindows, reap } = require('../lib/supervise');
@@ -329,23 +330,16 @@ describe('tree: endTreeOf on the Windows arm', () => {
   });
 });
 
-describe('tree: the end command', () => {
-  test('node tree.js end <pid> ends a live process and exits 0', async () => {
+describe('tree: endTreeOf on this machine', () => {
+  test('endTreeOf of a live process: it is gone and the end resolves', async () => {
     // No start() watchdog: it would end the child at the deadline `until` waits on.
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30);'], { detached: true, stdio: 'ignore' });
     try {
-      expect(alive(child.pid), 'the process is alive before the command').toBeTruthy();
-      const res = run(process.execPath, [TREE, 'end', String(child.pid)]);
-      expect(res.status, `the command exits 0, output: ${res.output}`).toBe(0);
+      expect(alive(child.pid), 'the process is alive before the end').toBeTruthy();
+      await endTreeOf(child.pid);
       expect(await until(() => !alive(child.pid)), `the process ${child.pid} is gone`).toBeTruthy();
     } finally {
       endTree(child.pid, 'SIGKILL');
     }
-  });
-
-  test('node tree.js with no arguments prints a usage line and exits 2', () => {
-    const res = run(process.execPath, [TREE]);
-    expect(res.status, `the command exits 2, output: ${res.output}`).toBe(2);
-    expect(/usage/i.test(res.output), `a usage line is printed, got: ${JSON.stringify(res.output)}`).toBeTruthy();
   });
 });

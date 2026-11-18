@@ -110,7 +110,7 @@ export function shellEnvOf(env, platform) {
 }
 
 // The folder every marker lives under, wk_markers_dir's rule.
-const markersDir = (home) => `${home}/markers`;
+export const markersDir = (home) => `${home}/markers`;
 
 /**
  * The marker file `<home>/markers/<dir>` holds for `anchor`, keyed by its

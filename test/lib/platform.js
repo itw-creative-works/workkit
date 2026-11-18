@@ -465,6 +465,13 @@ const homeEnv = (home, env = {}) => ({
 });
 
 /**
+ * The env pair that hands a shell this suite's own node as the kit's node
+ * (`wk_node` tries `WORKKIT_NODE` first), so no PATH a case narrowed hides it.
+ * A case spreads it into the env it spawns with.
+ */
+const nodeEnv = { WORKKIT_NODE: shellPath(process.execPath) };
+
+/**
  * A mirror of the system PATH with one command left out: the machine without
  * `gh`, built rather than assumed, since many ship it in /usr/bin. It holds the
  * system directories plus wherever this machine keeps jq, gh, git and node,
@@ -658,7 +665,7 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubNode, crlfJq,
-  lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, basePathWithout,
+  lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#563](../../issues/563) - A detached run is one Node command, `workflow/lib/runs.js`: it takes the lock, launches, attaches and ends the run, and the shell's names call it. The lock rules live in `workflow/lib/lock.js`. A supervised root run with no Node 22.12 or newer runs its command without a lock, and says so.
+
 ## [0.99.2] - 2026-11-17
 
 ### Changed

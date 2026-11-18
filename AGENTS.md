@@ -154,6 +154,7 @@
   - `homeEnv()` is the scratch home in every spelling a tool reads one by.
     - The spellings: HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off.
     - So no child of a test reads the developer's own home or reaches GitHub as them.
+  - `nodeEnv` is the one spelling of `{ WORKKIT_NODE: shellPath(process.execPath) }`, the pair that hands a shell the suite's own node; a case spreads it into its env.
   - A child a case starts goes through `workflow/lib/run.js` too.
     - `test/lib/platform.js` re-exports its `spawnSync`, `spawn` and `execFileSync`.
     - `spawnBash()`, the one way a case starts the test bash, launches through it, as does `spawnSystemBash()` for a case whose child PATH resolves nothing.

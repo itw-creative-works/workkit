@@ -113,7 +113,7 @@
     - It never lives in the temp folder a system cleaner empties, and nothing reads a marker anywhere else.
   - The kit sweeps its own: each writer runs the sweep.
     - The shell writers run `wk_sweep_markers`: `_hook_write_marker` (through `hook_sweep_markers`) and the `gh` shim's journal append (`journal_append` in `workflow/identity/gh`), each after it writes.
-    - The suite and package record writers (`workflow/lib/records.js`) run the same sweep in Node, before they write.
+    - The suite and package record writers (`workflow/lib/records.js`) run its Node twin, `sweepMarkers` in `workflow/lib/lock.js`, before they write.
     - The sweep removes every regular file one folder under that base whose mtime is older than `MARKER_KEEP_DAYS` (7 days).
     - It never enters a folder there (a run lock).
   - The hooks module runs no sweep.
@@ -409,6 +409,9 @@
       - the shell twin reads the top-level key through node, and only `"enabled": true` reads opted in on both;
     - the machine folder (`wk_user_dir`, `userDir` in `hooks/mods/log.js` and `workflow/user-dir.js`);
     - the marker path (`wk_marker_path` in `workflow/lib/platform.sh`, `markerPath` in `hooks/mods/markers.js`);
+    - the plain mutex (`wk_take_lock` in `workflow/lib/platform.sh`, `takeLock` in `workflow/lib/lock.js`), which exclude each other on one folder;
+    - the markers' sweep (`wk_sweep_markers`, `sweepMarkers` in `workflow/lib/lock.js`), which remove the same files from one marker tree;
+    - the color gate (`wk_color_on` in `workflow/lib/voice.sh`, `colorOn` in `tower/api/lib/log.js`), which answer alike for one environment and one stdout;
     - the test-script read (`wk_has_test_script` in `workflow/lib/suite.sh`, `hasTestScript` in `hooks/mods/suite.js`);
     - the CHANGELOG path test (`wk_is_changelog`, `isChangelog` in `hooks/mods/changelog-guard.js`);
     - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/slug.js`);

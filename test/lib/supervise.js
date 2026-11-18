@@ -1,18 +1,19 @@
 /**
  * What the suites of the detached supervisor's checks share: the check length a
- * case sets, the settings that set it, the frozen line, the reason a process
+ * case sets, the settings that set it and a root holding them, the frozen line, the reason a process
  * read is skipped and the skip value of a case that needs one, the fake commands and the reads
  * of what they leave, whether a started call has ended, the end of whatever
- * a red case left running, a run lock folder made by hand and read back, and a pid that has ended.
- * Consumers: test/scripts/detach.test.js, script-shell-detached.test.js,
- * prove.test.js, supervise.test.js, watch.test.js, tree.test.js, platform.test.js and
+ * a red case left running, a run lock folder made by hand and read back, a
+ * process that acts on a lock once a file appears, and a pid that has ended.
+ * Consumers: test/scripts/detach.test.js, runs.test.js, lock.test.js, script-shell-detached.test.js,
+ * prove.test.js, supervise.test.js, watch.test.js, tree.test.js, logs-dir.test.js and
  * test/lib/supervise-world.js.
  */
 
 const fs = require('fs');
 const path = require('path');
 const {
-  endTree, until, expect, pidIn, alive,
+  endTree, until, expect, pidIn, alive, start, mkTmp,
 } = require('./harness');
 const { IS_WINDOWS, jsPath, spawnSync } = require('./platform');
 
@@ -29,6 +30,17 @@ const FROZEN_LINE = /^detach: no output and no processor use for \S+ minutes, so
 
 /** A `.workkit/settings.json` body setting `tests.check` to <check>, `enabled` on when <optIn>. */
 const checkSettings = (check, optIn = false) => `${JSON.stringify({ ...(optIn ? { enabled: true } : {}), tests: { check } })}\n`;
+
+/** A scratch folder whose `.workkit/settings.json` is <body>, a run's `--root`. */
+const rootHolding = (body) => {
+  const root = mkTmp('supervise-root-');
+  fs.mkdirSync(path.join(root, '.workkit'));
+  fs.writeFileSync(path.join(root, '.workkit', 'settings.json'), body);
+  return root;
+};
+
+/** A scratch folder whose `.workkit/settings.json` sets `tests.check` to <check>. */
+const rootWith = (check) => rootHolding(checkSettings(check));
 
 /** The pid <file> holds, once the command has written it. */
 const pidOf = async (file) => {
@@ -72,6 +84,26 @@ const claimNaming = (tag) => `${tag}\n`;
 /** A take's tag whose first field is <pid>, the process that made it. */
 const tagOf = (pid) => `${pid}.1.1`;
 
+/**
+ * A node process that runs the JS statements <action> <ms> after <trigger> appears;
+ * it lives on when <stays>.
+ */
+const actsAfter = (trigger, ms, action, stays = false) => start(process.execPath, ['-e', [
+  "const fs = require('fs');",
+  `const seen = setInterval(() => { if (!fs.existsSync(${jsPath(trigger)})) return; clearInterval(seen);`,
+  `setTimeout(() => { ${action} }, ${ms}); }, 50);`,
+  stays ? 'setInterval(() => {}, 1 << 30);' : '',
+].join('\n')]);
+
+/**
+ * A node process that writes the JS expression <text> to <file> <ms> after <trigger>
+ * appears, whole through a rename from outside <file>'s folder; it lives on when <stays>.
+ */
+const writesAfter = (trigger, file, ms, text, stays = false) => {
+  const next = path.join(path.dirname(path.dirname(file)), `${path.basename(file)}.next`);
+  return actsAfter(trigger, ms, `fs.writeFileSync(${jsPath(next)}, ${text}); fs.renameSync(${jsPath(next)}, ${jsPath(file)});`, stays);
+};
+
 /** A pid that was real a moment ago and has ended. */
 const deadPid = () => {
   const pid = spawnSync(process.execPath, ['-e', '0']).pid;
@@ -83,6 +115,6 @@ const deadPid = () => {
 const holding = (lock) => (fs.existsSync(lock) ? fs.readdirSync(lock).sort().join(' ') : '(none)');
 
 module.exports = {
-  CHECK_MINUTES, NO_PROCESS_READ, skipOnWindows, FROZEN_LINE, checkSettings, pidOf, reap,
-  writesPid, silent, busy, ended, read, lastLine, realOf, handLock, claimNaming, tagOf, deadPid, holding,
+  CHECK_MINUTES, NO_PROCESS_READ, skipOnWindows, FROZEN_LINE, checkSettings, rootHolding, rootWith, pidOf, reap,
+  writesPid, silent, busy, ended, read, lastLine, realOf, handLock, claimNaming, tagOf, actsAfter, writesAfter, deadPid, holding,
 };

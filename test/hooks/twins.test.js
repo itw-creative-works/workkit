@@ -1,6 +1,6 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the tree hash, the
-// suite log's path, the test script, the marker path, the opt-in read (the gate's and the heal's), one setting, the machine folder,
+// suite log's path, the test script, the marker path, the color gate, the plain mutex, the marker sweep, the opt-in read (the gate's and the heal's), one setting, the machine folder,
 // the CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
 // version-only change, the status:building list, the public slug, git's value-taking global options. Plus one
 // JavaScript pair, the plain-object test, and one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash, nodeEnv,
 } = require('../lib/platform');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods, runResult } = require('../lib/mods-inputs');
@@ -21,6 +21,7 @@ const { recordArgv, readArgv } = require('../lib/argv-log');
 const commitGate = require('./commit-gate/helpers');
 const { runLib } = require('../lib/hook-lib');
 const { treeHash } = require('../lib/suite-record');
+const { agedFile, daysAgo } = require('../lib/workflow-home');
 const { readOrNull } = require('../../workflow/lib/read');
 const { makeRepo: healRepo, runScript: healRun, cleanup: healCleanup } = require('../scripts/workflow-standards/helpers');
 
@@ -129,7 +130,7 @@ describe('twins: the tree hash, wk_tree_hash in workflow/lib/suite.sh against tr
     w.write('app.js', 'module.exports = 2;\n');
     w.write('.workkit/settings.json', OPT_IN_SHAPES.current);
     w.write('.workkit/suite.log', 'script-shell: exit 0\n');
-    const res = runLib(`wk_tree_hash "${shellPath(w.repo)}"`, { TMPDIR: shellPath(w.tmp), WORKKIT_NODE: shellPath(process.execPath) });
+    const res = runLib(`wk_tree_hash "${shellPath(w.repo)}"`, { TMPDIR: shellPath(w.tmp), ...nodeEnv });
     const shell = res.stdout.trim();
     expect(/^[0-9a-f]{40,64}$/.test(shell), `a tree id from wk_tree_hash, got: ${res.stdout}|${res.stderr}`).toBeTruthy();
     expect(treeHash(w.repo), 'the twin prints the kit\'s id').toBe(shell);
@@ -159,7 +160,7 @@ describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh aga
       const w = mkRepo('twins-logdir-', { '.gitignore': ignore, '.workkit/settings.json': settingsOf(dir) }, undefined, { optIn: false });
       const root = w.git('rev-parse', '--show-toplevel').trim();
       const res = runLib(`wk_log_path "${root}" suite.log`, {
-        HOME: shellPath(path.dirname(w.workflowHome)), WORKFLOW_HOME: shellPath(w.workflowHome), WORKKIT_NODE: shellPath(process.execPath),
+        HOME: shellPath(path.dirname(w.workflowHome)), WORKFLOW_HOME: shellPath(w.workflowHome), ...nodeEnv,
       });
       // A refused value is one answer on both sides: the shell's non-zero exit, the gate's line naming logs.dir.
       shell.push(res.code === 0 ? norm(res.stdout.trim(), root) : 'refused');
@@ -225,12 +226,103 @@ describe('twins: the marker path, wk_marker_path in workflow/lib/platform.sh aga
   });
 });
 
+describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against colorOn in tower/api/lib/log.js', () => {
+  // Environments with no terminal on stdout, each the gate's variables alone; a TERM is named
+  // wherever one matters, since bash sets a dumb one when none is given.
+  const ENVS = [
+    {}, { WORKKIT_COLOR: '1', TERM: 'xterm-256color' }, { WORKKIT_COLOR: '0', TERM: 'xterm-256color' }, { WORKKIT_COLOR: '0' },
+    { WORKKIT_COLOR: '1', TERM: 'xterm-256color', NO_COLOR: '1' }, { NO_COLOR: '1', TERM: 'xterm-256color' },
+    { WORKKIT_COLOR: '1', TERM: 'dumb' }, { TERM: 'xterm-256color' },
+  ];
+  const GATE_VARS = ['WORKKIT_COLOR', 'NO_COLOR', 'TERM', 'FORCE_COLOR'];
+
+  test('wk_color_on and colorOn give every environment the same answer on a stdout that is no terminal', () => {
+    const { colorOn } = require(path.join(KIT, 'tower', 'api', 'lib', 'log.js'));
+    const shell = ENVS.map((vars) => {
+      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'voice.sh')}"\nif wk_color_on; then echo 1; else echo 0; fi`], {
+        env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...vars }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      });
+      expect(res.status, `the shell answered for ${JSON.stringify(vars)}, stderr: ${res.stderr}`).toBe(0);
+      return res.stdout.trim() === '1';
+    });
+    const saved = Object.fromEntries(GATE_VARS.map((name) => [name, process.env[name]]));
+    const node = ENVS.map((vars) => {
+      for (const name of GATE_VARS) delete process.env[name];
+      Object.assign(process.env, vars);
+      try {
+        return colorOn({ isTTY: false });
+      } finally {
+        for (const name of GATE_VARS) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name];
+      }
+    });
+    agree(ENVS.map((_, i) => i), shell, (i) => node[i], `the environments by index, colorOn's answers ${JSON.stringify(node)}`);
+    expect(JSON.stringify(shell.slice(0, 3)), 'nothing set is off, the gate forced on is on, forced off is off').toBe(JSON.stringify([false, true, false]));
+    expect(shell[4], 'NO_COLOR wins over the forced gate').toBe(false);
+  });
+});
+
+describe('twins: the plain mutex and the marker sweep, wk_take_lock and wk_sweep_markers in workflow/lib/platform.sh against takeLock and sweepMarkers in workflow/lib/lock.js', () => {
+  // Required in each case, so a missing module fails these cases alone.
+  const lockJs = () => require(path.join(KIT, 'workflow', 'lib', 'lock.js'));
+  /** <line> in a bash that sourced platform.sh, <env> added; spawnSync's result. */
+  const inPlatform = (line, env = {}) => spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"\n${line}`], {
+    env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  });
+
+  test('wk_take_lock and takeLock exclude each other on one folder: while one side holds it the other cannot take it, and can after the drop', async () => {
+    const { takeLock, dropLock } = lockJs();
+    const dir = path.join(mkTmp('twins-mutex-'), 'state', 'lock');
+    const L = { L: shellPath(dir) };
+    const shellTake = () => inPlatform('wk_take_lock "$L"', L);
+    const first = shellTake();
+    expect(first.status, `the shell takes the free folder, stderr: ${first.stderr}`).toBe(0);
+    expect(await takeLock(dir), 'takeLock cannot take the folder the shell holds').toBe(false);
+    const dropped = inPlatform('wk_drop_lock "$L"', L);
+    expect(dropped.status, `the shell drops it, stderr: ${dropped.stderr}`).toBe(0);
+    expect(await takeLock(dir), 'takeLock takes it after the shell\'s drop').toBe(true);
+    const refused = shellTake();
+    expect(refused.status, `wk_take_lock cannot take the folder takeLock holds, stderr: ${refused.stderr}`).toBe(1);
+    await dropLock(dir);
+    const after = shellTake();
+    expect(after.status, `wk_take_lock takes it after takeLock's drop, stderr: ${after.stderr}`).toBe(0);
+  });
+
+  test('wk_sweep_markers and sweepMarkers leave the same files of one marker tree', async () => {
+    const { sweepMarkers } = lockJs();
+    const base = mkTmp('twins-sweep-');
+    const seed = path.join(base, 'seed');
+    // [path under markers/, days since its last write]: records past and inside the 7 days, a lock folder's file, a loose file.
+    const FILES = [
+      ['claude-suite-marker/old', 8], ['claude-suite-marker/young', 1], ['claude-gh-journal/month', 30], ['claude-gh-journal/edge', 6],
+      ['claude-suite-lock/held/pid', 8], ['loose', 8],
+    ];
+    for (const [rel, days] of FILES) agedFile(path.join(seed, 'markers', rel), days);
+    fs.utimesSync(path.join(seed, 'markers', 'claude-suite-lock', 'held'), daysAgo(8), daysAgo(8));
+    const [shellHome, jsHome] = ['shell', 'js'].map((side) => {
+      const home = path.join(base, side);
+      fs.cpSync(seed, home, { recursive: true, preserveTimestamps: true });
+      return home;
+    });
+    const res = inPlatform('wk_sweep_markers', { WORKFLOW_HOME: shellPath(shellHome) });
+    expect(res.status, `the shell swept, stderr: ${res.stderr}`).toBe(0);
+    await sweepMarkers(jsHome);
+    const left = (home) => fs.readdirSync(path.join(home, 'markers'), { recursive: true })
+      .map((rel) => rel.replace(/\\/g, '/'))
+      .filter((rel) => fs.statSync(path.join(home, 'markers', rel)).isFile()).sort();
+    expect(JSON.stringify(left(jsHome)), 'the files sweepMarkers left, against wk_sweep_markers').toBe(JSON.stringify(left(shellHome)));
+    const kept = left(shellHome);
+    expect(!kept.includes('claude-suite-marker/old') && !kept.includes('claude-gh-journal/month')
+      && kept.includes('claude-suite-marker/young') && kept.includes('claude-gh-journal/edge') && kept.includes('claude-suite-lock/held/pid'),
+    `a record past 7 days goes, a younger one and a lock folder's file stay, left: ${kept.join(', ')}`).toBeTruthy();
+  });
+});
+
 describe('twins: the opt-in read, wk_opted_in in workflow/lib/participation.sh against settingsOptedIn in hooks/mods/gate.js', () => {
   // platform.sh first, as every caller sources it, so wk_opted_in reads through the node wk_node finds.
   const participation = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
   const fileOf = (root) => path.join(root, '.workkit', 'settings.json');
   const shellOptedIn = (roots) => bashAnswers(participation, 'wk_opted_in', roots.map(shellPath),
-    { WORKKIT_NODE: shellPath(process.execPath) });
+    { ...nodeEnv });
 
   test('wk_opted_in and settingsOptedIn agree on every settings text, and only a top-level "enabled": true is in', () => {
     const roots = settingsRoots(SETTINGS);

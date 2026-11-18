@@ -8,7 +8,7 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp,
 } = require('../lib/harness');
-const { shellPath } = require('../lib/platform');
+const { shellPath, nodeEnv } = require('../lib/platform');
 const { mkRepo } = require('../lib/script-shell');
 const { runLib } = require('../lib/hook-lib');
 
@@ -80,7 +80,7 @@ describe('workspaces.js: the members a package neither is nor depends on', () =>
   });
   const bId = (dir) => {
     const out = runLib(`wk_tree_hash "${shellPath(dir)}" packages/b`,
-      { TMPDIR: shellPath(mkTmp('workspaces-tmp-')), WORKKIT_NODE: shellPath(process.execPath) });
+      { TMPDIR: shellPath(mkTmp('workspaces-tmp-')), ...nodeEnv });
     const id = out.stdout.trim();
     expect(/^[0-9a-f]{40,64}$/.test(id), `a tree id for packages/b, got: ${out.stdout}|${out.stderr}`).toBeTruthy();
     return id;
