@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.99.4] - 2026-11-18
+
 ### Changed
 
-- [#564](../../issues/564) - `workkit supervise`, `workkit watch` and `workkit ship watch` are Node files calling the run layer in process. All three need Node 22.12 or newer, else one line and exit 1. `supervise` no longer runs a shell builtin.
+- [#564](../../issues/564) [`52ba1ee`](../../commit/52ba1ee) Thanks [@ianwieds]! - `workkit supervise`, `workkit watch` and `workkit ship watch` are Node files calling the run layer in process. All three need Node 22.12 or newer, else one line and exit 1. `supervise` no longer runs a shell builtin.
 
 ### Fixed
 
-- [#564](../../issues/564) - A run started without a root uses the kit's pick of Node when one fits; with no Node it prints `could not start` and exits 127. A `WK_END_WAIT` or `WK_LAUNCH_WAIT` that is not a number counts as unset.
+- [#564](../../issues/564) [`52ba1ee`](../../commit/52ba1ee) Thanks [@ianwieds]! - A run started without a root uses the kit's pick of Node when one fits; with no Node it prints `could not start` and exits 127. A `WK_END_WAIT` or `WK_LAUNCH_WAIT` that is not a number counts as unset.
 
 ## [0.99.3] - 2026-11-18
 
