@@ -56,7 +56,7 @@ const launchApart = (argv, env) => new Promise((resolve) => {
 const endOnInt = async (lock, pid, { endRun = runLock.endRun } = {}) => {
   if (await askEnd(lock, pid) === 0) {
     const code = doneCode(lock);
-    if (/^\d+$/.test(code)) leaveRecord(lock, pid, code);
+    if (/^\d+$/.test(code)) await leaveRecord(lock, pid, code);
   } else if (!(await endRun(pid))) {
     return false;
   }

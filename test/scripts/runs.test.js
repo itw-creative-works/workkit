@@ -4,7 +4,7 @@
 // launch that fails, a signal before the pid, an end that fails, a run under a supervisor already,
 // a painted and a plain view whose reader goes away, and the supervisor's parent. Then attach.js's
 // attach to a run that ended without its code, and run-lock.js's end request, its wait setting,
-// drop, end and liveness read.
+// drop, end, liveness read and the record it leaves beside the lock.
 
 const fs = require('fs');
 const path = require('path');
@@ -570,5 +570,46 @@ describe('run-lock.js: the owner\'s drop, the end of a run and the liveness read
     } finally {
       await parent.end('SIGKILL');
     }
+  });
+});
+
+describe('run-lock.js leaveRecord: the record beside the lock', () => {
+  const { leaveRecord } = require(RUN_LOCK);
+  const WRITERS = 8;
+  const NO_WRITE = (IS_WINDOWS || process.getuid() === 0) && 'a read-only folder does not stop the write here (Windows ignores the mode, root ignores it)';
+
+
+  test('eight calls attached to one run leave its record at one moment, 200 times each: every call exits 0, the record whole, no temp file left', async () => {
+    const lock = lockIn('runs-record-many-');
+    const body = `const { leaveRecord } = require(${jsPath(RUN_LOCK)}); (async () => { for (let i = 0; i < 200; i += 1) await leaveRecord(${jsPath(lock)}, 41, 6); })();`;
+    const writers = Array.from({ length: WRITERS }, () => start(process.execPath, ['-e', body], { env: envOf() }));
+    const ends = await Promise.all(writers.map((writer) => writer.done));
+    ends.forEach((end, at) => expect(end.status, `writer ${at} exits 0, it said: ${writers[at].output()}`).toBe(0));
+    expect(read(`${lock}.done`), 'the record holds the one line').toBe('41 6\n');
+    expect(fs.readdirSync(path.dirname(lock)).join(' '), 'the record alone, no temp file beside it').toBe('lock.done');
+  });
+
+  test('a record this call cannot write, the same line already left by another call: no error, the record as it was', { skip: NO_WRITE }, async () => {
+    const lock = lockIn('runs-record-same-');
+    const dir = path.dirname(lock);
+    fs.writeFileSync(`${lock}.done`, '41 6\n');
+    fs.chmodSync(dir, 0o555);
+    try {
+      expect(await leaveRecord(lock, 41, 6).then(() => null, (err) => err), 'the other call\'s record is this call\'s').toBe(null);
+    } finally {
+      fs.chmodSync(dir, 0o755);
+    }
+    expect(read(`${lock}.done`), 'the record as the other call left it').toBe('41 6\n');
+  });
+
+  test('a record no rename can land on, a folder holding a file: the rename\'s own error after about two seconds of tries, no temp file left', async () => {
+    const lock = lockIn('runs-record-never-');
+    fs.mkdirSync(`${lock}.done`);
+    fs.writeFileSync(path.join(`${lock}.done`, 'held'), '');
+    const began = Date.now();
+    const err = await leaveRecord(lock, 41, 6).then(() => null, (thrown) => thrown);
+    expect(err?.syscall, `the rename's error is thrown, got: ${err}`).toBe('rename');
+    expect(Date.now() - began >= 1900, `the write was tried for about two seconds, took ${Date.now() - began} ms`).toBeTruthy();
+    expect(fs.readdirSync(path.dirname(lock)).join(' '), 'the folder alone, no temp file beside it').toBe('lock.done');
   });
 });

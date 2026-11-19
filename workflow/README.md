@@ -623,6 +623,8 @@
       - With `WK_WATCH_NAME` set by the caller (a narrowed run's pid), both calls in that line carry it: `workkit watch <pid>`, `workkit watch --end <pid>`.
       - It removes the look file, keeps the lock, answers `look=1` and 125, with the run still going.
     - Before it drops the lock it leaves `<supervisor pid> <code>` in `<lock>.done` (`leaveRecord`), a file beside the lock folder, written whole and renamed.
+      - Every call attached to one run writes the same line, and Windows refuses a rename onto a file in use.
+      - So a write that fails is done once the record holds that line; otherwise it is tried again for two seconds, then its error is thrown.
     - A call that finds the lock or the done file gone, its supervisor's pid gone too, returns the code that record holds for its own pid (`recordedCode`).
       - So of two calls attached to one run, the one that finds the lock already dropped still gets the run's code, whatever the command printed.
       - No record, or another run's, is `detach: the run of supervisor <pid> ended without recording an exit code; its output is in <log>`, and 1.

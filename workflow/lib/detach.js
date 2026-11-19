@@ -133,14 +133,19 @@ const launch = (argv) => {
 
 /**
  * Writes `text` to `file` through a temp file and a rename, so a reader never
- * sees it half-written.
+ * sees it half-written. A rename that fails leaves no temp file behind.
  * @param {string} file
  * @param {string} text
  */
 const writeWhole = (file, text) => {
   const tmp = `${file}.tmp.${process.pid}`;
   fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, file);
+  try {
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
 };
 
 /** A span of checks in minutes, rounded clear of float noise. */

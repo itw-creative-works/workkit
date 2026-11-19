@@ -183,7 +183,7 @@ const follow = async (log, lock, pid, from, view, signal) => {
     console.error(`detach: the done file held no exit code (${code})`);
     return { rc: 1, code: null, look: false };
   }
-  leaveRecord(lock, pid, code);
+  await leaveRecord(lock, pid, code);
   await dropRunLock(lock, pid);
   return { rc: Number(code), code: Number(code), look: false };
 };
@@ -309,7 +309,7 @@ const runForeground = async (log, lock, argv) => {
   } catch { /* the open below says why */ }
   const rc = await runHere(argv, log, true);
   writeWhole(path.join(lock, 'done'), `${rc}\n`);
-  leaveRecord(lock, process.pid, rc);
+  await leaveRecord(lock, process.pid, rc);
   await dropRunLock(lock, process.pid);
   return { rc, code: rc };
 };

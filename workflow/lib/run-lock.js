@@ -30,6 +30,9 @@ const DONE_GOING_MS = 2000;
 // A live remover's gone mark gets this long to go, at no try's cost.
 const GONE_WAIT_MS = 5000;
 
+// A record that cannot be written gets this long, looked at every TAKE_POLL_MS.
+const RECORD_WAIT_MS = 2000;
+
 // How often a lock is looked at while a take waits (waitWhile), and while an end waits.
 const TAKE_POLL_MS = 100;
 const END_POLL_MS = 200;
@@ -114,15 +117,6 @@ const runHeld = (lock) => {
 const writePid = (lock, pid) => writeWhole(path.join(lock, 'pid'), `${pid}\n`);
 
 /**
- * `<pid> <code>` in <lock>.done, beside the lock folder, written whole, for a
- * call attached to the same run that finds the lock already dropped.
- * @param {string} lock
- * @param {number|string} pid
- * @param {number|string} code
- */
-const leaveRecord = (lock, pid, code) => writeWhole(`${lock}.done`, `${pid} ${code}\n`);
-
-/**
  * The code <lock>.done records for supervisor <pid>; null with no record or
  * another run's.
  * @param {string} lock
@@ -133,6 +127,31 @@ const recordedCode = (lock, pid) => {
   const line = (readOrNull(`${lock}.done`) ?? '').split('\n')[0];
   const match = /^[ \t]*(\S+)[ \t]+(\d+)[ \t]*$/.exec(line);
   return match && match[1] === String(pid) ? Number(match[2]) : null;
+};
+
+/**
+ * `<pid> <code>` in <lock>.done, beside the lock folder, written whole, for a
+ * call attached to the same run that finds the lock already dropped. Every call
+ * attached to one run writes the same line, and Windows refuses a rename onto a
+ * file in use: a write that fails is done once the record holds that line, and
+ * is tried again for RECORD_WAIT_MS before its error is thrown.
+ * @param {string} lock
+ * @param {number|string} pid
+ * @param {number|string} code
+ * @returns {Promise<void>}
+ */
+const leaveRecord = async (lock, pid, code) => {
+  const until = Date.now() + RECORD_WAIT_MS;
+  for (;;) {
+    try {
+      writeWhole(`${lock}.done`, `${pid} ${code}\n`);
+      return;
+    } catch (err) {
+      if (recordedCode(lock, pid) === Number(code)) return;
+      if (Date.now() >= until) throw err;
+      await sleep(TAKE_POLL_MS);
+    }
+  }
 };
 
 /**
