@@ -51,6 +51,13 @@ const signalCode = (signal) => {
  */
 const exitOf = (code, signal) => (code === null ? signalCode(signal) : code);
 
+/**
+ * Whether <env> is a supervised run's: the mark a supervisor sets on its command.
+ * @param {object} env an environment, `process.env`
+ * @returns {boolean}
+ */
+const isSupervised = (env) => env[SUPERVISED] === '1';
+
 // The code a requested end records: the one a shell gives a terminated command.
 const ENDED_CODE = signalCode('SIGTERM');
 
@@ -261,7 +268,7 @@ const supervise = (argv) => {
     writeWhole(job.done, `${code}\n`);
   };
   holdAwake(say);
-  // The mark a `test` event reads (script-shell.sh): already supervised, it runs
+  // The mark a `test` event reads (script-shell.js): already supervised, it runs
   // in the foreground and is never detached again.
   const env = { ...process.env, [SUPERVISED]: '1' };
   const child = spawn(job.cmd, job.args, { stdio: ['ignore', out, out], env, windowsHide: true });
@@ -330,5 +337,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  awakeCommand, writeWhole, signalCode, exitOf, END_SIGNALS, INT_CODE,
+  awakeCommand, writeWhole, signalCode, exitOf, isSupervised, END_SIGNALS, INT_CODE,
 };

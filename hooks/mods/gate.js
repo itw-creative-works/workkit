@@ -1,7 +1,8 @@
 /**
  * hooks/mods/gate.js: the opt-in rule the module's gate applies: a repo opted
  * in when its own .workkit/settings.json parses and its top-level `enabled` is
- * true, the default being false: the engine's wk_opted_in.
+ * true, the default being false: the engine's wk_opted_in; and the session
+ * rule built on it, the engine's wk_session_judges.
  */
 
 import { isPlain, parseJson, repoSettingsFile } from './settings.js';
@@ -21,6 +22,18 @@ const EXEMPT = new Set(['workflow:standards', 'workflow:reload-guard']);
 export function settingsOptedIn(text) {
   const settings = parseJson(text);
   return isPlain(settings) && settings.enabled === true;
+}
+
+/**
+ * Whether a Claude session's checks rule in a repo: CLAUDECODE is `1`,
+ * HOOK_DISABLE is not `1`, and the repo's settings text opts it in
+ * (settingsOptedIn). The engine's wk_session_judges.
+ * @param {object} env the variables the caller read
+ * @param {string|null|undefined} settingsText the repo's settings file's text, null when absent
+ * @returns {boolean}
+ */
+export function sessionJudges(env, settingsText) {
+  return env.CLAUDECODE === '1' && env.HOOK_DISABLE !== '1' && settingsOptedIn(settingsText);
 }
 
 /**

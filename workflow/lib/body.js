@@ -1,13 +1,30 @@
 /**
  * workflow/lib/body.js: a detached body's end, CJS: its last line is always
  * `<prefix>: exit <code>`, and a HUP, INT or TERM ends it with the code a
- * shell gives it, once its command has ended. The shell bodies' twin is
- * wk_body_traps in lib/detach.sh.
- * Usage: const { bodyEnd } = require('./body');
+ * shell gives it, once its command has ended. Its traps (endTraps) serve a
+ * run under a supervisor too (script-shell.js).
+ * Usage: const { bodyEnd, endTraps } = require('./body');
  */
 
 const fs = require('fs');
 const { signalCode, END_SIGNALS } = require('./detach');
+
+/**
+ * A shell's traps on HUP, INT and TERM: a signal ends nothing at once and
+ * aborts `stop`, and `code()` answers the first signal's code (129, 130, 143).
+ * @returns {{stop: AbortSignal, code: function(): (number|null)}} `code()` null before any signal
+ */
+const endTraps = () => {
+  const stop = new AbortController();
+  let signalled = null;
+  for (const signal of END_SIGNALS) {
+    process.on(signal, () => {
+      if (signalled === null) signalled = signalCode(signal);
+      stop.abort();
+    });
+  }
+  return { stop: stop.signal, code: () => signalled };
+};
 
 /**
  * Set a body's end. A signal ends nothing at once: the body ends as it would,
@@ -19,23 +36,16 @@ const { signalCode, END_SIGNALS } = require('./detach');
  * @returns {AbortSignal} aborted at the first signal, so a body starts no command after it
  */
 const bodyEnd = (prefix, cleanup = () => {}) => {
-  const stop = new AbortController();
-  let signalled = null;
-  for (const signal of END_SIGNALS) {
-    process.on(signal, () => {
-      if (signalled === null) signalled = signalCode(signal);
-      stop.abort();
-    });
-  }
+  const traps = endTraps();
   process.on('exit', (code) => {
-    if (signalled !== null) process.exitCode = signalled;
+    if (traps.code() !== null) process.exitCode = traps.code();
     try {
       cleanup();
     } finally {
       fs.writeSync(1, `${prefix}: exit ${process.exitCode ?? code}\n`);
     }
   });
-  return stop.signal;
+  return traps.stop;
 };
 
-module.exports = { bodyEnd };
+module.exports = { bodyEnd, endTraps };

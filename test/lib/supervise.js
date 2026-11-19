@@ -6,9 +6,9 @@
  * a red case left running, a run lock folder made by hand and read back, a
  * process that acts on a lock once a file appears, a pid that has ended, a node
  * attached to a run through attachRun, the end wait a case sets in process, and a
- * detached body in Node and in bash with a command that rides out signals.
+ * detached body in Node with a command that rides out signals.
  * Consumers: test/scripts/detach.test.js, runs.test.js, lock.test.js, script-shell-detached.test.js, prove.test.js,
- * supervise.test.js, watch.test.js, tree.test.js, logs-dir.test.js, test/hooks/twins.test.js and test/lib/supervise-world.js.
+ * supervise.test.js, watch.test.js, tree.test.js, logs-dir.test.js and test/lib/supervise-world.js.
  */
 
 const fs = require('fs');
@@ -17,7 +17,7 @@ const {
   endTree, until, expect, pidIn, alive, start, mkTmp,
 } = require('./harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, spawnSync,
+  IS_WINDOWS, jsPath, spawnSync,
 } = require('./platform');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
@@ -161,16 +161,6 @@ const nodeBody = (pidFile, command, cleanup = '() => {}') => [process.execPath, 
   `spawn(process.execPath, ['-e', ${JSON.stringify(command)}], { stdio: 'ignore' }).on('close', (code) => { process.exitCode = code; });`,
 ].join('\n')];
 
-/** The argv of the same body in bash under `wk_body_traps probe` (workflow/lib/detach.sh). */
-const shellBody = (pidFile, command) => [BASH, ...NO_RC, '-c', [
-  `. ${JSON.stringify(shellPath(path.join(LIB, 'platform.sh')))}`,
-  `. ${JSON.stringify(shellPath(path.join(LIB, 'detach.sh')))}`,
-  'wk_body_traps probe',
-  `printf '%s' "$$" > ${JSON.stringify(shellPath(pidFile))}`,
-  '"$2" -e "$1"',
-  'exit $?',
-].join('\n'), 'body', command, shellPath(process.execPath)];
-
 /**
  * detach.js launching <argv> with its log and done file in <dir>, under <env>, from <cwd>, the
  * run's settings read from <root> when given; the supervisor's pid it printed.
@@ -185,5 +175,5 @@ const launchBody = (dir, argv, { root, env = process.env, cwd } = {}) => {
 module.exports = {
   CHECK_MINUTES, NO_PROCESS_READ, skipOnWindows, FROZEN_LINE, checkSettings, rootHolding, rootWith, pidOf, reap,
   writesPid, silent, busy, ended, read, lastLine, realOf, handLock, claimNaming, tagOf, actsAfter, writesAfter, deadPid, holding,
-  attachArgv, underEndWait, ridesSignals, nodeBody, shellBody, launchBody,
+  attachArgv, underEndWait, ridesSignals, nodeBody, launchBody,
 };

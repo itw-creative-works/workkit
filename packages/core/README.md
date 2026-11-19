@@ -147,6 +147,9 @@ describe('render', { skip: needs('ffmpeg') }, () => {
   - `run` and `start` launch through `workkit-core/run`: on Windows every argument goes quoted and verbatim, and a given `env` keeps what Windows needs to start a child (`ComSpec`, `SystemRoot`, `PATHEXT`, `TEMP`, `TMP`).
   - `start`'s child has its stdin ignored. With `input` the text is written to it, then it is closed. With `stdin: 'open'` it stays open, after any `input`, for the caller to write and end through `child.stdin`, and Node closes it once the child is gone; `end()` and the deadline end the process, and close no stream first. Any other `stdin` throws at the call.
   - `endTree(pid, signal, seams)` on Windows runs `taskkill.exe` from `System32` under `SystemRoot`, never through PATH, and throws when it cannot start. Its seams are the platform, the program runner and `SystemRoot`.
+  - A target `endGroup` or `end()` still counts alive after SIGKILL throws `<who>: pid <N> survived SIGKILL`.
+    - For a group where `/proc` exists, each member it still shows follows, with its stat state: `; still in its group: <pid> (<state>), <pid> (<state>)`.
+    - Both live in `test/lib/proc-state.js`, outside `workkit-core/test`: the text is `survivedText(who, pid, members)`, the members `groupMembers(pgid)`, `[{ pid, state }]`, empty without `/proc`.
   - `alive(pid)` is false for anything but a positive integer, and for a process that ended and is not yet collected. `groupLives(pid)` is false once every member of the group is.
 - Suite discovery: `findSuites(root)` (every suite under the start folder, absolute paths, sorted), `suiteName(root, file)` (its printed name), `POOL`.
 - A plugin's own tests: `modCase(folder)` registers one case, `claude plugin test (<the folder's own name>)`, that runs `claude plugin test <folder>` there through the kit's program starter (a `claude.cmd` on Windows too).

@@ -1,7 +1,8 @@
 // Tests for workflow/script-shell.sh's root `npm test`: the suite runs detached,
 // its output in the suite log (plain text) and on the terminal, one run at a time, and the
 // CHANGELOG check runs before it starts; a narrowed run is supervised too, each in
-// a slot of its own that Ctrl-C clears; a suite that freezes is ended, and one that works in silence
+// a slot of its own that Ctrl-C clears, and under a supervisor already a TERM waits for its script;
+// a suite that freezes is ended, and one that works in silence
 // asks for a look and runs on. The world both script-shell suites run npm in is
 // test/lib/script-shell.js.
 
@@ -12,15 +13,14 @@ const {
   describe, test, expect, until, alive, pidIn, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, SYSTEM_PATH, shellPath, jsPath, joinPath, stubTool, nodeEnv,
+  IS_WINDOWS, BASH, NO_RC, shellPath, jsPath,
 } = require('../lib/platform');
 const { suiteLogPath, suiteLockPath, treeHash } = require('../lib/suite-record');
-const { recordArgv, readArgv } = require('../lib/argv-log');
 const { CHANGELOG, ISSUE } = require('../hooks/commit-gate/helpers');
 const {
-  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord,
+  cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, assertRecord, packaged,
 } = require('../lib/script-shell');
-const { runLib } = require('../lib/hook-lib');
+const { runPathsUnder } = require('../lib/run-paths');
 const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, reap, realOf, ended, silent, deadPid,
 } = require('../lib/supervise');
@@ -66,17 +66,14 @@ const childPid = (parent, needle) => {
   return row ? Number(row[0]) : undefined;
 };
 
-// A `node` ahead of the real one that logs every call's argv and runs it, so
-// a case can tell whether the CHANGELOG linter was started.
-const nodeLogger = (world) => {
-  const bin = path.join(world.root, 'node-logger');
-  fs.mkdirSync(bin, { recursive: true });
-  const logFile = path.join(world.root, 'node-argv.log');
-  stubTool(bin, 'node', ['#!/bin/bash', recordArgv(logFile), `exec "${shellPath(process.execPath)}" "$@"`]);
-  return {
-    env: { PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH) },
-    lintCalls: () => readArgv(logFile).filter((argv) => argv.some((a) => a.includes('changelog/lint.js'))),
-  };
+// An engine for WORKFLOW_DIR to name whose CHANGELOG linter adds a line per
+// start and passes, so a case can tell whether the check started it.
+const lintStandIn = (world) => {
+  const engine = path.join(world.root, 'lint-engine');
+  const starts = path.join(world.root, 'lint-starts');
+  fs.mkdirSync(path.join(engine, 'changelog'), { recursive: true });
+  fs.writeFileSync(path.join(engine, 'changelog', 'lint.js'), `require('fs').appendFileSync(${jsPath(starts)}, 'start\\n');\n`);
+  return { env: { WORKFLOW_DIR: shellPath(engine) }, starts: () => lineCount(starts) };
 };
 
 // A CHANGELOG entry of <words> words after its issue link.
@@ -281,13 +278,13 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
     test('a clean 20-word entry: the linter runs, then the suite, and the record is written', () => {
       const world = mkWorld();
       const out = mkOut(world);
-      const node = nodeLogger(world);
+      const lint = lintStandIn(world);
       const repo = mkRepo({ scripts: { test: 'echo x >> "$WK_OUT/counter"' } }, { 'CHANGELOG.md': CHANGELOG() });
       fs.writeFileSync(path.join(repo, 'CHANGELOG.md'), entryOf(20));
       const tree = treeHash(repo);
-      const res = npm(world, repo, ['test'], world.wrapper, { ...out.env, ...node.env });
+      const res = npm(world, repo, ['test'], world.wrapper, { ...out.env, ...lint.env });
       expect(res.code, `the run is green, got: ${res.code} ${res.err}`).toBe(0);
-      expect(node.lintCalls().length, 'the CHANGELOG linter ran once').toBe(1);
+      expect(lint.starts(), 'the CHANGELOG linter ran once').toBe(1);
       expect(lineCount(path.join(out.dir, 'counter')), 'the suite ran once').toBe(1);
       assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
       cleanup(world.root); cleanup(repo);
@@ -296,13 +293,13 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
     test('no CHANGELOG change: the suite runs and no linter is started', () => {
       const world = mkWorld();
       const out = mkOut(world);
-      const node = nodeLogger(world);
+      const lint = lintStandIn(world);
       const repo = mkRepo({ scripts: { test: 'echo x >> "$WK_OUT/counter"' } }, { 'CHANGELOG.md': entryOf(62) });
       fs.writeFileSync(path.join(repo, 'app.js'), 'const x = 2;\n');
       const tree = treeHash(repo);
-      const res = npm(world, repo, ['test'], world.wrapper, { ...out.env, ...node.env });
+      const res = npm(world, repo, ['test'], world.wrapper, { ...out.env, ...lint.env });
       expect(res.code, `the run is green, got: ${res.code} ${res.err}`).toBe(0);
-      expect(node.lintCalls().length, 'no CHANGELOG linter ran').toBe(0);
+      expect(lint.starts(), 'no CHANGELOG linter ran').toBe(0);
       expect(lineCount(path.join(out.dir, 'counter')), 'the suite ran once').toBe(1);
       assertRecord(recorded(world, repo), tree, 'the record holds the tree it proved');
       cleanup(world.root); cleanup(repo);
@@ -401,10 +398,8 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
         run = pidIn(pidFile);
         expect(await until(() => (wrapper = childPid(child.pid, 'script-shell')) !== undefined),
           `npm (pid ${child.pid}) never showed a script-shell child`).toBeTruthy();
-        const slot = runLib(`wk_test_log_path "${root}" ${wrapper} && wk_test_lock_path "${root}" ${wrapper}`,
-          { ...world.env, ...nodeEnv });
-        const [log, lock] = slot.stdout.trim().split('\n');
-        expect(slot.code === 0 && fs.existsSync(log) && fs.existsSync(lock), `the run's slot is there while it runs, got: ${slot.stdout} ${slot.stderr}`).toBeTruthy();
+        const [{ log, lock }] = runPathsUnder(world.env, [[root, 'test', wrapper]]);
+        expect(fs.existsSync(log) && fs.existsSync(lock), `the run's slot is there while it runs: ${log}, ${lock}`).toBeTruthy();
         process.kill(wrapper, 'SIGINT');
         expect(await until(() => !alive(run)), `the narrowed run (pid ${run}) outlived the INT`).toBeTruthy();
         expect(await until(() => ended(child)), `npm never ended after the INT; npm said: ${output()}`).toBeTruthy();
@@ -413,6 +408,44 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
         expect(!fs.existsSync(lock), `the run's lock is gone: ${lock}`).toBeTruthy();
       } finally {
         reap(run, wrapper);
+        await end('SIGKILL');
+      }
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('a supervised narrowed npm test whose script shell gets TERM: it waits for its script to end, then exits 143, no package record', {
+      skip: IS_WINDOWS && 'Windows delivers no TERM to one process',
+    }, async () => {
+      const world = mkWorld();
+      const out = mkOut(world);
+      const pidFile = path.join(out.dir, 'script.pid');
+      const go = path.join(out.dir, 'go');
+      const done = path.join(out.dir, 'done');
+      // Says it started, then ends green, leaving its marker, once the case makes the go file.
+      const waits = [
+        "const fs = require('fs');",
+        `fs.writeFileSync(${jsPath(pidFile)}, String(process.pid));`,
+        `setInterval(() => { if (fs.existsSync(${jsPath(go)})) { fs.writeFileSync(${jsPath(done)}, ''); process.exit(0); } }, 50);`,
+      ].join('\n');
+      const repo = mkRepo({ scripts: { test: 'node waits.js' } }, { 'waits.js': waits });
+      const { child, output, end } = npmStart(world, repo, ['test', '--', 'only/one.test.js'], { WORKKIT_SUPERVISED: '1' });
+      let wrapper;
+      let script;
+      try {
+        expect(await until(() => pidIn(pidFile) > 0), `the script never said it started; npm said: ${output()}`).toBeTruthy();
+        script = pidIn(pidFile);
+        expect(await until(() => (wrapper = childPid(child.pid, 'script-shell')) !== undefined),
+          `npm (pid ${child.pid}) never showed a script-shell child`).toBeTruthy();
+        process.kill(wrapper, 'SIGTERM');
+        expect(await until(() => ended(child), 1000), `the call ended before its script did; npm said: ${output()}`).toBe(false);
+        expect(alive(script), `the script (pid ${script}) still runs`).toBe(true);
+        fs.writeFileSync(go, '');
+        expect(await until(() => ended(child)), `npm never ended once its script could; npm said: ${output()}`).toBeTruthy();
+        expect(fs.existsSync(done), 'the script ran to its end').toBe(true);
+        expect(child.exitCode, `the TERM's code; npm said: ${output()}`).toBe(143);
+        expect(packaged(world, repo), 'a run cut by TERM writes no package record').toBe(undefined);
+      } finally {
+        reap(script, wrapper);
         await end('SIGKILL');
       }
       cleanup(world.root); cleanup(repo);

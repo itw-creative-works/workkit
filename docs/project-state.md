@@ -27,7 +27,7 @@
   - The logs are the kit's own, the owner's and the agents' alike to read and neither's to write:
     - `suite.log`, a root `npm test`'s output;
     - `run.log`, a `workkit supervise` run's;
-    - `test.log.<pid>`, a narrowed `npm test`'s, one per run, named by its wrapper's pid;
+    - `test.log.<pid>`, a narrowed `npm test`'s, one per run, named by the pid of the script shell's Node process;
     - `ci.log`, the ship's CI watch's;
     - `ship-<step>.log` for each other ship step and `proof-red.log`, a repo command's plain run (`workflow/README.md` § The one command).
     - Each is replaced per run and written there only where git ignores it, else under `~/.workkit/markers`, so a log never changes the tree.
@@ -271,7 +271,7 @@ flowchart TB
     - A commit carrying code passes when the record proves the index's tree.
     - It is blocked otherwise, naming `npm test` at the repo root and its log as the fix.
     - A docs-only or version-stamp-only commit needs no record.
-  - In a Claude session the wrapper holds a bare root run before anything else (the full-suite hold, `workflow/lib/hold.sh`).
+  - In a Claude session the wrapper holds a bare root run before anything else (the full-suite hold, `workflow/lib/hold.js`).
     - It holds in a repo that opted in and unless `HOOK_DISABLE=1`; the owner's terminal is never held.
     - It refuses a tree already recorded green, so the full suite runs once per tree, before the commit.
     - That one run comes after every item in the tree is parked and passed.

@@ -82,7 +82,7 @@ describe('markers: the marker paths', () => {
     expect(await markers().triageMarkerPath('/repos/thing', WH), 'the path').toBe(`${WH}/markers/claude-triage-marker/${SHA1_THING}`);
   });
 
-  test('wk_suite_marker_path is the suite marker dir plus the sha of the root', async () => {
+  test('suiteMarkerPath is the suite marker dir plus the sha of the root', async () => {
     expect(await markers().suiteMarkerPath('/repos/thing', WH), 'the path').toBe(`${WH}/markers/claude-suite-marker/${SHA1_THING}`);
   });
 

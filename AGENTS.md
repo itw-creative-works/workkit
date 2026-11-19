@@ -22,7 +22,7 @@
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── register.js       # the hooks module: the twenty-two in-process hooks (nine guards run in the `gh` and `git` shims and git's hooks), the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data (facts.js: the Bash guards' facts; changed.js: a call's changed files; slug.js)
-│   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage}/, the full-suite hold workflow/prove.js asks and .github/scripts/release-push.sh, never a hook)
+│   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage}/ and .github/scripts/release-push.sh, never a hook)
 │   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, tree
 │   └── manager/          # resources/ladder.json (the rungs and the classes; the tiers' defaults are defaults/settings.json's)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)

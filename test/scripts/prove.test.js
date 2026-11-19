@@ -8,11 +8,12 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, run, pidIn, mkTmp, until,
+  describe, test, expect, run, pidIn, mkTmp, until, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, shellPath, basePathWithout, nodeEnv,
+  IS_WINDOWS, NODE_DIR, SYSTEM_PATH, NO_RC, shellPath, joinPath, which, stubTool, spawnSystemBash, basePathWithout, nodeEnv,
 } = require('../lib/platform');
+const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
 const {
@@ -32,6 +33,8 @@ const {
 const { workkitStart } = require('../lib/supervise-world');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
+
+const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
 
 // The fixture's suite: every file under test/ required in turn, so an untracked
 // test file is part of the run the way a real suite's discovery makes it.
@@ -475,6 +478,31 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
         await call.end('SIGKILL');
         reap(pidIn(pidFile));
       }
+      cleanup(w.dir);
+    });
+  });
+
+  describe('workkit prove: the hold, asked in process', () => {
+    test('a proved index tree in a Claude session: the hold\'s line, exit 1, the record as it was, and no bash started on the way', () => {
+      const w = mkWorld();
+      stagePassing(w);
+      holdBreaking(w);
+      const tree = indexTree(w);
+      plantRecord(w.workflowHome, w.repo, tree);
+      // A bash first on PATH that records each start, then hands it to the real one;
+      // the command itself starts under the system bash by its full path, so it is never one.
+      // The rest of PATH is node and the system tools, so no shim of the session's is a bash script reached by name.
+      const bin = mkTmp('prove-bash-');
+      const starts = path.join(bin, 'starts.log');
+      stubTool(bin, 'bash', ['#!/bin/bash', recordArgv(starts), `exec "${shellPath(which('bash', SYSTEM_PATH))}" "$@"`]);
+      const env = { ...wiredNpmEnv(w), CLAUDECODE: '1', PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH) };
+      const res = spawnSystemBash([...NO_RC, shellPath(CLI), 'prove'], {
+        cwd: w.repo, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      });
+      expect(res.status, `refused with exit 1, got: ${res.status} ${res.stdout}${res.stderr}`).toBe(1);
+      expect(res.stderr.includes('suite-hold: this tree is already proved'), `the hold's line, got: ${res.stderr}`).toBe(true);
+      expect(recorded(w), 'the record as it was').toBe(`${tree}\n`);
+      expect(fmtCalls(readArgv(starts)), 'no bash was started').toBe(fmtCalls([]));
       cleanup(w.dir);
     });
   });

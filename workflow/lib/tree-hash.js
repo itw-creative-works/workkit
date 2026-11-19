@@ -3,8 +3,8 @@
 // workflow/lib/tree-hash.js: the one home of the tree ids the suite and package
 // records hold: the working tree's, a package's own (less the workspace members
 // it cannot see, lib/workspaces.js), and the real index's, each less `.workkit`.
-// Run by the hooks (treeHash in hooks/mods/suite.js) and by lib/suite.sh's names;
-// workflow/prove.js requires it for the index's scratch copy and its tree.
+// Run by the hooks (treeHash in hooks/mods/suite.js); npm's script shell
+// (script-shell.js) and workflow/prove.js require it.
 // Usage: node tree-hash.js <root> [<pkg>] | <root> -i
 
 const fs = require('fs');

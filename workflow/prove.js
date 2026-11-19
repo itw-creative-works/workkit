@@ -7,25 +7,24 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn, spawnSync, onPath } = require('./lib/run');
+const { spawn, onPath } = require('./lib/run');
 const { repoRoot, headSha, gitIn } = require('./lib/git');
 const { run } = require('./lib/runs');
 const { bodyEnd } = require('./lib/body');
 const { exitOf } = require('./lib/detach');
 const { runPaths, LogsDirError } = require('./lib/run-paths');
 const { proofBase, proofDir } = require('./lib/proof-dir');
-const { copyIndex, writeTree, treeId } = require('./lib/tree-hash');
+const {
+  copyIndex, writeTree, treeId, indexTreeId,
+} = require('./lib/tree-hash');
 const { fillCopy, worktreeAdd, worktreeRemove } = require('./lib/tree-copy');
 const { writeSuiteRecord } = require('./lib/records');
+const { suiteHold } = require('./lib/hold');
 const { sayAs } = require('./lib/say');
 const { readJsonOrNull } = require('./lib/read');
 const { hasTestScript } = require('../hooks/mods/suite.js');
-const { shellDirOf } = require('../hooks/mods/markers.js');
 
 const BODY = '--body';
-
-// The hooks' library, whose wk_suite_hold (lib/hold.sh) judges a root run.
-const SHELL_LIB = path.join(__dirname, '..', 'hooks', '_lib.sh');
 
 const say = sayAs('prove');
 
@@ -154,19 +153,11 @@ const body = async (root) => {
   return 0;
 };
 
-/** The full-suite hold (wk_suite_hold, lib/hold.sh) judged against the index's tree, its lines on stderr: the one shell call. */
-const holdAllows = (root) => {
-  const res = spawnSync('bash', ['-c', '. "$1" && wk_suite_hold "$2" wk_suite_index_tree', 'bash', shellDirOf(SHELL_LIB, process.env, process.platform), root], {
-    stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true,
-  });
-  if (res.error) say(`could not run the full-suite hold: ${res.error.message}`);
-  return res.status === 0;
-};
-
 /**
- * The call: the hold, then the body run detached on the suite's log and lock,
- * checked by the root's tests.check (a frozen run exits 124, a look at an
- * unclear one 125 with the run going on).
+ * The call: the full-suite hold (lib/hold.js) judged against the index's
+ * tree, then the body run detached on the suite's log and lock, checked by the
+ * root's tests.check (a frozen run exits 124, a look at an unclear one 125 with
+ * the run going on).
  * @param {string[]} argv none, or `--body <root>`
  * @returns {Promise<number>} the exit code
  */
@@ -182,7 +173,7 @@ const main = async (argv) => {
   if (root === null) fail('not inside a git repository');
   if (!hasTestScript(readJsonOrNull(path.join(root, 'package.json')))) fail(`${root} declares no test script, so there is no suite to prove`);
   if (onPath('npm') === null) fail('npm is not on PATH');
-  if (!holdAllows(root)) return 1;
+  if (!(await suiteHold(root, indexTreeId))) return 1;
   let paths;
   try {
     paths = await runPaths(root, 'suite');

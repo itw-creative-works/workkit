@@ -8,7 +8,7 @@ import path from 'node:path';
 import { inspect } from 'node:util';
 import { SPAWN_DEADLINE, PIPE_GRACE_MS, until } from './process.js';
 import { kitModule } from './kit-module.js';
-import { groupEnded } from './proc-state.js';
+import { groupEnded, groupMembers, survivedText } from './proc-state.js';
 
 // The kit's program starter: on Windows every argument goes quoted and verbatim.
 const { spawn, spawnSync } = kitModule('run');
@@ -55,7 +55,7 @@ const signalTree = (who, pid, signal) => {
 
 // Climb LADDER from <signal> while <lives()> holds, waiting END_GRACE after each
 // rung as the kit's `endRun` polls: a group's rung reaches the group
-// <pid> leads, else <pid> alone. Alive after SIGKILL throws `<who>: pid <N> survived SIGKILL`.
+// <pid> leads, else <pid> alone. Alive after SIGKILL throws `survivedText`.
 const climb = async (who, pid, signal, group, lives) => {
   for (const rung of LADDER.slice(LADDER.indexOf(signal))) {
     if (!lives()) break;
@@ -63,7 +63,7 @@ const climb = async (who, pid, signal, group, lives) => {
     else send(who, pid, pid, rung);
     await until(() => !lives(), END_GRACE);
   }
-  if (lives()) throw new Error(`${who}: pid ${pid} survived SIGKILL`);
+  if (lives()) throw new Error(survivedText(who, pid, group ? groupMembers(pid) : []));
 };
 
 // 0 or a negative pid signals the caller's own group or another, so it throws.

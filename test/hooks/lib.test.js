@@ -126,8 +126,7 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
     test('hook_jq hands back jq\'s own exit status, never the strip\'s', () => {
       // A caller that asks a question (`jq -e`, `jq empty`) reads the status and
       // nothing else, and a wrapper ending in a pipe would answer every one of
-      // them yes. wk_issues_building in workflow/lib/hold.sh leans on the engine's
-      // wk_jq status this answers through: a failed read there is its `|| return 2`.
+      // them yes.
       const dir = crlfWorld();
       const env = { PATH: systemPathWith(dir) };
       const ask = (json) => runLib(`printf '%s' '${json}' | hook_jq -e '.v' >/dev/null; printf '%s' "$?"`, env).stdout;
@@ -221,19 +220,11 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
         .toBe(shellPath(path.join(MARKERS, 'claude-triage-marker', sha1('/repos/thing'))));
     });
 
-    test('wk_suite_marker_path is the suite marker dir plus the sha of the root', () => {
-      const out = runLib('wk_suite_marker_path /repos/thing', HOME.env);
-      expect(out.stdout.trim(), `got: ${out.stdout}|${out.stderr}`)
-        .toBe(shellPath(path.join(MARKERS, 'claude-suite-marker', sha1('/repos/thing'))));
-    });
-
     test('the shell and JS key rules name the same file under the workflow home, for every marker kind', async () => {
       const kinds = [
         ['hook_review_marker_path', 'reviewMarkerPath'],
         ['hook_review_full_marker_path', 'reviewFullMarkerPath'],
         ['hook_triage_marker_path', 'triageMarkerPath'],
-        ['wk_suite_marker_path', 'suiteMarkerPath'],
-        ['wk_pkg_marker_path', 'pkgMarkerPath'],
       ];
       for (const [shellRule, jsRule] of kinds) {
         const shell = runLib(`${shellRule} /repos/thing`, HOME.env).stdout.trim();

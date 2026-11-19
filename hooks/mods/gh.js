@@ -34,8 +34,8 @@ export async function stageList(run, stage, { repo = '', ...init } = {}) {
 }
 
 /**
- * The stage list at status:building. Its argv changes together with
- * wk_issues_building in workflow/lib/hold.sh.
+ * The stage list at status:building, the one the full-suite hold
+ * (workflow/lib/hold.js) and the snapshot (workflow/lib/snapshot.js) read.
  * @param {function} run runs `(argv, init)`, resolving `{ exitCode, stdout }`
  * @param {{repo?: string, cwd?: string}} [init] the repo it names ('' for the folder's), and the run's options
  * @returns {Promise<string|null>} gh's JSON text, null when gh could not answer

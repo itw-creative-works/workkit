@@ -70,7 +70,7 @@ claude plugin install workkit@workkit
   4. **The `workkit` command.** Links it into `~/.local/bin`, and the `gh` shim beside it (see [The bot identity](#the-bot-identity)).
      - When that folder is not on your PATH, setup prints the `export` line to add; it never edits a shell rc file.
   5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper.
-     - From then on a root `npm test` records the tree it proved.
+     - From then on a root `npm test` records the tree it proved; a `test` event needs a node at 22.12 or later, and stops with one line, exit 1, without one.
      - It lints any new CHANGELOG entry before the suite starts.
      - It keeps running if the call that started it is cut, and logs to `.workkit/suite.log` (another folder when the repo's `logs.dir` names one).
      - The kit's own wrapper reached through a linked folder reads as current.

@@ -1,9 +1,9 @@
 // Tests for workflow/lib/detach.js, the detached runner: a bad argument list is
 // a usage error, and a command it launches outlives the process that launched
 // it, leaving its output in the log and its exit code in the done file. And for
-// detach.sh's `wk_run_detached` on top of it: whose lock a run drops, when a finished run's
+// a run started through `run` of runs.js on top of it, as the script shell starts one: whose lock a run drops, when a finished run's
 // lock is taken over, the code two attached calls get (one through attachRun), the whole run an
-// INT ends, a root run with no node at the floor, the node a run with no root starts under, and askEnd's answers. Then the supervisor's
+// INT ends, and askEnd's answers. Then the supervisor's
 // checks (frozen, busy, a look, an end on request or one that fails, a failed process read, the
 // awake hold), and body.js's signal codes.
 
@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, shellPath, jsPath, stubTool, stubNode, systemPathWith, homeEnv, basePathWithout, samePath, nodeEnv,
+  IS_WINDOWS, BASH, NO_RC, NODE_DIR, jsPath, stubTool, systemPathWith, homeEnv,
 } = require('../lib/platform');
 const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, rootHolding, rootWith, pidOf, reap,
@@ -21,59 +21,16 @@ const {
   attachArgv, underEndWait, ridesSignals, nodeBody, launchBody,
 } = require('../lib/supervise');
 const { scratchWorkflowHome } = require('../lib/workflow-home');
+const { runJob, runUnder, startRun } = require('../lib/kit-under');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 const DETACH = path.join(LIB, 'detach.js');
 
 const detach = (...args) => run(process.execPath, [DETACH, ...args]);
 
-/**
- * `wk_run_detached <log> <lock> [--root <root>] -- node -e <script>` in a shell
- * that sourced the seam and detach.sh, the way both callers do, after the bash
- * `before`, the bash `after` run once it returns; its last stdout lines are
- * `look=<WK_RAN_LOOK>`, `ran=<WK_RAN_CODE>` and `rc=<code>`, and the shell exits
- * with that code. Node joins PATH because the run starts through a Node supervisor.
- */
-const SOURCED = [
-  `. ${JSON.stringify(shellPath(path.join(LIB, 'platform.sh')))}`,
-  `. ${JSON.stringify(shellPath(path.join(LIB, 'detach.sh')))}`,
-];
-const runDetachedArgs = (dir, script, before = ':', root = null, after = ':') => [...NO_RC, '-c', [
-  ...SOURCED,
-  before,
-  `wk_run_detached "$1" "$2" ${root ? '--root "$4" ' : ''}-- node -e "$3"; rc=$?`,
-  after,
-  'printf "look=%s\\nran=%s\\nrc=%s\\n" "$WK_RAN_LOOK" "$WK_RAN_CODE" "$rc"',
-  'exit "$rc"',
-].join('\n'), 'wk', shellPath(path.join(dir, 'log')), shellPath(path.join(dir, 'lock')), script,
-...(root ? [shellPath(root)] : [])];
-/** runDetachedArgs with no root and <cmd> as the command, so a case with no node on PATH still names one that runs. */
-const runCmdArgs = (dir, before, cmd) => [...NO_RC, '-c', [
-  ...SOURCED,
-  before,
-  'wk_run_detached "$1" "$2" -- "${@:3}"; rc=$?',
-  'printf "look=%s\\nran=%s\\nrc=%s\\n" "$WK_RAN_LOOK" "$WK_RAN_CODE" "$rc"',
-  'exit "$rc"',
-].join('\n'), 'wk', shellPath(path.join(dir, 'log')), shellPath(path.join(dir, 'lock')), ...cmd];
-/** A command that touches <ran> and exits 6. */
-const touchesThenSix = (ran) => ['sh', '-c', ': > "$0"; exit 6', shellPath(ran)];
-/** A node under the floor at <dir>/node: each start adds its argv to <mark>, --version answers v20.15.1, any other call runs this suite's node. */
-const markingOldNode = (dir, mark) => {
-  fs.mkdirSync(dir, { recursive: true });
-  return stubTool(dir, 'node', [
-    '#!/bin/bash',
-    `printf '%s\\n' "$*" >> "${shellPath(mark)}"`,
-    'case "$1" in --version|-v) echo v20.15.1; exit 0 ;; esac',
-    `exec "${shellPath(process.execPath)}" "$@"`,
-  ]);
-};
-/** attachRun's node argv on the run runDetachedArgs started in <dir>, <marker> touched first; it exits with the attach's rc. */
+/** attachRun's node argv on the run runJob placed in <dir>, <marker> touched first; it exits with the attach's rc. */
 const attachTo = (dir, pid, marker) => attachArgv(path.join(dir, 'log'), path.join(dir, 'lock'), pid, marker);
 const RUN_ENV = { PATH: systemPathWith(NODE_DIR) };
-
-const rcOf = (out) => { const m = /rc=(\d+)\n$/.exec(out); return m ? Number(m[1]) : null; };
-const ranOf = (out) => { const m = /(?:^|\n)ran=(\d*)\nrc=\d+\n$/.exec(out); return m ? m[1] : null; };
-const lookOf = (out) => { const m = /(?:^|\n)look=(\d*)\nran=\d*\nrc=\d+\n$/.exec(out); return m ? m[1] : null; };
 
 /**
  * A scratch machine folder, so no case reads the machine's own settings: the env
@@ -182,7 +139,7 @@ describe('detach: the command outlives its launcher', () => {
   });
 });
 
-describe('detach.sh: wk_run_detached and its lock', () => {
+describe('detach: a run through runs.js and its lock', () => {
   test('a lock whose pid was rewritten mid-run: the command\'s own code comes back and the lock stays', async () => {
     // The lock taken over by a newer run while this one still ran: the pid in it
     // is no longer this run's, so the lock is no longer this run's to drop.
@@ -190,7 +147,7 @@ describe('detach.sh: wk_run_detached and its lock', () => {
     const lock = path.join(dir, 'lock');
     const go = path.join(dir, 'go');
     const script = `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(7)},50)`;
-    const runner = start(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
+    const runner = startRun(runJob(dir, script), { env: RUN_ENV });
     try {
       const pidFile = path.join(lock, 'pid');
       expect(await until(() => pidIn(pidFile) > 0),
@@ -199,8 +156,7 @@ describe('detach.sh: wk_run_detached and its lock', () => {
       fs.writeFileSync(go, '');
       expect(await until(() => runner.child.exitCode !== null), `the run never returned, stdout: ${runner.stdout()}`).toBeTruthy();
       await runner.done;
-      const out = runner.stdout();
-      expect(rcOf(out), `the command's own code, stdout: ${JSON.stringify(out)}, stderr: ${runner.stderr()}`).toBe(7);
+      expect(runner.child.exitCode, `the command's own code, output: ${runner.output()}`).toBe(7);
       expect(fs.existsSync(lock), 'the lock the newer pid holds is still there').toBeTruthy();
     } finally {
       await runner.end('SIGKILL');
@@ -214,8 +170,8 @@ describe('detach.sh: wk_run_detached and its lock', () => {
     const ran = path.join(dir, 'ran');
     handLock(lock, { claim: claimNaming('old'), 'id.old': '', pid: `${deadPid()}\n`, done: '0\n' });
     const script = `require('fs').writeFileSync(${jsPath(ran)},'');process.exit(6)`;
-    const res = run(BASH, runDetachedArgs(dir, script), { env: RUN_ENV });
-    expect(rcOf(res.stdout || ''), `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(6);
+    const { res } = runUnder(runJob(dir, script), { env: RUN_ENV });
+    expect(res.status, `the command's code, output: ${res.output}`).toBe(6);
     expect(fs.existsSync(ran), 'the command ran').toBeTruthy();
   });
 
@@ -226,13 +182,21 @@ describe('detach.sh: wk_run_detached and its lock', () => {
       const dir = mkTmp('detach-race-');
       const lock = path.join(dir, 'lock');
       const go = path.join(dir, 'go');
-      const first = start(BASH, runDetachedArgs(dir,
+      const first = startRun(runJob(dir,
         `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(0)},20)`), { env: RUN_ENV });
-      // B marks the moment its spin starts: under load its shell can come up
-      // after A would otherwise have finished and dropped the lock.
+      // B marks the moment its spin starts: under load its node can come up
+      // after A would otherwise have finished and dropped the lock. It spins
+      // with runs.js already loaded, so no start lies between.
       const spinning = `${lock}.spinning`;
-      const second = start(BASH, runDetachedArgs(dir, 'process.exit(5)',
-        ': > "$2.spinning"; seen=; until [ -e "$2/done" ]; do if [ -d "$2" ]; then seen=1; elif [ -n "$seen" ]; then break; fi; done'), { env: RUN_ENV });
+      const second = startRun(runJob(dir, 'process.exit(5)'), {
+        env: RUN_ENV,
+        before: [
+          "const fs = require('fs');",
+          `fs.writeFileSync(${jsPath(spinning)}, '');`,
+          'let seen = false;',
+          `for (;;) { if (fs.existsSync(${jsPath(path.join(lock, 'done'))})) break; if (fs.existsSync(${jsPath(lock)})) seen = true; else if (seen) break; }`,
+        ].join('\n'),
+      });
       try {
         expect(await until(() => fs.existsSync(path.join(lock, 'pid'))), `round ${round}: run A took the lock`).toBeTruthy();
         expect(await until(() => fs.existsSync(spinning)), `round ${round}: run B is spinning on the done file`).toBeTruthy();
@@ -240,141 +204,34 @@ describe('detach.sh: wk_run_detached and its lock', () => {
         expect(await until(() => first.child.exitCode !== null && second.child.exitCode !== null),
           `round ${round}: both runs returned`).toBeTruthy();
         await Promise.all([first.done, second.done]);
-        expect(rcOf(first.stdout()), `round ${round}: run A's own code, stdout: ${JSON.stringify(first.stdout())}, stderr: ${first.stderr()}`).toBe(0);
-        expect(rcOf(second.stdout()), `round ${round}: run B's own code, stdout: ${JSON.stringify(second.stdout())}, stderr: ${second.stderr()}`).toBe(5);
+        expect(first.child.exitCode, `round ${round}: run A's own code, output: ${first.output()}`).toBe(0);
+        expect(second.child.exitCode, `round ${round}: run B's own code, output: ${second.output()}`).toBe(5);
       } finally {
         await Promise.all([first.end('SIGKILL'), second.end('SIGKILL')]);
       }
     }
   });
 
-  test('the caller\'s own INT, TERM and HUP traps are back after wk_run_detached returns, from a run and from a start that failed', () => {
-    const traps = "trap 'echo caller-int' INT; trap 'echo caller-term' TERM; trap 'echo caller-hup' HUP";
-    const wanted = ["trap -- 'echo caller-int' SIGINT", "trap -- 'echo caller-term' SIGTERM", "trap -- 'echo caller-hup' SIGHUP"];
-    const failedStart = `${traps}; wk_node() { return 1; }`;
-    for (const [name, before, root] of [['a run', traps, null], ['a failed start', failedStart, rootWith(10)]]) {
-      const res = run(BASH, runDetachedArgs(mkTmp('detach-traps-'), 'process.exit(0)', before, root, 'trap -p INT TERM HUP'), { env: RUN_ENV });
-      const said = (res.stdout || '').split('\n');
-      const lost = wanted.filter((line) => !said.includes(line));
-      expect(lost.join(', '), `${name}: every caller trap is back, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe('');
-    }
-  });
-
-  test('WK_RAN_CODE: the command\'s code after it ran, empty when the runner could not start', () => {
-    const dir = mkTmp('detach-ran-');
-    const ran = run(BASH, runDetachedArgs(dir, 'process.exit(7)'), { env: RUN_ENV });
-    expect(rcOf(ran.stdout || ''), `the command's code comes back, stdout: ${JSON.stringify(ran.stdout)}, stderr: ${ran.stderr}`).toBe(7);
-    expect(ranOf(ran.stdout || ''), `WK_RAN_CODE holds it, stdout: ${JSON.stringify(ran.stdout)}`).toBe('7');
-
-    // A node ahead of the real one that fails, so the Node supervisor never
-    // runs; WK_RAN_CODE starts stale, so empty means the call reset it.
-    const bin = path.join(mkTmp('detach-nonode-'), 'bin');
-    fs.mkdirSync(bin);
-    stubTool(bin, 'node', ['#!/bin/bash', 'exit 1']);
-    const failed = run(BASH, runDetachedArgs(mkTmp('detach-ran-'), 'process.exit(7)', 'WK_RAN_CODE=7'),
-      { env: { PATH: systemPathWith(bin, NODE_DIR) } });
-    expect(rcOf(failed.stdout || ''), `the runner's 1, stdout: ${JSON.stringify(failed.stdout)}, stderr: ${failed.stderr}`).toBe(1);
-    expect(ranOf(failed.stdout || ''), `WK_RAN_CODE is empty, stdout: ${JSON.stringify(failed.stdout)}`).toBe('');
-  });
-
-  test('a run with a root and no node at 22.12 or newer anywhere: 1 with the no-node line, the command never ran, no lock left', () => {
-    const dir = mkTmp('detach-old-node-');
-    const ran = path.join(dir, 'ran');
-    const old = stubNode(path.join(dir, 'bin'), '20.15.1');
-    // HOME is a scratch one, so no node a machine's nvm keeps is found instead.
-    const env = homeEnv(path.join(dir, 'home'), { PATH: systemPathWith(path.dirname(old)), WORKKIT_NODE: shellPath(old) });
-    const res = run(BASH, runDetachedArgs(dir, `require('fs').writeFileSync(${jsPath(ran)}, '')`, ':', rootWith(10)), { env });
-    expect(rcOf(res.stdout || ''), `the run cannot be made, so 1, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(1);
-    expect(res.stderr.includes('detach: no node at or above 22.12 is installed'), `the no-node line, stderr: ${res.stderr}`).toBeTruthy();
-    expect(!fs.existsSync(ran), 'the command never ran').toBeTruthy();
-    expect(!fs.existsSync(path.join(dir, 'lock')), 'no lock left').toBeTruthy();
-  });
-
-  test('the same run under a supervisor already: its line, the command run in the shell, its code back and in WK_RAN_CODE, no lock', () => {
-    const dir = mkTmp('detach-old-node-held-');
-    const bin = path.join(dir, 'bin');
-    fs.mkdirSync(bin);
-    // An old node that answers its version and ends every other call 7: the command's own code here.
-    const old = stubTool(bin, 'node', ['#!/bin/bash', 'case "$1" in --version|-v) echo v20.15.1; exit 0 ;; esac', 'exit 7']);
-    const env = homeEnv(path.join(dir, 'home'), { PATH: systemPathWith(bin), WORKKIT_NODE: shellPath(old), WORKKIT_SUPERVISED: '1' });
-    const res = run(BASH, runDetachedArgs(dir, '0', ':', rootWith(10)), { env });
-    expect(res.stderr.includes('detach: no node at or above 22.12 is installed, so node runs here without its lock'),
-      `the line, stderr: ${res.stderr}`).toBeTruthy();
-    expect(rcOf(res.stdout || ''), `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(7);
-    expect(ranOf(res.stdout || ''), `WK_RAN_CODE holds it, stdout: ${JSON.stringify(res.stdout)}`).toBe('7');
-    expect(!fs.existsSync(path.join(dir, 'lock')), 'no lock taken').toBeTruthy();
-  });
-
-  test('a run with no root, PATH\'s node under the floor and a fitting one through WORKKIT_NODE: the command runs and its code comes back, PATH\'s node never started', () => {
-    const dir = mkTmp('detach-noroot-fit-');
-    const ran = path.join(dir, 'ran');
-    const mark = path.join(dir, 'started');
-    const old = markingOldNode(path.join(dir, 'bin'), mark);
-    const env = homeEnv(path.join(dir, 'home'), { PATH: systemPathWith(path.dirname(old)), ...nodeEnv });
-    const res = run(BASH, runCmdArgs(dir, ':', touchesThenSix(ran)), { env });
-    expect(rcOf(res.stdout || ''), `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(6);
-    expect(fs.existsSync(ran), 'the command ran').toBe(true);
-    expect(read(mark), 'PATH\'s node was never started').toBe('');
-  });
-
-  test('a run with no root and only a node under the floor on PATH: runs.js runs under it, the command runs and its code comes back', () => {
-    const dir = mkTmp('detach-noroot-old-');
-    const ran = path.join(dir, 'ran');
-    const mark = path.join(dir, 'started');
-    const old = markingOldNode(path.join(dir, 'bin'), mark);
-    // HOME is a scratch one, so no node a machine's nvm keeps is found instead.
-    const env = homeEnv(path.join(dir, 'home'), { PATH: systemPathWith(path.dirname(old)) });
-    const res = run(BASH, runCmdArgs(dir, ':', touchesThenSix(ran)), { env });
-    expect(rcOf(res.stdout || ''), `the command's code, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(6);
-    expect(fs.existsSync(ran), 'the command ran').toBe(true);
-    expect(read(mark).split('\n').some((line) => line.includes('runs.js')), `PATH's node started runs.js, its starts: ${JSON.stringify(read(mark))}`).toBe(true);
-  });
-
-  test('a run with no root and no node anywhere: the no-node line, then the could-not-start line, 127, WK_RAN_CODE empty, the command never ran', () => {
-    const dir = mkTmp('detach-noroot-nonode-');
-    const ran = path.join(dir, 'ran');
-    const log = path.join(dir, 'log');
-    // HOME is a scratch one, so no node a machine's nvm keeps is found instead.
-    const env = homeEnv(path.join(dir, 'home'), { PATH: basePathWithout(dir, 'node') });
-    // WK_RAN_CODE starts stale, so empty means the call reset it.
-    const res = run(BASH, runCmdArgs(dir, 'WK_RAN_CODE=7', touchesThenSix(ran)), { env });
-    expect(rcOf(res.stdout || ''), `127, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(127);
-    expect(ranOf(res.stdout || ''), `WK_RAN_CODE is empty, stdout: ${JSON.stringify(res.stdout)}`).toBe('');
-    expect(fs.existsSync(ran), 'the command never ran').toBe(false);
-    const lines = (res.stderr || '').replace(/\r/g, '').split('\n');
-    const noNode = lines.findIndex((line) => {
-      const said = /^detach: no node is installed to run (.+)$/.exec(line);
-      return said && samePath(said[1], fs.realpathSync(path.join(LIB, 'runs.js')), process.platform);
-    });
-    const noStart = lines.findIndex((line) => {
-      const said = /^detach: could not start sh \(log (.+)\)$/.exec(line);
-      return said && [log, shellPath(log)].some((spelling) => samePath(said[1], spelling, process.platform));
-    });
-    expect(noNode >= 0 && noStart > noNode, `the no-node line, then the could-not-start line, stderr: ${res.stderr}`).toBe(true);
-  });
-
-  test('a lock whose parent folder cannot be made: 1 with the could-not-take line, the command never ran', {
-    skip: IS_WINDOWS && 'Git Bash hands node a path that runs through a plain file unconverted, so the lock lands in another folder',
-  }, () => {
+  test('a lock whose parent folder cannot be made: 1 with the could-not-take line, the command never ran', () => {
     const base = mkTmp('detach-no-lock-');
     const ran = path.join(base, 'ran');
     fs.writeFileSync(path.join(base, 'plain'), '');
-    const res = run(BASH, runDetachedArgs(path.join(base, 'plain', 'under'), `require('fs').writeFileSync(${jsPath(ran)}, '')`), { env: RUN_ENV });
-    expect(rcOf(res.stdout || ''), `the lock cannot be made, so 1, stdout: ${JSON.stringify(res.stdout)}, stderr: ${res.stderr}`).toBe(1);
+    const { res } = runUnder(runJob(path.join(base, 'plain', 'under'), `require('fs').writeFileSync(${jsPath(ran)}, '')`), { env: RUN_ENV });
+    expect(res.status, `the lock cannot be made, so 1, output: ${res.output}`).toBe(1);
     expect(res.stderr.includes('detach: could not take the lock'), `the line, stderr: ${res.stderr}`).toBeTruthy();
     expect(!fs.existsSync(ran), 'the command never ran').toBeTruthy();
   });
 
-  test('a run that asks for a look: the evidence and the look\'s last line, 125 with WK_RAN_LOOK 1, the lock held, the run alive', { skip: skipOnWindows() }, () => {
+  test('a run that asks for a look: the evidence and the look\'s last line, 125 with rc 125 and look and no code in what run resolved, the lock held, the run alive', { skip: skipOnWindows() }, () => {
     const dir = mkTmp('detach-look-sh-');
     const pidFile = path.join(dir, 'cmd.pid');
     const lockPid = path.join(dir, 'lock', 'pid');
     try {
-      const res = run(BASH, runDetachedArgs(dir, busy(pidFile), ':', rootWith(CHECK_MINUTES)),
+      const { res, answers } = runUnder(runJob(dir, busy(pidFile), { root: rootWith(CHECK_MINUTES) }),
         { env: { ...machineEnv(), ...RUN_ENV } });
-      const out = res.stdout || '';
-      expect(rcOf(out), `the look's code, stdout: ${JSON.stringify(out)}, stderr: ${res.stderr}`).toBe(125);
-      expect(lookOf(out), `WK_RAN_LOOK is 1, stdout: ${JSON.stringify(out)}`).toBe('1');
+      expect(res.status, `the look's code, output: ${res.output}`).toBe(125);
+      expect(Boolean(answers) && answers.rc === 125 && answers.look === true, `rc 125 and look, got: ${JSON.stringify(answers)}`).toBe(true);
+      expect(answers.code ?? null, 'no code: the run goes on').toBe(null);
       const cmd = pidIn(pidFile);
       expect(evidenceOf(cmd).test(res.output), `the evidence names the command ${cmd}, got: ${res.output}`).toBeTruthy();
       const said = LOOK_LINE.exec(res.output);
@@ -395,7 +252,7 @@ describe('detach.sh: wk_run_detached and its lock', () => {
     const lockPid = path.join(dir, 'lock', 'pid');
     const env = { ...machineEnv(), ...RUN_ENV };
     const script = `const fs=require('fs');setInterval(()=>{if(fs.existsSync(${jsPath(go)}))process.exit(5)},50)`;
-    const first = start(BASH, runDetachedArgs(dir, script), { env });
+    const first = startRun(runJob(dir, script), { env });
     let second;
     try {
       const supervisor = await pidOf(lockPid);
@@ -404,7 +261,7 @@ describe('detach.sh: wk_run_detached and its lock', () => {
       fs.writeFileSync(go, '');
       expect(await until(() => first.child.exitCode !== null && second.child.exitCode !== null), 'both calls returned').toBeTruthy();
       await Promise.all([first.done, second.done]);
-      expect(rcOf(first.stdout()), `the starting call's code, stdout: ${JSON.stringify(first.stdout())}, stderr: ${first.stderr()}`).toBe(5);
+      expect(first.child.exitCode, `the starting call's code, output: ${first.output()}`).toBe(5);
       expect(second.child.exitCode, `the attached call's code, output: ${second.output()}`).toBe(5);
     } finally {
       reap(pidIn(lockPid));
@@ -666,7 +523,7 @@ describe('run-lock.js: askEnd', () => {
   });
 });
 
-describe('detach.sh: an INT to the attached call ends the whole run', () => {
+describe('detach: an INT to the attached call ends the whole run', () => {
   // Each run checks far less often than the case lasts, so only the INT ends it.
   test('a command with a child in its own session: both gone, the log ends with the request line, the lock gone, exit 130', {
     skip: IS_WINDOWS && 'Windows delivers no INT to one process',
@@ -675,7 +532,7 @@ describe('detach.sh: an INT to the attached call ends the whole run', () => {
     const pidFile = path.join(dir, 'cmd.pid');
     const childFile = path.join(dir, 'child.pid');
     const lock = path.join(dir, 'lock');
-    const runner = start(BASH, runDetachedArgs(dir, parentOf(pidFile, silent(childFile), true), ':', rootWith(10)),
+    const runner = startRun(runJob(dir, parentOf(pidFile, silent(childFile), true), { root: rootWith(10) }),
       { env: { ...machineEnv(), ...RUN_ENV } });
     let supervisor;
     try {
@@ -704,7 +561,7 @@ describe('detach.sh: an INT to the attached call ends the whole run', () => {
     const pidFile = path.join(dir, 'cmd.pid');
     const lock = path.join(dir, 'lock');
     const env = { ...machineEnv(), ...RUN_ENV };
-    const first = start(BASH, runDetachedArgs(dir, silent(pidFile), ':', rootWith(10)), { env });
+    const first = startRun(runJob(dir, silent(pidFile), { root: rootWith(10) }), { env });
     let supervisor;
     try {
       supervisor = await pidOf(path.join(lock, 'pid'));
@@ -727,8 +584,8 @@ describe('detach.sh: an INT to the attached call ends the whole run', () => {
     // A stopped supervisor answers nothing; a one second wait keeps the case short.
     const dir = mkTmp('detach-int-stopped-');
     const pidFile = path.join(dir, 'cmd.pid');
-    const runner = start(BASH, runDetachedArgs(dir, silent(pidFile), 'WK_END_WAIT=1', rootWith(10)),
-      { env: { ...machineEnv(), ...RUN_ENV } });
+    const runner = startRun(runJob(dir, silent(pidFile), { root: rootWith(10) }),
+      { env: { ...machineEnv(), ...RUN_ENV, WK_END_WAIT: '1' } });
     let supervisor;
     try {
       supervisor = await pidOf(path.join(dir, 'lock', 'pid'));
@@ -752,8 +609,8 @@ describe('detach.sh: an INT to the attached call ends the whole run', () => {
     // INT follows the forced end at once, well before the attach loop sees the supervisor gone.
     const dir = mkTmp('detach-int-gone-');
     const pidFile = path.join(dir, 'cmd.pid');
-    const runner = start(BASH, runDetachedArgs(dir, silent(pidFile), 'WK_END_WAIT=600', rootWith(10)),
-      { env: { ...machineEnv(), ...RUN_ENV } });
+    const runner = startRun(runJob(dir, silent(pidFile), { root: rootWith(10) }),
+      { env: { ...machineEnv(), ...RUN_ENV, WK_END_WAIT: '600' } });
     let supervisor;
     try {
       supervisor = await pidOf(path.join(dir, 'lock', 'pid'));

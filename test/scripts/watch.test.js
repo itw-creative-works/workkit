@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath, nodeEnv, stubNode, systemPathWith,
+  IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath, stubNode, systemPathWith,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
@@ -96,27 +96,20 @@ const lookedNarrowed = async (world, name) => {
   }
 };
 
-/** The slot of the narrowed run whose look named <pid>: its log and its lock folder, from the suite library's own paths. */
+/** The slot of the narrowed run whose look named <pid>: its log and its lock folder, from runPaths under the world's env. */
 const slotOf = ({ w, env }, pid) => {
   const root = run('git', ['rev-parse', '--show-toplevel'], { cwd: w.repo }).stdout.trim();
-  const res = runLib(`wk_test_log_path "${root}" ${pid} && wk_test_lock_path "${root}" ${pid}`,
-    { ...env, ...nodeEnv });
-  const [log, lock] = res.stdout.trim().split('\n');
-  expect(res.code === 0 && log && lock, `the slot of run ${pid}, got: ${res.stdout} ${res.stderr}`).toBeTruthy();
-  return { log, lock };
+  const [slot] = runPathsUnder(env, [[root, 'test', pid]]);
+  return slot;
 };
 
 /**
- * The suite lock of <w>'s repo from the suite library's own path and the run lock
- * from runPaths, each under <env>: the spelling the run holding it writes in a
- * `foreground` file.
+ * The suite lock and the run lock of <w>'s repo from runPaths under <env>: the
+ * spelling the run holding it writes in a `foreground` file.
  */
 const lockPaths = (w, env = w.env) => {
   const root = run('git', ['rev-parse', '--show-toplevel'], { cwd: w.repo }).stdout.trim();
-  const res = runLib(`wk_suite_lock_path "${root}"`, { ...env, ...nodeEnv });
-  const suite = res.stdout.trim();
-  expect(res.code === 0 && suite, `the repo's suite lock, got: ${res.stdout} ${res.stderr}`).toBeTruthy();
-  const [{ lock: runLock }] = runPathsUnder(env, [[root, 'run']]);
+  const [{ lock: suite }, { lock: runLock }] = runPathsUnder(env, [[root, 'suite'], [root, 'run']]);
   return { suite, run: runLock };
 };
 

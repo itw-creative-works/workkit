@@ -3,8 +3,9 @@
  * less `.git`, every package's node_modules and the kit's own paths; the fill
  * that then makes each package's node_modules a real folder of links to the live
  * repo's; and the detached worktree a copy is made in, added and removed. The
- * snapshot (lib/snapshot.js), `workkit prove` and `workkit proof red` share it.
- * Usage: const { copyTree, fillCopy, copyEntry, heldModules, worktreeAdd, worktreeRemove } = require('./tree-copy');
+ * snapshot (lib/snapshot.js), `workkit prove` and `workkit proof red` share it,
+ * and npm's script shell its path under the physical root (relIn).
+ * Usage: const { copyTree, fillCopy, copyEntry, heldModules, worktreeAdd, worktreeRemove, relIn } = require('./tree-copy');
  */
 
 const fs = require('fs');
@@ -276,5 +277,5 @@ const worktreeRemove = (root, dest) => {
 };
 
 module.exports = {
-  copyTree, fillCopy, copyEntry, heldModules, worktreeAdd, worktreeRemove,
+  copyTree, fillCopy, copyEntry, heldModules, worktreeAdd, worktreeRemove, relIn,
 };

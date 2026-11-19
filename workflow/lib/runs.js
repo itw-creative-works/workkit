@@ -1,44 +1,24 @@
-#!/usr/bin/env node
 /* eslint-disable no-console */
 // workflow/lib/runs.js: a detached run, one Node process from the lock to the
-// answer: `run` takes the lock (lib/run-lock.js), launches the supervisor
-// (lib/detach.js) and attaches (lib/attach.js), its answers handed back in
-// process; as a command, lib/detach.sh's names run it and read them from the answer file.
-// Usage: node runs.js <verb> ...   (USAGE below), or const { run } = require('./runs');
+// answer, CJS: `run` takes the lock (lib/run-lock.js), launches the supervisor
+// (lib/detach.js) and attaches (lib/attach.js), its answers handed back in process.
+// Usage: const { run } = require('./runs');
 
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('./run');
 const {
-  signalCode, exitOf, END_SIGNALS, INT_CODE,
+  signalCode, exitOf, isSupervised, END_SIGNALS, INT_CODE,
 } = require('./detach');
 const { attachRun, runForeground } = require('./attach');
 const { retireLock } = require('./lock');
 const runLock = require('./run-lock');
 
 const {
-  takeRunLock, writePid, leaveRecord, dropRunLock, askEnd, sweepSlots, doneCode,
+  takeRunLock, writePid, leaveRecord, dropRunLock, askEnd, doneCode,
 } = runLock;
 
 const DETACH = path.join(__dirname, 'detach.js');
-
-const USAGE = [
-  'usage: runs.js run <log> <lock> [--root <root>] --answer <file> -- <cmd> [args...]',
-  '     | runs.js sweep-slots <base>',
-].join('\n');
-
-/**
- * The answer file written: one `<name>=<digits>` line per answer that applies,
- * true written as 1. The shell sources it, so any other value throws.
- */
-const answerTo = (file, answers) => {
-  const lines = Object.entries(answers)
-    .filter(([, value]) => value !== null && value !== undefined && value !== false)
-    .map(([name, value]) => [name, value === true ? 1 : value]);
-  const bad = lines.find(([, value]) => !Number.isInteger(value) || value < 0);
-  if (bad) throw new Error(`runs: the answer ${bad[0]} must be a whole number, got ${bad[1]}`);
-  fs.writeFileSync(file, lines.map(([name, value]) => `${name}=${value}\n`).join(''));
-};
 
 /**
  * The launcher in a process of its own, `node detach.js`, gone once it printed
@@ -62,22 +42,6 @@ const launchApart = (argv, env) => new Promise((resolve) => {
     else resolve({ code: exitOf(code, signal) || 1 });
   });
 });
-
-/** `run`'s arguments, or null when they are not its shape. */
-const runArgs = ([log, lock, ...rest]) => {
-  let at = 0;
-  let root = null;
-  if (rest[at] === '--root') {
-    root = rest[at + 1];
-    at += 2;
-  }
-  const answer = rest[at] === '--answer' ? rest[at + 1] : null;
-  const argv = rest.slice(at + 3);
-  if (!log || !lock || root === '' || root === undefined || !answer || rest[at + 2] !== '--' || argv.length === 0) return null;
-  return {
-    log, lock, root, answer, argv,
-  };
-};
 
 /**
  * An interrupt of an attached call: the supervisor asked to end the run, its
@@ -120,7 +84,7 @@ const answered = (rc, answers = {}) => ({
 const run = async ({
   log, lock, root, argv,
 }, { launch = launchApart, endRun = runLock.endRun } = {}) => {
-  if (process.env.WORKKIT_SUPERVISED === '1') {
+  if (isSupervised(process.env)) {
     const done = await runForeground(log, lock, argv);
     return answered(done.rc, { held: done.held ?? null, code: done.code });
   }
@@ -174,42 +138,4 @@ const run = async ({
   return Promise.race([attached(), interrupted]);
 };
 
-/** The `run` command: run's answers written to the answer file for the shell. */
-const runCommand = async ({ answer, ...job }) => {
-  const { rc, ...answers } = await run(job);
-  answerTo(answer, answers);
-  return rc;
-};
-
-// Each verb: its argument check and its call.
-const VERBS = {
-  run: [runArgs, runCommand],
-  'sweep-slots': [(args) => (args.length === 1 && args[0] ? args : null), async ([base]) => {
-    for (const slot of await sweepSlots(base)) console.log(slot);
-    return 0;
-  }],
-};
-
-/**
- * The CLI. Exit codes: `run` the run's own code, 125 on a look, 130 on an
- * interrupt, 3 for a live holder, 1 when the lock or the run cannot be made;
- * `sweep-slots` 0; 2 for a call it does not take.
- * @param {string[]} argv `<verb> <args...>`
- * @returns {Promise<number>} the exit code
- */
-const main = async ([verb, ...args]) => {
-  const known = VERBS[verb];
-  const parsed = known ? known[0](args) : null;
-  if (!parsed) {
-    console.error(USAGE);
-    return 2;
-  }
-  return known[1](parsed);
-};
-
-if (require.main === module) {
-  // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
-}
-
-module.exports = { main, run, endOnInt };
+module.exports = { run, endOnInt };

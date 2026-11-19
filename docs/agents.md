@@ -67,7 +67,7 @@ flowchart TB
     - Even then a root run waits until every item is parked.
 - The full suite runs once per tree, as `npm test` at the repo root before the commit.
   - The shell records the tree it proved, and the gate checks the record (spec § The proof).
-  - In a Claude session the full-suite hold (`workflow/lib/hold.sh`) refuses two runs, from any class:
+  - In a Claude session the full-suite hold (`workflow/lib/hold.js`) refuses two runs, from any class:
     - a repeat full run on a tree already proved green;
     - any root run while an issue of the repo is at `status:building`.
 - The per-feature proof is enforced too.

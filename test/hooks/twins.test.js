@@ -1,30 +1,26 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the tree hash, the
-// suite log's path, a run's log and lock, a detached body's end, the test script, the marker path, the color gate, the plain mutex, the marker sweep, the opt-in read (the gate's and the heal's), one setting, the machine folder,
-// the CHANGELOG test, the hooks log, the slug, the Proof pattern, the lint block's sentence, the working-diff reads, the
-// version-only change, the status:building list, the public slug, git's value-taking global options. Plus one
+// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the
+// suite log's path, the test script, the marker path, the color gate, the plain mutex, the marker sweep, the opt-in read (the gate's and the heal's), the session rule, one setting, the machine folder,
+// the hooks log, the slug, the Proof pattern, the working-diff reads, the
+// version-only change, the public slug, git's value-taking global options. Plus one
 // JavaScript pair, the plain-object test, and one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
+// And one export with no shell side, the CHANGELOG test.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, mkTmp, until, pidIn, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash, nodeEnv, homeEnv, samePath,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash, nodeEnv,
 } = require('../lib/platform');
-const { runPathsUnder } = require('../lib/run-paths');
-const {
-  pidOf, reap, read, lastLine, ridesSignals, nodeBody, shellBody, launchBody,
-} = require('../lib/supervise');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods, runResult } = require('../lib/mods-inputs');
 const { recordArgv, readArgv } = require('../lib/argv-log');
 const commitGate = require('./commit-gate/helpers');
 const { runLib } = require('../lib/hook-lib');
-const { treeHash } = require('../lib/suite-record');
 const { agedFile, daysAgo } = require('../lib/workflow-home');
 const { readOrNull } = require('../../workflow/lib/read');
 const { makeRepo: healRepo, runScript: healRun, cleanup: healCleanup } = require('../scripts/workflow-standards/helpers');
@@ -128,20 +124,6 @@ const recordingTool = (tool, out = '', lines = []) => {
   return { path: systemPathWith(bin), calls: () => readArgv(logFile) };
 };
 
-describe('twins: the tree hash, wk_tree_hash in workflow/lib/suite.sh against treeHash in test/lib/suite-record.js', () => {
-  test('wk_tree_hash and treeHash print one id for a repo whose .workkit/ holds a tracked settings file and an untracked log', () => {
-    const w = mkRepo('twins-tree-', { 'app.js': 'module.exports = 1;\n' });
-    w.write('app.js', 'module.exports = 2;\n');
-    w.write('.workkit/settings.json', OPT_IN_SHAPES.current);
-    w.write('.workkit/suite.log', 'script-shell: exit 0\n');
-    const res = runLib(`wk_tree_hash "${shellPath(w.repo)}"`, { TMPDIR: shellPath(w.tmp), ...nodeEnv });
-    const shell = res.stdout.trim();
-    expect(/^[0-9a-f]{40,64}$/.test(shell), `a tree id from wk_tree_hash, got: ${res.stdout}|${res.stderr}`).toBeTruthy();
-    expect(treeHash(w.repo), 'the twin prints the kit\'s id').toBe(shell);
-    fs.rmSync(w.dir, { recursive: true, force: true });
-  });
-});
-
 // [logs.dir, the repo's .gitignore]: undefined sets no logs.dir. The last four are
 // spellings two hand-written path walkers could read apart.
 const LOG_DIRS = [
@@ -193,68 +175,6 @@ describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh aga
       'markers/claude-suite.log/<sha>', 'markers/claude-suite.log/<sha>',
       '<root>/logs/suite.log', '<root>/logs/suite.log', '<root>/logs/sub/suite.log', '<root>/.workkit/suite.log',
     ]));
-  });
-});
-
-describe('twins: a run\'s log and lock, wk_suite_log_path, wk_suite_lock_path, wk_test_log_path and wk_test_lock_path in workflow/lib/suite.sh against runPaths in workflow/lib/run-paths.js', () => {
-  const SLOT = 4242;
-  const NAMES = ['the suite log', 'the suite lock', 'the slot log', 'the slot lock'];
-
-  test('the shell names and runPaths give one log and one lock for the suite and for a slot, for every logs.dir and .gitignore', () => {
-    const home = mkTmp('twins-runpaths-home-');
-    const workflowHome = path.join(home, '.workkit');
-    const roots = LOG_DIRS.map(([dir, ignore]) => mkRepo('twins-runpaths-', { '.gitignore': ignore, '.workkit/settings.json': settingsOf(dir) }, undefined, { optIn: false })
-      .git('rev-parse', '--show-toplevel').trim());
-    const shell = roots.map((root) => {
-      const res = runLib(`wk_suite_log_path "${root}" && wk_suite_lock_path "${root}" && wk_test_log_path "${root}" ${SLOT} && wk_test_lock_path "${root}" ${SLOT}`,
-        { HOME: shellPath(home), WORKFLOW_HOME: shellPath(workflowHome), ...nodeEnv });
-      expect(res.code, `the shell names answer for ${root}, stderr: ${res.stderr}`).toBe(0);
-      return res.stdout.trim().split('\n');
-    });
-    const js = runPathsUnder(homeEnv(home, { PATH: process.env.PATH, WORKFLOW_HOME: workflowHome }),
-      roots.flatMap((root) => [[root, 'suite'], [root, 'test', SLOT]]));
-    const differ = roots.flatMap((_, i) => {
-      const paths = [js[2 * i].log, js[2 * i].lock, js[2 * i + 1].log, js[2 * i + 1].lock];
-      return paths.flatMap((p, k) => (samePath(p, shell[i][k], process.platform)
-        ? [] : [`${JSON.stringify(LOG_DIRS[i])} ${NAMES[k]}: bash ${shell[i][k]}, runPaths ${p}`]));
-    });
-    expect(differ.join('; '), 'bash and runPaths name the same files').toBe('');
-  });
-});
-
-describe('twins: a detached body\'s end, wk_body_traps in workflow/lib/detach.sh against bodyEnd in workflow/lib/body.js', () => {
-  // [how the body ends, its code]: its command's own 7, or a signal to the body while the command runs.
-  const ENDS = [['own', 7], ['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 143]]
-    .filter(([end]) => end === 'own' || !IS_WINDOWS);
-
-  /** The body <bodyOf> builds, run under the supervisor and ended by <end>: `<done code> | <the log's last line>`. */
-  const endOf = async (bodyOf, end) => {
-    const dir = mkTmp('twins-body-');
-    const [pidFile, go, done] = ['body.pid', 'go', 'done'].map((name) => path.join(dir, name));
-    if (end === 'own') fs.writeFileSync(go, '');
-    const supervisor = launchBody(dir, bodyOf(pidFile, ridesSignals(go, path.join(dir, 'ended'), end === 'own' ? 7 : 0)));
-    try {
-      if (end !== 'own') {
-        process.kill(await pidOf(pidFile), end);
-        expect(!(await until(() => read(done) !== '', 500)), `the body ended before its command did, log: ${JSON.stringify(read(path.join(dir, 'log')))}`).toBeTruthy();
-        fs.writeFileSync(go, '');
-      }
-      expect(await until(() => read(done) !== ''), `the done file never appeared at ${done}`).toBeTruthy();
-      return `${read(done).trim()} | ${lastLine(read(path.join(dir, 'log')))}`;
-    } finally {
-      reap(pidIn(pidFile), supervisor);
-    }
-  };
-
-  test(`wk_body_traps and bodyEnd end a body alike: its own code, ${IS_WINDOWS ? 'no signal on Windows, which delivers none to one process' : 'and 129, 130 and 143 on HUP, INT and TERM once its command has ended'}`, async () => {
-    const shell = [];
-    const js = [];
-    for (const [end] of ENDS) {
-      shell.push(await endOf(shellBody, end));
-      js.push(await endOf(nodeBody, end));
-    }
-    agree(ENDS.map((_, i) => i), shell, (i) => js[i], `the ends by index, bodyEnd's answers ${JSON.stringify(js)}`);
-    expect(JSON.stringify(shell), 'the code and the closing line of each end').toBe(JSON.stringify(ENDS.map(([, code]) => `${code} | probe: exit ${code}`)));
   });
 });
 
@@ -428,6 +348,28 @@ describe('twins: the opt-in read, wk_opted_in in workflow/lib/participation.sh a
     });
 });
 
+describe('twins: the session rule, wk_session_judges in workflow/lib/participation.sh against sessionJudges in hooks/mods/gate.js', () => {
+  // The variables the rule reads, each environment beside nothing else; an absent key is unset.
+  const ENVS = [
+    {}, { CLAUDECODE: '1' }, { CLAUDECODE: '1', HOOK_DISABLE: '1' }, { CLAUDECODE: '1', HOOK_DISABLE: '0' },
+    { CLAUDECODE: '1', HOOK_DISABLE: '' }, { CLAUDECODE: '0' }, { CLAUDECODE: 'true' }, { CLAUDECODE: '' }, { HOOK_DISABLE: '1' },
+  ];
+  // The settings texts: none, the opt-in, a decline, a string true.
+  const TEXTS = [null, OPT_IN_SHAPES.current, '{ "version": 1, "enabled": false }\n', '{ "enabled": "true" }'];
+
+  test('wk_session_judges and sessionJudges answer every environment and settings text alike, and only CLAUDECODE=1, no HOOK_DISABLE=1 and an opted-in repo judge', () => {
+    const roots = settingsRoots(TEXTS);
+    const sources = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
+    const shell = ENVS.map((vars) => bashAnswers(sources, 'wk_session_judges', roots.map(shellPath), { ...nodeEnv, ...vars }));
+    const { sessionJudges } = mods('gate');
+    ENVS.forEach((vars, e) => agree(TEXTS.map((_, t) => t), shell[e], (t) => sessionJudges(vars, TEXTS[t]),
+      `the settings texts (by index into TEXTS) under ${JSON.stringify(vars)}`));
+    expect(JSON.stringify(shell[1]), 'CLAUDECODE=1 alone: the opted-in repo judges, no other').toBe(JSON.stringify([false, true, false, false]));
+    expect(JSON.stringify([shell[0][1], shell[2][1], shell[5][1], shell[6][1]]), 'unset, HOOK_DISABLE=1, CLAUDECODE 0 or true: the opted-in repo is not judged')
+      .toBe(JSON.stringify([false, false, false, false]));
+  });
+});
+
 describe('twins: the opt-in read, the heal\'s --state (resolve_state in workflow/standards/state.sh) against settingsOptedIn', () => {
   test('the heal reads a repo enabled exactly where settingsOptedIn reads it in, and a string enabled is no answer it offers on', () => {
     const states = SETTINGS.map((text) => {
@@ -526,10 +468,11 @@ describe('twins: the machine folder, wk_user_dir against userDir in hooks/mods/l
   });
 });
 
-describe('twins: the CHANGELOG test, wk_is_changelog against isChangelog in hooks/mods/changelog-guard.js', () => {
-  test('wk_is_changelog and isChangelog agree on every fixture', () => {
-    const shell = bashAnswers(lib('workflow', 'lib', 'changelog.sh'), 'wk_is_changelog', CHANGELOGS);
-    agree(CHANGELOGS, shell, (p) => mods('changelog-guard').isChangelog(p), 'the CHANGELOG test');
+describe('the CHANGELOG test, isChangelog in hooks/mods/changelog-guard.js', () => {
+  test('a CHANGELOG.md at the root, below it or absolute is one; a longer name, another case, no extension or a folder of that name is not', () => {
+    const { isChangelog } = mods('changelog-guard');
+    expect(JSON.stringify(CHANGELOGS.map((p) => isChangelog(p))), CHANGELOGS.join(', '))
+      .toBe(JSON.stringify([true, true, true, true, false, false, false, false, false, false]));
   });
 });
 
@@ -614,26 +557,6 @@ describe('twins: the Proof pattern, workflow/ship/items.sh against PROOF_RE in h
   });
 });
 
-describe('twins: the lint block, wk_changelog_lint in workflow/lib/changelog.sh against lintText in hooks/mods/commit-gate.js', () => {
-  // The linter's findings, the same on both sides: a node stub prints them in bash.
-  const SAID = 'CHANGELOG.md:7 [word-cap] 62 words (max 50)\nCHANGELOG.md:7 [link] no issue link';
-
-  test('a failed lint reads the same sentence and findings from the shell and from the gate', async () => {
-    const node = mkTmp('twins-node-');
-    stubTool(node, 'node', ['#!/bin/bash', `printf '%b\\n' '${SAID.replace(/\n/g, '\\n')}' >&2`, 'exit 1']);
-    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'changelog.sh')}"; wk_changelog_lint /w/repo --staged CHANGELOG.md`], {
-      env: { PATH: systemPathWith(node), HOME: shellPath(os.homedir()), WORKFLOW_DIR: lib('workflow') }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    expect(res.status, `the shell lint fails, stderr: ${res.stderr}`).toBe(1);
-    const r = commitGate.mkRepo();
-    commitGate.stage(r, 'CHANGELOG.md', commitGate.CHANGELOG('- An essay entry.'));
-    const facts = { ...commitGate.factsOf(r), lint: async () => runResult({ exitCode: 1, stderr: `${SAID}\n` }) };
-    const deny = commitGate.denyOf(await mods('commit-gate').preCommitVerdict(facts));
-    expect(deny !== null && deny.startsWith(commitGate.PREFIX), `the gate blocks on the lint, got: ${deny}`).toBeTruthy();
-    expect(deny.slice(commitGate.PREFIX.length), 'the sentence and the findings, byte for byte').toBe(res.stderr.replace(/\n$/, ''));
-  });
-});
-
 describe('twins: the working diff, hook_working_paths in hooks/lib/tree.sh against the touched list proof-guard reads', () => {
   // The reads the touched list hangs on: the HEAD check, the working diff, the untracked list (never the ref reads).
   const touchedReads = (calls) => calls.filter((a) => ['diff', 'ls-files'].includes(a[0]) || (a[0] === 'rev-parse' && a.includes('--verify')));
@@ -710,23 +633,6 @@ describe('twins: the version-only change, hook_version_only_change in hooks/lib/
     agree(files, shell, (f) => mods('commit-gate/checks').versionOnly(LOCK_HEAD, LOCK_CHANGES[f]), 'the lockfile stamp');
     expect(JSON.stringify(shell), 'only the version spots moving is version-only').toBe(JSON.stringify([true, false]));
     fs.rmSync(w.dir, { recursive: true, force: true });
-  });
-});
-
-describe('twins: the status:building list, wk_issues_building in workflow/lib/hold.sh against buildingList in hooks/mods/gh.js', () => {
-  test('wk_issues_building and buildingList ask gh with the same argv, with and without a repo', async () => {
-    for (const repo of ['', 'acme/widgets']) {
-      const gh = recordingTool('gh', '[]');
-      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; . "${lib('workflow', 'lib', 'hold.sh')}"; wk_issues_building ${repo}`], {
-        env: { PATH: gh.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
-      const shell = gh.calls();
-      expect(shell.length, `${repo || 'no repo'}: the shell asks gh once, stderr: ${res.stderr}`).toBe(1);
-      expect(res.status, `${repo || 'no repo'}: the shell reads gh's answer, stderr: ${res.stderr}`).toBe(0);
-      const runs = [];
-      await mods('gh').buildingList(async (argv) => { runs.push(argv); return runResult({ stdout: '[]' }); }, { repo });
-      expect(JSON.stringify(runs[0].slice(1)), `${repo || 'no repo'}: the same argv`).toBe(JSON.stringify(shell[0]));
-    }
   });
 });
 

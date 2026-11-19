@@ -40,8 +40,8 @@ const deny = (reason) => ({ deny: `${BLOCK_PREFIX}${reason}` });
 const lines = (text) => String(text ?? '').split('\n').filter(Boolean);
 
 const newFilesText = (list) => `the commit adds new source files (${list}) but touches no test file. The test obligation scales with the change (AGENTS.md §6): write/extend tests for the new files, stage them, then commit.`;
-// Changes together with wk_changelog_lint's message in workflow/lib/changelog.sh.
-const lintText = (stderr) => `the CHANGELOG entry does not match the format (see docs/project-state.md). ${String(stderr ?? '').replace(/\n+$/, '')}`;
+// npm's script shell (workflow/script-shell.js) says it too.
+export const lintText = (stderr) => `the CHANGELOG entry does not match the format (see docs/project-state.md). ${String(stderr ?? '').replace(/\n+$/, '')}`;
 const unpassedText = (list) => `the message names issues the owner has not passed: ${list}. The owner's pass moves an issue to status:complete before a commit names it (docs/project-state.md, "The park"): leave the work uncommitted until then, or drop the reference.`;
 const unprovedText = (list) => `the message closes${list}, and no comment there opens with a \`Proof:\` line. A proof is a hard gate (docs/project-state.md, "The proof"): the agent that built the item comments the Proof: line first, one entry per layer with the command or the reason it was skipped, and only then does the trailer close the issue.`;
 const sharedText = (trailers) => {
@@ -107,7 +107,7 @@ export function logPlaceOf(settings, name, id = '') {
 }
 
 // Where a root run logs: suite.log in the log folder where git ignores it,
-// else its marker path (wk_suite_log_path); a bad logs.dir is its line.
+// else its marker path (runPaths' suite log); a bad logs.dir is its line.
 async function suiteLogOf(facts, root) {
   const settings = await loadSettings(facts.read, { kit: facts.kitRoot, root, user: facts.userSettings });
   const place = logPlaceOf(settings, 'suite.log');

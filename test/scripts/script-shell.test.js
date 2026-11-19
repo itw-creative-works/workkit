@@ -1,6 +1,6 @@
 // Tests for workflow/script-shell.sh, npm's script shell: a green root `npm test`
 // records the tree it proved, every other green test run records its package,
-// an install-time script in an opted-in repo is followed by the git hooks'
+// a test event with no node at the floor stops on one line, an install-time script in an opted-in repo is followed by the git hooks'
 // re-point, and every other script passes straight through.
 // The detached run and the checks before it are script-shell-detached.test.js;
 // the world both run npm in is test/lib/script-shell.js.
@@ -11,14 +11,15 @@ const {
   describe, test, expect,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, shellPath, which, joinPath, stubTool, stubNode, NODE_DIR, SYSTEM_PATH, nodeEnv,
+  IS_WINDOWS, shellPath, which, joinPath, stubTool, stubNode, NODE_DIR, SYSTEM_PATH,
 } = require('../lib/platform');
 const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
 const {
   scratchNpmrc, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged, assertRecord,
 } = require('../lib/script-shell');
 const { gateOn: gateIn } = require('../lib/real-gate');
-const { runLib } = require('../lib/hook-lib');
+const { kitUnder } = require('../lib/kit-under');
+const { treeId } = require('../../workflow/lib/tree-hash');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 const { linesOf } = require('../lib/run-lists');
 const { coreBin } = require('../lib/workkit-bin');
@@ -43,14 +44,10 @@ const isOurs = (value) => value !== '' && fs.existsSync(value) && fs.realpathSyn
 // `npm install` in <repo> as the owner's terminal runs it: no Claude session.
 const install = (world, repo) => npm(world, repo, ['install', '--no-audit', '--no-fund'], world.wrapper, { CLAUDECODE: undefined });
 
-// What the wrapper's run reaches in the kit, by its path from the kit root: its
-// libs, the settings reader the launcher loads for a run's root, and the record
-// rules records.js binds.
-const WRAPPER_PARTS = [
-  'workflow/script-shell.sh', 'workflow/lib', 'workflow/user-dir.js',
-  'hooks/package.json', 'hooks/mods/settings.js', 'hooks/mods/log.js', 'hooks/mods/markers.js', 'hooks/mods/suite.js',
-  'defaults/settings.json',
-];
+// What the wrapper's run reaches in the kit, by its path from the kit root: the
+// engine, whose Node half runs the test event, the hooks' rules it reads (the
+// hold's, the records', the CHANGELOG check's) and the default settings.
+const WRAPPER_PARTS = ['workflow', 'hooks', 'defaults/settings.json'];
 
 // The wrapper and what it reaches, copied in the kit's layout to <world.root>/kit
 // so a case may rewrite it, its workflow/ linked as <world.root>/claude/workkit.
@@ -139,7 +136,7 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       cleanup(world.root); cleanup(repo);
     });
 
-    test('a green supervised root run on a machine with no node at the floor: exit 1, the suite ran, no record, the output names the missing node', () => {
+    test('a test event on a machine with no node at the floor, bare, narrowed or supervised: the one no-node line, exit 1, the suite never ran, no record', () => {
       const world = mkWorld();
       // The suite prints `ran-2`, a token npm's echo of the script line never holds.
       const repo = mkRepo({ scripts: { test: 'echo ran-$((1+1))' } });
@@ -150,14 +147,21 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       stubTool(bin, 'npm', ['#!/bin/bash', `exec "${shellPath(process.execPath)}" "${shellPath(cli)}" "$@"`]);
       const old = path.join(world.root, 'old-node');
       stubNode(old, '20.15.1');
-      // A detached run needs node at the floor to start its supervisor, so the run that passes is a supervised one.
-      const res = npm(world, repo, ['test'], world.wrapper, { PATH: joinPath(bin, old, SYSTEM_PATH), WORKKIT_SUPERVISED: '1' });
-      const said = `${res.out}\n${res.err}`;
-      expect(said.includes('ran-2'), `the suite ran, got: ${said}`).toBeTruthy();
-      expect(res.code, `a green run with no tree id is not green, got: ${res.code} ${said}`).toBe(1);
-      expect(said.includes('no record was written') && said.includes('no node 22.12 or newer found'),
-        `the output says no record was written and names the missing node, got: ${said}`).toBeTruthy();
+      const shapes = [
+        ['a bare root run', ['test'], {}],
+        ['a narrowed run', ['test', '--', 'only/one.test.js'], {}],
+        ['a supervised root run', ['test'], { WORKKIT_SUPERVISED: '1' }],
+      ];
+      for (const [label, args, env] of shapes) {
+        const res = npm(world, repo, args, world.wrapper, { PATH: joinPath(bin, old, SYSTEM_PATH), ...env });
+        const said = `${res.out}\n${res.err}`;
+        expect(res.code, `${label}: exit 1, got: ${res.code} ${said}`).toBe(1);
+        expect(res.err.split(/\r?\n/).filter((line) => line === 'script-shell: no node at or above 22.12 is installed').length,
+          `${label}: the no-node line once on stderr, got: ${res.err}`).toBe(1);
+        expect(said.includes('ran-2'), `${label}: the suite never ran, got: ${said}`).toBe(false);
+      }
       expect(recorded(world, repo), 'no record was written').toBe(undefined);
+      expect(packaged(world, repo), 'and no package record').toBe(undefined);
       cleanup(world.root); cleanup(repo);
     });
   });
@@ -290,9 +294,8 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       expect(npm(world, repo, ['test', '-w', 'b']).code, 'b is green after its edit').toBe(0);
       expect(JSON.stringify(JSON.parse(packaged(world, repo)).sort()), "a's line unchanged, b's on its new id").toBe(JSON.stringify([`${aId} packages/a`, `${bId} packages/b`].sort()));
       const root = git(repo, 'rev-parse', '--show-toplevel');
-      const proved = runLib(`wk_pkg_proved "${root}" "$(wk_tree_hash "${root}" packages/a)" packages/a`,
-        { ...world.env, ...nodeEnv });
-      expect(proved.code, `a is still proved on the tree as it is now, got: ${proved.stderr}`).toBe(0);
+      const [proved] = kitUnder(world.env, 'records.js', 'pkgHolds', [[root, treeId(root, 'packages/a'), 'packages/a']]);
+      expect(proved, 'a is still proved on the tree as it is now').toBe(true);
       cleanup(world.root); cleanup(repo);
     });
   });

@@ -9,7 +9,6 @@
 const fs = require('fs');
 const path = require('path');
 const { repoRoot } = require('./lib/git');
-const { spawnSync } = require('./lib/run');
 const { readOrNull } = require('./lib/read');
 const { INT_CODE } = require('./lib/detach');
 const {
@@ -100,14 +99,13 @@ const logBytes = (log, size = sizeOf(log)) => (size > 0 ? bytesOf(log, 0, size) 
 /** The code of a run whose done file is written, taken from the log's end: the lock drops, and a call still attached reads the code from the record it leaves. */
 const collect = (log, lock, pid) => attachRun(log, lock, pid, sizeOf(log), { view: UNSEEN });
 
-/** Whether a narrowed run's wrapper still runs: its pid is Git Bash's own on Windows, so bash asks there. */
-const wrapperAlive = (pid) => (process.platform === 'win32'
-  ? spawnSync('bash', ['-c', 'kill -0 "$1" 2>/dev/null', 'bash', pid], { stdio: 'ignore', windowsHide: true }).status === 0
-  : pidAlive(pid));
-
-/** A narrowed run's slot cleared once its end is read, unless its wrapper still runs: that call is attached, needs the record, and clears the slot itself. */
+/**
+ * A narrowed run's slot cleared once its end is read, unless its call still
+ * runs (the slot names the script shell's node, script-shell.js): that call is
+ * attached, needs the record, and clears the slot itself.
+ */
 const dropSlot = async (root, slot) => {
-  if (slot === '' || wrapperAlive(slot)) return;
+  if (slot === '' || pidAlive(slot)) return;
   await clearSlot(root, slot);
 };
 

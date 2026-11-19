@@ -7,10 +7,10 @@
 const path = require('path');
 const fs = require('fs');
 const { describe, test } = require('../../lib/harness');
-const { shellPath, nodeEnv } = require('../../lib/platform');
+const { nodeEnv } = require('../../lib/platform');
 const { mkRepo } = require('../../lib/script-shell');
 const { plantPkgRecord } = require('../../lib/suite-record');
-const { runLib } = require('../../lib/hook-lib');
+const { treeId } = require('../../../workflow/lib/tree-hash');
 const { scratchWorkflowHome } = require('../../lib/workflow-home');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const {
@@ -39,8 +39,7 @@ describe('proof-guard: a record holds only the tree it was written on', () => {
     fs.writeFileSync(path.join(dir, 'test', 'a.test.js'), "require('../app.js');\n");
     const { workflowHome, env: homeEnv } = scratchWorkflowHome('qa-record-home-');
     const env = { ...process.env, ...homeEnv, ...nodeEnv };
-    const recorded = runLib(`wk_tree_hash "${shellPath(dir)}"`, env).stdout.trim();
-    plantPkgRecord(workflowHome, dir, ['.'], recorded);
+    plantPkgRecord(workflowHome, dir, ['.'], treeId(dir));
 
     fs.writeFileSync(path.join(dir, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
     fs.writeFileSync(path.join(dir, '.workkit', 'suite.log'), 'script-shell: exit 0\n');

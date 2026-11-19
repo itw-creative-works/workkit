@@ -3,15 +3,30 @@
 // Usage: const { sayAs, endOf, errLine } = require('../lib/say');
 
 const fs = require('fs');
+const { pause } = require('./pause');
+
+// How long a write that found stderr's pipe full waits before it tries again.
+const FULL_PIPE_WAIT_S = 0.01;
 
 /**
  * A writer of `<prefix>: <text>` lines on stderr, written straight to the fd so
  * each lands before a child's output that follows it; stdout stays the command's own.
+ * The whole line is written: a full pipe that is not blocking (EAGAIN) is waited
+ * on and the write goes on from the byte it reached; any other error throws.
  * @param {string} prefix - the line prefix, without its colon
  * @returns {(text: string) => void}
  */
 const sayAs = (prefix) => (text) => {
-  fs.writeSync(2, `${prefix}: ${text}\n`);
+  const line = Buffer.from(`${prefix}: ${text}\n`);
+  let at = 0;
+  while (at < line.length) {
+    try {
+      at += fs.writeSync(2, line, at);
+    } catch (err) {
+      if (err.code !== 'EAGAIN') throw err;
+      pause(FULL_PIPE_WAIT_S);
+    }
+  }
 };
 
 /**

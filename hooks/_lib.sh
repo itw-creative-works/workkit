@@ -1,7 +1,7 @@
 #!/bin/bash
 # hooks/_lib.sh: the hook library's entry, sourced and never executed, by the
-# shell that still needs it: workflow/{review,triage}/*.sh, the full-suite hold
-# workflow/prove.js asks, .github/scripts/release-push.sh and the dotfiles hooks. The constants, the platform seam, hook_jq and the engine sources live
+# shell that still needs it: workflow/{review,triage}/*.sh,
+# .github/scripts/release-push.sh and the dotfiles hooks. The constants, the platform seam, hook_jq and the engine sources live
 # here; the helper groups live one file per concern under hooks/lib/, sourced
 # at the foot. Add a helper only with a second named consumer.
 
@@ -57,16 +57,10 @@ hook_sha1() { wk_sha1 "$@"; }
 # shellcheck source=../workflow/lib/slug.sh
 . "$HOOK_LIB_DIR/../workflow/lib/slug.sh"
 
-# The proved-tree records, the suite record and the package record
-# (wk_tree_hash, wk_suite_marker_write, wk_has_test_script and the rest),
-# engine names for the same reason.
+# The has-a-test-script read and the log paths (wk_has_test_script,
+# wk_log_dir, wk_log_path), engine names for the same reason.
 # shellcheck source=../workflow/lib/suite.sh
 . "$HOOK_LIB_DIR/../workflow/lib/suite.sh"
-
-# The full-suite hold (wk_suite_hold) and the building list it reads
-# (wk_issues_building), which workflow/prove.js asks through here.
-# shellcheck source=../workflow/lib/hold.sh
-. "$HOOK_LIB_DIR/../workflow/lib/hold.sh"
 
 # The helper groups: each defines functions and sets nothing, so sourcing runs
 # nothing and every name they read is defined above.

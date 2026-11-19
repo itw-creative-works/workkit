@@ -119,20 +119,6 @@ run_verb() {
   exec node "$base.js" "$@"
 }
 
-# run_at_floor <prefix> <code> <file> [args]: a Node verb that requires the kit's
-# ES modules, run under the first node at the kit's floor (wk_node). Exec'd, so
-# the file's output and exit code are the command's; with no such node, one
-# `<prefix>:` line and <code>, the code the verb gives any other stop.
-run_at_floor() {
-  local prefix="$1" code="$2" file="$3" node
-  shift 3
-  if ! node="$(wk_node)"; then
-    printf '%s: no node at or above %s is installed\n' "$prefix" "$WK_NODE_FLOOR" >&2
-    exit "$code"
-  fi
-  exec "$node" "$file" "$@"
-}
-
 usage() {
   cat <<'EOF'
 workkit: the issue workflow, one command.

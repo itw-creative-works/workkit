@@ -1,4 +1,4 @@
-// The suite marker read and written independently of workflow/lib/suite.sh: its
+// The suite marker read and written independently of workflow/lib/records.js: its
 // path (and the package record's, the review marker's, the suite log's and the
 // lock's) under a workflow home's markers folder, the package record's lines, the working tree's hash
 // by the temp-index recipe, and the suite and package records planted as a green

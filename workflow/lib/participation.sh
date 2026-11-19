@@ -86,8 +86,8 @@ wk_setting() {
 }
 
 # wk_session_judges <root>: 0 when a Claude session's checks rule in <root>:
-# CLAUDECODE=1, HOOK_DISABLE not 1, and the repo opted in. The gate of the
-# full-suite hold and of the git hooks alike.
+# CLAUDECODE=1, HOOK_DISABLE not 1, and the repo opted in. The gate of the git
+# hooks and the two shims, the twin of sessionJudges (hooks/mods/gate.js).
 wk_session_judges() {
   [ "${CLAUDECODE:-}" = 1 ] || return 1
   [ "${HOOK_DISABLE:-}" != 1 ] || return 1

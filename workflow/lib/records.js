@@ -1,9 +1,7 @@
-#!/usr/bin/env node
-/* eslint-disable no-console */
 // workflow/lib/records.js: the proved-tree records' rules (hooks/mods/suite.js)
-// bound to the disk: the suite record and the package record, where each is
-// kept, their writes and their reads. lib/suite.sh's names run it as a command.
-// Usage: node records.js <verb> ...   (main's verbs; a yes or no is the exit code)
+// bound to the disk, CJS: the suite record and the package record, where each is
+// kept, their writes and their reads.
+// Usage: const { writeSuiteRecord, suiteHolds } = require('./records');
 
 const fs = require('fs');
 const path = require('path');
@@ -14,8 +12,6 @@ const { userDirOf } = require('../../hooks/mods/log.js');
 const {
   pkgProved, pkgRecordText, suiteProved, suiteRecordText,
 } = require('../../hooks/mods/suite.js');
-
-const USAGE = 'usage: records.js suite-write <root> <tree> <ms> | pkg-write <root> <tree> <pkg> | suite-proved <root> <tree> | pkg-proved <root> <tree> <pkg>';
 
 /** The machine folder as the hooks read it, the shell's spelling of its paths translated. */
 const home = () => userDirOf(shellEnvOf(process.env, process.platform));
@@ -90,40 +86,6 @@ const suiteHolds = async (root, tree) => suiteProved(readOrNull(await suiteRecor
  * @returns {Promise<boolean>}
  */
 const pkgHolds = async (root, tree, pkg) => pkgProved(readOrNull(await pkgRecordPath(root)), tree, pkg);
-
-// Each verb: its arity and its answer, a yes or no.
-const VERBS = {
-  'suite-write': [3, ([root, tree, ms]) => writeSuiteRecord(root, tree, ms)],
-  'pkg-write': [3, ([root, tree, pkg]) => writePkgRecord(root, tree, pkg)],
-  'suite-proved': [2, ([root, tree]) => suiteHolds(root, tree)],
-  'pkg-proved': [3, ([root, tree, pkg]) => pkgHolds(root, tree, pkg)],
-};
-
-/**
- * The CLI: a yes or no as 0 or 1. A failed write prints `records: <reason>`
- * and exits 1; a record that cannot be read reads as no record (a no). 2 for a
- * call it does not take.
- * @param {string[]} argv `<verb> <args...>`
- * @returns {Promise<number>} the exit code
- */
-const main = async ([verb, ...args]) => {
-  const known = VERBS[verb];
-  if (!known || !args[0] || args.length < known[0]) {
-    console.error(USAGE);
-    return 2;
-  }
-  try {
-    return (await known[1](args)) ? 0 : 1;
-  } catch (err) {
-    console.error(`records: ${err.message}`);
-    return 1;
-  }
-};
-
-if (require.main === module) {
-  // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
-}
 
 module.exports = {
   home, suiteRecordPath, pkgRecordPath, writeSuiteRecord, writePkgRecord, suiteHolds, pkgHolds,

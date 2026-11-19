@@ -1,10 +1,10 @@
-// Tests for workflow/lib/runs.js, the one Node command that takes a run's lock, launches,
-// attaches and ends it: a free lock, the take's judge (a run that is over, a live holder, a
-// launch under way, a removal under way), two takers on one lock, a launch that fails, a signal
-// before the pid, an end that fails, run's answers in process beside the answer file, a run
-// under a supervisor already, a painted and a plain view whose reader goes away, and the
-// supervisor's parent. Then attach.js's attach to a run that ended without its code, and
-// run-lock.js's end request, its wait setting, drop, end and liveness read.
+// Tests for workflow/lib/runs.js's run, which takes a run's lock, launches, attaches and ends it,
+// called in a node of its own as the script shell calls it: a free lock, the take's judge (a run
+// that is over, a live holder, a launch under way, a removal under way), two takers on one lock, a
+// launch that fails, a signal before the pid, an end that fails, a run under a supervisor already,
+// a painted and a plain view whose reader goes away, and the supervisor's parent. Then attach.js's
+// attach to a run that ended without its code, and run-lock.js's end request, its wait setting,
+// drop, end and liveness read.
 
 const fs = require('fs');
 const path = require('path');
@@ -15,11 +15,12 @@ const {
   IS_WINDOWS, NODE_DIR, jsPath, systemPathWith, homeEnv, samePath,
 } = require('../lib/platform');
 const {
-  CHECK_MINUTES, skipOnWindows, checkSettings, rootHolding, rootWith, pidOf, reap, writesPid, silent, busy, ended, read, handLock, claimNaming, tagOf,
+  checkSettings, rootHolding, pidOf, reap, writesPid, silent, ended, read, handLock, claimNaming, tagOf,
   actsAfter, writesAfter, deadPid, holding, attachArgv, underEndWait, launchBody,
 } = require('../lib/supervise');
 const { startNeverCollects, childOf } = require('../lib/never-collects');
 const { COLOR_ON } = require('../lib/supervise-world');
+const { runJob, runUnder, startRun } = require('../lib/kit-under');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 const RUNS = path.join(LIB, 'runs.js');
@@ -35,44 +36,11 @@ const claimOf = (lock) => read(path.join(lock, 'claim')).trim();
 /** A scratch home and this suite's node on PATH, <extra> beside them, so no case reads the machine's own settings. */
 const envOf = (extra = {}) => homeEnv(mkTmp('runs-home-'), { PATH: systemPathWith(NODE_DIR), ...extra });
 
-/** The answer file's `key=value` lines as an object, `{}` while it is not there. */
-const answerOf = (file) => Object.fromEntries(read(file).split('\n').filter(Boolean)
-  .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+/** A run of node -e <script> on <lock>, its log in a scratch folder of its own. */
+const jobOn = (lock, script, root = null) => runJob(mkTmp('runs-call-'), script, { lock, root });
 
-/**
- * The argv of `runs.js run <dir>/log <lock> [--root <root>] --answer <dir>/answer -- node -e <script>`,
- * and the log and answer paths, <dir> the call's own scratch folder.
- */
-const runCall = (lock, script, { root, dir = mkTmp('runs-call-') } = {}) => {
-  const log = path.join(dir, 'log');
-  const answer = path.join(dir, 'answer');
-  const rootArgs = root ? ['--root', root] : [];
-  return { log, answer, args: [RUNS, 'run', log, lock, ...rootArgs, '--answer', answer, '--', process.execPath, '-e', script] };
-};
-
-/** `runs.js run` on <lock> to its end: spawn's result, the answer it left and its log. */
-const runOn = (lock, script, { env = envOf(), root } = {}) => {
-  const call = runCall(lock, script, { root });
-  const res = run(process.execPath, call.args, { env });
-  return { res, answer: answerOf(call.answer), log: call.log };
-};
-
-/**
- * A node script that runs <job> (`{ log, lock, root, argv }`) through runs.js's run in process,
- * writes what run resolved to <out> as JSON and exits with its rc; <launch> is the source of a
- * launch seam, the real launch when null.
- */
-const runInProcess = (job, out, launch = null) => [
-  `const { run } = require(${jsPath(RUNS)});`,
-  launch ? `const launch = ${launch};` : '',
-  `run(${JSON.stringify(job)}${launch ? ', { launch }' : ''}).then((answers) => {`,
-  `  require('fs').writeFileSync(${jsPath(out)}, JSON.stringify(answers));`,
-  '  process.exit(answers.rc);',
-  '});',
-].join('\n');
-
-/** What a runInProcess script wrote to <out>, or null when it wrote nothing. */
-const resolvedOf = (out) => (read(out) === '' ? null : JSON.parse(read(out)));
+/** run on <lock> to its end: the harness run's result and what run resolved. */
+const runOn = (lock, script, { env = envOf(), root } = {}) => runUnder(jobOn(lock, script, root), { env });
 
 /** A command that writes <ran> and exits 0: whether a run launched it. */
 const writesRan = (ran) => `require('fs').writeFileSync(${jsPath(ran)}, '')`;
@@ -109,13 +77,14 @@ const tookOver = (lock, env = envOf()) => {
 };
 
 describe('runs.js run: a lock with no holder', () => {
-  test('the command\'s output on stdout from the log\'s first byte, its code the exit and the answer\'s, the lock held under one mark its claim names and gone after; the next run holds it under another tag', () => {
+  test('the command\'s output on stdout from the log\'s first byte, its code the exit and run\'s rc and code, no held, look or int, the lock held under one mark its claim names and gone after; the next run holds it under another tag', () => {
     const lock = lockIn('runs-free-');
     const seen = path.join(path.dirname(lock), 'seen.json');
-    const { res, answer } = runOn(lock, recordsLock(lock, seen, 4));
+    const { res, answers } = runOn(lock, recordsLock(lock, seen, 4));
     expect(res.status, `the command's own code, output: ${res.output}`).toBe(4);
     expect(res.stdout.startsWith('first line\nsecond line\n'), `stdout from the log's first byte, got: ${JSON.stringify(res.stdout)}`).toBeTruthy();
-    expect(answer.code, `the answer holds the code, got: ${JSON.stringify(answer)}`).toBe('4');
+    expect(Boolean(answers) && answers.rc === 4 && answers.code === 4, `rc and code 4, got: ${JSON.stringify(answers)}`).toBe(true);
+    expect(Boolean(answers.held || answers.look || answers.int), `no held, look or int, got: ${JSON.stringify(answers)}`).toBe(false);
     const first = seenIn(seen);
     expect(holding(lock), 'the lock is gone after').toBe('(none)');
     const next = tookOver(lock);
@@ -154,9 +123,9 @@ describe('runs.js run: a lock that is there', () => {
   test('a lock a live run holds: exit 3, held naming its pid, nothing launched, the lock as it was', () => {
     const lock = handLock(lockIn('runs-live-'), { claim: claimNaming('live'), 'id.live': '', pid: `${process.pid}\n` });
     const ran = path.join(path.dirname(lock), 'ran');
-    const { res, answer } = runOn(lock, writesRan(ran));
+    const { res, answers } = runOn(lock, writesRan(ran));
     expect(res.status, `a live holder, so 3, output: ${res.output}`).toBe(3);
-    expect(answer.held, `held names the live run, got: ${JSON.stringify(answer)}`).toBe(String(process.pid));
+    expect(Boolean(answers) && answers.rc === 3 && answers.held === process.pid, `rc 3, held names the live run, got: ${JSON.stringify(answers)}`).toBe(true);
     expect(fs.existsSync(ran), 'nothing was launched').toBe(false);
     expect(holding(lock), 'the live run\'s lock as it was').toBe('claim id.live pid');
     expect(claimOf(lock), 'its claim still names its mark').toBe('live');
@@ -169,14 +138,14 @@ describe('runs.js run: a lock that is there', () => {
     const go = path.join(dir, 'go');
     const ran = path.join(dir, 'ran');
     const env = envOf();
-    const first = start(process.execPath, runCall(lock, waitsFor(go)).args, { env });
+    const first = startRun(jobOn(lock, waitsFor(go)), { env });
     try {
       const supervisor = await pidOf(lockPid);
       const [mark, claim] = [marksIn(fs.readdirSync(lock)), claimOf(lock)];
       expect(mark !== '' && mark === `id.${claim}`, `the holder's claim names its one mark, it holds: ${holding(lock)}`).toBeTruthy();
-      const { res, answer } = runOn(lock, writesRan(ran), { env });
+      const { res, answers } = runOn(lock, writesRan(ran), { env });
       expect(res.status, `the take answers 3, output: ${res.output}`).toBe(3);
-      expect(answer.held, `held names the supervisor, got: ${JSON.stringify(answer)}`).toBe(String(supervisor));
+      expect(answers && answers.held, `held names the supervisor, got: ${JSON.stringify(answers)}`).toBe(supervisor);
       expect(fs.existsSync(ran), 'the second command never ran').toBe(false);
       expect(`${marksIn(fs.readdirSync(lock))} ${claimOf(lock)}`, 'the holder\'s mark and claim unchanged').toBe(`${mark} ${claim}`);
       fs.writeFileSync(go, '');
@@ -216,9 +185,9 @@ describe('runs.js run: a lock whose launch is still under way', () => {
     const supervisor = writesAfter(began, path.join(lock, 'pid'), 7000, '`${process.pid}\\n`', true);
     try {
       fs.writeFileSync(began, '');
-      const { res, answer } = runOn(lock, 'process.exit(0)');
+      const { res, answers } = runOn(lock, 'process.exit(0)');
       expect(res.status, `a starting run keeps its lock, so 3, output: ${res.output}`).toBe(3);
-      expect(answer.held, `held names the pid written late, got: ${JSON.stringify(answer)}`).toBe(String(supervisor.pid));
+      expect(answers && answers.held, `held names the pid written late, got: ${JSON.stringify(answers)}`).toBe(supervisor.pid);
     } finally {
       await supervisor.end('SIGKILL');
     }
@@ -257,15 +226,14 @@ describe('runs.js run: two takers at one moment', () => {
         `setTimeout(() => { fs.rmSync(${jsPath(inside)}); process.exit(0); }, 500);`,
       ].join('\n');
       const env = envOf();
-      const calls = [0, 1].map(() => runCall(lock, script));
-      const runs = calls.map((call) => start(process.execPath, call.args, { env }));
+      const runs = [0, 1].map(() => startRun(jobOn(lock, script), { env }));
       try {
         expect(await until(() => runs.every((r) => ended(r.child))), `round ${round}: both runs returned`).toBeTruthy();
         await Promise.all(runs.map((r) => r.done));
         runs.forEach((r, i) => {
           const code = r.child.exitCode;
           expect(code === 0 || code === 3, `round ${round}, run ${i}: 0 or 3, never two holders, got ${code}, output: ${r.output()}`).toBeTruthy();
-          if (code === 3) expect(Number(answerOf(calls[i].answer).held) > 0, `round ${round}, run ${i}: held names the holder`).toBeTruthy();
+          if (code === 3) expect(r.answers().held > 0, `round ${round}, run ${i}: held names the holder`).toBeTruthy();
         });
       } finally {
         await Promise.all(runs.map((r) => r.end('SIGKILL')));
@@ -275,72 +243,25 @@ describe('runs.js run: two takers at one moment', () => {
 });
 
 describe('runs.js run: a launch that fails', () => {
-  test('a bad tests.check: not 0, the could-not-start line naming the log, nothing ran, no code in the answer, the lock retired so the next run takes it at once', () => {
+  test('a bad tests.check: not 0, the could-not-start line naming the log, nothing ran, no code in what run resolved, the lock retired so the next run takes it at once', () => {
     const dir = mkTmp('runs-nostart-');
     const lock = path.join(dir, 'lock');
     const ran = path.join(dir, 'ran');
     const env = envOf();
-    const call = runCall(lock, writesRan(ran), { root: rootHolding(checkSettings(0)), dir });
-    const res = run(process.execPath, call.args, { env });
+    const { res, answers } = runUnder(runJob(dir, writesRan(ran), { root: rootHolding(checkSettings(0)) }), { env });
     expect(res.status !== 0 && res.status !== null, `the launch failed, so not 0, output: ${res.output}`).toBeTruthy();
     const line = res.stderr.split('\n').find((l) => l.startsWith('detach: could not start '));
     expect(Boolean(line) && line.includes(path.basename(dir)), `the could-not-start line naming the log, stderr: ${res.stderr}`).toBeTruthy();
     expect(fs.existsSync(ran), 'the command never ran').toBe(false);
-    expect(answerOf(call.answer).code, 'no code: the runner failed, not the command').toBe(undefined);
+    expect(answers.code ?? null, 'no code: the runner failed, not the command').toBe(null);
     expect(holding(lock), 'the lock was retired').toBe('(none)');
     expect(runOn(lock, 'process.exit(6)', { env }).res.status, 'the next run takes the lock with its own code').toBe(6);
   });
 });
 
-describe('runs.js run: its answers to a caller in process', () => {
-  /** A run of <argv> on a fresh lock in <dir>, its root <root>: the job runInProcess takes. */
-  const jobIn = (dir, argv, root = null) => ({ log: path.join(dir, 'log'), lock: path.join(dir, 'lock'), root, argv });
-
-  test('a free lock: run resolves the command\'s code as rc and code, no held, look or int; the command\'s answer file holds that code alone', () => {
-    const dir = mkTmp('runs-answers-free-');
-    const out = path.join(dir, 'resolved.json');
-    const res = run(process.execPath, ['-e', runInProcess(jobIn(dir, [process.execPath, '-e', 'process.exit(4)']), out)], { env: envOf() });
-    expect(res.status, `the command's own code, output: ${res.output}`).toBe(4);
-    const resolved = resolvedOf(out);
-    expect(Boolean(resolved) && resolved.rc === 4 && resolved.code === 4, `rc and code 4, got: ${read(out) || 'nothing'}`).toBe(true);
-    expect(Boolean(resolved.held || resolved.look || resolved.int), `no held, look or int, got: ${read(out)}`).toBe(false);
-    expect(runOn(lockIn('runs-answers-cmd-'), 'process.exit(4)').answer, 'the command writes the same answer to its file').toEqual({ code: '4' });
-  });
-
-  test('a lock a live run holds: run resolves rc 3 and held naming that run\'s pid, nothing launched', () => {
-    const dir = mkTmp('runs-answers-held-');
-    const out = path.join(dir, 'resolved.json');
-    const ran = path.join(dir, 'ran');
-    handLock(path.join(dir, 'lock'), { claim: claimNaming('live'), 'id.live': '', pid: `${process.pid}\n` });
-    const res = run(process.execPath, ['-e', runInProcess(jobIn(dir, [process.execPath, '-e', writesRan(ran)]), out)], { env: envOf() });
-    expect(res.status, `a live holder, so 3, output: ${res.output}`).toBe(3);
-    const resolved = resolvedOf(out);
-    expect(Boolean(resolved) && resolved.rc === 3 && Number(resolved.held) === process.pid, `rc 3, held ${process.pid}, got: ${read(out) || 'nothing'}`).toBe(true);
-    expect(fs.existsSync(ran), 'nothing was launched').toBe(false);
-  });
-
-  test('a run that asks for a look: run resolves rc 125 and look with no code, the run going on', { skip: skipOnWindows() }, () => {
-    const dir = mkTmp('runs-answers-look-');
-    const out = path.join(dir, 'resolved.json');
-    const pidFile = path.join(dir, 'cmd.pid');
-    const lockPid = path.join(dir, 'lock', 'pid');
-    try {
-      const job = jobIn(dir, [process.execPath, '-e', busy(pidFile)], rootWith(CHECK_MINUTES));
-      const res = run(process.execPath, ['-e', runInProcess(job, out)], { env: envOf() });
-      expect(res.status, `the look's code, output: ${res.output}`).toBe(125);
-      const resolved = resolvedOf(out);
-      expect(Boolean(resolved) && resolved.rc === 125 && Boolean(resolved.look), `rc 125 and look, got: ${read(out) || 'nothing'}`).toBe(true);
-      expect(resolved.code ?? null, 'no code: the run goes on').toBe(null);
-      expect(alive(pidIn(pidFile)), `the run ${pidIn(pidFile)} still lives`).toBe(true);
-    } finally {
-      reap(pidIn(pidFile), pidIn(lockPid));
-    }
-  });
-});
-
 describe('runs.js run: a signal before the pid is written', () => {
   // A launch that never settles, holding a timer so the process lives on while it hangs.
-  const holdsLaunch = (job, out) => runInProcess(job, out, '() => new Promise(() => { setInterval(() => {}, 1 << 30); })');
+  const HOLDS_LAUNCH = '() => new Promise(() => { setInterval(() => {}, 1 << 30); })';
 
   for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
     test(`a ${signal} after the lock is taken and before any pid: exit ${code}${signal === 'SIGINT' ? ', int in what run resolves' : ''}, the pidless lock retired, the next run takes it at once`, {
@@ -348,9 +269,7 @@ describe('runs.js run: a signal before the pid is written', () => {
     }, async () => {
       const dir = mkTmp('runs-window-');
       const lock = path.join(dir, 'lock');
-      const answer = path.join(dir, 'answer.json');
-      const job = { log: path.join(dir, 'log'), lock, root: null, argv: [process.execPath, '-e', 'process.exit(0)'] };
-      const caller = start(process.execPath, ['-e', holdsLaunch(job, answer)], { env: envOf() });
+      const caller = startRun(runJob(dir, 'process.exit(0)'), { env: envOf(), launch: HOLDS_LAUNCH });
       try {
         expect(await until(() => fs.existsSync(path.join(lock, 'claim'))), `the lock was never taken, output: ${caller.output()}`).toBeTruthy();
         expect(fs.existsSync(path.join(lock, 'pid')), 'no pid while the launch hangs').toBe(false);
@@ -359,8 +278,8 @@ describe('runs.js run: a signal before the pid is written', () => {
         await caller.done;
         expect(caller.child.exitCode, `the call exits ${code}, output: ${caller.output()}`).toBe(code);
         if (signal === 'SIGINT') {
-          const resolved = resolvedOf(answer);
-          expect(Boolean(resolved && resolved.int), `run resolved int to its caller, got: ${read(answer) || 'nothing'}`).toBe(true);
+          const answers = caller.answers();
+          expect(Boolean(answers && answers.int), `run resolved int to its caller, got: ${JSON.stringify(answers)}`).toBe(true);
         }
         expect(holding(lock), 'the pidless lock was retired').toBe('(none)');
         expect(runOn(lock, 'process.exit(4)').res.status, 'the next run takes the lock with its own code').toBe(4);
@@ -369,37 +288,6 @@ describe('runs.js run: a signal before the pid is written', () => {
       }
     });
   }
-
-  test('the run command, a SIGINT after the lock is taken and before any pid: exit 130, int=1 in its answer file, the pidless lock retired', {
-    skip: IS_WINDOWS && 'Windows delivers no signal to one process',
-  }, async () => {
-    const dir = mkTmp('runs-window-cmd-');
-    const lock = path.join(dir, 'lock');
-    const launcherPid = path.join(dir, 'launcher.pid');
-    // Preloaded into every node of the call: the launcher, detach.js, leaves its pid and blocks, so no pid is ever written.
-    const hold = path.join(dir, 'hold-launch.js');
-    fs.writeFileSync(hold, [
-      "if (/detach\\.js$/.test(process.argv[1] || '')) {",
-      `  require('fs').writeFileSync(${jsPath(launcherPid)}, String(process.pid));`,
-      '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);',
-      '}',
-    ].join('\n'));
-    const call = runCall(lock, 'process.exit(0)', { dir });
-    const caller = start(process.execPath, call.args, { env: envOf({ NODE_OPTIONS: `--require ${JSON.stringify(hold)}` }) });
-    try {
-      await pidOf(launcherPid);
-      expect(fs.existsSync(path.join(lock, 'claim')) && !fs.existsSync(path.join(lock, 'pid')), `the lock taken and no pid, it holds: ${holding(lock)}`).toBe(true);
-      process.kill(caller.pid, 'SIGINT');
-      expect(await until(() => ended(caller.child)), `the call never ended after the SIGINT, output: ${caller.output()}`).toBeTruthy();
-      await caller.done;
-      expect(caller.child.exitCode, `the call exits 130, output: ${caller.output()}`).toBe(130);
-      expect(answerOf(call.answer).int, `the answer file holds int=1, got: ${read(call.answer)}`).toBe('1');
-      expect(holding(lock), 'the pidless lock was retired').toBe('(none)');
-    } finally {
-      reap(pidIn(launcherPid));
-      await caller.end('SIGKILL');
-    }
-  });
 });
 
 describe('runs.js endOnInt: an end of the run that fails', () => {
@@ -499,25 +387,25 @@ describe('runs.js run under a supervisor already', () => {
       "console.log('in the foreground');",
       'process.exit(3);',
     ].join('\n');
-    const call = runCall(lock, script, { dir });
-    const res = run(process.execPath, call.args, { env: envOf({ WORKKIT_SUPERVISED: '1', WK_RUN_LOCK: enclosing }) });
+    const job = runJob(dir, script);
+    const { res, answers } = runUnder(job, { env: envOf({ WORKKIT_SUPERVISED: '1', WK_RUN_LOCK: enclosing }) });
     expect(res.status, `the command's own code, output: ${res.output}`).toBe(3);
     expect(res.stdout.includes('in the foreground'), `on stdout, got: ${JSON.stringify(res.stdout)}`).toBeTruthy();
-    expect(read(call.log).includes('in the foreground'), `in the log, got: ${JSON.stringify(read(call.log))}`).toBeTruthy();
+    expect(read(job.log).includes('in the foreground'), `in the log, got: ${JSON.stringify(read(job.log))}`).toBeTruthy();
     expect(samePath(read(seen).trim(), enclosing, process.platform), `the foreground mark names the enclosing lock, got: ${JSON.stringify(read(seen))}`).toBe(true);
-    expect(answerOf(call.answer).code, 'the answer holds the code').toBe('3');
+    expect(answers && answers.code, `run resolved the code, got: ${JSON.stringify(answers)}`).toBe(3);
     expect(holding(lock), 'the lock is gone after').toBe('(none)');
   });
 
   test('WORKKIT_SUPERVISED=1 under the enclosing run\'s own lock: bare, on stdout alone, the log and that lock untouched', () => {
     const dir = mkTmp('runs-bare-');
     const lock = handLock(path.join(dir, 'lock'), { claim: claimNaming('enc'), 'id.enc': '', pid: `${process.pid}\n` });
-    const call = runCall(lock, "console.log('bare line'); process.exit(3);", { dir });
-    fs.writeFileSync(call.log, 'the enclosing run\'s line\n');
-    const res = run(process.execPath, call.args, { env: envOf({ WORKKIT_SUPERVISED: '1', WK_RUN_LOCK: lock }) });
+    const job = runJob(dir, "console.log('bare line'); process.exit(3);", { lock });
+    fs.writeFileSync(job.log, 'the enclosing run\'s line\n');
+    const { res } = runUnder(job, { env: envOf({ WORKKIT_SUPERVISED: '1', WK_RUN_LOCK: lock }) });
     expect(res.status, `the command's own code, output: ${res.output}`).toBe(3);
     expect(res.stdout.includes('bare line'), `on stdout, got: ${JSON.stringify(res.stdout)}`).toBeTruthy();
-    expect(read(call.log), 'the enclosing run\'s log as it was: its stdout is that log already').toBe('the enclosing run\'s line\n');
+    expect(read(job.log), 'the enclosing run\'s log as it was: its stdout is that log already').toBe('the enclosing run\'s line\n');
     expect(holding(lock), 'the enclosing run\'s lock as it was').toBe('claim id.enc pid');
   });
 
@@ -528,16 +416,15 @@ describe('runs.js run under a supervisor already', () => {
     const lock = path.join(dir, 'lock');
     const pidFile = path.join(dir, 'cmd.pid');
     // The command ends on its own INT, with 7.
-    const call = runCall(lock, `process.on('SIGINT', () => process.exit(7));\n${silent(pidFile)}`, { dir });
     const env = envOf({ WORKKIT_SUPERVISED: '1', WK_RUN_LOCK: path.join(dir, 'enclosing-lock') });
-    const caller = start(process.execPath, call.args, { env, detached: true });
+    const caller = startRun(runJob(dir, `process.on('SIGINT', () => process.exit(7));\n${silent(pidFile)}`), { env, detached: true });
     try {
       await pidOf(pidFile);
       process.kill(-caller.pid, 'SIGINT');
       expect(await until(() => ended(caller.child)), `the call never returned after the INT, output: ${caller.output()}`).toBeTruthy();
       await caller.done;
       expect(caller.child.exitCode, `the command's own code, output: ${caller.output()}`).toBe(7);
-      expect(answerOf(call.answer).code, `the answer holds the code, got: ${read(call.answer)}`).toBe('7');
+      expect(caller.answers() && caller.answers().code, `run resolved the code, got: ${JSON.stringify(caller.answers())}`).toBe(7);
       expect(/^\d+ 7\n?$/.test(read(`${lock}.done`)), `the record beside the lock holds the code, got: ${JSON.stringify(read(`${lock}.done`))}`).toBe(true);
       expect(holding(lock), 'the foreground lock was dropped').toBe('(none)');
     } finally {
@@ -556,7 +443,7 @@ describe('runs.js run: a view whose reader goes away', () => {
   /** A run of linesUntil in <dir> under <env>, its stdout's reader gone once a line showed: the call, the command's pid, the supervisor's. */
   const viewGone = async (dir, env) => {
     const lock = path.join(dir, 'lock');
-    const viewer = start(process.execPath, runCall(lock, linesUntil(path.join(dir, 'cmd.pid'), path.join(dir, 'stop'), 5), { dir }).args, { env });
+    const viewer = startRun(runJob(dir, linesUntil(path.join(dir, 'cmd.pid'), path.join(dir, 'stop'), 5)), { env });
     const supervisor = await pidOf(path.join(lock, 'pid'));
     const cmd = await pidOf(path.join(dir, 'cmd.pid'));
     expect(await until(() => viewer.stdout().includes('a line')), `the view never showed a line, output: ${viewer.output()}`).toBeTruthy();
@@ -608,14 +495,14 @@ describe('runs.js run: a view whose reader goes away', () => {
 });
 
 describe('runs.js run: the supervisor\'s parent', () => {
-  test('a running run\'s supervisor is no child of the calling runs.js, so an end of the call\'s tree never reaches the run', {
+  test('a running run\'s supervisor is no child of the node calling run, so an end of the call\'s tree never reaches the run', {
     skip: IS_WINDOWS && 'the parent is read with ps -o ppid=, which Git Bash\'s ps does not answer for a Windows pid',
   }, async () => {
     const dir = mkTmp('runs-parent-');
     const lock = path.join(dir, 'lock');
     const lockPid = path.join(lock, 'pid');
     const go = path.join(dir, 'go');
-    const caller = start(process.execPath, runCall(lock, waitsFor(go)).args, { env: envOf() });
+    const caller = startRun(runJob(dir, waitsFor(go)), { env: envOf() });
     try {
       const supervisor = await pidOf(lockPid);
       const ps = run('ps', ['-o', 'ppid=', '-p', String(supervisor)]);

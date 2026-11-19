@@ -1,11 +1,11 @@
-// Tests for packages/core/test/lib/spawn.js through the one entry: run() keeps both streams and the
-// exit, start() streams while its child runs and end() ends its group, climbing INT, TERM, KILL only
-// while the child lives, its stdin carries the input given, else is empty, or with stdin 'open'
-// stays open until the case ends it (any other stdin value throws), a deadline ends a child that
-// never exits, and endTree() ends a group, refuses a pid that is not a positive integer and throws
-// on a signal the system refuses; on its Windows arm, reached through its seams, it runs taskkill
-// from System32 and throws when that cannot start or SystemRoot is unset. alive() is false for any
+// Tests for packages/core/test/lib/spawn.js through the one entry: run() keeps both streams and the exit, start()
+// streams while its child runs and end() ends its group, climbing INT, TERM, KILL only while the child lives, its
+// stdin carries the input given, else is empty, or with stdin 'open' stays open until the case ends it (any other
+// stdin value throws), a deadline ends a child that never exits, and endTree() ends a group, refuses a pid that is
+// not a positive integer and throws on a signal the system refuses; on its Windows arm, reached through its seams,
+// it runs taskkill from System32 and throws when that cannot start or SystemRoot is unset. alive() is false for any
 // pid but a positive integer and for one that ended uncollected, groupLives() for a group whose every member did.
+// And the error for a target that survives SIGKILL names each group member groupMembers saw (survivedText).
 
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +17,7 @@ const {
 const { IS_WINDOWS, BASH, NO_RC, recordingRun, signalsRefused, samePath } = require('./lib/platform');
 const { caught } = require('./lib/caught');
 const { startNeverCollects, childOf } = require('./lib/never-collects');
+const { survivedText, groupMembers } = require(path.join(__dirname, '..', 'packages', 'core', 'test', 'lib', 'proc-state.js'));
 
 // Writes one line to each stream, stdout first, then exits 3.
 const BOTH = 'process.stdout.write("to stdout\\n", () => { process.stderr.write("to stderr\\n", () => process.exit(3)); });';
@@ -508,6 +509,39 @@ describe('spawn: groupLives()', () => {
       } finally {
         await parent.end('SIGKILL');
       }
+    },
+  );
+});
+
+describe('spawn: the survived error', () => {
+  test('survivedText with no member seen is the bare text', () => {
+    expect(survivedText('endGroup', 4242, [])).toBe('endGroup: pid 4242 survived SIGKILL');
+  });
+
+  test('survivedText with members names each pid and its state, in the order given', () => {
+    expect(survivedText('end', 4242, [{ pid: 4242, state: 'D' }, { pid: 4250, state: 'Z' }]))
+      .toBe('end: pid 4242 survived SIGKILL; still in its group: 4242 (D), 4250 (Z)');
+  });
+
+  test(
+    'groupMembers lists a live detached child alone in the group it leads, with a state letter',
+    { skip: process.platform !== 'linux' && 'no /proc off Linux, so CI runs it first' },
+    (t) => {
+      const child = start(process.execPath, ['-e', FOREVER], { detached: true });
+      t.after(() => child.end('SIGKILL'));
+      const members = groupMembers(child.pid);
+      expect(members.map((m) => m.pid), `the group ${child.pid} leads, got: ${JSON.stringify(members)}`).toEqual([child.pid]);
+      expect(members[0].state).toMatch(/^[A-Za-z]$/);
+    },
+  );
+
+  test(
+    'groupMembers answers an empty list with no /proc, a live group or not',
+    { skip: process.platform === 'linux' && 'Linux has /proc: the case above reads it' },
+    (t) => {
+      const child = start(process.execPath, ['-e', FOREVER], { detached: true });
+      t.after(() => child.end('SIGKILL'));
+      expect(groupMembers(child.pid)).toEqual([]);
     },
   );
 });

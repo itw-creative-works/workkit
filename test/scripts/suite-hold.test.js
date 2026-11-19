@@ -1,17 +1,18 @@
-// Tests for the suite hold (workflow/lib/hold.sh) where the full suite runs: a
+// Tests for the suite hold (workflow/lib/hold.js) where the full suite runs: a
 // bare root `npm test` through npm's script shell, `workkit prove`, and a bare
 // `workkit test`. In a Claude session, in a repo that opted in, a run on a tree
 // already recorded green or while an issue is at status:building is refused
 // before the suite starts. The world is test/lib/script-shell.js's; the suite
-// ran when its root test script left the world's `ran` file.
+// ran when its root test script left the world's `ran` file. Each branch of the
+// hold itself is hold.test.js's.
 
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, SPAWN_DEADLINE,
+  describe, test, expect,
 } = require('../lib/harness');
 const {
-  NODE_DIR, SYSTEM_PATH, NO_RC, shellPath, joinPath, spawnBash,
+  NODE_DIR, SYSTEM_PATH, shellPath, joinPath,
 } = require('../lib/platform');
 const { mkRepo: mkGitRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { suiteMarkerPath, plantRecord, kitIndexTree } = require('../lib/suite-record');
@@ -60,16 +61,6 @@ const assertRefused = (res, text, label) => {
   expect(res.code, `${label}: refused with exit 1, got: ${res.code} ${res.said}`).toBe(1);
   expect(res.said.includes(text), `${label}: the refusal says ${JSON.stringify(text)}, got: ${res.said}`).toBeTruthy();
   expect(!res.ran, `${label}: the suite never ran`).toBeTruthy();
-};
-
-// wk_suite_hold <root> <reader> called in bash with the libs script-shell.sh
-// sources before it, under `env`; the reader is the shell function `name() { body; }`.
-const LIBS = ['platform', 'participation', 'slug', 'suite', 'hold'].map((n) => path.join(__dirname, '..', '..', 'workflow', 'lib', `${n}.sh`));
-const holdWith = (root, name, body, env) => {
-  const script = `${LIBS.map((_, i) => `. "$${i + 1}"`).join('; ')}; ${name}() { ${body}; }; wk_suite_hold "$${LIBS.length + 1}" ${name}`;
-  const res = spawnBash([...NO_RC, '-c', script, 'bash', ...LIBS.map(shellPath), shellPath(root)],
-    { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-  return { code: res.status, err: res.stderr || '' };
 };
 
 // The working tree made to differ from the index, so a record of one is no record of the other.
@@ -174,27 +165,6 @@ describe('suite hold', { skip: skipWithoutWrapper() }, () => {
       assertRefused(buildingB.res, HELD(21), 'B building #21, A nothing');
       expect(buildingB.recordB, 'the refused run writes B no record').toBe(undefined);
       buildingB.done();
-    });
-  });
-
-  describe('suite hold: a tree that cannot be hashed', () => {
-    test('a reader that exits 1: one suite-hold line naming the failed hash, return 0, no refusal on an empty tree', () => {
-      const w = mkGitRepo('suite-hold-reader-', { 'app.js': 'const x = 1;\n' });
-      plantRecord(w.workflowHome, w.repo, '');
-      const gh = makeGhStub({ lists: { repo: [] } });
-      const res = holdWith(w.repo, 'failing_reader', 'return 1', { ...w.env, PATH: joinPath(gh.binDir, NODE_DIR, SYSTEM_PATH), CLAUDECODE: '1' });
-      expect(res.code, `the run goes on, got: ${res.code} ${res.err}`).toBe(0);
-      expect(JSON.stringify(res.err.split('\n').filter(Boolean)), 'one stderr line naming the reader and its exit').toBe(JSON.stringify(['suite-hold: the tree could not be hashed (failing_reader exited 1), so the proved-tree check did not run; the building hold still judges']));
-      cleanup(w.dir);
-    });
-
-    test('a reader that exits 1 with an issue building: the building hold still refuses', () => {
-      const w = mkGitRepo('suite-hold-reader-', { 'app.js': 'const x = 1;\n' });
-      const gh = makeGhStub({ lists: { repo: [issue(7)] } });
-      const res = holdWith(w.repo, 'failing_reader', 'return 1', { ...w.env, PATH: joinPath(gh.binDir, NODE_DIR, SYSTEM_PATH), CLAUDECODE: '1' });
-      expect(res.code, `refused, got: ${res.code} ${res.err}`).toBe(1);
-      expect(res.err.includes(HELD(7)), `naming #7, got: ${res.err}`).toBeTruthy();
-      cleanup(w.dir);
     });
   });
 
