@@ -27,7 +27,7 @@
   - The logs are the kit's own, the owner's and the agents' alike to read and neither's to write:
     - `suite.log`, a root `npm test`'s output;
     - `run.log`, a `workkit supervise` run's;
-    - `test.log.<pid>`, a narrowed `npm test`'s, one per run, named by the pid of the script shell's Node process;
+    - `test.log.<pid>`, a narrowed `npm test`'s, one per run, named by the pid of the Node process of npm's script shell (`workflow/script-shell.js`);
     - `ci.log`, the ship's CI watch's;
     - `ship-<step>.log` for each other ship step and `proof-red.log`, a repo command's plain run (`workflow/README.md` § The one command).
     - Each is replaced per run and written there only where git ignores it, else under `~/.workkit/markers`, so a log never changes the tree.
@@ -243,35 +243,28 @@ flowchart TB
     - Bare, it is that package's whole suite.
     - With arguments (`npm test -- <what>`) it is narrowed, and the package's runner decides what the arguments mean.
     - A repo's root `test` script is the whole definition of its tests; a nested package's suite is that script's job.
-      - On the kit's runner a bare root run starts each workspace member's own `npm test` after the root's suites (`docs/tests.md` § The kit's runner).
-      - Each member's run writes its own package line, and the record of a green bare root run stands for the root's suites and every member.
-      - Under `workkit proof red` the root run writes one summary line: its own counts plus each member's.
+      - On the kit's runner a bare root run starts each workspace member's own `npm test` after the root's suites (`docs/tests.md` § The kit's runner); the records each writes are below.
     - A run under the runner's `--filter=<text>` left cases out, so it writes no record: a green one says so in one `script-shell:` line and exits 0.
+      - Only a `--filter=` npm appended to the package's own script counts, so a script's own `--filter=` for another tool still records.
   - A tree is proved by running `npm test` at the repo root, by anyone (the owner in a terminal, the agent, a background run), with `CI` unset or empty.
-    - The shell records the tree it proved, and the gate checks the record.
+    - npm's script shell records the tree it proved, and the gate checks the record.
     - A run with `CI` set to any other value (`false` and `0` included) writes no record: a repo's root script may run only part of its suite under `CI`, so such a run cannot stand for the whole.
       - The run itself goes as always, `CI` left in its environment as it came; a green one says so in one `script-shell:` line and exits 0.
       - Neither the kit's runner nor anything else reads it, so a tree only a `CI` run proved is refused at the commit for a missing record.
     - Every tree id a record is keyed to (the working tree's, a package's own, the index's) is the tree with `.workkit/` left out.
     - So a write there (the suite log, a marker, `settings.json`) never re-keys a green record.
-  - The shell is npm's `script-shell`, which `workkit setup` points at the kit's wrapper.
+  - The recorder is npm's script shell, `workflow/script-shell.js`: `workkit setup` points npm's `script-shell` setting at the kit's wrapper (`workflow/script-shell.sh`, the built `script-shell.exe` on Windows), which starts it.
     - A green root run records the tree it started on; a run that changed the tree, or one with `CI` set, records nothing.
-    - The wrapper first runs the gate's cheap check, the CHANGELOG format over every modified `CHANGELOG.md`. So a bad entry stops the run before the suite starts.
+    - It first runs the gate's cheap check, the CHANGELOG format over every modified `CHANGELOG.md`. So a bad entry stops the run before the suite starts.
     - The suite then runs in its own session, its output written to `suite.log` in the repo's log folder (`.workkit/` unless `logs.dir` names another, § The model) as well as the terminal.
-    - A kill of the shell that started it (an agent tool's time limit) leaves it running to its record.
-    - The agent reads the log for the result: the suite's closing line is `script-shell: exit <code>`, and a `detach:` line follows it after a frozen or requested end.
-    - A Ctrl-C still ends it, and a second root `npm test` while one runs starts nothing, naming the log.
-    - Its supervisor reads it every `tests.check` minutes (`docs/tests.md` § The checks).
-      - A run with no output and no processor use is frozen: it is ended, its log's last line saying so.
-      - A run with no output that still works asks for a look: the call prints the evidence and returns, and the run goes on to its record.
-    - A test run started in the background is one the supervisor reads, and its end is acted on: `agents.md` § Watching a run.
-  - The record is the engine-agnostic contract and the wrapper is npm's adapter.
+    - The run is detached and supervised, so the agent reads the log for its result: the mechanics are `workflow/README.md`, the `script-shell.js` and `lib/runs.js` entries, the checks `docs/tests.md` § The checks, and a background run's end `agents.md` § Watching a run.
+  - The record is the engine-agnostic contract and npm's script shell is npm's adapter.
     - Another engine proves a tree through an adapter of its own that writes the same record.
   - The commit gate never runs tests.
     - A commit carrying code passes when the record proves the index's tree.
     - It is blocked otherwise, naming `npm test` at the repo root and its log as the fix.
     - A docs-only or version-stamp-only commit needs no record.
-  - In a Claude session the wrapper holds a bare root run before anything else (the full-suite hold, `workflow/lib/hold.js`).
+  - In a Claude session npm's script shell holds a bare root run before anything else (the full-suite hold, `workflow/lib/hold.js`).
     - It holds in a repo that opted in and unless `HOOK_DISABLE=1`; the owner's terminal is never held.
     - It refuses a tree already recorded green, so the full suite runs once per tree, before the commit.
     - That one run comes after every item in the tree is parked and passed.
@@ -281,11 +274,6 @@ flowchart TB
   - The kit's own CI runs the root suite on a push to `main` as well, with two exceptions:
     - a release push, whose every change is the CHANGELOG or a version stamp by the commit gate's version-only rule (its code the work commit's run proved; `.github/scripts/release-push.sh` decides it);
     - a tag push.
-  - Every class, the manager included, still runs only the narrowest test that proves the change while touching a feature.
-    - That is `npm test -- <files>` from that package's folder, never the batch's whole touched set: the test files touched by the edit it made or checks.
-    - The one who made the edit also runs the suite of every module that requires a changed file.
-      - Those are its importers, found by one grep of the package's source per changed file for its basename.
-    - A verifier runs the narrowest command that checks the claim.
   - When the folder holds work the commit leaves out, `workkit prove` proves the staged tree instead.
     - It runs the root suite in a throwaway copy of the index outside the repo and, on green, records the index's tree.
     - With `CI` set it refuses before the copy, exit 1, since the record is its only product.
@@ -294,10 +282,17 @@ flowchart TB
     - The ship picks it after staging when the index differs from the disk, untracked files included. So the whole-folder run never starts there.
       - The test: `git diff --quiet` fails, or `git ls-files --others --exclude-standard` prints a file.
     - It shares the root run's log and lock: one full run at a time, its output in the same suite log, its closing line `prove: exit <code>`.
-    - The same hold judges it first, against the index's tree: once per tree, and never while an issue is building.
+    - The full-suite hold (above) judges it first, against the index's tree.
   - Whether a change needs a test, and whether a test earns its place, stay judgment, nudged at edit time and never bounced:
     - `safety:test-reminder` asks once per file when no test names the written code file, a "no" recorded in the `Proof:` line;
     - `safety:test-bar` names each line of a written test file that misses the mechanical half of the test bar (`docs/tests.md` § The bar).
+  - Every class, the manager included, still runs only the narrowest test that proves the change while touching a feature.
+    - That is `npm test -- <files>` from that package's folder, never the batch's whole touched set: the test files touched by the edit it made or checks.
+    - A worker's mid-work proof is those test files, red-green on the new cases.
+    - No class runs a package or root suite unless its brief asks or the finding is suite-scoped.
+    - The one who made the edit also runs the suite of every module that requires a changed file.
+      - Those are its importers, found by one grep of the package's source per changed file for its basename.
+    - A verifier runs the narrowest command that checks the claim.
   - `safety:proof-guard` owns the per-feature check at the park, and it runs nothing.
     - At the flip to `status:qa`, each package that owns a touched test file must have a green `npm test` run recorded on its own id (below), whole or narrowed.
       - The package that owns a file is the nearest folder at or above the file with a test script of its own, else the root.
@@ -309,8 +304,8 @@ flowchart TB
       - The form is `"proof": { "rootOnly": ["<folder>"] }`, with `.` for the root.
       - The park needs no record for it, and the root run before the commit is its proof.
     - npm's script shell is the one writer of the package record. The suite record keeps its two writers, the script shell and `workkit prove`.
-      - A green bare root run writes the suite record.
-      - Every other green `test` run (narrowed anywhere, or a nested package's bare run) writes the package record, unless it ran under the runner's `--filter` or with `CI` set.
+      - A green bare root run writes the suite record, which stands for the root's suites and every workspace member it started.
+      - Every other green `test` run (narrowed anywhere, or a nested package's bare run, each member a root run starts included) writes the package record, unless it ran under the runner's `--filter` or with `CI` set.
       - That is one line per package folder, on that package's own id: the code it can see.
       - The rule: [`hooks.md`](hooks.md) § `safety:proof-guard`, the package id bullet.
     - A run that changed its id, one with `CI` set, or one under the runner's `--filter`, records nothing.
@@ -347,7 +342,7 @@ flowchart TB
   - File-level hold mechanics (shipping around un-passed work) are deliberately out of scope.
 - **The tree holds unshipped work while a batch sits in qa**, and the next batch builds on top of it.
   - A parked batch is no reason to wait (`docs/agents.md` § Batches).
-  - The one hold is the full-suite hold's, while an issue is building.
+  - The one hold is the full-suite hold's, while an issue is building (§ The proof).
   - A batch's items park together in the same tree once its one review panel and fix round are done.
   - The commit word comes once, when the whole batch is parked.
   - That is the accepted cost of the simple version: no branches, no PRs, no worktrees, no previews.

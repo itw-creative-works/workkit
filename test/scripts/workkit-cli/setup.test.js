@@ -63,7 +63,7 @@ describe('workkit setup', () => {
     const repo = mkRepo();
     const { code, out } = runCli(world, ['setup'], { cwd: repo, script });
     expect(code, 'it finishes rather than waiting for an answer').toBe(0);
-    expect(out.includes('workkit enable'), `and hands over the command, got: ${out}`).toBeTruthy();
+    expect(out.includes('`workkit enable` joins it'), `and hands over the command, got: ${out}`).toBeTruthy();
     expect(!fs.existsSync(path.join(repo, W)), 'a repo that never answered is not written to').toBeTruthy();
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
@@ -74,7 +74,7 @@ describe('workkit setup', () => {
     const repo = mkRepo({ optIn: true });
     const { out } = runCli(world, ['setup'], { cwd: repo, script });
     expect(out.includes('is in the workflow'), `it reports the state, got: ${out}`).toBeTruthy();
-    expect(!out.includes('workkit enable'), 'and asks nothing').toBeTruthy();
+    expect(!out.includes('`workkit enable` joins it'), 'and asks nothing').toBeTruthy();
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 

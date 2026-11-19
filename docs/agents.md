@@ -59,21 +59,9 @@ flowchart TB
 - The manager is whichever model the chat runs on, so the topology follows the session's model.
   - A frontier session never spawns the advisor.
   - A workhorse session consults it for plans and hard calls.
-- Test scope is doctrine for every class, the manager included.
-  - A worker's mid-work proof is the test files it touched, red-green on the new cases.
-    - Then the suites of the modules that require a file it changed (its importers, one grep of the package's source per changed file).
-  - A verifier runs the narrowest command that checks the claim.
-  - None of them runs a package or root suite unless the brief asks or the finding is suite-scoped.
-    - Even then a root run waits until every item is parked.
-- The full suite runs once per tree, as `npm test` at the repo root before the commit.
-  - The shell records the tree it proved, and the gate checks the record (spec § The proof).
-  - In a Claude session the full-suite hold (`workflow/lib/hold.js`) refuses two runs, from any class:
-    - a repeat full run on a tree already proved green;
-    - any root run while an issue of the repo is at `status:building`.
-- The per-feature proof is enforced too.
-  - At the flip to `status:qa`, `safety:proof-guard` runs nothing.
-  - It blocks until each package owning a touched test file has a green `npm test` recorded on its own id of the tree.
-  - The rule is the spec's: `project-state.md` § The proof.
+- Test scope is doctrine for every class, the manager included: each runs only the narrowest test that proves the change (`project-state.md` § The proof).
+- The full suite runs once per tree, as `npm test` at the repo root before the commit, recorded by npm's script shell (`workflow/script-shell.js`) and held by the full-suite hold (`project-state.md` § The proof).
+- At the flip to `status:qa`, `safety:proof-guard` runs nothing and blocks until each package owning a touched test file has a green `npm test` recorded on its own id of the tree (`project-state.md` § The proof).
 - Drift is verifier doctrine: every blind verification also asks the three DRIFT questions past its brief.
   - Parity siblings on the other surfaces.
   - Duplicates of anything hand-typed the diff adds (found by grep).
@@ -153,7 +141,8 @@ flowchart TB
   - A scope folder and `.bin` are filled one level down, so a bin that runs a workspace package runs the copy's.
 - A repo with no snapshot exits 2 with `red-proof: not runnable: no snapshot for this repo (the claim to status:building takes it)`.
 - A reader of stdout or stderr that closes while the command runs is a stop: the command is ended, the place restored, exit 2.
-  - A closed stdout says so on stderr: `red-proof: stopped: its stdout was closed`.
+  - A closed stdout says so on stderr, as the last line there: `red-proof: stopped: its stdout was closed`.
+  - A closed stderr prints nothing.
   - A reader that closes once the command has ended leaves the verdict's own code.
 - In the copy mode a HUP, INT or TERM ends the command first, then the worktree and the run folder go, then the proof ends by the signal (129, 130 or 143 as its exit code on Windows).
 - A failed run whose output shows a module that could not load inside the copy exits 2, never red.
@@ -173,13 +162,10 @@ flowchart TB
     - Node's block counts a skipped case as a test, and the runner's line counts only passed and failed, so a run whose every case is skipped reads `no test ran` on the kit's runner only.
   - A failing run whose summary counts no failed test exits 2, never red.
     - The line: `red-proof: not runnable: no test failed; the command stopped another way`.
-- The summary file is workkit-core's runner's (`tests.md` § The kit's runner).
+- The summary file is workkit-core's runner's, one line `{"passed":<n>,"failed":<n>}` per run, a monorepo root's counting its members (`tests.md` § The kit's runner).
   - `workkit proof red` names it `summary`, in the run's own folder.
   - It hands the path to the command in `WORKKIT_TEST_SUMMARY`, in the platform's native form.
-  - The runner adds one line `{"passed":<n>,"failed":<n>}` per run, on every exit it makes itself.
   - The lines are summed, so a command that starts the runner more than once (a repo with several packages) counts every run.
-  - A monorepo root's run writes one line that holds its own counts plus each workspace member's, each member having written its own line to a file of its own.
-    - A member whose run stops before its runner (a step of its script fails, or its script runs another runner) counts as one failed test in that line.
   - With one line or more the file decides, and node's block is not read.
   - A line that is not that JSON exits 2 with `red-proof: not runnable: the test summary cannot be read`.
   - Its known limits:
@@ -256,7 +242,7 @@ flowchart TB
   - The grouping comment on its claim says which.
 - A parked batch on the tree is no reason to wait.
   - The next batch builds on top of it, and the ship carries what passed.
-- The one hold is the full-suite hold's: an issue at `status:building` holds the root `npm test`.
+- The one hold is the full-suite hold's, an issue at `status:building` holding the root `npm test` (`project-state.md` § The proof).
   - So a ship waits until every running group has parked.
 - A batch (`project-state.md` § Queue semantics, the Batches bullet) builds in parallel groups on the shared tree.
   - It rides one commit and one ship.
@@ -287,14 +273,10 @@ flowchart TB
 - The ends are per issue.
   - At the front: the spec pass and the claim.
   - At the back: the park and the check (the owner's check, or the agent's own under `agent:ok`).
-- The commit is one per batch, proved by the root `npm test`.
+- The commit is one per batch, proved by the root `npm test` (`project-state.md` § The proof).
 - `agent:ok` decides who checks and whether the agent ships, never how the build runs.
-- The qa flip's `safety:proof-guard` check covers every test file the working diff touched.
-  - For a batch that is the union of its groups.
-  - Each package owning one needs a green `npm test` recorded on its own id of the parked tree.
-    - The id is the code it can see; the package id bullet of `docs/hooks.md` § `safety:proof-guard`.
-  - So a package runs again only when an edit it can see lands.
-  - Every flip on that unchanged tree passes on those records.
+- The qa flip's `safety:proof-guard` check covers every test file the working diff touched, for a batch the union of its groups (`project-state.md` § The proof; the package id bullet of `hooks.md` § `safety:proof-guard`).
+  - Every later flip on an unchanged tree passes on the records already written.
 
 ### Questions to the owner
 
@@ -314,14 +296,13 @@ flowchart TB
   - any `npm test` npm's script shell runs, the root's and a narrowed `npm test -- <files>` alike, or `workkit test` from any folder of the repo;
   - `workkit prove`;
   - or `workkit supervise -- <command>`, for any other run (a lane, a build).
-- Wrapping one of the first two in `workkit supervise` changes nothing: it runs inside that one supervised run.
-- The supervised call ends with the command's own code, 124 after a frozen end, or 125 on a look.
-  - A narrowed run's output ends with `script-shell: exit <code>`, its stderr on stdout.
-  - The checks, the verdicts and the evidence: `tests.md` § The checks.
+- Wrapping one of the first two in `workkit supervise` changes nothing: it runs inside that one supervised run (`workflow/README.md`, the `supervise.js` entry).
+- The supervised call ends with the command's own code, 124 after a frozen end, or 125 on a look (`tests.md` § The checks).
+  - A narrowed run's output ends with `script-shell: exit <code>`, its stderr on stdout (`workflow/README.md`, the `script-shell.js` entry).
 - On 125 the manager reads the evidence and the log's last lines.
   - A run that still moves gets `workkit watch`.
   - A run that goes in circles gets `workkit watch --end`.
-  - A narrowed run is named by the pid its look line prints (`workkit watch <pid>`); with several live, an unnamed call names each and exits 2.
+  - A narrowed run is named by the pid its look line prints (`workkit watch <pid>`; `workflow/README.md`, the `watch.js` entry).
   - Each runs as its own Bash call, since its allow rule matches the bare call alone.
 - After a frozen end, or an end it asked for, the manager reads the evidence and finds the cause.
   - A bug it can reach is fixed and the run started again.

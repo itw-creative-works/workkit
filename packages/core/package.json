@@ -16,9 +16,7 @@
   "files": [
     "bin",
     "test",
-    "run.cjs",
-    "expand-workspaces.cjs",
-    "proc-state.cjs"
+    "/*.cjs"
   ],
   "bin": {
     "workkit": "bin/workkit.js"

@@ -49,7 +49,7 @@ const sharedText = (trailers) => {
   const form = trailers.flatMap(({ keyword, issues }) => issues.map((n) => `  ${keyword} #${n}`)).join('\n');
   return `a closing line names more than one issue, and GitHub closes only the first (the release tools read it the same way), so this commit would leave ${open} open. Give each issue its own line, then commit:\n${form}`;
 };
-const noGreenText = (log) => `the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; the shell records a green run and writes its output to ${log}), then commit.`;
+const noGreenText = (log) => `the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; npm's script shell records a green run and writes its output to ${log}), then commit.`;
 
 // A folder's real path joined to the name as written (wk_physical_path); null when it cannot be resolved.
 async function physical(real, path) {

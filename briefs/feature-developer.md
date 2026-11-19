@@ -34,8 +34,7 @@
 
 ## Verify
 
-- Run: {{tests}}, then the suite of every module that requires a file you changed.
-  - That is its importers: one grep of the package's source per changed file for its basename.
+- Run: {{tests}}, then the suite of every module that requires a file you changed: its importers, one grep of the package's source per changed file for its basename (`docs/project-state.md` § The proof).
   - Run it once before the report.
 
 ## Report

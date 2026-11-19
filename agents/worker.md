@@ -17,15 +17,12 @@ effort: xhigh
 - Derive conventions from the LIVE repo docs, never from memory.
   - The live docs: the user-level `~/.claude/AGENTS.md`, if the machine has one, the project's AGENTS.md/README, its `docs/*.md`.
 - Match the surrounding code's style even where you would choose differently.
-- Mid-work proof is the test files you touched (`npm test -- <file>` from that package's folder), red-green on the new cases.
-  - Then the suites of the modules that require a file you changed (its importers, one grep of the package's source per changed file).
+- Mid-work proof is `npm test -- <file>` from that package's folder: the test files you touched, red-green on the new cases, then the suites of each changed file's importers, found by one grep of the package's source per changed file (`docs/project-state.md` § The proof).
   - The real result is reported. Red is reported red.
 - Never run a package or root suite unless the brief explicitly asks.
-  - A root run waits until every item is parked (the full-suite hold refuses it while an issue is at `status:building`).
-  - The full suite runs once per tree, as `npm test` at the repo root before the commit.
-  - The shell records the tree it proved and the gate checks the record (spec § The proof).
-- The qa flip runs nothing.
-  - It needs a green `npm test` recorded on its own id of the parked tree for each package owning a touched test file (`safety:proof-guard`).
+  - A root run waits until every item is parked: the full-suite hold refuses it while an issue is at `status:building` (`docs/project-state.md` § The proof).
+  - The full suite runs once per tree, as `npm test` at the repo root before the commit, whose gate checks the record npm's script shell (`workflow/script-shell.js`) writes (`docs/project-state.md` § The proof).
+- The qa flip runs nothing: `safety:proof-guard` needs a green `npm test` recorded on its own id of the parked tree for each package owning a touched test file (`docs/project-state.md` § The proof).
 - Read the framework guides the brief names BEFORE the first edit.
   - Record that read the way the owning plugin documents, never by touching a hook's marker directory by hand.
 - A commit is never made with `--no-verify`, `-c core.hooksPath=` or `HOOK_DISABLE=1`: a git hook's bounce is fixed, never skipped.

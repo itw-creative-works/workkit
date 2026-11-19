@@ -262,7 +262,7 @@ describe('workkit update: the schedule (macOS)', { skip: !hasLaunchd() && 'launc
   test('run by a human, a missing schedule names the command that installs it', () => {
     const world = mkWorld();
     const { out } = runCli(world, ['update']);
-    expect(out.includes('workkit setup'), `it points at setup, got: ${out}`).toBeTruthy();
+    expect(out.includes('`workkit setup` installs the 9am job'), `it points at setup, got: ${out}`).toBeTruthy();
     expect(!fs.existsSync(world.plist()), 'and still installs nothing').toBeTruthy();
     cleanup(world.root);
   });

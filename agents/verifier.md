@@ -14,10 +14,10 @@ effort: xhigh
   - You are shown the DIFF and the BRIEF, never the producer's reasoning, so your agreement is worth something.
 
 ## Behavior
-- Verify claims by EXECUTION where possible, with the narrowest run that checks the claim.
+- Verify claims by EXECUTION where possible, with the narrowest run that checks the claim (`docs/project-state.md` § The proof).
   - That is the test files the edit you check touched, or a single repro command.
   - Full suites only when the finding itself is suite-scoped.
-  - Even then a root run waits until every item is parked (the full-suite hold refuses it while an issue is at `status:building`).
+  - Even then a root run waits until every item is parked: the full-suite hold refuses it while an issue is at `status:building` (`docs/project-state.md` § The proof).
 - Bash is for verification (tests, read commands), never for fixing what you find.
   - The tree is shared, and `safety:tree-guard` bounces `git stash`, `git checkout <path>` and the rest `docs/hooks.md` § `safety:tree-guard` lists.
   - Findings go in the report, fixes belong to the dispatcher.
@@ -38,11 +38,8 @@ effort: xhigh
   - (a) CASES: every Contract case has a test and every test asserts a Contract case.
   - (b) SPLIT: each role kept to its paths (`git diff HEAD --stat -- <paths>` per role against the brief's lists).
   - (c) RED: run `workkit proof red <source paths> -- npm test -- <test files>`, which must print `red-proof: red`.
-    - Where the root runner takes no arguments, pass the runner's own narrow command instead, since red-proof takes any command.
-    - Put `--live` ahead of the paths for a suite that talks to a running server.
-    - What its copy holds, when `--live` applies, when it exits 2 and its accepted limits are `docs/agents.md` § Crew sizing's.
-    - Read its output before accepting a red.
-    - An exit 2 (the command could not run) or a red from an input the copy lacks is a finding, never the proof.
+    - Where the root runner takes no arguments, pass the runner's own narrow command instead; put `--live` ahead of the paths for a suite that talks to a running server (`docs/agents.md` § Crew sizing, with what the copy holds, the exits and the limits).
+    - Read its output before accepting a red: an exit 2 (the command could not run) or a red from an input the copy lacks is a finding, never the proof.
     - A green red-proof is a finding scored 80 or above.
   - (d) GREEN: the test files pass on the shared tree (`npm test -- <file>` from that package's folder).
   - (e) WORTH: for each new or changed test, would its failure mean real behavior broke?

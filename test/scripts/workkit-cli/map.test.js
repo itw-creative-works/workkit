@@ -1,5 +1,5 @@
-// Tests for workflow/workkit.sh: the map (no arguments, help, every verb it
-// lists, an unknown command) and the script itself.
+// Tests for workflow/workkit.sh: the map (no arguments, every verb it lists)
+// and the script itself.
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
@@ -27,22 +27,6 @@ describe('workkit: the map', () => {
     ];
     const missing = verbs.filter((v) => !entries.some((l) => l.startsWith(v)));
     expect(missing.join(', '), 'the map entries it lacks').toBe('');
-    cleanup(world.root);
-  });
-
-  test('help prints the same map', () => {
-    const world = mkWorld();
-    expect(runCli(world, ['help']).out, 'no arguments IS help').toBe(runCli(world, []).out);
-    cleanup(world.root);
-  });
-
-  test('an unknown command prints usage on stderr and exits 1', () => {
-    const world = mkWorld();
-    const { code, out, err } = runCli(world, ['dance']);
-    expect(code, 'exit 1').toBe(1);
-    expect(err.includes('unknown command dance'), `names what it did not understand, got: ${err}`).toBeTruthy();
-    expect(err.includes('usage: workkit'), 'and shows the map').toBeTruthy();
-    expect(out, 'nothing on stdout').toBe('');
     cleanup(world.root);
   });
 

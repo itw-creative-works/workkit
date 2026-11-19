@@ -3,8 +3,13 @@
 # runs (workflow/README.md, the ship/ rows). Sourced by workkit.sh, the verb
 # list and functions only; each subcommand is its script in ship/, which speaks for itself.
 
-# The ship's subcommands, the kit's one list: allow.sh builds its allow rules from it.
-SHIP_VERBS=(items release watch cut plan publish deploy)
+# The ship's subcommands, read off the `ship <verb>` entries of WORKKIT_COMMANDS
+# (command-list.sh, sourced first) in their order.
+SHIP_VERBS=()
+while IFS= read -r _wk_verb; do
+  SHIP_VERBS+=("$_wk_verb")
+done < <(wk_command_verbs ship)
+unset _wk_verb
 
 # workkit ship items | release <x.y.z> [--keep N,M] | watch <sha> | cut <x.y.z> | plan | publish | deploy
 cmd_ship() {

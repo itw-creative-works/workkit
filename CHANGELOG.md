@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#568](../../issues/568) - The docs state each rule of the test-run layer once, in its home. Every other doc, agent file, skill and brief names it in one sentence and points there. The commit check's line for an unproved tree now says "npm's script shell records a green run".
+- [#569](../../issues/569) - The kit keeps one list of its commands, each with the permission its Claude Code rule lands in, and setup writes the rules from it. `workkit ship deploy` lands at `permissions.ask`, so Claude Code asks at every deploy. A command that runs other code gets no rule.
+
 ## [0.99.6] - 2026-11-19
 
 ### Changed

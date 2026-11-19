@@ -70,25 +70,28 @@ claude plugin install workkit@workkit
   4. **The `workkit` command.** Links it into `~/.local/bin`, and the `gh` shim beside it (see [The bot identity](#the-bot-identity)).
      - When that folder is not on your PATH, setup prints the `export` line to add; it never edits a shell rc file.
   5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper.
-     - From then on a root `npm test` records the tree it proved; a `test` event needs a node at 22.12 or later, and stops with one line, exit 1, without one.
+     - From then on a root `npm test` records the tree it proved ([`project-state.md`](project-state.md) § The proof); a `test` event needs a node at 22.12 or later, and stops with one line, exit 1, without one ([`workflow/README.md`](../workflow/README.md), the `lib/platform.sh` entry).
      - It lints any new CHANGELOG entry before the suite starts.
-     - It keeps running if the call that started it is cut, and logs to `.workkit/suite.log` (another folder when the repo's `logs.dir` names one).
+     - It keeps running if the call that started it is cut, and logs to `.workkit/suite.log` (another folder when the repo's `logs.dir` names one; [`project-state.md`](project-state.md) § The model).
      - The kit's own wrapper reached through a linked folder reads as current.
      - A value someone else set is warned about and left alone.
      - The setting is made only when the wrapper exists behind the engine's address.
      - With that link missing, setup prints a named skip and `script-shell` stays unset.
      - On Windows, setup first builds the kit's script shell with the compiler every Windows ships.
-  6. **The allow rules.** Adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in `~/.claude/settings.json`.
-     - This is so auto mode does not block the commands a ship or a review runs, or the manager's `workkit watch`.
-     - Every `workkit ship` command is listed but `deploy`, so a deploy outside a ship prompts.
+  6. **The allow and ask rules.** Adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in `~/.claude/settings.json`, and its ask rules (`ASK_RULES`) to `permissions.ask`, in one write.
+     - Both are built from one list, `WORKKIT_COMMANDS` in `workflow/workkit/command-list.sh`: each kit command as `<command>=<permission>`, the permission `allow`, `ask` or `none`.
+     - An `allow` command's rule is `Bash(workkit <command>:*)` at `permissions.allow`, so the command runs with no prompt and auto mode never blocks it; the ship's verbs are listed one by one, so no allow rule matches a deploy. `Bash(npm publish:*)` follows them, the publish a ship runs.
+     - An `ask` command's rule is the same shape at `permissions.ask`. `Bash(workkit ship deploy:*)` is the one there: Claude Code weighs an ask rule before an allow rule, in auto mode too, so it asks at every `workkit ship deploy`, inside a ship as well, and that call needs a person to answer that prompt.
+     - A `none` command gets no rule, so Claude Code checks it as it checks any command: `test`, `proof red`, `tower`, `prove` and `supervise` each run other code.
+     - `workkit` refuses a command whose first word the list does not name, so a new command cannot ship without its permission.
      - A retired rule the kit once kept (`Bash(workkit ship:*)`, which let a deploy through) is taken out, and doctor names one still there.
      - Only the missing rules are added, after the ones already there, and every other key stays as it is.
      - A file that holds them all and no retired one is not written.
      - A settings file that is a link is written at its target.
      - A missing one is created holding only the rules.
-     - One that is not valid JSON is left alone and warned about by a human's run and by doctor, never by the daily run.
+     - One that is not valid JSON, or whose `permissions.allow` or `permissions.ask` is not a list, is left alone and warned about by a human's run and by doctor, never by the daily run.
      - `workkit update` and the daily `update --auto` keep the rules too (the daily run creates no `~/.claude`).
-     - `workkit doctor` names each one that is missing.
+     - `workkit doctor` names each one that is missing, an ask rule with `permissions.ask`.
   7. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.sh`.
      - This is macOS only (launchd); everywhere else the brief runs in the cloud.
   8. **The dashboard.** Says how to start it: `workkit tower`, the local one of the [three ways to see your board](#three-ways-to-see-your-board).
@@ -135,7 +138,7 @@ claude plugin install workkit@workkit
 - **In a cloud session** (claude.ai/code, where `CLAUDE_CODE_REMOTE` is `true`), run `workkit setup --cloud` instead.
   - It checks the gh login as setup and doctor do everywhere.
   - It makes the engine's address, the `workkit` command and the `gh` shim (creating `~/.local/bin`).
-  - It points npm's `script-shell` at the kit, and adds the kit's allow rules to `~/.claude/settings.json`.
+  - It points npm's `script-shell` at the kit, and adds the kit's allow and ask rules to `~/.claude/settings.json`.
   - The bot does not act there: the session's GitHub proxy signs every request as your account.
     - So the `gh` shim serves the kit's issue, label, auth, pr and release verbs through REST as you ([gh in a session](cloud.md#gh-in-a-session)).
     - Nothing signs in.

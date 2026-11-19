@@ -255,7 +255,7 @@ describe('commit-gate: the suite record', () => {
     const deny = denyOf(await judge(r, 'feat: thing'));
     recordBlocks({ deny });
     const logFile = deny.slice(deny.indexOf('writes its output to ') + 'writes its output to '.length, deny.length - T.recordTail.length);
-    expect(logFile.includes('suite.log'), `the bounce names the suite log, got: ${logFile}`).toBeTruthy();
+    expect(/^\/w\/user\/markers\/claude-suite\.log\/[0-9a-f]{40}$/.test(logFile), `the bounce names the suite log under the machine's folder, got: ${logFile}`).toBeTruthy();
   });
 
   test('logs.dir logs, git ignoring logs/: the bounce for a missing record names logs/suite.log', async () => {

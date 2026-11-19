@@ -172,7 +172,7 @@ const which = (name, searchPath = process.env.PATH) => {
 
 /**
  * The digest tool this machine spells sha1 with: macOS ships `shasum`, a Linux
- * machine and Git Bash ship `sha1sum`, and `hook_sha1` takes either. Every
+ * machine and Git Bash ship `sha1sum`, and `wk_sha1` takes either. Every
  * suite that names a marker path keys it through this one answer, or it would
  * only ever pass on half the platforms the kit runs on.
  * @param {string} [searchPath] - the PATH to search, this process's own by default

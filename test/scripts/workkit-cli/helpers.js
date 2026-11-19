@@ -23,6 +23,24 @@ const LABEL = 'com.workkit.claude-daily';
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
+// The issue's table, in its order: each kit command and the permission its rule
+// lands in. Typed here, never read from workflow/, so the list is checked against it.
+const COMMAND_TABLE = [
+  ['help', 'allow'], ['setup', 'allow'], ['update', 'allow'], ['doctor', 'allow'],
+  ['publish', 'allow'], ['brief', 'allow'], ['log', 'allow'],
+  ['test', 'none'],
+  ['tools', 'allow'], ['convert', 'allow'], ['public', 'allow'],
+  ['ship items', 'allow'], ['ship release', 'allow'], ['ship watch', 'allow'],
+  ['ship cut', 'allow'], ['ship plan', 'allow'], ['ship publish', 'allow'],
+  ['ship deploy', 'ask'],
+  ['review', 'allow'], ['triage', 'allow'],
+  ['proof red', 'none'],
+  ['changelog', 'allow'], ['tower', 'none'], ['enable', 'allow'], ['decline', 'allow'],
+  ['heal', 'allow'], ['state', 'allow'], ['note', 'allow'],
+  ['prove', 'none'], ['supervise', 'none'],
+  ['watch', 'allow'],
+];
+
 const writeStub = (file, lines) => stubTool(
   path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines],
 );
@@ -425,7 +443,7 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
+  WORKFLOW_DIR, CLI, LABEL, COMMAND_TABLE, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
   installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
   SLUG, HOME, mkHomeWorld,
 };

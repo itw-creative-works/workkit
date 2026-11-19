@@ -36,12 +36,8 @@ claude plugin install workkit@workkit
 - Without either, the agent's bookkeeping stops and tells you which ([docs/setup.md § The bot identity](docs/setup.md#the-bot-identity)).
 - `workkit doctor` shows what is set up, and `workkit help` lists every command.
 - Start a new Claude Code session so the plugin loads.
-- Setup adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in your `~/.claude/settings.json`.
-  - So auto mode does not block the commands a ship or a review runs, `workkit review mark` among them, or the manager's `workkit watch`.
-  - Every ship command is listed but `workkit ship deploy`, which prompts outside a ship.
-  - Setup takes out the retired `Bash(workkit ship:*)`, which let it through.
-  - Beyond that it adds only the missing ones and leaves the rest of the file as it is.
-  - `workkit doctor` names any that goes missing or a retired one still there.
+- Setup keeps the kit's allow and ask rules in your `~/.claude/settings.json`, made from the kit's one list of its commands, and Claude Code asks at every `workkit ship deploy`.
+  - How the rules are made and kept: [docs/setup.md § What setup does](docs/setup.md#what-setup-does), step 6.
 - The skills also run `gh issue ...` often; to skip most of those prompts, add `Bash(gh issue *)` there yourself.
 - To work on workkit itself, install from a clone instead; the clone then outranks the plugin copy:
 
@@ -101,7 +97,7 @@ claude
      - An entry marked `"local": true` needs your machine, so a cloud session skips it and says so.
 
 - Hooks guard each step on their own.
-  - For example, no code commits until the full test suite has passed on exactly what is being committed.
+  - For example, no code commits until the full test suite has passed on exactly what is being committed ([docs/project-state.md § The proof](docs/project-state.md)).
 - A repo that has not turned workkit on gets none of its hooks.
 - The commit checks run in git's own commit hooks and the issue checks in workkit's `gh` shim.
   - So they judge the real commit and the real `gh` call.

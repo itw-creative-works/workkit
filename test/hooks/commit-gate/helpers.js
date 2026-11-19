@@ -44,7 +44,7 @@ const T = {
   disk: 'the green run proved the tree on disk, and this commit carries a different one (an untracked file or an unstaged edit the commit leaves out): stage everything that ran (`git add -A`), or run `workkit prove` to prove the staged tree alone (the suite runs on a copy of the index, and the folder stays as it is), then commit.',
   unwired: "the commit carries code and no green run proves this tree, and npm's script-shell does not point at the kit's wrapper, so a root `npm test` writes no record. Run `workkit setup` once, then `npm test` at the repo root, then commit.",
   // The record block names the suite log, whose path no fact carries: its two ends.
-  recordHead: 'the commit carries code and no green run proves this tree. Run `npm test` at the repo root (once per tree; the shell records a green run and writes its output to ',
+  recordHead: "the commit carries code and no green run proves this tree. Run `npm test` at the repo root (once per tree; npm's script shell records a green run and writes its output to ",
   recordTail: '), then commit.',
 };
 const NOTICE = {
@@ -331,6 +331,7 @@ const factsOf = (r) => {
     isWindows: r.isWindows,
     scriptShell: r.scriptShell,
     scriptShellExe: r.scriptShellExe ?? null,
+    home: '/w/user',
     // The machine's settings file: a real file when a case sets one, else a path nothing holds.
     userSettings: r.userSettings ?? '/w/user/settings.json',
     show: async (rev, p) => {

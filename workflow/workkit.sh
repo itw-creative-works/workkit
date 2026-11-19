@@ -282,6 +282,8 @@ IDENTITY_USER=''
 
 # Sourced plainly, never through the tolerant loop: the pieces are the command,
 # so a checkout without them is broken and the source says so.
+# shellcheck source=./workkit/command-list.sh
+. "$SCRIPT_DIR/workkit/command-list.sh"
 # shellcheck source=./workkit/links.sh
 . "$SCRIPT_DIR/workkit/links.sh"
 # shellcheck source=./workkit/schedule.sh
@@ -318,6 +320,20 @@ IDENTITY_USER=''
 . "$SCRIPT_DIR/workkit/allow.sh"
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
+
+# unknown_command <word>: the refusal and the map, exit 1.
+unknown_command() {
+  wk_error "unknown command $1"
+  printf '\n' >&2
+  usage >&2
+  exit 1
+}
+
+# A new command needs its entry in WORKKIT_COMMANDS (workkit/command-list.sh).
+case "${1:-help}" in
+  -h|--help) ;;
+  *) wk_command_listed "${1:-help}" || unknown_command "$1" ;;
+esac
 
 # A command that does work runs again under its log (lib/command-log.sh); a
 # call made inside a logged one is in that log already.
@@ -361,10 +377,5 @@ case "${1:-help}" in
   prove)   shift; run_at_floor prove 1 "$PROVE" "$@" ;;
   supervise) shift; run_at_floor supervise 1 "$SUPERVISE" "$@" ;;
   watch)   shift; run_at_floor watch 1 "$WATCH" "$@" ;;
-  *)
-    wk_error "unknown command $1"
-    printf '\n' >&2
-    usage >&2
-    exit 1
-    ;;
+  *) unknown_command "$1" ;;
 esac

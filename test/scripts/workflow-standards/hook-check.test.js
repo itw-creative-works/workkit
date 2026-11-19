@@ -100,7 +100,7 @@ describe('standards.sh: the hook layer self-check', () => {
   }
 
   test('a digest tool under either name satisfies the check (workkit #245)', () => {
-    // hook_sha1 takes shasum or sha1sum, so the daily heal asks for the pair:
+    // wk_sha1 takes shasum or sha1sum, so the daily heal asks for the pair:
     // a Linux machine with only sha1sum is whole, and a machine with neither
     // is told both names.
     const repo = makeRepo();

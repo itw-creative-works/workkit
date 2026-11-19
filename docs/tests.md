@@ -69,7 +69,7 @@
     - A `workflow/lib` export asked under a world's env: `kitUnder(env, file, name, asks)` in `test/lib/kit-under.js` calls `<name>` of `workflow/lib/<file>` once per ask, each ask an argument list, all in one node of its own under `env`, so the machine folder, the temp folder and git's config it reads are the world's.
       - The answers come back in order, as JSON brings them. A call that throws in that node throws in the test with its message, and the asks after it are never made.
       - `kitUnderAsync(env, file, name, asks)` is the same asks started without waiting, so several nodes ask at one moment; it resolves the answers, or rejects as `kitUnder` throws.
-    - `run` of `lib/runs.js` driven the same way, as the script shell calls it, so a signal to the call reaches that node:
+    - `run` of `lib/runs.js` driven the same way, as npm's script shell (`workflow/script-shell.js`) calls it, so a signal to the call reaches that node:
       - `runJob(dir, script, { lock, root })` is the job the script shell hands `run`: `node -e <script>`, its log in `<dir>`, its lock there unless `lock` names one, `root` null unless given.
       - `runUnder(job, { env, before, launch })` runs it to its end in a node of its own and answers `{ res, answers }`: the harness run's result (its status the `rc`, its output the run's) and what `run` resolved, null when the call ended first. `before` is source run once `runs.js` is loaded, `launch` a launch seam's source.
       - `startRun(job, { env, before, launch, detached })` is `runUnder` started without waiting: the harness start handle, its pid the call's, plus `answers()`, null until `run` resolved.
@@ -126,10 +126,7 @@
   - The bin runs `test`, `tools` and `convert`; any other verb exits 2, naming the global `workkit` command.
 - `workkit test [paths] [--filter=<text>]` in a terminal is the global command.
   - It hands its arguments to the repo's own `npm test`, run at the repo root, and does nothing else.
-  - So the one recorder, npm's script shell, sees the run.
-    - A narrowed run leaves the package record, a bare one the suite record; a run under `--filter`, or with `CI` set, leaves none.
-    - A package's line in that record is keyed to its own id: the code it can see.
-    - The rule: `docs/hooks.md` § `safety:proof-guard`, the package id bullet.
+  - So the one recorder, npm's script shell, sees the run and records it as `docs/project-state.md` § The proof says.
   - So `workkit test`, `npm test`, `workkit test test/x.test.js` and `npm test -- test/x.test.js` land in the same runner with the same arguments.
   - A repo whose package.json has no `test` script gets one error line and exit 1.
   - The global verb started inside an `npm test` means the package is missing.
@@ -241,7 +238,6 @@
     - From a monorepo root that is no case of its own and none in any member it started: every member wrote the no-match line (below). A member whose matching cases were all skipped matched.
   - From a monorepo root a filter alone starts the members a bare run starts, each handed the text (below). A filter with suite paths starts none.
   - A filtered run writes no proof record (`docs/project-state.md` § The proof).
-    - The script shell reads the flag only in what npm appended to the package's own script, so a script's own `--filter=` for another tool still records.
 - Each suite file has a deadline, `SUITE_DEADLINE` (600 seconds).
   - `TEST_DEADLINE=<seconds>` in the environment sets it for one run.
     - A value that is no positive number, or above 2147483 (more than node's timer holds), exits 1 before any suite runs: `TEST_DEADLINE must be a positive number of seconds, got <value>`.
@@ -280,6 +276,7 @@
   - Its limit: a member's run has no deadline of its own; its suites keep theirs.
 - `WORKKIT_TEST_SUMMARY=<file>` in the environment, set by `workkit proof red` for its command and by a root run for each member it starts, has the run add one line to that file on every exit it makes itself; a forced end (`SIGKILL`, any signal on Windows) writes none.
   - The line is `{"passed":<n>,"failed":<n>}`, the counts the totals line prints, the members' included; a run that stops before any suite ran writes both as 0.
+    - A member whose run stops before its runner (a step of its script fails, or its script runs another runner) counts as one failed test in its root's line.
   - The runner takes the variable out of its environment at its start, so a run a suite starts writes no line. Unset, no file is written.
   - How the proof reads it: `agents.md` § Crew sizing.
 - `WORKKIT_TEST_NO_MATCH=<file>` in the environment, set by a root run for each member it starts under a filter, has a run that ends with no matching case add one line to that file: the filter text, as a JSON string.
@@ -417,7 +414,7 @@ describe('the popup', () => {
 - `tests.budget` is the whole minutes a repo allows its root run.
   - It is set in the repo's `.workkit/settings.json`.
   - Or in `~/.workkit/settings.json` under the same key, for every repo that sets none.
-- The suite record carries the recorded run's wall time.
+- The suite record carries the recorded run's wall time (`workflow/README.md`, the `lib/records.js` entry).
 - When a commit's recorded run took longer than the budget, the commit gate prints a line beside its proved line.
   - The line: `test-budget: the root run took Nm, the budget is Mm`.
   - The commit still passes.
@@ -443,6 +440,7 @@ describe('the popup', () => {
   - output or work: alive, and nothing happens;
   - neither, two checks in a row: frozen. The log gets the evidence, then the run is ended and exits 124.
   - no output for six checks in a row, with work among them: a look. The run goes on, and the call attached to it prints the evidence and exits 125.
+    - A green end of that run still writes its record.
 - The evidence is one line per process seen in the check, `detach:   <pid> <seconds>s <command>`, the seconds those it used in the check.
 - A frozen log ends `detach: no output and no processor use for <N> minutes, so the run was ended (exit 124)`, under the body's own `<prefix>: exit 143`.
 - After a look, the next one is asked after six more checks with no output.

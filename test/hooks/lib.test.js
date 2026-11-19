@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 // Tests for hooks/_lib.sh, the helper library the scripts and the dotfiles hooks
-// source: one group per helper, from the platform seam and hook_sha1 through
+// source: one group per helper, from the platform seam and the digest through
 // hook_jq, the test package and the marker paths. The suite and package records are test/hooks/lib-record.test.js.
 
 const fs = require('fs');
@@ -32,24 +32,24 @@ const digestWorld = (name, tool) => {
 };
 
 describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1sum, so no digest world can be built' }, () => {
-  describe('_lib.sh: hook_sha1', () => {
+  describe('_lib.sh: the digest, wk_sha1', () => {
     test('a world with only shasum: the hex digest of stdin, no filename', () => {
       const world = digestWorld('shasum', real);
-      const out = runLib("printf '%s' abc | hook_sha1", { PATH: world });
+      const out = runLib("printf '%s' abc | wk_sha1", { PATH: world });
       expect(out.stdout.trim(), `the sha1 of abc, got: ${out.stdout}|${out.stderr}`).toBe(SHA1_ABC);
       fs.rmSync(world, { recursive: true, force: true });
     });
 
     test('a world with only sha1sum: the same digest, same shape', () => {
       const world = digestWorld('sha1sum', real);
-      const out = runLib("printf '%s' abc | hook_sha1", { PATH: world });
+      const out = runLib("printf '%s' abc | wk_sha1", { PATH: world });
       expect(out.stdout.trim(), `the sha1 of abc, got: ${out.stdout}|${out.stderr}`).toBe(SHA1_ABC);
       fs.rmSync(world, { recursive: true, force: true });
     });
 
     test('a world with neither: non-zero, one line on stderr, never an empty key', () => {
       const world = mkTmp('lib-nosha-');
-      const out = runLib("key=$(printf '%s' abc | hook_sha1); printf 'rc=%s key=[%s]' \"$?\" \"$key\"",
+      const out = runLib("key=$(printf '%s' abc | wk_sha1); printf 'rc=%s key=[%s]' \"$?\" \"$key\"",
         { PATH: world });
       expect(out.stdout.includes('key=[]'), `no key at all, got: ${out.stdout}`).toBeTruthy();
       expect(!out.stdout.includes('rc=0'), `and says so, got: ${out.stdout}`).toBeTruthy();

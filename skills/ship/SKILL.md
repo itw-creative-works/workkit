@@ -1,7 +1,7 @@
 ---
 name: ship
 description: Ship a release, commit (or PR), bump the version, publish, create the GitHub release, run the deploy, and run each step's hooks the repo declares. - Use when the OWNER commands a ship, by /workkit:ship or the word in their own message ("ship it", "ship this"). A passing mention ("we can ship later") is not it; an agent never self-invokes.
-allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git ls-files *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release view *), Bash(gh api repos/*), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh issue edit *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(workkit ship *), Bash(workkit review *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(workkit publish *), Bash(workkit prove *), Bash(workkit setup *), Bash(workkit public close *)
+allowed-tools: Bash(git add *), Bash(git commit *), Bash(git diff *), Bash(git ls-files *), Bash(git log *), Bash(git status *), Bash(git push *), Bash(git rev-parse *), Bash(git stash list *), Bash(git tag *), Bash(git switch *), Bash(git checkout *), Bash(git pull *), Bash(git branch *), Bash(gh release view *), Bash(gh api repos/*), Bash(gh issue list *), Bash(gh issue view *), Bash(gh issue close *), Bash(gh issue comment *), Bash(gh issue edit *), Bash(gh pr create *), Bash(gh pr merge *), Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run list *), Bash(gh run watch *), Bash(gh run view *), Bash(gh workflow list *), Bash(workkit review *), Bash(npm publish *), Bash(npm version *), Bash(npm run prepare *), Bash(workkit publish *), Bash(workkit prove *), Bash(workkit setup *), Bash(workkit public close *)
 user-invocable: true
 ---
 # Ship a Release
@@ -9,7 +9,7 @@ user-invocable: true
 
 ## Invocation args
 
-- Parse the invocation text BEFORE anything else. When args resolve every decision, ask NOTHING and run the full pipeline. Otherwise it asks two questions only: which repo (Step 0) and a major bump (Step 1). The deploy confirmation (Step 6) is a gate, not a question, and only `deploy` in the args skips it.
+- Parse the invocation text BEFORE anything else. When args resolve every decision, ask NOTHING and run the full pipeline. Otherwise it asks two questions only: which repo (Step 0) and a major bump (Step 1). The deploy confirmation (Step 6) is a gate, not a question, and only `deploy` in the args skips it, never Claude Code's own prompt at the call.
 - Bump: `patch` / `minor` / `major` uses that bump. An explicit version (`1.0.0`, `v1.0.0`) bumps to exactly it, a major included. `skip` / `no bump` skips the bump. A bump given here is never asked about.
 - File scope: `all` / `everything` stages the whole tree (`git add -A`), the DEFAULT. Explicit paths or globs (`src/` `docs/`) stage ONLY those. A description ("just the prompt changes", "only the route files") stages only the matching files.
 - Opt out:
@@ -18,7 +18,7 @@ user-invocable: true
   - `no prepare` skips prepare even if `scripts.prepare` exists.
   - `no release` skips the GitHub release, and the release commit's body is the one trailer line `Release: none`, so CI's release job makes none and a later cut never waits for it.
   - `no changelog` skips the CHANGELOG update.
-- Opt in: `deploy` runs deploy WITHOUT the confirmation prompt. `pr` ships through a pull request (branch, checks, merge commit) instead of the default direct commit; a cloud session always does. `publish` changes nothing: ship means publish.
+- Opt in: `deploy` skips Step 6's question only; Claude Code's own prompt at `workkit ship deploy` still comes (Step 6). `pr` ships through a pull request (branch, checks, merge commit) instead of the default direct commit; a cloud session always does. `publish` changes nothing: ship means publish.
 
 | Invocation | Bump | Files | Overrides |
 |---|---|---|---|
@@ -33,10 +33,12 @@ user-invocable: true
 
 ## The kit's verbs run bare
 
-- Every allow-listed verb (each `workkit ship` verb but `deploy`, and `workkit review ...`) runs as its own Bash call from the repo root (`cd` there in a call of its own first).
-  - It runs as the bare command: no `cd <path> &&`, no pipe, no redirect, no trailing `; echo`, no variable prefix, no command substitution in an argument, since its allow rule matches the bare form only.
+- Every `workkit` verb runs as its own Bash call from the repo root (`cd` there in a call of its own first).
+  - Its rule comes from the kit's one list, `WORKKIT_COMMANDS` (`workflow/workkit/command-list.sh`), and `workkit setup` keeps it in the global settings: an allow rule for each verb a ship runs but two. `workkit ship deploy` has an ask rule, so it prompts (Step 6); `workkit prove` has none, and this skill's `allowed-tools` grants it.
+  - The settings rules carry the ship's verbs, so this skill grants none of them: no grant here can stand above the deploy's ask rule, and the verbs are not copied by hand.
+  - It runs as the bare command: no `cd <path> &&`, no pipe, no redirect, no trailing `; echo`, no variable prefix, no command substitution in an argument, since its rule matches the bare form only.
 - A refused verb is first checked for its shape: one run in a compound, behind a prefix or with a redirect is retried bare. Only a refused BARE call is reported, with the allow line `workkit doctor` names; the command is never handed to the owner to run.
-- Each step but `watch` also writes its run, plain, to `ship-<step>.log` in the repo's log folder (`.workkit/` unless `logs.dir` names another).
+- Each step but `watch` also writes its run, plain, to `ship-<step>.log` in the repo's log folder (`.workkit/` unless `logs.dir` names another: `docs/project-state.md` § The model, its logs bullet).
   - The log exists once the step has ended, and its last line is `workkit ship <step>: exit <code>`; a call cut off before that has no log of this run to read, only the last run's or none.
   - At a terminal `cut`, `publish` and `deploy` keep the terminal for the hooks, npm's one-time password and the deploy script, and their log holds one note line and the closing line; away from a terminal (an agent's call) they are logged whole.
 
@@ -134,7 +136,7 @@ user-invocable: true
    - A cloud session (`CLAUDE_CODE_REMOTE=true`) always takes the PR path, from its own `claude/<name>` branch: the owner's "ship" is the ask the cloud platform needs before a PR.
    - **Direct**: stage (`git add -A`, or the named paths), then check that the index equals the disk, untracked files included.
      - The check: `git diff --quiet` exits 0 AND `git ls-files --others --exclude-standard` prints nothing.
-     - Both hold: run `npm test` at the repo root once on the final tree (detached through the kit's wrapper; a cut-off call reads `suite.log` in the repo's log folder, `.workkit/` unless `logs.dir` names another).
+     - Both hold: run `npm test` at the repo root once on the final tree (detached through npm's script shell, `workflow/script-shell.js`; a cut-off call reads `suite.log` in the repo's log folder, `docs/project-state.md` § The model, its logs bullet).
        - It is watched per `docs/agents.md` § Watching a run.
      - Either fails: the folder holds work the commit leaves out, so run `workkit prove` once instead, never the whole-folder run, which cannot satisfy the gate in that state.
      - Then commit, never with `--no-verify` or `-c core.hooksPath=`: a git hook's bounce is fixed, never skipped.
@@ -202,7 +204,7 @@ user-invocable: true
 - That wait applies to every ship.
   - One that pushed a work commit watches it (on the PR path, the branch tip).
   - The no-commit path and a release-only ship watch the newest commit that is not a release commit.
-- The watch runs detached and logs everything to `ci.log` in the repo's log folder, `.workkit/` unless `logs.dir` names another (under `~/.workkit/markers` when that folder is not gitignored); its last `ci-watch: exit <code>` line is the answer.
+- The watch runs detached and logs everything to `ci.log` in the repo's log folder (`docs/project-state.md` § The model, its logs bullet); its last `ci-watch: exit <code>` line is the answer.
   - A cut-off call leaves it running: read the log, never poll `gh`.
   - Exit 5 names the watched sha and the log; never start a second: wait for its exit line, record it, then watch the next sha (that call truncates the log).
   - Ctrl-C ends it with 130.
@@ -270,14 +272,16 @@ user-invocable: true
 - Then ONE command publishes the plan: `workkit ship publish`, prepare its own call before it. Per package, in plan order, it asks npm, skips a version already out, and runs `npm publish --workspace=<name>` (plain `npm publish` without `workspaces`; `--access public` when scoped). The first failure stops it, package named, non-zero; a rerun resumes. All out: one line.
 - A run that published at least one package then runs the repo's afterPublish hooks (`hooks.afterPublish`, the same rule as Step 4's), so it gets the same long timeout; report its `ship-hooks:` lines. A failed hook exits 1 with `publish-plan: <N> published; an afterPublish hook failed.`, and what published stands. A run that publishes nothing runs none.
 - The agent runs it; it never hands the command back to the owner. Never a shell loop or a compound with prepare: when `workkit ship publish` is unavailable, ONE plain `npm publish --workspace=<name> [--access public]` per Bash call, in plan order, each after `npm view <name>@<version> version` shows the version not yet out.
-- `workkit setup` keeps the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) in the global `~/.claude/settings.json`, and `workkit doctor` names a missing one. A refused call follows § The kit's verbs run bare. A refused plan or failed check: print which and STOP.
+- `workkit setup` keeps the kit's allow and ask rules (`ALLOW_RULES` and `ASK_RULES` in `workflow/workkit/allow.sh`) in the global `~/.claude/settings.json`, and `workkit doctor` names a missing one. A refused call follows § The kit's verbs run bare. A refused plan or failed check: print which and STOP.
 
 ## Step 6: Deploy (if applicable)
 
 - Runs LAST, after commit, push, publish and release, so what deploys is exactly what was committed. A root `package.json` with neither `scripts.deploy` nor `scripts.release`: skip silently, no question.
-- **MANDATORY: ask before deploying**, since deploy sends code to PRODUCTION. Ask "Deploy to production?" and wait for an explicit "yes", unless `deploy` is literally in the `/workkit:ship deploy` args. Earlier conversation, context, or "ship it" never count. The command never asks: the yes is this step's alone.
+- **MANDATORY: ask before deploying**, since deploy sends code to PRODUCTION. Ask "Deploy to production?" and wait for an explicit "yes", unless `deploy` is literally in the `/workkit:ship deploy` args. Earlier conversation, context, or "ship it" never count. The command itself asks nothing; Claude Code's ask rule prompts at the call as well.
 - After the yes, run `workkit ship deploy` from the repo root, with a long timeout.
-  - It runs `npm run deploy` when `scripts.deploy` exists, else `npm run release`, then the repo's afterDeploy hooks (`hooks.afterDeploy`, Step 4's rule).
+  - Claude Code then asks at every `workkit ship deploy`, inside a ship too, since the kit's ask rule `Bash(workkit ship deploy:*)` (its `ask` entry in `WORKKIT_COMMANDS`, made a rule in `ASK_RULES`, `workflow/workkit/allow.sh`) beats any allow rule; `deploy` in the args skips this step's question, never that prompt.
+  - With no one to answer that prompt, or with the prompt declined, the deploy does not run: say plainly that it did not run and tell the owner, never work around it.
+  - `workkit ship deploy` runs `npm run deploy` when `scripts.deploy` exists, else `npm run release`, then the repo's afterDeploy hooks (`hooks.afterDeploy`, Step 4's rule).
   - Report its `ship-deploy:` and `ship-hooks:` lines.
   - A failed script (`ship-deploy: npm run <name> exited <code>`) runs no hook; a failed hook (`ship-deploy: the deploy ran; an afterDeploy hook failed`) leaves the deploy done.
   - Either is loud, exit 1.
@@ -311,9 +315,9 @@ user-invocable: true
 - `safety:commit-gate` checks every `git commit`, in git's own `pre-commit` and `commit-msg` hooks. When the project defines a root `test` script and staged code exists, it passes only a tree a green root `npm test` recorded (docs-only and version-only commits need no record). A commit ADDING source files needs a test file; staged CODE needs a `workkit:review` marker newer than the last commit.
 - `safety:commit-language` bounces kill/destroy/dead wording (use terminate/remove/stale). It bounces a subject that is not Conventional Commits (`<type>(<scope>)?: <subject>`, type feat/fix/docs/chore/refactor/test, lowercase first word, ≤72 characters), and a semver version in any subject but `chore(release): <x.y.z>`.
 - `safety:commit-attribution` bounces a Claude co-author line or the Claude Code footer in the message, in a repo whose `commit.attribution` is false. Remove the line and commit again.
-- The ship's one run is a root `npm test` on the final tree, or `workkit prove` when the folder holds work the commit leaves out (Step 3 item 5); the gate checks its record.
+- The ship's one run is a root `npm test` on the final tree, or `workkit prove` when the folder holds work the commit leaves out (Step 3 item 5); the gate checks its record (`docs/project-state.md` § The proof).
   - A commit on a tree no green run recorded bounces: rerun it, fix any red, never bypass the gate.
-  - The full-suite hold refuses the run while an issue is at `status:building`: park it first.
+  - The full-suite hold refuses the run while an issue is at `status:building`: park it first (`docs/project-state.md` § The proof).
   - A no-code ship leans on the newest code commit's record (publish check 3).
   - New source files ship WITH tests.
 - The ship runs the review itself (step 3.2b), never asking the owner first. The work commit stales the marker, so retouch it (`workkit review mark`, plus `full` when this ship's own panel was full) before `chore(release)` when that commit stages anything code-classified.

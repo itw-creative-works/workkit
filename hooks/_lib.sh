@@ -41,9 +41,6 @@ hook_is_linux() { hook_uname_s; [ "$HOOK_UNAME_S" = "Linux" ]; }
 hook_jq() { wk_jq "$@"; }
 # hook_jq_default <default> <jq args...>: wk_jq_default under the hook name.
 hook_jq_default() { wk_jq_default "$@"; }
-# hook_sha1: the one digest; the body is wk_sha1, since the engine keys the
-# suite and package records with it too.
-hook_sha1() { wk_sha1 "$@"; }
 
 # The participation predicates (wk_is_repo_root, wk_settings_declined,
 # wk_settings_enabled) keep their engine names: every hook that loads this

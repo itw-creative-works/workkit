@@ -128,7 +128,7 @@
 - `npm test` is `workkit test`, the bin of the runner the kit ships as the npm package `workkit-core`.
   - The package is `packages/core/`, its library in `test/lib/` there.
   - The global `workkit test` hands its arguments to this `npm test`.
-  - A path after `--` is a suite file or a folder, every suite under it; `--filter=<text>` runs only the cases whose full name holds the text, and records no proof.
+  - A path after `--` is a suite file or a folder, every suite under it; `--filter=<text>` runs only the cases whose full name holds the text, and records no proof (`docs/project-state.md` § The proof).
   - The kit's root lists `packages/*` as workspaces, and `packages/core` has no `test` script, so the root run starts no member.
 - `test/lib/harness.js` is a one-line re-export of `workkit-core/test`, which carries the whole library.
 - The runner reads no list file: a suite that runs alone says so in its name, `*.serial.test.js`, and runs in the serial tail after the parallel wave (`docs/tests.md` § The kit's runner).
