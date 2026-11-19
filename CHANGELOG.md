@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.99.6] - 2026-11-19
+
 ### Changed
 
-- [#566](../../issues/566) - npm's script shell runs a `test` event in Node, and `workkit prove` asks the full-suite hold in process. A `test` event needs Node 22.12: without it, one `script-shell:` line and exit 1. The hold's line for an unhashable tree no longer names a shell function.
+- [#566](../../issues/566) [`957f5d7e`](../../commit/957f5d7e) Thanks [@ianwieds]! - npm's script shell runs a `test` event in Node, and `workkit prove` asks the full-suite hold in process. A `test` event needs Node 22.12: without it, one `script-shell:` line and exit 1. The hold's line for an unhashable tree no longer names a shell function.
 
 ### Fixed
 
-- [#566](../../issues/566) - A kit line on stderr is written whole when the pipe is full, so `workkit proof red` no longer ends with exit 2 and no `red-proof:` line. A test harness group that survives SIGKILL names each member still there, with its state, where `/proc` exists.
+- [#566](../../issues/566) [`957f5d7e`](../../commit/957f5d7e) Thanks [@ianwieds]! - A kit line on stderr is written whole when the pipe is full, so `workkit proof red` no longer ends with exit 2 and no `red-proof:` line. A test harness group that survives SIGKILL names each member still there, with its state, where `/proc` exists.
 
 ## [0.99.5] - 2026-11-18
 
