@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.100.1] - 2026-11-20
+
 ### Changed
 
-- [#569](../../issues/569) - The kit keeps one list of its commands, each with the permission its Claude Code rule lands in, and setup writes the rules from it. `workkit ship deploy` lands at `permissions.ask`, so Claude Code asks at every deploy. A command that runs other code gets no rule.
+- [#569](../../issues/569) [`d54dea59`](../../commit/d54dea59) Thanks [@ianwieds]! - The kit keeps one list of its commands, each with the permission its Claude Code rule lands in, and setup writes the rules from it. `workkit ship deploy` lands at `permissions.ask`, so Claude Code asks at every deploy. A command that runs other code gets no rule.
 
 ### Fixed
 
-- [#563](../../issues/563) - On Windows, several calls attached to one run could fail as each left the run's exit code record at the same moment. A call now takes a record that already holds its line as written, and tries a refused write again for two seconds.
+- [#563](../../issues/563) [`fec8e471`](../../commit/fec8e471) Thanks [@ianwieds]! - On Windows, several calls attached to one run could fail as each left the run's exit code record at the same moment. A call now takes a record that already holds its line as written, and tries a refused write again for two seconds.
 - (no issue) - `workkit ship cut` names a real command when a repo's `checks.yml` has no `release` job: `workkit heal`. Its line named `workkit standards`, which is no command.
 - (no issue) - A run's record that fails to write now leaves no temp file behind. The scripts of a run now share that write, `workflow/lib/write.js`.
 
