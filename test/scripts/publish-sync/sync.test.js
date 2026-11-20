@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { IS_WINDOWS, shellPath } = require('../../lib/platform');
+const { shellPath, skipWithoutModes } = require('../../lib/platform');
 const { STAMP, kitVersion } = require('../../lib/version-stamp');
 const {
   cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
@@ -317,7 +317,7 @@ describe('workflow/home: a top-level folder the app dropped', () => {
   });
 
   // A read-only subfolder makes the removal fail; Windows and root ignore the mode.
-  test('a folder removal that fails warns, cleans its temp folder and returns 3', { skip: (IS_WINDOWS || process.getuid() === 0) && 'a read-only folder does not stop a removal here' }, () => {
+  test('a folder removal that fails warns, cleans its temp folder and returns 3', { skip: skipWithoutModes('a read-only folder does not stop a removal') }, () => {
     const world = mkSyncWorld();
     write(path.join(world.app, 'legacy', 'deep', 'two.js'), 'export default 2;\n');
     const checkout = commitCheckout(world);

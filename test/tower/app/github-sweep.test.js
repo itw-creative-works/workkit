@@ -20,7 +20,7 @@ describe('tower/app: github - the sweep is the tower’s own', () => {
     const fromBrowser = github.normalizeBoard(SLUGS, SWEEP.data, SWEEP.errors, CLOSED_NOW);
     expect(fromBrowser.issues[0].blockedBy.length, 'an issue depending on nothing carries the empty list').toBe(0);
     expect(keys(fromBrowser.issues[1]), 'the unreadable-repo edge is carried whole, the closed one is satisfied, and the edge written both ways is one edge').toBe('owner/gone#7,ITW-Creative-Works/workkit#81');
-    expect(keys(fromBrowser.issues[2]), 'a bulleted Depends on: line is the same line - issue bodies are markdown').toBe('Omega-JS-Stack/omega#144');
+    expect(keys(fromBrowser.issues[2]), 'a bulleted Depends on: line is the same line - issue bodies are markdown').toBe('omegajs-dev/omega#144');
   });
 
   test('the day’s closed count rides the sweep, and no closed issue enters the board', () => {

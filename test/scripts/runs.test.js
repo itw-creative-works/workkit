@@ -12,7 +12,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, jsPath, systemPathWith, homeEnv, samePath,
+  IS_WINDOWS, NODE_DIR, jsPath, systemPathWith, homeEnv, samePath, skipWithoutModes,
 } = require('../lib/platform');
 const {
   checkSettings, rootHolding, pidOf, reap, writesPid, silent, ended, read, handLock, claimNaming, tagOf,
@@ -576,7 +576,7 @@ describe('run-lock.js: the owner\'s drop, the end of a run and the liveness read
 describe('run-lock.js leaveRecord: the record beside the lock', () => {
   const { leaveRecord } = require(RUN_LOCK);
   const WRITERS = 8;
-  const NO_WRITE = (IS_WINDOWS || process.getuid() === 0) && 'a read-only folder does not stop the write here (Windows ignores the mode, root ignores it)';
+  const NO_WRITE = skipWithoutModes('a read-only folder does not stop the write');
 
 
   test('eight calls attached to one run leave its record at one moment, 200 times each: every call exits 0, the record whole, no temp file left', async () => {

@@ -243,7 +243,7 @@ const SWEEP = {
           // around the label. The edge points outside the sweep, so it is
           // carried and never acted on; this item leads nextUp once item 82 is
           // demoted behind its open blocker.
-          body: 'the spec\n\n- Depends on: Omega-JS-Stack/omega#144\n',
+          body: 'the spec\n\n- Depends on: omegajs-dev/omega#144\n',
           createdAt: '2026-07-27T09:00:00Z',
           updatedAt: '2026-07-27T10:00:00Z',
           comments: { totalCount: 0 },

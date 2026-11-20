@@ -249,7 +249,7 @@ describe('tower/brief: what a morning waits on', () => {
     // A closed issue and a repo this token cannot read look identical from
     // here, so the edge says nothing rather than something invented.
     const board = boardOf([
-      issue(1, { status: 'specced', ...blockedByOf('Omega-JS-Stack/omega#144') }),
+      issue(1, { status: 'specced', ...blockedByOf('omegajs-dev/omega#144') }),
       issue(2, { status: 'specced' }),
     ]);
     const out = buildBrief(board, {}, ROSTER, STAMP);

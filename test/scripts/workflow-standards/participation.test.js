@@ -8,7 +8,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NO_RC, gitPath, shellPath, samePath, spawnSystemBash,
+  IS_WINDOWS, NO_RC, gitPath, shellPath, samePath, spawnSystemBash, skipWithoutModes,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const {
@@ -271,7 +271,7 @@ describe('standards.sh: participation', () => {
     cleanup(repo);
   });
 
-  test('without jq an unreadable settings file reads unreadable, as it does with jq', { skip: (IS_WINDOWS || process.getuid() === 0) && 'a mode-000 file is still readable here (Windows ignores the mode, root ignores it)' }, () => {
+  test('without jq an unreadable settings file reads unreadable, as it does with jq', { skip: skipWithoutModes('a mode-000 file is still readable') }, () => {
     // standards/state.sh sourced after participation.sh, as standards.sh sources
     // them. The text says enabled, so only the unreadable read can answer.
     const dir = mkTmp('wf-std-');

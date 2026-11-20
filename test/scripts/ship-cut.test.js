@@ -133,7 +133,7 @@ describe('ship cut: refusals', () => {
     const gh = commitGh({ tags: ['v1.2.3'] });
     const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
     expect(code !== 0 && code !== null, `a non-zero exit, got ${code}: ${err}`).toBeTruthy();
-    expect(lines(err).includes('ship-cut: .github/workflows/checks.yml has no release job; run the standards step (workkit standards) and commit the caller'),
+    expect(lines(err).includes('ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller'),
       `the no-release-job line, got: ${err}`).toBeTruthy();
     expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
     expect(g.order(), 'no hook').toBe(null);

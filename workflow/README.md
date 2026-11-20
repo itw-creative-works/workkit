@@ -39,7 +39,7 @@
 | `lib/lock.js` | The lock folder's rules: the claim, a run lock's mark, its retire and adopt, the plain mutex and the markers' sweep, CJS, requiring `lib/run.js`, `lib/read.js` and `lib/proc-state.js`, and `hooks/mods/markers.js` only for the sweep |
 | `lib/proc-state.js` | A process's state: its `/proc` fields, and whether it ended and waits uncollected, CJS, requiring nothing beyond Node; a program it starts goes through the starter its caller hands it |
 | `lib/attach.js` | A call attached to a run: the tail of its log, painted in process, its look, the run under a supervisor already, and the view, the log reads and the path compare `watch.js` shares, CJS |
-| `lib/detach.js` | The detached runner's launcher (`node detach.js`, which `lib/runs.js` runs as a process of its own) and its supervisor: its checks and its ends, requiring `lib/run.js`, `lib/pulse.js` and `lib/tree.js`, and `lib/settings.js` only with `--root` |
+| `lib/detach.js` | The detached runner's launcher (`node detach.js`, which `lib/runs.js` runs as a process of its own) and its supervisor: its checks and its ends, requiring `lib/run.js`, `lib/pulse.js`, `lib/tree.js` and `lib/write.js`, and `lib/settings.js` only with `--root` |
 | `lib/command-log.sh` | The command log: a `workkit` command that does work runs again with its two streams teed to the terminal, and its run kept plain in its log file |
 | `lib/pulse.js` | The supervisor's verdict on a run from one reading per check, CJS, requiring nothing: `judge`, and the counts, the work floor and the two codes |
 | `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`, on Windows from both the Windows and the Git Bash process tables), CJS, requiring only `lib/run.js` |
@@ -48,6 +48,7 @@
 | `lib/pause.js` | The one blocking wait the kit's synchronous Node commands share, CJS, requiring nothing beyond Node: `pause(seconds)` blocks the process through `Atomics.wait`, a fraction allowed, so a poll loop sleeps with no child process (`identity/rest-pr.js`'s `pr checks --watch`, `ship/cut.js`'s release wait, `lib/tree-copy.js`'s worktree add retries, `lib/say.js`'s full pipe) |
 | `lib/say.js` | The line helpers the kit's Node commands share, CJS, requiring only `lib/pause.js` |
 | `lib/read.js` | The read of a file that may not be there, CJS, requiring nothing beyond Node |
+| `lib/write.js` | The write of a file through a temp file and a rename (`writeWhole`), so a reader never sees it half-written, CJS, requiring nothing beyond Node |
 | `lib/settings.js` | The settings loader bound to the disk for the kit's Node scripts, CJS |
 | `lib/cloud.js` | Whether this is a claude.ai/code cloud session, CJS, requiring nothing beyond Node: `isCloud(env)` is `CLAUDE_CODE_REMOTE` being `true` (`env` is `process.env` when absent), the workflow layer's Node twin of `wk_is_cloud` in `lib/platform.sh`, read by `ship/hooks.js` and `identity/gate.js` |
 | `public/` | The public pairing's three verbs, each a Node script run from the private repo |
@@ -1376,7 +1377,7 @@
     - a version that is not semver, or none, is the usage line, exit 2;
     - a version whose own release commit carries `Release: none` is exit 0, no wait and no hook;
     - that line is `ship-cut: the chore(release): <x.y.z> commit carries Release: none, so there is no v<x.y.z> to wait for and no hook ran`;
-    - no `release` job is `ship-cut: .github/workflows/checks.yml has no release job; run the standards step (workkit standards) and commit the caller`, exit 1;
+    - no `release` job is `ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller`, exit 1;
     - no `[x.y.z]` section with entries, a folder outside a repo or no HEAD commit is one line, exit 1;
     - no release within the wait is `ship-cut: no release v<x.y.z> after <n>s; check the release job: <url>`, exit 1, no hook run;
     - that url is HEAD's `checks.yml` run (`gh run list --commit`), else the repo's Actions page;

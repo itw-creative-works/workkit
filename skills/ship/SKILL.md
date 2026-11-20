@@ -236,7 +236,7 @@ user-invocable: true
   - A release commit carrying `Release: none` gets none, and one already released is never duplicated.
   - That job does not wait for the work commit's run: on the direct path the release (and a pages deploy it starts) can be public before that run ends.
   - So a red run after it means the release already exists. The red path stops the ship as always, and the fix ships forward as the next version, never by deleting the release.
-- The cut checks the caller first: with no `release` job it prints `ship-cut: .github/workflows/checks.yml has no release job; run the standards step (workkit standards) and commit the caller` and exits 1.
+- The cut checks the caller first: with no `release` job it prints `ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller` and exits 1.
   - Report it; the ship ends there.
 - It then waits for `v<version>` to appear (`gh release view`, about ten minutes in all; a release already there answers at once) and runs the afterRelease hooks.
   - No release in that time is `ship-cut: no release v<version> after <n>s; check the release job: <url>`, exit 1, no hook run: report it with the url.

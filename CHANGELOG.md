@@ -14,6 +14,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 ### Fixed
 
 - [#563](../../issues/563) - On Windows, several calls attached to one run could fail as each left the run's exit code record at the same moment. A call now takes a record that already holds its line as written, and tries a refused write again for two seconds.
+- (no issue) - `workkit ship cut` names a real command when a repo's `checks.yml` has no `release` job: `workkit heal`. Its line named `workkit standards`, which is no command.
+- (no issue) - A run's record that fails to write now leaves no temp file behind. The scripts of a run now share that write, `workflow/lib/write.js`.
 
 ## [0.100.0] - 2026-11-19
 

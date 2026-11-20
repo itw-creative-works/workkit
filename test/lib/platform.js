@@ -278,6 +278,15 @@ const NO_NODE_STUB = 'this case still skips on Windows: its stub predates the la
  */
 const skipWithoutNodeStub = () => IS_WINDOWS && NO_NODE_STUB;
 
+/**
+ * The skip value of a case a file mode must refuse something in: Windows
+ * ignores the mode, and so does root.
+ * @param {string} what what the mode fails to stop, as "a read-only folder does not stop the write"
+ * @returns {false|string} false, or the reason
+ */
+const skipWithoutModes = (what) => (IS_WINDOWS || process.getuid() === 0)
+  && `${what} here (Windows ignores the mode, root ignores it)`;
+
 let fileLinkSkip;
 
 /**
@@ -666,7 +675,7 @@ module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubNode, crlfJq,
   lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeEnv, basePathWithout,
-  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
+  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.
   spawnSync: run.spawnSync,

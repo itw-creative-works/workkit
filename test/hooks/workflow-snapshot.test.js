@@ -10,6 +10,7 @@ const {
 } = require('../lib/harness');
 const {
   IS_WINDOWS, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash, spawnSync,
+  skipWithoutModes,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const { mkRepo, mkOriginRepo } = require('../lib/git-repo');
@@ -639,8 +640,7 @@ describe('workflow:snapshot: a failed take', () => {
     }
   };
 
-  const LOCK_SKIP = (IS_WINDOWS || process.getuid() === 0)
-    && 'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)';
+  const LOCK_SKIP = skipWithoutModes('a read-only folder does not stop the removal');
   const siblingsOf = (w, snap) => snapshots(w).filter((name) => name.startsWith(`${path.basename(snap)}.`));
 
   test('a take over an old snapshot it cannot remove moves the remains to one sibling and takes the new one', { skip: LOCK_SKIP }, () => {

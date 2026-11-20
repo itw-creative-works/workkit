@@ -93,9 +93,9 @@ describe('tower/board: what an issue waits on', () => {
   test('an inline Depends on: line is merged with the native edges, and a repeat is one edge', () => {
     const res = swept(issue(17, {
       blockedBy: blockedBy([4, 'OPEN']),
-      body: 'The graph half waits on the framework.\n\nDepends on: Omega-JS-Stack/omega#144, ITW-Creative-Works/workkit#4\n',
+      body: 'The graph half waits on the framework.\n\nDepends on: omegajs-dev/omega#144, ITW-Creative-Works/workkit#4\n',
     }));
-    expect(waits(res), 'the native edge leads and the cross-org line adds the one GitHub would not hold').toBe('ITW-Creative-Works/workkit#4 Omega-JS-Stack/omega#144');
+    expect(waits(res), 'the native edge leads and the cross-org line adds the one GitHub would not hold').toBe('ITW-Creative-Works/workkit#4 omegajs-dev/omega#144');
     expect(res.issues[0].blockedBy.length, 'the edge written both ways is counted once').toBe(2);
   });
 
@@ -108,9 +108,9 @@ describe('tower/board: what an issue waits on', () => {
 
   test('a Depends on: line under markdown list or bold markers still reads (#103)', () => {
     const res = swept(issue(17, {
-      body: '- Depends on: Omega-JS-Stack/omega#144\n\n**Depends on:** #6\n',
+      body: '- Depends on: omegajs-dev/omega#144\n\n**Depends on:** #6\n',
     }));
-    expect(waits(res), 'issue bodies are markdown - a bullet or bold around the label is the same line').toBe('Omega-JS-Stack/omega#144 ITW-Creative-Works/workkit#6');
+    expect(waits(res), 'issue bodies are markdown - a bullet or bold around the label is the same line').toBe('omegajs-dev/omega#144 ITW-Creative-Works/workkit#6');
   });
 
   test('an issue depending on nothing carries an empty list, never a missing field', () => {

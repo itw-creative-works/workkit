@@ -134,7 +134,7 @@
 - The runner reads no list file: a suite that runs alone says so in its name, `*.serial.test.js`, and runs in the serial tail after the parallel wave (`docs/tests.md` § The kit's runner).
 - Every suite is Node's own shape, `describe`, `test` and `expect` from `test/lib/harness.js` (`docs/tests.md` § The shape).
 - A suite or case this machine cannot answer states a `skip` value, `false` or the reason; the runner names the skip.
-  - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutFileLink` in `test/lib/`.
+  - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutModes`, `skipWithoutFileLink` in `test/lib/`.
 - The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
 - This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
   - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`, `events`, `app-cases`, `mod-case`).

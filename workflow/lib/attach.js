@@ -14,7 +14,8 @@ const { StringDecoder } = require('string_decoder');
 const { setTimeout: sleep } = require('timers/promises');
 const { spawn } = require('./run');
 const { readOrNull } = require('./read');
-const { writeWhole, exitOf, END_SIGNALS } = require('./detach');
+const { exitOf, END_SIGNALS } = require('./detach');
+const { writeWhole } = require('./write');
 const {
   takeRunLock, writePid, leaveRecord, recordedCode, dropRunLock, doneCode, pidAlive,
 } = require('./run-lock');

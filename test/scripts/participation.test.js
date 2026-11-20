@@ -11,7 +11,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, NO_EXEC_BIT, shellPath, spawnBash, nodeEnv,
+  SYSTEM_PATH, NO_RC, skipWithoutModes, shellPath, spawnBash, nodeEnv,
 } = require('../lib/platform');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
@@ -168,7 +168,7 @@ describe('participation.sh: wk_settings_declined and wk_settings_enabled', () =>
     expect(both('  \n'), 'and so is a whitespace-only one').toBe('nono');
   });
 
-  test('an unreadable file reads as declined, and says nothing on stderr', { skip: IS_WINDOWS && NO_EXEC_BIT }, () => {
+  test('an unreadable file reads as declined, and says nothing on stderr', { skip: skipWithoutModes('a mode-000 file is still readable') }, () => {
     // A guard reading this must not print the shell's complaint into a session's
     // context, so the silencing lives in the seam rather than at each call. The
     // text says enabled, so only the unreadable read can make it a decline.

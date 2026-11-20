@@ -21,7 +21,7 @@ const { pause } = require('../lib/pause');
 
 const USAGE = 'usage: workkit ship cut <x.y.z>';
 const CALLER = '.github/workflows/checks.yml';
-const NO_RELEASE_JOB = `${CALLER} has no release job; run the standards step (workkit standards) and commit the caller`;
+const NO_RELEASE_JOB = `${CALLER} has no release job; run the standards heal (workkit heal) and commit the caller`;
 
 const say = sayAs('ship-cut');
 

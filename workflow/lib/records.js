@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { readOrNull } = require('./read');
+const { writeWhole } = require('./write');
 const { takeLock, dropLock, sweepMarkers } = require('./lock');
 const { pkgMarkerPath, shellEnvOf, suiteMarkerPath } = require('../../hooks/mods/markers.js');
 const { userDirOf } = require('../../hooks/mods/log.js');
@@ -57,14 +58,9 @@ const writePkgRecord = async (root, tree, pkg) => {
   const lock = `${file}.lock`;
   // A lock not taken in time writes anyway, as wk_take_lock's callers do.
   const locked = await takeLock(lock);
-  const temp = `${file}.tmp.${process.pid}`;
   try {
-    fs.writeFileSync(temp, pkgRecordText(readOrNull(file), tree, pkg));
-    fs.renameSync(temp, file);
+    writeWhole(file, pkgRecordText(readOrNull(file), tree, pkg));
     return true;
-  } catch (err) {
-    fs.rmSync(temp, { force: true });
-    throw err;
   } finally {
     if (locked) dropLock(lock);
   }

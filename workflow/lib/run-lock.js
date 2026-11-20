@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { setTimeout: sleep } = require('timers/promises');
 const { readOrNull } = require('./read');
-const { writeWhole } = require('./detach');
+const { writeWhole } = require('./write');
 const { endTreeOf } = require('./tree');
 const {
   claimDir, lockMark, retireJudged, lockTag, tagPid, pidAlive, isFile, isDir, DAY_MS,

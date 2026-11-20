@@ -13,7 +13,7 @@ const {
   describe, test, expect, SPAWN_DEADLINE, alive, pidIn, until,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, jsPath, gitPath, joinPath, spawnSync, spawn,
+  IS_WINDOWS, BASH, jsPath, gitPath, joinPath, spawnSync, spawn, skipWithoutModes,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { skipWithoutNpm } = require('../lib/core-repo');
@@ -1281,7 +1281,7 @@ describe('proof red --live', () => {
   });
 
   test('--live with a named path that cannot be put back: exit 2 naming it, the run folder kept with its live version', {
-    skip: (IS_WINDOWS || process.getuid() === 0) && 'a read-only folder does not stop the removal here (Windows ignores the mode, root ignores it)',
+    skip: skipWithoutModes('a read-only folder does not stop the removal'),
   }, () => {
     const w = mkWorld();
     takeSnapshot(w);
