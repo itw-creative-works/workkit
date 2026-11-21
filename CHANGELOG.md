@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.100.2] - 2026-11-21
+
 ### Fixed
 
 - (no issue) - A call attached to a run no longer loses the run's last lines when another call collects the run first. It could exit with the run's code and no closing line; it now reads the rest of the log before it returns.
