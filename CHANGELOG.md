@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- (no issue) - A call attached to a run no longer loses the run's last lines when another call collects the run first. It could exit with the run's code and no closing line; it now reads the rest of the log before it returns.
+- (no issue) - A sign-in file or token cache that fails to write now leaves no temp file behind. Both go through the kit's one whole-file write, `workflow/lib/write.js`, which can now make a file at mode 600 from its first moment.
+
 ## [0.100.1] - 2026-11-20
 
 ### Changed

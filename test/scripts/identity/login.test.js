@@ -165,6 +165,17 @@ describe('identity/login: the device flow', () => {
       expect(flow.calls.filter((c) => c.url === 'https://api.github.com/user').length, `${reason}: no /user read`).toBe(0);
     }
   });
+
+  test('a login write that cannot land: it throws, and no temp file is left beside the login file', async () => {
+    const { writeLogin } = load();
+    const dir = mkTmp('wk-login-nowrite-');
+    const file = path.join(dir, 'login.json');
+    // A folder where the login file goes, so the rename cannot land.
+    fs.mkdirSync(file);
+    const err = await caught(() => writeLogin(file, { token: 'ghu_cannotland', login: 'octocat' }));
+    expect(err, 'the write throws').toBeInstanceOf(Error);
+    expect(JSON.stringify(fs.readdirSync(dir)), 'the folder alone, no temp file beside it').toBe(JSON.stringify(['login.json']));
+  });
 });
 
 describe('identity/login: the browser opener', () => {

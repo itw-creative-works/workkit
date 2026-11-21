@@ -9,6 +9,7 @@ const path = require('path');
 const { CLIENT_ID } = require('./app');
 const { userDir } = require('../user-dir');
 const { readJsonOrNull } = require('../lib/read');
+const { writeWhole } = require('../lib/write');
 
 const DEFAULT_SERVER = 'https://github.com';
 const DEFAULT_API = 'https://api.github.com';
@@ -39,20 +40,23 @@ const readLogin = (file) => {
 };
 
 /**
- * A JSON file written owner-only: the folder 0700, the file 0600, renamed into
- * place so a reader racing the write never sees half a file. The login and the
- * client's token cache both write through it.
- * @param {string} file
- * @param {object} entry
+ * A folder made owner-only, 0700, an existing one narrowed to it.
+ * @param {string} dir
  */
-const writeOwnerOnly = (file, entry) => {
-  const dir = path.dirname(file);
+const ownerOnlyDir = (dir) => {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   fs.chmodSync(dir, 0o700);
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
-  fs.chmodSync(tmp, 0o600);
-  fs.renameSync(tmp, file);
+};
+
+/**
+ * A file written owner-only: its folder 0700, the file 0600 through writeWhole.
+ * The login and the client's token cache both write through it.
+ * @param {string} file
+ * @param {string} text
+ */
+const writeOwnerOnly = (file, text) => {
+  ownerOnlyDir(path.dirname(file));
+  writeWhole(file, text, { mode: 0o600 });
 };
 
 /**
@@ -65,7 +69,7 @@ const writeLogin = (file, entry) => {
   if (!entry || typeof entry.token !== 'string' || !entry.token || typeof entry.login !== 'string' || !entry.login) {
     throw new TypeError('a login needs a token and a login');
   }
-  writeOwnerOnly(file, { token: entry.token, login: entry.login });
+  writeOwnerOnly(file, `${JSON.stringify({ token: entry.token, login: entry.login })}\n`);
 };
 
 /**

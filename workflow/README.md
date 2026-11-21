@@ -48,7 +48,7 @@
 | `lib/pause.js` | The one blocking wait the kit's synchronous Node commands share, CJS, requiring nothing beyond Node: `pause(seconds)` blocks the process through `Atomics.wait`, a fraction allowed, so a poll loop sleeps with no child process (`identity/rest-pr.js`'s `pr checks --watch`, `ship/cut.js`'s release wait, `lib/tree-copy.js`'s worktree add retries, `lib/say.js`'s full pipe) |
 | `lib/say.js` | The line helpers the kit's Node commands share, CJS, requiring only `lib/pause.js` |
 | `lib/read.js` | The read of a file that may not be there, CJS, requiring nothing beyond Node |
-| `lib/write.js` | The write of a file through a temp file and a rename (`writeWhole`), so a reader never sees it half-written, CJS, requiring nothing beyond Node |
+| `lib/write.js` | The write of a file through a temp file and a rename (`writeWhole`), so a reader never sees it half-written, CJS, requiring nothing beyond Node. A `mode` creates the temp file new at it, never wider even for a moment: the sign-in and the token cache write theirs at 0600 |
 | `lib/settings.js` | The settings loader bound to the disk for the kit's Node scripts, CJS |
 | `lib/cloud.js` | Whether this is a claude.ai/code cloud session, CJS, requiring nothing beyond Node: `isCloud(env)` is `CLAUDE_CODE_REMOTE` being `true` (`env` is `process.env` when absent), the workflow layer's Node twin of `wk_is_cloud` in `lib/platform.sh`, read by `ship/hooks.js` and `identity/gate.js` |
 | `public/` | The public pairing's three verbs, each a Node script run from the private repo |
@@ -627,6 +627,7 @@
       - Every call attached to one run writes the same line, and Windows refuses a rename onto a file in use.
       - So a write that fails is done once the record holds that line; otherwise it is tried again for two seconds, then its error is thrown.
     - A call that finds the lock or the done file gone, its supervisor's pid gone too, returns the code that record holds for its own pid (`recordedCode`).
+      - First it reads the log again from where it left off, since the run may have ended after the poll's own read: so it shows the log's last lines.
       - So of two calls attached to one run, the one that finds the lock already dropped still gets the run's code, whatever the command printed.
       - No record, or another run's, is `detach: the run of supervisor <pid> ended without recording an exit code; its output is in <log>`, and 1.
     - A done file that holds no number is `detach: the done file held no exit code (<text>)`, the lock dropped, and 1.
@@ -872,8 +873,9 @@
     - It asks `/login/device/code`, and prints the page and the code.
     - It polls `/login/oauth/access_token` at the server's interval, five seconds more on `slow_down`.
     - It reads the login from `GET /user`.
-    - It writes `{ token, login }` to `loginFile()`, `~/.workkit/identity/login.json` (the folder 0700, the file 0600, renamed into place).
+    - It writes `{ token, login }` to `loginFile()`, `~/.workkit/identity/login.json` (the folder 0700, the file 0600, through `writeWhole` of `lib/write.js`).
   - `readLogin` and `writeLogin` are the store.
+    - `writeOwnerOnly(file, text)` is the owner-only write both the login and the token cache of `identity/token.js` go through: the folder 0700 (an existing one narrowed to it), then `writeWhole` at 0600.
   - `GITHUB_SERVER_URL` and `GITHUB_API_URL` override the two hosts.
     - `apiUrl()` is the second, which the install page reads too.
   - Run as `node login.js` it signs in.

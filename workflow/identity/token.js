@@ -241,7 +241,7 @@ const tokenFor = async (repo, opts = {}) => {
     fetch: opts.fetch || globalThis.fetch,
     login,
   });
-  writeOwnerOnly(file, entry);
+  writeOwnerOnly(file, `${JSON.stringify(entry)}\n`);
   return entry.token;
 };
 

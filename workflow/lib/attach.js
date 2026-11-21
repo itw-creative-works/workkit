@@ -144,16 +144,19 @@ const follow = async (log, lock, pid, from, view, signal) => {
   const lookFile = path.join(lock, 'look');
   let off = from;
   let code = '';
-  for (let polls = 1; ; polls += 1) {
-    // Done is read once, before the log, so the log read that follows is the
-    // last; an empty read is a done file not written yet.
-    code = doneCode(lock);
-    const look = code === '' && fs.existsSync(lookFile);
+  const readOn = () => {
     const size = sizeOf(log);
     if (size > off) {
       view.write(bytesOf(log, off, size));
       off = size;
     }
+  };
+  for (let polls = 1; ; polls += 1) {
+    // Done is read once, before the log, so the log read that follows is the
+    // last; an empty read is a done file not written yet.
+    code = doneCode(lock);
+    const look = code === '' && fs.existsSync(lookFile);
+    readOn();
     if (code !== '') break;
     if (look) {
       const evidence = readOrNull(lookFile);
@@ -165,6 +168,9 @@ const follow = async (log, lock, pid, from, view, signal) => {
       return { rc: 125, code: null, look: true };
     }
     if ((!fs.existsSync(lock) || polls % LIFE_EVERY === 0) && !pidAlive(pid) && !fs.existsSync(path.join(lock, 'done'))) {
+      // The run may have ended, and another call collected it, after the read
+      // above: its supervisor gone, the log is whole now, so its rest is read.
+      readOn();
       await dropRunLock(lock, pid);
       const recorded = recordedCode(lock, pid);
       if (recorded !== null) return { rc: recorded, code: recorded, look: false };

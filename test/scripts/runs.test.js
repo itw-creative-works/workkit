@@ -19,7 +19,7 @@ const {
   actsAfter, writesAfter, deadPid, holding, attachArgv, underEndWait, launchBody,
 } = require('../lib/supervise');
 const { startNeverCollects, childOf } = require('../lib/never-collects');
-const { COLOR_ON } = require('../lib/supervise-world');
+const { COLOR_ON, linesToLast } = require('../lib/supervise-world');
 const { runJob, runUnder, startRun } = require('../lib/kit-under');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
@@ -328,6 +328,34 @@ describe('attach.js attachRun: a run that ended without its code', () => {
     const res = attachTo(process.pid, { pid: `${process.pid}\n`, done: 'x\n' });
     expect(res.status, `exit 1, output: ${res.output}`).toBe(1);
     expect(res.stderr.includes('detach: the done file held no exit code (x)'), `the line, stderr: ${res.stderr}`).toBeTruthy();
+  });
+
+  test('another call collected the run between this call\'s log read and its lock check: this call still shows the log\'s last lines, then the run\'s code', async () => {
+    const { attachRun } = require(path.join(LIB, 'attach.js'));
+    const request = 'detach: the run was ended on request (exit 143)';
+    const dir = mkTmp('runs-collected-');
+    const log = path.join(dir, 'log');
+    const supervisor = deadPid();
+    const lock = handLock(path.join(dir, 'lock'), { claim: claimNaming('a'), 'id.a': '', pid: `${supervisor}\n` });
+    fs.writeFileSync(log, 'narrowed-marker\n');
+    let shown = '';
+    // The view gets the first read's bytes before the lock check, so the end lands there:
+    // the body's closing line and the request line, then the record and the lock dropped as a collecting call leaves them.
+    const view = {
+      write: (bytes) => {
+        if (shown === '') {
+          fs.appendFileSync(log, `script-shell: exit 143\n${request}\n`);
+          fs.writeFileSync(`${lock}.done`, `${supervisor} 143\n`);
+          fs.rmSync(lock, { recursive: true });
+        }
+        shown += String(bytes);
+      },
+      flush: () => {},
+      gone: () => false,
+    };
+    const done = await attachRun(log, lock, supervisor, 0, { view });
+    expect(done.rc, `the record's code, shown: ${shown}`).toBe(143);
+    expect(linesToLast(shown).slice(-2), 'the closing line and the request line, last').toEqual(['script-shell: exit 143', request]);
   });
 });
 
