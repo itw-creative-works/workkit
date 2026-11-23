@@ -164,7 +164,7 @@ describe('tower/api/server: the board’s relabel write path', () => {
     expect(/Park it with a Proof: comment first/.test(body.reason), 'and the fix that exists').toBeTruthy();
     expect(moveCalls(w, 'edit').length, 'the drag is not a door around the hooks').toBe(0);
     const [view] = moveCalls(w, 'view');
-    expect(view.join(' '), 'one read of the issue\u2019s own comments, the same read hook_issue_has_proof makes').toBe(`gh issue view 17 --repo ${SLUG} --json comments`);
+    expect(view.join(' '), 'one read of the issue\u2019s own comments, the same read safety:proof-guard makes (hooks/mods/proof-guard.js)').toBe(`gh issue view 17 --repo ${SLUG} --json comments`);
     cleanup(w.root);
   });
 

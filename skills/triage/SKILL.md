@@ -20,7 +20,7 @@ workkit triage mark
 ```
 
 - It records that triage is running. `safety:capture-guard` checks it before a read of `.workkit/capture.md` or the rewrite that clears drained entries. That rewrite is an agent's only write to the file. Adding to it is the owner's alone; it is their capture surface at every other moment.
-- The script keys the marker to the session's repo root, which the capture file belongs to (`$HOME` outside every repo). It names the marker by the same key rule the hook reads it with (`wk_marker_path`, `triageMarkerPath` in the hooks module), so the two cannot drift.
+- The script keys the marker to the session's repo root, which the capture file belongs to (`$HOME` outside every repo). It names the marker by the function the hook reads it with (`triageMarkerPath` of `hooks/mods/markers.js`), so the two cannot drift.
 
 ## Sources to drain (the FULL drain; § Scoped mode reads only the named issues)
 

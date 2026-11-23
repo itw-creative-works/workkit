@@ -1,6 +1,6 @@
 // Tests for workflow/lib/records.js's exports, each asked in a node of its own under
 // the world's env (the records live under its machine folder): the suite record's
-// write, the package record's locked line write, and the sweep each write runs first.
+// write and the sweep after it, the package record's locked line write and the sweep before it.
 // The record paths are the tests' own (test/lib/suite-record.js).
 
 const fs = require('fs');

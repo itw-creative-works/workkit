@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const { spawnSync } = require('../lib/run');
+const { writeErr } = require('../lib/say');
 const { subAt } = require('./gate');
 
 const HOST = 'https://github.com';
@@ -285,7 +286,7 @@ const authStatus = (ctx, argv) => {
     login = api(ctx, 'GET', 'user', ['-q', '.login']).trim();
   } catch (err) {
     if (!(err instanceof GhFailure)) throw err;
-    process.stderr.write(err.result.stderr);
+    writeErr(err.result.stderr);
   }
   if (!login) {
     process.stderr.write(`${NOT_LOGGED_IN}\n`);
@@ -616,7 +617,7 @@ const run = (argv, { gh, repo = '' }) => {
   } catch (err) {
     if (err instanceof GhFailure) {
       process.stdout.write(err.result.stdout);
-      process.stderr.write(err.result.stderr);
+      writeErr(err.result.stderr);
       return err.result.status || 1;
     }
     if (!(err instanceof UsageError)) throw err;

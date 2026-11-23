@@ -1,21 +1,21 @@
-// Tests for workflow/review/covers.sh (`workkit review covers`): whether the
-// full-panel review marker is newer than every path in the working diff. Every
-// case is a real throwaway git repo; the marker is written by
-// workflow/review/mark.sh (`workkit review mark`) itself under the case's own
-// workflow home, so the machine's real marker is never touched.
+// Tests for workflow/review/covers.js (`workkit review covers`): whether the
+// full-panel review marker is newer than every path in the working diff, and
+// workflow/review/mark.js (`workkit review mark [full]`), which writes it. Every
+// case is a real throwaway git repo, each program started under this suite's own
+// node with the case's own workflow home, so the machine's real marker is never touched.
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const {
-  NO_RC, shellPath, which, toolStem, basePathWithout, spawnBash,
-} = require('../lib/platform');
+const { describe, test, expect, run } = require('../lib/harness');
+const { samePath } = require('../lib/platform');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
+const { agedFile } = require('../lib/workflow-home');
 
 const REVIEW = path.join(__dirname, '..', '..', 'workflow', 'review');
-const SCRIPT = path.join(REVIEW, 'covers.sh');
-const MARKER_SCRIPT = path.join(REVIEW, 'mark.sh');
+const SCRIPT = path.join(REVIEW, 'covers.js');
+const MARKER_SCRIPT = path.join(REVIEW, 'mark.js');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -44,14 +44,12 @@ const mkWorld = ({ tracked = true } = {}) => {
 };
 
 const spawnIn = (w, script, cwd = w.repo, args = []) => {
-  const res = spawnBash([...NO_RC, shellPath(script), ...args], {
-    cwd, env: w.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-  });
-  expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();
+  const res = run(process.execPath, [script, ...args], { cwd, env: w.env });
+  expect(res.status !== null, `the program finished (no timeout): ${res.signal || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
-const writeMarker = (w, cwd = w.repo) => expect(spawnIn(w, MARKER_SCRIPT, cwd, ['full']).code, 'mark.sh full wrote the markers').toBe(0);
+const writeMarker = (w, cwd = w.repo) => expect(spawnIn(w, MARKER_SCRIPT, cwd, ['full']).code, 'review mark full wrote the markers').toBe(0);
 
 /** The one full-panel marker the case's workflow home holds. */
 const fullMarker = (w) => {
@@ -132,7 +130,7 @@ describe('review covers: the verdict', () => {
   test('only the plain review marker: stale, no full-panel marker', () => {
     const w = mkWorld();
     w.write('src/x.js', "module.exports = 'x2';\n");
-    expect(spawnIn(w, MARKER_SCRIPT).code, 'mark.sh wrote the plain marker').toBe(0);
+    expect(spawnIn(w, MARKER_SCRIPT).code, 'review mark wrote the plain marker').toBe(0);
     const { code, out, err } = spawnIn(w, SCRIPT);
     expect(code, `exit 1: ${out}${err}`).toBe(1);
     expect(out, `a lone lens covers nothing: ${out}${err}`).toBe('review-covers: stale: no full-panel marker\n');
@@ -206,10 +204,10 @@ describe('review covers: the heal\'s removal of the version key', () => {
 });
 
 describe('review mark: the plain and the full-panel marker', () => {
-  // The markers mark.sh left under the case's workflow home, by folder.
+  // The markers review mark left under the case's workflow home, by folder.
   const markersAfter = (args) => {
     const w = mkWorld();
-    expect(spawnIn(w, MARKER_SCRIPT, w.repo, args).code, `mark.sh ${args.join(' ')} exits 0`).toBe(0);
+    expect(spawnIn(w, MARKER_SCRIPT, w.repo, args).code, `review mark ${args.join(' ')} exits 0`).toBe(0);
     const markers = path.join(w.workflowHome, 'markers');
     const count = (dir) => (fs.existsSync(path.join(markers, dir)) ? fs.readdirSync(path.join(markers, dir)).length : 0);
     const found = { plain: count('claude-review-marker'), full: count('claude-review-full-marker') };
@@ -217,12 +215,76 @@ describe('review mark: the plain and the full-panel marker', () => {
     return found;
   };
 
-  test('mark.sh full writes both review markers', () => {
+  // The file a marker kind holds for the world's repo: its folder under the
+  // workflow home's markers, then the sha1 of the root git names.
+  const markerFile = (w, kind) => {
+    const root = w.git('rev-parse', '--show-toplevel').trim();
+    return path.join(w.workflowHome, 'markers', kind, crypto.createHash('sha1').update(root).digest('hex'));
+  };
+
+  // Each printed line names its expected file, in order, in either spelling of the platform.
+  const printsFiles = (out, files, what) => {
+    const printed = out.split('\n').filter(Boolean);
+    expect(printed.length, `${what}: one line per marker, got: ${out}`).toBe(files.length);
+    files.forEach((file, i) => expect(samePath(printed[i], file, process.platform), `${what}: line ${i + 1} is ${file}, got: ${printed[i]}`).toBeTruthy());
+  };
+
+  test('review mark full writes both review markers', () => {
     expect(JSON.stringify(markersAfter(['full'])), 'the plain and the full-panel marker').toBe(JSON.stringify({ plain: 1, full: 1 }));
   });
 
-  test('mark.sh with no argument writes the plain marker alone', () => {
+  test('review mark with no argument writes the plain marker alone', () => {
     expect(JSON.stringify(markersAfter([])), 'no full-panel marker').toBe(JSON.stringify({ plain: 1, full: 0 }));
+  });
+
+  test('review mark writes the empty review marker keyed on the repo root and prints its path', () => {
+    const w = mkWorld();
+    const { code, out, err } = spawnIn(w, MARKER_SCRIPT);
+    expect(code, `exit 0: ${err}`).toBe(0);
+    const file = markerFile(w, 'claude-review-marker');
+    printsFiles(out, [file], 'review mark');
+    expect(fs.readFileSync(file, 'utf8'), 'the marker is an empty file, as any version reads it').toBe('');
+    cleanup(w.dir);
+  });
+
+  test('review mark full prints the review marker\'s path, then the full-panel marker\'s', () => {
+    const w = mkWorld();
+    const { code, out, err } = spawnIn(w, MARKER_SCRIPT, w.repo, ['full']);
+    expect(code, `exit 0: ${err}`).toBe(0);
+    printsFiles(out, [markerFile(w, 'claude-review-marker'), markerFile(w, 'claude-review-full-marker')], 'review mark full');
+    cleanup(w.dir);
+  });
+
+  test('review mark sweeps the markers folder: a file 8 days old goes, of any kind, one 6 days old stays', () => {
+    const w = mkWorld();
+    const aged = (kind, name, days) => agedFile(path.join(w.workflowHome, 'markers', kind, name), days);
+    const old = aged('claude-review-marker', 'old', 8);
+    const oldOtherKind = aged('claude-suite-marker', 'old', 8);
+    const young = aged('claude-review-marker', 'young', 6);
+    expect(spawnIn(w, MARKER_SCRIPT).code, 'review mark exits 0').toBe(0);
+    expect(!fs.existsSync(old), 'the 8-day-old sibling is swept').toBeTruthy();
+    expect(!fs.existsSync(oldOtherKind), 'and so is an 8-day-old file of another kind').toBeTruthy();
+    expect(fs.existsSync(young), 'the 6-day-old sibling is kept').toBeTruthy();
+    cleanup(w.dir);
+  });
+
+  test('an unknown argument: the usage line on stderr, exit 1, no marker written', () => {
+    const w = mkWorld();
+    const { code, out, err } = spawnIn(w, MARKER_SCRIPT, w.repo, ['--nope']);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the usage line').toBe('review-marker: unknown argument --nope (usage: workkit review mark [full])\n');
+    expect(!fs.existsSync(path.join(w.workflowHome, 'markers', 'claude-review-marker')), 'no review marker').toBeTruthy();
+    cleanup(w.dir);
+  });
+
+  test('outside a git repo: the no-repo line on stderr, exit 1', () => {
+    const w = mkWorld();
+    const { code, out, err } = spawnIn(w, MARKER_SCRIPT, w.tmp);
+    expect(code, `exit 1: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the no-repo line').toBe('review-marker: not inside a git repository, so there is no repo to key the marker to.\n');
+    cleanup(w.dir);
   });
 });
 
@@ -268,23 +330,6 @@ describe('review covers: usage', () => {
     expect(code, `exit 2: ${err}`).toBe(2);
     expect(out, 'nothing on stdout').toBe('');
     expect(err.split('\n').filter(Boolean).length === 1 && err.startsWith('review-covers: '), `one line: ${err}`).toBeTruthy();
-    cleanup(w.dir);
-  });
-
-  test('no shasum and no sha1sum on PATH: exit 2 with one review-covers: line', () => {
-    const w = mkWorld();
-    const bin = basePathWithout(mkTmp('review-covers-'), 'shasum');
-    for (const name of fs.readdirSync(bin)) {
-      if (toolStem(name) === 'sha1sum') fs.rmSync(path.join(bin, name));
-    }
-    expect(!which('shasum', bin) && !which('sha1sum', bin), 'the PATH holds neither hash command').toBeTruthy();
-    const res = spawnBash([...NO_RC, shellPath(SCRIPT)], {
-      cwd: w.repo, env: { ...w.env, PATH: bin }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    expect(res.status, `exit 2: ${res.stdout}${res.stderr}`).toBe(2);
-    expect(res.stdout, 'nothing on stdout').toBe('');
-    const lines = res.stderr.split('\n').filter(Boolean);
-    expect(lines.length === 1 && lines[0].startsWith('review-covers: '), `one review-covers: line: ${res.stderr}`).toBeTruthy();
     cleanup(w.dir);
   });
 });

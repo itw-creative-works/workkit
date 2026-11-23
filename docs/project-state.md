@@ -272,7 +272,7 @@ flowchart TB
       - It is never keyed on `agent:claimed`, since an `agent:ok` item keeps that claim through the park.
     - Each run is judged by the root it runs in. So a run in another repo is that repo's to hold, and a repo that never opted in is never held.
   - The kit's own CI runs the root suite on a push to `main` as well, with two exceptions:
-    - a release push, whose every change is the CHANGELOG or a version stamp by the commit gate's version-only rule (its code the work commit's run proved; `.github/scripts/release-push.sh` decides it);
+    - a release push, whose every change is the CHANGELOG or a version stamp by the commit gate's version-only rule (its code the work commit's run proved; `.github/scripts/release-push.js` decides it);
     - a tag push.
   - When the folder holds work the commit leaves out, `workkit prove` proves the staged tree instead.
     - It runs the root suite in a throwaway copy of the index outside the repo and, on green, records the index's tree.
@@ -960,9 +960,9 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
     - `checks`, `uses: itw-creative-works/workkit/.github/workflows/ci.yml@main` with `secrets: inherit`;
     - and `release`, on a push only with `contents: write` and `actions: write`, calling the kit's `release.yml@main`.
       - That makes the GitHub release of each `chore(release): <x.y.z>` commit the push brought, then a dispatch of each workflow on `release`.
-- That reusable workflow first decides, before any setup, whether the suite runs.
+- That reusable workflow first decides, before the repo's own setup, whether the suite runs.
   - A release push, every change the CHANGELOG or a version stamp, skips every later step with one line.
-    - The kit's `.github/scripts/release-push.sh` judges it.
+    - The kit's `.github/scripts/release-push.js` judges it.
   - Otherwise it sets up Node from the repo's root `.nvmrc`, else its root `.node-version`, else `lts/*`.
     - It reads the file as nvm reads it: blank and comment lines skipped, `v22/*` and `v22` as `22`.
   - It runs each entry of the repo's `hooks.ciSetup` before the dependency install.

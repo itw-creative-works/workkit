@@ -5,6 +5,8 @@
 // append their name to one order file. The wait's bound and poll gap come from
 // WORKKIT_CUT_RELEASE_TIMEOUT and WORKKIT_CUT_RELEASE_POLL (seconds).
 
+const fs = require('fs');
+const path = require('path');
 const {
   describe, test, expect,
 } = require('../lib/harness');
@@ -46,18 +48,22 @@ const caller = (release = true) => `${[
   ...(release ? RELEASE_JOB : []),
 ].join('\n')}\n`;
 
+const CALLER = '.github/workflows/checks.yml';
+const NO_RELEASE_JOB = 'ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller';
+const NOT_COMMITTED = 'ship-cut: .github/workflows/checks.yml has a release job on disk but not in the last commit; commit the caller and push it, then run the cut again';
+
 const RUN_URL = 'https://github.com/o/r/actions/runs/42';
 const RUNS = [{
   databaseId: 42, name: 'checks', workflowName: 'checks', event: 'push', status: 'completed', conclusion: 'success', url: RUN_URL,
 }];
 
 /**
- * A repo carrying `checks` as its caller and the afterRelease hooks `hooksOf(g)`
- * (bash lines), then the commit adding the [1.2.3] section, `subject` its
- * subject: the 1.2.3 release commit the cut follows by default.
+ * A repo carrying `checks` as its caller (null: no caller committed) and the
+ * afterRelease hooks `hooksOf(g)` (bash lines), then the commit adding the [1.2.3]
+ * section, `subject` its subject: the 1.2.3 release commit the cut follows by default.
  */
 const mkCutRepo = (hooksOf = (g) => [g.note('hook')], checks = caller(), subject = 'chore(release): 1.2.3') => {
-  const g = mkShipRepo({ '.github/workflows/checks.yml': checks });
+  const g = mkShipRepo(checks === null ? {} : { [CALLER]: checks });
   g.write('.workkit/settings.json', enabledWith({ afterRelease: hooksOf(g) }));
   g.write('CHANGELOG.md', CHANGELOG);
   g.git('add', '-A');
@@ -128,15 +134,54 @@ describe('ship cut: refusals', () => {
     expect(g.order(), 'no hook').toBe(null);
   });
 
-  test('a caller with no release job: the standards line, a non-zero exit, no gh create and no hook', () => {
+  test('no release job at HEAD nor on disk, and no caller at all: the standards line, exit 1, no gh call and no hook', () => {
+    for (const [shape, checks] of [['a caller with no release job', caller(false)], ['no caller file', null]]) {
+      const g = mkCutRepo(undefined, checks);
+      const gh = commitGh({ tags: ['v1.2.3'] });
+      const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
+      expect(code, `${shape}: exit 1, got: ${err}`).toBe(1);
+      expect(lines(err).includes(NO_RELEASE_JOB), `${shape}: the no-release-job line, got: ${err}`).toBeTruthy();
+      expect(gh.calls().length, `${shape}: no gh call, got: ${fmtCalls(gh.calls())}`).toBe(0);
+      expect(g.order(), `${shape}: no hook`).toBe(null);
+    }
+  });
+
+  test('no release job at HEAD, an uncommitted edit adding one on disk: the not-committed line, exit 1, no gh call and no hook', () => {
     const g = mkCutRepo(undefined, caller(false));
+    g.write(CALLER, caller());
     const gh = commitGh({ tags: ['v1.2.3'] });
     const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
-    expect(code !== 0 && code !== null, `a non-zero exit, got ${code}: ${err}`).toBeTruthy();
-    expect(lines(err).includes('ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller'),
-      `the no-release-job line, got: ${err}`).toBeTruthy();
-    expect(creates(gh).length, `no gh create, got: ${fmtCalls(gh.calls())}`).toBe(0);
+    expect(code, `exit 1, got: ${err}`).toBe(1);
+    expect(lines(err).includes(NOT_COMMITTED), `the not-committed line, got: ${err}`).toBeTruthy();
+    expect(gh.calls().length, `no gh call, got: ${fmtCalls(gh.calls())}`).toBe(0);
     expect(g.order(), 'no hook').toBe(null);
+  });
+
+  test('no caller at HEAD, an untracked one on disk with a release job: the not-committed line, exit 1, no gh call and no hook', () => {
+    const g = mkCutRepo(undefined, null);
+    g.write(CALLER, caller());
+    const gh = commitGh({ tags: ['v1.2.3'] });
+    const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
+    expect(code, `exit 1, got: ${err}`).toBe(1);
+    expect(lines(err).includes(NOT_COMMITTED), `the not-committed line, got: ${err}`).toBeTruthy();
+    expect(gh.calls().length, `no gh call, got: ${fmtCalls(gh.calls())}`).toBe(0);
+    expect(g.order(), 'no hook').toBe(null);
+  });
+});
+
+describe('ship cut: HEAD decides the caller', () => {
+  test('a release job at HEAD, the disk\'s caller without one or deleted: the cut waits for the release and runs the hooks, exit 0', () => {
+    for (const [shape, change] of [
+      ['the disk\'s caller with no release job', (g) => g.write(CALLER, caller(false))],
+      ['the caller deleted on disk', (g) => fs.rmSync(path.join(g.repo, CALLER))],
+    ]) {
+      const g = mkCutRepo();
+      change(g);
+      const gh = commitGh({ tags: ['v1.2.3'] });
+      const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
+      expect(code, `${shape}: exit 0, got: ${err}`).toBe(0);
+      expect(g.order(), `${shape}: the afterRelease hook ran`).toBe('hook\n');
+    }
   });
 });
 

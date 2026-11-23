@@ -520,6 +520,65 @@ describe('release', { skip: skipWithoutNpm() }, () => {
     });
   });
 
+  describe('release: a checks caller not committed', () => {
+    const CALLER = '.github/workflows/checks.yml';
+    const CHECKS = 'name: checks\non:\n  push:\n    branches: [main]\njobs:\n  checks:\n    uses: o/r/.github/workflows/ci.yml@main\n';
+    const RELEASE_JOB = '  release:\n    uses: o/r/.github/workflows/release.yml@main\n';
+    const PENDING = 'release: .github/workflows/checks.yml has changes that are not committed; commit the caller before the release commit; nothing was written.';
+    const WRITTEN = ['CHANGELOG.md', 'package.json', 'package-lock.json', PLUGIN_FILE];
+
+    /** A repo with every version file, the caller committed unless `committed` is false. */
+    const callerRepo = (committed = true) => mkRepo({
+      plugin: PLUGIN, files: { 'package-lock.json': LOCK, ...(committed ? { [CALLER]: CHECKS } : {}) },
+    });
+    const bytes = (dir) => WRITTEN.map((f) => fs.readFileSync(path.join(dir, f)));
+    const writeCaller = (dir) => {
+      fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
+      fs.writeFileSync(path.join(dir, CALLER), `${CHECKS}${RELEASE_JOB}`);
+    };
+
+    /** The refusal, and the CHANGELOG and every version file byte for byte as before. */
+    const assertPending = (dir, args) => {
+      const before = bytes(dir);
+      assertRefused(dir, release(dir, args), PENDING);
+      bytes(dir).forEach((b, i) => expect(b.equals(before[i]), `${WRITTEN[i]} byte for byte as it was`).toBeTruthy());
+    };
+
+    test('the caller changed on disk: the refusal, exit 1, nothing written', () => {
+      const { dir } = callerRepo();
+      writeCaller(dir);
+      assertPending(dir, ['1.3.0']);
+      cleanup(dir);
+    });
+
+    test('the caller staged, and a caller that is untracked: the refusal each time', () => {
+      const staged = callerRepo();
+      writeCaller(staged.dir);
+      git(staged.dir, 'add', CALLER);
+      assertPending(staged.dir, ['1.3.0']);
+      const untracked = callerRepo(false);
+      writeCaller(untracked.dir);
+      assertPending(untracked.dir, ['1.3.0']);
+      cleanup(staged.dir); cleanup(untracked.dir);
+    });
+
+    test('--dry-run with the caller changed: the refusal, exit 1', () => {
+      const { dir } = callerRepo();
+      writeCaller(dir);
+      assertPending(dir, ['1.3.0', '--dry-run']);
+      cleanup(dir);
+    });
+
+    test('a committed caller with no change: it releases', () => {
+      const { dir } = callerRepo();
+      const res = release(dir, ['1.3.0']);
+      expect(res.code, `exit 0 (stderr: ${res.stderr})`).toBe(0);
+      expect(res.stdout, 'the released line').toBe('released 1.3.0 (package.json, .claude-plugin/plugin.json, package-lock.json): 3 entries moved, 0 kept under [Unreleased]\n');
+      expect(read(dir, PLUGIN_FILE), 'the manifest bumped').toBe(bumped(PLUGIN));
+      cleanup(dir);
+    });
+  });
+
   describe('release: usage', () => {
     test('no version is a usage error, exit 2, nothing written', () => {
       const { dir } = mkRepo();

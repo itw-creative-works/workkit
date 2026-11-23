@@ -18,10 +18,11 @@ const { runHooks } = require('./hooks');
 const { RELEASE_SUBJECT } = require('../../hooks/mods/release-taken.js');
 const { sayAs, endOf, errLine } = require('../lib/say');
 const { pause } = require('../lib/pause');
+const { CALLER, hasReleaseJob, callerAtHead } = require('./caller');
 
 const USAGE = 'usage: workkit ship cut <x.y.z>';
-const CALLER = '.github/workflows/checks.yml';
 const NO_RELEASE_JOB = `${CALLER} has no release job; run the standards heal (workkit heal) and commit the caller`;
+const UNCOMMITTED_RELEASE_JOB = `${CALLER} has a release job on disk but not in the last commit; commit the caller and push it, then run the cut again`;
 
 const say = sayAs('ship-cut');
 
@@ -84,26 +85,6 @@ const isReleased = (root, tag) => {
   if (res.status === 0) return true;
   if (/release not found/.test(res.stderr || '')) return false;
   throw new ReleaseViewError(`gh release view ${tag} failed: ${errLine(res)}`);
-};
-
-/**
- * Whether a checks.yml's top-level `jobs:` holds a job named `release`.
- * @param {string} text - the workflow file
- * @returns {boolean}
- */
-const hasReleaseJob = (text) => {
-  const lines = text.replace(/\r/g, '').split('\n');
-  const start = lines.findIndex((line) => /^["']?jobs["']?\s*:\s*(#.*)?$/.test(line));
-  if (start < 0) return false;
-  let indent = null;
-  for (const line of lines.slice(start + 1)) {
-    if (/^\s*(#.*)?$/.test(line)) continue;
-    const at = line.search(/\S/);
-    if (at === 0) return false;
-    if (indent === null) indent = at;
-    if (at === indent && /^["']?release["']?\s*:/.test(line.slice(at))) return true;
-  }
-  return false;
 };
 
 /**
@@ -228,9 +209,12 @@ const main = (argv) => {
     return 1;
   }
 
-  const callerFile = path.join(root, CALLER);
-  if (!fs.existsSync(callerFile) || !hasReleaseJob(fs.readFileSync(callerFile, 'utf8'))) {
-    say(NO_RELEASE_JOB);
+  // HEAD's caller is the one CI ran; the disk only tells which line explains its lack.
+  const committed = callerAtHead(root);
+  if (committed === null || !hasReleaseJob(committed)) {
+    const callerFile = path.join(root, CALLER);
+    const onDisk = fs.existsSync(callerFile) && hasReleaseJob(fs.readFileSync(callerFile, 'utf8'));
+    say(onDisk ? UNCOMMITTED_RELEASE_JOB : NO_RELEASE_JOB);
     return 1;
   }
 
@@ -239,11 +223,6 @@ const main = (argv) => {
   const notesOf = (v) => (log === null ? null : sectionBody(log, v));
   if (notesOf(version) === null) {
     say(noSection(version));
-    return 1;
-  }
-
-  if (headSha(root) === null) {
-    say(`the repo has no HEAD commit, so ${tag} was not released`);
     return 1;
   }
 

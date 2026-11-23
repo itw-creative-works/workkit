@@ -1,7 +1,7 @@
 // Tests for the scripts the kit's reusable ci.yml runs beside a repo's checkout:
-// .github/scripts/ci-node-version.sh (the Node version), ci-hooks.sh (the repo's
-// hooks.ciSetup and hooks.ciPostInstall commands) and ci-test.sh (the suite).
-// Each runs for real through bash, given a scratch repo, from a folder outside it.
+// .github/scripts/ci-node-version.js (the Node version), ci-hooks.js (the repo's
+// hooks.ciSetup and hooks.ciPostInstall commands) and ci-test.js (the suite).
+// Each runs for real under this Node, given a scratch repo, from a folder outside it.
 
 const fs = require('fs');
 const path = require('path');
@@ -9,8 +9,11 @@ const {
   describe, test, expect, mkTmp, WORKKIT_DIR, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  NO_RC, NODE_DIR, shellPath, stubTool, joinPath, homeEnv, basePathWithout, spawnBash,
+  NODE_DIR, shellPath, stubTool, joinPath, homeEnv, basePathWithout, spawnSync, skipWithoutNodeStub,
 } = require('../lib/platform');
+const {
+  recordArgv, readArgv, eqArgv, fmtCalls,
+} = require('../lib/argv-log');
 const { enabledWith } = require('../lib/ship-world');
 
 const SCRIPTS = path.join(__dirname, '..', '..', '.github', 'scripts');
@@ -45,9 +48,9 @@ const basePath = () => {
   return mirror;
 };
 
-/** `bash .github/scripts/<name> <args>` (default the repo) from a folder outside the repo; `all` is stdout then stderr. */
-const run = (w, name, { PATH = basePath(), env = {}, args = [shellPath(w.repo)] } = {}) => {
-  const res = spawnBash([...NO_RC, shellPath(path.join(SCRIPTS, name)), ...args], {
+/** `node .github/scripts/<name> <args>` (default the repo) from a folder outside the repo; `all` is stdout then stderr. */
+const run = (w, name, { PATH = basePath(), env = {}, args = [w.repo] } = {}) => {
+  const res = spawnSync(process.execPath, [path.join(SCRIPTS, name), ...args], {
     cwd: w.away,
     env: homeEnv(w.home, { ...env, PATH, NPM_CONFIG_UPDATE_NOTIFIER: 'false' }),
     encoding: 'utf8',
@@ -59,8 +62,8 @@ const run = (w, name, { PATH = basePath(), env = {}, args = [shellPath(w.repo)] 
   return { code: res.status, out, err, all: out + err };
 };
 
-/** `bash .github/scripts/ci-hooks.sh <event> <repo>`, as run() answers. */
-const hooks = (w, event, opts = {}) => run(w, 'ci-hooks.sh', { ...opts, args: [event, shellPath(w.repo)] });
+/** `node .github/scripts/ci-hooks.js <event> <repo>`, as run() answers. */
+const hooks = (w, event, opts = {}) => run(w, 'ci-hooks.js', { ...opts, args: [event, w.repo] });
 
 const SETTINGS = `${WORKKIT_DIR}/settings.json`;
 /** The repo's settings text: workkit on, `hooks` as given. */
@@ -88,24 +91,24 @@ const xvfbStub = (w) => {
   return { PATH: joinPath(w.bin, basePath()), argv: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : null) };
 };
 
-describe('ci-node-version.sh: which Node the job sets up', () => {
+describe('ci-node-version.js: which Node the job sets up', () => {
   test('a root .nvmrc is the version, over a root .node-version', () => {
     const w = mkWorld({ '.nvmrc': '20.11.1\n', '.node-version': '18.19.0\n' });
-    const { code, out, err } = run(w, 'ci-node-version.sh');
+    const { code, out, err } = run(w, 'ci-node-version.js');
     expect(code, `exit 0, stderr: ${err}`).toBe(0);
     expect(out.trim(), 'the .nvmrc value').toBe('20.11.1');
   });
 
   test('only a root .node-version: its value', () => {
     const w = mkWorld({ '.node-version': '22.3.0\n' });
-    const { code, out, err } = run(w, 'ci-node-version.sh');
+    const { code, out, err } = run(w, 'ci-node-version.js');
     expect(code, `exit 0, stderr: ${err}`).toBe(0);
     expect(out.trim(), 'the .node-version value').toBe('22.3.0');
   });
 
   test('neither at the root, a targets/web/.nvmrc below it: lts/*', () => {
     const w = mkWorld({ 'targets/web/.nvmrc': '20\n' });
-    const { code, out, err } = run(w, 'ci-node-version.sh');
+    const { code, out, err } = run(w, 'ci-node-version.js');
     expect(code, `exit 0, stderr: ${err}`).toBe(0);
     expect(out.trim(), 'no folder below the root is read').toBe('lts/*');
   });
@@ -116,7 +119,7 @@ describe('ci-node-version.sh: which Node the job sets up', () => {
       ['22.3.0\n', '22.3.0'], ['lts/iron\n', 'lts/iron'],
     ];
     for (const [body, want] of forms) {
-      const { code, out } = run(mkWorld({ '.nvmrc': body }), 'ci-node-version.sh');
+      const { code, out } = run(mkWorld({ '.nvmrc': body }), 'ci-node-version.js');
       expect(code, `${JSON.stringify(body)}: exit 0`).toBe(0);
       expect(out, `${JSON.stringify(body)}: the version setup-node takes`).toBe(`${want}\n`);
     }
@@ -128,13 +131,13 @@ describe('ci-node-version.sh: which Node the job sets up', () => {
       ['\r\n#only\r\n18\r\n', '18'],
     ];
     for (const [body, want] of forms) {
-      expect(run(mkWorld({ '.nvmrc': body }), 'ci-node-version.sh').out, `${JSON.stringify(body)}`).toBe(`${want}\n`);
+      expect(run(mkWorld({ '.nvmrc': body }), 'ci-node-version.js').out, `${JSON.stringify(body)}`).toBe(`${want}\n`);
     }
-    expect(run(mkWorld({ '.nvmrc': '# nothing\n\n', '.node-version': '21\n' }), 'ci-node-version.sh').out, 'an .nvmrc of comments alone falls through to .node-version').toBe('21\n');
+    expect(run(mkWorld({ '.nvmrc': '# nothing\n\n', '.node-version': '21\n' }), 'ci-node-version.js').out, 'an .nvmrc of comments alone falls through to .node-version').toBe('21\n');
   });
 });
 
-describe('ci-hooks.sh ciSetup: the repo\'s hooks.ciSetup commands', () => {
+describe('ci-hooks.js ciSetup: the repo\'s hooks.ciSetup commands', () => {
   test('two commands run in order, from the repo root', () => {
     const w = mkWorld({ [SETTINGS]: enabledWith({ ciSetup: ['echo one >> order.txt', 'echo two >> order.txt && pwd -P > where.txt'] }) });
     const { code, all } = hooks(w, 'ciSetup');
@@ -192,7 +195,7 @@ describe('ci-hooks.sh ciSetup: the repo\'s hooks.ciSetup commands', () => {
   });
 });
 
-describe('ci-hooks.sh ciPostInstall: the repo\'s hooks.ciPostInstall commands', () => {
+describe('ci-hooks.js ciPostInstall: the repo\'s hooks.ciPostInstall commands', () => {
   test('two commands run from the repo root in order, each inside a log group named ci-post-install: <command>', () => {
     const first = 'echo one >> order.txt';
     const second = 'echo two >> order.txt && pwd -P > where.txt';
@@ -206,7 +209,7 @@ describe('ci-hooks.sh ciPostInstall: the repo\'s hooks.ciPostInstall commands', 
       .toBe([`::group::ci-post-install: ${first}`, '::endgroup::', `::group::ci-post-install: ${second}`, '::endgroup::'].join('\n'));
   });
 
-  test('a ciPostInstall list alone: ci-hooks.sh ciSetup runs none of it', () => {
+  test('a ciPostInstall list alone: ci-hooks.js ciSetup runs none of it', () => {
     const w = mkWorld({ [SETTINGS]: enabledWith({ ciPostInstall: ['echo post >> ran.txt'] }) });
     const { code, all } = hooks(w, 'ciSetup');
     expect(code, `exit 0, got: ${all}`).toBe(0);
@@ -272,12 +275,12 @@ describe('ci-hooks.sh ciPostInstall: the repo\'s hooks.ciPostInstall commands', 
   });
 });
 
-describe('ci-hooks.sh: the event', () => {
+describe('ci-hooks.js: the event', () => {
   test('no event, or a word that is neither: exit 1 naming ciSetup and ciPostInstall', () => {
     const w = mkWorld({ [SETTINGS]: enabledWith({ afterRelease: ['echo ran >> ran.txt'] }) });
-    const calls = { 'no event': [], 'afterRelease': ['afterRelease', shellPath(w.repo)], 'ciTeardown': ['ciTeardown', shellPath(w.repo)] };
+    const calls = { 'no event': [], 'afterRelease': ['afterRelease', w.repo], 'ciTeardown': ['ciTeardown', w.repo] };
     for (const [name, args] of Object.entries(calls)) {
-      const { code, all } = run(w, 'ci-hooks.sh', { args });
+      const { code, all } = run(w, 'ci-hooks.js', { args });
       expect(code, `${name}: exit 1, got: ${all}`).toBe(1);
       expect(all.includes('ciSetup') && all.includes('ciPostInstall'), `${name}: both events named, got: ${all}`).toBeTruthy();
       expect(w.read('ran.txt'), `${name}: nothing ran`).toBe(null);
@@ -285,11 +288,11 @@ describe('ci-hooks.sh: the event', () => {
   });
 });
 
-describe('ci-test.sh: the suite', () => {
+describe('ci-test.js: the suite', () => {
   test('a test script with xvfb-run on PATH: the suite runs as xvfb-run -a npm test', () => {
     const w = mkWorld(withTestScript());
     const xvfb = xvfbStub(w);
-    const { code, all } = run(w, 'ci-test.sh', { PATH: xvfb.PATH });
+    const { code, all } = run(w, 'ci-test.js', { PATH: xvfb.PATH });
     expect(code, `exit 0, got: ${all}`).toBe(0);
     expect(xvfb.argv(), 'the wrapper got -a npm test').toBe('-a\nnpm\ntest\n');
     expect(w.read('ran.txt'), 'and the repo\'s test script ran').toBe('ran');
@@ -297,11 +300,11 @@ describe('ci-test.sh: the suite', () => {
 
   test('a test script without xvfb-run: plain npm test, its failure the step\'s', () => {
     const w = mkWorld(withTestScript());
-    const { code, all } = run(w, 'ci-test.sh');
+    const { code, all } = run(w, 'ci-test.js');
     expect(code, `exit 0, got: ${all}`).toBe(0);
     expect(w.read('ran.txt'), 'the repo\'s test script ran').toBe('ran');
     const red = mkWorld(withTestScript(4));
-    const failed = run(red, 'ci-test.sh');
+    const failed = run(red, 'ci-test.js');
     expect(failed.code !== 0, `a failing suite fails the step, got ${failed.code}: ${failed.all}`).toBeTruthy();
   });
 
@@ -313,11 +316,41 @@ describe('ci-test.sh: the suite', () => {
     for (const [name, files] of Object.entries(shapes)) {
       const w = mkWorld(files);
       const xvfb = xvfbStub(w);
-      const { code, all } = run(w, 'ci-test.sh', { PATH: xvfb.PATH });
+      const { code, all } = run(w, 'ci-test.js', { PATH: xvfb.PATH });
       expect(code, `${name}: exit 0, got: ${all}`).toBe(0);
       expect(all.trim().split('\n').length, `${name}: one line, got: ${all}`).toBe(1);
       expect(all.trim() !== '', `${name}: a line, not silence`).toBeTruthy();
       expect(xvfb.argv(), `${name}: xvfb-run never called`).toBe(null);
     }
+  });
+});
+
+// A node and an npm ahead of the real ones on PATH, each recording its start. The
+// scripts run under this suite's Node, so a command that reached it instead leaves no record.
+const pathTools = (w) => {
+  const logs = { node: path.join(w.dir, 'node.argv'), npm: path.join(w.dir, 'npm.argv') };
+  for (const [name, log] of Object.entries(logs)) stubTool(w.bin, name, ['#!/bin/bash', recordArgv(log), 'exit 0']);
+  return { PATH: joinPath(w.bin, basePath()), calls: (name) => readArgv(logs[name]) };
+};
+
+describe('ci-hooks.js and ci-test.js: the repo runs on PATH\'s Node, not the one that started the script', () => {
+  test('a ciSetup or ciPostInstall command starting node reaches PATH\'s node', { skip: skipWithoutNodeStub() }, () => {
+    for (const event of ['ciSetup', 'ciPostInstall']) {
+      const w = mkWorld({ [SETTINGS]: enabledWith({ [event]: [`node --probe ${event}`] }) });
+      const tools = pathTools(w);
+      const { code, all } = hooks(w, event, { PATH: tools.PATH });
+      expect(code, `${event}: exit 0, got: ${all}`).toBe(0);
+      const calls = tools.calls('node');
+      expect(calls.some((c) => eqArgv(c, ['--probe', event])), `${event}: PATH's node ran the command, got: ${fmtCalls(calls)}`).toBeTruthy();
+    }
+  });
+
+  test('the suite runs as PATH\'s npm test', { skip: skipWithoutNodeStub() }, () => {
+    const w = mkWorld(withTestScript());
+    const tools = pathTools(w);
+    const { code, all } = run(w, 'ci-test.js', { PATH: tools.PATH });
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    const calls = tools.calls('npm');
+    expect(calls.some((c) => eqArgv(c, ['test'])), `PATH's npm ran test, got: ${fmtCalls(calls)}`).toBeTruthy();
   });
 });

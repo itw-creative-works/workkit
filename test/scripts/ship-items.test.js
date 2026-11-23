@@ -1,18 +1,18 @@
-// Tests for workflow/ship/items.sh (`workkit ship items`): the ship's Step 0c
+// Tests for workflow/ship/items.js (`workkit ship items`): the ship's Step 0c
 // read, the open qa and complete issues one line each with the proof call made.
-// `gh` is a stub answering from fixtures; jq is the machine's own, since the
-// proof read is a jq expression. The proof rule is hooks/mods/proof.js's, cased
-// in test/hooks/proof-guard/.
+// `gh` is a stub answering from fixtures, and the program runs under this
+// suite's own node. The proof rule is hooks/mods/proof.js's, cased in
+// test/hooks/proof-guard/.
 
 const fs = require('fs');
 const path = require('path');
-const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, run } = require('../lib/harness');
 const {
-  NO_RC, shellPath, homeEnv, stubTool, pathWith, spawnBash,
+  shellPath, homeEnv, stubTool, pathWith, joinPath, which, basePathWithout,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'items.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'items.js');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
@@ -51,14 +51,10 @@ const mkWorld = ({ qa = [], complete = [], fail = false } = {}) => {
   return { dir, bin, home, calls: () => readArgv(logFile) };
 };
 
-const runScript = (w, args = []) => {
-  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
-    cwd: w.dir,
-    env: homeEnv(w.home, { PATH: pathWith(w.bin) }),
-    encoding: 'utf8',
-    timeout: SPAWN_DEADLINE,
-  });
-  expect(res.status !== null, `the script finished (no timeout): ${res.error || ''}`).toBeTruthy();
+// `PATH` is the stub's folder ahead of the rest, this machine's PATH unless one is given.
+const runScript = (w, args = [], { PATH = pathWith(w.bin) } = {}) => {
+  const res = run(process.execPath, [SCRIPT, ...args], { cwd: w.dir, env: homeEnv(w.home, { PATH }) });
+  expect(res.status !== null, `the program finished (no timeout): ${res.signal || ''}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -90,6 +86,19 @@ describe('ship items: the lines', () => {
     const { code, out } = runScript(w);
     expect(code, 'exit 0').toBe(0);
     expect(out, 'the title untouched').toBe(`complete #5 proved ${title}\n`);
+    cleanup(w.dir);
+  });
+
+  test('no jq on PATH: the same lines, exit 0', () => {
+    const w = mkWorld({
+      qa: [issue(3, 'qa three', 'Proof: unit')],
+      complete: [issue(7, 'complete seven', 'no proof yet')],
+    });
+    const base = basePathWithout(w.dir, 'jq');
+    expect(!which('jq', base), 'the PATH holds no jq').toBeTruthy();
+    const { code, out, err } = runScript(w, [], { PATH: joinPath(w.bin, base) });
+    expect(code, `exit 0: ${err}`).toBe(0);
+    assertList(lines(out), ['qa #3 proved qa three', 'complete #7 unproved complete seven'], 'both stages read without jq');
     cleanup(w.dir);
   });
 });

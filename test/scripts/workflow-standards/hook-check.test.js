@@ -1,5 +1,5 @@
 // Tests for standards.sh: the hook layer self-check, over a layer with no loader:
-// the hooks module and the shell pieces the scripts still source.
+// the hooks module and the tools the layer needs.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -16,36 +16,30 @@ const {
 } = require('./helpers');
 
 describe('standards.sh: the hook layer self-check', () => {
-  // Every guard fails open by design, so a module that cannot load, a shell
-  // piece with a syntax error, or a missing tool disables a safety layer with
-  // nothing watching. This is the once-a-day assertion that the layer is alive.
+  // Every guard fails open by design, so a module that cannot load or a
+  // missing tool disables a safety layer with nothing watching. This is the
+  // once-a-day assertion that the layer is alive.
 
-  // badPieces: shell pieces (paths under the hooks dir) written with a syntax
-  // error; badModule: the hooks module, register.js, written with one.
-  const makeHooksDir = ({ badPieces = [], badModule = false } = {}) => {
+  // badModule: the hooks module, register.js, written with a syntax error.
+  const makeHooksDir = ({ badModule = false } = {}) => {
     const dir = mkTmp('wf-std-');
     fs.writeFileSync(path.join(dir, 'register.js'), badModule
       ? 'export function register(on {\n'
       : 'export function register(on) {}\n');
     fs.writeFileSync(path.join(dir, 'hooks.json'), `${JSON.stringify({ modules: ['./register.js'] }, null, 2)}\n`);
-    for (const piece of ['_lib.sh', 'lib/markers.sh']) {
-      fs.mkdirSync(path.dirname(path.join(dir, piece)), { recursive: true });
-      fs.writeFileSync(path.join(dir, piece), '#!/bin/bash\nhook_ok() { :; }\n');
-    }
-    for (const piece of badPieces) {
-      fs.mkdirSync(path.dirname(path.join(dir, piece)), { recursive: true });
-      fs.writeFileSync(path.join(dir, piece), 'if [ 1 ; then\n');
-    }
     return dir;
   };
 
-  test('a healthy hook layer with no loader passes and says nothing at all', () => {
+  test('a healthy hook layer with no loader: the one line hooks: the hooks module loads, exit 0, no flag', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const hooks = makeHooksDir();
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
     expect(code, 'exit 0').toBe(0);
     expect(!output.includes('⚠'), `a live layer is not news, and no loader is no fault, got: ${output}`).toBeTruthy();
+    // Each line naming the module, from its `hooks: ` on, past the mark the voice puts before it.
+    const said = output.split('\n').filter((l) => l.includes('hooks module')).map((l) => l.slice(l.indexOf('hooks: ')).trimEnd());
+    expect(JSON.stringify(said), `the one line, got: ${output}`).toBe(JSON.stringify(['hooks: the hooks module loads']));
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
 
@@ -56,7 +50,7 @@ describe('standards.sh: the hook layer self-check', () => {
     const stub = makeGhStub();
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     expect(code, 'exit 0').toBe(0);
-    expect(!output.includes('⚠'), `the module loads and every shell piece parses, got: ${output}`).toBeTruthy();
+    expect(!output.includes('⚠'), `the module loads and every tool is here, got: ${output}`).toBeTruthy();
     expect(output.includes('the hooks module loads'), `and the module is named as loading, got: ${output}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
@@ -83,21 +77,9 @@ describe('standards.sh: the hook layer self-check', () => {
     const line = output.split('\n').find((l) => l.includes('hooks: the hooks module fails to load:')) || '';
     expect(line, `the flag line names the module, got: ${output}`).toBeTruthy();
     expect(line.replace(/.*hooks: the hooks module fails to load:/, '').trim().length > 0, `and carries a stderr line, got: ${line}`).toBeTruthy();
-    expect(!output.includes('; the hooks module loads'), `and the summary does not call it loaded, got: ${output}`).toBeTruthy();
+    expect(!output.includes('the hooks module loads'), `and no line calls it loaded, got: ${output}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
   });
-
-  for (const piece of ['_lib.sh', 'lib/broken.sh']) {
-    test(`a staying shell piece that does not parse is named and marks the run unfinished: ${piece}`, () => {
-      const repo = makeRepo();
-      const stub = makeGhStub();
-      const hooks = makeHooksDir({ badPieces: [piece] });
-      const { code, output } = runScript(repo, { pathPrefix: stub.binDir, hooksDir: hooks });
-      expect(code, 'reported as unfinished').toBe(1);
-      expect(output.includes(`${piece} has a syntax error`), `names the piece, got: ${output}`).toBeTruthy();
-      cleanup(repo); cleanup(stub.dir); cleanup(hooks);
-    });
-  }
 
   test('a digest tool under either name satisfies the check (workkit #245)', () => {
     // wk_sha1 takes shasum or sha1sum, so the daily heal asks for the pair:

@@ -1,6 +1,6 @@
 // workflow/lib/say.js: the one-line stderr writer the kit's Node commands share,
 // and how a child process ended or why it failed, phrased for such a line.
-// Usage: const { sayAs, endOf, errLine } = require('../lib/say');
+// Usage: const { sayAs, writeErr, endOf, errLine } = require('../lib/say');
 
 const fs = require('fs');
 const { pause } = require('./pause');
@@ -9,25 +9,31 @@ const { pause } = require('./pause');
 const FULL_PIPE_WAIT_S = 0.01;
 
 /**
- * A writer of `<prefix>: <text>` lines on stderr, written straight to the fd so
- * each lands before a child's output that follows it; stdout stays the command's own.
- * The whole line is written: a full pipe that is not blocking (EAGAIN) is waited
+ * Write text to stderr whole, straight to the fd so it lands before a child's
+ * output that follows it. A full pipe that is not blocking (EAGAIN) is waited
  * on and the write goes on from the byte it reached; any other error throws.
- * @param {string} prefix - the line prefix, without its colon
- * @returns {(text: string) => void}
+ * @param {string|Buffer} text - what to write, as it is
  */
-const sayAs = (prefix) => (text) => {
-  const line = Buffer.from(`${prefix}: ${text}\n`);
+const writeErr = (text) => {
+  const bytes = Buffer.from(text);
   let at = 0;
-  while (at < line.length) {
+  while (at < bytes.length) {
     try {
-      at += fs.writeSync(2, line, at);
+      at += fs.writeSync(2, bytes, at);
     } catch (err) {
       if (err.code !== 'EAGAIN') throw err;
       pause(FULL_PIPE_WAIT_S);
     }
   }
 };
+
+/**
+ * A writer of `<prefix>: <text>` lines on stderr through `writeErr`; stdout stays
+ * the command's own.
+ * @param {string} prefix - the line prefix, without its colon
+ * @returns {(text: string) => void}
+ */
+const sayAs = (prefix) => (text) => writeErr(`${prefix}: ${text}\n`);
 
 /**
  * How a `spawnSync` child ended: `exited <code>`, `did not finish (<signal>)`,
@@ -49,4 +55,6 @@ const endOf = (res) => {
  */
 const errLine = (res, fallback = endOf(res)) => (res.stderr || '').trim().split('\n')[0].trim() || fallback;
 
-module.exports = { sayAs, endOf, errLine };
+module.exports = {
+  sayAs, writeErr, endOf, errLine,
+};

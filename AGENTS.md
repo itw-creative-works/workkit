@@ -18,12 +18,10 @@
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
 ├── .github/workflows/    # checks.yml (the suite on every pull request and push to main but a release-only one; the release job on a push) · ci.yml, release.yml (the reusable CI and release job every kit-owned checks.yml calls) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
-├── .github/scripts/      # release-push.sh (checks.yml's scope job and ci.yml's Scope step: whether a push is a release stamp only) · ci-node-version.sh, ci-hooks.sh, ci-test.sh (ci.yml's steps: the Node version, a repo's hooks.ciSetup and hooks.ciPostInstall, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
-├── hooks/                # hooks.json (its `modules` list) + the hooks module + the shell library the scripts source, resolved via ${CLAUDE_PLUGIN_ROOT}
+├── .github/scripts/      # release-push.js (checks.yml's scope job and ci.yml's Scope step: whether a push is a release stamp only) · ci-node-version.js, ci-hooks.js, ci-test.js (ci.yml's steps: the Node version, a repo's hooks.ciSetup and hooks.ciPostInstall, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
+├── hooks/                # hooks.json (its `modules` list) + the hooks module, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── register.js       # the hooks module: the twenty-two in-process hooks (nine guards run in the `gh` and `git` shims and git's hooks), the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data (facts.js: the Bash guards' facts; changed.js: a call's changed files; slug.js)
-│   ├── _lib.sh           # the shell library's entry (sourced by workflow/{review,triage}/ and .github/scripts/release-push.sh, never a hook)
-│   ├── lib/              # _lib.sh's helper groups, one file per concern: markers, tree
 │   └── manager/          # resources/ladder.json (the rungs and the classes; the tiers' defaults are defaults/settings.json's)
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
@@ -94,7 +92,7 @@
   - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
 - Beside it live:
   - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
-  - the ship's steps in `ship/`: `items.sh`, `release.js`, `watch.js`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, and `hooks.js`;
+  - the ship's steps in `ship/`: `items.js`, `release.js`, `watch.js`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, and `hooks.js`;
     - `hooks.js` holds the hooks a repo declares for the release, the publish and the deploy, which those steps run;
   - the review and triage markers and the review tier in `review/` and `triage/`, the verifier's red run in `proof/`;
   - the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle.
@@ -185,7 +183,7 @@
   - So a root `npm test` there records its tree.
 - The Windows lane runs in CI: `checks.yml` runs the suite on Linux and Windows for every pull request and every push to `main`.
   - The exception is a release push: its every change is the CHANGELOG or a version stamp, by the commit gate's version-only rule.
-  - `.github/scripts/release-push.sh` decides it, so a dependency change in the lockfile still runs.
+  - `.github/scripts/release-push.js` decides it, so a dependency change in the lockfile still runs.
   - A tag push runs nothing.
 - Every participating repo's caller skips a release push by the same script.
   - It does so in `ci.yml`'s `Scope` step, ahead of its setup, install and suite.
@@ -203,7 +201,7 @@
 ## Conventions
 
 - **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit.
-  - A spelling that differs branches once, in `workflow/lib/platform.sh` and `hooks/_lib.sh` (`docs/hooks.md` § Platforms).
+  - A spelling that differs branches once, in `workflow/lib/platform.sh` (`docs/hooks.md` § Platforms).
   - The hooks module resolves the kit through `$.plugin.root`; the engine's stable address is `~/.claude/workkit`.
   - Every program the shipped Node code starts goes through `workflow/lib/run.js`, the Node twin of `platform.sh`.
     - `test/scripts/run-home.test.js` fails any other shipped `child_process` import but the published workkit-core runner's `test/run.js`.

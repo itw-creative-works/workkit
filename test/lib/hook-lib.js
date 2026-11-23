@@ -1,23 +1,26 @@
-// The snippet runner for hooks/_lib.sh: a bash with the library sourced runs
-// one snippet and hands back its exit code and both streams. Consumers: the
-// test/hooks/lib and lib-record suites.
+// The snippet runner for the engine's shell library: a bash with
+// workflow/lib/platform.sh sourced, plus the siblings a case names, runs one
+// snippet and hands back its exit code and both streams. Consumers: the
+// test/hooks/lib and twins suites, and test/scripts/watch.test.js.
 
 const os = require('os');
 const path = require('path');
 const { SYSTEM_PATH, NO_RC, shellPath, spawnSystemBash } = require('./platform');
 const { SPAWN_DEADLINE } = require('./harness');
 
-const LIB = shellPath(path.join(__dirname, '..', '..', 'hooks', '_lib.sh'));
+const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 
 /**
- * Run <snippet> with hooks/_lib.sh sourced. bash is spawned by absolute path so
- * a case can hand over a PATH holding nothing at all.
- * @param {string} snippet - the bash run after the source line
+ * Run <snippet> with workflow/lib/platform.sh sourced, then each of <siblings>.
+ * bash is spawned by absolute path so a case can hand over a PATH holding nothing at all.
+ * @param {string} snippet - the bash run after the source lines
  * @param {object} [env] - merged over the system PATH and the real HOME
+ * @param {string[]} [siblings] - further file names under workflow/lib/, sourced in order
  * @returns {{code: number, stdout: string, stderr: string}}
  */
-const runLib = (snippet, env = {}) => {
-  const res = spawnSystemBash([...NO_RC, '-c', `. "${LIB}"\n${snippet}`], {
+const runLib = (snippet, env = {}, siblings = []) => {
+  const sources = ['platform.sh', ...siblings].map((name) => `. "${shellPath(path.join(LIB, name))}"\n`).join('');
+  const res = spawnSystemBash([...NO_RC, '-c', `${sources}${snippet}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,

@@ -70,15 +70,15 @@ describe('markers: the marker paths', () => {
   const WH = '/w/home/.workkit';
   const TMP = '/w/tmp';
 
-  test('hook_review_marker_path is the review marker dir plus the sha of the root', async () => {
+  test('reviewMarkerPath is the review marker dir plus the sha of the root', async () => {
     expect(await markers().reviewMarkerPath('/repos/thing', WH), 'the path').toBe(`${WH}/markers/claude-review-marker/${SHA1_THING}`);
   });
 
-  test('hook_review_full_marker_path is the full-panel marker dir plus the sha of the root', async () => {
+  test('reviewFullMarkerPath is the full-panel marker dir plus the sha of the root', async () => {
     expect(await markers().reviewFullMarkerPath('/repos/thing', WH), 'the path').toBe(`${WH}/markers/claude-review-full-marker/${SHA1_THING}`);
   });
 
-  test('hook_triage_marker_path is the triage marker dir plus the sha of the anchor', async () => {
+  test('triageMarkerPath is the triage marker dir plus the sha of the anchor', async () => {
     expect(await markers().triageMarkerPath('/repos/thing', WH), 'the path').toBe(`${WH}/markers/claude-triage-marker/${SHA1_THING}`);
   });
 
@@ -86,7 +86,7 @@ describe('markers: the marker paths', () => {
     expect(await markers().suiteMarkerPath('/repos/thing', WH), 'the path').toBe(`${WH}/markers/claude-suite-marker/${SHA1_THING}`);
   });
 
-  test('hook_session_marker is the named dir plus the session id with every non-alphanumeric as _', async () => {
+  test('sessionMarker is the named dir plus the session id with every non-alphanumeric as _', async () => {
     expect(await markers().sessionMarker('workkit-thing', 'ab-12/c.d e', TMP), 'the path').toBe(`${TMP}/workkit-thing/ab_12_c_d_e`);
   });
 });

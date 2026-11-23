@@ -29,13 +29,19 @@ on:
 jobs:
   scope:
     # Whether the suite runs: always for a pull request; for a push unless it is a
-    # release stamp, which .github/scripts/release-push.sh answers.
+    # release stamp, which .github/scripts/release-push.js answers.
     runs-on: ubuntu-latest
     outputs:
       run: ${{ steps.scope.outputs.run }}
     steps:
       - uses: actions/checkout@v5
         if: github.event_name == 'push'
+      # The kit's scripts run on this Node, as ci.yml starts them.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - name: Kit Node
+        run: echo "WORKKIT_NODE=$(command -v node)" >> "$GITHUB_ENV"
       # The checkout is the pushed commit alone; the script fetches <before> itself.
       - id: scope
         env:
@@ -44,7 +50,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" != push ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
-            bash .github/scripts/release-push.sh "$BEFORE" >> "$GITHUB_OUTPUT"
+            "$WORKKIT_NODE" "$GITHUB_WORKSPACE/.github/scripts/release-push.js" "$BEFORE" >> "$GITHUB_OUTPUT"
           fi
   suite:
     needs: scope

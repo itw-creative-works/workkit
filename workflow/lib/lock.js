@@ -2,8 +2,8 @@
  * workflow/lib/lock.js: the lock folder's rules bound to the disk, CJS: the
  * create-only claim, a run lock's mark (`id.<tag>`, `gone.<tag>`, `id.orphan`),
  * its retire and its adopt, the judged retire every remover shares, the plain
- * mutex, and the 7-day sweep of the marker folders. The mutex and the sweep
- * have shell twins in lib/platform.sh (`wk_take_lock`, `wk_drop_lock`,
+ * mutex, the marker write and the 7-day sweep of the marker folders. The mutex
+ * and the sweep have shell twins in lib/platform.sh (`wk_take_lock`, `wk_drop_lock`,
  * `wk_claim_dir`, `wk_sweep_markers`), which callers outside the run layer use.
  * Usage: const { takeLock, dropLock } = require('./lock');
  */
@@ -315,7 +315,21 @@ const sweepMarkers = (home) => {
   }
 };
 
+/**
+ * Write the marker <file> holding <text>, its folder made first, then sweep the
+ * old markers: the one writer the marker verbs and the suite record share, so
+ * each marker is made alike.
+ * @param {string} file the marker's path (markerPath of hooks/mods/markers.js)
+ * @param {string} home the machine folder
+ * @param {string} [text] the marker's content, empty by default
+ */
+const writeMarker = (file, home, text = '') => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, text);
+  sweepMarkers(home);
+};
+
 module.exports = {
-  claimDir, lockMark, retireLock, adoptLock, retireJudged, takeLock, dropLock, sweepMarkers,
+  claimDir, lockMark, retireLock, adoptLock, retireJudged, takeLock, dropLock, sweepMarkers, writeMarker,
   lockTag, tagPid, pidAlive, isFile, isDir, DAY_MS,
 };

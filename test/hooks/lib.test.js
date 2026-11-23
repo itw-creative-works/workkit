@@ -1,20 +1,15 @@
 /* eslint-disable no-console */
-// Tests for hooks/_lib.sh, the helper library the scripts and the dotfiles hooks
-// source: one group per helper, from the platform seam and the digest through
-// hook_jq, the test package and the marker paths. The suite and package records are test/hooks/lib-record.test.js.
+// Tests for the engine's shell library under workflow/lib/: one group per
+// helper, the digest, the platform seam, wk_jq, the test package and the marker
+// path's refusal. The suite and package records are test/hooks/lib-record.test.js.
 
 const fs = require('fs');
 const path = require('path');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 const {
-  describe, test, before, expect, mkTmp,
-} = require('../lib/harness');
-const {
-  SYSTEM_PATH, NO_RC,
-  shellPath, digestTool, stubTool, crlfJq, systemPathWith, spawnBash,
+  SYSTEM_PATH, shellPath, digestTool, stubTool, crlfJq, systemPathWith,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
-const { mods } = require('../lib/mods-inputs');
-const { scratchWorkflowHome, agedFile } = require('../lib/workflow-home');
 
 const SHA1_ABC = 'a9993e364706816aba3e25717850c26c9cd0d89d';
 
@@ -31,8 +26,8 @@ const digestWorld = (name, tool) => {
   return dir;
 };
 
-describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1sum, so no digest world can be built' }, () => {
-  describe('_lib.sh: the digest, wk_sha1', () => {
+describe('the engine\'s shell library', { skip: !real && 'this machine has neither shasum nor sha1sum, so no digest world can be built' }, () => {
+  describe('the digest, wk_sha1', () => {
     test('a world with only shasum: the hex digest of stdin, no filename', () => {
       const world = digestWorld('shasum', real);
       const out = runLib("printf '%s' abc | wk_sha1", { PATH: world });
@@ -60,32 +55,7 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
     });
   });
 
-  describe('_lib.sh: the platform seam', () => {
-    test('OSTYPE answers with no uname on PATH: msys is Windows', () => {
-      const out = runLib('hook_is_windows && echo win; hook_is_macos && echo mac; hook_is_linux && echo linux',
-        { OSTYPE: 'msys', PATH: '' });
-      expect(out.stdout.trim(), `Git Bash reads as Windows and nothing else, got: ${out.stdout}`).toBe('win');
-    });
-
-    test('OSTYPE linux-gnu is Linux, darwin is macOS, each exclusive', () => {
-      const linux = runLib('hook_is_linux && echo linux; hook_is_windows && echo win; hook_is_macos && echo mac',
-        { OSTYPE: 'linux-gnu', PATH: '' });
-      expect(linux.stdout.trim(), `got: ${linux.stdout}`).toBe('linux');
-      const mac = runLib('hook_is_macos && echo mac; hook_is_windows && echo win; hook_is_linux && echo linux',
-        { OSTYPE: 'darwin24', PATH: '' });
-      expect(mac.stdout.trim(), `got: ${mac.stdout}`).toBe('mac');
-    });
-
-    test('an OSTYPE this split does not know falls back to uname -s', () => {
-      // The reference reading is taken in a shell started exactly as the helper's
-      // is: under Git Bash the answer depends on the environment the shell
-      // carries (MSYS_NT without MSYSTEM set, MINGW64_NT with it), so a reading
-      // from anywhere else would be comparing two different questions.
-      const uname = runLib('uname -s').stdout.trim();
-      const out = runLib('hook_uname_s; printf "%s" "$HOOK_UNAME_S"', { OSTYPE: 'plan9' });
-      expect(out.stdout.trim(), `the shell's own answer, got: ${out.stdout}`).toBe(uname);
-    });
-
+  describe('the platform seam', () => {
     test('Git Bash asks for real symlinks once, however often the seam is sourced', () => {
       const seam = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
       // The seed is set in the shell, never in the env: a real MSYS runtime reads
@@ -95,82 +65,51 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
       const mac = runLib('printf "%s" "${MSYS-unset}"', { OSTYPE: 'darwin24' });
       expect(mac.stdout, `macOS sets nothing, got: ${mac.stdout}`).toBe('unset');
     });
-
-    test('the reading is cached: a set HOOK_UNAME_S is never re-probed', () => {
-      const out = runLib('hook_is_linux && echo linux', { HOOK_UNAME_S: 'Linux', PATH: '' });
-      expect(out.stdout.trim(), `the cache decides, got: ${out.stdout}`).toBe('linux');
-    });
   });
 
-  describe('_lib.sh: hook_jq', () => {
+  describe('wk_jq', () => {
     // A jq that writes CRLF, as the winget build does on Windows: the platform
     // seam builds it, since the standards suite asks the same machine the same
-    // question about the engine's own `wk_jq`.
+    // question through the heal.
     const crlfWorld = () => {
       const dir = mkTmp('lib-crlf-jq-');
       crlfJq(dir);
       return dir;
     };
 
-    test('hook_jq strips the carriage returns of a text-mode jq, on every line', () => {
-      // jq's own output proves the stub; hook_jq's is the same lines with nothing
-      // left on them, which is the engine's wk_jq answering through the pointer.
+    test('wk_jq strips the carriage returns of a text-mode jq, on every line', () => {
+      // jq's own output proves the stub; wk_jq's is the same lines with nothing
+      // left on them.
       const dir = crlfWorld();
       const env = { PATH: systemPathWith(dir) };
       const filter = `printf '%s' '{"v":["a","b","c"]}' |`;
       expect(runLib(`${filter} jq -r '.v[]'`, env).stdout, 'the stub jq writes CRLF').toBe('a\r\nb\r\nc\r\n');
-      expect(runLib(`${filter} hook_jq -r '.v[]'`, env).stdout, 'hook_jq hands on LF').toBe('a\nb\nc\n');
+      expect(runLib(`${filter} wk_jq -r '.v[]'`, env).stdout, 'wk_jq hands on LF').toBe('a\nb\nc\n');
       fs.rmSync(dir, { recursive: true, force: true });
     });
 
-    test('hook_jq hands back jq\'s own exit status, never the strip\'s', () => {
+    test('wk_jq hands back jq\'s own exit status, never the strip\'s', () => {
       // A caller that asks a question (`jq -e`, `jq empty`) reads the status and
       // nothing else, and a wrapper ending in a pipe would answer every one of
       // them yes.
       const dir = crlfWorld();
       const env = { PATH: systemPathWith(dir) };
-      const ask = (json) => runLib(`printf '%s' '${json}' | hook_jq -e '.v' >/dev/null; printf '%s' "$?"`, env).stdout;
+      const ask = (json) => runLib(`printf '%s' '${json}' | wk_jq -e '.v' >/dev/null; printf '%s' "$?"`, env).stdout;
       expect(ask('{"v":true}'), 'a true answer is 0').toBe('0');
       expect(ask('{"v":false}'), '`-e` says false with 1').toBe('1');
-      expect(runLib(`printf 'not json' | hook_jq . >/dev/null 2>&1; printf '%s' "$?"`, env).stdout,
+      expect(runLib(`printf 'not json' | wk_jq . >/dev/null 2>&1; printf '%s' "$?"`, env).stdout,
         'a parse failure is jq\'s own 5').toBe('5');
-      fs.rmSync(dir, { recursive: true, force: true });
-    });
-
-    test('hook_jq_default takes the default only when jq answered nothing', () => {
-      // A jq that fails on a stream's tail has already written the first value's
-      // answer, so a `|| printf <default>` would hand back the two stuck
-      // together. The default is for silence alone.
-      const severed = `printf '%s' '{"v":"kept"}{' |`;
-      expect(runLib(`${severed} hook_jq_default 'fallen-back' -r '.v'`).stdout,
-        'the answer jq did write, and nothing appended to it').toBe('kept');
-      expect(runLib(`printf 'not json' | hook_jq_default 'fallen-back' -r '.v'`).stdout,
-        'nothing written at all is what the default is for').toBe('fallen-back');
-      expect(runLib(`printf '%s' '{"v":"here"}' | hook_jq_default 'fallen-back' -r '.v'`).stdout,
-        'and a clean read is just the answer').toBe('here');
-    });
-
-    test('hook_jq_default answers through the engine, CRLF and all', () => {
-      // The body is wk_jq_default's, so the strip and the silent status come with
-      // it: a text-mode jq's `\r` never reaches the caller, and a failed read is
-      // still exit 0, since a read carrying a default has decided that already.
-      const dir = crlfWorld();
-      const env = { PATH: systemPathWith(dir) };
-      expect(runLib(`printf '%s' '{"v":"x"}' | hook_jq_default 'd' -r '.v'`, env).stdout,
-        'no carriage return rides along').toBe('x');
-      expect(runLib(`printf 'not json' | hook_jq_default 'd' -r '.v' >/dev/null; printf '%s' "$?"`, env).stdout,
-        'the status is the default\'s, not jq\'s').toBe('0');
       fs.rmSync(dir, { recursive: true, force: true });
     });
   });
 
-  describe('_lib.sh: the test package', () => {
+  describe('the test package', () => {
     test('wk_has_test_script: a package.json that defines scripts.test, and nothing else', () => {
       const root = mkTmp('lib-testscript-');
       for (const d of ['tested', 'bare', 'none']) fs.mkdirSync(path.join(root, d));
       fs.writeFileSync(path.join(root, 'tested', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
       fs.writeFileSync(path.join(root, 'bare', 'package.json'), JSON.stringify({ name: 'bare', scripts: { lint: 'x' } }));
-      const ask = (d) => runLib(`wk_has_test_script "${shellPath(path.join(root, d))}"`).code;
+      const ask = (d) => runLib(`wk_has_test_script "${shellPath(path.join(root, d))}"`, {}, ['suite.sh']).code;
       expect(ask('tested'), 'a package.json with a test script answers yes').toBe(0);
       expect(ask('bare'), 'a package.json without a test script answers no').toBe(1);
       expect(ask('none'), 'a folder with no package.json answers no').toBe(1);
@@ -180,80 +119,15 @@ describe('_lib.sh', { skip: !real && 'this machine has neither shasum nor sha1su
     test('an empty scripts.test is no script', () => {
       const root = mkTmp('lib-emptyscript-');
       fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: '' } }));
-      expect(runLib(`wk_has_test_script "${shellPath(root)}"`).code, 'wk_has_test_script answers no').toBe(1);
+      expect(runLib(`wk_has_test_script "${shellPath(root)}"`, {}, ['suite.sh']).code, 'wk_has_test_script answers no').toBe(1);
       fs.rmSync(root, { recursive: true, force: true });
     });
   });
 
-  describe('_lib.sh: the marker paths', () => {
-    const sha1 = (text) => spawnBash([...NO_RC, '-c', `printf '%s' "$1" | "${shellPath(real)}"`, 'sh', text],
-      { encoding: 'utf8' }).stdout.split(' ')[0];
-
-    // TMPDIR is handed over explicitly: a session marker lives under whatever
-    // temp dir the session has.
-    let TMP;
-    // So are HOME and WORKFLOW_HOME: every other marker lives under the workflow
-    // home's markers folder, never the machine's.
-    let HOME;
-    let MARKERS;
-    before(() => {
-      TMP = mkTmp('lib-marker-');
-      HOME = scratchWorkflowHome('lib-marker-home-');
-      MARKERS = path.join(HOME.workflowHome, 'markers');
-    });
-
-    test('hook_review_marker_path is the review marker dir plus the sha of the root', () => {
-      const out = runLib('hook_review_marker_path /repos/thing', HOME.env);
-      expect(out.stdout.trim(), `got: ${out.stdout}|${out.stderr}`)
-        .toBe(shellPath(path.join(MARKERS, 'claude-review-marker', sha1('/repos/thing'))));
-    });
-
-    test('hook_review_full_marker_path is the full-panel marker dir plus the sha of the root', () => {
-      const out = runLib('hook_review_full_marker_path /repos/thing', HOME.env);
-      expect(out.stdout.trim(), `got: ${out.stdout}|${out.stderr}`)
-        .toBe(shellPath(path.join(MARKERS, 'claude-review-full-marker', sha1('/repos/thing'))));
-    });
-
-    test('hook_triage_marker_path is the triage marker dir plus the sha of the anchor', () => {
-      const out = runLib('hook_triage_marker_path /repos/thing', HOME.env);
-      expect(out.stdout.trim(), `got: ${out.stdout}|${out.stderr}`)
-        .toBe(shellPath(path.join(MARKERS, 'claude-triage-marker', sha1('/repos/thing'))));
-    });
-
-    test('the shell and JS key rules name the same file under the workflow home, for every marker kind', async () => {
-      const kinds = [
-        ['hook_review_marker_path', 'reviewMarkerPath'],
-        ['hook_review_full_marker_path', 'reviewFullMarkerPath'],
-        ['hook_triage_marker_path', 'triageMarkerPath'],
-      ];
-      for (const [shellRule, jsRule] of kinds) {
-        const shell = runLib(`${shellRule} /repos/thing`, HOME.env).stdout.trim();
-        expect(shell.startsWith(`${shellPath(MARKERS)}/`), `${shellRule} is under the markers folder, got: ${shell}`).toBeTruthy();
-        expect(await mods('markers')[jsRule]('/repos/thing', shellPath(HOME.workflowHome)), `${jsRule} names the file ${shellRule} does`).toBe(shell);
-      }
-    });
-
-    test('writing a marker sweeps the markers folder: a file 8 days old goes, one 6 days old stays', () => {
-      const { workflowHome, env } = scratchWorkflowHome('lib-sweep-home-');
-      const aged = (kind, name, days) => agedFile(path.join(workflowHome, 'markers', kind, name), days);
-      const old = aged('claude-review-marker', 'old', 8);
-      const oldOtherKind = aged('claude-suite-marker', 'old', 8);
-      const young = aged('claude-review-marker', 'young', 6);
-      const out = runLib('_hook_write_marker "$(hook_review_marker_path /repos/thing)"', env);
-      expect(out.code, `the marker is written, got: ${out.stderr}`).toBe(0);
-      expect(!fs.existsSync(old), 'the 8-day-old sibling is swept').toBeTruthy();
-      expect(!fs.existsSync(oldOtherKind), 'and so is an 8-day-old file of another kind').toBeTruthy();
-      expect(fs.existsSync(young), 'the 6-day-old sibling is kept').toBeTruthy();
-    });
-
-    test('hook_session_marker is the named dir plus the session id with every non-alphanumeric as _', () => {
-      const out = runLib('hook_session_marker workkit-thing "ab-12/c.d e"', { TMPDIR: shellPath(TMP) });
-      expect(out.stdout.trim(), `got: ${out.stdout}|${out.stderr}`).toBe(`${shellPath(TMP)}/workkit-thing/ab_12_c_d_e`);
-    });
-
-    test('no digest tool: a marker path is refused, never half-built', () => {
+  describe('the marker path', () => {
+    test('no digest tool: wk_marker_path refuses, never a half-built path', () => {
       const world = mkTmp('lib-nosha-');
-      const out = runLib('p=$(hook_review_marker_path /repos/thing); printf \'rc=%s p=[%s]\' "$?" "$p"',
+      const out = runLib('p=$(wk_marker_path claude-review-marker /repos/thing); printf \'rc=%s p=[%s]\' "$?" "$p"',
         { PATH: world });
       expect(out.stdout.includes('p=[]'), `no path at all, got: ${out.stdout}`).toBeTruthy();
       expect(!out.stdout.includes('rc=0'), `and says so, got: ${out.stdout}`).toBeTruthy();

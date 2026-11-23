@@ -14,8 +14,6 @@
   - the `gh` shim (`workflow/identity/gh`), linked into `~/.local/bin`;
   - the `git` shim (`workflow/gitshim/git`), which the module's `classic.SessionStart` puts first on a session's PATH (§ `safety:tree-guard`);
   - and git's own hooks (`workflow/githooks/`), set as a repo's `core.hooksPath` by the heal.
-- The shell left under `hooks/` is no hook.
-  - `hooks/_lib.sh` and `hooks/lib/*.sh` are the library the `workflow/review/` and `workflow/triage/` scripts source (§ Platforms).
 
 ### The hooks log
 
@@ -86,20 +84,14 @@
 ## Platforms
 
 - The hooks run on macOS, on Windows under Git Bash, and on Linux.
-- Where a spelling differs between them, the branch is taken once, never in the hook that needs it:
-  - in [`hooks/_lib.sh`](../hooks/_lib.sh) for what only a hook asks;
-  - in the engine's [`workflow/lib/platform.sh`](../workflow/lib/platform.sh) for what the engine asks too; this library points at the platform reading under its own `hook_` names, and the digest keeps the engine's name:
+- Where a spelling differs between them, the branch is taken once, never in the hook that needs it: in the engine's [`workflow/lib/platform.sh`](../workflow/lib/platform.sh), whose names the shims and git's hooks call as they are:
 
-- `hook_is_macos` / `hook_is_windows` / `hook_is_linux`, over `hook_uname_s`: the platform reading.
-  - `$OSTYPE` answers first: the shell sets it, so it costs no fork and needs no PATH.
-  - `uname -s` answers only for a name that split does not know.
-  - The dotfiles hooks load these helpers from this lib through `~/.claude/workkit`, so one mechanism spans both sides.
 - `wk_sha1` in `workflow/lib/platform.sh`: the one digest.
   - macOS ships `shasum` and no `sha1sum`, a Linux machine often the reverse, and a key computed with a different tool is a different key.
   - Every marker and cache name goes through the same digest.
-  - The four markers are the review and triage markers, through `hook_review_marker_path` and `hook_triage_marker_path`, each built by `wk_marker_path`, and the suite and package records, whose paths are not.
-    - A skill writes the first two.
-    - The records are named by `markerPath` in `hooks/mods/markers.js`, the Node twin of `wk_marker_path` over the same digest (`sha1Hex`), as `suiteMarkerPath` and `pkgMarkerPath`, and written by `workflow/lib/records.js`; their writers and readers: `workflow/README.md`, the `lib/records.js` entry.
+  - The four markers are the review and triage markers, through `reviewMarkerPath` and `triageMarkerPath` in `hooks/mods/markers.js`, and the suite and package records.
+    - A skill writes the first two, through `workkit review mark` and `workkit triage mark`.
+    - All four are named by `markerPath` in `hooks/mods/markers.js`, the Node twin of `wk_marker_path` over the same digest (`sha1Hex`); the records as `suiteMarkerPath` and `pkgMarkerPath`, written by `workflow/lib/records.js`; their writers and readers: `workflow/README.md`, the `lib/records.js` entry.
   - The same derivation names the run locks and fallback logs of the detached suite run, supervised run, CI watch and narrowed runs' slots: `runPaths` in `workflow/lib/run-paths.js` names them all.
   - A machine with neither tool is refused loudly rather than keyed to an empty string.
     - An empty string would be one marker shared by every repo on it.
@@ -108,24 +100,20 @@
   - Every marker kind lives at `markers/<kind>/<sha1>` in the machine folder (`${WORKFLOW_HOME:-$HOME/.workkit}/markers`, `wk_markers_dir`).
     - It never lives in the temp folder a system cleaner empties, and nothing reads a marker anywhere else.
   - The kit sweeps its own: each writer runs the sweep.
-    - The shell writers run `wk_sweep_markers`: `_hook_write_marker` (through `hook_sweep_markers`) and the `gh` shim's journal append (`journal_append` in `workflow/identity/gh`), each after it writes.
-    - The suite and package record writers (`workflow/lib/records.js`) run its Node twin, `sweepMarkers` in `workflow/lib/lock.js`, before they write.
+    - The shell writer runs `wk_sweep_markers`: the `gh` shim's journal append (`journal_append` in `workflow/identity/gh`), after it writes.
+    - The package record writer (`writePkgRecord` in `workflow/lib/records.js`) runs its Node twin, `sweepMarkers` in `workflow/lib/lock.js`, before it writes.
+    - The suite record writer (`writeSuiteRecord`, beside it) and the review and triage marker verbs run it through `writeMarker` in `workflow/lib/lock.js`, after they write.
     - The sweep removes every regular file one folder under that base whose mtime is older than `MARKER_KEEP_DAYS` (7 days).
     - It never enters a folder there (a run lock).
   - The hooks module runs no sweep.
     - The module reads markers, and writes and removes one: the gh journal mark (`journalMarkPath` in `hooks/mods/markers.js`).
     - A Bash call's `tool.call` writes that mark, and its `PostToolUse` or `PostToolUseFailure` removes it.
     - So the sweep finds only a mark no call came back to.
-- `hook_jq`: the CRLF-safe jq.
+- `wk_jq` in `workflow/lib/platform.sh`: the CRLF-safe jq.
   - jq on Windows is a native program whose stdout is in text mode, so it writes CRLF.
   - A value read bare then carries a `\r` into whatever is compared or written next.
-  - The engine reads the same JSON with the same tool, so the body is `wk_jq` in `workflow/lib/platform.sh`, and `hook_jq` is one line pointing at it.
-    - The strip has one home.
+  - The `gh` shim and the engine read JSON through it, so the strip has one home.
     - jq's own exit status comes back, so a predicate still answers what it answered.
-  - `hook_jq_default <default> <jq args...>` is the same pointer for the read that carries a default.
-    - jq writes the values it parsed before it fails on a later one.
-    - So a `|| printf <default>` in the substitution hands back that partial answer with the default stuck on the end of it.
-    - Here the default is taken only when jq wrote nothing.
 - `wk_repo_slug` / `wk_slug_from_remote`: what a repo is CALLED, which is platform-shaped too.
   - git stores a remote exactly as it was typed, so a Windows checkout's origin comes back a native path with backslashes.
   - A reader that took only a forward slash answered nothing about it.
@@ -139,7 +127,6 @@
   - So every path a kit shell line prints for a person goes through it: `cygpath -m` on Windows, the path unchanged elsewhere.
   - It is git's spelling too, so a path git printed is in it already, and a roster key is written and looked up through it.
   - Node prints the native spelling already, through `path`.
-- `hook_file_mtime`: BSD `stat -f` against GNU `stat -c`, each spelling accepted only when its output is digits, since the GNU one prints `?` and exits 0 for the flag it does not mean.
 - `copyTree` in `workflow/lib/tree-copy.js`: the snapshot copy, in Node, since the copy is the one step whose tool differs per platform.
   - macOS clones with `cp -c -pPR`, Linux copies with `cp -a --reflink=auto`, any other POSIX system with `cp -pPR`, each walking into a folder only where it holds a package's `node_modules`.
   - Windows copies with Node's own walk (`copyEntry`), walking the same way, each link made again as a link with its type set: a junction for a folder with an absolute target.
@@ -156,14 +143,6 @@
   - Any other `node_modules`, data inside an ignored folder, is copied as it is.
   - Given paths (`only`), it copies only those, each one whose parent folder the destination holds.
   - A link the fill makes is a junction on Windows for a folder, which needs no privilege.
-
-- `hooks/_lib.sh` is the library's entry. It keeps the seam, `hook_jq`, the engine sources and the constants.
-  - It sources its helper groups from [`hooks/lib/`](../hooks/lib/), one file per group, so a script still sources `_lib.sh` alone.
-  - The groups: the markers, the tested package a path sits in, the working-diff path list.
-- Its consumers:
-  - the scripts the skills and agents run through `workkit review` and `workkit triage` (`workflow/{review,triage}/*.sh`);
-  - the CI's `.github/scripts/release-push.sh` and the dotfiles hooks.
-  - No workkit hook sources it.
 
 - The reads the module's guards share each have one home under `hooks/mods/`:
   - `facts.js`: the Bash guards' facts (`bashFacts`, its one home) and the variables as a guard reads them (`guardEnv`).
@@ -226,8 +205,8 @@
   - `site.repo` (`docs:session`, `tower/api/lib/repos.js` and `summaries.js`, `workflow/publish/site-repos.js`, `jobs/morning/brief/cc-news.js`).
     - Each reads it through `homeSlugOf` in `hooks/mods/settings.js`, the scripts by way of `homeSlug` in `workflow/lib/settings.js`.
 - No reader parses a settings file itself but one, for `hooks.ciSetup` and `hooks.ciPostInstall`.
-  - `.github/scripts/ci-hooks.sh` reads each off the repo's own file alone, on a CI runner.
-  - The runner has no machine file and runs the repo's Node, perhaps too old to load the ESM loader.
+  - `.github/scripts/ci-hooks.js` reads each off the repo's own file alone, on a CI runner.
+  - The runner has no machine file. The script runs on the kit's Node (`WORKKIT_NODE`), and each command on the repo's.
   - Its entries pass the ship hooks' own check (`workflow/ship/entries.js`).
 - `docs:change-tracker`, `safety:capture-guard` and `safety:findings-guard` read `findings.file` through `findingsOn` and `findingsRoute`.
   - `findingsOn` is true when the setting reads `true`, the one read all three make.
@@ -242,8 +221,8 @@
   - When a link still could not be made, it removes the copy and says so, rather than leaving a stale engine at the address.
 
 - The skills carry no platform-bound command at all.
-  - The two that record a marker run `workkit review mark` and `workkit triage mark` ([`workflow/review/mark.sh`](../workflow/review/mark.sh) and [`workflow/triage/mark.sh`](../workflow/triage/mark.sh)).
-  - Those source `hooks/_lib.sh` and write exactly the path the guard reads.
+  - The two that record a marker run `workkit review mark` and `workkit triage mark` ([`workflow/review/mark.js`](../workflow/review/mark.js) and [`workflow/triage/mark.js`](../workflow/triage/mark.js)).
+  - Those name the marker through `hooks/mods/markers.js` and write exactly the path the guard reads.
 
 ## The hooks module
 
@@ -411,9 +390,6 @@
     - the color gate (`wk_color_on` in `workflow/lib/voice.sh`, `colorOn` in `tower/api/lib/log.js`), which answer alike for one environment and one stdout;
     - the test-script read (`wk_has_test_script` in `workflow/lib/suite.sh`, `hasTestScript` in `hooks/mods/suite.js`);
     - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/slug.js`);
-    - the `Proof:` pattern (`workflow/ship/items.sh`, `PROOF_RE` in `hooks/mods/proof.js`);
-    - the version file test (`hook_is_manifest` in `hooks/lib/tree.sh`, `isManifest` in `hooks/mods/commit-gate/checks.js`);
-    - the version-only diff (`hook_version_only_change` in `hooks/lib/tree.sh`, `versionOnly` in `hooks/mods/commit-gate/checks.js`);
     - git's global options that take a value (`VALUE_FLAGS` in `workflow/gitshim/git`, `GIT_VALUE_FLAGS` in `hooks/mods/tree-guard.js`);
     - the two shims' shared shell helpers, `norm_dir`, `real_path` and `in_list`, and their PATH walk to the real tool (`real_git` against `real_gh`), `workflow/gitshim/git` against `workflow/identity/gh`;
     - and the hooks log line (`logLine` in `hooks/mods/log.js`).
@@ -446,8 +422,7 @@
   - What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
 - The heal includes the one check that is the hook layer's own (`workflow/standards/hooks.sh`):
   - the hooks module loads in `node`, which pulls in every module under `hooks/mods/`;
-  - the shell pieces the scripts source (`hooks/_lib.sh`, `hooks/lib/*.sh`) parse;
-  - and the tools both call are present.
+  - and the tools the hook layer calls are present.
 - Reports only what it fixed.
   - `QUIET=1` silences the heal's skips at the source.
   - Only the lines opening with the engine's ✓ or ⚠ are kept.
@@ -897,8 +872,7 @@
     - A `.workkit/settings.json` tracked in HEAD may differ in its working copy only in `version`, present or absent, both sides parsing as objects.
     - Such a file never makes the full-panel marker stale. Every other path is judged by its mtime as before.
     - A diff holding nothing but that removal reads `stale: no working diff`, as an empty one does.
-    - The rule is `hook_version_only_change` in `hooks/lib/tree.sh`, the shell twin of `versionOnly` in `checks.js` less its lockstep pins.
-    - The two change together.
+    - The rule is `versionOnly` in `checks.js`, the gate's own.
 - Check 3 lints the CHANGELOG entries the commit adds with `node workflow/changelog/lint.js <file> --added-only` (`--staged` for the index).
   - It is the linter npm's script shell (`workflow/script-shell.js`) runs before a bare root run, with the same message (`lintText`).
   - It lints every `CHANGELOG.md` the commit carries, as its index holds it.
@@ -1172,7 +1146,7 @@
   - A repo the roster does not hold, or holds as declined, is not a yes. So its flip is not judged, as no hook judges such a repo.
 - The touched list is the working diff at the repo root plus the committed leg below, deletions excluded.
   - The working diff is `git diff HEAD --name-only --no-renames -z` and `git ls-files --others --exclude-standard -z`.
-  - Its two reads are `WORKING_READS` (`UNBORN_READS` with no commit) in `hooks/mods/proof-guard.js`, the reads `workingPaths` in `workflow/lib/snapshot.js` makes for the snapshot and `workkit proof red`, and `hook_working_paths` in `hooks/lib/tree.sh` for `workkit review covers`.
+  - Its two reads are `WORKING_READS` (`UNBORN_READS` with no commit) in `hooks/mods/proof-guard.js`, the reads `workingPaths` in `workflow/lib/snapshot.js` makes for the snapshot, `workkit proof red` and `workkit review covers`.
   - In a repo with no commit yet, the staged list, `git ls-files -z`, stands in for the diff against HEAD.
   - A failed `git diff HEAD` or `git ls-files` read, or one that did not start, denies the flip naming the read.
 - Every test-shaped path (`*.test.*`, `*.spec.*`, `*_test.*`: `isTestName` in `hooks/mods/test-reminder.js`) counts, whatever its extension.
@@ -1217,7 +1191,7 @@
 - The committed leg reads the commits since `origin`'s default branch, else since this branch's upstream.
   - With neither, or when HEAD shares no merge base with it, that leg reads nothing.
 - The check's one skip is the committed `proof.rootOnly` declaration above, which names a package rather than skipping the check; no env var turns it off. What a package's `npm test` proves is that package's runner's to define; a layer skipped on purpose is recorded in the `Proof:` line for the reader, naming the layer and the reason, and is never handed to the guard.
-- The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer, which reads the same pattern. The pattern's homes change together: `PROOF_RE` in `hooks/mods/proof.js` (this guard's `viewHasProof`), `workflow/ship/items.sh` (the ship's read), and `PROOF_LINE` in `tower/api/server/validate.js` and the dashboard's `libs/tower/github/writes.js`.
+- The third stage of the same gate is `safety:commit-gate` check 6, the `Fixes #N` trailer, which reads the same pattern. The pattern's homes change together: `PROOF_RE` in `hooks/mods/proof.js` (this guard's `viewHasProof`, and the ship's read in `workflow/ship/items.js`), and `PROOF_LINE` in `tower/api/server/validate.js` and the dashboard's `libs/tower/github/writes.js`.
 - The tower Board's own move of a card to Complete applies the same gate off the same read, on both of its write paths; the one difference is that a read the board cannot make refuses the move, where this guard lets the call go ahead. Detail: `tower/README.md`.
 - The logic is `proofVerdict({ steps, cwd, repo, facts })` in `hooks/mods/proof-guard.js`.
   - It takes one step `{ sub, number, add, remove }` per issue, and `repo` '' for the cwd's.

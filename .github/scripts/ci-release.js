@@ -12,7 +12,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('../../workflow/lib/run');
-const { sayAs, endOf, errLine } = require('../../workflow/lib/say');
+const { gitIn, hasCommit, textAt } = require('../../workflow/lib/git');
+const {
+  sayAs, writeErr, endOf, errLine,
+} = require('../../workflow/lib/say');
 const {
   sectionBody, noSection, releaseCommits, isReleased, missingBefore, ReleaseViewError,
 } = require('../../workflow/ship/cut');
@@ -27,9 +30,6 @@ const say = sayAs('ci-release');
 /** Whether the workflow file's `workflow_dispatch` declares the input (dispatch-input.awk). */
 const takesInput = (file, input) => spawnSync('awk', ['-v', `input=${input}`, '-f', INPUTS, file], { stdio: 'ignore' }).status === 0;
 
-/** Whether `rev` names a commit this clone holds. */
-const known = (root, rev) => spawnSync('git', ['cat-file', '-e', `${rev}^{commit}`], { cwd: root, stdio: 'ignore' }).status === 0;
-
 /**
  * git log's revisions for the push: before..after, or the pushed commit alone
  * when <before> is no commit to start from (a new branch, a force push).
@@ -40,7 +40,7 @@ const known = (root, rev) => spawnSync('git', ['cat-file', '-e', `${rev}^{commit
  */
 const pushedRevs = (root, event, after) => {
   const before = event.before || '';
-  if (event.forced || /^0*$/.test(before) || !known(root, before)) return ['--no-walk', after];
+  if (event.forced || /^0*$/.test(before) || !hasCommit(root, before)) return ['--no-walk', after];
   return [`${before}..${after}`];
 };
 
@@ -49,22 +49,30 @@ const pushedRevs = (root, event, after) => {
  * @returns {string|null} null when that commit's CHANGELOG has no section for it
  */
 const notesAt = (root, sha, version) => {
-  const res = spawnSync('git', ['show', `${sha}:CHANGELOG.md`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  return res.status === 0 ? sectionBody(res.stdout, version) : null;
+  const text = textAt(root, sha, 'CHANGELOG.md');
+  return text === null ? null : sectionBody(text, version);
 };
 
+/** Whether .github/workflows differs between the two commits; a target that is the head never differs from itself. */
+const workflowsDiffer = (root, a, b) => gitIn(root, ['diff', '--quiet', a, b, '--', WORKFLOWS], { stdio: 'ignore' }).status === 1;
+
 /**
- * Create one release at its commit, the notes through a file.
+ * Create one release at its commit, the notes through a file; gh's stderr is
+ * passed on as it was, and a 403 GitHub's workflow rule explains gets its two lines.
+ * @param {string} after - the pushed commit, a sha or the word HEAD
  * @returns {number} 0 created, else the code to exit with
  */
-const create = (root, { sha, version }, notes) => {
+const create = (root, { sha, version }, notes, after) => {
   const tag = `v${version}`;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-release-'));
   const file = path.join(dir, 'notes.md');
   fs.writeFileSync(file, `${notes}\n`);
   say(`releasing ${tag} at ${sha.slice(0, 7)}`);
-  const res = spawnSync('gh', ['release', 'create', tag, '--target', sha, '--title', tag, '--notes-file', file], { cwd: root, stdio: 'inherit' });
+  const res = spawnSync('gh', ['release', 'create', tag, '--target', sha, '--title', tag, '--notes-file', file], {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'inherit', 'pipe'],
+  });
   fs.rmSync(dir, { recursive: true, force: true });
+  if (res.stderr) writeErr(res.stderr);
   if (res.status === 0) return 0;
   // Another run may have made it in between; then it is done, not a failure.
   if (isReleased(root, tag)) {
@@ -72,6 +80,10 @@ const create = (root, { sha, version }, notes) => {
     return 0;
   }
   say(`gh release create ${tag} ${endOf(res)}`);
+  if (/HTTP 403/.test(res.stderr || '') && workflowsDiffer(root, sha, after)) {
+    say('GitHub refuses a job\'s token a release at a commit that is no branch head or tag when its .github/workflows differs from the branch\'s (it needs the workflow scope, which no job\'s token holds)');
+    say(`make it by hand, signed in as a person: gh release create ${tag} --target ${sha} --title ${tag} --notes-file <a file holding CHANGELOG.md's [${version}] section>`);
+  }
   return res.status || 1;
 };
 
@@ -158,7 +170,7 @@ const releasePush = (root, event) => {
       say(noSection(commit.version));
       return 1;
     }
-    const code = create(root, commit, notes);
+    const code = create(root, commit, notes, after);
     if (code !== 0) return code;
     dispatchTag = tag;
   }

@@ -17,6 +17,7 @@ const {
   repoSlug, commitsByIssue, authorHandle, fill, defaultRange,
 } = require('../changelog/changelog-links');
 const { isSemver } = require('./semver');
+const { CALLER, callerPending } = require('./caller');
 const {
   expandWorkspaces, PlanError, npmEnd,
 } = require('./plan');
@@ -271,6 +272,10 @@ const release = (root, { version, keep, dryRun, date }) => {
     byIssue = commitsByIssue(range, root);
   } catch {
     throw new ReleaseError(`release: git cannot read the range ${range} in ${root}; nothing was written.`);
+  }
+  // A release commit below a later caller commit is one GitHub refuses the job's token.
+  if (callerPending(root)) {
+    throw new ReleaseError(`release: ${CALLER} has changes that are not committed; commit the caller before the release commit; nothing was written.`);
   }
   // The commit links are relative and need no remote; the handle needs a
   // GitHub one, and without it the entry simply carries no attribution.

@@ -58,7 +58,7 @@ FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 # The hook layer beside this engine; the self-check skips silently without it.
 # WORKFLOW_HOOKS_DIR is the tests' seam.
 HOOKS_DIR="${WORKFLOW_HOOKS_DIR:-$SCRIPT_DIR/../hooks}"
-# The hooks module and the hook library's scripts fail open without these, so
+# The hooks module and the guards in the shims fail open without these, so
 # this list makes a missing one visible. A `|` joins one tool's spellings
 # across platforms; any one satisfies it.
 HOOK_TOOLS="jq git node shasum|sha1sum"
@@ -72,8 +72,8 @@ CLAIM_STALE_SECONDS=86400
 BUILDING_LABEL="status:building"
 SPECCED_LABEL="status:specced"
 
-# The state directory's name for the engine layer. hooks/_lib.sh and
-# packages/core/test/lib/harness.js hold their own copy, so change all three together.
+# The state directory's name for the engine layer.
+# packages/core/test/lib/harness.js holds its own copy, so change both together.
 WORKKIT_DIR=".workkit"
 
 # ── Logging ───────────────────────────────────────────────────────────────────

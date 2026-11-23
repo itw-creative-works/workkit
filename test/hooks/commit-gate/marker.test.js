@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, run } = require('../../lib/harness');
 const {
-  BASH, NO_RC, shellPath, gitPath, joinPath,
+  BASH, NO_RC, gitPath, joinPath, nodeEnv,
 } = require('../../lib/platform');
 const { mods } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
@@ -19,25 +19,26 @@ const {
 } = require('./helpers');
 const { daysAgo, agedFile } = require('../../lib/workflow-home');
 
-// A kit script, by its path under workflow/, run for real in <cwd> with the world's env.
-const runScript = (world, rel, args = [], cwd = world.repo) => run(BASH, [...NO_RC, shellPath(path.join(KIT, 'workflow', rel)), ...args], {
-  cwd, env: world.env,
-});
-
 // Every file under <dir>, at any depth; none when it is not there.
 const filesUnder = (dir) => (fs.existsSync(dir)
   ? fs.readdirSync(dir, { recursive: true }).map((rel) => path.join(dir, rel)).filter((p) => fs.statSync(p).isFile())
   : []);
 
-// The review skill's own marker line, run for real with the kit's `workkit`
-// on PATH: the skill, the verb, the script and the module's marker path cannot
-// drift apart.
-const skillLine = () => {
-  const skill = fs.readFileSync(path.join(KIT, 'skills', 'review', 'SKILL.md'), 'utf8');
-  const line = skill.split('\n').find((l) => l.startsWith('workkit review mark'));
-  expect(line, 'the skill carries the marker line').toBeTruthy();
+// A skill's own `workkit` line, the one whose command (its text before a `#`)
+// is <words>: the skill, the verb, the program and the module's marker path
+// cannot drift apart.
+const skillLine = (skill, words) => {
+  const text = fs.readFileSync(path.join(KIT, 'skills', skill, 'SKILL.md'), 'utf8');
+  const line = text.split('\n').find((l) => l.split('#')[0].trim() === words);
+  expect(line, `the ${skill} skill carries the line ${words}`).toBeTruthy();
   return line;
 };
+
+// <line> run for real in <cwd>, the kit's `workkit` first on PATH and this
+// suite's node as the kit's.
+const runLine = (world, line, cwd = world.repo) => run(BASH, [...NO_RC, '-c', line], {
+  cwd, env: { ...world.env, ...nodeEnv, PATH: joinPath(workkitBin(), world.env.PATH) },
+});
 
 describe('commit-gate: scope', () => {
   test('commit with nothing staged: exit 0 (git will fail it anyway)', async () => {
@@ -70,10 +71,7 @@ describe('commit-gate: review marker', () => {
     stage(r, 'app.js', 'const x = 2;\n');
     r.headTime = Number(world.git('log', '-1', '--format=%ct').trim());
     blocks(await judge(r, 'feat: thing'), T.noReview, 'blocked before the skill runs');
-    const res = run(BASH, [...NO_RC, '-c', skillLine()], {
-      cwd: world.repo,
-      env: { ...world.env, PATH: joinPath(workkitBin(), world.env.PATH) },
-    });
+    const res = runLine(world, skillLine('review', 'workkit review mark'));
     expect(res.status, `the marker verb runs, got: ${res.stderr}`).toBe(0);
     expect(fs.existsSync(marker), `and writes exactly the file the module names: ${marker}`).toBeTruthy();
     r.marker = { mtimeMs: fs.statSync(marker).mtimeMs };
@@ -104,15 +102,15 @@ describe('commit-gate: the review marker under the workflow home', () => {
     expect(amend.status, `HEAD is redated: ${amend.stderr}`).toBe(0);
     world.write('app.js', 'const x = 2;\n', daysAgo(6));
     world.git('add', 'app.js');
-    const wrote = runScript(world, 'review/mark.sh', ['full']);
-    expect(wrote.status, `review/mark.sh full runs, got: ${wrote.stderr}`).toBe(0);
+    const wrote = runLine(world, skillLine('review', 'workkit review mark full'));
+    expect(wrote.status, `workkit review mark full runs, got: ${wrote.stderr}`).toBe(0);
     const aged = filesUnder(path.join(world.workflowHome, 'markers'));
     expect(aged.length, `the plain and the full marker are under the workflow home, got: ${aged}`).toBe(2);
     for (const file of aged) agedFile(file, 5);
-    const later = runScript(world, 'triage/mark.sh', [], world.dir);
+    const later = runLine(world, skillLine('triage', 'workkit triage mark'), world.dir);
     expect(later.status, `a later marker write runs its sweep, got: ${later.stderr}`).toBe(0);
-    const covers = runScript(world, 'review/covers.sh');
-    expect(covers.stdout, `review/covers.sh still sees the full marker, got: ${covers.stdout}${covers.stderr}`).toBe('review-covers: covered\n');
+    const covers = runLine(world, 'workkit review covers');
+    expect(covers.stdout, `workkit review covers still sees the full marker, got: ${covers.stdout}${covers.stderr}`).toBe('review-covers: covered\n');
     const gate = await gateOn(world.repo, world.env);
     expect(gate.deny, 'and the gate still sees the review marker').toBe(null);
     fs.rmSync(world.dir, { recursive: true, force: true });

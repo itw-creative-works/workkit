@@ -1,7 +1,9 @@
 // The one shape of a `hooks.<event>` declaration and its check, shared by the
-// ship hooks (hooks.js) and CI's hook steps (.github/scripts/ci-hooks.sh). No
-// imports, so a CI runner on the repo's own, perhaps older, Node loads it.
+// ship hooks (hooks.js) and CI's hook steps (.github/scripts/ci-hooks.js), which
+// CI loads on the kit's Node.
 // Usage: const { HooksError, commandsOf } = require('./entries');
+
+const { isPlain } = require('../../hooks/mods/settings.js');
 
 /** A settings shape the hooks cannot run from; its message is the line to print. */
 class HooksError extends Error {
@@ -10,10 +12,6 @@ class HooksError extends Error {
     this.name = 'HooksError';
   }
 }
-
-// hooks/mods/settings.js's isPlain, which is ESM and so out of an older Node's
-// reach; test/hooks/twins.test.js holds the two to one answer.
-const isPlain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /**
  * The entries a settings object declares for an event, validated whole before any runs.
@@ -36,4 +34,4 @@ const commandsOf = (settings, event) => {
   });
 };
 
-module.exports = { HooksError, commandsOf, isPlain };
+module.exports = { HooksError, commandsOf };

@@ -8,8 +8,8 @@ import { parseJson } from './settings.js';
 
 /**
  * The line that proves an item was built: any LINE opening with `Proof:`,
- * leading whitespace tolerated and nothing else. Its homes change together:
- * this, workflow/ship/items.sh, and PROOF_LINE in tower/api/server/validate.js
+ * leading whitespace tolerated and nothing else (workflow/ship/items.js reads
+ * it too). Its homes change together: this, PROOF_LINE in tower/api/server/validate.js
  * and libs/tower/github/writes.js (docs/hooks.md § safety:proof-guard).
  */
 export const PROOF_RE = /(^|\n)[ \t]*Proof:/;

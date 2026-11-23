@@ -20,7 +20,7 @@ import { isTestName, isTestPath } from './test-reminder.js';
 
 const SHAPE = 'The key proof.rootOnly in the settings is not an array of folder strings, so no package was taken as proved by the root run alone.';
 // The working diff's two git reads, the one spelling workflow/lib/snapshot.js's
-// workingPaths and hook_working_paths in hooks/lib/tree.sh read too.
+// workingPaths reads too.
 export const WORKING_READS = [['diff', 'HEAD', '--name-only', '--no-renames', '-z'], ['ls-files', '--others', '--exclude-standard', '-z']];
 // With no commit yet the staged list stands in for the diff against HEAD.
 export const UNBORN_READS = [['ls-files', '-z'], WORKING_READS[1]];
@@ -186,7 +186,6 @@ function rootOnlyDeclared(settings) {
 // them: the working diff, then the commits since the merge base with
 // origin's default branch, else with the upstream; and whether a base was found.
 // A failed working-diff read answers null paths and the read that failed.
-// Its first two reads change together with hook_working_paths in hooks/lib/tree.sh.
 async function touchedOf(root, { run, read }) {
   const git = (...args) => run(['git', ...args], { cwd: root, timeoutMs: LONG_RUN_MS });
   const out = (r) => (r.exitCode === 0 ? r.stdout.trim() : '');

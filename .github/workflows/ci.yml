@@ -1,7 +1,8 @@
 # The CI every participating repo runs: its checks.yml, the caller the kit owns,
 # calls this file with one job,
 #   uses: itw-creative-works/workkit/.github/workflows/ci.yml@main
-# The logic sits in the kit's .github/scripts/ci-*.sh, run from a clone of the kit.
+# The logic sits in the kit's .github/scripts/*.js, run from a clone of the kit on
+# the kit's own Node ($WORKKIT_NODE); the repo's install, hooks and tests run on its Node.
 
 # A repo's own setup is its hooks.ciSetup commands, run before the dependency
 # install, then its hooks.ciPostInstall commands, run after it and before the tests;
@@ -27,8 +28,14 @@ jobs:
       # Outside the workspace, so no glob of the repo's own tests reaches the kit's.
       - name: Fetch the workkit kit
         run: git clone --depth 1 https://github.com/itw-creative-works/workkit.git "$RUNNER_TEMP/workkit-kit"
-      # Whether the suite runs, decided before any setup: always for a pull request;
-      # for a push unless it is a release stamp, which the kit's release-push.sh answers.
+      # The kit's scripts run on this Node, never the repo's, which may be older.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - name: Kit Node
+        run: echo "WORKKIT_NODE=$(command -v node)" >> "$GITHUB_ENV"
+      # Whether the suite runs, decided before the repo's own setup: always for a pull request;
+      # for a push unless it is a release stamp, which the kit's release-push.js answers.
       - name: Scope
         id: scope
         env:
@@ -37,12 +44,12 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" != push ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
-            bash "$RUNNER_TEMP/workkit-kit/.github/scripts/release-push.sh" "$BEFORE" >> "$GITHUB_OUTPUT"
+            "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/release-push.js" "$BEFORE" >> "$GITHUB_OUTPUT"
           fi
       - name: Node version
         id: node
         if: steps.scope.outputs.run == 'true'
-        run: echo "version=$(bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-node-version.sh")" >> "$GITHUB_OUTPUT"
+        run: echo "version=$("$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-node-version.js")" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v5
         if: steps.scope.outputs.run == 'true'
         with:
@@ -57,7 +64,8 @@ jobs:
       # Before the install, so a tool or a $GITHUB_ENV value it needs is in place.
       - name: Setup (hooks.ciSetup)
         if: steps.scope.outputs.run == 'true'
-        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-hooks.sh" ciSetup
+        run: |
+          "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-hooks.js" ciSetup
       - name: Install dependencies
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -69,11 +77,13 @@ jobs:
       # After the install, so a command that needs an installed package can run.
       - name: Post-install (hooks.ciPostInstall)
         if: steps.scope.outputs.run == 'true'
-        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-hooks.sh" ciPostInstall
+        run: |
+          "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-hooks.js" ciPostInstall
       # No FORCE_COLOR here: it would reach every program a suite starts, and Node then colors what they print.
       - name: Test
         if: steps.scope.outputs.run == 'true'
-        run: bash "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-test.sh"
+        run: |
+          "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-test.js"
       # Its work commit's run proved that code, so a release push ends here.
       - name: Release push
         if: steps.scope.outputs.run == 'false'

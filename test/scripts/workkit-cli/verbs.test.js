@@ -53,7 +53,7 @@ const CHAIN_PLAN = 'publish @s/a 1.0.0 scoped\npublish @s/b 1.0.0 scoped\npublis
 describe('workkit ship', () => {
   test('ship items hands its arguments to the script: an unknown one is its usage refusal, exit 2', () => {
     const world = mkWorld();
-    const { code, out, err } = runCli(world, ['ship', 'items', '--nope']);
+    const { code, out, err } = runCli(world, ['ship', 'items', '--nope'], { env: withNode(world) });
     expect(code, `exit 2, got: ${out}${err}`).toBe(2);
     expect(err.startsWith('ship-items: '), `the script's own line, got: ${err}`).toBeTruthy();
     expect(world.ghCalls().length, `gh never asked, got: ${fmtCalls(world.ghCalls())}`).toBe(0);
@@ -156,12 +156,13 @@ describe('workkit review', () => {
     const g = mkGitRepo('wk-review-', { 'src/x.js': "module.exports = 'x';\n" }, PAST);
     // A new size: git's stat check would read the same size at the same date as clean.
     g.write('src/x.js', "module.exports = 'changed';\n", PAST);
-    const before = runCli(world, ['review', 'covers'], { cwd: g.repo });
+    const opts = { cwd: g.repo, env: withNode(world) };
+    const before = runCli(world, ['review', 'covers'], opts);
     expect(before.code, `stale is exit 1, got: ${before.said}`).toBe(1);
     expect(before.out, 'no marker yet').toBe('review-covers: stale: no full-panel marker\n');
-    const mark = runCli(world, ['review', 'mark', 'full'], { cwd: g.repo });
+    const mark = runCli(world, ['review', 'mark', 'full'], opts);
     expect(mark.code, `the marker is written, got: ${mark.said}`).toBe(0);
-    const after = runCli(world, ['review', 'covers'], { cwd: g.repo });
+    const after = runCli(world, ['review', 'covers'], opts);
     expect(after.code, `covered is exit 0, got: ${after.said}`).toBe(0);
     expect(after.out, 'the full marker covers the diff').toBe('review-covers: covered\n');
     cleanup(g.dir);
@@ -211,6 +212,33 @@ describe('workkit prove and proof red: the node floor', () => {
     cleanup(g.dir);
     cleanup(world.root);
   });
+});
+
+describe('workkit review, triage and ship items: the node floor', () => {
+  // [the command's words, its prefix, its code with no node at the floor].
+  const FLOOR = [
+    [['review', 'covers'], 'review-covers', 2],
+    [['review', 'mark'], 'review-marker', 1],
+    [['triage', 'mark'], 'triage-marker', 1],
+    [['ship', 'items'], 'ship-items', 1],
+  ];
+
+  for (const [args, prefix, exit] of FLOOR) {
+    test(`${args.join(' ')} with no node at or above the floor: one ${prefix} line naming 22.12 on stderr, nothing on stdout, exit ${exit}, no review or triage marker written, gh never asked`, () => {
+      const world = mkWorld();
+      const { g, env } = belowFloor(world);
+      const { code, out, err } = runCli(world, args, { cwd: g.repo, env });
+      expect(code, `exit ${exit}, got: ${out}${err}`).toBe(exit);
+      expect(out, 'nothing on stdout').toBe('');
+      expect(err, 'the one floor line').toBe(`${prefix}: no node at or above 22.12 is installed\n`);
+      const written = ['claude-review-marker', 'claude-review-full-marker', 'claude-triage-marker']
+        .filter((kind) => fs.existsSync(path.join(world.workflowHome, 'markers', kind)));
+      expect(written.join(', '), 'no review or triage marker written').toBe('');
+      expect(world.ghCalls().length, `gh never asked, got: ${fmtCalls(world.ghCalls())}`).toBe(0);
+      cleanup(g.dir);
+      cleanup(world.root);
+    });
+  }
 });
 
 describe('workkit changelog', () => {

@@ -87,15 +87,15 @@ const mkOriginRepo = (dir, origin) => {
  * prints `issues[N]` as JSON (unknown: exit 1); `release view <tag>` runs `onView`
  * (a bash line), then prints the tag when `tags` holds it or `late` (tag to its
  * "not found" misses) has spent them, else "release not found", exit 1; `release
- * create` runs `onCreate` (a bash line) and exits `createExit`; `run list` prints
- * `runs` as JSON, through jq for `--jq`/`-q`; `workflow run <file>` exits 1 with a
+ * create` runs `onCreate` (a bash line), prints `createSays` on stderr, exits
+ * `createExit`; `run list` prints `runs` as JSON, through jq for `--jq`/`-q`; `workflow run <file>` exits 1 with a
  * refusal on stderr when `dispatchFails` names the file, else 0; with `fails`
  * every call exits 1 the way a signed-out gh does.
  * @param {object} [opts]
  * @returns {{binDir: string, calls: Function}} `calls()` is every argv, in order
  */
 const commitGh = ({
-  issues = {}, tags = [], late = {}, fails = false, createExit = 0, onCreate = ':', onView = ':', runs = [], dispatchFails = [],
+  issues = {}, tags = [], late = {}, fails = false, createExit = 0, createSays = '', onCreate = ':', onView = ':', runs = [], dispatchFails = [],
 } = {}) => {
   const dir = mkTmp('commit-gh-');
   const binDir = path.join(dir, 'bin');
@@ -108,6 +108,9 @@ const commitGh = ({
   for (const [tag, misses] of Object.entries(late)) fs.writeFileSync(path.join(lateDir, tag), String(misses));
   const runsFile = path.join(dir, 'runs.json');
   fs.writeFileSync(runsFile, JSON.stringify(runs));
+  // A file, so any text reaches stderr whole, whatever quotes it holds.
+  const saysFile = path.join(dir, 'create-says.txt');
+  fs.writeFileSync(saysFile, createSays ? `${createSays}\n` : '');
   const jq = which('jq');
   const log = path.join(dir, 'gh.log');
   stubTool(binDir, 'gh', [
@@ -132,6 +135,7 @@ const commitGh = ({
     'fi',
     'if [[ "$1 $2" == "release create" ]]; then',
     `  ${onCreate}`,
+    `  cat "${shellPath(saysFile)}" >&2`,
     `  exit ${createExit}`,
     'fi',
     'if [[ "$1 $2" == "run list" ]]; then',

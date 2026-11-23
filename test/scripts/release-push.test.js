@@ -1,19 +1,19 @@
-// Tests for .github/scripts/release-push.sh, the CI scope job's answer: run
-// for real at the root of a scratch repo, given the commit before the push.
-// A push that only stamps a release (CHANGELOG.md, version spots in the JSON
-// files) prints `run=false`; anything else, or a before it cannot read, prints
-// `run=true`. A before the shallow CI clone lacks is fetched from origin first.
+// Tests for .github/scripts/release-push.js, the CI scope job's answer, started with
+// Node at the root of a scratch repo with no jq on PATH. A push that only stamps a
+// release prints `run=false`; anything else, or a before it cannot read, `run=true`.
+// A before the shallow CI clone lacks is fetched from origin first.
 
+const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const {
-  describe, test, expect, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
-const { NO_RC, shellPath, spawnBash } = require('../lib/platform');
+const { spawnSync, basePathWithout } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 
 const KIT = path.join(__dirname, '..', '..');
-const SCRIPT = path.join(KIT, '.github', 'scripts', 'release-push.sh');
+const SCRIPT = path.join(KIT, '.github', 'scripts', 'release-push.js');
 
 const json = (o) => `${JSON.stringify(o, null, 2)}\n`;
 const plugin = (version) => json({ name: 'fixture', version });
@@ -68,10 +68,17 @@ const mkShallow = (files) => {
   return { c, before };
 };
 
-/** The script at `w`'s root, given `args`. */
+// The machine's PATH with jq left out, built once per process.
+let noJq = null;
+const noJqPath = () => {
+  if (!noJq) noJq = basePathWithout(mkTmp('release-push-'), 'jq');
+  return noJq;
+};
+
+/** The script at `w`'s root, started with this Node, given `args`. */
 const run = (w, args) => {
-  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
-    cwd: w.repo, env: w.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  const res = spawnSync(process.execPath, [SCRIPT, ...args], {
+    cwd: w.repo, env: { ...w.env, PATH: noJqPath() }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
 };
@@ -97,7 +104,10 @@ const STAMP = {
   'package-lock.json': lock('1.0.1', '2.0.0'),
 };
 
-describe('release-push.sh: a release stamp skips', () => {
+// A sha no world holds.
+const UNKNOWN = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+
+describe('release-push.js: a release stamp skips', () => {
   test('a push changing CHANGELOG.md and the version in plugin.json, package.json and the lockfile prints run=false', () => {
     const { w, before } = mkWorld();
     push(w, STAMP);
@@ -111,7 +121,7 @@ describe('release-push.sh: a release stamp skips', () => {
   });
 });
 
-describe('release-push.sh: any other push runs', () => {
+describe('release-push.js: any other push runs', () => {
   test('a push changing only a dependency version in package-lock.json prints run=true', () => {
     const { w, before } = mkWorld();
     push(w, { 'package-lock.json': lock('1.0.0', '2.0.1') });
@@ -164,7 +174,7 @@ describe('release-push.sh: any other push runs', () => {
   });
 });
 
-describe('release-push.sh: a <before> the shallow CI clone lacks', () => {
+describe('release-push.js: a <before> the shallow CI clone lacks', () => {
   test('origin holds it: it is fetched, and a release-stamp push prints run=false', () => {
     const { c, before } = mkShallow(STAMP);
     answers(c, before, 'run=false', 'shallow release stamp');
@@ -172,15 +182,80 @@ describe('release-push.sh: a <before> the shallow CI clone lacks', () => {
 
   test('origin lacks it too: the failed fetch is passed over, run=true', () => {
     const { c } = mkShallow(STAMP);
-    answers(c, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', 'run=true', 'unknown everywhere');
+    answers(c, UNKNOWN, 'run=true', 'unknown everywhere');
   });
 });
 
-describe('release-push.sh: usage', () => {
-  test('no argument exits 64 and answers nothing', () => {
+const member = (name, version, deps) => json({ name, version, ...(deps ? { dependencies: deps } : {}) });
+/** A workspace's package files at `version`, member a pinning its sibling b at `pin`. */
+const workspace = (version, pin = version) => ({
+  'package.json': json({ name: 'fixture', version, private: true, workspaces: ['packages/*'] }),
+  'packages/a/package.json': member('@fixture/a', version, { '@fixture/b': pin }),
+  'packages/b/package.json': member('@fixture/b', version),
+});
+
+describe('release-push.js: a workspace whose packages release together', () => {
+  test('the CHANGELOG, each member\'s version and its sibling pin moving to that version prints run=false; a pin to another number runs', () => {
+    for (const [pin, line, what] of [['1.0.1', 'run=false', 'pins equal to the version'], ['2.0.0', 'run=true', 'a pin off the version']]) {
+      const w = mkRepo('release-push-', { 'CHANGELOG.md': CHANGELOG, ...workspace('1.0.0') });
+      const before = w.git('rev-parse', 'HEAD').trim();
+      push(w, { 'CHANGELOG.md': STAMP['CHANGELOG.md'], ...workspace('1.0.1', pin) });
+      answers(w, before, line, what);
+    }
+  });
+});
+
+/** Stage a new file and leave an unstaged edit, so a run that touched the index would show. */
+const dirty = (w) => {
+  fs.writeFileSync(path.join(w.repo, 'staged.txt'), 'staged\n');
+  w.git('add', 'staged.txt');
+  fs.appendFileSync(path.join(w.repo, 'CHANGELOG.md'), '\nunstaged\n');
+};
+
+/** HEAD, the ref it names, its reflog, the index and the working changes. */
+const checkoutState = (w) => ({
+  head: w.git('rev-parse', 'HEAD'),
+  ref: w.git('rev-parse', '--symbolic-full-name', 'HEAD'),
+  reflog: w.git('reflog', 'show', '--format=%H %gs', 'HEAD'),
+  index: w.git('ls-files', '--stage'),
+  status: w.git('status', '--porcelain'),
+});
+
+describe('release-push.js: the checkout is left as it was', () => {
+  test('HEAD never moves and the index keeps its staged work, on every path through the script', () => {
+    const pushed = (files) => {
+      const { w, before } = mkWorld();
+      push(w, files);
+      return { w, before };
+    };
+    const shallow = mkShallow(STAMP);
+    const paths = [
+      ['release stamp', pushed(STAMP), null, 'run=false'],
+      ['code change', pushed({ 'src/x.js': 'module.exports = 2;\n' }), null, 'run=true'],
+      ['a before fetched from origin', { w: shallow.c, before: shallow.before }, null, 'run=false'],
+      ['a before nowhere', { w: mkShallow(STAMP).c }, UNKNOWN, 'run=true'],
+      ['an unknown before', pushed(STAMP), UNKNOWN, 'run=true'],
+      ['an all-zero before', pushed(STAMP), '0'.repeat(40), 'run=true'],
+      ['an empty before', pushed(STAMP), '', 'run=true'],
+    ];
+    for (const [what, world, given, line] of paths) {
+      dirty(world.w);
+      const was = checkoutState(world.w);
+      const out = run(world.w, [given === null ? world.before : given]);
+      expect(out.code, `${what}: exit code (stderr: ${out.stderr})`).toBe(0);
+      expect(out.stdout, `${what}: the printed line`).toBe(`${line}\n`);
+      const now = checkoutState(world.w);
+      for (const key of Object.keys(was)) expect(now[key], `${what}: ${key} as it was`).toBe(was[key]);
+    }
+  });
+});
+
+describe('release-push.js: usage', () => {
+  test('no argument exits 64 with the usage line naming the file, and answers nothing', () => {
     const { w } = mkWorld();
     const out = run(w, []);
     expect(out.code, `exit code (stderr: ${out.stderr})`).toBe(64);
+    expect(`${out.stdout}${out.stderr}`.split(/\r?\n/).includes('usage: release-push.js <before>'), `the usage line, got: ${out.stdout}${out.stderr}`).toBeTruthy();
     expect(!/run=/.test(out.stdout), `no run= answer on stdout: ${out.stdout}`).toBeTruthy();
   });
 });

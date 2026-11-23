@@ -23,17 +23,6 @@ wk_jq() {
   return "${PIPESTATUS[0]}"
 }
 
-# wk_jq_default <default> <jq args...>: jq's answer, or <default> when it wrote
-# nothing. Never `|| printf <default>`: jq writes what it parsed before failing,
-# and the default would be stuck on the end. Always exits 0.
-wk_jq_default() {
-  local default="$1" out
-  shift
-  out="$(wk_jq "$@" 2>/dev/null || true)"
-  [ -n "$out" ] || out="$default"
-  printf '%s' "$out"
-}
-
 # wk_in_plugin_cache <kit dir>: whether the kit is the workkit plugin's copy in
 # Claude's plugin cache: its manifest names workkit and its physical path lies
 # under the PHYSICAL <claude home>/plugins/cache/, since ~/.claude may be a

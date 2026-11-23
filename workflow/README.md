@@ -36,7 +36,7 @@
 | `lib/run-lock.js` | The run lock: the take and its judge, the pid file, the record beside the lock, the live and held reads, the end request, the end of a run's processes and the listing and sweep of the narrowed runs' slots, CJS |
 | `lib/run-paths.js` | Where a detached run logs and locks, the suite's, the supervised run's, the CI watch's and a narrowed run's slot; the slots a repo holds, and a slot cleared, CJS |
 | `lib/body.js` | A detached Node body's end: its last line `<prefix>: exit <code>`, and its signal codes, CJS |
-| `lib/lock.js` | The lock folder's rules: the claim, a run lock's mark, its retire and adopt, the plain mutex and the markers' sweep, CJS, requiring `lib/run.js`, `lib/read.js` and `lib/proc-state.js`, and `hooks/mods/markers.js` only for the sweep |
+| `lib/lock.js` | The lock folder's rules: the claim, a run lock's mark, its retire and adopt, the plain mutex, the marker write and the markers' sweep, CJS, requiring `lib/run.js`, `lib/read.js` and `lib/proc-state.js`, and `hooks/mods/markers.js` only for the sweep |
 | `lib/proc-state.js` | A process's state: its `/proc` fields, and whether it ended and waits uncollected, CJS, requiring nothing beyond Node; a program it starts goes through the starter its caller hands it |
 | `lib/attach.js` | A call attached to a run: the tail of its log, painted in process, its look, the run under a supervisor already, and the view, the log reads and the path compare `watch.js` shares, CJS |
 | `lib/detach.js` | The detached runner's launcher (`node detach.js`, which `lib/runs.js` runs as a process of its own) and its supervisor: its checks and its ends, requiring `lib/run.js`, `lib/pulse.js`, `lib/tree.js` and `lib/write.js`, and `lib/settings.js` only with `--root` |
@@ -84,18 +84,19 @@
 | `ship/plan.js` | The ship's publish plan: which packages go to npm, in dependency order, and which are skipped and why |
 | `ship/publish.js` | The ship's publish, `workkit ship publish [--dir <root>]` |
 | `ship/cut.js` | The ship's GitHub release, which CI makes: `workkit ship cut <x.y.z>` creates nothing |
+| `ship/caller.js` | A repo's checks caller, a library with no CLI: `CALLER` (its path, `.github/workflows/checks.yml`), `hasReleaseJob(text)`, `callerAtHead(root)` (its text at HEAD, or null) and `callerPending(root)` (changed, staged or untracked); `cut.js` and `release.js` require it |
 | `ship/deploy.js` | The ship's deploy: `workkit ship deploy`, from inside the repo, run at its root |
 | `ship/hooks.js` | The ship hooks, a library with no CLI |
-| `ship/entries.js` | The one shape of a `hooks.<event>` declaration and its check, CJS with no imports so a CI runner's older Node loads it: `commandsOf(settings, event)` answers `[{ command, local }]` or throws `HooksError` naming the first misshapen entry; `ship/hooks.js` and `.github/scripts/ci-hooks.sh` (`hooks.ciSetup`, `hooks.ciPostInstall`) both call it |
+| `ship/entries.js` | The one shape of a `hooks.<event>` declaration and its check, CJS, requiring `isPlain` from `hooks/mods/settings.js`: `commandsOf(settings, event)` answers `[{ command, local }]` or throws `HooksError` naming the first misshapen entry; `ship/hooks.js` and `.github/scripts/ci-hooks.js` (`hooks.ciSetup`, `hooks.ciPostInstall`, on the kit's Node) both call it |
 | `ship/watch.js` | The ship's CI watch: `workkit ship watch <sha>`, under a node at the kit's floor (`lib/platform.sh`) |
 | `ship/triggers.awk` | Whether one workflow file's top-level `on:` names an event, exit 0 yes and 1 no |
 | `ship/triggers.js` | The one Node caller of `ship/triggers.awk`: `listensTo(file, event)`, which `ship/watch.js` and `.github/scripts/ci-release.js` require |
 | `ship/dispatch-input.awk` | Whether one workflow file declares a dispatch input, exit 0 yes and 1 no |
 | `ship/semver.js` | The kit's one version comparison, `compareVersions(a, b)` in semver's order (a missing part reads as 0, a prerelease sorts below its release), and `isSemver(v)` beside it. Required by `plan.js`, `release.js` and `cut.js` for the version shape and by `jobs/morning/brief/cc-news.js` for the upstream releases; it requires nothing |
-| `ship/items.sh` | The ship's Step 0c read: every open issue at `status:qa` or `status:complete`, one line each |
-| `review/covers.sh` | The ship's review tier: whether the full-panel review marker covers the working diff, `workkit review covers` |
-| `review/mark.sh` | The review marker's writer, `workkit review mark [full]`: the `workkit:review` skill's record that it ran on this repo, keyed on the repo root; `full` writes the full-panel marker `review/covers.sh` reads as well. An unknown argument, or no repo, exits 1 |
-| `triage/mark.sh` | The triage marker's writer, `workkit triage mark`: the `workkit:triage` skill's record that a drain is under way, keyed on the repo root or `$HOME` outside one, which `safety:capture-guard` reads before it lets the capture file open (`docs/hooks.md` § `safety:capture-guard`) |
+| `ship/items.js` | The ship's Step 0c read, `workkit ship items [--repo owner/name]`, under a node at the kit's floor (`lib/platform.sh`): every open issue at `status:qa` or `status:complete`, one line each |
+| `review/covers.js` | The ship's review tier, under a node at the kit's floor: whether the full-panel review marker covers the working diff, `workkit review covers` |
+| `review/mark.js` | The review marker's writer, `workkit review mark [full]`, under a node at the kit's floor: the `workkit:review` skill's record that it ran on this repo, keyed on the repo root; `full` writes the full-panel marker `review/covers.js` reads as well. An unknown argument, or no repo, exits 1 |
+| `triage/mark.js` | The triage marker's writer, `workkit triage mark`, under a node at the kit's floor: the `workkit:triage` skill's record that a drain is under way, keyed on the repo root or `$HOME` outside one, which `safety:capture-guard` reads before it lets the capture file open (`docs/hooks.md` § `safety:capture-guard`) |
 | `proof/red.js` | The verifier's red run, `workkit proof red [--live] <path>... -- <command>...` |
 | `proof/place.js` | The place a red run's command runs in: the copy, or the live swap with `--live`, each with its restore |
 | `proof/reading.js` | How a red run's output is read: the test summary and the modules that failed to load |
@@ -191,12 +192,17 @@
     - Job `checks` calls the kit's `.github/workflows/ci.yml@main` with `secrets: inherit`.
     - Job `release` runs on a push only (`if: github.event_name == 'push'`), so a pull request's token stays read-only.
     - `release` has `contents: write` and `actions: write`, and calls the kit's `.github/workflows/release.yml@main` with no secrets. The job's own token is its only credential.
-  - The reusable `ci.yml`'s `test` job runs the kit's `.github/scripts/ci-*.sh` from a shallow clone of the kit in `$RUNNER_TEMP`, outside the workspace.
+  - The reusable `ci.yml`'s `test` job runs the kit's `.github/scripts/ci-node-version.js`, `ci-hooks.js` and `ci-test.js` from a shallow clone of the kit in `$RUNNER_TEMP`, outside the workspace.
     - What they run: the Node version, the repo's `hooks.ciSetup` before the dependency install, its `hooks.ciPostInstall` after it, the suite under `xvfb-run -a`.
+    - Every kit script runs on the kit's own Node, never the repo's, which may be older: right after the kit's clone, `actions/setup-node` sets up `lts/*`, and a `Kit Node` step keeps its path in `WORKKIT_NODE`.
+      - Each script's step is `"$WORKKIT_NODE" "<kit>/.github/scripts/<name>.js"`. The kit's own `checks.yml` has the same two steps in its `scope` job.
+      - The repo's Node is set up after the `Scope` step, at the version `ci-node-version.js` names; the install, the hook commands and the suite run on it, through PATH. A `workkit` verb started inside them at the floor (`run_at_floor`) runs on the kit's Node, since `wk_node` tries `$WORKKIT_NODE` first; a verb `run_verb` starts runs on PATH's.
     - A newer run on the same pull request cancels the older.
   - A release push runs no setup, install or suite.
-    - A `Scope` step right after the kit's clone answers `run=true` for a pull request.
-    - For a push it asks the kit's `release-push.sh` with the push's `before`, which fetches it when the shallow checkout lacks it.
+    - A `Scope` step right after the kit's Node answers `run=true` for a pull request.
+    - For a push it asks the kit's `release-push.js` with the push's `before`, which fetches it when the shallow checkout lacks it.
+      - It reads each changed file at both commits through git, so it moves no ref, and needs no `jq`.
+      - A version stamp is the commit gate's version-only rule (`isManifest` and `versionOnly` in `hooks/mods/commit-gate/checks.js`), so a release that also moves the dependency pins equal to the version, as a workspace releasing in lockstep does, skips too.
     - Every later step runs only on `run=true`.
     - On `run=false` one last step prints one line saying every change is the CHANGELOG or a version stamp.
   - Its `changelog` job calls the kit's `changelog.yml`, whose header says what a push and a pull request judge.
@@ -209,6 +215,13 @@
       - Each prints `ci-release: v<x.y.z> has a release commit but no release, so it is released too`.
     - Each with no `Release: none` trailer and no release yet gets `gh release create v<x.y.z> --target <sha> --title v<x.y.z> --notes-file <notes>`.
     - The notes are `cut.js`'s `sectionBody` of that commit's CHANGELOG. None is the cut's line and a failed job.
+    - gh's stderr is read and written to the job's stderr as it was, on success and on failure.
+    - A failed create is `ci-release: gh release create v<x.y.z> exited <code>`, and the job exits with gh's code.
+      - Another run that made the release meanwhile is `ci-release: gh release create v<x.y.z> exited <code>, but v<x.y.z> is there now, so it is released` instead, exit 0.
+    - A failed create whose stderr holds `HTTP 403` adds two lines when the target's `.github/workflows` differs from the pushed head's (which a target that is the pushed head never does), `git diff --quiet <target> <head> -- .github/workflows` exiting 1:
+      - `ci-release: GitHub refuses a job's token a release at a commit that is no branch head or tag when its .github/workflows differs from the branch's (it needs the workflow scope, which no job's token holds)`
+      - `ci-release: make it by hand, signed in as a person: gh release create v<x.y.z> --target <sha> --title v<x.y.z> --notes-file <a file holding CHANGELOG.md's [x.y.z] section>`
+      - The pushed head is the event's `after` (HEAD when it has none). A release a person makes fires the `release` event itself.
   - A release that job's token makes starts no workflow.
     - So after a create, or on a re-run where a release commit the push brought already has its release, it dispatches.
     - It runs `gh workflow run <file> --ref <the event's repository.default_branch>` for every workflow whose top-level `on:` names both `release` and `workflow_dispatch` (`ship/triggers.awk`).
@@ -227,8 +240,9 @@
   - A verb with subcommands follows one rule: `workkit <verb> <sub>` runs `<verb>/<sub>.sh` or `.js` (`run_verb`).
     - It is exec'd, so the script's output and exit code are the command's.
     - An unknown or missing subcommand exits 1 with one line naming the ones there are.
-  - `prove`, `supervise`, `watch`, `ship watch` and `proof red` require the kit's ES modules, so each starts through `run_at_floor <prefix> <code> <file>` (`lib/platform.sh`) instead.
-    - With no node at the floor each exits 1, but `proof red`, whose 1 means green, which prints `red-proof:` and exits 2.
+  - `prove`, `supervise`, `watch`, `ship watch`, `ship items`, `review covers`, `review mark`, `triage mark` and `proof red` require the kit's ES modules, so each starts through `run_at_floor <prefix> <code> <file>` (`lib/platform.sh`) instead.
+    - With no node at the floor (22.12) each prints `<prefix>: no node at or above 22.12 is installed` and exits 1, but `review covers` and `proof red`, whose 1 means stale or green, which exit 2.
+    - The prefix is the verb's own, but `ship items` (`ship-items`), `review covers` (`review-covers`), `review mark` (`review-marker`), `triage mark` (`triage-marker`) and `proof red` (`red-proof`).
     - npm's script shell starts a `test` event the same way (`script-shell.sh`).
 - `workkit/`:
   - Functions only, each sourced by the entry and never executed; `links.sh` by `standards.sh --command-link` as well.
@@ -256,8 +270,8 @@
   - `allow.sh`: the kit's allow rules (`ALLOW_RULES`, at `permissions.allow`) and ask rules (`ASK_RULES`, at `permissions.ask`) in the global `~/.claude/settings.json`, setup's step and doctor's lines.
     - `ALLOW_RULES` is `Bash(workkit <command>:*)` for each `allow` entry of `WORKKIT_COMMANDS`, then `Bash(npm publish:*)`; `ASK_RULES` the same for each `ask` entry. A `none` entry gets no rule.
     - `RETIRED_ALLOW_RULES` (`Bash(workkit ship:*)`) is taken out at every run.
-  - `ship.sh`: `SHIP_VERBS`, read off the `ship <verb>` entries of `WORKKIT_COMMANDS` in their order, each handed to `run_verb`, but `ship watch`, handed to `run_at_floor` (`lib/platform.sh`).
-  - `review.sh`, `triage.sh`, `proof.sh` and `changelog.sh`: each its verb's subcommand list, handed to `run_verb`, but `proof red`, handed to `run_at_floor`.
+  - `ship.sh`: `SHIP_VERBS`, read off the `ship <verb>` entries of `WORKKIT_COMMANDS` in their order, each handed to `run_verb`, but `ship watch` and `ship items`, handed to `run_at_floor` (`lib/platform.sh`).
+  - `review.sh`, `triage.sh`, `proof.sh` and `changelog.sh`: each its verb's subcommand list, handed to `run_verb`, but `review covers`, `review mark`, `triage mark` and `proof red`, handed to `run_at_floor`.
 - `lib.sh`:
   - The global layer's addresses: `~/.workkit`, the tower clone in it, its config and its build output.
   - A safe JSON edit.
@@ -275,19 +289,14 @@
     - `watch.js` calls no `runs.js`: it reads and follows a run through `attach.js`, `run-lock.js` and `run-paths.js`.
   - One is `workkit.sh`'s alone, with a row of its own: `command-log.sh`.
 - `lib/platform.sh`:
-  - Sourced by `lib.sh`, by `standards.sh` and by the hooks' `_lib.sh` alike.
+  - Sourced by `lib.sh`, by `standards.sh` and by the shims and git's hooks alike.
   - It is the shell twin of `test/lib/platform.js`, and of `lib/run.js` on the Node side.
   - A shape sits here beside the spelling it is built on.
-    - So one jq read has one home for both of its questions: which jq answers it, and what its default means.
   - Its functions, each below.
   - `wk_jq`, since jq on Windows is a native program whose stdout is in TEXT MODE.
     - So a value read bare carries a `\r` into whatever is compared or written next.
     - Every jq call in `standards.sh` and in `lib/state.sh`'s JSON helpers goes through it.
-    - The hook layer reaches it under its own name (`hook_jq`).
     - jq's own exit status comes back, so a predicate (`jq -e`, `jq empty`) answers what it always answered.
-  - `wk_jq_default <default> <jq args...>`, beside it: the shape every read that carries a default is written in (`hook_jq_default` on the hook side).
-    - jq writes the values it parsed before it fails on a later one.
-    - So a `|| printf <default>` in the substitution hands back that partial answer, with the default stuck on the end of it.
   - `wk_native_path`: the native spelling of a path (`cygpath -m` on Windows, the identity elsewhere), which is git's own.
     - Every kit shell line prints a path for a person in it, so Windows output never mixes `/d/a` and `D:/a`.
     - It is the one spelling a machine-roster key is written and looked up under.
@@ -303,10 +312,10 @@
     - A machine with neither is refused loudly, rather than keyed to an empty string.
   - `wk_keyed_path <folder> <anchor>`, beside it: the path `<folder>/<sha1 of anchor>`, 1 when no digest comes out: the keyed-name step of `wk_marker_path`.
   - `wk_marker_path <dir> <anchor>`: the one derivation of a marker's path, `<markers dir>/<dir>/<sha1 of anchor>`, through `wk_keyed_path`.
-    - It serves a log's marker path (`wk_log_path`, `lib/suite.sh`) and the hooks' review and triage markers alike.
-    - The suite and package records are keyed in Node, by `markerPath` in `hooks/mods/markers.js`: the `lib/records.js` entry.
+    - It serves a log's marker path (`wk_log_path`, `lib/suite.sh`) and the `gh` shim's journal alike.
+    - The review and triage markers and the suite and package records are keyed in Node, by `markerPath` in `hooks/mods/markers.js` (the records: the `lib/records.js` entry).
   - `wk_markers_dir`: that base, `markers/` in `wk_user_dir`'s folder, out of reach of a system temp cleaner.
-  - `wk_sweep_markers`: the kit's own cleaner. Every shell marker writer calls it; the two record writers in `lib/records.js` run its Node twin, `sweepMarkers` in `lib/lock.js`.
+  - `wk_sweep_markers`: the kit's own cleaner. Every shell marker writer calls it; the two record writers in `lib/records.js` and the marker verbs' `writeMarker` run its Node twin, `sweepMarkers` in `lib/lock.js`.
     - It removes each regular file one folder under the base whose mtime is older than `MARKER_KEEP_DAYS` (7 days, set here).
     - It never enters a folder there.
   - `wk_tower_dir`: the tower clone, `tower/` in the same folder, the one spelling `lib.sh`'s `WK_HOME_DIR` reads.
@@ -338,7 +347,7 @@
     - It gives nothing and 1 when none fits.
     - It is the node the `gh` shim's gate and the git hooks' judge run under.
   - `run_at_floor <prefix> <code> <file> [args]`: `<file>` exec'd under `wk_node`'s pick, or one `<prefix>: no node at or above <floor> is installed` line and exit `<code>`.
-    - `workkit.sh`, `workkit/ship.sh`, `workkit/proof.sh` and `script-shell.sh` start their Node files through it.
+    - `workkit.sh`, `workkit/ship.sh`, `workkit/review.sh`, `workkit/triage.sh`, `workkit/proof.sh` and `script-shell.sh` start their Node files through it.
   - The one mutex shape:
     - `wk_claim_dir <dir>`: 0 only for the one caller that creates `<dir>/claim`.
       - A `mkdir` may answer 0 to two racing callers, so the one whose `mkdir` answered 0 must also create `<dir>/claim` under noclobber, which opens it create-only.
@@ -393,7 +402,7 @@
       - its `packages/core/test/lib/members.js` starts each member's `npm` through the starter `packages/core/test/run.js` hands it, so it imports none;
     - the root `test/` files still on the check's list, which only shrinks.
 - `lib/participation.sh`:
-  - Sourced by `lib.sh` and by the hooks' `_lib.sh` alike.
+  - Sourced by `lib.sh` and by the shims and git's hooks alike.
   - `wk_is_repo_root <dir>`: it asks `.git` with `-e` and never `-d`.
     - A worktree's and a submodule's `.git` is a FILE, and a `-d` reading skips a repo that works perfectly.
   - `wk_settings_declined <file>` / `wk_settings_enabled <file>`: the top-level `enabled` key of a settings file, read without jq.
@@ -428,7 +437,7 @@
     - It is 0 too when the folder is spelled like a kit's and does not exist (a plugin update's leftover, a dangling link).
     - So an existing folder of the repo's own that merely ends `/workflow/githooks` is not kit-like.
 - `lib/slug.sh`:
-  - Sourced by `lib.sh` and by the hooks' `_lib.sh` alike.
+  - Sourced by `lib.sh` and by the `gh` shim alike.
   - `wk_slug_from_remote <url>` is `owner/repo` out of a remote in every form git writes one, the SSH shorthand and the HTTPS URL.
     - It also reads one out of a local path in EITHER separator.
     - Git stores a remote exactly as it was typed, and a path typed natively on Windows comes back with backslashes.
@@ -445,7 +454,7 @@
     - The hooks module follows it as `rosterPath` in `hooks/mods/optin.js`.
     - That is how `safety:proof-guard`, `workflow:snapshot` and `workflow:public-mirror` find the repo a flip names.
 - `lib/suite.sh`:
-  - Sourced by `workkit.sh` and by the hooks' `_lib.sh` alike; `lib/command-log.sh` reads `wk_log_path` from it.
+  - Sourced by `workkit.sh`; `lib/command-log.sh` reads `wk_log_path` from it.
   - `wk_has_test_script` is the one has-a-test-script predicate (a non-empty string `scripts.test`); its module twin is `hasTestScript` in `hooks/mods/suite.js`.
   - `wk_log_dir <root>` is the repo's log folder: `logs.dir` (`wk_setting`), a path from the root, default `.workkit`.
     - Each `.` and `..` in it is walked, so `./logs/` reads as `logs`, and `.` is the root itself; an empty value reads as `.workkit`, as it does with no jq.
@@ -487,7 +496,8 @@
     - It holds one line per package, `<id> <pkg>`: the package folder relative to the root (`.` for the root), after its own tree id hashed before the run.
     - `writePkgRecord(root, tree, pkg)` works under the record's lock, `<record>.lock`, taken by `takeLock` in `lib/lock.js`, `wk_take_lock`'s twin (the folder, then its `claim` create-only).
     - It keeps every line whose package is not `<pkg>` and appends `<tree> <pkg>` (`pkgRecordText`), moved onto the record from `<record>.tmp.<pid>`, so overlapping package runs each keep their line.
-  - Each write first removes every regular file one folder under the markers folder older than 7 days (`sweepMarkers` in `lib/lock.js`, `wk_sweep_markers`'s twin); a lock folder there is left alone.
+  - Each write sweeps the markers folder, removing every regular file one folder under it older than 7 days (`sweepMarkers` in `lib/lock.js`, `wk_sweep_markers`'s twin); a lock folder there is left alone.
+    - The package record sweeps before its write; the suite record after it, through `writeMarker`.
   - `suiteHolds(root, tree)` and `pkgHolds(root, tree, pkg)` are the reads, through `suiteProved` and `pkgProved`; a record that cannot be read reads as no record.
   - The suite record is the engine-agnostic contract between whatever runs a repo's root suite and the gate.
     - It has two writers. `script-shell.js` is npm's adapter, recording the working tree a root run started on.
@@ -520,6 +530,7 @@
   - Each throws its step's own words, which its caller puts in its line.
 - `lib/snapshot.js`:
   - The red-proof snapshot, CJS, as exports (`take`, `add`, `stale`, `drop`, and `workingPaths`, the working diff's list) and as the command `workflow:snapshot` runs: `node snapshot.js take <root> [issue]... | add <root> <issue>... | stale <root> [repo] | drop <root>`.
+    - `workingPaths` has two callers beside the snapshot's own: `proof/red.js` and `review/covers.js`.
   - Its folder is `snapshotPath` in `hooks/mods/snapshot.js`, keyed by the root as git's top level spells it; what each mode does: `../docs/hooks.md` § `workflow:snapshot`.
   - Exit codes: the step's own; `stale` 0 stale, 1 live, 2 when `gh` cannot answer (`buildingList` in `hooks/mods/gh.js`); 64 with a `snapshot:` line for a usage fault; 129, 130 or 143 for a `take` ended by HUP, INT or TERM.
 - `lib/workspaces.js`:
@@ -712,6 +723,8 @@
     - The callers: the take's takeover and the owner's drop, a foreground run's too, and `sweepSlots`; a signal before the pid and a failed launch retire by the run's own mark.
   - `takeLock(dir)` and `dropLock(dir)` are the plain mutex, `wk_take_lock` and `wk_drop_lock`'s twins: its parent made, then `claimDir(dir)` tried 50 times 100 ms apart; the claim dropped before the folder. The package record's write takes its lock so.
   - `sweepMarkers(home)` is `wk_sweep_markers`'s twin: every regular file one folder under the markers folder (`markersDir` in `hooks/mods/markers.js`) older than 7 days removed, a folder there never entered.
+  - `writeMarker(file, home, text)` is the one writer of a marker and of the suite record: `<text>` at `<file>` (empty by default), its folder made first, then `sweepMarkers(home)`.
+    - Its callers: `review/mark.js` and `triage/mark.js`, with no text, and `lib/records.js`'s `writeSuiteRecord`, with the record's text.
 - `lib/proc-state.js`:
   - A process's state, CJS, requiring nothing beyond Node, so workkit-core can ship it: its prepack copies it in as `proc-state.cjs`, and its `alive` and `groupLives` read through it.
   - `procStat(pid)` is the fields of `/proc/<pid>/stat` after the command name, `[state, ppid, pgrp, ...]`: null once the entry is gone, undefined when it cannot be read.
@@ -762,24 +775,34 @@
   - Their callers each keep their own reaction to null:
     - `public/lib.js` throws its `PublicError`;
     - `changelog/changelog-links.js` prints `changelog-links: not a git repository.` and exits 1;
-    - `ship/cut.js` (both reads) and `ship/deploy.js` refuse the run;
+    - `ship/cut.js` refuses the run on a null `repoRoot`, and its `runUrl` reads a null `headSha` as no run, naming the repo's Actions page;
+    - `ship/deploy.js` refuses the run;
     - `ship/publish.js` reads its afterPublish hooks from its `--dir` itself;
     - `lib/io.js`'s `top` answers it as is;
     - `prove.js` stops with `prove: <root> has no commit to add a worktree of` on a null `headSha`;
-    - `lib/snapshot.js` reads a null `headSha` as a repo with no commit: its take stops with `<root> has no HEAD commit`, and its working-diff list reads the staged list instead.
+    - `lib/snapshot.js` reads a null `headSha` as a repo with no commit: its take stops with `<root> has no HEAD commit`, and its working-diff list reads the staged list instead;
+    - `review/covers.js` and `review/mark.js` stop with their `not inside a git repository` line, exit 2 and 1;
+    - `triage/mark.js` keys its marker on the home folder instead.
   - `gitIn(root, args, options)` is `git -C <root> <args>` through `lib/run.js`'s `spawnSync`, its answer as `spawnSync` gives it.
     - Its defaults are `maxBuffer: GIT_MAX_BUFFER` and `windowsHide: true`; a caller's options win, and each passes its own stdio, encoding and env.
-    - Its callers: `prove.js`, `lib/snapshot.js`, `lib/tree-copy.js`, `proof/red.js` and `proof/place.js`, for every git read of theirs but the two above.
+    - Its callers: `prove.js`, `lib/snapshot.js`, `lib/tree-copy.js`, `proof/red.js` and `proof/place.js`, for every git read of theirs but the two above; `ship/caller.js`'s status read; `script-shell.js`'s status read; `.github/scripts/ci-release.js`'s workflows diff.
+    - And the fetch and the path list of `.github/scripts/release-push.js`, and the two reads below.
+  - `hasCommit(root, rev)` is whether `rev` names a commit the repo holds (`git cat-file -e <rev>^{commit}`), false for any other answer.
+    - Its callers: `.github/scripts/release-push.js` and `.github/scripts/ci-release.js`, for a push's `before`.
+  - `textAt(root, rev, file)` is the text of `file` at `rev` (`git show <rev>:<file>`), or null when git cannot read it there.
+    - Its callers: `ship/caller.js`'s `callerAtHead`, `review/covers.js`'s settings file at HEAD, `.github/scripts/release-push.js`'s two sides of a version file, `.github/scripts/ci-release.js`'s CHANGELOG at a commit.
   - `GIT_MAX_BUFFER` is the most output one git read keeps, 64 MiB, ample for a repo's whole path list; `gitIn` and `ship/cut.js`'s `git log` read it.
   - `hooks/register.js` keeps its own `gitTop`, since the hooks module spawns through `$.process.run`.
 - `lib/say.js`:
-  - `sayAs(prefix)` is a writer of one `<prefix>: <text>` line on stderr.
-    - It writes straight to the fd, so the line lands before the output of a child started after it.
-    - It writes the whole line as bytes. On a full pipe that is not blocking, a write that answers `EAGAIN` waits 10 ms (`pause` in `lib/pause.js`) and goes on from the byte it reached, with no bound, as a blocking pipe has none; any other error throws.
+  - `writeErr(text)` writes a text or Buffer to stderr whole, as it is.
+    - It writes straight to the fd, so the text lands before the output of a child started after it.
+    - It writes the whole text as bytes. On a full pipe that is not blocking, a write that answers `EAGAIN` waits 10 ms (`pause` in `lib/pause.js`) and goes on from the byte it reached, with no bound, as a blocking pipe has none; any other error throws.
+    - Its callers: `sayAs`; `.github/scripts/ci-release.js` and `identity/rest.js`, which pass on gh's stderr; `.github/scripts/release-push.js`'s usage line.
+  - `sayAs(prefix)` is a writer of one `<prefix>: <text>` line on stderr, through `writeErr`.
     - A caller is a kit Node command, or a `lib/` file one requires, that prints its own `<prefix>:` lines on stderr.
   - `endOf(res)` is how a `spawnSync` child ended: `exited <code>`, `did not finish (<signal>)` or `could not be run, <error code>`.
     - It is the one phrasing of the ship's failure lines.
-    - Its callers: `ship/hooks.js`, `ship/cut.js`, `ship/deploy.js`, and `plan.js`'s `npmEnd`, which puts `npm` before it.
+    - Its callers: `ship/hooks.js`, `ship/cut.js`, `ship/caller.js`, `ship/deploy.js`, `.github/scripts/ci-release.js`, and `plan.js`'s `npmEnd`, which puts `npm` before it.
   - `errLine(res, fallback)` is a failed child's first stderr line, else `fallback` (`endOf(res)` by default).
     - It is the why of a failure line.
     - Its callers: `ship/cut.js`'s gh view failure, `.github/scripts/ci-release.js`'s dispatch failure, `ship/publish.js`'s npm check, with `npmEnd` as its fallback.
@@ -790,6 +813,7 @@
   - Its callers each keep their own reaction to null:
     - `lib/settings.js` (the loader's read), `lib/io.js` (the io's `read`);
     - `identity/token.js` and `login.js`, `publish/site-repos.js`;
+    - `review/covers.js`, and `.github/scripts/ci-node-version.js`, `ci-hooks.js` and `ci-test.js` (its `readJsonOrNull`);
     - and `tower/api/lib/repos.js`, `sessions.js`, `board.js` and `health.js`.
 - `lib/settings.js`:
   - `settingsAt(root, user?)` is `loadSettings` in `hooks/mods/settings.js`, read through `readOrNull` in `lib/read.js`.
@@ -842,7 +866,7 @@
   - `close.js` (`<version> <N>...`): one `gh issue close --comment`.
     - The comment is `Fixed in v<version>: <the issue's CHANGELOG entry>. Thanks for reporting it.`
     - One already closed is left alone.
-  - `lib.js`: the key, the link line, the `gh` calls.
+  - `lib.js`: the key, the link line, the `gh` calls; `ship/items.js` makes its own through `runGh` and `ghJson`.
   - A repo with no `public` key does nothing.
   - A key that is no slug is one line on stderr, and the pairing off.
   - A failed issue is one warning line and exit 1; the rest still run ([`docs/project-state.md`](../docs/project-state.md) § Capture).
@@ -1325,7 +1349,8 @@
     - neither file carrying a version;
     - no `[Unreleased]` heading;
     - a release that would move nothing;
-    - a stray line among the entries.
+    - a stray line among the entries;
+    - a pending caller (`ship/caller.js`'s `callerPending`), under `--dry-run` too: `release: .github/workflows/checks.yml has changes that are not committed; commit the caller before the release commit; nothing was written.`
   - It never commits, tags or pushes.
 - `ship/plan.js`:
   - The command: `workkit ship plan [--dir <root>]`. It publishes nothing.
@@ -1348,7 +1373,8 @@
   - It runs from inside the repo, at its root (`repoRoot` in `lib/git.js`).
   - The repo's `checks.yml` `release` job (`release.yml`, `.github/scripts/ci-release.js`) makes `v<x.y.z>` when the release commit reaches the default branch.
     - That is the same on a machine and in a cloud session.
-  - The cut first checks that `.github/workflows/checks.yml` holds a top-level job named `release`.
+  - The cut first checks that `.github/workflows/checks.yml` at HEAD, the file CI ran, holds a top-level job named `release` (`ship/caller.js`).
+    - The disk is read only to choose the line when HEAD's has none.
   - Then it checks that the CHANGELOG has an `[x.y.z]` section with entries.
   - Then it waits for `gh release view v<x.y.z>` to answer, and runs the repo's afterRelease hooks (`ship/hooks.js`).
   - A release already there answers at once.
@@ -1379,8 +1405,11 @@
     - a version that is not semver, or none, is the usage line, exit 2;
     - a version whose own release commit carries `Release: none` is exit 0, no wait and no hook;
     - that line is `ship-cut: the chore(release): <x.y.z> commit carries Release: none, so there is no v<x.y.z> to wait for and no hook ran`;
-    - no `release` job is `ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller`, exit 1;
-    - no `[x.y.z]` section with entries, a folder outside a repo or no HEAD commit is one line, exit 1;
+    - no `release` job at HEAD nor on disk (or no file) is `ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller`, exit 1;
+    - no `release` job at HEAD but one on disk is `ship-cut: .github/workflows/checks.yml has a release job on disk but not in the last commit; commit the caller and push it, then run the cut again`, exit 1;
+    - both come before the wait and before any `gh` call;
+    - a repo with no HEAD commit has no caller at HEAD, so it gets one of the two caller lines above;
+    - no `[x.y.z]` section with entries or a folder outside a repo is one line, exit 1;
     - no release within the wait is `ship-cut: no release v<x.y.z> after <n>s; check the release job: <url>`, exit 1, no hook run;
     - that url is HEAD's `checks.yml` run (`gh run list --commit`), else the repo's Actions page;
     - a hook failing prints `ship-cut: v<x.y.z> was released; an afterRelease hook failed`, exit 1, the release standing.
@@ -1481,19 +1510,21 @@
   - It reads carriage returns and quotes as `triggers.awk` reads them.
   - The same key anywhere else (a step's `with:`, an input's property) never counts.
   - `.github/scripts/ci-release.js` asks it for `tag`.
-- `ship/items.sh`:
+- `ship/items.js`:
   - The line is `<stage> #<N> <proved|unproved> <title>`, qa first then complete, each by number.
   - `proved` is a comment line starting `Proof:`.
-    - That is the same pattern `safety:proof-guard` reads (`PROOF_RE` in `hooks/mods/proof.js`), and the two change together.
+    - That is the pattern `safety:proof-guard` reads, `PROOF_RE` in `hooks/mods/proof.js`, read from there.
+  - It reads gh's answer in Node (`ghJson` in `public/lib.js`), so it needs no `jq`.
   - Nothing at either stage prints `ship-items: nothing at qa or complete`.
   - A failed `gh` prints one `ship-items:` line on stderr and exits 1.
   - A usage error exits 2.
   - The command: `workkit ship items [--repo owner/name]`.
-- `review/covers.sh`:
+- `review/covers.js`:
   - The marker must be newer than every modified, staged and untracked path, and than the folder a deleted path left.
     - The one change it passes over is the heal's removal of the retired `version` key from `.workkit/settings.json`.
   - It prints `review-covers: covered` and exits 0, or `review-covers: stale: <why>` and exits 1.
-  - A usage or git failure exits 2 (`docs/hooks.md` § `safety:commit-gate`).
+  - A folder outside a repo, or a working diff git cannot list, exits 2 with one `review-covers:` line (`docs/hooks.md` § `safety:commit-gate`).
+  - It and `review/mark.js` key the marker in Node (`markerPath` in `hooks/mods/markers.js`), so neither needs `shasum` or `sha1sum`.
 - `proof/red.js`:
   - `workkit.sh` starts it through `run_at_floor` (`lib/platform.sh`); with no node at the floor it prints `red-proof: no node at or above <floor> is installed`, exit 2, since its 1 means green.
   - It runs the command against the named paths as the claim's snapshot holds them.
@@ -1583,9 +1614,9 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 | `workkit supervise -- <command> [args...]` | `supervise.js`, under a node at the kit's floor (`lib/platform.sh`): the command run detached under the supervisor, as the root suite runs, its output tailed to the call and kept in the run log; it exits with the command's code, or the code of a check's verdict (`docs/tests.md` § The checks) |
 | `workkit watch [--end] [suite\|run\|<pid>]` | `watch.js`, under a node at the kit's floor (`lib/platform.sh`): the call attached again to the live run, the suite's before the supervised one before the one narrowed run, or the one named (a narrowed run by its pid); `--end` asks the supervisor to end it, and with several runs live and no name it refuses, exit 2 |
 | `workkit public intake` · `mirror <N>... \| --all` · `close <version> <N>...` | the public pairing, run from the private repo: `public/intake.js`, `public/mirror.js`, `public/close.js` (the `public/` row above); the triage drain runs the intake, `workflow:public-mirror` and the daily heal the mirror, the ship's close step the close |
-| `workkit ship items` · `release <x.y.z> [--keep N,M]` · `watch <sha>` · `cut <x.y.z>` · `plan` · `publish` · `deploy` | the ship's steps, run by `workkit:ship`: `ship/items.sh`, `ship/release.js`, `ship/watch.js`, `ship/cut.js`, `ship/plan.js`, `ship/publish.js`, `ship/deploy.js` (their rows above) |
-| `workkit review covers` · `mark [full]` | the review tier and the review marker: `review/covers.sh`, `review/mark.sh` |
-| `workkit triage mark` | the triage marker: `triage/mark.sh` |
+| `workkit ship items` · `release <x.y.z> [--keep N,M]` · `watch <sha>` · `cut <x.y.z>` · `plan` · `publish` · `deploy` | the ship's steps, run by `workkit:ship`: `ship/items.js`, `ship/release.js`, `ship/watch.js`, `ship/cut.js`, `ship/plan.js`, `ship/publish.js`, `ship/deploy.js` (their rows above) |
+| `workkit review covers` · `mark [full]` | the review tier and the review marker: `review/covers.js`, `review/mark.js`, under a node at the kit's floor (`lib/platform.sh`) |
+| `workkit triage mark` | the triage marker: `triage/mark.js`, under a node at the kit's floor (`lib/platform.sh`) |
 | `workkit proof red [--live] <path>... -- <command>...` | the verifier's red run: `proof/red.js`, under a node at the kit's floor (`lib/platform.sh`) |
 | `workkit changelog lint <file> [flags]` | the CHANGELOG entry check: `changelog/lint.js` |
 
@@ -1810,7 +1841,7 @@ workkit note fix the tower poller
 
 - Every hook but the three `tool.call` guard chains fails open by design.
   - A chain that crashes refuses the call: `docs/hooks.md` § Failure.
-  - So a module that cannot load, a syntax error in a shell piece, or a missing tool takes a safety layer offline with nothing watching.
+  - So a module that cannot load, or a missing tool, takes a safety layer offline with nothing watching.
 - Once a day, the heal asserts the layer beside it (`workflow/standards/hooks.sh`).
 - The hooks module is loaded the way Claude Code loads it: `node --input-type=module` imports `hooks/register.js` by its file URL.
   - That pulls in every module under `hooks/mods/`.
@@ -1818,14 +1849,10 @@ workkit note fix the tower poller
   - The warning carries node's first stderr line that opens with an error name and a colon (`SyntaxError:`, `Error [ERR_MODULE_NOT_FOUND]:`).
   - Else it carries node's first stderr line.
   - No `register.js` beside the engine, or no `node`, checks nothing there.
-- The shell the scripts still source is parsed with `bash -n`, since a sourcing script never parses what it sources until it runs.
-  - That shell is `hooks/_lib.sh` and every `*.sh` under `hooks/lib/`.
-  - The `review/` and `triage/` scripts load it.
-  - A piece with a syntax error warns and marks the run unfinished.
-- The tools the module and those scripts call must be on the PATH: `HOOK_TOOLS` in `standards.sh` (`jq`, `git`, `node`, `shasum` or `sha1sum`).
+- The tools the module and the guards in the shims call must be on the PATH: `HOOK_TOOLS` in `standards.sh` (`jq`, `git`, `node`, `shasum` or `sha1sum`).
   - A missing one warns just as loudly, but never marks the run.
   - No repo can install it, and an unfinished run, retried every session, would nag forever.
-- The summary line reads `hooks: <N> shell pieces parse; the hooks module loads`.
+- The summary line reads `hooks: the hooks module loads`.
 - An engine installed with no hook layer beside it (no `hooks/hooks.json`) checks nothing and says nothing.
   - `WORKFLOW_HOOKS_DIR` overrides the location.
 
@@ -1869,7 +1896,7 @@ workkit note fix the tower poller
     - An entry's optional `"local": true` marks one that needs a machine, which a cloud session skips with its line (`ship/hooks.js`).
   - The same shape under `"ciSetup"` and `"ciPostInstall"` is the repo's own CI setup, which the ship never runs.
     - The kit's `ci.yml` runs each `ciSetup` entry on the runner before the dependency install, and each `ciPostInstall` entry after it and before the tests, skipping a `"local": true` one.
-    - Where: `.github/scripts/ci-hooks.sh <event>`, through the one entry check in `ship/entries.js`.
+    - Where: `.github/scripts/ci-hooks.js <event>`, through the one entry check in `ship/entries.js`.
   - An optional `"public": "<owner>/<repo>"` pairs this private repo with the public one its users file issues on (`docs/project-state.md` § Capture).
     - The heal makes the `status:` labels there and mirrors each linked issue's status.
     - The `gh` shim posts there as the bot, and `workkit public` runs the intake and the close.

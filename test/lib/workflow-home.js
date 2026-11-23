@@ -1,7 +1,7 @@
 // A scratch workflow home, where every marker and record lives, a HOME's cache
 // and its proof run folders, and a file or run folder aged by its mtime for the
-// sweeps. Consumers: the test/hooks/lib, lib-record, commit-gate/marker, prove,
-// red-proof and workflow:snapshot suites, and test/lib/red-snapshot.js.
+// sweeps. Consumers: the lib-record, twins, workflow:snapshot, proof-guard, commit-gate/marker,
+// review-covers, detach, records, proof-dir, red-proof and prove suites, and test/lib/red-snapshot.js.
 
 const fs = require('fs');
 const path = require('path');

@@ -43,6 +43,17 @@ const VSIX = 'name: vsix\non:\n  release:\n    types: [published]\n  workflow_di
 const STRAY_TAG = 'name: docs\non:\n  release:\n  workflow_dispatch:\n    inputs:\n      ref:\n        tag: v0\njobs:\n  docs:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: some/action@v1\n        with:\n          tag: v1\n';
 const BUILD = 'name: build\non:\n  push:\n  workflow_dispatch:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo build\n';
 
+// The checks caller before and after the heal's rewrite, as the two commits hold it.
+const CALLER = '.github/workflows/checks.yml';
+const OLD_CALLER = 'name: checks\non:\n  push:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+const NEW_CALLER = 'name: checks\non:\n  push:\njobs:\n  checks:\n    uses: o/r/.github/workflows/ci.yml@main\n  release:\n    uses: o/r/.github/workflows/release.yml@main\n';
+
+// What gh prints for a create GitHub refuses, and for one whose tag is taken.
+const FORBIDDEN = 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/o/r/releases)';
+const TAKEN = 'HTTP 422: Validation Failed (https://api.github.com/repos/o/r/releases)';
+const EXITED = 'ci-release: gh release create v1.2.3 exited 1';
+const WORKFLOW_RULE = 'ci-release: GitHub refuses a job\'s token a release at a commit that is no branch head or tag when its .github/workflows differs from the branch\'s (it needs the workflow scope, which no job\'s token holds)';
+
 /** A repo holding CHANGELOG and `files`, committed; `before` is that commit, the push's start. */
 const mkWorld = (files = {}) => {
   const g = mkRepo('ci-release-', { 'CHANGELOG.md': CHANGELOG, ...files });
@@ -54,6 +65,13 @@ const workCommit = (g, name) => {
   g.write(`${name}.txt`, `${name}\n`);
   g.git('add', '-A');
   g.git('commit', '-q', '-m', `fix: ${name}`);
+};
+
+/** The heal's caller committed over the old one. */
+const newCaller = (g) => {
+  g.write(CALLER, NEW_CALLER);
+  g.git('add', '-A');
+  g.git('commit', '-q', '-m', 'ci: take the kit\'s checks caller');
 };
 
 /** Commit `chore(release): <version>` adding its section of `notes` under [Unreleased]; `body` the message body; returns its sha. */
@@ -83,12 +101,17 @@ const releaseGh = (g, opts = {}) => {
   return { ...gh, notes };
 };
 
-/** The scan at `g`'s root for the push `before`..HEAD, gh being `gh`. */
+/**
+ * The scan at `g`'s root for the push `before`..HEAD, gh being `gh`. Its stdout
+ * and stderr share one file, so `all` holds every line in the order written.
+ */
 const scan = (g, gh, before) => {
   const event = path.join(g.dir, 'event.json');
   fs.writeFileSync(event, JSON.stringify({
     before, after: g.git('rev-parse', 'HEAD').trim(), ref: 'refs/heads/main', repository: { default_branch: 'main' },
   }));
+  const outFile = path.join(g.dir, 'scan.out');
+  const fd = fs.openSync(outFile, 'w');
   const res = spawnSync(process.execPath, [SCRIPT], {
     cwd: g.repo,
     env: {
@@ -98,14 +121,14 @@ const scan = (g, gh, before) => {
       GITHUB_EVENT_PATH: event,
       GITHUB_REF_NAME: 'main',
     },
+    stdio: ['pipe', fd, fd],
     input: '',
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
   });
+  fs.closeSync(fd);
   expect(res.status !== null, `ci-release finished (no timeout, no signal): ${res.error || ''}`).toBeTruthy();
-  const out = res.stdout || '';
-  const err = res.stderr || '';
-  return { code: res.status, all: out + err };
+  return { code: res.status, all: fs.readFileSync(outFile, 'utf8') };
 };
 
 const creates = (gh) => gh.calls().filter((c) => isCall(c, 'release', 'create'));
@@ -173,13 +196,14 @@ describe('ci-release.js: a release commit in the push', () => {
     expect(JSON.stringify(made.map((c) => [c[2], flagValue(c, '--target')])), `v1.1.0 at its own commit, then v1.2.0, got: ${fmtCalls(made)}`).toBe(JSON.stringify([['v1.1.0', older], ['v1.2.0', sha]]));
   });
 
-  test('a create that fails while another run made the release: it counts as released, exit 0', () => {
+  test('a create that fails while another run made the release: gh\'s stderr printed, it counts as released, exit 0', () => {
     const { g, before } = mkWorld();
     releaseCommit(g, '1.2.3');
-    const gh = releaseGh(g, { late: { 'v1.2.3': 1 }, createExit: 1 });
+    const gh = releaseGh(g, { late: { 'v1.2.3': 1 }, createExit: 1, createSays: TAKEN });
     const { code, all } = scan(g, gh, before);
     expect(code, `exit 0, got: ${all}`).toBe(0);
     expect(creates(gh).length, `one create tried, got: ${fmtCalls(gh.calls())}`).toBe(1);
+    expect(all.split('\n').includes(TAKEN), `gh's stderr text, got: ${all}`).toBeTruthy();
     expect(all.includes('v1.2.3 is there now, so it is released'), `the line saying so, got: ${all}`).toBeTruthy();
   });
 
@@ -192,6 +216,81 @@ describe('ci-release.js: a release commit in the push', () => {
     expect(all.split('\n').includes('ci-release: gh release view v1.2.3 failed: gh: To get started with GitHub CLI, please run: gh auth login'),
       `the gh failure line, got: ${all}`).toBeTruthy();
     expect(creates(gh).length, `no create, got: ${fmtCalls(gh.calls())}`).toBe(0);
+  });
+});
+
+describe('ci-release.js: a create GitHub refuses', () => {
+  /**
+   * A world whose caller is `OLD_CALLER`, then `steps(g)` in order; returns the
+   * world, the push's start and the release commit's sha `steps` returned.
+   */
+  const refusedWorld = (steps) => {
+    const { g, before } = mkWorld({ [CALLER]: OLD_CALLER });
+    return { g, before, sha: steps(g) };
+  };
+
+  /** The run's lines that are one of the two the 403 adds. */
+  const added = (all) => all.split('\n').filter((l) => l === WORKFLOW_RULE || l.startsWith('ci-release: make it by hand'));
+
+  test('a 403 at a target one below the head, the two commits\' .github/workflows different: gh\'s text, the exited line, then the two lines; exit gh\'s', () => {
+    const { g, before, sha } = refusedWorld((w) => {
+      const at = releaseCommit(w, '1.2.3');
+      newCaller(w);
+      return at;
+    });
+    const gh = releaseGh(g, { createExit: 1, createSays: FORBIDDEN });
+    const { code, all } = scan(g, gh, before);
+    expect(code, `gh's exit, got: ${all}`).toBe(1);
+    const expected = [
+      FORBIDDEN,
+      EXITED,
+      WORKFLOW_RULE,
+      `ci-release: make it by hand, signed in as a person: gh release create v1.2.3 --target ${sha} --title v1.2.3 --notes-file <a file holding CHANGELOG.md's [1.2.3] section>`,
+    ];
+    const lines = all.split('\n');
+    const at = expected.map((l) => lines.indexOf(l));
+    expect(at.every((i, n) => i >= 0 && (n === 0 || i > at[n - 1])), `the four lines, in order, got: ${all}`).toBeTruthy();
+  });
+
+  test('a 403 at a target that is the pushed head: gh\'s text and the exited line only', () => {
+    const { g, before } = refusedWorld((w) => {
+      newCaller(w);
+      return releaseCommit(w, '1.2.3');
+    });
+    const gh = releaseGh(g, { createExit: 1, createSays: FORBIDDEN });
+    const { code, all } = scan(g, gh, before);
+    expect(code, `gh's exit, got: ${all}`).toBe(1);
+    const lines = all.split('\n');
+    expect(lines.includes(FORBIDDEN) && lines.includes(EXITED), `gh's text and the exited line, got: ${all}`).toBeTruthy();
+    expect(added(all).length, `neither added line, got: ${all}`).toBe(0);
+  });
+
+  test('a 403 at a target below the head whose .github/workflows equals the head\'s: gh\'s text and the exited line only', () => {
+    const { g, before } = refusedWorld((w) => {
+      const at = releaseCommit(w, '1.2.3');
+      workCommit(w, 'later');
+      return at;
+    });
+    const gh = releaseGh(g, { createExit: 1, createSays: FORBIDDEN });
+    const { code, all } = scan(g, gh, before);
+    expect(code, `gh's exit, got: ${all}`).toBe(1);
+    const lines = all.split('\n');
+    expect(lines.includes(FORBIDDEN) && lines.includes(EXITED), `gh's text and the exited line, got: ${all}`).toBeTruthy();
+    expect(added(all).length, `neither added line, got: ${all}`).toBe(0);
+  });
+
+  test('a create failing with another text, below the head with .github/workflows different: gh\'s text and the exited line only', () => {
+    const { g, before } = refusedWorld((w) => {
+      const at = releaseCommit(w, '1.2.3');
+      newCaller(w);
+      return at;
+    });
+    const gh = releaseGh(g, { createExit: 1, createSays: TAKEN });
+    const { code, all } = scan(g, gh, before);
+    expect(code, `gh's exit, got: ${all}`).toBe(1);
+    const lines = all.split('\n');
+    expect(lines.includes(TAKEN) && lines.includes(EXITED), `gh's text and the exited line, got: ${all}`).toBeTruthy();
+    expect(added(all).length, `neither added line, got: ${all}`).toBe(0);
   });
 });
 

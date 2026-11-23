@@ -75,7 +75,7 @@ user-invocable: true
 ## 5. Marker (feeds the commit gate)
 
 - After the report, record that review ran, from inside the repo under review.
-- The `safety:commit-gate` hook checks this marker before it allows a code commit. The script names the marker by the same key rule the hook reads it with (`wk_marker_path`, `reviewMarkerPath` in the hooks module), so the two cannot drift.
+- The `safety:commit-gate` hook checks this marker before it allows a code commit. The script names the marker by the functions the hook reads it with (`reviewMarkerPath` and `reviewFullMarkerPath` of `hooks/mods/markers.js`), so the two cannot drift.
 - The light tier runs it plain. The full tier passes `full`, and so does the retouch that closes a full panel's fix round (`workkit:feature` § 5); `full` also writes the full-panel marker beside the plain one; `workkit review covers` reads only that one.
 
 ```sh

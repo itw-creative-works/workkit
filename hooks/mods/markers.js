@@ -1,6 +1,6 @@
 /**
- * hooks/mods/markers.js: the files the hooks name by content, the port of
- * hooks/lib/markers.sh and the engine's wk_marker_path: the review, full-panel,
+ * hooks/mods/markers.js: the files the hooks name by content, the Node twin of
+ * the engine's wk_marker_path: the review, full-panel,
  * triage, suite and package markers, the gh shim's journals, a call's mark of them
  * and the read of what it changed, the per-session marker, a file's age, and
  * the folder Git Bash means by a path the shell spelled, which the module's
@@ -332,7 +332,7 @@ export function sessionMarker(name, sessionId, tmpdir) {
 
 /**
  * A file's age in whole seconds; an unreadable file reads as made at the
- * epoch, as hook_file_mtime's 0 does, so it is never fresh.
+ * epoch, so it is never fresh.
  * @param {number|null|undefined} mtimeMs the file's mtime, null when unreadable
  * @param {number} nowMs the time now
  * @returns {number}

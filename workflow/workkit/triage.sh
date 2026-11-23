@@ -4,12 +4,12 @@
 # Sourced by workkit.sh, functions only; the subcommand is its script in
 # triage/, which speaks for itself.
 
-# workkit triage mark
+# workkit triage mark. It requires the kit's ES modules, so it runs under a node
+# at the floor.
 cmd_triage() {
   local sub="${1:-}"
   case "$sub" in
-    mark) shift ;;
+    mark) shift; run_at_floor triage-marker 1 "$SCRIPT_DIR/triage/mark.js" "$@" ;;
     *) wk_error "triage: unknown subcommand ${sub:-(none)}; use mark"; return 1 ;;
   esac
-  run_verb triage "$sub" "$@"
 }

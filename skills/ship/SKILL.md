@@ -11,7 +11,7 @@ user-invocable: true
 
 - Parse the invocation text BEFORE anything else. When args resolve every decision, ask NOTHING and run the full pipeline. Otherwise it asks two questions only: which repo (Step 0) and a major bump (Step 1). The deploy confirmation (Step 6) is a gate, not a question, and only `deploy` in the args skips it, never Claude Code's own prompt at the call.
 - Bump: `patch` / `minor` / `major` uses that bump. An explicit version (`1.0.0`, `v1.0.0`) bumps to exactly it, a major included. `skip` / `no bump` skips the bump. A bump given here is never asked about.
-- File scope: `all` / `everything` stages the whole tree (`git add -A`), the DEFAULT. Explicit paths or globs (`src/` `docs/`) stage ONLY those. A description ("just the prompt changes", "only the route files") stages only the matching files.
+- File scope: `all` / `everything` stages the whole tree (`git add -A`), the DEFAULT. Explicit paths or globs (`src/` `docs/`) stage ONLY those. A description ("just the prompt changes", "only the route files") stages only the matching files. A pending `.github/workflows/checks.yml` is staged too, whatever the scope (Step 3 item 5's caller rule).
 - Opt out:
   - `no deploy` / `skip deploy` skips deploy without asking.
   - `no publish` / `skip publish` is the only way to skip publish.
@@ -134,7 +134,11 @@ user-invocable: true
    - A local session ships DIRECT, watched or not: the local gates already reviewed it.
      - It takes the PR path only on the owner's literal `pr`, or when the work sits on a branch with an open PR.
    - A cloud session (`CLAUDE_CODE_REMOTE=true`) always takes the PR path, from its own `claude/<name>` branch: the owner's "ship" is the ask the cloud platform needs before a PR.
-   - **Direct**: stage (`git add -A`, or the named paths), then check that the index equals the disk, untracked files included.
+   - **The checks caller**: a pending `.github/workflows/checks.yml` (changed, staged or untracked, as the standards heal leaves it) rides the work commit, whatever file scope the owner named.
+     - When it is the only pending change (a release-only ship, or the cut's not-committed line in Step 4), it is its own commit, pushed before any release commit.
+     - The commit gate passes a commit that holds only the heal's caller.
+     - GitHub refuses the release job a release commit that sits below a later caller commit, so the release step refuses while the caller is pending.
+   - **Direct**: stage (`git add -A`, or the named paths plus a pending caller, per the caller rule above), then check that the index equals the disk, untracked files included.
      - The check: `git diff --quiet` exits 0 AND `git ls-files --others --exclude-standard` prints nothing.
      - Both hold: run `npm test` at the repo root once on the final tree (detached through npm's script shell, `workflow/script-shell.js`; a cut-off call reads `suite.log` in the repo's log folder, `docs/project-state.md` § The model, its logs bullet).
        - It is watched per `docs/agents.md` § Watching a run.
@@ -150,6 +154,8 @@ user-invocable: true
    - **Release commit** (either path, unless the bump is skipped): compute the version, then ONE command, `workkit ship release <x.y.z> [--keep <N,M>]`, Step 0c's open items as `--keep`.
      - Never a bare `npm version`, which commits and tags; the release step runs it with `--no-git-tag-version` itself.
      - `safety:release-taken` bounces the commit when npm or a GitHub release already holds the version, so a taken number surfaces here, not at the publish.
+     - A pending caller stops it, exit 1, under `--dry-run` too: `release: .github/workflows/checks.yml has changes that are not committed; commit the caller before the release commit; nothing was written.`
+       - Commit and push the caller (the caller rule above), then run the release step again.
    - It sets `version` in each version file carrying one.
      - npm sets it in `package.json`, in each lockstep workspace member's and in `package-lock.json`, and the step sets `.claude-plugin/plugin.json`'s by text.
      - It then backfills each entry's commit link, and moves `[Unreleased]` into `[<x.y.z>] - <date>`, the kept entries staying.
@@ -236,8 +242,9 @@ user-invocable: true
   - A release commit carrying `Release: none` gets none, and one already released is never duplicated.
   - That job does not wait for the work commit's run: on the direct path the release (and a pages deploy it starts) can be public before that run ends.
   - So a red run after it means the release already exists. The red path stops the ship as always, and the fix ships forward as the next version, never by deleting the release.
-- The cut checks the caller first: with no `release` job it prints `ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller` and exits 1.
-  - Report it; the ship ends there.
+- The cut checks the caller first, as HEAD holds it (the file CI ran), never the disk. With no `release` job there it exits 1 before any wait:
+  - with none on disk either, `ship-cut: .github/workflows/checks.yml has no release job; run the standards heal (workkit heal) and commit the caller`: report it; the ship ends there;
+  - with one on disk, `ship-cut: .github/workflows/checks.yml has a release job on disk but not in the last commit; commit the caller and push it, then run the cut again`: commit the caller on its own (Step 3 item 5's caller rule), push it, and run the cut again.
 - It then waits for `v<version>` to appear (`gh release view`, about ten minutes in all; a release already there answers at once) and runs the afterRelease hooks.
   - No release in that time is `ship-cut: no release v<version> after <n>s; check the release job: <url>`, exit 1, no hook run: report it with the url.
 - Two lines end it at once, exit 1, no hook run, and are reported as they are:
@@ -254,7 +261,11 @@ user-invocable: true
 - The call gets a long timeout, as Step 7's setup run: the wait and a hook may take minutes. Report its `ship-hooks:` and `ship-cut:` lines.
 - A FAILED hook is loud, like a failed publish (`ship-cut: v<version> was released; an afterRelease hook failed`, exit 1), and the release itself stands.
   - Fix the hook, then `/ship skip` on the clean tree reruns the cut, which finds the release at once and reruns every afterRelease hook.
-- Never a `gh release create` typed by hand: it runs no hook, and auto mode refuses it as a new public page.
+- Never a `gh release create` typed by hand: it runs no hook, and auto mode refuses it as a new public page. The one exception is the owner's own release after the two 403 lines below; the agent still never types it.
+- A release job GitHub refuses with `HTTP 403` adds two lines to its log after gh's own, when the target's `.github/workflows` differs from the pushed head's (which a target that is the pushed head never does):
+  - `ci-release: GitHub refuses a job's token a release at a commit that is no branch head or tag when its .github/workflows differs from the branch's (it needs the workflow scope, which no job's token holds)`
+  - `ci-release: make it by hand, signed in as a person: gh release create v<x.y.z> --target <sha> --title v<x.y.z> --notes-file <a file holding CHANGELOG.md's [x.y.z] section>`
+  - Report both to the owner, whose release that is to make. A release a person makes fires the `release` event itself, so nothing else is owed; then `/ship skip` reruns the cut and its afterRelease hooks.
 - Report each `ship-cut:` wait line the cut printed.
 
 ## Step 5: npm publish (if applicable)

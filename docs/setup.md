@@ -274,7 +274,7 @@ claude plugin install workkit@workkit
 
 ```
 .claude-plugin/   plugin.json + marketplace.json (this repo is its own marketplace)
-hooks/            hooks.json + the hooks module (register.js, mods/) + the shell library the scripts source
+hooks/            hooks.json + the hooks module (register.js, mods/)
 agents/           the crew (namespaced workkit:<name>)
 briefs/           the role brief templates, one per crew job (the manager fills the slots)
 skills/           the nine workflow skills (namespaced workkit:<name>)

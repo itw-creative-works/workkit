@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # workflow/lib/suite.sh: the has-a-test-script read and where a detached run
-# logs, for the shell. Sourced, functions only, by workkit.sh and the hooks'
-# _lib.sh; it reads wk_jq and wk_marker_path from platform.sh and wk_setting
-# from participation.sh, which it sources when the caller has not.
+# logs, for the shell. Sourced, functions only, by workkit.sh; it reads wk_jq
+# and wk_marker_path from platform.sh and wk_setting from participation.sh,
+# which it sources when the caller has not.
 
 # wk_has_test_script <dir>: <dir>/package.json declares scripts.test as a
 # non-empty string. Consumer: cmd_test; the module's twin is hasTestScript in

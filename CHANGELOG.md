@@ -7,6 +7,14 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#572](../../issues/572) - `workkit review covers`, `review mark`, `triage mark`, `ship items` and the CI scripts run in Node: each verb needs a Node at 22.12, none needs `jq` or `shasum`. CI sets up the kit's Node first, and skips the suite for a release push that also moves lockstep dependency pins.
+
+### Fixed
+
+- [#567](../../issues/567) - A ship no longer loses its GitHub release to an uncommitted checks caller. `workkit ship release` refuses while `checks.yml` is pending, `workkit ship cut` reads the committed caller, and a release job GitHub refuses with a 403 says why and how to release by hand.
+
 ## [0.100.2] - 2026-11-21
 
 ### Fixed

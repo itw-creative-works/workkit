@@ -5,9 +5,9 @@
 # HOOK_TOOLS are the entry's.
 
 # ── 5. The hook layer is alive ──
-# The hooks module loads, the shell pieces the scripts source parse, and the
-# tools both call are present. A dead piece flags the run; a missing tool warns
-# without flagging it, since no repo can fix it.
+# The hooks module loads and the tools the hooks call are present. A module
+# that fails to load flags the run; a missing tool warns without flagging it,
+# since no repo can fix it.
 check_hook_layer() {
   # No hook layer beside the engine: this is the engine installed on its own,
   # not a broken install.
@@ -25,23 +25,7 @@ check_hook_layer() {
     wk_warn "hooks: the hook layer needs$missing; without them the hooks stand aside and their checks silently do not run"
   fi
 
-  local module=""
-  check_hook_module && module="; the hooks module loads"
-
-  # The shell the scripts still source (workflow/{review,triage}/*.sh):
-  # `bash -n` on each piece, since a sourcing script never parses what it
-  # sources until it runs.
-  local piece pieces_checked=0
-  for piece in "$HOOKS_DIR/_lib.sh" "$HOOKS_DIR"/lib/*.sh; do
-    [[ -f "$piece" ]] || continue
-    pieces_checked=$((pieces_checked + 1))
-    if ! bash -n "$piece" 2>/dev/null; then
-      wk_warn "hooks: ${piece#"$HOOKS_DIR"/} has a syntax error; every script that sources it exits non-zero before doing anything (bash -n $(wk_native_path "$piece"))"
-      needs_attention=1
-    fi
-  done
-
-  [[ "$pieces_checked" -gt 0 || -n "$module" ]] && wk_skip "hooks: $pieces_checked shell pieces parse$module"
+  check_hook_module && wk_skip "hooks: the hooks module loads"
   return 0
 }
 

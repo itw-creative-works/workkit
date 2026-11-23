@@ -7,7 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const { readOrNull } = require('./read');
 const { writeWhole } = require('./write');
-const { takeLock, dropLock, sweepMarkers } = require('./lock');
+const {
+  takeLock, dropLock, sweepMarkers, writeMarker,
+} = require('./lock');
 const { pkgMarkerPath, shellEnvOf, suiteMarkerPath } = require('../../hooks/mods/markers.js');
 const { userDirOf } = require('../../hooks/mods/log.js');
 const {
@@ -25,7 +27,7 @@ const pkgRecordPath = (root) => pkgMarkerPath(root, home());
 
 /**
  * Write the suite record afresh: <tree>, hashed BEFORE the green run, and the
- * run's wall time. The old markers are swept first.
+ * run's wall time, through writeMarker, which then sweeps the old markers.
  * @param {string} root the repo root
  * @param {string} tree the tree id; empty is refused, nothing written
  * @param {number|string} ms the run's milliseconds
@@ -33,10 +35,7 @@ const pkgRecordPath = (root) => pkgMarkerPath(root, home());
  */
 const writeSuiteRecord = async (root, tree, ms) => {
   if (!tree) return false;
-  const file = await suiteRecordPath(root);
-  sweepMarkers(home());
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, suiteRecordText(tree, ms));
+  writeMarker(await suiteRecordPath(root), home(), suiteRecordText(tree, ms));
   return true;
 };
 

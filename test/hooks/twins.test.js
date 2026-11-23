@@ -1,9 +1,8 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the
 // suite log's path, the test script, the marker path, the color gate, the plain mutex, the marker sweep, the opt-in read (the gate's and the heal's), the session rule, one setting, the machine folder,
-// the hooks log, the slug, the Proof pattern, the working-diff reads, the
-// version-only change, the public slug, git's value-taking global options. Plus one
-// JavaScript pair, the plain-object test, and one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
+// the hooks log, the slug, the public slug, git's value-taking global options. Plus one
+// shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
 // And one export with no shell side, the CHANGELOG test.
 
 const fs = require('fs');
@@ -14,11 +13,10 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, systemPathWith, spawnSystemBash, nodeEnv,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, spawnSystemBash, nodeEnv,
 } = require('../lib/platform');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
-const { mods, runResult } = require('../lib/mods-inputs');
-const { recordArgv, readArgv } = require('../lib/argv-log');
+const { mods } = require('../lib/mods-inputs');
 const commitGate = require('./commit-gate/helpers');
 const { runLib } = require('../lib/hook-lib');
 const { agedFile, daysAgo } = require('../lib/workflow-home');
@@ -92,12 +90,6 @@ const CHANGELOGS = [
   'CHANGELOG.md.bak', 'xCHANGELOG.md', 'changelog.md', 'CHANGELOG', 'CHANGELOG.md/x', 'docs/OLD-CHANGELOG.md',
 ];
 
-const MANIFESTS = [
-  'package.json', 'package-lock.json', 'packages/a/package.json', 'packages/a/package-lock.json',
-  '.claude-plugin/plugin.json', 'x/.claude-plugin/plugin.json', 'plugin.json', 'xpackage.json',
-  'package.json.bak', 'fixtures/app.json', 'npm-shrinkwrap.json', 'package-lock.jsonx',
-];
-
 // A repo's settings text; null writes no file.
 const SETTINGS = [
   null, '', '{}', '{ "version": 1 }\n', '{ "enabled": true }\n', '{ "version": 1, "enabled": false }\n',
@@ -114,15 +106,6 @@ const settingsRoots = (texts) => texts.map((text) => {
   }
   return root;
 });
-
-// A PATH world whose `tool` records each argv to a log, runs `lines` and prints `out`;
-// the real tools stay reachable behind it.
-const recordingTool = (tool, out = '', lines = []) => {
-  const bin = mkTmp(`twins-${tool}-`);
-  const logFile = path.join(bin, 'argv.log');
-  stubTool(bin, tool, ['#!/bin/bash', recordArgv(logFile), ...lines, `printf '%s' '${out}'`]);
-  return { path: systemPathWith(bin), calls: () => readArgv(logFile) };
-};
 
 // [logs.dir, the repo's .gitignore]: undefined sets no logs.dir. The last four are
 // spellings two hand-written path walkers could read apart.
@@ -148,7 +131,7 @@ describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh aga
       const root = w.git('rev-parse', '--show-toplevel').trim();
       const res = runLib(`wk_log_path "${root}" suite.log`, {
         HOME: shellPath(path.dirname(w.workflowHome)), WORKFLOW_HOME: shellPath(w.workflowHome), ...nodeEnv,
-      });
+      }, ['suite.sh']);
       // A refused value is one answer on both sides: the shell's non-zero exit, the gate's line naming logs.dir.
       shell.push(res.code === 0 ? norm(res.stdout.trim(), root) : 'refused');
 
@@ -191,7 +174,7 @@ describe('twins: the test script, wk_has_test_script in workflow/lib/suite.sh ag
       if (text !== null) fs.writeFileSync(path.join(dir, 'package.json'), text);
       return dir;
     });
-    const shell = bashAnswers(lib('hooks', '_lib.sh'), 'wk_has_test_script', dirs.map(shellPath));
+    const shell = bashAnswers([lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'suite.sh')], 'wk_has_test_script', dirs.map(shellPath));
     const parsed = (text) => { try { return JSON.parse(text); } catch { return null; } };
     agree(PACKAGES.map((_, i) => i), shell, (i) => mods('suite').hasTestScript(parsed(PACKAGES[i])), 'the package.json texts by index');
     expect(JSON.stringify(shell.slice(0, 3)), 'a test script is one, an empty one and none are not').toBe(JSON.stringify([true, false, false]));
@@ -200,7 +183,7 @@ describe('twins: the test script, wk_has_test_script in workflow/lib/suite.sh ag
 
 describe('twins: the marker path, wk_marker_path in workflow/lib/platform.sh against markerPath in hooks/mods/markers.js', () => {
   // The anchor spellings the shell must hash byte for byte as the module does: a space, a drive, backslashes, a trailing
-  // slash, a call id, none at all. The plain root through each marker kind is test/hooks/lib.test.js's.
+  // slash, a call id, none at all. The plain root through each marker kind is test/hooks/markers.test.js's.
   const ANCHORS = ['/w/a b/repo', 'C:/Users/x/repo', 'C:\\Users\\x\\repo', '/repos/thing/', 'toolu_01AbC', ''];
   const HOMES = { HOME: '/w/home', WORKFLOW_HOME: '/w/moved' };
 
@@ -534,108 +517,6 @@ describe('twins: the slug, wk_slug_from_remote in workflow/lib/slug.sh against s
   });
 });
 
-describe('twins: the Proof pattern, workflow/ship/items.sh against PROOF_RE in hooks/mods/proof.js', () => {
-  // Comment bodies a Proof: read meets; the last five carry no Proof: at a line start.
-  const BODIES = [
-    'Proof: unit', 'looks good\nProof: unit: node tests/x.test.js', 'notes first\n  \tProof: integration',
-    'a\n\nProof:', 'x\r\nProof: after a CRLF', '\tProof:x',
-    'proof: unit', 'Proof of concept only', 'the Proof: line is still to come', '', 'Proofs: none',
-  ];
-
-  test("the ship's jq test and PROOF_RE match the same comment bodies", () => {
-    const src = fs.readFileSync(path.join(KIT, 'workflow', 'ship', 'items.sh'), 'utf8');
-    const found = src.match(/test\("([^"]*Proof:[^"]*)"\)/);
-    expect(found, 'items.sh tests each comment against a Proof: pattern').toBeTruthy();
-    const res = spawnSystemBash([...NO_RC, '-c', 'jq -c "map(test(\\"$PATTERN\\"))"'], {
-      env: { PATH: SYSTEM_PATH, PATTERN: found[1] }, input: JSON.stringify(BODIES), encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    expect(res.status, `jq ran the ship's pattern, stderr: ${res.stderr}`).toBe(0);
-    const shell = JSON.parse(res.stdout);
-    agree(BODIES, shell, (b) => mods('proof').PROOF_RE.test(b), 'the Proof pattern');
-    expect(JSON.stringify(shell.slice(0, 6)), 'a Proof: line at a line start matches').toBe(JSON.stringify([true, true, true, true, true, true]));
-    expect(JSON.stringify(shell.slice(6)), 'and nothing else does').toBe(JSON.stringify([false, false, false, false, false]));
-  });
-});
-
-describe('twins: the working diff, hook_working_paths in hooks/lib/tree.sh against the touched list proof-guard reads', () => {
-  // The reads the touched list hangs on: the HEAD check, the working diff, the untracked list (never the ref reads).
-  const touchedReads = (calls) => calls.filter((a) => ['diff', 'ls-files'].includes(a[0]) || (a[0] === 'rev-parse' && a.includes('--verify')));
-  for (const headed of [true, false]) {
-    const kinds = headed ? 'rev-parse, diff, ls-files' : 'rev-parse, ls-files, ls-files';
-    test(`hook_working_paths and the qa check make the same reads in the same order, ${headed ? 'a repo with a commit' : 'a repo with no commit'}: ${kinds}`, async () => {
-      const git = recordingTool('git', '', headed ? [] : ['[[ " $* " == *" --verify "* ]] && exit 1']);
-      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('hooks', 'lib', 'tree.sh')}"; hook_working_paths /w/repo`], {
-        env: { PATH: git.path, HOME: shellPath(os.homedir()) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
-      expect(res.status, `the shell reads ran, stderr: ${res.stderr}`).toBe(0);
-      const shell = git.calls().map((argv) => (argv[0] === '-C' ? argv.slice(2) : argv));
-      expect(shell.map((a) => a[0]).join(', '), `the shell's reads, got: ${JSON.stringify(shell)}`).toBe(kinds);
-      const runs = [];
-      const view = JSON.stringify({ state: 'OPEN', url: 'https://github.com/o/r/issues/12', labels: [{ name: 'status:building' }], comments: [], body: '' });
-      const recordRun = async (argv, init = {}) => {
-        runs.push({ argv: [...argv], init });
-        const unborn = !headed && argv[0] === 'git' && argv[1] === 'rev-parse' && argv.includes('--verify');
-        return runResult({ exitCode: unborn ? 1 : 0, stdout: argv[0] === 'gh' ? view : '' });
-      };
-      const { proofVerdict, proofFacts } = mods('proof-guard');
-      const facts = await proofFacts({
-        cwd: '/w/repo', env: { HOME: '/w/home' }, top: async () => '/w/repo', read: async () => null, list: async () => [], run: recordRun, pluginRoot: KIT,
-      });
-      await proofVerdict({ steps: [{ sub: 'edit', number: 12, add: ['status:qa'], remove: ['status:building'] }], cwd: '/w/repo', repo: null, facts });
-      const reads = touchedReads(runs.filter((c) => c.argv[0] === 'git').map((c) => c.argv.slice(1)));
-      expect(JSON.stringify(reads), 'the module makes the shell\'s reads, in its order').toBe(JSON.stringify(shell));
-    });
-  }
-});
-
-describe('twins: the version file test, hook_is_manifest in hooks/lib/tree.sh against isManifest in hooks/mods/commit-gate/checks.js', () => {
-  test('hook_is_manifest and isManifest agree on every fixture', () => {
-    const shell = bashAnswers(lib('hooks', 'lib', 'tree.sh'), 'hook_is_manifest', MANIFESTS);
-    agree(MANIFESTS, shell, (p) => mods('commit-gate/checks').isManifest(p), 'the version file test');
-  });
-});
-
-describe('twins: the version-only change, hook_version_only_change in hooks/lib/tree.sh against versionOnly in hooks/mods/commit-gate/checks.js', () => {
-  // One JSON file's HEAD text, then its working copy: the version alone, another key too, a copy that does not parse.
-  const HEAD_JSON = '{\n  "version": 1,\n  "enabled": true\n}\n';
-  const CHANGES = {
-    'stamp.json': '{\n  "version": 2,\n  "enabled": true\n}\n',
-    'other.json': '{\n  "version": 2,\n  "enabled": false\n}\n',
-    'broken.json': '{\n  "version": 2,\n',
-  };
-
-  test('hook_version_only_change and versionOnly give every change the same answer', () => {
-    const files = Object.keys(CHANGES);
-    const w = mkRepo('twins-version-', Object.fromEntries(files.map((f) => [f, HEAD_JSON])), undefined, { optIn: false });
-    for (const f of files) w.write(f, CHANGES[f]);
-    const shell = bashAnswers(lib('hooks', '_lib.sh'), `hook_version_only_change "${shellPath(w.repo)}"`, files);
-    agree(files, shell, (f) => mods('commit-gate/checks').versionOnly(HEAD_JSON, CHANGES[f]), 'the version-only change');
-    expect(JSON.stringify(shell), 'only the lone version stamp is version-only').toBe(JSON.stringify([true, false, false]));
-    fs.rmSync(w.dir, { recursive: true, force: true });
-  });
-
-  // A lockfile's HEAD text, then its working copy: every version spot moved
-  // (the top, the root entry, a member's), and a dependency's entry moved too.
-  const lock = (version, dep) => `${JSON.stringify({
-    name: 'w',
-    version,
-    lockfileVersion: 3,
-    packages: { '': { name: 'w', version }, 'node_modules/dep': { version: dep }, 'packages/a': { name: 'a', version } },
-  }, null, 2)}\n`;
-  const LOCK_HEAD = lock('1.0.0', '2.0.0');
-  const LOCK_CHANGES = { 'stamp-lock.json': lock('1.1.0', '2.0.0'), 'dep-lock.json': lock('1.1.0', '2.1.0') };
-
-  test('hook_version_only_change and versionOnly read a lockfile\'s version spots alike, and a dependency\'s entry as no stamp', () => {
-    const files = Object.keys(LOCK_CHANGES);
-    const w = mkRepo('twins-lock-', Object.fromEntries(files.map((f) => [f, LOCK_HEAD])), undefined, { optIn: false });
-    for (const f of files) w.write(f, LOCK_CHANGES[f]);
-    const shell = bashAnswers(lib('hooks', '_lib.sh'), `hook_version_only_change "${shellPath(w.repo)}"`, files);
-    agree(files, shell, (f) => mods('commit-gate/checks').versionOnly(LOCK_HEAD, LOCK_CHANGES[f]), 'the lockfile stamp');
-    expect(JSON.stringify(shell), 'only the version spots moving is version-only').toBe(JSON.stringify([true, false]));
-    fs.rmSync(w.dir, { recursive: true, force: true });
-  });
-});
-
 describe('twins: the public slug, PUBLIC_SLUG_RE in workflow/standards/labels.sh against SLUG_RE and the Public: link in workflow/public/lib.js', () => {
   // `public` key values; the first four are slugs.
   const PUBLIC_KEYS = [
@@ -767,16 +648,5 @@ describe('twins: the shims\' shared readers, norm_dir, in_list, real_path and th
     const expected = ROWS.map(([, pick]) => pick);
     agree(expected.map((_, i) => i), git, (i) => gh[i], 'git shim real_git against gh shim real_gh (by index into the PATHs)');
     expect(JSON.stringify(git), 'the entry each PATH leads to').toBe(JSON.stringify(expected));
-  });
-});
-
-describe('twins: the plain-object test, isPlain in workflow/ship/entries.js against hooks/mods/settings.js', () => {
-  test('both isPlain copies answer every value alike: only a non-null, non-array object is plain', () => {
-    const { isPlain: entriesPlain } = require(path.join(KIT, 'workflow', 'ship', 'entries.js'));
-    const values = [{}, { command: 'x' }, Object.create(null), [], [{}], null, undefined, 0, 1, '', 'x', true, false, () => {}, new Date(0)];
-    const settingsPlain = mods('settings').isPlain;
-    const differ = values.flatMap((v, i) => (entriesPlain(v) === settingsPlain(v) ? [] : [`value ${i}: entries ${entriesPlain(v)}`]));
-    expect(differ.join('; '), 'the values the two copies answer differently').toBe('');
-    expect(values.slice(0, 6).map(entriesPlain).join(','), 'objects are plain, arrays and null are not').toBe('true,true,true,false,false,false');
   });
 });

@@ -1,6 +1,6 @@
 // workflow/lib/git.js: the git reads the kit's Node scripts share, so a lookup
 // has one spelling and every caller keeps its own reaction to a miss.
-// Usage: const { repoRoot, headSha, gitIn } = require('../lib/git');
+// Usage: const { repoRoot, headSha, gitIn, hasCommit, textAt } = require('../lib/git');
 
 const { spawnSync } = require('./run');
 
@@ -45,6 +45,28 @@ const headSha = (cwd) => {
   return res.status === 0 ? res.stdout.trim() : null;
 };
 
+/**
+ * Whether `rev` names a commit the repo at `root` holds (`git cat-file -e
+ * <rev>^{commit}`); false for any other answer, a shallow clone's missing one too.
+ * @param {string} root
+ * @param {string} rev
+ * @returns {boolean}
+ */
+const hasCommit = (root, rev) => gitIn(root, ['cat-file', '-e', `${rev}^{commit}`], { stdio: 'ignore' }).status === 0;
+
+/**
+ * The text of `file` at `rev` in the repo at `root` (`git show <rev>:<file>`),
+ * or null when git cannot read it there: no such commit, or no such file in it.
+ * @param {string} root
+ * @param {string} rev
+ * @param {string} file the path from the repo root
+ * @returns {string|null}
+ */
+const textAt = (root, rev, file) => {
+  const res = gitIn(root, ['show', `${rev}:${file}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  return res.status === 0 ? res.stdout : null;
+};
+
 module.exports = {
-  repoRoot, headSha, gitIn, GIT_MAX_BUFFER,
+  repoRoot, headSha, gitIn, hasCommit, textAt, GIT_MAX_BUFFER,
 };
