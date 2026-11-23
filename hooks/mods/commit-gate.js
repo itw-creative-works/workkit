@@ -354,7 +354,7 @@ function gatherFacts(g, root) {
       return started(r) ? r : { skipped: r.stderr.trim() };
     },
     // checks.yml as the heal writes it, read at the root, whose default branch it names.
-    jobRewrite: () => at(['bash', `${kit}/workflow/changelog/changelog-job.sh`, 'rewrite'], { timeoutMs: LONG_RUN_MS }),
+    jobRewrite: () => at(['node', `${kit}/workflow/changelog/job.js`, 'rewrite'], { timeoutMs: LONG_RUN_MS }),
     hashOf: async (path, body) => (await text(['git', 'hash-object', `--path=${path}`, '--stdin'], { stdin: body, timeoutMs: LONG_RUN_MS }))?.trim() || null,
   };
 }

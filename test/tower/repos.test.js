@@ -131,7 +131,7 @@ describe('tower/repos: which repos are in', () => {
   });
 
   test('the opt-in is "enabled": true alone, and a machine file saying true turns no repo on', () => {
-    // The engine's resolve_state is the SSOT of what enabled means: a committed
+    // The engine's resolveState is the SSOT of what enabled means: a committed
     // file with no answer is no member, whatever the roster or the machine file says.
     const tmp = mkTmp('tower-repos-');
     const yes = mkRepo(tmp, 'Owner/yes');

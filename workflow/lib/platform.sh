@@ -91,9 +91,9 @@ wk_is_cloud() {
   [[ "${CLAUDE_CODE_REMOTE:-}" == 'true' ]]
 }
 
-# The oldest node the gh gate and the git hooks' judge run under: they require()
-# the ES modules in hooks/mods, which Node allows from 22.12.
-WK_NODE_FLOOR=22.12
+# The oldest node every program wk_node finds runs under, the engines floor of
+# both package.json files: the kit's one lowest Node.
+WK_NODE_FLOOR=22.22
 
 # _wk_node_fits <node>: whether <node> runs and its --version reaches
 # WK_NODE_FLOOR, part by part as numbers, a suffix (`-nightly`, a `\r`) dropped.

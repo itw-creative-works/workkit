@@ -5,14 +5,13 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, WORKKIT_DIR: W, mkTmp,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NO_RC, gitPath, shellPath, samePath, spawnSystemBash, skipWithoutModes,
+  IS_WINDOWS, gitPath, samePath, skipWithoutModes,
 } = require('../../lib/platform');
-const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const {
-  WORKFLOW_DIR, cleanup, rosterOf, makeRepo, binDirWithout, runScript,
+  cleanup, rosterOf, makeRepo, runScript,
 } = require('./helpers');
 const { settingsAt } = require('../../../workflow/lib/settings');
 
@@ -271,23 +270,18 @@ describe('standards.sh: participation', () => {
     cleanup(repo);
   });
 
-  test('without jq an unreadable settings file reads unreadable, as it does with jq', { skip: skipWithoutModes('a mode-000 file is still readable') }, () => {
-    // standards/state.sh sourced after participation.sh, as standards.sh sources
-    // them. The text says enabled, so only the unreadable read can answer.
-    const dir = mkTmp('wf-std-');
-    const file = path.join(dir, 'settings.json');
-    fs.writeFileSync(file, OPT_IN_SHAPES.current);
+  test('a settings file that cannot be read answers unreadable, and the heal writes nothing', { skip: skipWithoutModes('a mode-000 file is still readable') }, () => {
+    // The text says enabled, so only the failed read can answer.
+    const repo = makeRepo();
+    const file = path.join(repo, W, 'settings.json');
     fs.chmodSync(file, 0o000);
-    const binDir = binDirWithout('jq');
-    const res = spawnSystemBash([
-      ...NO_RC, '-c', '. "$1"; . "$2"; repo_enabled_flag "$3"', 'bash',
-      shellPath(path.join(WORKFLOW_DIR, 'lib', 'participation.sh')),
-      shellPath(path.join(WORKFLOW_DIR, 'standards', 'state.sh')),
-      shellPath(file),
-    ], { env: { PATH: binDir }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    expect(res.stdout, `never a decline or a yes, stderr: ${res.stderr}`).toBe('unreadable');
+    const { stdout, stderr } = runScript(repo, { args: ['--state'] });
+    expect(stdout.trim(), `never a decline or a yes, stderr: ${stderr}`).toBe('unreadable');
+    const { code } = runScript(repo);
+    expect(code, 'exit 0').toBe(0);
+    expect(!fs.existsSync(path.join(repo, '.github')), 'healing nothing until it can be read').toBeTruthy();
     fs.chmodSync(file, 0o600);
-    cleanup(dir); cleanup(binDir);
+    cleanup(repo);
   });
 
   test('--state on a non-git directory says so instead of guessing', () => {

@@ -6,14 +6,13 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, start,
+  describe, test, expect, WORKKIT_DIR: W, mkTmp, start,
 } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, cygpathStub, joinPath, spawnSystemBash,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, joinPath,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, binDirWithout,
-  runScript,
+  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, runScript,
 } = require('./helpers');
 
 describe('standards.sh: the roster', () => {
@@ -202,7 +201,7 @@ describe('standards.sh: the roster', () => {
   });
 
   test('an entry whose committed file has no enabled key is pruned: only true is a yes', () => {
-    // The prune reads the file as resolve_state does, so a file with no answer
+    // The prune reads the file as resolveState does, so a file with no answer
     // is no member, whatever the roster says.
     const repo = makeRepo();
     const unanswered = makeRepo({ settings: '{ "version": 1 }\n' });
@@ -259,61 +258,34 @@ describe('standards.sh: the roster', () => {
     cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
-  test('without jq the roster is simply not maintained', () => {
-    const repo = makeRepo();
-    const home = mkTmp('wf-std-');
-    // A PATH with no jq anywhere on it: the roster edit is a jq edit, and a
-    // machine without it must lose the index, never the heal.
-    const binDir = binDirWithout('jq');
-    const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
-      env: { PATH: binDir, WORKFLOW_HOME: shellPath(home), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')) },
-      encoding: 'utf8',
-      timeout: SPAWN_DEADLINE,
-    });
-    expect(res.status, `the heal runs without it: ${res.stderr}`).toBe(0);
-    expect(rosterOf(home)[gitPath(fs.realpathSync(repo))], 'no jq, no edit, and no half-written file').toBe(undefined);
-    cleanup(repo); cleanup(home); cleanup(binDir);
-  });
-
   // On Windows one repo has two spellings (git's `C:/Users/x`, Git Bash's
-  // `/c/Users/x`), so the key is git's, asked of `wk_native_path` on every write
-  // and lookup. An inherited OSTYPE drives the branch from here, so the rule
-  // holds at every commit and not only on Windows.
-  const msysWorld = () => {
-    const cyg = mkTmp('wf-std-');
-    cygpathStub(cyg);
-    return cyg;
-  };
+  // `/c/Users/x`), so the key is git's on every write and lookup. The heal reads
+  // the platform it runs on, so only a Windows machine takes that branch.
+  const ON_WINDOWS_ONLY = !IS_WINDOWS && 'the second spelling of a path is Windows\' own, and the heal reads the platform it runs on';
 
-  test('the roster key is git\'s spelling of the repo root, on the Windows branch too', () => {
+  test('the roster key is git\'s spelling of the repo root, on Windows too', { skip: ON_WINDOWS_ONLY }, () => {
     const repo = makeRepo();
     const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
-    const cyg = msysWorld();
-    const { code } = runScript(repo, {
-      pathPrefix: joinPath(cyg, stub.binDir), workflowHome: home, env: { OSTYPE: 'msys' },
-    });
+    const { code } = runScript(repo, { pathPrefix: stub.binDir, workflowHome: home });
     expect(code, 'exit 0').toBe(0);
     const keys = Object.keys(rosterOf(home));
     expect(keys.length, `one repo, one key, got: ${keys.join(' + ')}`).toBe(1);
-    expect(keys[0], 'spelled the way git spells it').toBe(winRosterKey(repo));
-    cleanup(repo); cleanup(home); cleanup(stub.dir); cleanup(cyg);
+    expect(keys[0], 'spelled the way git spells it, C:/ and never Git Bash\'s /c/').toBe(winRosterKey(repo));
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 
-  test('a decline writes that same key, and the state read after it finds it', () => {
+  test('a decline writes that same key, and the state read after it finds it', { skip: ON_WINDOWS_ONLY }, () => {
     const repo = makeRepo({ settings: null });
     const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
-    const cyg = msysWorld();
-    const opts = {
-      pathPrefix: joinPath(cyg, stub.binDir), workflowHome: home, env: { OSTYPE: 'msys' },
-    };
+    const opts = { pathPrefix: stub.binDir, workflowHome: home };
     runScript(repo, { ...opts, args: ['--decline'] });
     const keys = Object.keys(rosterOf(home));
     expect(keys.length, `the decline wrote one key, got: ${keys.join(' + ')}`).toBe(1);
     expect(keys[0], 'git\'s spelling, the one every lookup asks for').toBe(winRosterKey(repo));
     const { stdout } = runScript(repo, { ...opts, args: ['--state'] });
     expect(stdout.trim(), 'and the lookup finds what the write left').toBe('declined');
-    cleanup(repo); cleanup(home); cleanup(stub.dir); cleanup(cyg);
+    cleanup(repo); cleanup(home); cleanup(stub.dir);
   });
 });

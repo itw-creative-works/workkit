@@ -4,14 +4,15 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  describe, test, expect, WORKKIT_DIR: W, mkTmp,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  gitPath, crlfJq, joinPath, skipWithoutNodeStub,
+  gitPath, joinPath, skipWithoutNodeStub, shellPath, spawnBash, NO_RC, SYSTEM_PATH, NODE_DIR,
 } = require('../../lib/platform');
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
+const { PTY, atTerminal } = require('../../lib/identity');
 const {
-  desiredLabels, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, runScript,
+  SCRIPT, WORKFLOW_DIR, copyKitSiblings, desiredLabels, cleanup, makeRepo, makeGhStub, ghCalls, runScript,
 } = require('./helpers');
 
 // The repo a gh call names by flag, '' for the cwd's own.
@@ -69,62 +70,29 @@ describe('standards.sh: labels', () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  test('a jq that writes CRLF: no phantom issue warning, no carriage return written', (t) => {
-    // A Windows jq ends every line `\r\n`: the open-issue check then answers a lone
-    // `\r` and warns of unlabelled issues that do not exist, and each colour arrives
-    // with a `\r` GitHub refuses. The no-drift half is a guard, not the repro: a
-    // fix that strips one side of that compare and not the other cannot pass.
-    const jqDir = mkTmp('wf-std-');
-    if (!crlfJq(jqDir)) {
-      t.skip('this machine has no jq to wrap in one that writes CRLF');
-      return;
-    }
-
-    // The guard: every label GitHub holds already matches the manifest.
-    const matched = makeRepo();
-    const held = makeGhStub({ labels: desiredLabels() });
-    const quiet = runScript(matched, { pathPrefix: joinPath(jqDir, held.binDir) });
-    const writes = ghCalls(held).filter((c) => isCall(c, 'label', 'create') || isCall(c, 'label', 'edit'));
-    expect(writes.length, `nothing drifted, got: ${fmtCalls(writes)}`).toBe(0);
-    expect(
-      quiet.output.includes(`${desiredLabels().length} already correct`),
-      `every label was compared and matched, got: ${quiet.output}`,
-    ).toBeTruthy();
-
-    // The repro: a repo with no labels and a board that conforms. The heal
-    // finishes silently, and each create carries the manifest's own description
-    // and colour byte for byte. Its settings carry a version key for jq to remove.
-    const empty = makeRepo({ settings: '{ "version": 9, "enabled": true }\n' });
-    const home = mkTmp('wf-std-');
-    const none = makeGhStub({
-      labels: [],
-      issues: [{ number: 1, labels: [{ name: 'status:specced' }, { name: 'type:bug' }] }],
+  test('a labels.json in the kit that does not parse: the warning naming it and the fix, and the heal exits 1', () => {
+    const kit = mkTmp('wf-std-');
+    const engine = path.join(kit, 'workflow');
+    fs.cpSync(WORKFLOW_DIR, engine, { recursive: true });
+    copyKitSiblings(kit);
+    fs.writeFileSync(path.join(engine, 'labels.json'), '{ "groups": ');
+    const repo = makeRepo();
+    const stub = makeGhStub({ labels: desiredLabels() });
+    const res = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
+      env: {
+        ...process.env,
+        PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
+        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
+        WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'claude-home')),
+      },
+      encoding: 'utf8',
+      timeout: SPAWN_DEADLINE,
     });
-    const { code, output } = runScript(empty, {
-      pathPrefix: joinPath(jqDir, none.binDir), workflowHome: home,
-    });
-    expect(!output.includes('missing a required status'), `no phantom issue warning, got: ${output}`).toBeTruthy();
-    expect(code, `the heal finished, got: ${output}`).toBe(0);
-    const creates = ghCalls(none).filter((c) => isCall(c, 'label', 'create'));
-    for (const { name, description, color } of desiredLabels()) {
-      const want = ['label', 'create', name, '--description', description, '--color', color];
-      expect(
-        creates.some((c) => eqArgv(c, want)),
-        `created ${name} with nothing left on its arguments; calls: ${fmtCalls(creates)}`,
-      ).toBeTruthy();
-    }
-
-    // And what the heal wrote: both files are jq's own output, so a text-mode jq
-    // rewrites every line of them with a `\r` on it. One of the two is committed,
-    // so its shape would flip with whichever machine healed last.
-    const settings = readFile(path.join(empty, W, 'settings.json'));
-    expect(settings.includes('"enabled"') && !settings.includes('"version"'), `the version key was removed, got: ${JSON.stringify(settings)}`).toBeTruthy();
-    expect(!settings.includes('\r'), `and the committed file is LF, got: ${JSON.stringify(settings)}`).toBeTruthy();
-    const roster = readFile(path.join(home, '.repos.json'));
-    expect(rosterOf(home)[gitPath(fs.realpathSync(empty))], 'the roster recorded the repo').toBe('enabled');
-    expect(!roster.includes('\r'), `and the roster is LF, got: ${JSON.stringify(roster)}`).toBeTruthy();
-
-    cleanup(matched); cleanup(held.dir); cleanup(empty); cleanup(home); cleanup(none.dir); cleanup(jqDir);
+    const file = gitPath(path.join(fs.realpathSync(kit), 'workflow', 'labels.json'));
+    const want = `  ⚠ labels: labels.json at ${file} cannot be read as JSON; reinstall the workflow core`;
+    expect((res.stderr || '').split('\n').includes(want), `the warning on stderr, got: ${res.stderr}`).toBe(true);
+    expect(res.status, `the heal exits 1 so the caller retries, got: ${res.stdout}${res.stderr}`).toBe(1);
+    cleanup(repo); cleanup(stub.dir); cleanup(kit);
   });
 
   test('description and color drift is corrected, one edit per label', () => {
@@ -233,6 +201,49 @@ describe('standards.sh: labels', () => {
     const outside = ghCalls(stub).filter((c) => target(c) !== '' || isCall(c, 'issue', 'view'));
     expect(outside.length, `no call reaches a public repo, got: ${fmtCalls(outside)}`).toBe(0);
     cleanup(repo); cleanup(stub.dir);
+  });
+});
+
+describe('standards.sh: the wait line of a gh call', () => {
+  // The branch protection step's read of the default branch: the one gh call whose
+  // wait line the heal shows, since every other call's output is captured.
+  const WAIT = '⏳ reading the default branch...';
+  // The heal's own env as runScript builds it, colors off, no quiet or spin setting carried in.
+  const healEnv = (stub, extra = {}) => {
+    const env = { ...process.env };
+    for (const key of ['QUIET', 'WORKKIT_SPIN', 'WORKKIT_COLOR']) delete env[key];
+    return {
+      ...env,
+      PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
+      WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'claude-home')),
+      NO_COLOR: '1',
+      ...extra,
+    };
+  };
+
+  test('off a terminal and at one: the default branch\'s wait line is the one wait line on stderr, and no cursor code', { skip: !PTY && 'no `script` here to give the heal a terminal' }, () => {
+    const piped = runScript(makeRepo(), { pathPrefix: makeGhStub({ labels: desiredLabels() }).binDir, env: { NO_COLOR: '1' } });
+    const repo = makeRepo();
+    const stub = makeGhStub({ labels: desiredLabels() });
+    const tty = atTerminal(['bash', shellPath(SCRIPT), shellPath(repo)], { env: healEnv(stub), cwd: repo, dir: mkTmp('wf-std-') });
+    // The terminal turns each newline into a carriage return and a newline, and BSD script
+    // opens on its echo of the empty stdin's end; any other return or escape is a cursor move.
+    const shown = tty.terminal.replace(/^\^D\x08\x08/, '').replace(/\r\n/g, '\n');
+    for (const [where, text] of [['off a terminal', piped.stderr], ['at a terminal', shown]]) {
+      const waits = text.split('\n').filter((l) => l.trimStart().startsWith('⏳'));
+      expect(waits, `${where}: one wait line, the default branch's, at the heal's indent, got: ${JSON.stringify(text)}`).toEqual([`  ${WAIT}`]);
+      expect(/[\r\x1b]/.test(text), `${where}: no cursor code, got: ${JSON.stringify(text)}`).toBe(false);
+    }
+  });
+
+  test('under QUIET=1: no wait line, and the labels still read', () => {
+    const stub = makeGhStub({ labels: desiredLabels() });
+    const res = runScript(makeRepo(), { pathPrefix: stub.binDir, env: { QUIET: '1' } });
+    expect(res.code, `the heal runs clean, got: ${res.output}`).toBe(0);
+    expect(res.output.includes('⏳'), `no wait line, got: ${res.output}`).toBe(false);
+    expect(ghCalls(stub).some((c) => c[0] === 'api' && c.some((a) => a.includes('default_branch'))),
+      `the default branch was still asked of GitHub, calls: ${fmtCalls(ghCalls(stub))}`).toBe(true);
   });
 });
 

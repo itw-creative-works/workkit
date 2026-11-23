@@ -6,7 +6,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('../../lib/platform');
+const { spawnSync, skipWithoutModes } = require('../../lib/platform');
 const { describe, test, expect } = require('../../lib/harness');
 const { block, inlineValue, listValue, isContent } = require('../../lib/workflow-yaml');
 const { OLD_CHECKS, withSteps, withCloneStep } = require('../../lib/checks-template');
@@ -34,9 +34,10 @@ const trunkWorld = () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, body);
   };
-  const heal = () => runScript(repo, { pathPrefix: stub.binDir }).output;
+  const run = () => runScript(repo, { pathPrefix: stub.binDir });
+  const heal = () => run().output;
   const done = () => { cleanup(repo); cleanup(stub.dir); };
-  return { file, write, heal, read: () => readFile(file), done };
+  return { repo, file, write, run, heal, read: () => readFile(file), done };
 };
 
 /**
@@ -125,6 +126,40 @@ describe('standards.sh: the checks.yml caller', () => {
     expect(w.read(), 'the same bytes').toBe(once);
     expect(fs.statSync(w.file).mtimeMs, `the file was never rewritten, got: ${output}`).toBe(past.getTime());
     expect(warnings(output).length, 'and nothing to move').toBe(0);
+    w.done();
+  });
+
+  test('a caller that already matches is compared before any temp file: a folder that takes no new file still heals clean', { skip: skipWithoutModes('a read-only folder does not stop a write') }, () => {
+    const w = trunkWorld();
+    w.heal();
+    const once = w.read();
+    const folder = path.dirname(w.file);
+    fs.chmodSync(folder, 0o555);
+    let output;
+    try {
+      output = w.heal();
+    } finally {
+      fs.chmodSync(folder, 0o755);
+    }
+    expect(w.read(), 'the same bytes').toBe(once);
+    expect(output.includes('checks: could not'), `nothing was tried, so nothing failed, got: ${output}`).toBe(false);
+    expect(fs.readdirSync(folder), 'and no temp file appeared').toEqual(['checks.yml']);
+    w.done();
+  });
+
+  test('a .github that is a file: the issue forms step says so, the heal goes on, the checks step says it could not write the caller, flags the run and leaves no temp file', () => {
+    const w = trunkWorld();
+    fs.writeFileSync(path.join(w.repo, '.github'), 'a file\n');
+    const res = w.run();
+    const lines = res.output.split('\n').map((l) => l.trimEnd());
+    const forms = lines.findIndex((l) => l.endsWith('issue forms: could not write .github/ISSUE_TEMPLATE'));
+    const checks = lines.findIndex((l) => l.endsWith('checks: could not write .github/workflows/checks.yml'));
+    expect(forms, `the issue forms step says it could not write its folder, got: ${res.output}`).not.toBe(-1);
+    expect(checks > forms, `then the checks step, later in the same heal, says it could not write the caller, got: ${res.output}`).toBe(true);
+    expect(res.code, `the run is flagged, got: ${res.output}`).toBe(1);
+    const left = fs.readdirSync(w.repo, { recursive: true }).filter((p) => p.split(path.sep)[0] !== '.git' && p.includes('.tmp'));
+    expect(JSON.stringify(left), 'no temp file anywhere in the repo').toBe('[]');
+    expect(fs.readFileSync(path.join(w.repo, '.github'), 'utf8'), 'and the file stands as it was').toBe('a file\n');
     w.done();
   });
 

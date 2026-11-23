@@ -41,8 +41,22 @@ const repoWith = (scripts, settings = OPT_IN) => mkRepo({ scripts },
 const hooksPathOf = (repo) => git(repo, 'config', '--local', '--get', 'core.hooksPath');
 const isOurs = (value) => value !== '' && fs.existsSync(value) && fs.realpathSync(value) === fs.realpathSync(KIT_HOOKS);
 
-// `npm install` in <repo> as the owner's terminal runs it: no Claude session.
-const install = (world, repo) => npm(world, repo, ['install', '--no-audit', '--no-fund'], world.wrapper, { CLAUDECODE: undefined });
+// `npm install` in <repo> as the owner's terminal runs it: no Claude session; <env> over the world's.
+const install = (world, repo, env = {}) => npm(world, repo, ['install', '--no-audit', '--no-fund'], world.wrapper, { CLAUDECODE: undefined, ...env });
+
+// A folder holding an npm that runs on this suite's node by its absolute path,
+// so a run's PATH may hold another node, or a stand-in, without npm starting it.
+const npmOnOwnNode = (world) => {
+  const bin = path.join(world.root, 'npm-bin');
+  fs.mkdirSync(bin);
+  const cli = IS_WINDOWS ? path.join(NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js') : fs.realpathSync(which('npm', NODE_DIR));
+  stubTool(bin, 'npm', ['#!/bin/bash', `exec "${shellPath(process.execPath)}" "${shellPath(cli)}" "$@"`]);
+  return bin;
+};
+
+// A line in the kit's voice, at any indent: a level glyph and a space. Kept as printed.
+const KIT_LINE = /^ *[✓·›⚠✖⏳] /;
+const kitLines = (text) => linesOf(text).filter((line) => KIT_LINE.test(line));
 
 // What the wrapper's run reaches in the kit, by its path from the kit root: the
 // engine, whose Node half runs the test event, the hooks' rules it reads (the
@@ -140,11 +154,8 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       const world = mkWorld();
       // The suite prints `ran-2`, a token npm's echo of the script line never holds.
       const repo = mkRepo({ scripts: { test: 'echo ran-$((1+1))' } });
-      // npm runs on this suite's node by its absolute path, so the only node the run's PATH holds is a 20.
-      const bin = path.join(world.root, 'npm-bin');
-      fs.mkdirSync(bin);
-      const cli = IS_WINDOWS ? path.join(NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js') : fs.realpathSync(which('npm', NODE_DIR));
-      stubTool(bin, 'npm', ['#!/bin/bash', `exec "${shellPath(process.execPath)}" "${shellPath(cli)}" "$@"`]);
+      // The only node the run's PATH holds is a 20.
+      const bin = npmOnOwnNode(world);
       const old = path.join(world.root, 'old-node');
       stubNode(old, '20.15.1');
       const shapes = [
@@ -156,7 +167,7 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
         const res = npm(world, repo, args, world.wrapper, { PATH: joinPath(bin, old, SYSTEM_PATH), ...env });
         const said = `${res.out}\n${res.err}`;
         expect(res.code, `${label}: exit 1, got: ${res.code} ${said}`).toBe(1);
-        expect(res.err.split(/\r?\n/).filter((line) => line === 'script-shell: no node at or above 22.12 is installed').length,
+        expect(res.err.split(/\r?\n/).filter((line) => line === 'script-shell: no node at or above 22.22 is installed').length,
           `${label}: the no-node line once on stderr, got: ${res.err}`).toBe(1);
         expect(said.includes('ran-2'), `${label}: the suite never ran, got: ${said}`).toBe(false);
       }
@@ -479,13 +490,35 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
   });
 
   describe('script-shell: an install-time script re-points the git hooks', () => {
-    test('a prepare that takes core.hooksPath for husky: after npm install it is ours again, the husky folder saved', () => {
+    test('a prepare that takes core.hooksPath for husky: after npm install it is ours again, the husky folder saved, the one set line printed', () => {
       const world = mkWorld();
       const repo = repoWith({ prepare: HUSKY });
       const res = install(world, repo);
       expect(res.code, `npm install exits 0, got: ${res.out}${res.err}`).toBe(0);
       expect(isOurs(hooksPathOf(repo)), `core.hooksPath is the kit's githooks, got: ${hooksPathOf(repo)}`).toBeTruthy();
       expect(git(repo, 'config', '--local', '--get', 'workkit.hooksPath'), 'the repo\'s own folder is saved for ours to chain to').toBe('.husky/_');
+      expect(kitLines(res.err), `the set line on stderr, flush left, got: ${res.err}; stdout: ${res.out}`)
+        .toEqual([`✓ git hooks: set core.hooksPath → ${hooksPathOf(repo)}; the repo's own hooks in .husky/_ run after ours`]);
+      expect(kitLines(res.out), `no line of ours on stdout, got: ${res.out}`).toEqual([]);
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('an opted-in repo whose hooks are already ours: the install starts no node and prints nothing of ours', () => {
+      const world = mkWorld();
+      const mark = path.join(world.root, 'prepared');
+      const repo = repoWith({ prepare: 'echo prepared > "$WK_MARK"' });
+      git(repo, 'config', 'core.hooksPath', KIT_HOOKS);
+      // A stand-in node ahead of every other records each start, then hands over to the real one.
+      const standIn = path.join(world.root, 'stand-in');
+      const starts = path.join(world.root, 'node-starts');
+      fs.mkdirSync(standIn);
+      stubTool(standIn, 'node', ['#!/bin/bash', `echo "$*" >> "${shellPath(starts)}"`, `exec "${shellPath(process.execPath)}" "$@"`]);
+      const res = install(world, repo, { PATH: joinPath(npmOnOwnNode(world), standIn, SYSTEM_PATH), WK_MARK: shellPath(mark) });
+      expect(res.code, `npm install exits 0, got: ${res.out}${res.err}`).toBe(0);
+      expect(fs.readFileSync(mark, 'utf8'), 'the prepare script ran').toBe('prepared\n');
+      expect(fs.existsSync(starts) ? fs.readFileSync(starts, 'utf8') : '', 'no node was started').toBe('');
+      expect(kitLines(`${res.out}\n${res.err}`), `no line of ours, got: ${res.out} ${res.err}`).toEqual([]);
+      expect(hooksPathOf(repo), 'core.hooksPath left as it was').toBe(KIT_HOOKS);
       cleanup(world.root); cleanup(repo);
     });
 

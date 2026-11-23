@@ -8,7 +8,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
-  IS_WINDOWS, spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, basePathWithout,
+  spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, basePathWithout,
   joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
@@ -49,12 +49,8 @@ const rosterOf = (home) => {
   return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')).repos || {}) : {};
 };
 
-// The roster key a repo takes on the Windows branch: git's spelling of its
-// root. On Windows this machine's own cygpath answers; off it, the seam's stub
-// does, prefixing the drive letter the MSYS root maps to (test/lib/platform.js).
-const winRosterKey = (repo) => (IS_WINDOWS
-  ? gitPath(fs.realpathSync(repo))
-  : `C:${fs.realpathSync(repo)}`);
+// The roster key a repo takes on Windows: git's spelling of its root.
+const winRosterKey = (repo) => gitPath(fs.realpathSync(repo));
 
 // A git repo with an origin remote: the shape the script expects. No commits
 // are made and the remote is never contacted (gh is stubbed).
@@ -243,12 +239,17 @@ const linkedClaudeHome = () => {
   return { ...made, link };
 };
 
-// The kit defaults a copied engine at <root>/workflow reads its settings through,
-// two folders above workflow/lib/.
-const copyDefaults = (root) => fs.cpSync(path.join(WORKFLOW_DIR, '..', 'defaults'), path.join(root, 'defaults'), { recursive: true });
+// The kit folders a copied engine at <root>/workflow reads beside it, as a real
+// kit has them: the defaults its settings come through, the hooks, and the
+// runner library the hooks module loads.
+const copyKitSiblings = (root) => {
+  for (const folder of ['defaults', 'hooks', path.join('packages', 'core')]) {
+    fs.cpSync(path.join(WORKFLOW_DIR, '..', folder), path.join(root, folder), { recursive: true });
+  }
+};
 
 module.exports = {
-  copyDefaults, WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
+  copyKitSiblings, WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
   desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
   binDirWithout, runScript, claudeHomeWith, linkedClaudeHome,
 };

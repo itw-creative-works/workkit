@@ -9,7 +9,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, stubTool, joinPath, spawnSync: runSync, spawnBash,
+  SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, nodeEnv, stubTool, joinPath, spawnSync: runSync, spawnBash,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
@@ -229,6 +229,9 @@ const mkWorld = ({
       // launchctl here is a recorder, so this world is the rehearsal the override
       // exists for. The guard itself is pinned in test/jobs.
       WORKKIT_LAUNCHD_OK: '1',
+      // The kit's node for the heal, off PATH: node and npm stay absent there,
+      // which the npm and sign-in cases read.
+      ...nodeEnv,
     }),
   };
 };

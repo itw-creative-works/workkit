@@ -1,6 +1,6 @@
 // Tests for safety:commit-gate's logic, preCommitVerdict(facts) in hooks/mods/commit-gate.js: heal
 // bookkeeping skips the review and new-file checks, and a heal arm whose tool fails or never starts
-// is held by name; `jobRewrite` runs the real `changelog-job.sh rewrite`, whose answer is the kit's
+// is held by name; `jobRewrite` runs the real `node job.js rewrite`, whose answer is the kit's
 // caller on the root's default branch. The shared prologue (repo, facts, texts) is ./helpers.js.
 
 const path = require('path');
@@ -8,7 +8,7 @@ const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
 const {
   WORKFLOW_DIR, TEMPLATE, PREFIX, T, NOTICE, mkRepo, stage, gitRm, commit, proveTree,
-  judge, denyOf, blocks, passes, realRewrite,
+  judge, denyOf, blocks, passes, realRewrite, startsJob,
 } = require('./helpers');
 const { withSteps, withCloneStep, OLD_CHECKS } = require('../../lib/checks-template');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
@@ -147,10 +147,20 @@ describe('commit-gate: heal bookkeeping skips review + new-file checks (issue #1
     const r = mkVendoredRepo('changelog-lint.cjs');
     gitRm(r, '.github/changelog-lint.cjs');
     await judge(r, 'chore: drop the copy');
-    const asked = r.calls.run.find((c) => c.argv.some((a) => a.endsWith('changelog-job.sh')) && c.argv.includes('names'));
+    const asked = r.calls.run.find((c) => startsJob(c.argv) && c.argv.includes('names'));
     expect(asked !== undefined, 'the entry was asked').toBeTruthy();
     expect(asked.argv.slice(asked.argv.indexOf('names')).join(' '), 'the stdin marker, then the copy').toBe('names - .github/changelog-lint.cjs');
     expect(asked.init.stdin.includes('.github/changelog-lint.cjs'), 'the workflow texts ride on stdin').toBeTruthy();
+  });
+
+  test('the gate asks the changelog job its copies, names and rewrite by starting job.js with node', async () => {
+    const r = mkVendoredRepo('changelog-lint.cjs');
+    gitRm(r, '.github/changelog-lint.cjs');
+    stage(r, CHECKS, healedChecks());
+    proveTree(r);
+    await judge(r, 'chore(workflow): drop the linter copy');
+    const modes = new Set(r.calls.run.filter((c) => startsJob(c.argv)).map((c) => c.argv[2]));
+    expect([...modes].sort().join(','), 'each mode the heal arms ask, each started as node job.js').toBe('copies,names,rewrite');
   });
 
   test('checks.yml rewritten with one more changed line, no marker: exit 2', async () => {
@@ -213,8 +223,8 @@ describe('commit-gate: a heal-output check whose tool fails is held by name', ()
     gitRm(r, '.github/changelog-lint.cjs');
     stage(r, CHECKS, healedChecks());
     proveTree(r);
-    r.failOn = (argv) => (argv.some((a) => a.endsWith('changelog-job.sh')) && argv.includes('names')
-      ? { isStarted: false, stderr: 'spawn bash ENOENT' } : null);
+    r.failOn = (argv) => (startsJob(argv) && argv.includes('names')
+      ? { isStarted: false, stderr: 'spawn node ENOENT' } : null);
     const deny = denyOf(await judge(r, 'chore(workflow): drop the linter copy'));
     const shape = new RegExp(`^${PREFIX}the linter copy check could not run: \`[^\`]+\` did not start`);
     expect(deny !== null && shape.test(deny) && deny.endsWith(HELD), `the check, the command and did not start, got: ${deny}`).toBeTruthy();
@@ -225,7 +235,7 @@ describe('commit-gate: a heal-output check whose tool fails is held by name', ()
     gitRm(r, '.github/changelog-lint.cjs');
     stage(r, CHECKS, healedChecks());
     proveTree(r);
-    r.failOn = (argv) => (argv.some((a) => a.endsWith('changelog-job.sh')) && argv.includes('names')
+    r.failOn = (argv) => (startsJob(argv) && argv.includes('names')
       ? { exitCode: null, isStarted: true, stdout: '', stderr: '' } : null);
     const deny = denyOf(await judge(r, 'chore(workflow): drop the linter copy'));
     const shape = new RegExp(`^${PREFIX}the linter copy check could not run: \`[^\`]+\` exited null`);
@@ -258,13 +268,13 @@ describe('commit-gate: a heal-output check whose tool fails is held by name', ()
     stage(r, CHECKS, healedChecks());
     proveTree(r);
     const deny = denyOf(await judge(r, 'chore(workflow): the kit\'s CI caller'));
-    const shape = new RegExp(`^${PREFIX}the checks\\.yml rewrite check could not run: \`changelog-job\\.sh rewrite\` exited 2 \\(changelog-job\\.sh: no default branch: [^)]*git remote set-head origin -a\\)`);
+    const shape = new RegExp(`^${PREFIX}the checks\\.yml rewrite check could not run: \`[^\`]*rewrite\` exited 2 \\(changelog-job: no default branch: [^)]*git remote set-head origin -a\\)`);
     expect(deny !== null && shape.test(deny) && deny.endsWith(HELD), `held, naming the fix, got: ${deny}`).toBeTruthy();
   });
 });
 
-describe('changelog-job.sh rewrite: the caller, its branch the repo\'s', () => {
-  test('`changelog-job.sh rewrite` prints the template on the root\'s default branch, and fails 2 naming the fix with none', () => {
+describe('changelog-job rewrite: the caller, its branch the repo\'s', () => {
+  test('`node job.js rewrite` prints the template on the root\'s default branch, and fails 2 naming the fix with none', () => {
     const on = realRewrite(undefined, 'trunk');
     expect(on.exitCode, `exit 0, stderr: ${on.stderr}`).toBe(0);
     expect(on.stdout, 'the caller on trunk').toBe(fs.readFileSync(TEMPLATE, 'utf8').replace('__DEFAULT_BRANCH__', 'trunk'));

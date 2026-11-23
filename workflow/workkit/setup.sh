@@ -44,15 +44,15 @@ report_globals() {
 
 # git_hooks_line <state> [heal]: the This repo line for git's commit hooks in
 # an enabled repo, `installed (<path>)` or the warning naming setup, which
-# returns 1. `heal` (setup) sets them first when they are not installed.
+# returns 1. `heal` (setup) sets them first when not installed, through
+# `standards.sh --git-hooks`, in setup's own stream, indent and QUIET.
 git_hooks_line() {
   local root path
   [[ "$1" == enabled ]] || return 0
   root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
-  # shellcheck source=../standards/githooks.sh
-  . "$SCRIPT_DIR/standards/githooks.sh"
   if ! path="$(git_hooks_installed "$root")" && [[ "${2:-}" == heal ]]; then
-    ensure_git_hooks "$root"
+    WK_LOG_STDERR="${WK_LOG_STDERR:-0}" WK_LOG_INDENT="${WK_LOG_INDENT:-}" QUIET="${QUIET:-0}" \
+      bash "$STANDARDS" --git-hooks "$root" || true
     path="$(git_hooks_installed "$root")" || path=""
   fi
   if [[ -n "$path" ]]; then

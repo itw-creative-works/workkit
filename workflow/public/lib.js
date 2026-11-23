@@ -8,8 +8,7 @@ const { spawnSync } = require('../lib/run');
 const git = require('../lib/git');
 const { settingsAt } = require('../lib/settings');
 
-// An owner/name slug. The twin of PUBLIC_SLUG_RE in standards/labels.sh,
-// pinned by test/hooks/twins.test.js: change one and change the other.
+// An owner/name slug, the pairing key's and the heal's (standards/labels.js).
 const SLUG = '[A-Za-z0-9-]+/[A-Za-z0-9._-]+';
 const SLUG_RE = new RegExp(`^${SLUG}$`);
 // The one link every step reads: the private issue's first body line.
@@ -25,13 +24,15 @@ class PublicError extends Error {
 }
 
 /**
- * Runs `gh` by name with the arguments as given.
+ * Runs `gh` by name with the arguments as given, `input` its stdin when given.
  * @param {string[]} args
- * @param {{cwd: string}} opts
+ * @param {{cwd: string, input?: string}} opts
  * @returns {{ok: boolean, stdout: string, stderr: string}}
  */
-const runGh = (args, { cwd }) => {
-  const r = spawnSync('gh', args, { cwd, encoding: 'utf8', maxBuffer: 1 << 28 });
+const runGh = (args, { cwd, input }) => {
+  const r = spawnSync('gh', args, {
+    cwd, input, encoding: 'utf8', maxBuffer: 1 << 28,
+  });
   const stderr = r.error ? r.error.message : (r.stderr || '');
   return { ok: !r.error && r.status === 0, stdout: r.stdout || '', stderr };
 };

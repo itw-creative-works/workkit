@@ -1,27 +1,48 @@
 /**
- * hooks/mods/gate.js: the opt-in rule the module's gate applies: a repo opted
- * in when its own .workkit/settings.json parses and its top-level `enabled` is
- * true, the default being false: the engine's wk_opted_in; and the session
- * rule built on it, the engine's wk_session_judges.
+ * hooks/mods/gate.js: the repo flag's one rule, a settings file's top-level
+ * `enabled` as the heal reads it; the opt-in rule the module's gate applies on
+ * it, the engine's wk_opted_in; and the session rule built on that, the
+ * engine's wk_session_judges.
  */
 
-import { isPlain, parseJson, repoSettingsFile } from './settings.js';
+import { isPlain, repoSettingsFile } from './settings.js';
 
 // The hooks that run in every repo, opted in or not: each speaks to the
 // machine (the setup reminder, the restart notice), never to a repo.
 const EXEMPT = new Set(['workflow:standards', 'workflow:reload-guard']);
 
 /**
- * Whether a repo's settings text opts it in: true only when it parses and its
- * top-level `enabled` is true; absent, empty, unparsable or keyless text is
- * off, and a nested `enabled` is never read. Only the repo's own file says,
- * never the machine's. The module's one opt-in reader, the engine's wk_opted_in.
+ * A settings text's top-level `enabled`, the whole text parsed once: `true` or
+ * `false` when it is a boolean; `absent` when the text is blank or `null`, or
+ * an object holds no boolean there; `unreadable` when it cannot be read (not a
+ * string), does not parse, or holds a value that is not an object.
+ * @param {string|null|undefined} text the settings file's text, null when unreadable
+ * @returns {'true'|'false'|'absent'|'unreadable'}
+ */
+export function repoFlag(text) {
+  if (typeof text !== 'string') return 'unreadable';
+  if (text.trim() === '') return 'absent';
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return 'unreadable';
+  }
+  if (value === null) return 'absent';
+  if (!isPlain(value)) return 'unreadable';
+  return typeof value.enabled === 'boolean' ? String(value.enabled) : 'absent';
+}
+
+/**
+ * Whether a repo's settings text opts it in: its top-level `enabled` is true
+ * (repoFlag); anything else is off, and a nested `enabled` is never read. Only
+ * the repo's own file says, never the machine's. The module's one opt-in
+ * reader, the engine's wk_opted_in.
  * @param {string|null|undefined} text the settings file's text, null when absent
  * @returns {boolean}
  */
 export function settingsOptedIn(text) {
-  const settings = parseJson(text);
-  return isPlain(settings) && settings.enabled === true;
+  return repoFlag(text) === 'true';
 }
 
 /**

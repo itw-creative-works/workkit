@@ -192,21 +192,31 @@ describe('platform.sh: wk_user_dir', () => {
 });
 
 describe('platform.sh: wk_node', () => {
-  test('wk_node: a PATH node older than 22.12 is passed over for the newer one nvm keeps', () => {
-    const w = nodeWorld({ path: '20.15.1', 'v22.16.0': '22.16.0' });
-    const { code, out, err } = inPlatform('wk_node', w.env);
-    expect(code, `a qualifying node was found, stderr: ${err}`).toBe(0);
-    expect(out.trim(), 'the nvm node, not the PATH one').toBe(`${shellPath(w.home)}/.nvm/versions/node/v22.16.0/bin/node`);
+  test('the finder\'s floor is the engines floor of the root package.json and of packages/core/package.json', () => {
+    const { code, out, err } = inPlatform('printf "%s" "$WK_NODE_FLOOR"');
+    expect(code, `the floor was read, stderr: ${err}`).toBe(0);
+    const kit = path.join(__dirname, '..', '..');
+    for (const file of [path.join(kit, 'package.json'), path.join(kit, 'packages', 'core', 'package.json')]) {
+      const { engines } = JSON.parse(fs.readFileSync(file, 'utf8'));
+      expect(`>=${out}`, `${path.relative(kit, file)}'s engines.node against WK_NODE_FLOOR`).toBe(engines.node);
+    }
   });
 
-  test('wk_node: a PATH node at exactly 22.12.0 is the pick, ahead of a newer nvm node', () => {
-    const w = nodeWorld({ path: '22.12.0', 'v22.16.0': '22.16.0' });
+  test('wk_node: a PATH node at 22.21, one below the floor, is passed over for the newer one nvm keeps', () => {
+    const w = nodeWorld({ path: '22.21.9', 'v24.1.0': '24.1.0' });
+    const { code, out, err } = inPlatform('wk_node', w.env);
+    expect(code, `a qualifying node was found, stderr: ${err}`).toBe(0);
+    expect(out.trim(), 'the nvm node, not the PATH one').toBe(`${shellPath(w.home)}/.nvm/versions/node/v24.1.0/bin/node`);
+  });
+
+  test('wk_node: a PATH node at exactly 22.22.0 is the pick, ahead of a newer nvm node', () => {
+    const w = nodeWorld({ path: '22.22.0', 'v24.1.0': '24.1.0' });
     const { code, out, err } = inPlatform('wk_node', w.env);
     expect(code, `the floor itself qualifies, stderr: ${err}`).toBe(0);
     expect(out.trim(), 'the PATH node, first in the order').toBe(`${shellPath(w.bin)}/node`);
   });
 
-  test('wk_node: with no node at 22.12 or newer anywhere it looks, it prints nothing and exits 1', () => {
+  test('wk_node: with no node at 22.22 or newer anywhere it looks, it prints nothing and exits 1', () => {
     const w = nodeWorld({ path: '20.15.1', default: '21.7.3', 'v18.20.4': '18.20.4' });
     const { code, out } = inPlatform('wk_node', w.env);
     expect(code, 'none qualifies').toBe(1);

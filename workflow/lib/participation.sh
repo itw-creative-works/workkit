@@ -10,41 +10,22 @@ wk_is_repo_root() {
   [ -e "$1/.git" ]
 }
 
-# _wk_settings_key <file> <true|false>: 0 when the top-level `enabled` of <file>
-# is that value, non-empty text that does not parse reading false and empty text
-# neither; 1 when not; 2 with no node. wk_node is platform.sh's, which every
-# caller sources before this file.
-_wk_settings_key() {
-  local node
-  node="$(wk_node)" || return 2
-  "$node" -e 'const t = require("fs").readFileSync(process.argv[1], "utf8"); let s = null;
-if (t.trim() === "") process.exit(1);
-try { s = JSON.parse(t); } catch {}
-process.exit((s === null ? false : s.enabled) === (process.argv[2] === "true") ? 0 : 1);' "$1" "$2" 2>/dev/null && return 0
-  return 1
-}
-
-# wk_settings_declined <file> / wk_settings_enabled <file>: the top-level
-# `enabled` key through _wk_settings_key: unreadable or unparsable is declined,
-# empty is neither. With no node, a text match, nested keys too. Not each
-# other's negation: a file with no key is off, yet not declined (the heal offers it).
-wk_settings_declined() {
-  local rc
-  [ -e "$1" ] || return 1
-  [ -r "$1" ] || return 0
-  _wk_settings_key "$1" false
-  rc=$?
-  [ "$rc" -eq 2 ] || return "$rc"
-  grep -qE '"enabled"[[:space:]]*:[[:space:]]*false' "$1" 2>/dev/null
-}
-
+# wk_settings_enabled <file>: 0 when the file's top-level `enabled` is true, as
+# repoFlag (the kit's hooks/mods/gate.js, the one rule) reads it; 1 otherwise.
+# With no node, a text match, nested keys too. wk_node is platform.sh's, which
+# every caller sources before this file.
 wk_settings_enabled() {
-  local rc
+  local node
   [ -r "$1" ] || return 1
-  _wk_settings_key "$1" true
-  rc=$?
-  [ "$rc" -eq 2 ] || return "$rc"
-  grep -qE '"enabled"[[:space:]]*:[[:space:]]*true' "$1" 2>/dev/null
+  if ! node="$(wk_node)"; then
+    grep -qE '"enabled"[[:space:]]*:[[:space:]]*true' "$1" 2>/dev/null
+    return
+  fi
+  "$node" -e 'const { repoFlag } = require(require("path").resolve(process.argv[1])); let t = null;
+try { t = require("fs").readFileSync(process.argv[2], "utf8"); } catch {}
+process.exit(repoFlag(t) === "true" ? 0 : 1);' \
+    "${BASH_SOURCE[0]%/*}/../../hooks/mods/gate.js" "$1" 2>/dev/null && return 0
+  return 1
 }
 
 # wk_opted_in <root>: 0 when the repo at <root> turned workkit on: its own
@@ -122,4 +103,14 @@ wk_githooks_kitlike() {
   wk_githooks_kit "$1" "$2" >/dev/null && return 0
   wk_githooks_spelled "$2" || return 1
   ! (cd "$1" 2>/dev/null && [ -e "$2" ])
+}
+
+# git_hooks_installed <root>: prints the folder core.hooksPath names, read with
+# --path so a ~/ spelling is expanded, 0 when it is a kit's hooks folder
+# (wk_githooks_kit); 1 for any other value or none. Asks git alone, no node.
+git_hooks_installed() {
+  local path
+  path="$(git -C "$1" config --local --path core.hooksPath 2>/dev/null)" || return 1
+  wk_githooks_kit "$1" "$path" >/dev/null || return 1
+  printf '%s' "$path"
 }

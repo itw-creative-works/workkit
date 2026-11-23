@@ -45,12 +45,12 @@ const settingsFile = (dir, body) => {
 };
 
 describe('participation.sh: sourcing it', () => {
-  test('sourcing defines the nine functions', () => {
+  test('sourcing defines the eight functions', () => {
     // The contract this file shares with platform.sh: a caller sources it at
     // load time and gets functions, in a shell whose options are its own.
     const out = inSeam("compgen -A function | grep '^wk_' | sort | tr '\\n' ' '");
     expect(out.code, `it sources clean, stderr: ${out.err}`).toBe(0);
-    expect(out.out, `the nine, and nothing else named wk_*, got: ${out.out}`).toBe('wk_githooks_kit wk_githooks_kitlike wk_githooks_spelled wk_is_repo_root wk_opted_in wk_session_judges wk_setting wk_settings_declined wk_settings_enabled ');
+    expect(out.out, `the eight, and nothing else named wk_*, got: ${out.out}`).toBe('wk_githooks_kit wk_githooks_kitlike wk_githooks_spelled wk_is_repo_root wk_opted_in wk_session_judges wk_setting wk_settings_enabled ');
   });
 
   test('sourcing sets no variable and runs nothing', () => {
@@ -105,23 +105,18 @@ describe('participation.sh: wk_is_repo_root', () => {
   });
 });
 
-describe('participation.sh: wk_settings_declined and wk_settings_enabled', () => {
-  const answers = (file) => `${ask('wk_settings_declined', file)}/${ask('wk_settings_enabled', file)}`;
+describe('participation.sh: wk_settings_enabled', () => {
+  /** wk_settings_enabled's answer for `file`, read through the node wk_node finds. */
+  const enabled = (file) => inSeam(
+    `. ${JSON.stringify(PLATFORM)}\nif wk_settings_enabled ${JSON.stringify(shellPath(file))}; then printf yes; else printf no; fi`,
+    { ...nodeEnv },
+  ).out;
 
-  test('a declined file is declined, and an enabled file is enabled', () => {
+  test('an enabled file is enabled, and a declined one or one with no `enabled` key is not', () => {
     const dir = mkTmp('wf-participation-');
-    expect(answers(settingsFile(dir, '{ "version": 1, "enabled": false }\n')), 'the deliberate no').toBe('yes/no');
-    cleanup(dir);
-    const other = mkTmp('wf-participation-');
-    expect(answers(settingsFile(other, OPT_IN_SHAPES.current)), 'the yes').toBe('no/yes');
-    cleanup(other);
-  });
-
-  test('a file with no `enabled` key is neither', () => {
-    // The two are not each other's negation, and this is the case that says so:
-    // a file with no answer is no decline and no yes.
-    const dir = mkTmp('wf-participation-');
-    expect(answers(settingsFile(dir, '{ "version": 1 }\n')), 'neither declined nor enabled').toBe('no/no');
+    expect(enabled(settingsFile(dir, OPT_IN_SHAPES.current)), 'the yes').toBe('yes');
+    expect(enabled(settingsFile(dir, '{ "version": 1, "enabled": false }\n')), 'the deliberate no').toBe('no');
+    expect(enabled(settingsFile(dir, '{ "version": 1 }\n')), 'no answer at all').toBe('no');
     cleanup(dir);
   });
 
@@ -129,54 +124,30 @@ describe('participation.sh: wk_settings_declined and wk_settings_enabled', () =>
     // The published file is jq's, which spaces the colon; a hand-edited one may
     // not, and the repo's answer cannot depend on that.
     const dir = mkTmp('wf-participation-');
-    expect(answers(settingsFile(dir, '{"enabled":false}\n')), 'no space after the colon').toBe('yes/no');
+    expect(enabled(settingsFile(dir, '{"enabled":true}\n')), 'no space after the colon').toBe('yes');
+    expect(enabled(settingsFile(dir, '{ "enabled"  :   true }\n')), 'and spaces around it').toBe('yes');
     cleanup(dir);
-    const spaced = mkTmp('wf-participation-');
-    expect(answers(settingsFile(spaced, '{ "enabled"  :   true }\n')), 'and spaces around it').toBe('no/yes');
-    cleanup(spaced);
   });
 
-  test('a missing file and an empty file are both no answer at all', () => {
+  test('a missing, empty or whitespace-only file, a nested yes alone and text that does not parse are not enabled', () => {
     const dir = mkTmp('wf-participation-');
-    expect(answers(path.join(dir, 'settings.json')), 'a file that is not there').toBe('no/no');
-    expect(answers(settingsFile(dir, '')), 'and one holding nothing').toBe('no/no');
+    expect(enabled(path.join(dir, 'settings.json')), 'a file that is not there').toBe('no');
+    expect(enabled(settingsFile(dir, '')), 'one holding nothing').toBe('no');
+    expect(enabled(settingsFile(dir, '  \n')), 'one holding whitespace').toBe('no');
+    expect(enabled(settingsFile(dir, '{"manager": {"enabled": true}}')), 'a nested enabled: true alone').toBe('no');
+    expect(enabled(settingsFile(dir, 'not json')), 'text that does not parse').toBe('no');
     cleanup(dir);
   });
 
-  test('under node, only the top-level enabled key declines, and text that does not parse is declined', () => {
-    const declined = (body) => {
-      const dir = mkTmp('wf-participation-');
-      const file = settingsFile(dir, body);
-      const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nif wk_settings_declined ${JSON.stringify(shellPath(file))}; then printf yes; else printf no; fi`,
-        { ...nodeEnv });
-      cleanup(dir);
-      return out.out;
-    };
-    expect(declined('{"enabled": true, "manager": {"enabled": false}}'), 'a nested enabled: false leaves an opted-in repo in').toBe('no');
-    expect(declined('{"enabled": false}'), 'the top-level decline').toBe('yes');
-    expect(declined('{"manager": {"enabled": false}}'), 'a nested decline alone is no decline').toBe('no');
-    expect(declined('not json'), 'text that does not parse').toBe('yes');
-    const both = (body) => {
-      const dir = mkTmp('wf-participation-');
-      const file = JSON.stringify(shellPath(settingsFile(dir, body)));
-      const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nfor f in wk_settings_declined wk_settings_enabled; do if $f ${file}; then printf yes; else printf no; fi; done`,
-        { ...nodeEnv });
-      cleanup(dir);
-      return out.out;
-    };
-    expect(both(''), 'an empty file is no answer at all, neither declined nor enabled').toBe('nono');
-    expect(both('  \n'), 'and so is a whitespace-only one').toBe('nono');
-  });
-
-  test('an unreadable file reads as declined, and says nothing on stderr', { skip: skipWithoutModes('a mode-000 file is still readable') }, () => {
+  test('an unreadable file is not enabled, and says nothing on stderr', { skip: skipWithoutModes('a mode-000 file is still readable') }, () => {
     // A guard reading this must not print the shell's complaint into a session's
     // context, so the silencing lives in the seam rather than at each call. The
-    // text says enabled, so only the unreadable read can make it a decline.
+    // text says enabled, so only the unreadable read can make it a no.
     const dir = mkTmp('wf-participation-');
     const file = settingsFile(dir, OPT_IN_SHAPES.current);
     fs.chmodSync(file, 0o000);
-    const out = inSeam(`wk_settings_declined ${JSON.stringify(shellPath(file))}; printf 'rc=%s' "$?"`);
-    expect(out.out, 'unreadable is a decline, as the hooks module reads it').toBe('rc=0');
+    const out = inSeam(`. ${JSON.stringify(PLATFORM)}\nwk_settings_enabled ${JSON.stringify(shellPath(file))}; printf 'rc=%s' "$?"`, { ...nodeEnv });
+    expect(out.out, 'unreadable is no yes, as the hooks module reads it').toBe('rc=1');
     expect(out.err, `and nothing reaches stderr, got: ${out.err}`).toBe('');
     fs.chmodSync(file, 0o600);
     cleanup(dir);

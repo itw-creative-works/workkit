@@ -2,16 +2,15 @@
  * hooks/mods/commit-gate/heal.js: the commit gate's heal-bookkeeping arms,
  * each proving a file is exactly the heal's output: the retired version key's
  * removal from .workkit/settings.json (the version-only compare the manifest
- * classifier shares), a retired linter copy's deletion, and the checks.yml rewrite. The rewrite is workflow/changelog/changelog-job.sh's,
- * reached through its entry, so the gate never accepts a change the heal would
- * not make; so are the copies and the still-runs question (wk_linter_copies,
- * wk_names_linter_copy), asked over the texts git answers.
+ * classifier shares), a retired linter copy's deletion, and the checks.yml rewrite. The rewrite is workflow/changelog/job.js's,
+ * reached through its program, so the gate never accepts a change the heal would
+ * not make; so are the copies and the still-runs question (its `copies` and
+ * `names` modes), asked over the texts git answers.
  */
 
+import { CALLER } from '../../../workflow/ship/caller.js';
 import { LONG_RUN_MS } from '../suite.js';
 import { versionOnly } from './checks.js';
-
-const CHECKS = '.github/workflows/checks.yml';
 
 const lines = (text) => text.split('\n').filter(Boolean);
 
@@ -58,7 +57,7 @@ export const exitOf = (r) => (started(r) ? r.exitCode : 'did not start');
  */
 export function healArms(facts, root) {
   const git = (argv, init = {}) => facts.run(['git', '-C', root, ...argv], { cwd: root, timeoutMs: LONG_RUN_MS, ...init });
-  const job = (args, init = {}) => facts.run(['bash', `${facts.kitRoot}/workflow/changelog/changelog-job.sh`, ...args], { cwd: root, timeoutMs: LONG_RUN_MS, ...init });
+  const job = (args, init = {}) => facts.run(['node', `${facts.kitRoot}/workflow/changelog/job.js`, ...args], { cwd: root, timeoutMs: LONG_RUN_MS, ...init });
   let copies = null;
 
   // A run whose numeric status is up to `max` is an answer; past it, never
@@ -107,12 +106,12 @@ export function healArms(facts, root) {
     const texts = (await workflowTexts(check)).join('');
     // No workflow text names nothing, and an empty stdin reaches the entry closed.
     if (texts === '') return true;
-    return (await ask(check, 1, `wk_names_linter_copy ${path}`, job(['names', '-', path], { stdin: texts }))).exitCode === 1;
+    return (await ask(check, 1, `job.js names - ${path}`, job(['names', '-', path], { stdin: texts }))).exitCode === 1;
   }
 
   // The copies an earlier heal vendored, asked once.
   async function linterCopies() {
-    copies ??= lines((await tool('linter copy', 'wk_linter_copies', job(['copies']))).stdout);
+    copies ??= lines((await tool('linter copy', 'job.js copies', job(['copies']))).stdout);
     return copies;
   }
 
@@ -122,12 +121,12 @@ export function healArms(facts, root) {
     const check = 'checks.yml rewrite';
     const answer = await facts.jobRewrite();
     const rewrite = typeof answer === 'string' ? { exitCode: 0, stdout: answer, stderr: '' } : answer ?? { exitCode: 1, stdout: '', stderr: '' };
-    await tool(check, 'changelog-job.sh rewrite', rewrite);
-    const want = await facts.hashOf(CHECKS, rewrite.stdout);
-    const staged = await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `:${CHECKS}`]);
+    await tool(check, 'job.js rewrite', rewrite);
+    const want = await facts.hashOf(CALLER, rewrite.stdout);
+    const staged = await gitAsk(check, 1, ['rev-parse', '-q', '--verify', `:${CALLER}`]);
     if (staged.exitCode === 1) return false;
     const have = staged.stdout.trim();
-    if (!want) throw held(check, `git -C ${root} hash-object --path=${CHECKS} --stdin`, 'non-zero', '');
+    if (!want) throw held(check, `git -C ${root} hash-object --path=${CALLER} --stdin`, 'non-zero', '');
     return have !== '' && have === want;
   }
 
@@ -142,7 +141,7 @@ export function healArms(facts, root) {
     for (const path of files) {
       if (path === '.workkit/settings.json') {
         if (!(await versionBumpOnly(path))) return false;
-      } else if (path === CHECKS) {
+      } else if (path === CALLER) {
         if (!(await checksIsJobRewrite())) return false;
       } else if (!(await linterCopies()).includes(path) || !(await linterCopyRetired(path))) {
         return false;

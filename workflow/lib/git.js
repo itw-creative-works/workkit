@@ -1,6 +1,7 @@
-// workflow/lib/git.js: the git reads the kit's Node scripts share, so a lookup
-// has one spelling and every caller keeps its own reaction to a miss.
-// Usage: const { repoRoot, headSha, gitIn, hasCommit, textAt } = require('../lib/git');
+// workflow/lib/git.js: the git reads the kit's Node scripts share, the default
+// branch GitHub names among them, so a lookup has one spelling and every
+// caller keeps its own reaction to a miss.
+// Usage: const { repoRoot, headSha, gitIn, hasCommit, textAt, defaultBranch } = require('../lib/git');
 
 const { spawnSync } = require('./run');
 
@@ -67,6 +68,24 @@ const textAt = (root, rev, file) => {
   return res.status === 0 ? res.stdout : null;
 };
 
+/**
+ * The default branch of the repo at `root`, the one read the checks caller and
+ * branch protection share: GitHub's answer, else origin/HEAD's, else null:
+ * neither is a failure, never a guess.
+ * @param {string} root
+ * @returns {string|null}
+ */
+const defaultBranch = (root) => {
+  const gh = spawnSync('gh', ['api', 'repos/{owner}/{repo}', '--jq', '.default_branch'], {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+  });
+  const branch = gh.status === 0 ? gh.stdout.trim() : '';
+  if (branch) return branch;
+  const head = gitIn(root, ['symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const origin = head.status === 0 ? head.stdout.trim().replace(/^origin\//, '') : '';
+  return origin || null;
+};
+
 module.exports = {
-  repoRoot, headSha, gitIn, hasCommit, textAt, GIT_MAX_BUFFER,
+  repoRoot, headSha, gitIn, hasCommit, textAt, defaultBranch, GIT_MAX_BUFFER,
 };

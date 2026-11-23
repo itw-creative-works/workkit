@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#573](../../issues/573) - The standards heal and the changelog job run in Node: the heal no longer needs `jq`, `perl`, `awk` or `sed`, and a step that skipped without `jq` now runs. `standards.sh --git-hooks <repo>` sets git's hooks alone. The kit's lowest Node is 22.22 everywhere.
+
 ## [0.100.3] - 2026-11-23
 
 ### Changed

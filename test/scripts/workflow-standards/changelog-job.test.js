@@ -7,7 +7,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
 const { cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
-const { stubTool } = require('../../lib/platform');
+const { skipWithoutModes } = require('../../lib/platform');
 
 // What an earlier heal vendored: a shebang, the vendor header on line 2,
 // then the linter's body.
@@ -134,12 +134,39 @@ describe('standards.sh: a checks.yml job running the copy', () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  test('a copy is kept when the workflows cannot be read, and the heal says why', () => {
+  test('only a workflow naming that copy keeps it: one naming the other copy leaves it removed', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
     const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
-    fs.mkdirSync(path.join(repo, '.github', 'workflows'), { recursive: true });
-    stubTool(stub.binDir, 'find', ['#!/bin/bash', 'echo "find: stub" >&2', 'exit 1']);
+    const js = writeCopy(repo, 'changelog-lint.js', VENDORED_COPY);
+    const lint = path.join(repo, '.github', 'workflows', 'lint.yml');
+    fs.mkdirSync(path.dirname(lint), { recursive: true });
+    fs.writeFileSync(lint, 'jobs:\n  x:\n    steps:\n      - run: node .github/changelog-lint.js\n');
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    expect(readFile(js), `the copy lint.yml runs stays, got: ${output}`).toBe(VENDORED_COPY);
+    expect(output.includes('changelog lint: kept .github/changelog-lint.js: a workflow under .github/workflows still runs it'),
+      `and its keep is reported, got: ${output}`).toBeTruthy();
+    expect(!fs.existsSync(cjs), `the copy no workflow names is gone, got: ${output}`).toBeTruthy();
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  // With no origin remote the heal writes no caller, so .github/workflows never exists.
+  test('a repo with no workflow folder runs no copy: the copy is removed', () => {
+    const repo = makeRepo({ remote: false });
+    const stub = makeGhStub();
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    expect(!fs.existsSync(cjs), `the copy is gone, got: ${output}`).toBeTruthy();
+    cleanup(repo); cleanup(stub.dir);
+  });
+
+  test('a copy is kept when the workflows cannot be read, and the heal says why', { skip: skipWithoutModes('a file it cannot read') }, () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const locked = path.join(repo, '.github', 'workflows', 'lint.yml');
+    fs.mkdirSync(path.dirname(locked), { recursive: true });
+    fs.writeFileSync(locked, 'jobs:\n', { mode: 0o000 });
     const { output } = runScript(repo, { pathPrefix: stub.binDir });
     expect(readFile(cjs), `nothing proves the copy unused, so it stays, got: ${output}`).toBe(VENDORED_COPY);
     expect(output.includes('changelog lint: kept .github/changelog-lint.cjs: .github/workflows could not be read'),

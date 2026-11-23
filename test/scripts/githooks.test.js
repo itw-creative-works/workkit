@@ -307,14 +307,14 @@ describe('githooks: who is judged', () => {
     landed(commit(disabled, ['-m', BAD_MSG], { env: { HOOK_DISABLE: '1' } }), 'HOOK_DISABLE=1');
   });
 
-  test('with only a node older than 22.12 on PATH and none under nvm, case 1\'s bad commit lands, the hook saying it did not run', () => {
+  test('with only a node older than 22.22 on PATH and none under nvm, case 1\'s bad commit lands, the hook saying it did not run', () => {
     const w = mkWorld();
     const old = path.join(w.dir, 'old-node');
     stubNode(old, '20.15.1');
     stageUntested(w);
     const res = commit(w, ['-m', BAD_MSG], { env: { PATH: systemPathWith(w.ghDir, old) } });
     landed(res, 'a node 20 alone');
-    expect(res.err.includes('did not run (no node 22.12 or newer found)'), `stderr names the stand-down, got: ${res.err}`).toBeTruthy();
+    expect(res.err.includes('did not run (no node 22.22 or newer found)'), `stderr names the stand-down, got: ${res.err}`).toBeTruthy();
   });
 
   test('the hook\'s node found but none on PATH: the CHANGELOG check runs under the hook\'s node and judges', () => {

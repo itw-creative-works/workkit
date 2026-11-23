@@ -340,7 +340,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
     const hash = argv.findIndex((a) => a.endsWith('tree-hash.js'))
     if (hash >= 0) return ok(`${argv[hash + 2] === '-i' ? world.git.indexTree : world.treeId}\n`)
     // `opts.rewrite`: the rewrite entry's stdout; `opts.scriptShell`: npm's value, npm missing when unset.
-    if (argv.some((a) => a.endsWith('changelog-job.sh'))) return ok(opts.rewrite ?? '')
+    if (argv.some((a) => a.endsWith('/changelog/job.js'))) return ok(opts.rewrite ?? '')
     if (cmd === 'npm' && argv.slice(1, 4).join(' ') === 'config get script-shell') {
       return typeof opts.scriptShell === 'string' ? ok(`${opts.scriptShell}\n`) : ok('', 'npm: command not found\n', 127)
     }
@@ -372,7 +372,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
       if (world.gh.offlineAt?.includes(argv[argv.indexOf('--label') + 1])) return ok('', 'error connecting to api.github.com\n', 1)
       return ok(JSON.stringify(world.gh.issues))
     }
-    const script = argv.find((a) => /(standards|workkit|changelog\/lint|hooks)\.(sh|js)$/.test(a)) || ''
+    const script = argv.find((a) => /(standards|workkit|changelog\/lint)\.(sh|js)$/.test(a)) || ''
     if (script.endsWith('changelog/lint.js')) return ok(world.lint.stdout || '', world.lint.stderr || '', world.lint.exitCode)
     if (script.endsWith('standards.sh')) {
       if (argv.includes('--state')) return ok(`${world.standards.state}\n`)
@@ -387,7 +387,6 @@ export const mkWorld = (on: any, opts: any = {}) => {
       const r = world.standards.update
       return ok(r.stdout || '', r.stderr || '', r.exitCode ?? 0)
     }
-    if (script.endsWith('hooks.sh')) return ok()
     return ok('', `${cmd}: command not found\n`, 127)
   })
 

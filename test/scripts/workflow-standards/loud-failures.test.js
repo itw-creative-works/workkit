@@ -6,10 +6,10 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NO_RC, shellPath, gitPath, which, linkTool, systemPathWith, spawnBash, spawnSystemBash,
+  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, which, linkTool, joinPath, nodeEnv, spawnBash, spawnSystemBash,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, copyDefaults,
+  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, copyKitSiblings,
 } = require('./helpers');
 
 describe('standards.sh: it fails loudly, never silently', () => {
@@ -18,13 +18,13 @@ describe('standards.sh: it fails loudly, never silently', () => {
     const engine = path.join(kit, 'workflow');
     fs.mkdirSync(engine);
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
-    copyDefaults(kit);
+    copyKitSiblings(kit);
     fs.rmSync(path.join(engine, 'templates', 'session.md'));
     const repo = makeRepo();
     const stub = makeGhStub();
     const res = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
       env: {
-        ...process.env, PATH: systemPathWith(stub.binDir),
+        ...process.env, PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
         WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
       },
       encoding: 'utf8', timeout: SPAWN_DEADLINE,
@@ -43,11 +43,11 @@ describe('standards.sh: it fails loudly, never silently', () => {
     const engine = path.join(kit, 'workflow');
     fs.mkdirSync(engine);
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
-    copyDefaults(kit);
+    copyKitSiblings(kit);
     fs.rmSync(path.join(engine, 'labels.json'));
     const repo = makeRepo();
     const env = {
-      ...process.env, PATH: SYSTEM_PATH,
+      ...process.env, PATH: joinPath(SYSTEM_PATH, NODE_DIR),
       WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
     };
     const state = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
@@ -90,29 +90,17 @@ describe('standards.sh: it fails loudly, never silently', () => {
     cleanup(repo);
   });
 
-  test('a committed no with a severed tail is still a no, never a heal', () => {
-    // jq prints the answer it parsed and then fails on the tail, so a read
-    // whose fallback is appended to that answer resolves to neither `false`
-    // nor `unreadable`: it falls through to the enabled arm and heals a repo
-    // that said no.
-    const repo = makeRepo({ settings: '{ "version": 1, "enabled": false }{\n' });
-    expect(runScript(repo, { args: ['--state'] }).stdout.trim(), 'the deliberate no is read as a no').toBe('disabled');
-    const { output } = runScript(repo);
-    expect(output, `nothing is said about a repo that opted out, got: ${output}`).toBe('');
-    expect(!fs.existsSync(path.join(repo, '.github')), 'and nothing is written into it').toBeTruthy();
-    cleanup(repo);
-  });
-
-  test('a severed tail on a yes with no version key: the heals run and the file is never rewritten', () => {
-    // jq prints the answer it parsed and then fails on the tail, so a key
-    // check that reads the failure as a key found tries a write nothing can make.
-    const text = '{ "enabled": true }{\n';
-    const repo = makeRepo({ settings: text });
-    const { output } = runScript(repo);
-    expect(output.includes('issue forms'), `the mechanical heals still run, got: ${output}`).toBeTruthy();
-    expect(!/not valid JSON/.test(output), `no write is tried on the file, got: ${output}`).toBeTruthy();
-    expect(fs.readFileSync(path.join(repo, '.workkit', 'settings.json'), 'utf8'), 'and it stands as it was').toBe(text);
-    cleanup(repo);
+  test('a whole yes or no with a severed tail, or a second value after it, is unreadable: no heal, the file as it was', () => {
+    // The whole text is one value or it is no answer, so a yes before a broken
+    // tail never turns a repo on.
+    for (const text of ['{ "enabled": true }{\n', '{ "version": 1, "enabled": false }{\n', '{ "enabled": true }\n{ "enabled": true }\n']) {
+      const repo = makeRepo({ settings: text });
+      expect(runScript(repo, { args: ['--state'] }).stdout.trim(), `${JSON.stringify(text)} is no answer`).toBe('unreadable');
+      const { output } = runScript(repo);
+      expect(!fs.existsSync(path.join(repo, '.github')), `${JSON.stringify(text)}: nothing is written into the repo, got: ${output}`).toBeTruthy();
+      expect(fs.readFileSync(path.join(repo, '.workkit', 'settings.json'), 'utf8'), `${JSON.stringify(text)}: the file stands as it was`).toBe(text);
+      cleanup(repo);
+    }
   });
 
   test('a malformed roster file: declines cleanly, records nothing, leaves no litter', () => {
@@ -152,7 +140,7 @@ describe('standards.sh: it fails loudly, never silently', () => {
   });
 
   test('no jq: a committed enabled:false is still a no, and a file with no enabled key no yes', () => {
-    // The grep fallback exists for exactly this: a committed answer, read without jq.
+    // A committed answer, read on a machine with no jq.
     const binDir = mkTmp('wf-std-');
     // cygpath is the engine's path spelling on Windows (wk_native_path), as much a
     // need there as git; `which` answers nothing for it on macOS and Linux.
@@ -163,7 +151,7 @@ describe('standards.sh: it fails loudly, never silently', () => {
     for (const [settings, want] of [['{ "version": 1, "enabled": false }\n', 'disabled'], ['{ "version": 1 }\n', 'undecided']]) {
       const repo = makeRepo({ settings });
       const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
-        env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+        env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')), ...nodeEnv }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
       });
       expect((res.stdout || '').trim(), `${settings.trim()} on a jq-less machine, stderr: ${res.stderr}`).toBe(want);
       cleanup(repo);

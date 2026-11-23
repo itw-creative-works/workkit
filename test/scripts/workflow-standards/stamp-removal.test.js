@@ -41,20 +41,17 @@ describe('standards.sh: the version key is removed, never stamped', () => {
     cleanup(dir); cleanup(stub.dir);
   });
 
-  test('no jq on PATH: one warning line naming the key and the file, and no write', () => {
-    const text = '{ "version": 9, "enabled": true }\n';
-    const dir = makeRepo({ settings: text });
-    const mtime = backdate(settingsOf(dir));
+  test('no jq on PATH: the version key is removed and the file is otherwise as it was', () => {
+    const dir = makeRepo({ settings: '{ "version": 9, "enabled": true, "tests": { "budget": 5 } }\n' });
     const binDir = binDirWithout('jq');
     const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(dir)], {
       env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')) },
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
     });
-    const said = `${res.stdout || ''}${res.stderr || ''}`.split(/\r?\n/).filter((l) => l.includes('version') && l.includes('settings.json'));
-    expect(said.length, `one line names the key and the file, got: ${res.stdout}${res.stderr}`).toBe(1);
-    expect(readFile(settingsOf(dir)), 'the file keeps its key').toBe(text);
-    expect(fs.statSync(settingsOf(dir)).mtimeMs, 'and was never rewritten').toBe(mtime);
+    const parsed = JSON.parse(readFile(settingsOf(dir)));
+    expect(JSON.stringify(parsed), `the key is gone, the rest kept, got: ${res.stdout}${res.stderr}`)
+      .toBe(JSON.stringify({ enabled: true, tests: { budget: 5 } }));
     cleanup(dir); cleanup(binDir);
   });
 });

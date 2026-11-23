@@ -214,11 +214,10 @@
   - The change-tracker's stop instruction words its own: a `status:inbox` issue while on, chat under 🧭 Findings for the owner to answer file or drop while off.
 
 - On Windows the engine's address must be a real symlink.
-  - Git Bash answers a plain `ln -s` with a copy unless the MSYS runtime is told otherwise.
-  - A copy of the engine at `~/.claude/workkit` hides the kit's folders beside it.
+  - A copy of the engine at `~/.claude/workkit` would hide the kit's folders beside it.
   - The schedule reaches those folders through the address (`~/.claude/workkit/../jobs/morning.sh`).
-  - The daily heal sets that flag.
-  - When a link still could not be made, it removes the copy and says so, rather than leaving a stale engine at the address.
+  - The heal makes the link in Node (`workflow/lib/link.js`), which makes a link or fails, never a copy.
+  - When Windows refuses the link, the heal says so, naming Developer Mode or an administrator's shell, then `workkit update`.
 
 - The skills carry no platform-bound command at all.
   - The two that record a marker run `workkit review mark` and `workkit triage mark` ([`workflow/review/mark.js`](../workflow/review/mark.js) and [`workflow/triage/mark.js`](../workflow/triage/mark.js)).
@@ -246,6 +245,9 @@
   - That is why `workflow:reload-guard` counts its files among the load-time surfaces.
 - The `hooks/` folder carries its own `package.json` (`{ "type": "module" }`).
   - So node reads the module as ESM from the start rather than guessing its type.
+- Every file `register.js` loads runs in Claude Code's in-process hook runtime, which loads no Node module.
+  - So none of them imports a `workflow/` file or a Node builtin; `test/mods.test.js` fails when the module cannot load.
+  - The engine reaches the other way: its Node files load a `hooks/mods` file with `require()`, as `workflow/lib/settings.js` loads `settings.js` and the heal `gate.js`.
 
 | Hook | Event | What it does |
 |---|---|---|
@@ -353,6 +355,8 @@
     - So a linked file names its target's repo, and a path not there yet keeps its spelling.
     - For `agent.spawn` and the Agent tool's `classic.PreToolUse` it is the session's folder.
   - It opted in when `<root>/.workkit/settings.json` exists, parses, and its top-level `enabled` is `true` (`settingsOptedIn` in `hooks/mods/gate.js`, the engine's `wk_opted_in`).
+    - `settingsOptedIn` is `repoFlag(text) === 'true'`. `repoFlag`, beside it, is the repo flag's one rule: `true`, `false`, `absent` or `unreadable`, the heal's state answer read off it.
+    - It parses the whole text once, so a whole object before a broken tail does not parse.
     - A nested `enabled` changes nothing.
     - An empty file, a file with no key and text that does not parse are all off.
   - `workflow:standards` and `workflow:reload-guard` are exempt.
@@ -381,13 +385,20 @@
 - **The parity suite.** Some rules keep a shell home beside the module's, because a script still reads it there.
   - For those, `test/hooks/twins.test.js` runs both on the same inputs and holds them to one answer:
     - the opt-in read (`wk_opted_in`, `settingsOptedIn` in `hooks/mods/gate.js`);
-      - the shell twin reads the top-level key through node, and only `"enabled": true` reads opted in on both;
+      - the shell twin reads the top-level key through node, asking `repoFlag` itself, and only `"enabled": true` reads opted in on both;
     - the machine folder (`wk_user_dir`, `userDir` in `hooks/mods/log.js` and `workflow/user-dir.js`);
+    - the tower folder (`wk_tower_dir` in `workflow/lib/platform.sh`, `towerDir` in `workflow/user-dir.js`), one folder for every `WORKFLOW_HOME` and `HOME`;
     - the marker path (`wk_marker_path` in `workflow/lib/platform.sh`, `markerPath` in `hooks/mods/markers.js`);
     - the session rule (`wk_session_judges` in `workflow/lib/participation.sh`, `sessionJudges` in `hooks/mods/gate.js`);
     - the plain mutex (`wk_take_lock` in `workflow/lib/platform.sh`, `takeLock` in `workflow/lib/lock.js`), which exclude each other on one folder;
     - the markers' sweep (`wk_sweep_markers`, `sweepMarkers` in `workflow/lib/lock.js`), which remove the same files from one marker tree;
-    - the color gate (`wk_color_on` in `workflow/lib/voice.sh`, `colorOn` in `tower/api/lib/log.js`), which answer alike for one environment and one stdout;
+    - the color gate (`wk_color_on` in `workflow/lib/voice.sh`, `colorOn` in `workflow/lib/voice.js`), which answer alike for one environment and one stdout;
+    - the voice lines (`wk_ok`, `wk_skip`, `wk_info`, `wk_warn` and `wk_warn_lines`, their Node halves in `workflow/lib/voice.js`), plain, colored, quiet and indented;
+    - the native path and the clone rank (`wk_native_path` and `wk_clone_outranks` in `workflow/lib/platform.sh`, `nativePath` and `cloneOutranks` in `workflow/lib/platform.js`);
+    - the atomic link (`wk_link` in `workflow/lib/flows.sh` and `wk_mv_link` in `workflow/lib/platform.sh`, `link` and `mvLink` in `workflow/lib/link.js`), which leave the same address, answer alike and leave no temp file, never moving into a folder an address points at;
+    - the safe JSON edit (`wk_json_edit` in `workflow/lib/state.sh`, `editJson` in `workflow/lib/write.js`), which leave the same bytes and mode for a change, a change that fails and a file that is no JSON, answer alike and leave no temp file;
+    - the repo slug and the kit checkout (`wk_repo_slug` and `wk_is_kit_checkout` in `workflow/lib/slug.sh`, `repoSlug` and `isKitCheckout` in `workflow/lib/repo.js`);
+    - the kit's hooks folder (`wk_githooks_kit`, `wk_githooks_kitlike` and `wk_githooks_spelled` in `workflow/lib/participation.sh`, their Node halves in `workflow/lib/participation.js`);
     - the test-script read (`wk_has_test_script` in `workflow/lib/suite.sh`, `hasTestScript` in `hooks/mods/suite.js`);
     - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/slug.js`);
     - git's global options that take a value (`VALUE_FLAGS` in `workflow/gitshim/git`, `GIT_VALUE_FLAGS` in `hooks/mods/tree-guard.js`);
@@ -420,7 +431,7 @@
   - The call is `bash workflow/standards.sh <root>` under `QUIET=1`, through `$.process.run`.
   - It runs under that call's ten-minute ceiling, past the heal's worst case.
   - What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
-- The heal includes the one check that is the hook layer's own (`workflow/standards/hooks.sh`):
+- The heal includes the one check that is the hook layer's own (`workflow/standards/hooks.js`):
   - the hooks module loads in `node`, which pulls in every module under `hooks/mods/`;
   - and the tools the hook layer calls are present.
 - Reports only what it fixed.
@@ -790,12 +801,12 @@
   - a commit closing an issue (`Fixes #N`) stages the entry it closes against;
   - and each closing line names one issue.
 - It runs as git's own hooks: `workflow/githooks/pre-commit` (checks 1, 2, 3, 5) and `commit-msg` (checks 8, 4, 6, 7).
-  - The heal sets them as the repo's `core.hooksPath` (`ensure_git_hooks`, `workflow/standards/githooks.sh`).
+  - The heal sets them as the repo's `core.hooksPath` (`ensureGitHooks`, `workflow/standards/githooks.js`).
   - The heal names them through the engine link as `~/.claude/workkit/githooks`, so a plugin update leaves the path good.
   - Where the link is missing, the path is the plugin's own `workflow/githooks` folder.
   - npm's `script-shell` wrapper sets the path back right after a repo's `prepare`, `install` or `postinstall` script.
   - The reason: that script may set the path itself (husky's does).
-- They judge only where `wk_node` finds a Node 22.12 or newer (the floor: `workflow/README.md`, the `lib/platform.sh` entry). With none: one stderr line, and the commit lands unjudged.
+- They judge only where `wk_node` finds a Node 22.22 or newer (the floor: `workflow/README.md`, the `lib/platform.sh` entry). With none: one stderr line, and the commit lands unjudged.
   - They judge only where `wk_session_judges` holds for the repo root (`workflow/README.md`, the `lib/participation.sh` row).
   - That is the `gh` shim's gate too, and the full-suite hold asks the same rule through `sessionJudges` (`hooks/mods/gate.js`), so the owner's terminal is never judged.
 - The repo's own hooks run after ours, whatever the session.
@@ -847,13 +858,13 @@
   - Arm two: the DELETION of a linter copy once no workflow in the tree the commit produces still runs it.
   - Arm three: a `.github/workflows/checks.yml` whose blob is byte for byte the caller the heal writes (`checksIsJobRewrite`).
     - That holds whatever HEAD held, a first caller included, so HEAD is never read.
-  - The copies, the still-runs question and the rewrite are `workflow/changelog/changelog-job.sh`'s, the file the heal runs.
-    - The arms reach it as a program through its entry, so the two cannot disagree.
-    - `copies` (`wk_linter_copies`).
-    - `names <file|-> [copy]` (`wk_names_linter_copy`): a mention outside a comment line.
+  - The copies, the still-runs question and the rewrite are `workflow/changelog/job.js`'s, the file the heal requires.
+    - The arms run it as a program, `node job.js <mode>`, so the two cannot disagree.
+    - `copies` (`LINTER_COPIES`).
+    - `names <file|-> [copy]` (`namesLinterCopy`): a mention outside a comment line.
     - It is asked over the workflows of the tree the commit produces: the index's blobs, the commit's own in the hook.
-    - `rewrite [template]` (`wk_checks_heal_rewrite`): the template `wk_checks_template` names by default.
-    - The rewrite fills the template with the repo's default branch, `wk_default_branch`'s: GitHub's answer, else `origin/HEAD`'s.
+    - `rewrite [template]` (`checksRewrite`): the kit's template (`TEMPLATE`) by default.
+    - The rewrite fills the template with the repo's default branch, `defaultBranch`'s (`workflow/lib/git.js`): GitHub's answer, else `origin/HEAD`'s.
     - With neither it exits 2 naming `git remote set-head origin -a`, which the arm holds on like any failed tool.
   - That caller is all the CI a repo carries.
     - The repo's own `npm test` script is the one test command it runs.

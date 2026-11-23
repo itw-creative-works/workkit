@@ -91,4 +91,19 @@ describe('standards.sh: the CHANGELOG separator', () => {
     expect(!again.includes('changelog separator'), `a clean file is silent, got: ${again}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
+
+  test('a CHANGELOG with an em dash and bytes that are not UTF-8 is left byte for byte, one warning says why, and the run is flagged', () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const file = path.join(repo, 'CHANGELOG.md');
+    // A Latin-1 e acute, a byte UTF-8 never starts a character with, beside the dash.
+    const text = `# Changelog\n\n- [#4](../../issues/4) ${String.fromCharCode(0x2014)} Caf`;
+    const bytes = Buffer.concat([Buffer.from(text, 'utf8'), Buffer.from([0xe9]), Buffer.from('\n', 'utf8')]);
+    fs.writeFileSync(file, bytes);
+    const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
+    expect(fs.readFileSync(file).equals(bytes), `the file is left as it was, got: ${output}`).toBe(true);
+    expect(output.includes('changelog separator: CHANGELOG.md is not valid UTF-8, so it is left as it is'), `the warning names why, got: ${output}`).toBeTruthy();
+    expect(code, `the run is flagged, got: ${output}`).toBe(1);
+    cleanup(repo); cleanup(stub.dir);
+  });
 });

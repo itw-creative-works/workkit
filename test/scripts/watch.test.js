@@ -410,7 +410,7 @@ describe('workkit watch: no run to attach to', () => {
 });
 
 describe('workkit watch and workkit supervise: no node at the floor', () => {
-  test('each prints one line naming the floor 22.12 and exits 1; the supervised command never runs', async () => {
+  test('each prints one line naming the floor 22.22 and exits 1; the supervised command never runs', async () => {
     const w = mkWorld();
     const ran = path.join(w.out, 'ran');
     const old = stubNode(path.join(w.dir, 'old-node'), '20.15.1');
@@ -420,7 +420,7 @@ describe('workkit watch and workkit supervise: no node at the floor', () => {
       const res = await workkit(args, { cwd: w.repo, env });
       expect(res.code, `workkit ${args[0]} exits 1, got: ${res.output}`).toBe(1);
       const said = linesToLast(res.output);
-      expect(said.length === 1 && said[0].includes('22.12'), `workkit ${args[0]}: one line naming the floor, got: ${res.output}`).toBeTruthy();
+      expect(said.length === 1 && said[0].includes('22.22'), `workkit ${args[0]}: one line naming the floor, got: ${res.output}`).toBeTruthy();
     }
     expect(fs.existsSync(ran), 'the supervised command never ran').toBe(false);
   });

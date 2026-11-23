@@ -1,109 +1,24 @@
 #!/usr/bin/env bash
-# workflow standards: bring a repo to the issue-workflow standard, idempotently.
-# The heals live in standards/; what each does: workflow/README.md, the
-# standards.sh row, § Every heal runs and § The hook layer self-check.
-# Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link|--command-link|--home] [repo_dir]
-#   (no mode) heals an enabled repo; --state prints enabled | disabled |
-#   declined | undecided | home | nogit; --home heals only the tower clone;
-#   --engine-link and --command-link each make one machine link, no repo read.
-#   Every mode: README § Participation: the tri-state. repo_dir defaults to $PWD.
+# workflow standards: the starter of standards.js, the heal, which runs under a
+# node at the kit's floor with every argument handed over. --command-link stays
+# here: its step is workkit/links.sh's. Every mode: workflow/README.md, the standards.sh row.
+# Usage: bash standards.sh [--state|--announce|--enable|--decline|--engine-link|--command-link|--home|--git-hooks] [repo_dir]
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-LABELS_JSON="$SCRIPT_DIR/labels.json"
-TEMPLATES_DIR="$SCRIPT_DIR/templates"
-FORMS_DIR="$TEMPLATES_DIR/issue-forms"
 
-# The CRLF-safe jq, named here as well as reached through lib.sh since this
-# script reads JSON from its first step. Sourcing it twice is harmless.
 # shellcheck source=./lib/platform.sh
 . "$SCRIPT_DIR/lib/platform.sh"
 
-# For the state mutex, wk_json_edit, and WK_HOME_DIR, the clone the heal never
-# offers, heals or registers.
-# shellcheck source=./lib.sh
-. "$SCRIPT_DIR/lib.sh"
-
-# Its own file because safety:commit-gate runs it too, as a program through its
-# entry, to prove a staged checks.yml is exactly the rewrite this heal writes.
-# shellcheck source=./changelog/changelog-job.sh
-. "$SCRIPT_DIR/changelog/changelog-job.sh"
-
-# The heals, one file per concern, functions only: every value they read is
-# this script's own.
-# shellcheck source=./standards/engine-link.sh
-. "$SCRIPT_DIR/standards/engine-link.sh"
-# shellcheck source=./standards/state.sh
-. "$SCRIPT_DIR/standards/state.sh"
-# shellcheck source=./standards/gitignore.sh
-. "$SCRIPT_DIR/standards/gitignore.sh"
-# shellcheck source=./standards/githooks.sh
-. "$SCRIPT_DIR/standards/githooks.sh"
-# shellcheck source=./standards/templates.sh
-. "$SCRIPT_DIR/standards/templates.sh"
-# shellcheck source=./standards/checks.sh
-. "$SCRIPT_DIR/standards/checks.sh"
-# shellcheck source=./standards/changelog.sh
-. "$SCRIPT_DIR/standards/changelog.sh"
-# shellcheck source=./standards/labels.sh
-. "$SCRIPT_DIR/standards/labels.sh"
-# shellcheck source=./standards/claims.sh
-. "$SCRIPT_DIR/standards/claims.sh"
-# shellcheck source=./standards/hooks.sh
-. "$SCRIPT_DIR/standards/hooks.sh"
-# shellcheck source=./standards/tests.sh
-. "$SCRIPT_DIR/standards/tests.sh"
-
-# The hook layer beside this engine; the self-check skips silently without it.
-# WORKFLOW_HOOKS_DIR is the tests' seam.
-HOOKS_DIR="${WORKFLOW_HOOKS_DIR:-$SCRIPT_DIR/../hooks}"
-# The hooks module and the guards in the shims fail open without these, so
-# this list makes a missing one visible. A `|` joins one tool's spellings
-# across platforms; any one satisfies it.
-HOOK_TOOLS="jq git node shasum|sha1sum"
-
-# An agent's claim and how long it may sit idle before the heal releases it.
-# The label is the claim; an assignee is a person's mark and never read as one.
-CLAIM_LABEL="agent:claimed"
-CLAIM_STALE_SECONDS=86400
-# The two pipeline states a release moves between: an unclaimed issue whose spec
-# is still accepted is specced, not building.
-BUILDING_LABEL="status:building"
-SPECCED_LABEL="status:specced"
-
-# The state directory's name for the engine layer.
-# packages/core/test/lib/harness.js holds its own copy, so change both together.
-WORKKIT_DIR=".workkit"
-
-# ── Logging ───────────────────────────────────────────────────────────────────
-# Diagnostics go to stderr: stdout is the machine answer of --state and
-# --announce. The heal prints no title, so it sets its own indent.
-WK_LOG_STDERR=1
-WK_LOG_INDENT='  '
-
-mode="heal"
-case "${1:-}" in
-  --state|--announce|--enable|--decline|--engine-link|--command-link|--home) mode="${1#--}"; shift ;;
-  --*) wk_warn "standards: unknown option $1"; exit 1 ;;
-esac
-
-# The engine's public address, written by a real heal or `--engine-link` only
-# (README § How it is reached). WORKFLOW_CLAUDE_HOME is the tests' seam, so no
-# test touches a real ~/.claude.
-CLAUDE_HOME="${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}"
-ENGINE_LINK="$CLAUDE_HOME/workkit"
-
-# The engine's address needs no repo, so it answers before one is resolved.
-if [[ "$mode" == "engine-link" ]]; then
-  ensure_engine_link
-  exit 0
-fi
-
-# The command's link needs no repo either: links.sh's step alone, with the names
-# it reads spelled as workkit.sh spells them. An explicit call, not the
-# automatic path, so a missing ~/.local/bin is made; HOME is the tests' seam.
-if [[ "$mode" == "command-link" ]]; then
+# The command's link needs no repo: links.sh's step alone, with the names it
+# reads spelled as workkit.sh spells them. An explicit call, not the automatic
+# path, so a missing ~/.local/bin is made; HOME is the tests' seam.
+if [[ "${1:-}" == '--command-link' ]]; then
+  # shellcheck source=./lib.sh
+  . "$SCRIPT_DIR/lib.sh"
+  WK_LOG_STDERR=1
+  WK_LOG_INDENT='  '
   KIT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
   BIN_DIR="${HOME:-}/.local/bin"
   BIN_LINK="$BIN_DIR/workkit"
@@ -114,120 +29,4 @@ if [[ "$mode" == "command-link" ]]; then
   exit 0
 fi
 
-repo_dir="${1:-$PWD}"
-
-if ! root="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)"; then
-  if [[ "$mode" == "state" ]]; then
-    printf 'nogit\n'
-  else
-    wk_skip "standards: $(wk_native_path "$repo_dir") is not a git repo; nothing to standardize"
-  fi
-  exit 0
-fi
-
-cd "$root"
-
-# The roster key, settled once from git's own answer: `cygpath` keeps the
-# letter case it is handed, so a `$PWD` would mint a second key. Every write
-# and lookup below reads this variable.
-roster_key="$(wk_native_path "$root")"
-
-# ── 0. Participation ──────────────────────────────────────────────────────────
-# The states: README § Participation: the tri-state. The heal reads and writes
-# `.repos.json`; the hand-edited user settings.json is only seeded when absent.
-USER_SETTINGS="$WK_USER_DIR/settings.json"
-USER_REPOS="$WK_USER_DIR/.repos.json"
-REPO_SETTINGS="$WORKKIT_DIR/settings.json"
-
-# The `home` state, the tower clone, known by path. Compared by physical path
-# (cd + pwd -P, since realpath is not on every machine), so a symlinked home
-# directory is still one folder. wk_tower_dir owns the address.
-HOME_CLONE_DIR="$WK_HOME_DIR"
-
-seed_user_settings
-
-# ── 1a. The two entries every .gitignore needs ──
-# Only the missing ones are appended; a repo that covers them in any spelling
-# is left as it is.
-GITIGNORE_BASICS=".DS_Store .env"
-
-# `gh label list`, kept from the sync for the steps below. Empty means the sync
-# never reached GitHub.
-existing_labels=""
-
-# Set by any heal that could not finish on its own: the run stays exit 0 (a
-# session start must never wedge) but says plainly that a human is needed.
-needs_attention=0
-
-state="$(resolve_state)"
-
-case "$mode" in
-  state)    printf '%s\n' "$state"; exit 0 ;;
-  announce) offer_line; printf '\n'; exit 0 ;;
-  # The tower clone's own heal, forms and labels only, run by the engine since
-  # no session opens in the clone. It refuses every other directory.
-  home)     if [[ "$state" != "home" ]]; then
-              wk_warn "standards: $root is not the tower clone; --home heals the home repo and nothing else"
-              exit 1
-            fi
-            wk_info "standards: $root (the home clone)"
-            ensure_issue_forms
-            sync_labels
-            [[ "$needs_attention" -eq 0 ]] || exit 1
-            exit 0 ;;
-  decline)  if [[ "$state" == "home" ]]; then
-              wk_warn "standards: $root is the tower clone; engine territory, and it never participates (nothing recorded)"
-              exit 1
-            fi
-            record_decline; exit 0 ;;
-  enable)   if [[ "$state" == "home" ]]; then
-              wk_warn "standards: $root is the tower clone; engine territory, and it never participates"
-              exit 1
-            fi
-            write_repo_optin; state="enabled" ;;
-esac
-
-# Nothing is written into a repo that has not said yes. Only a deliberate no is
-# silent, so an unanticipated state speaks up rather than skipping a repo.
-case "$state" in
-  enabled)    ;;
-  home)       wk_skip "standards: $root is the tower clone; engine territory, nothing to heal"; exit 0 ;;
-  undecided)  wk_info "$(offer_line)"; exit 0 ;;
-  disabled|declined) exit 0 ;;
-  unreadable) wk_warn "standards: $REPO_SETTINGS cannot be read as JSON (unreadable or not valid JSON); fix or remove it; healing nothing until then"; exit 0 ;;
-  *)          wk_warn "standards: unrecognized participation state '$state'; healing nothing; this is a bug worth reporting"; exit 0 ;;
-esac
-
-wk_info "standards: $root"
-# Written by a real heal only: the probes and an unconsented repo exit above.
-ensure_engine_link
-register_in_roster
-report_user_settings
-remove_version_stamp
-ensure_workflow_ignored
-ensure_gitignore_basics
-ensure_git_hooks "$root"
-ensure_local_file capture.md
-ensure_local_file session.md agents/session.md
-ensure_issue_forms
-ensure_ci_workflow
-ensure_changelog_separator
-remove_changelog_linter_copies
-ensure_branch_protection
-read_public_repo
-sync_labels
-sync_public_labels
-sweep_stale_claims
-flip_claimed_specced
-sweep_public_mirror
-check_issue_labels
-check_hook_layer
-check_test_runner
-
-if [[ "$needs_attention" -eq 1 ]]; then
-  wk_warn "standards: $root is not fully standardized; see the warning above"
-  # The hook caches the day only on success, so an unfinished repo retries next
-  # session; the hook keeps a non-zero exit from wedging it.
-  exit 1
-fi
-exit 0
+run_at_floor standards 1 "$SCRIPT_DIR/standards.js" "$@"

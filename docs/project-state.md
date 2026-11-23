@@ -881,7 +881,7 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
   - An entry is pruned on the same contact when one of these holds:
     - its path is gone;
     - its committed `.workkit/settings.json` is gone;
-    - or its committed file no longer says `"enabled": true` (a file jq cannot read excepted).
+    - or its committed file no longer says `"enabled": true` (a file that cannot be read as JSON excepted).
   - A `"declined"` entry is a decision rather than an observation and is never pruned.
   - The committed per-repo file stays the SSOT of membership.
     - This list is a self-maintaining machine-local INDEX of it, and the tower reads it.

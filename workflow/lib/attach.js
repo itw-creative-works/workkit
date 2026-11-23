@@ -16,14 +16,12 @@ const { spawn } = require('./run');
 const { readOrNull } = require('./read');
 const { exitOf, END_SIGNALS } = require('./detach');
 const { writeWhole } = require('./write');
+const { colorOn } = require('./voice');
 const {
   takeRunLock, writePid, leaveRecord, recordedCode, dropRunLock, doneCode, pidAlive,
 } = require('./run-lock');
 
 const PAINT = path.join(__dirname, '..', '..', 'packages', 'core', 'test', 'lib', 'paint.js');
-
-// The Node home of `wk_color_on`'s rule, the tower's logger.
-const GATE = path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'log.js');
 
 // The one home of the kit's node floor, `WK_NODE_FLOOR=<x.y>`.
 const FLOOR_HOME = path.join(__dirname, 'platform.sh');
@@ -52,14 +50,13 @@ const LIFE_EVERY = 25;
 
 /**
  * The painter's `paint` when the view is painted: the kit's color gate on
- * stdout says yes (`colorOn` in GATE), the painter is here, and this Node is at
+ * stdout says yes (`colorOn`, lib/voice.js), the painter is here, and this Node is at
  * the kit's floor; else the plain view. A painter that is there and fails to
  * load throws. The gate judged stdout already, so color is forced.
  * @returns {function|null}
  */
 const painter = () => {
-  if (!fs.existsSync(GATE) || !fs.existsSync(PAINT)) return null;
-  const { colorOn } = require(GATE);
+  if (!fs.existsSync(PAINT)) return null;
   if (!colorOn(process.stdout) || !atFloor()) return null;
   const { paint } = require(PAINT);
   process.env.FORCE_COLOR = '1';

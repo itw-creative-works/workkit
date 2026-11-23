@@ -15,13 +15,11 @@ const { execFileSync } = require('../../../workflow/lib/run');
 // What a repo is called has one home, the engine's workflow/slug.js. The home
 // runner seed keeps both trees at the same relative depth, so this resolves there too.
 const { slugFromRemote } = require('../../../workflow/slug');
-const { homeUserDir } = require('../../../workflow/user-dir');
+const { homeUserDir, towerDir, WORKKIT_DIR } = require('../../../workflow/user-dir');
 const { tempDirOf } = require('../../../hooks/mods/markers.js');
 const { settingsOptedIn } = require('../../../hooks/mods/gate.js');
 const { homeSlug } = require('../../../workflow/lib/settings');
 const { readJsonOrNull, readOrNull } = require('../../../workflow/lib/read');
-
-const WORKKIT_DIR = '.workkit';
 
 const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
   encoding: 'utf8',
@@ -129,7 +127,7 @@ const discoverRepos = (opts = {}) => {
   // only when not declined and its origin matches `site.repo`, never a foreign
   // checkout parked there. The path is in git's spelling, so both compares
   // below match the roster keys on Windows. wk_tower_dir's rule.
-  const tower = gitPath(path.join(workflowHome, 'tower'));
+  const tower = gitPath(towerDir(workflowHome));
   const towerDeclined = !!registered && typeof registered === 'object' && registered[tower] === 'declined';
   if (!towerDeclined && !found.some((r) => r.path === tower) && fs.existsSync(path.join(tower, '.git'))) {
     const homeRepo = homeSlug(workflowHome);

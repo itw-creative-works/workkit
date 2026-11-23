@@ -86,7 +86,7 @@ describe('workkit ship', () => {
     cleanup(world.root);
   });
 
-  test('ship watch with no node at or above the floor: one line naming 22.12 on stderr, nothing on stdout, exit 1, gh never asked', () => {
+  test('ship watch with no node at or above the floor: one line naming 22.22 on stderr, nothing on stdout, exit 1, gh never asked', () => {
     const world = mkWorld();
     const old = stubNode(path.join(world.root, 'old-node'), '20.15.1');
     // The world's home is a scratch one, so no node a machine's nvm keeps is found instead.
@@ -94,7 +94,7 @@ describe('workkit ship', () => {
     const { code, out, err } = runCli(world, ['ship', 'watch', 'main'], { env });
     expect(code, `exit 1, got: ${out}${err}`).toBe(1);
     expect(out, 'nothing on stdout').toBe('');
-    expect(err, 'the one floor line').toBe('ship watch: no node at or above 22.12 is installed\n');
+    expect(err, 'the one floor line').toBe('ship watch: no node at or above 22.22 is installed\n');
     expect(world.ghCalls().length, `gh never asked, got: ${fmtCalls(world.ghCalls())}`).toBe(0);
     cleanup(world.root);
   });
@@ -191,24 +191,24 @@ const belowFloor = (world) => {
 };
 
 describe('workkit prove and proof red: the node floor', () => {
-  test('prove with no node at or above the floor: one line naming 22.12 on stderr, nothing on stdout, exit 1', () => {
+  test('prove with no node at or above the floor: one line naming 22.22 on stderr, nothing on stdout, exit 1', () => {
     const world = mkWorld();
     const { g, env } = belowFloor(world);
     const { code, out, err } = runCli(world, ['prove'], { cwd: g.repo, env });
     expect(code, `exit 1, got: ${out}${err}`).toBe(1);
     expect(out, 'nothing on stdout').toBe('');
-    expect(err, 'the one floor line').toBe('prove: no node at or above 22.12 is installed\n');
+    expect(err, 'the one floor line').toBe('prove: no node at or above 22.22 is installed\n');
     cleanup(g.dir);
     cleanup(world.root);
   });
 
-  test('proof red with no node at or above the floor: one line naming 22.12 on stderr, nothing on stdout, exit 2, never 1 (green)', () => {
+  test('proof red with no node at or above the floor: one line naming 22.22 on stderr, nothing on stdout, exit 2, never 1 (green)', () => {
     const world = mkWorld();
     const { g, env } = belowFloor(world);
     const { code, out, err } = runCli(world, ['proof', 'red', 'src/x.js', '--', 'true'], { cwd: g.repo, env });
     expect(code, `exit 2, got: ${out}${err}`).toBe(2);
     expect(out, 'nothing on stdout').toBe('');
-    expect(err, 'the one floor line').toBe('red-proof: no node at or above 22.12 is installed\n');
+    expect(err, 'the one floor line').toBe('red-proof: no node at or above 22.22 is installed\n');
     cleanup(g.dir);
     cleanup(world.root);
   });
@@ -224,13 +224,13 @@ describe('workkit review, triage and ship items: the node floor', () => {
   ];
 
   for (const [args, prefix, exit] of FLOOR) {
-    test(`${args.join(' ')} with no node at or above the floor: one ${prefix} line naming 22.12 on stderr, nothing on stdout, exit ${exit}, no review or triage marker written, gh never asked`, () => {
+    test(`${args.join(' ')} with no node at or above the floor: one ${prefix} line naming 22.22 on stderr, nothing on stdout, exit ${exit}, no review or triage marker written, gh never asked`, () => {
       const world = mkWorld();
       const { g, env } = belowFloor(world);
       const { code, out, err } = runCli(world, args, { cwd: g.repo, env });
       expect(code, `exit ${exit}, got: ${out}${err}`).toBe(exit);
       expect(out, 'nothing on stdout').toBe('');
-      expect(err, 'the one floor line').toBe(`${prefix}: no node at or above 22.12 is installed\n`);
+      expect(err, 'the one floor line').toBe(`${prefix}: no node at or above 22.22 is installed\n`);
       const written = ['claude-review-marker', 'claude-review-full-marker', 'claude-triage-marker']
         .filter((kind) => fs.existsSync(path.join(world.workflowHome, 'markers', kind)));
       expect(written.join(', '), 'no review or triage marker written').toBe('');
@@ -263,10 +263,10 @@ describe('workkit state', () => {
   test('state names a repo\'s participation, the current folder by default', () => {
     const world = mkWorld();
     const repo = mkRepo({ optIn: true });
-    const named = runCli(world, ['state', shellPath(repo)]);
+    const named = runCli(world, ['state', shellPath(repo)], { env: withNode(world) });
     expect(named.code, `exit 0, got: ${named.said}`).toBe(0);
     expect(named.out, 'an opted-in repo').toBe('enabled\n');
-    const here = runCli(world, ['state'], { cwd: mkTmp('workkit-cli-') });
+    const here = runCli(world, ['state'], { cwd: mkTmp('workkit-cli-'), env: withNode(world) });
     expect(here.out, `a folder outside every repo, got: ${here.said}`).toBe('nogit\n');
     cleanup(repo);
     cleanup(world.root);

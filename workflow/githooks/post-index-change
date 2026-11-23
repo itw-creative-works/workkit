@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One of git's client-side hooks, each this same body, named by its file;
-# core.hooksPath names the folder (the heal, standards/githooks.sh). hook.sh's
+# core.hooksPath names the folder (the heal, standards/githooks.js). hook.sh's
 # wk_githook_run judges pre-commit and commit-msg (judge.js) and passes every
 # hook on to the repo's own.
 

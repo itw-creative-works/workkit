@@ -6,7 +6,9 @@ const fs = require('fs');
 const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
-const { NO_RC, shellPath, systemPathWith, spawnBash, spawnSystemBash } = require('../../lib/platform');
+const {
+  NO_RC, shellPath, systemPathWith, spawnBash, spawnSystemBash, joinPath,
+} = require('../../lib/platform');
 const { isCall } = require('../../lib/argv-log');
 const {
   SCRIPT, IGNORE_GLOB, cleanup, makeRepo, makeGhStub, readFile, ghCalls, binDirWithout,
@@ -35,21 +37,28 @@ describe('standards.sh: offline and unauthenticated', () => {
     cleanup(repo); cleanup(binDir);
   });
 
-  test('no jq on PATH: only the label step is skipped, local heals run', () => {
+  test('no jq on PATH: the label step still runs, local heals run, and the hook layer check names jq', () => {
     const repo = makeRepo();
     const binDir = binDirWithout('jq');
+    // The mirror keeps this machine's gh, so the stub goes ahead of it.
+    const stub = makeGhStub();
     const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
-      env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')) },
+      env: {
+        PATH: joinPath(stub.binDir, binDir),
+        WORKFLOW_HOME: shellPath(path.join(binDir, 'workflow-home')),
+        WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'claude-home')),
+      },
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
     });
     const stdout = (res.stdout || '') + (res.stderr || '');
-    expect(res.status, 'exit 0').toBe(0);
-    expect(stdout.includes('jq not installed'), `says why the label step was skipped, got: ${stdout}`).toBeTruthy();
+    expect(res.status, `exit 0, got: ${stdout}`).toBe(0);
+    expect(ghCalls(stub).some((c) => isCall(c, 'label', 'list')), `the label step read the labels, got: ${stdout}`).toBe(true);
+    expect(stdout.includes('hooks: the hook layer needs jq'), `the gh shim's need of jq is still named, got: ${stdout}`).toBeTruthy();
     expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'templates still installed').toBeTruthy();
     expect(fs.existsSync(path.join(repo, W, 'capture.md')), 'the capture file is still created').toBeTruthy();
     expect(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed').toBeTruthy();
-    cleanup(repo); cleanup(binDir);
+    cleanup(repo); cleanup(binDir); cleanup(stub.dir);
   });
 
   test('gh present but unauthenticated: skipped without any label call', () => {

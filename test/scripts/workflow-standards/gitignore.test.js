@@ -9,7 +9,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  SCRIPT, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION, cleanup, makeRepo, makeGhStub,
+  IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION, cleanup, makeRepo, makeGhStub,
   readFile, runScript,
 } = require('./helpers');
 
@@ -88,10 +88,8 @@ describe('standards.sh: .workkit/ in .gitignore', () => {
 });
 
 describe('standards.sh: the .gitignore basics', () => {
-  // The two entries every repo needs, read from the engine so the suite asks
-  // for whatever the engine actually heals.
-  const BASICS = /^GITIGNORE_BASICS="([^"]+)"/m
-    .exec(fs.readFileSync(SCRIPT, 'utf8'))[1].split(' ');
+  // The two entries every repo needs, in the order the heal names them.
+  const BASICS = ['.DS_Store', '.env'];
   const countLine = (text, entry) =>
     (text.match(new RegExp(`^${entry.replace(/\./g, '\\.')}$`, 'gm')) || []).length;
 

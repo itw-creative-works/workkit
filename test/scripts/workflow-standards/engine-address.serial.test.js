@@ -9,10 +9,10 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE, start,
 } = require('../../lib/harness');
 const {
-  BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, joinPath, spawnBash,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, spawnBash, execFileSync,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith, copyDefaults,
+  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith, copyKitSiblings,
 } = require('./helpers');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
@@ -83,28 +83,28 @@ describe("standards.sh: the engine's address", () => {
     cleanup(claude);
   });
 
-  // Git Bash without symlink rights answers `ln -s` with a copy and exit 0. A
-  // copy hides the marker scripts one level above the engine folder, so every
-  // skill's fallback resolves into ~/.claude. The `ln` stub below is that
-  // machine, on this one.
-  test('an `ln` that copies instead of linking: the copy is removed and named', () => {
+  // Windows refuses a link to a user without symlink rights, and the heal names
+  // the fix. The runner holds the rights, so a deny on the claude home is that
+  // refusal here.
+  test('a link Windows refuses: nothing is left at the address, and the line names Developer Mode', {
+    skip: !IS_WINDOWS && 'only Windows refuses a link for want of Developer Mode, and the heal reads the platform it runs on',
+  }, () => {
     const repo = makeRepo();
     const { claude } = claudeHomeWith();
-    const bin = mkTmp('wf-std-');
-    stubTool(bin, 'ln', [
-      '#!/bin/bash',
-      '# Git Bash without symlink rights: a copy, and exit 0.',
-      'dst="${@: -1}"; src="${@: -2:1}"',
-      'cp -R "$src" "$dst"',
-    ]);
-    const link = path.join(claude, 'workkit');
-    const { output } = runScript(repo, { claudeHome: claude, pathPrefix: bin });
-    expect(!fs.existsSync(link), `the copy is removed, not left at the address, got: ${output}`).toBeTruthy();
-    expect(output.includes('engine:') && output.includes(gitPath(link)),
-      `and the human is told, naming the address, got: ${output}`).toBeTruthy();
-    expect(/symlink/.test(output), `and what is wrong with it, got: ${output}`).toBeTruthy();
-    expect(!output.includes('engine: linked'), `never reported as linked, got: ${output}`).toBeTruthy();
-    cleanup(repo); cleanup(claude); cleanup(bin);
+    const icacls = path.join(process.env.SystemRoot, 'System32', 'icacls.exe');
+    const everyone = '*S-1-1-0';
+    execFileSync(icacls, [claude, '/deny', `${everyone}:(WD,AD)`], { timeout: SPAWN_DEADLINE });
+    let res;
+    try {
+      res = runScript(repo, { claudeHome: claude });
+    } finally {
+      execFileSync(icacls, [claude, '/remove:d', everyone], { timeout: SPAWN_DEADLINE });
+    }
+    expect(res.code, `the heal carries on: ${res.output}`).toBe(0);
+    expect(fs.lstatSync(path.join(claude, 'workkit'), { throwIfNoEntry: false }), 'no link and no copy at the address').toBe(undefined);
+    const line = res.output.split('\n').find((l) => l.includes('engine:'));
+    expect(!!line && line.includes('turn on Developer Mode or run as administrator'), `one engine line names the fix, got: ${res.output}`).toBeTruthy();
+    cleanup(repo); cleanup(claude);
   });
 
   test('a REAL directory at the address is never replaced', () => {
@@ -182,7 +182,7 @@ describe("standards.sh: the engine's address", () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    copyDefaults(copyRoot);
+    copyKitSiblings(copyRoot);
     const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
         ...process.env,
@@ -207,7 +207,7 @@ describe("standards.sh: the engine's address", () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    copyDefaults(copyRoot);
+    copyKitSiblings(copyRoot);
     mkOriginRepo(copyRoot, 'https://github.com/someone/not-the-kit.git');
     const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
       env: {
@@ -231,7 +231,7 @@ describe("standards.sh: the engine's address", () => {
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
-    copyDefaults(copyRoot);
+    copyKitSiblings(copyRoot);
     mkOriginRepo(copyRoot, 'git@github.com:ITW-Creative-Works/workkit.git');
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
     const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {

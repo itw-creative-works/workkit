@@ -7,7 +7,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which, joinPath, cygpathStub,
+  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which, joinPath, cygpathStub, spawnSync,
 } = require('../../lib/platform');
 const {
   isCall, fmtCalls, recordArgv, readArgv,
@@ -16,6 +16,10 @@ const {
   WORKFLOW_DIR, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
   writeStub, mkSetupKit, mkPartialKit,
 } = require('./helpers');
+
+// The world's env with a scratch npmrc and this suite's node on PATH after the
+// world's stubs, so a global gh or claude beside that node never answers.
+const withNode = (world) => ({ ...withNpm(world).env, PATH: joinPath(world.env.PATH, NODE_DIR) });
 
 describe('workkit setup', () => {
   test('a machine without the plugin has it installed from this checkout', () => {
@@ -61,7 +65,7 @@ describe('workkit setup', () => {
     const world = mkWorld();
     const { kit, script } = mkSetupKit();
     const repo = mkRepo();
-    const { code, out } = runCli(world, ['setup'], { cwd: repo, script });
+    const { code, out } = runCli(world, ['setup'], { cwd: repo, script, env: withNode(world) });
     expect(code, 'it finishes rather than waiting for an answer').toBe(0);
     expect(out.includes('`workkit enable` joins it'), `and hands over the command, got: ${out}`).toBeTruthy();
     expect(!fs.existsSync(path.join(repo, W)), 'a repo that never answered is not written to').toBeTruthy();
@@ -72,20 +76,21 @@ describe('workkit setup', () => {
     const world = mkWorld();
     const { kit, script } = mkSetupKit();
     const repo = mkRepo({ optIn: true });
-    const { out } = runCli(world, ['setup'], { cwd: repo, script });
+    const { out } = runCli(world, ['setup'], { cwd: repo, script, env: withNode(world) });
     expect(out.includes('is in the workflow'), `it reports the state, got: ${out}`).toBeTruthy();
     expect(!out.includes('`workkit enable` joins it'), 'and asks nothing').toBeTruthy();
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
   // `setup` at the terminal seam from an undecided repo, the answers on stdin.
-  // The world has no node, no home repo and no login, so every other question
-  // is a named skip and the one answer goes to the repo's.
+  // The world has no home repo and no login, so its node answers the repo's state
+  // and the one question before the repo's is the sign-in's, declined so no device
+  // flow starts; the answer given goes to the repo's.
   const repoQuestion = (input) => {
     const world = mkWorld();
     const { kit, script } = mkSetupKit();
     const repo = mkRepo();
-    const res = inCli(world, `${AT_TERMINAL}\ncd ${JSON.stringify(shellPath(repo))}\ncmd_setup`, { entry: script, input });
+    const res = inCli(world, `${AT_TERMINAL}\ncd ${JSON.stringify(shellPath(repo))}\ncmd_setup`, { entry: script, input: `n\n${input}`, env: withNode(world) });
     return { ...res, repo, done: () => { cleanup(world.root); cleanup(kit); cleanup(repo); } };
   };
 
@@ -127,8 +132,9 @@ describe('workkit setup', () => {
     const { kit, script } = mkSetupKit();
     fs.mkdirSync(world.claudeHome, { recursive: true });
     const repo = mkRepo({ optIn: true });
-    runCli(world, ['setup'], { cwd: repo, script });
-    const { code, said } = runCli(world, ['setup'], { cwd: repo, script });
+    const env = withNode(world);
+    runCli(world, ['setup'], { cwd: repo, script, env });
+    const { code, said } = runCli(world, ['setup'], { cwd: repo, script, env });
     expect(code, 'exit 0').toBe(0);
     // `setup` has no quiet variant, so the verbs are the signal here: QUIET is
     // 0 and an action and a skip are the same shape of line.
@@ -371,6 +377,38 @@ describe('workkit setup: the site publish', () => {
       expect(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`).toBeTruthy();
       cleanup(world.root); cleanup(kit);
     }
+  });
+});
+
+describe('workkit setup: the git hooks line for this repo', () => {
+  // `setup` from an enabled repo, node and a scratch npmrc on the world's PATH,
+  // and the repo's core.hooksPath after it, '' when unset.
+  const setupIn = (prepare) => {
+    const world = mkWorld({ pluginInstalled: true });
+    const { kit, script } = mkSetupKit();
+    const repo = mkRepo({ optIn: true });
+    prepare(repo);
+    const res = runCli(world, ['setup'], { cwd: repo, script, env: withNode(world) });
+    const set = spawnSync('git', ['config', '--local', 'core.hooksPath'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+    const lines = (text) => text.split('\n');
+    return { ...res, set, kit, outLines: lines(res.out), errLines: lines(res.err), done: () => { cleanup(world.root); cleanup(kit); cleanup(repo); } };
+  };
+
+  test('hooks not set: setup sets the kit\'s, and its set and installed lines name the path on stdout at its indent', () => {
+    const run = setupIn(() => {});
+    expect(run.set !== '' && fs.realpathSync(run.set), `core.hooksPath is the kit's githooks, got: ${run.set}`)
+      .toBe(fs.realpathSync(path.join(run.kit, 'workflow', 'githooks')));
+    expect(run.outLines.includes(`  ✓ git hooks: set core.hooksPath → ${run.set}`), `the set line, got: ${run.out}`).toBe(true);
+    expect(run.outLines.includes(`  ✓ git hooks: installed (${run.set})`), `the installed line names it, got: ${run.out}`).toBe(true);
+    run.done();
+  });
+
+  test('hooks that cannot be set: the warning naming workkit setup, on stderr at its indent', () => {
+    // git refuses every config write while another writer's lock file stands.
+    const run = setupIn((repo) => fs.writeFileSync(path.join(repo, '.git', 'config.lock'), ''));
+    expect(run.set, 'nothing was set').toBe('');
+    expect(run.errLines.includes('  ⚠ git hooks: not installed; run `workkit setup`'), `the warning, got: ${run.err}`).toBe(true);
+    run.done();
   });
 });
 

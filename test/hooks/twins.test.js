@@ -1,27 +1,26 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the
-// suite log's path, the test script, the marker path, the color gate, the plain mutex, the marker sweep, the opt-in read (the gate's and the heal's), the session rule, one setting, the machine folder,
-// the hooks log, the slug, the public slug, git's value-taking global options. Plus one
-// shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
-// And one export with no shell side, the CHANGELOG test.
+// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the suite log's path, the test script,
+// the marker path, the color gate, the voice lines, the plain mutex, the marker sweep, the opt-in read, the session rule, one setting, the machine folder and tower,
+// the hooks log, the slug, the native path, the repo slug and kit checkout, the clone rank, the atomic link, the safe JSON edit, the kit's hooks folder, git's value-taking global options.
+// Plus one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
+// And three with no shell side, the repo flag, the public slug and the CHANGELOG test.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, needs, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, spawnSystemBash, nodeEnv,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, spawnSystemBash, nodeEnv, samePath,
 } = require('../lib/platform');
-const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
+const { mkRepo, mkOriginRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods } = require('../lib/mods-inputs');
 const commitGate = require('./commit-gate/helpers');
 const { runLib } = require('../lib/hook-lib');
 const { agedFile, daysAgo } = require('../lib/workflow-home');
 const { readOrNull } = require('../../workflow/lib/read');
-const { makeRepo: healRepo, runScript: healRun, cleanup: healCleanup } = require('../scripts/workflow-standards/helpers');
 
 const KIT = path.join(__dirname, '..', '..');
 const lib = (...parts) => shellPath(path.join(KIT, ...parts));
@@ -60,6 +59,23 @@ const bashLines = (file, fn, fixtures, env = {}) => {
 };
 
 /**
+ * Each [first, second] pair through `fn` in one bash that sources `files` (one or a list, in order):
+ * what it printed where it exits 0, null where it does not, one per pair, in order.
+ */
+const bashPairs = (files, fn, pairs, env = {}) => {
+  const sources = [].concat(files).map((f) => `. "${f}"\n`).join('');
+  const script = `${sources}while (( $# >= 2 )); do if out="$(${fn} "$1" "$2")"; then printf '1%s\\n' "$out"; else printf '0\\n'; fi; shift 2; done`;
+  const res = spawnSystemBash([...NO_RC, '-c', script, 'pairs', ...pairs.flat()], {
+    env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env },
+    encoding: 'utf8',
+    timeout: SPAWN_DEADLINE,
+  });
+  const lines = (res.stdout || '').replace(/\r/g, '').split('\n').slice(0, -1);
+  expect(lines.length, `one answer per pair from ${fn}, stderr: ${res.stderr}`).toBe(pairs.length);
+  return lines.map((l) => (l[0] === '1' ? l.slice(1) : null));
+};
+
+/**
  * A scratch file holding the named pieces of a shell script that cannot be sourced (it runs on load): each
  * `name() {` function through its closing `}` line, or the one `NAME=(...)` line, then `extra` lines. Bash
  * runs them as written; returns the file's shell path, for bashLines. `dir` is the folder the file goes in.
@@ -95,6 +111,7 @@ const SETTINGS = [
   null, '', '{}', '{ "version": 1 }\n', '{ "enabled": true }\n', '{ "version": 1, "enabled": false }\n',
   '{"enabled":false}', '{ "enabled" :\tfalse }', '{ "enabled": "false" }', '{ "enabled": true, "x": { "enabled": false } }',
   '{\n  "version": 1,\n  "enabled": false\n}\n', '{ "enabled":\nfalse }', '{ "enabled": "true" }',
+  '{ "enabled": true }{', '{ "enabled": false }{', '{ "enabled": true } { "enabled": true }',
 ];
 
 /** One scratch repo root per settings text, the shell side's input. */
@@ -196,7 +213,7 @@ describe('twins: the marker path, wk_marker_path in workflow/lib/platform.sh aga
   });
 });
 
-describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against colorOn in tower/api/lib/log.js', () => {
+describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against colorOn in workflow/lib/voice.js', () => {
   // Environments with no terminal on stdout, each the gate's variables alone; a TERM is named
   // wherever one matters, since bash sets a dumb one when none is given.
   const ENVS = [
@@ -207,7 +224,7 @@ describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against co
   const GATE_VARS = ['WORKKIT_COLOR', 'NO_COLOR', 'TERM', 'FORCE_COLOR'];
 
   test('wk_color_on and colorOn give every environment the same answer on a stdout that is no terminal', () => {
-    const { colorOn } = require(path.join(KIT, 'tower', 'api', 'lib', 'log.js'));
+    const { colorOn } = require(path.join(KIT, 'workflow', 'lib', 'voice.js'));
     const shell = ENVS.map((vars) => {
       const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'voice.sh')}"\nif wk_color_on; then echo 1; else echo 0; fi`], {
         env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...vars }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
@@ -228,6 +245,56 @@ describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against co
     agree(ENVS.map((_, i) => i), shell, (i) => node[i], `the environments by index, colorOn's answers ${JSON.stringify(node)}`);
     expect(JSON.stringify(shell.slice(0, 3)), 'nothing set is off, the gate forced on is on, forced off is off').toBe(JSON.stringify([false, true, false]));
     expect(shell[4], 'NO_COLOR wins over the forced gate').toBe(false);
+  });
+});
+
+describe('twins: the voice lines, wk_ok, wk_skip, wk_info, wk_warn and wk_warn_lines in workflow/lib/voice.sh against workflow/lib/voice.js', () => {
+  // A task split, two clauses no task, a percent and a backslash, a colon past the task.
+  const MESSAGES = ['labels: 3 created', 'Two words: no task', '50% of a\\b', 'a: b: c'];
+  // wk_warn_lines' text: a prefixed line, a blank, a bare one, one already prefixed with no space.
+  const [TOPIC, TEXT] = ['hooks', 'hooks: set\n\nmoved by a script\nhooks:x'];
+  // The variables the lines read, each environment beside nothing else.
+  const ENVS = {
+    plain: {},
+    colored: { WORKKIT_COLOR: '1', TERM: 'xterm-256color' },
+    quiet: { QUIET: '1' },
+    indented: { WK_LOG_INDENT: '  ' },
+    stderr: { WK_LOG_STDERR: '1', WK_LOG_INDENT: '    ' },
+    all: { QUIET: '1', WORKKIT_COLOR: '1', TERM: 'xterm-256color', WK_LOG_INDENT: '  ', WK_LOG_STDERR: '1' },
+  };
+  const BASH_VOICE = `. "${lib('workflow', 'lib', 'voice.sh')}"
+wk_palette
+topic="$1" text="$2"; shift 2
+for m in "$@"; do wk_ok "$m"; wk_skip "$m"; wk_info "$m"; wk_warn "$m"; done
+wk_warn_lines "$topic" "$text"`;
+  const NODE_VOICE = `const v = require(${JSON.stringify(path.join(KIT, 'workflow', 'lib', 'voice.js'))});
+const [topic, text, ...messages] = process.argv.slice(1);
+for (const m of messages) { v.ok(m); v.skip(m); v.info(m); v.warn(m); }
+v.warnLines(topic, text);`;
+  const say = (side, vars) => {
+    const env = { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...vars };
+    const opts = { env, encoding: 'utf8', timeout: SPAWN_DEADLINE };
+    const res = side === 'bash'
+      ? spawnSystemBash([...NO_RC, '-c', BASH_VOICE, 'voice', TOPIC, TEXT, ...MESSAGES], opts)
+      : spawnSync(process.execPath, ['-e', NODE_VOICE, TOPIC, TEXT, ...MESSAGES], opts);
+    expect(res.status, `${side} said its lines under ${JSON.stringify(vars)}, stderr: ${res.stderr}`).toBe(0);
+    return { out: res.stdout.replace(/\r/g, ''), err: res.stderr.replace(/\r/g, '') };
+  };
+
+  test('both print every line alike, plain, colored, quiet, indented and on stderr, each to the same stream', () => {
+    const bash = Object.fromEntries(Object.entries(ENVS).map(([name, vars]) => [name, say('bash', vars)]));
+    const each = (glyphs) => MESSAGES.flatMap((m) => glyphs.map((g) => `${g} ${m}\n`)).join('');
+    const warned = '⚠ hooks: set\n⚠ hooks: moved by a script\n⚠ hooks:x\n';
+    expect(bash.plain.out, 'plain: the three reporting lines per message on stdout').toBe(each(['✓', '·', '›']));
+    expect(bash.plain.err, 'plain: the warnings on stderr, each line of the text under its topic').toBe(each(['⚠']) + warned);
+    expect(bash.quiet.out, 'quiet: only the acted line').toBe(each(['✓']));
+    expect(bash.colored.out.split('\n')[0], 'colored: the glyph and the task painted')
+      .toBe('\x1b[1m\x1b[0;32m✓\x1b[0m \x1b[1mlabels:\x1b[0m 3 created');
+    expect(bash.stderr.out, 'WK_LOG_STDERR: nothing on stdout').toBe('');
+    expect(bash.stderr.err.split('\n')[0], 'WK_LOG_STDERR: the indent leads the line').toBe('    ✓ labels: 3 created');
+    for (const [name, vars] of Object.entries(ENVS)) {
+      expect(JSON.stringify(say('node', vars)), `${name}: voice.js's stdout and stderr against voice.sh's`).toBe(JSON.stringify(bash[name]));
+    }
   });
 });
 
@@ -299,8 +366,8 @@ describe('twins: the opt-in read, wk_opted_in in workflow/lib/participation.sh a
     const shell = shellOptedIn(roots);
     const js = (i) => mods('gate').settingsOptedIn(readOrNull(fileOf(roots[i])));
     agree(SETTINGS.map((_, i) => i), shell, js, 'the settings texts (by index into SETTINGS)');
-    expect(JSON.stringify(shell), 'no file, an empty file, {}, a version alone and every false or non-true value are out')
-      .toBe(JSON.stringify([false, false, false, false, true, false, false, false, false, true, false, false, false]));
+    expect(JSON.stringify(shell), 'no file, an empty file, {}, a version alone, every false or non-true value, a broken tail and a second value are out')
+      .toBe(JSON.stringify([false, false, false, false, true, false, false, false, false, true, false, false, false, false, false, false]));
   });
 
   test('settingsOptedIn reads only the top-level enabled key, and text that does not parse is out', () => {
@@ -353,19 +420,24 @@ describe('twins: the session rule, wk_session_judges in workflow/lib/participati
   });
 });
 
-describe('twins: the opt-in read, the heal\'s --state (resolve_state in workflow/standards/state.sh) against settingsOptedIn', () => {
-  test('the heal reads a repo enabled exactly where settingsOptedIn reads it in, and a string enabled is no answer it offers on', () => {
-    const states = SETTINGS.map((text) => {
-      const repo = healRepo({ settings: text });
-      const state = healRun(repo, { args: ['--state'] }).stdout.trim();
-      healCleanup(repo);
-      return state;
-    });
-    const js = (i) => mods('gate').settingsOptedIn(SETTINGS[i]);
-    agree(SETTINGS.map((_, i) => i), states.map((s) => s === 'enabled'), js, 'the settings texts (by index into SETTINGS)');
-    for (const text of ['{ "enabled": "false" }', '{ "enabled": "true" }']) {
-      expect(states[SETTINGS.indexOf(text)], `${text}: no answer, so the heal offers`).toBe('undecided');
-    }
+describe('the repo flag, repoFlag in hooks/mods/gate.js', () => {
+  test('a boolean enabled is true or false, no boolean one absent, the whole text not one value unreadable; settingsOptedIn is in for true alone', () => {
+    const { repoFlag } = mods('gate');
+    // [settings text, its answer].
+    const FLAGS = [
+      ['{ "enabled": true }\n', 'true'], ['{"enabled":false}', 'false'], ['{ "enabled": true, "x": { "enabled": false } }', 'true'],
+      ['{ "version": 1 }\n', 'absent'], ['{}', 'absent'], ['', 'absent'], ['  \n', 'absent'], ['null', 'absent'],
+      ['{ "enabled": "true" }', 'absent'], ['{ "enabled": null }', 'absent'], ['not json', 'unreadable'], ['{ "enabled": tru', 'unreadable'],
+      ['{ "enabled": true }{', 'unreadable'], ['{ "enabled": false }{', 'unreadable'],
+      ['{ "enabled": true } { "enabled": true }', 'unreadable'], ['{ "enabled": false }\n{}\n', 'unreadable'],
+      [null, 'unreadable'], ['[{ "enabled": true }]', 'unreadable'], ['1', 'unreadable'],
+    ];
+    const differ = FLAGS.flatMap(([text, want]) => (repoFlag(text) === want ? [] : [`${JSON.stringify(text)}: ${repoFlag(text)}, not ${want}`]));
+    expect(differ.join('; '), 'the settings texts repoFlag answers wrongly').toBe('');
+    const { settingsOptedIn } = mods('gate');
+    const optedIn = FLAGS.flatMap(([text]) => (settingsOptedIn(text) ? [text] : []));
+    expect(JSON.stringify(optedIn), 'settingsOptedIn is in exactly where repoFlag answers true')
+      .toBe(JSON.stringify(FLAGS.flatMap(([text, want]) => (want === 'true' ? [text] : []))));
   });
 });
 
@@ -439,6 +511,29 @@ describe('twins: the machine folder, wk_user_dir against userDir in hooks/mods/l
       } finally {
         if (saved === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = saved;
       }
+    }
+  });
+
+  test('wk_tower_dir and towerDir name one tower folder for every WORKFLOW_HOME and HOME', () => {
+    const { towerDir } = require(path.join(KIT, 'workflow', 'user-dir.js'));
+    const shell = HOMES.map(([workflowHome, home]) => {
+      const env = { PATH: SYSTEM_PATH, HOME: home, ...(workflowHome === undefined ? {} : { WORKFLOW_HOME: workflowHome }) };
+      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_tower_dir`], {
+        env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      });
+      return (res.stdout || '').replace(/\r?\n$/, '');
+    });
+    expect(JSON.stringify(shell.slice(0, 2)), 'tower under the machine folder, WORKFLOW_HOME unset and set')
+      .toBe(JSON.stringify(['/w/home/.workkit/tower', '/w/moved/tower']));
+    const saved = process.env.WORKFLOW_HOME;
+    try {
+      agree(HOMES.map((_, i) => i), shell, (i) => {
+        const [workflowHome, home] = HOMES[i];
+        if (workflowHome === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = workflowHome;
+        return towerDir(nodeUserDir(home)).replace(/\\/g, '/');
+      }, `wk_tower_dir against towerDir (by index into ${JSON.stringify(HOMES)})`);
+    } finally {
+      if (saved === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = saved;
     }
   });
 
@@ -517,25 +612,311 @@ describe('twins: the slug, wk_slug_from_remote in workflow/lib/slug.sh against s
   });
 });
 
-describe('twins: the public slug, PUBLIC_SLUG_RE in workflow/standards/labels.sh against SLUG_RE and the Public: link in workflow/public/lib.js', () => {
-  // `public` key values; the first four are slugs.
+describe('the public slug, SLUG_RE against the Public: link in workflow/public/lib.js', () => {
+  // [`public` key value, whether it is a slug]: an owner of letters, digits and hyphens; a name that adds `.` and `_`.
   const PUBLIC_KEYS = [
-    'acme/public', 'Acme-Co/free-proxy-list', 'a1/b.c_d-e', 'acme/.github', 'acme', '', 'acme/', '/public',
-    'acme/public/x', 'ac me/public', 'acme_co/public', 'acme/pub$lic', 'https://github.com/acme/public',
+    ['acme/public', true], ['Acme-Co/free-proxy-list', true], ['a1/b.c_d-e', true], ['acme/.github', true],
+    ['acme', false], ['', false], ['acme/', false], ['/public', false], ['acme/public/x', false], ['ac me/public', false],
+    ['acme_co/public', false], ['acme/pub$lic', false], ['https://github.com/acme/public', false],
   ];
 
-  test('the heal and the verbs take the same values as a slug, and the Public: link reads those alone', () => {
-    const script = `. "${lib('workflow', 'standards', 'labels.sh')}"
-while IFS= read -r p; do if [[ "$p" =~ $PUBLIC_SLUG_RE ]]; then echo 1; else echo 0; fi; done <<<"$FIXTURES"`;
-    const res = spawnSystemBash([...NO_RC, '-c', script], {
-      env: { PATH: SYSTEM_PATH, FIXTURES: PUBLIC_KEYS.join('\n') }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    const shell = (res.stdout || '').split('\n').filter(Boolean).map((a) => a === '1');
-    expect(shell.length, `one answer per value, stderr: ${res.stderr}`).toBe(PUBLIC_KEYS.length);
-    expect(JSON.stringify(shell.slice(0, 5)), 'the four slugs pass, a bare owner does not').toBe(JSON.stringify([true, true, true, true, false]));
+  test('SLUG_RE takes the slugs alone, and the Public: link reads a link to those alone', () => {
     const { SLUG_RE, publicLink } = require(path.join(KIT, 'workflow', 'public', 'lib.js'));
-    agree(PUBLIC_KEYS, shell, (k) => SLUG_RE.test(k), 'PUBLIC_SLUG_RE against SLUG_RE');
-    agree(PUBLIC_KEYS, shell, (k) => publicLink(`Public: https://github.com/${k}/issues/1`) !== null, 'PUBLIC_SLUG_RE against the Public: link');
+    const wrong = PUBLIC_KEYS.flatMap(([key, slug]) => [
+      ...(SLUG_RE.test(key) === slug ? [] : [`SLUG_RE ${JSON.stringify(key)}: ${!slug}`]),
+      ...((publicLink(`Public: https://github.com/${key}/issues/1`) !== null) === slug ? [] : [`the Public: link to ${JSON.stringify(key)}: ${!slug}`]),
+    ]);
+    expect(wrong.join('; '), 'the values read wrongly').toBe('');
+  });
+});
+
+describe('twins: the native path, wk_native_path in workflow/lib/platform.sh against nativePath in workflow/lib/platform.js', () => {
+  test('both spell every path alike on this machine: unchanged off Windows, git\'s drive form on it', () => {
+    const PATHS = ['/c/Users/x/repo', 'C:/Users/x', '/w/a b/repo', 'rel/dir', '/d/a/x/'];
+    const shell = bashLines(lib('workflow', 'lib', 'platform.sh'), 'wk_native_path', PATHS);
+    expect(shell[0], 'the drive-mount spelling').toBe(IS_WINDOWS ? 'C:/Users/x/repo' : '/c/Users/x/repo');
+    const { nativePath } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
+    agree(PATHS, shell, (p) => nativePath(p), 'wk_native_path against nativePath');
+  });
+});
+
+/** A new folder at `dir`, a git repo with `origin` as its remote, or with none when `origin` is undefined. */
+const originRepo = (dir, origin) => {
+  fs.mkdirSync(dir);
+  if (origin !== undefined) return mkOriginRepo(dir, origin);
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  return dir;
+};
+
+describe('twins: the repo slug and the kit checkout, wk_repo_slug and wk_is_kit_checkout in workflow/lib/slug.sh against workflow/lib/repo.js', () => {
+  // [name, origin]: undefined adds no origin. The kit is any owner's workkit, any letter case.
+  const ORIGINS = [
+    ['ssh', 'git@github.com:acme/workkit.git'], ['cased', 'https://github.com/ITW-Creative-Works/WorkKit'],
+    ['longer', 'https://github.com/acme/workkit-extra.git'], ['owner', 'https://github.com/workkit/widgets'],
+    ['local', '/srv/git/acme/workkit.git'], ['bare', undefined],
+  ];
+  const folders = () => {
+    const base = mkTmp('twins-repo-');
+    const dirs = Object.fromEntries(ORIGINS.map(([name, origin]) => [name, originRepo(path.join(base, name), origin)]));
+    dirs.sub = path.join(dirs.ssh, 'sub', 'deeper');
+    fs.mkdirSync(dirs.sub, { recursive: true });
+    dirs.plain = path.join(base, 'plain');
+    fs.mkdirSync(dirs.plain);
+    dirs.missing = path.join(base, 'missing');
+    return dirs;
+  };
+
+  test('wk_repo_slug and repoSlug name the same origin slug for every folder, and nothing where none is', () => {
+    const dirs = folders();
+    const names = Object.keys(dirs);
+    const shell = bashLines(lib('workflow', 'lib', 'slug.sh'), 'wk_repo_slug', names.map((n) => shellPath(dirs[n])));
+    expect(JSON.stringify(shell), `each folder's slug, by ${names.join(', ')}`).toBe(JSON.stringify([
+      'acme/workkit', 'ITW-Creative-Works/WorkKit', 'acme/workkit-extra', 'workkit/widgets', 'acme/workkit', '', 'acme/workkit', '', '',
+    ]));
+    const { repoSlug } = require(path.join(KIT, 'workflow', 'lib', 'repo.js'));
+    agree(names, shell, (n) => repoSlug(dirs[n]), 'wk_repo_slug against repoSlug (by folder name)');
+  });
+
+  test('wk_is_kit_checkout and isKitCheckout read the same folders as a clone of the kit', () => {
+    const dirs = { ...folders(), empty: '' };
+    const names = Object.keys(dirs);
+    const shell = bashAnswers(lib('workflow', 'lib', 'slug.sh'), 'wk_is_kit_checkout', names.map((n) => (dirs[n] && shellPath(dirs[n]))));
+    expect(JSON.stringify(shell), `a workkit origin, its subfolder and a local workkit path are the kit, nothing else is, by ${names.join(', ')}`)
+      .toBe(JSON.stringify([true, true, false, false, true, false, true, false, false, false]));
+    const { isKitCheckout } = require(path.join(KIT, 'workflow', 'lib', 'repo.js'));
+    agree(names, shell, (n) => isKitCheckout(dirs[n]), 'wk_is_kit_checkout against isKitCheckout (by folder name)');
+  });
+});
+
+describe('twins: the clone rank, wk_clone_outranks in workflow/lib/platform.sh against cloneOutranks in workflow/lib/platform.js', () => {
+  /** A kit folder whose manifest names `name`, at `dir`. */
+  const manifested = (dir, name) => {
+    fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), `${JSON.stringify({ name })}\n`);
+    return dir;
+  };
+
+  test('both rank a clone over the cached kit alike, the Claude home named directly or through a link', () => {
+    const base = mkTmp('twins-outranks-');
+    const claude = path.join(base, 'claude');
+    const cached = manifested(path.join(claude, 'plugins', 'cache', 'itw', 'workkit', '1.2.3'), 'workkit');
+    const other = manifested(path.join(claude, 'plugins', 'cache', 'itw', 'other', '1.0.0'), 'other');
+    const clone = manifested(originRepo(path.join(base, 'clone'), 'git@github.com:acme/workkit.git'), 'workkit');
+    const widgets = originRepo(path.join(base, 'widgets'), 'https://github.com/acme/widgets');
+    const linked = path.join(base, 'claude-link');
+    fs.symlinkSync(claude, linked, 'junction');
+    // [kit dir, linked dir]: the cached kit and a clone outrank; another plugin, a kit out of the cache, a non-kit or no clone do not.
+    const PAIRS = [
+      [cached, clone], [cached, widgets], [cached, ''], [cached, path.join(base, 'missing')],
+      [other, clone], [clone, clone], [path.join(base, 'gone'), clone],
+    ];
+    const sources = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'slug.sh')];
+    const homes = [claude, linked];
+    const shell = homes.map((home) => bashPairs(sources, 'wk_clone_outranks', PAIRS.map((pair) => pair.map((p) => (p && shellPath(p)))),
+      { WORKFLOW_CLAUDE_HOME: shellPath(home) }).map((out) => out !== null));
+    for (const answers of shell) {
+      expect(JSON.stringify(answers), 'the cached kit with a clone alone outranks, the home named directly or through a link')
+        .toBe(JSON.stringify([true, false, false, false, false, false, false]));
+    }
+    const { cloneOutranks } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
+    const saved = process.env.WORKFLOW_CLAUDE_HOME;
+    try {
+      homes.forEach((home, h) => {
+        process.env.WORKFLOW_CLAUDE_HOME = home;
+        agree(PAIRS.map((_, i) => i), shell[h], (i) => cloneOutranks(...PAIRS[i]), `wk_clone_outranks against cloneOutranks (by index into the pairs), the home ${home}`);
+      });
+    } finally {
+      if (saved === undefined) delete process.env.WORKFLOW_CLAUDE_HOME; else process.env.WORKFLOW_CLAUDE_HOME = saved;
+    }
+  });
+
+  test('with no WORKFLOW_CLAUDE_HOME, inPluginCache reads the Claude home under HOME, as the shell does', () => {
+    const home = mkTmp('twins-cache-home-');
+    const cached = manifested(path.join(home, '.claude', 'plugins', 'cache', 'itw', 'workkit', '1.2.3'), 'workkit');
+    const { inPluginCache } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
+    const saved = { HOME: process.env.HOME, WORKFLOW_CLAUDE_HOME: process.env.WORKFLOW_CLAUDE_HOME };
+    try {
+      delete process.env.WORKFLOW_CLAUDE_HOME;
+      process.env.HOME = home;
+      expect(inPluginCache(cached), `the kit under ${home}/.claude/plugins/cache is the cached kit`).toBe(true);
+      const [shell] = bashAnswers(lib('workflow', 'lib', 'platform.sh'), 'wk_in_plugin_cache', [shellPath(cached)], { HOME: shellPath(home) });
+      expect(shell, 'and so it is to wk_in_plugin_cache').toBe(true);
+    } finally {
+      for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  });
+});
+
+/** What sits at `p`, one string: `link -> <target>`, `dir <names>`, `file <text>`, or `none`. */
+const whatsAt = (p) => {
+  let st;
+  try { st = fs.lstatSync(p); } catch { return 'none'; }
+  if (st.isSymbolicLink()) return `link -> ${fs.readlinkSync(p)}`;
+  if (st.isDirectory()) return `dir ${fs.readdirSync(p).sort().join(',')}`;
+  return `file ${fs.readFileSync(p, 'utf8')}`;
+};
+
+describe('twins: the atomic link, wk_link in workflow/lib/flows.sh and wk_mv_link in workflow/lib/platform.sh against link and mvLink in workflow/lib/link.js',
+  { skip: IS_WINDOWS && 'Windows makes no symlink without a privilege this run may lack' }, () => {
+    const linkJs = () => require(path.join(KIT, 'workflow', 'lib', 'link.js'));
+    /** `snippet` with platform.sh and flows.sh sourced; '1' or '0' for its exit. */
+    const shellAnswer = (snippet, env) => {
+      const res = runLib(`if ${snippet}; then echo 1; else echo 0; fi`, env, ['flows.sh']);
+      expect(res.code, `the shell answered, stderr: ${res.stderr}`).toBe(0);
+      return res.stdout.trim() === '1';
+    };
+
+    test('wk_link and link leave the same address, answer alike and leave no temp file: missing, pointing elsewhere, already right', () => {
+      const base = fs.realpathSync(mkTmp('twins-link-'));
+      const [target, other] = ['target', 'other'].map((name) => {
+        fs.mkdirSync(path.join(base, name));
+        return path.join(base, name);
+      });
+      // Each address's state before the call; `elsewhere` points at a folder, so a rename that follows it lands inside.
+      const STATES = { missing: null, elsewhere: other, right: target };
+      const sides = ['shell', 'node'].map((side) => Object.entries(STATES).map(([state, points]) => {
+        const dir = path.join(base, side, state);
+        fs.mkdirSync(dir, { recursive: true });
+        const address = path.join(dir, 'address');
+        if (points) fs.symlinkSync(points, address);
+        const answer = side === 'shell' ? shellAnswer('wk_link "$T" "$A"', { T: target, A: address }) : linkJs().link(target, address);
+        return `${state}: ${answer} ${whatsAt(address)}; folder ${whatsAt(dir)}; other ${whatsAt(other)}`;
+      }));
+      expect(JSON.stringify(sides[0]), 'the shell: every address now the link to the target, nothing else beside it')
+        .toBe(JSON.stringify(Object.keys(STATES).map((state) => `${state}: true link -> ${target}; folder dir address; other dir `)));
+      expect(JSON.stringify(sides[1]), 'link against wk_link').toBe(JSON.stringify(sides[0]));
+    });
+
+    test('wk_mv_link and mvLink move a link onto the same addresses alike, never into a folder an address points at', () => {
+      const base = fs.realpathSync(mkTmp('twins-mv-link-'));
+      const other = path.join(base, 'other');
+      fs.mkdirSync(other);
+      // The `to` address before the move; `from` is a link to `target`, or nothing for `gone`.
+      const STATES = ['missing', 'link to a folder', 'file', 'gone'];
+      const sides = ['shell', 'node'].map((side) => STATES.map((state, i) => {
+        const dir = path.join(base, side, String(i));
+        fs.mkdirSync(dir, { recursive: true });
+        const [from, to] = [path.join(dir, 'from'), path.join(dir, 'to')];
+        if (state !== 'gone') fs.symlinkSync('target', from);
+        if (state === 'link to a folder') fs.symlinkSync(other, to);
+        if (state === 'file') fs.writeFileSync(to, 'old\n');
+        const answer = side === 'shell' ? shellAnswer('wk_mv_link "$F" "$T"', { F: from, T: to }) : linkJs().mvLink(from, to);
+        return `${state}: ${answer} ${whatsAt(to)}; folder ${whatsAt(dir)}; other ${whatsAt(other)}`;
+      }));
+      expect(JSON.stringify(sides[0].slice(0, 3)), 'the shell: the link takes each address\'s place, the folder it pointed at untouched')
+        .toBe(JSON.stringify(STATES.slice(0, 3).map((state) => `${state}: true link -> target; folder dir to; other dir `)));
+      expect(JSON.stringify(sides[1]), 'mvLink against wk_mv_link').toBe(JSON.stringify(sides[0]));
+    });
+  });
+
+describe('twins: the safe JSON edit, wk_json_edit in workflow/lib/state.sh against editJson in workflow/lib/write.js', { skip: needs('jq') }, () => {
+  // [name, file text, jq filter, the same change in Node]: a change, a change that fails, a file that is no JSON.
+  const EDITS = [
+    ['a change', '{"a":1}', '.b = [2]', (value) => ({ ...value, b: [2] })],
+    ['a change that fails', '{"a":1}', 'error("refused")', () => { throw new Error('refused'); }],
+    ['a file that is no JSON', '{"a":', '.b = [2]', (value) => ({ ...value, b: [2] })],
+  ];
+  // Windows keeps no mode to compare.
+  const MODE = IS_WINDOWS ? 'no mode' : '640';
+  const modeOf = (file) => (IS_WINDOWS ? 'no mode' : (fs.statSync(file).mode & 0o777).toString(8));
+
+  test('both leave the same bytes and mode, answer alike and leave no temp file', () => {
+    const { editJson } = require(path.join(KIT, 'workflow', 'lib', 'write.js'));
+    const base = mkTmp('twins-json-edit-');
+    const sides = ['shell', 'node'].map((side) => EDITS.map(([name, text, filter, change], i) => {
+      const dir = path.join(base, side, String(i));
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'settings.json');
+      fs.writeFileSync(file, text);
+      fs.chmodSync(file, 0o640);
+      const answer = side === 'shell'
+        ? runLib('wk_json_edit "$F" "$J"', { F: shellPath(file), J: filter }, ['voice.sh', 'state.sh']).code === 0
+        : editJson(file, change);
+      return [name, answer, fs.readFileSync(file, 'utf8'), modeOf(file), whatsAt(dir)];
+    }));
+    expect(JSON.stringify(sides[0]), 'the shell: the change written whole as two-space JSON, the mode kept; each failure leaves the file as it was')
+      .toBe(JSON.stringify([
+        ['a change', true, '{\n  "a": 1,\n  "b": [\n    2\n  ]\n}\n', MODE, 'dir settings.json'],
+        ['a change that fails', false, '{"a":1}', MODE, 'dir settings.json'],
+        ['a file that is no JSON', false, '{"a":', MODE, 'dir settings.json'],
+      ]));
+    expect(JSON.stringify(sides[1]), 'editJson against wk_json_edit').toBe(JSON.stringify(sides[0]));
+  });
+});
+
+describe('twins: the kit\'s hooks folder, wk_githooks_kit, wk_githooks_kitlike and wk_githooks_spelled in workflow/lib/participation.sh against workflow/lib/participation.js', () => {
+  const sources = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
+  const participationJs = () => require(path.join(KIT, 'workflow', 'lib', 'participation.js'));
+
+  /** A hooks folder at `<dir>/<folder>` holding `files` (each name, executable unless `plain` names it). */
+  const hooksAt = (dir, folder, files, plain = []) => {
+    const at = path.join(dir, folder);
+    fs.mkdirSync(at, { recursive: true });
+    for (const name of files) fs.writeFileSync(path.join(at, name), '#!/bin/sh\n', { mode: plain.includes(name) || name.endsWith('.js') ? 0o644 : 0o755 });
+    return at;
+  };
+
+  /** The scratch world: a repo folder and every hooks folder a pair names, [name, root, folder] each. */
+  const world = () => {
+    const base = fs.realpathSync(mkTmp('twins-githooks-'));
+    const root = path.join(base, 'repo');
+    fs.mkdirSync(path.join(root, '.git', 'hooks'), { recursive: true });
+    const ALL = ['pre-commit', 'commit-msg', 'judge.js'];
+    const kitHooks = hooksAt(base, 'kit/workflow/githooks', ALL);
+    fs.symlinkSync(path.join(base, 'kit'), path.join(base, 'engine'), 'junction');
+    hooksAt(root, 'own/workflow/githooks', []);
+    const pairs = [
+      ['kit', root, kitHooks], ['relative', root, '../kit/workflow/githooks'], ['engine link', root, path.join(base, 'engine', 'workflow', 'githooks')],
+      ['no judge', root, hooksAt(base, 'nojudge/workflow/githooks', ['pre-commit', 'commit-msg'])],
+      ['other name', root, hooksAt(base, 'plain/hooks', ALL)], ['git hooks', root, '.git/hooks'], ['empty', root, ''],
+      ['gone kit', root, path.join(base, 'gone', 'workflow', 'githooks')], ['gone engine', root, path.join(base, 'gone', 'workkit', 'githooks')],
+      ['own', root, 'own/workflow/githooks'], ['gone relative', root, 'old/workkit/githooks'],
+    ];
+    if (!IS_WINDOWS) {
+      pairs.push(['no exec', root, hooksAt(base, 'noexec/workflow/githooks', ALL, ['pre-commit'])]);
+      fs.symlinkSync(path.join(base, 'removed'), path.join(base, 'dangling'));
+      pairs.push(['dangling', root, path.join(base, 'dangling', 'workflow', 'githooks')]);
+    }
+    return { base, pairs };
+  };
+  const shellArgs = (pairs) => pairs.map(([, root, folder]) => [shellPath(root), path.isAbsolute(folder) ? shellPath(folder) : folder]);
+
+  test('wk_githooks_kit and githooksKit name the same kit root for every folder, the physical one, and none for the rest', () => {
+    const { base, pairs } = world();
+    const shell = bashPairs(sources, 'wk_githooks_kit', shellArgs(pairs), nodeEnv);
+    const kits = pairs.flatMap(([name], i) => (shell[i] === null ? [] : [name]));
+    expect(kits.join(', '), 'the kit\'s folder in any spelling, nothing else').toBe('kit, relative, engine link');
+    const kit = shellPath(path.join(base, 'kit'));
+    expect(shell.slice(0, 3).every((s) => samePath(s, kit, process.platform)), `each the physical kit root, got: ${shell.slice(0, 3)}`).toBe(true);
+    const { githooksKit } = participationJs();
+    const differ = pairs.flatMap(([name, root, folder], i) => {
+      const node = githooksKit(root, folder);
+      const same = shell[i] === null || node === null ? shell[i] === node : samePath(shell[i], node, process.platform);
+      return same ? [] : [`${name}: bash ${JSON.stringify(shell[i])}, node ${JSON.stringify(node)}`];
+    });
+    expect(differ.join('; '), 'the folders wk_githooks_kit and githooksKit answer differently').toBe('');
+  });
+
+  test('wk_githooks_kitlike and githooksKitlike read the same folders as a kit\'s, spelled as one and gone included', () => {
+    const { pairs } = world();
+    const shell = bashPairs(sources, 'wk_githooks_kitlike', shellArgs(pairs), nodeEnv).map((out) => out !== null);
+    const kitlike = pairs.flatMap(([name], i) => (shell[i] ? [name] : []));
+    expect(kitlike.join(', '), 'a kit\'s folder, and a kit spelling that is gone')
+      .toBe(['kit', 'relative', 'engine link', 'gone kit', 'gone engine', 'gone relative', ...(IS_WINDOWS ? [] : ['dangling'])].join(', '));
+    const { githooksKitlike } = participationJs();
+    agree(pairs.map((_, i) => i), shell, (i) => githooksKitlike(pairs[i][1], pairs[i][2]), `wk_githooks_kitlike against githooksKitlike (by index into ${pairs.map(([n]) => n).join(', ')})`);
+  });
+
+  test('wk_githooks_spelled and githooksSpelled read the same folder names as a kit\'s', () => {
+    const FOLDERS = [
+      '/a/workflow/githooks', '/a/workkit/githooks', 'C:/x/workkit/githooks', 'old/workkit/githooks',
+      'workflow/githooks', '/a/workflow/githooks/', '/a/workflow/githooks2', '/a/other/githooks', 'C:\\x\\workkit\\githooks', '.git/hooks', '',
+    ];
+    const shell = bashAnswers(sources, 'wk_githooks_spelled', FOLDERS);
+    expect(JSON.stringify(shell), 'a path ending in a kit\'s or the engine link\'s hooks folder, after a slash')
+      .toBe(JSON.stringify([true, true, true, true, false, false, false, false, false, false, false]));
+    const { githooksSpelled } = participationJs();
+    agree(FOLDERS, shell, (f) => githooksSpelled(f), 'wk_githooks_spelled against githooksSpelled');
   });
 });
 

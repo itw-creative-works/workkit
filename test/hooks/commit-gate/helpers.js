@@ -5,7 +5,7 @@
 // for byte the shell hook's. The stubbed reads answer from the same repo:
 // `show`, `run` (git, npm's script-shell), `issueView`;
 // `lint` runs the real changelog linter over a scratch copy of the repo,
-// `jobRewrite` the real heal rewrite.
+// `jobRewrite` the gate's own start of the real changelog job's rewrite.
 
 const path = require('path');
 const fs = require('fs');
@@ -13,13 +13,15 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { NO_RC, shellPath, stubTool, joinPath, spawnBash } = require('../../lib/platform');
+const { stubTool, joinPath } = require('../../lib/platform');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo, FIXTURE_ORIGIN, OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const KIT = fs.realpathSync(path.join(__dirname, '..', '..', '..'));
 const WORKFLOW_DIR = path.join(KIT, 'workflow');
-const JOB = path.join(WORKFLOW_DIR, 'changelog', 'changelog-job.sh');
+const JOB = path.join(WORKFLOW_DIR, 'changelog', 'job.js');
+/** Whether `argv` starts the changelog job with node, the one form the gate uses. */
+const startsJob = (argv) => /^node(\.exe)?$/i.test(path.basename(argv[0])) && argv[1] !== undefined && path.resolve(argv[1]) === JOB;
 const TEMPLATE = path.join(WORKFLOW_DIR, 'templates', 'github-workflows', 'checks.yml');
 const LINTER = path.join(WORKFLOW_DIR, 'changelog', 'lint.js');
 // npm's script-shell as setup wires it: the wrapper beside this checkout's engine.
@@ -221,12 +223,12 @@ const rewriteRoot = (branch) => {
 };
 
 /**
- * `changelog-job.sh rewrite [template]` run for real at a root whose default
+ * `node job.js rewrite [template]` run for real at a root whose default
  * branch is `branch` (none when null): its exit code, stdout and stderr.
  */
 const realRewrite = (template, branch = 'main') => {
   const { root, PATH } = rewriteRoot(branch);
-  const res = spawnBash([...NO_RC, shellPath(JOB), 'rewrite', ...(template ? [shellPath(template)] : [])],
+  const res = spawnSync(process.execPath, [JOB, 'rewrite', ...(template ? [template] : [])],
     { cwd: root, env: { ...process.env, PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
 };
@@ -243,10 +245,10 @@ const readWork = (r, p) => {
   return fs.statSync(p).isFile() ? fs.readFileSync(p, 'utf8') : null;
 };
 
-// One of the kit's own scripts run for real, from a real folder.
+// The changelog job run for real by this node, from a real folder.
 const realRun = (argv, init) => {
-  const cwd = init.cwd && fs.existsSync(init.cwd) ? init.cwd : os.tmpdir();
-  const res = spawnBash([...NO_RC, ...argv.slice(1)], { cwd, input: init.stdin, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+  const cwd = init.cwd && fs.existsSync(init.cwd) ? init.cwd : mkTmp('cg-job-');
+  const res = spawnSync(process.execPath, argv.slice(1), { cwd, input: init.stdin, encoding: 'utf8', timeout: SPAWN_DEADLINE });
   return runResult({ exitCode: res.status ?? 1, stdout: res.stdout || '', stderr: res.stderr || '' });
 };
 
@@ -259,9 +261,8 @@ function runStub(r, cwd) {
     if (failed) return failed.isStarted === false ? { ...runResult(failed), exitCode: null, isStarted: false } : { ...runResult(failed), isStarted: true };
     const tool = path.basename(argv[0]);
     if (tool === 'git') return git(r, argv.slice(1), init.cwd || cwd, init);
-    if (argv.some((a) => a.endsWith('changelog-job.sh')) && argv.includes('rewrite')) {
-      return rewriteOf(r, argv[argv.indexOf('rewrite') + 1]);
-    }
+    // The changelog job: its rewrite at the world's default branch, any other mode as it is.
+    if (startsJob(argv)) return argv[2] === 'rewrite' ? rewriteOf(r, argv[3]) : realRun(argv, init);
     if (tool === 'npm' && argv.slice(1, 4).join(' ') === 'config get script-shell') {
       return r.scriptShell === null ? runResult({ exitCode: 127, stderr: 'npm: command not found\n' }) : runResult({ stdout: `${r.scriptShell}\n` });
     }
@@ -287,7 +288,6 @@ function runStub(r, cwd) {
     // `node <kit>/workflow/lib/tree-hash.js <root> -i`, the gate's tree: the index's id.
     const hash = argv.findIndex((a) => a.endsWith('tree-hash.js'));
     if (hash >= 0 && argv[hash + 2] === '-i') return runResult({ stdout: `${indexTree(r)}\n` });
-    if (tool === 'bash' && argv.slice(1).some((a) => a.startsWith(KIT))) return realRun(argv, init);
     return runResult({ exitCode: 127, stderr: `${tool}: command not found\n` });
   };
 }
@@ -355,9 +355,10 @@ const factsOf = (r) => {
         { cwd: scratch, encoding: 'utf8', timeout: SPAWN_DEADLINE });
       return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });
     },
+    // The gate's own rewrite fact, started through the stub run so its argv is recorded.
     jobRewrite: async (...args) => {
       r.calls.jobRewrite.push(args);
-      return rewriteOf(r);
+      return mods('commit-gate').commitFacts({ pluginRoot: KIT, env: { HOME: '/w/user' }, run: runStub(r, ROOT) }, ROOT).jobRewrite();
     },
     originless: r.origin === null,
     read: async (p) => readWork(r, p),
@@ -443,7 +444,7 @@ const shipReadyRepo = () => {
 };
 
 module.exports = {
-  KIT, WORKFLOW_DIR, JOB, TEMPLATE, WRAPPER, ROOT, NOW_S, PREFIX, T, NOTICE,
+  KIT, WORKFLOW_DIR, JOB, startsJob, TEMPLATE, WRAPPER, ROOT, NOW_S, PREFIX, T, NOTICE,
   mkRepo, stage, write, gitRm, commit, touchMarker, staleMarker, dropMarker, proveTree,
   factsOf, judge, denyOf, contextOf, blocks, passes, recordBlocks, suiteRan, realRewrite,
   pkg, mkReleaseRepo, CHANGELOG, ISSUE, ENTRY, shipReadyRepo,

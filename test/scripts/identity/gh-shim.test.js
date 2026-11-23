@@ -478,14 +478,14 @@ describe('identity/gh: the refusals', () => {
     }
   });
 
-  test('with only a node older than 22.12 on PATH and none under nvm, a Claude session\'s gh issue view runs the real gh, the gate saying it did not run', async () => {
+  test('with only a node older than 22.22 on PATH and none under nvm, a Claude session\'s gh issue view runs the real gh, the gate saying it did not run', async () => {
     const world = mkWorld();
     const old = path.join(world.root, 'old-node');
     stubNode(old, '20.15.1');
     const view = ['issue', 'view', '1'];
     const res = runShim(world, view, { nodeDir: old });
     assertRan(res, view, null, 'gh issue view past a node 20');
-    expect(res.stderr.includes('did not run (no node 22.12 or newer found)'), `stderr names the gate's stand-down, got: ${res.stderr}`).toBeTruthy();
+    expect(res.stderr.includes('did not run (no node 22.22 or newer found)'), `stderr names the gate's stand-down, got: ${res.stderr}`).toBeTruthy();
   });
 });
 
