@@ -882,7 +882,7 @@
     - `inPluginCache` and the heal's run object (`standards.js`) both call it.
 - `lib/link.js`:
   - Requiring nothing beyond Node.
-  - `link(target, address)` is `wk_link`: a link made beside the address, then renamed onto it, so no other session sees a gap; true when the address now resolves to the target. It removes nothing.
+  - `link(target, address)` is `wk_link`: a link made beside the address, then renamed onto it, so no other session sees a gap; true when the address now resolves to the target. It removes nothing, but on Windows, which renames nothing onto a folder link, a link there naming something else: it goes, then the rename is tried again.
   - `mvLink(from, to)` is `wk_mv_link`: a rename that replaces the name at `to`, never landing inside a folder a link there names.
   - `isLink(path)` is whether a path is a symlink, a dangling one included; `physical(path)` is its spelling through every link, or null.
 - `lib/participation.js`:
@@ -2630,7 +2630,8 @@ bash ~/.claude/workkit/standards.sh --git-hooks <repo>  # set git's hooks alone,
   - On Windows a refused link warns ``engine: could not link <address>; Windows refused the symlink (turn on Developer Mode or run as administrator), then re-run `workkit update` ``.
   - Elsewhere a failed link stays silent.
 - A real file or directory already at the address is left as it is, with a warning to move it aside.
-- A symlink there is never removed, since it is another session's win of the same race.
+- A symlink there is renamed over, never removed first, since it may be another session's win of the same race.
+  - Windows renames nothing onto a folder link, so there a repoint removes the old link and then renames, a moment with no address; a link already naming this engine stays.
 - `--engine-link` is that step on its own, which is what `workkit setup|update` calls.
 - The hook takes a `WORKFLOW_DIR` override, and the address step a `WORKFLOW_CLAUDE_HOME` one; the tests use both.
 - Run it by hand against any repo:

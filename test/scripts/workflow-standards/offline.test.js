@@ -7,7 +7,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  NO_RC, shellPath, systemPathWith, spawnBash, spawnSystemBash, joinPath,
+  NO_RC, NODE_DIR, shellPath, systemPathWith, spawnBash, spawnSystemBash, joinPath, homeEnv,
 } = require('../../lib/platform');
 const { isCall } = require('../../lib/argv-log');
 const {
@@ -89,16 +89,17 @@ describe('standards.sh: runs from anywhere', () => {
     const stub = makeGhStub();
     const res = spawnBash([...NO_RC, shellPath(SCRIPT)], {
       cwd: repo,
-      env: {
-        ...process.env, PATH: systemPathWith(stub.binDir),
-        // Inherited HOME plus the two user-level seeds would write the real
-        // ~/.workkit and repoint the real ~/.claude/workkit.
+      // A scratch home, so the heal's node is this suite's on PATH, never one a
+      // machine keeps under its own home (~/.nvm).
+      env: homeEnv(mkTmp('wf-std-'), {
+        ...process.env, PATH: systemPathWith(stub.binDir, NODE_DIR),
+        // The two user-level seeds, so nothing reaches a ~/.workkit or ~/.claude/workkit.
         WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
-      },
+      }),
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
     });
-    expect(res.status, 'exit 0').toBe(0);
+    expect(res.status, `exit 0, got: ${res.stdout}${res.stderr}`).toBe(0);
     expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'dump.md')), 'healed the cwd repo').toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });

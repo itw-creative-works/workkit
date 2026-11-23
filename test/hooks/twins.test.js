@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp, needs, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, stubTool, spawnSystemBash, nodeEnv, samePath,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, gitPath, stubTool, spawnSystemBash, nodeEnv, samePath,
 } = require('../lib/platform');
 const { mkRepo, mkOriginRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods } = require('../lib/mods-inputs');
@@ -904,7 +904,8 @@ describe('twins: the kit\'s hooks folder, wk_githooks_kit, wk_githooks_kitlike a
     expect(kitlike.join(', '), 'a kit\'s folder, and a kit spelling that is gone')
       .toBe(['kit', 'relative', 'engine link', 'gone kit', 'gone engine', 'gone relative', ...(IS_WINDOWS ? [] : ['dangling'])].join(', '));
     const { githooksKitlike } = participationJs();
-    agree(pairs.map((_, i) => i), shell, (i) => githooksKitlike(pairs[i][1], pairs[i][2]), `wk_githooks_kitlike against githooksKitlike (by index into ${pairs.map(([n]) => n).join(', ')})`);
+    // The folder in git's spelling, the core.hooksPath value the heal hands it.
+    agree(pairs.map((_, i) => i), shell, (i) => githooksKitlike(pairs[i][1], gitPath(pairs[i][2])), `wk_githooks_kitlike against githooksKitlike (by index into ${pairs.map(([n]) => n).join(', ')})`);
   });
 
   test('wk_githooks_spelled and githooksSpelled read the same folder names as a kit\'s', () => {
