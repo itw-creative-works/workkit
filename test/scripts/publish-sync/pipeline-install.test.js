@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { samePath } = require('../../lib/platform');
 const { cleanup, writeJson, write, mkPublishWorld, publish, fromPages } = require('./helpers');
 
 describe('workflow/publish: the install after a manifest change', () => {
@@ -23,7 +23,9 @@ describe('workflow/publish: the install after a manifest change', () => {
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     const installs = world.npms().filter((call) => /install/.test(call));
     expect(installs.length, `one install for the manifest that moved: ${installs.join(' | ')}`).toBe(before + 1);
-    expect(installs[installs.length - 1], 'in the clone, which is the project the build runs out of').toBe(`${shellPath(world.tower)}|install`);
+    // The stand-in's $PWD is the spelling Node handed it, native on Windows.
+    const [cwd, argv] = installs[installs.length - 1].split('|');
+    expect(samePath(cwd, world.tower, process.platform) && argv === 'install', `in the clone, which is the project the build runs out of, got: ${installs[installs.length - 1]}`).toBe(true);
     cleanup(world.root);
   });
 

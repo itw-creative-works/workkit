@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { shellPath, samePath } = require('../../lib/platform');
 const { cleanup, writeStub, mkPublishWorld, publish, fromPages } = require('./helpers');
 
 describe('workflow/publish: the mint after any change', () => {
@@ -15,7 +15,9 @@ describe('workflow/publish: the mint after any change', () => {
     publish(world);
     const mints = world.mints();
     expect(mints.length, `one mint: ${mints.join(' | ')}`).toBe(1);
-    expect(mints[0], 'the assets service, run at the clone’s brand root').toBe(`${shellPath(world.tower)}|manage --service=assets`);
+    // The stand-in's $PWD is the spelling Node handed it, native on Windows.
+    const [cwd, argv] = mints[0].split('|');
+    expect(samePath(cwd, world.tower, process.platform) && argv === 'manage --service=assets', `the assets service, run at the clone’s brand root, got: ${mints[0]}`).toBe(true);
     cleanup(world.root);
   });
 

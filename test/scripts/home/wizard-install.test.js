@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { samePath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const { cleanup, mkWorld, setup } = require('./helpers');
 
@@ -23,7 +23,8 @@ describe('workflow/home: the wizard, the install', () => {
     expect(code, `exit 0: ${out}`).toBe(0);
     const cwds = world.npmCwds();
     expect(cwds.length, `one install, and its cwd recorded: ${cwds.join(' | ')}`).toBe(1);
-    expect(cwds[0], 'the cwd is the clone with its links resolved').toBe(shellPath(world.tower));
+    // The stand-in's $PWD is the spelling Node handed it, native on Windows.
+    expect(samePath(cwds[0], world.tower, process.platform), `the cwd is the clone with its links resolved, got: ${cwds[0]}`).toBe(true);
     expect(!world.npmCalls().some((c) => c.includes('--prefix')),
       `and no --prefix keys the tree from elsewhere: ${fmtCalls(world.npmCalls())}`).toBeTruthy();
     cleanup(world.root);

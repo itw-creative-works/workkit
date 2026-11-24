@@ -61,6 +61,10 @@
   - Those suites run one at a time after the parallel wave, in sorted order.
   - No list file names them: the runner reads none.
 - A world is seeded once per process (`seeded()`) and copied per case.
+- A path in a world's env is spelled for the program it is handed to: `shellPath` for a bash, native for a node a case starts itself.
+  - Only Git Bash turns `/d/a/x` back into `D:/a/x`, for a program it starts; a node handed it straight reads `D:\d\a\x`.
+  - A world both read keeps it native and hands its bash the shell's spelling (`bashEnv` in `test/scripts/home/helpers.js`).
+  - A run: line meant for Linux runs under `MSYS2_ARG_CONV_EXCL=*`, so Git Bash rewrites no argument that looks like a path (`/workkit/`).
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
 - A suite or a case that cannot run here states a `skip` value, its reason, and the run lists every skip after the totals.
   - A whole file skips through its outer `describe`'s `skip` option: `describe('supervise', { skip: skipOnWindows() }, () => { ... })`, the kit's helper in `test/lib/supervise.js`. A suite that needs a tool states `needs` there (its bullets below).

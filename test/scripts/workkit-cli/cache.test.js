@@ -29,7 +29,8 @@ const seedHomeClone = (world, script) => {
   const remote = path.join(world.root, 'home-remote.git');
   spawnSync('git', ['init', '-q', '--bare', '-b', 'main', remote], { encoding: 'utf8' });
   world.env.WORKKIT_HOME_REMOTE = remote;
-  const cloned = inNode(world, [['repo', 'clone', ['owner/home']]]);
+  // The clone's node is started here, not by Git Bash, so it is handed the native folder.
+  const cloned = inNode({ ...world, env: { ...world.env, WORKFLOW_HOME: world.workflowHome } }, [['repo', 'clone', ['owner/home']]]);
   expect(cloned.code, `the home is cloned, got: ${cloned.out}`).toBe(0);
   const res = inCli(world, 'wk_home_seed_runner', { entry: script });
   expect(res.code, `the clone is seeded, got: ${res.said}`).toBe(0);

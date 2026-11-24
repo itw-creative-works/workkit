@@ -105,9 +105,10 @@ const mkProject = ({
     go,
     npms: () => readLog(npmLog),
     mints: () => readLog(mintLog),
+    // Native: build.js is started here, not by Git Bash, which alone converts a shell spelling.
     env: homeEnv(home, {
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(userDir),
+      WORKFLOW_HOME: userDir,
       ...(app === null ? {} : { WORKKIT_TOWER_APP: appDir }),
     }),
   };

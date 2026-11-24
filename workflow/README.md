@@ -969,6 +969,7 @@
     - The bot token client, `identity/token.js` in the `gh` shim, keeps the shim's streams: under a logged command its stderr is the log's pipe, so it offers no sign-in, and its line names `workkit setup --login`.
   - `wk_spin` and `wk_poll` draw their frames on the call's own stderr, 8 under a command log, else 2 (`wk_spin_fd` in `lib/voice.sh`, through `_wk_terminal_held` here when this file is loaded), so a spinner shows at the terminal and no frame enters the log.
     - Their Node halves pick the same way (`spinFd` in `lib/spin.js`): 8 when `WK_COMMAND_LOGGED` is set and 7, 8 and 9 are open.
+      - On Windows Git Bash hands a native node only 0, 1 and 2, so there a Node spinner under a command log draws on 2, the log's pipe, so no frames unless `WORKKIT_SPIN=1`.
 - `public/`:
   - Each script calls `gh` by name, so the shim (and in the cloud `identity/rest.js`) answers it.
   - `intake.js`: each open public issue with no `status:` label becomes a private `status:inbox`, `type:idea` issue.

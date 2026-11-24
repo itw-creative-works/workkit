@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { samePath } = require('../../lib/platform');
 const { cleanup, mkRemote, mkWorld, inHome, inNode } = require('./helpers');
 
 const CLONE_AND_SEED = [['repo', 'clone', ['owner/workkit']], ['seed', 'seed']];
@@ -42,8 +42,11 @@ describe('workflow/home: the seed', () => {
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     inNode(world, CLONE_AND_SEED);
 
-    expect(world.pkg().devDependencies['@omega.js/manager'], 'the root manifest points at the framework this machine resolves it from').toBe(`file:${shellPath(path.join(world.framework, 'manager'))}`);
-    expect(world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'], 'and so does every app, resolved from ITS own directory').toBe(`file:${shellPath(path.join(world.framework, 'web'))}`);
+    // The spec holds the folder in the machine's own spelling, so the two are compared as paths.
+    const manager = world.pkg().devDependencies['@omega.js/manager'];
+    const web = world.pkg(path.join('targets', 'web', 'package.json')).dependencies['@omega.js/web'];
+    expect(manager.startsWith('file:') && samePath(manager.slice(5), path.join(world.framework, 'manager'), process.platform), `the root manifest points at the framework this machine resolves it from, got: ${manager}`).toBe(true);
+    expect(web.startsWith('file:') && samePath(web.slice(5), path.join(world.framework, 'web'), process.platform), `and so does every app, resolved from ITS own directory, got: ${web}`).toBe(true);
     cleanup(world.root);
   });
 

@@ -12,7 +12,7 @@ const {
   IS_WINDOWS, NO_EXEC_BIT, NO_RC, shellPath, spawnBash,
 } = require('../../lib/platform');
 const {
-  KIT_DIR, cleanup, git, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
+  KIT_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
   dropRunnerLine,
 } = require('./helpers');
 
@@ -72,7 +72,7 @@ describe('workflow/home: the cloud brief runner', () => {
     const driver = ['lib.sh', 'lib/discussions.sh', 'home.sh']
       .map((lib) => `. ${JSON.stringify(shellPath(path.join(engine, lib)))}`).concat('wk_home_slug').join('\n');
     const res = spawnBash([...NO_RC, '-c', `set -euo pipefail\n${driver}`], {
-      cwd: '/', env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      cwd: '/', env: bashEnv(world), encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     expect(res.status, `the seeded engine answers from the clone alone: ${res.stderr}`).toBe(0);
     expect(res.stdout.trim(), 'with the slug this machine is configured for').toBe('owner/workkit');

@@ -4,11 +4,15 @@
 
 const fs = require('fs');
 const { describe, test, expect, mkTmp } = require('../lib/harness');
-const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
+const { IS_WINDOWS, SYSTEM_PATH, homeEnv } = require('../lib/platform');
 const { PTY, atTerminal } = require('../lib/identity');
 const {
   driveSpin, spinArgs, framesIn, CLEAR, ANSWER, MESSAGE,
 } = require('../lib/spin-call');
+
+// The skips of the two command log cases: one only Windows can answer, one only it cannot.
+const NO_HELD_FDS = 'a native node on Windows inherits only 0, 1 and 2 from Git Bash, so no command log\'s 8 reaches it';
+const OWN_FDS = 'off Windows a node opens its own 7, 8 and 9, which read as a command log\'s';
 
 /** A scratch home's env with no spin, quiet or color setting carried in, <vars> beside it. */
 const worldEnv = (vars = {}) => homeEnv(mkTmp('spin-home-'), { PATH: SYSTEM_PATH, ...vars });
@@ -59,11 +63,18 @@ describe('spin: the frames forced', () => {
     expect(res.status, 'and it exits 0').toBe(0);
   });
 
-  test('under a command log holding 7, 8 and 9, the frames and the clear go to 8 and none reach 2', async () => {
+  test('under a command log holding 7, 8 and 9, the frames and the clear go to 8 and none reach 2', { skip: IS_WINDOWS && NO_HELD_FDS }, async () => {
     const res = await driveSpin('call', { env: worldEnv({ WORKKIT_SPIN: '1' }), frames: 2, commandLog: true });
     expect(res.held.endsWith(CLEAR), `8 ends on the clear, got: ${JSON.stringify(res.held)}`).toBe(true);
     onlyFrames(res.held.slice(0, -CLEAR.length), 2, '8');
     expect(res.stderr, 'stderr, the stream the log reads, holds the caller\'s line alone').toBe('after\n');
+  });
+
+  test('on Windows, under a command log whose 7, 8 and 9 never reach the node, the frames and the clear stay on 2', { skip: !IS_WINDOWS && OWN_FDS }, async () => {
+    const res = await driveSpin('call', { env: worldEnv({ WORKKIT_SPIN: '1', WK_COMMAND_LOGGED: '1' }), frames: 2 });
+    const tail = `${CLEAR}after\n`;
+    expect(res.stderr.endsWith(tail), `the clear, then the caller's line, got: ${JSON.stringify(res.stderr)}`).toBe(true);
+    onlyFrames(res.stderr.slice(0, -tail.length), 2, 'stderr');
   });
 });
 

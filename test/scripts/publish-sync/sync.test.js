@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { shellPath, skipWithoutModes } = require('../../lib/platform');
+const { shellPath, samePath, skipWithoutModes } = require('../../lib/platform');
 const { STAMP, kitVersion } = require('../../lib/version-stamp');
 const {
   cleanup, git, write, mkSyncWorld, commitCheckout, sync, seed, mtimes,
@@ -189,8 +189,11 @@ describe('workflow/home: a checkout in a git repo copies its committed tree', ()
     expect(rootText !== null && webText !== null, 'both manifests reached the clone').toBeTruthy();
     const root = JSON.parse(rootText);
     const web = JSON.parse(webText);
-    expect(root.devDependencies['@omega.js/manager'], 'the root spec resolves from the checkout, not a scratch copy').toBe(`file:${shellPath(path.join(packages, 'manager'))}`);
-    expect(web.dependencies['@omega.js/web'], 'and so does the nested one').toBe(`file:${shellPath(path.join(packages, 'web'))}`);
+    // The spec holds the folder in the machine's own spelling, so the two are compared as paths.
+    const managerSpec = root.devDependencies['@omega.js/manager'];
+    const webSpec = web.dependencies['@omega.js/web'];
+    expect(managerSpec.startsWith('file:') && samePath(managerSpec.slice(5), path.join(packages, 'manager'), process.platform), `the root spec resolves from the checkout, not a scratch copy, got: ${managerSpec}`).toBe(true);
+    expect(webSpec.startsWith('file:') && samePath(webSpec.slice(5), path.join(packages, 'web'), process.platform), `and so does the nested one, got: ${webSpec}`).toBe(true);
     cleanup(world.root);
   });
 

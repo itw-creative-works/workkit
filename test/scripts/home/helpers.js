@@ -267,9 +267,11 @@ const mkWorld = ({
       : []),
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
     pkg: (rel = 'package.json') => JSON.parse(fs.readFileSync(path.join(workflowHome, 'tower', rel), 'utf8')),
+    // WORKFLOW_HOME native, for the node a case starts itself; a bash is handed
+    // the shell's spelling through bashEnv, which Git Bash turns back for its node.
     env: homeEnv(home, {
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(workflowHome),
+      WORKFLOW_HOME: workflowHome,
       WORKKIT_TOWER_APP: tower.app,
       // The kit the runner is read from is a committed copy, never this
       // checkout: the source reads HEAD, and this checkout's HEAD lags its edits.
@@ -278,6 +280,15 @@ const mkWorld = ({
     }),
   };
 };
+
+/**
+ * A world's env as a bash under test is handed it: WORKFLOW_HOME in the shell's
+ * spelling. A node started straight from a case reads `/d/a/x` as `D:\d\a\x`,
+ * so the world keeps the native one.
+ * @param {{env: object}} world
+ * @returns {object}
+ */
+const bashEnv = (world) => ({ ...world.env, WORKFLOW_HOME: shellPath(world.env.WORKFLOW_HOME) });
 
 /**
  * Source the library and run one line of shell in it: how every caller uses
@@ -296,7 +307,7 @@ const inHome = (world, script, { input = '' } = {}) => {
   // off the cwd (as npm does) must key it off a scratch directory rather
   // than this checkout.
   const res = spawnBash([...NO_RC, '-c', driver], {
-    cwd: world.root, env: world.env, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    cwd: world.root, env: bashEnv(world), input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
   // `out` is both streams in the order a terminal shows them, since what these
@@ -502,6 +513,6 @@ const dropRunnerLine = (kit, src) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, inNode, inNodeHeld, setup, runnerPairs, seeded,
+  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, inHome, inNode, inNodeHeld, setup, runnerPairs, seeded,
   mkKitCopy, mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP,
 };

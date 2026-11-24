@@ -104,9 +104,10 @@ const mkSyncWorld = () => {
     root,
     clone,
     app: tower.app,
+    // Native: only a node this suite starts itself reads it, and no Git Bash converts it.
     env: homeEnv(homeDir, {
       PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(workflowHome),
+      WORKFLOW_HOME: workflowHome,
       WORKKIT_TOWER_APP: tower.app,
       WORKKIT_HOME_REMOTE: bare,
     }),

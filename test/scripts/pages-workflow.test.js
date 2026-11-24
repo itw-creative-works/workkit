@@ -88,9 +88,12 @@ describe('pages.yml: the build steps', () => {
     const record = (who) => `printf '%s|%s|%s|%s\\n' ${who} "$PWD" "$*" "\${OMEGA_PATH_PREFIX:-unset}" >> ${JSON.stringify(shellPath(log))}`;
     writeStub(path.join(root, 'bin', 'npm'), [record('npm'), 'if [[ "$1" == --prefix ]]; then mkdir -p "$2/dist"; fi', 'exit 0']);
     writeStub(path.join(app, 'node_modules', '.bin', 'omega'), [record('omega'), 'mkdir -p "$PWD/.omega/assets/logo"', 'exit 0']);
+    // pages.yml runs on Linux, where `/workkit/` reaches node as written; Git Bash
+    // would rewrite that argument as a path for the native node, so none is rewritten.
     const env = homeEnv(path.join(root, 'home'), {
       PATH: joinPath(path.join(root, 'bin'), SYSTEM_PATH, NODE_DIR),
       WORKFLOW_HOME: shellPath(path.join(root, 'home', '.workkit')),
+      MSYS2_ARG_CONV_EXCL: '*',
     });
 
     const commands = runLines(lines()).map((line) => line.replace(/^\s*(?:- )?run:\s*/, ''));

@@ -8,7 +8,7 @@ const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, inNode, mkKitCopy, kitCommitted,
+  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, inNode, mkKitCopy, kitCommitted,
 } = require('./helpers');
 
 describe('workflow/home: the clone’s own heal', () => {
@@ -128,7 +128,7 @@ describe('workflow/home: the clone’s own heal', () => {
     fs.mkdirSync(other, { recursive: true });
     spawnSync('git', ['init', '-q', other], { encoding: 'utf8' });
     const res = spawnBash([...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--home', shellPath(other)], {
-      env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      env: bashEnv(world), encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
     expect(res.status, 'it refuses').toBe(1);
     expect(/not the tower clone/.test(res.stderr || ''), `and says why, got: ${res.stderr}`).toBeTruthy();
