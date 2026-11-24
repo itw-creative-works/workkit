@@ -13,6 +13,7 @@ const os = require('os');
 const { execFileSync } = require('../../../workflow/lib/run');
 const { readJsonOrNull, readOrNull } = require('../../../workflow/lib/read');
 const { gitPath, tempRoot } = require('./repos');
+const { sessionKey } = require('../../../hooks/mods/markers.js');
 
 const DEFAULT_IDLE_MINUTES = 45;
 
@@ -159,8 +160,7 @@ const chatNameFrom = (file, budget = NAME_READ_BYTES) => {
 
 /** Model and effort from the statusline cache, or nulls (a VS Code session writes none). */
 const sessionState = (stateDir, session) => {
-  const safe = session.replace(/[^a-zA-Z0-9]/g, '_');
-  const parsed = readJsonOrNull(path.join(stateDir, `${safe}.json`));
+  const parsed = readJsonOrNull(path.join(stateDir, `${sessionKey(session)}.json`));
   if (parsed === null) return { model: null, effort: null };
   const model = parsed.model || null;
   const effort = parsed.effort;

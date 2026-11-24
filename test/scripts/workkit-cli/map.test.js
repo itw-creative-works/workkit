@@ -23,7 +23,7 @@ describe('workkit: the map', () => {
     const entries = runCli(world, []).out.split('\n').map((l) => l.trim());
     const verbs = [
       'ship items', 'ship release', 'ship watch', 'ship plan', 'ship publish', 'ship cut', 'ship deploy', 'review covers', 'review mark',
-      'triage mark', 'proof red', 'changelog lint', 'state [repo]',
+      'triage mark', 'checkpoint safe', 'proof red', 'changelog lint', 'state [repo]',
     ];
     const missing = verbs.filter((v) => !entries.some((l) => l.startsWith(v)));
     expect(missing.join(', '), 'the map entries it lacks').toBe('');

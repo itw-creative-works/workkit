@@ -11,7 +11,7 @@ const WORKKIT_DIR = '.workkit';
 
 /**
  * The folder under <home>, WORKFLOW_HOME never read: the roster readers resolve
- * through os.homedir() alone, which is why morning.sh pins WORKFLOW_HOME there.
+ * through os.homedir() alone, which is why jobs/morning.js pins WORKFLOW_HOME there.
  * @param {string} [home] overrides os.homedir()
  * @returns {string}
  */

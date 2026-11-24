@@ -24,8 +24,8 @@ PUBLISH="$SCRIPT_DIR/publish.sh"
 PROVE="$SCRIPT_DIR/prove.js"
 SUPERVISE="$SCRIPT_DIR/supervise.js"
 WATCH="$SCRIPT_DIR/watch.js"
-JOBS_INSTALL="$KIT_DIR/jobs/install.sh"
-TOWER_START="$KIT_DIR/tower/start.sh"
+JOBS_INSTALL="$KIT_DIR/jobs/install.js"
+TOWER_START="$KIT_DIR/tower/start.js"
 # The same two files the 9am schedule runs, so `workkit brief` is that morning
 # on demand.
 MORNING="$KIT_DIR/jobs/morning.sh"
@@ -53,7 +53,7 @@ ENGINE_LINK="$CLAUDE_HOME/workkit"
 # Sourced tolerantly: an incomplete checkout is reported by the steps that need
 # these, never by a source that aborts before the command can speak.
 HOME_LIBS=1
-for _lib in lib/platform.sh lib/suite.sh lib.sh lib/discussions.sh home.sh lib/command-log.sh; do
+for _lib in lib/platform.sh lib/suite.sh lib.sh home.sh lib/command-log.sh; do
   if [[ -f "$SCRIPT_DIR/$_lib" ]]; then
     # shellcheck source=/dev/null
     . "$SCRIPT_DIR/$_lib"
@@ -227,6 +227,8 @@ usage: workkit <command> [args]
                        the full panel too
   triage mark          record that a triage drain is under way, so the capture
                        guard lets it read the capture file
+  checkpoint safe      record that a checkpoint put every item on the board,
+                       keyed by this session, for a harness to read
   proof red [--live] <path>... -- <command>...
                        run the command against the paths as the claim found
                        them, so the tests must fail: exit 0 red, 1 green
@@ -313,6 +315,8 @@ IDENTITY_USER=''
 . "$SCRIPT_DIR/workkit/review.sh"
 # shellcheck source=./workkit/triage.sh
 . "$SCRIPT_DIR/workkit/triage.sh"
+# shellcheck source=./workkit/checkpoint.sh
+. "$SCRIPT_DIR/workkit/checkpoint.sh"
 # shellcheck source=./workkit/proof.sh
 . "$SCRIPT_DIR/workkit/proof.sh"
 # shellcheck source=./workkit/changelog.sh
@@ -357,6 +361,7 @@ case "${1:-help}" in
   ship)    shift; cmd_ship "$@" ;;
   review)  shift; cmd_review "$@" ;;
   triage)  shift; cmd_triage "$@" ;;
+  checkpoint) shift; cmd_checkpoint "$@" ;;
   proof)   shift; cmd_proof "$@" ;;
   changelog) shift; cmd_changelog "$@" ;;
   tower)
@@ -367,7 +372,7 @@ case "${1:-help}" in
       wk_error "tower: no tower beside this engine ($(wk_native_path "$TOWER_START")), and this command needs the whole kit"
       exit 1
     fi
-    exec bash "$TOWER_START" "$@"
+    run_at_floor tower 1 "$TOWER_START" "$@"
     ;;
   # These eight hand the whole run to another script, which speaks for itself.
   enable)  shift; exec bash "$STANDARDS" --enable "${1:-$PWD}" ;;

@@ -1,7 +1,7 @@
 /**
  * workflow/home/stamp.js: the clone's version stamp and the compare that
- * refuses a downgrade. The kit's manifest is read through seed.js's `file`,
- * the committed copy, so it agrees with the bytes the writers copy.
+ * refuses a downgrade. The kit's manifest is read through committed.js's
+ * `file`, the committed copy, so it agrees with the bytes the writers copy.
  * Usage: const { STAMP, kitVersion, downgrades, stampWrite } = require('./stamp');
  */
 
@@ -12,6 +12,7 @@ const { compareVersions } = require('../ship/semver');
 const { nativePath } = require('../lib/platform');
 const { isFile } = require('../lib/lock');
 const { warn } = require('../lib/voice');
+const { file } = require('./committed');
 const { kitDir } = require('./options');
 
 // The kit version the clone was last written from: one file at the root for
@@ -35,8 +36,6 @@ const stampText = () => {
  * @returns {string}
  */
 const kitVersion = () => {
-  // At the call: seed.js requires this file.
-  const { file } = require('./seed');
   const manifest = file(kitDir(), '.claude-plugin/plugin.json');
   if (manifest === null) return '';
   let version;

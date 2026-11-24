@@ -1,6 +1,6 @@
 // Tests for jobs/morning.sh as a GitHub Actions runner runs it: the two tokens
 // its calls are made with, and no credential committed in the workflow it seeds.
-// The shared prologue (world factory, no-jq PATH, job runner) is ./helpers.js.
+// The shared prologue (world factory, job runner) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');

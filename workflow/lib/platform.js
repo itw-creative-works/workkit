@@ -1,8 +1,9 @@
 /**
  * workflow/lib/platform.js: the platform reads of lib/platform.sh the kit's Node
- * scripts share: a path's native spelling, the claude home, and whether the kit
- * runs from Claude's plugin cache, where a workkit clone outranks it.
- * Usage: const { nativePath, claudeHome, inPluginCache, cloneOutranks } = require('../lib/platform');
+ * scripts share: a path's native spelling, the claude home, a folder's physical
+ * path, and whether the kit runs from Claude's plugin cache, where a workkit
+ * clone outranks it.
+ * Usage: const { nativePath, claudeHome, physicalDir, inPluginCache, cloneOutranks } = require('../lib/platform');
  */
 
 const os = require('os');
@@ -67,4 +68,6 @@ const inPluginCache = (kitDir) => {
  */
 const cloneOutranks = (kitDir, linkedDir) => inPluginCache(kitDir) && isKitCheckout(linkedDir || '');
 
-module.exports = { nativePath, claudeHome, inPluginCache, cloneOutranks };
+module.exports = {
+  nativePath, claudeHome, physicalDir, inPluginCache, cloneOutranks,
+};

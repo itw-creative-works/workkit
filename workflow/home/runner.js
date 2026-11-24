@@ -13,7 +13,9 @@ const { ok, skip, warn } = require('../lib/voice');
 const { towerDir } = require('../user-dir');
 const { kitDir } = require('./options');
 const { filesUnder } = require('../lib/read');
-const { source, scratchDir, sameBytes } = require('./seed');
+const { withScratch } = require('../lib/scratch');
+const { source } = require('./committed');
+const { sameBytes } = require('./seed');
 const { downgrades, stampWrite } = require('./stamp');
 
 // Where a kit folder keeps its list.
@@ -21,19 +23,22 @@ const LIST_REL = path.join('workflow', 'home', 'runner-files.js');
 
 /**
  * The `[source, destination]` pairs a kit folder's own runner-files.js lists;
- * none when it has no list, or one that does not load.
+ * none when it has no list, or one that cannot be loaded (it does not parse,
+ * or it requires a file that is not there). Any other error is thrown.
  * @param {string} kit a kit folder, the exported one
  * @returns {Array<[string, string]>}
  */
 const runnerList = (kit) => {
   const file = path.join(kit, LIST_REL);
   if (!isFile(file)) return [];
+  let pairs;
   try {
-    const pairs = require(file);
-    return Array.isArray(pairs) ? pairs : [];
-  } catch {
-    return [];
+    pairs = require(file);
+  } catch (err) {
+    if (err instanceof SyntaxError || err.code === 'MODULE_NOT_FOUND') return [];
+    throw err;
   }
+  return Array.isArray(pairs) ? pairs : [];
 };
 
 /**
@@ -110,45 +115,44 @@ const seedRunner = async () => {
   }
   // Never over a newer kit's work, so no caller commits.
   if (downgrades()) return 1;
-  const scratch = scratchDir();
-  if (scratch === null) {
-    warn('home: could not make a scratch directory; the cloud brief\'s runner was not seeded');
-    return 1;
-  }
-  let changed;
-  let removed = 0;
-  let missing;
-  try {
+  // The walk answers false when it wrote nothing (warned), else its counts.
+  const seeded = withScratch((scratch) => {
     const from = source(scratch, kit);
-    if (!from) return 1;
+    if (!from) return false;
     const pairs = runnerList(from);
     if (pairs.length === 0) {
       warn(`home: the committed kit at ${nativePath(kit)} carries no runner list; the cloud brief's runner was not seeded`);
-      return 1;
+      return false;
     }
     const copied = copyListed(from, pairs);
-    if (copied.written === null) return 1;
-    changed = copied.written;
-    ({ missing } = copied);
+    if (copied.written === null) return false;
+    let changed = copied.written;
+    let removed = 0;
     // Only `brief/`, engine territory, is pruned. A missing source is a list
     // naming a file the commit lacks, so the prune waits: a file the list
     // dropped may still be one the committed scripts require.
-    if (missing.length === 0 && isDir(path.join(home, 'brief'))) {
+    if (copied.missing.length === 0 && isDir(path.join(home, 'brief'))) {
       for (const found of runnerRetired(pairs)) {
         try {
           fs.rmSync(found, { force: true });
         } catch {
           warn(`home: could not remove the retired ${path.relative(home, found).split(path.sep).join('/')} from ${nativePath(home)}`);
-          return 1;
+          return false;
         }
         changed += 1;
         removed += 1;
       }
       removeEmptyDirs(path.join(home, 'brief'));
     }
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+    return { changed, removed, missing: copied.missing };
+  }, 'workkit-home.');
+  if (seeded === null) {
+    warn('home: could not make a scratch directory; the cloud brief\'s runner was not seeded');
+    return 1;
   }
+  if (seeded === false) return 1;
+  let { changed } = seeded;
+  const { removed, missing } = seeded;
   if (missing.length > 0) {
     warn(`home: this kit is missing ${missing.join(' ')}; the cloud brief's runner is incomplete in ${nativePath(home)}, and the files its list no longer names were left in place until it is whole`);
   }

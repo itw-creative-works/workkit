@@ -92,7 +92,7 @@ claude plugin install workkit@workkit
      - One that is not valid JSON, or whose `permissions.allow` or `permissions.ask` is not a list, is left alone and warned about by a human's run and by doctor, never by the daily run.
      - `workkit update` and the daily `update --auto` keep the rules too (the daily run creates no `~/.claude`).
      - `workkit doctor` names each one that is missing, an ask rule with `permissions.ask`.
-  7. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.sh`.
+  7. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.js`.
      - This is macOS only (launchd); everywhere else the brief runs in the cloud.
   8. **The dashboard.** Says how to start it: `workkit tower`, the local one of the [three ways to see your board](#three-ways-to-see-your-board).
 - **Home repo**

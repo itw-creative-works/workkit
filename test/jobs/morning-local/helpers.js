@@ -7,14 +7,14 @@
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { spawnSync } = require('child_process');
 const { mkTmp, SPAWN_DEADLINE, until } = require('../../lib/harness');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
 const {
-  NO_RC, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, stubTool, pathWith, systemPathWith, joinPath, spawnBash,
+  NO_RC, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, nodeEnv, stubTool, stubToolJs, pathWith, joinPath, spawnBash, spawnSync,
 } = require('../../lib/platform');
-const { skipOnJobPathNode, skipOnUsrLocalBin } = require('../../lib/job-path');
+const { skipOnUsrLocalBin } = require('../../lib/job-path');
 const { mkKitRepo } = require('../../scripts/home/helpers');
+const { binDirWithout } = require('../../scripts/publish/helpers');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
@@ -175,6 +175,8 @@ const mkWorld = ({
     tower,
     homeRemote,
     notifly,
+    localBin,
+    ghLog,
     nightlyLog: path.join(home, 'Library', 'Logs', 'claude-nightly.log'),
     calls: () => readArgv(claudeLog),
     // The PATH each send ran under, one entry per call.
@@ -263,12 +265,71 @@ const notifiedMatching = async (world, pattern) => {
 // notification lands, or after a short bound when none comes.
 const settle = (world) => until(() => world.notifs().length > 0, 500);
 
-// The system tools and the fake ones: no node anywhere the case controls.
-const withoutNode = (world) => { world.env.PATH = systemPathWith(path.join(world.root, 'bin')); };
-
 // The system tools, the fake ones and the suite's node: no /usr/local/bin
 // unless the job adds it.
 const withBarePath = (world) => { world.env.PATH = joinPath(path.join(world.root, 'bin'), SYSTEM_PATH, NODE_DIR); };
+
+// The programs the shell morning leaned on, which the Node one starts none of.
+const SHELL_TOOLS = ['jq', 'awk', 'sed', 'base64', 'timeout'];
+
+/**
+ * The world as a machine without `gone`: the fake tools ahead of a mirror of
+ * the system's with none of them, the suite's node handed to the starter. The
+ * job's own PATH line reaches /opt/homebrew/bin and /usr/local/bin, where a
+ * machine may keep one, so ~/.local/bin, first on that line, answers each as a
+ * missing command does.
+ */
+const withoutTools = (world, gone = SHELL_TOOLS) => {
+  world.env.PATH = joinPath(path.join(world.root, 'bin'), binDirWithout(...gone));
+  Object.assign(world.env, nodeEnv);
+  for (const tool of gone) {
+    stubToolJs(world.localBin, tool, `process.stderr.write(${JSON.stringify(`${tool}: command not found\n`)});\nprocess.exitCode = 127;`);
+  }
+};
+
+/**
+ * A `gh` in place of the world's that never answers a call matching `hangOn`
+ * (a RegExp, as source text), its pid written to the file it returns; any other
+ * call answers as the world's does on a machine: the dispatch lands, both
+ * secrets are listed, and an API call gets `{}`.
+ */
+const hangingGh = (world, hangOn) => {
+  const pidFile = path.join(world.root, 'gh-hung.pid');
+  stubToolJs(world.localBin, 'gh', [
+    'const argv = process.argv.slice(2);',
+    recordArgvJs(JSON.stringify(world.ghLog), 'argv'),
+    "const all = argv.join(' ');",
+    `if (${hangOn}.test(all)) {`,
+    `  require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
+    '  setInterval(() => {}, 2 ** 30);',
+    "} else if (all.startsWith('secret list')) {",
+    "  process.stdout.write('CLAUDE_CODE_OAUTH_TOKEN\\tUpdated 2026-07-01\\nWORKKIT_GITHUB_TOKEN\\tUpdated 2026-07-01\\n');",
+    "} else if (!all.startsWith('workflow run')) {",
+    "  process.stdout.write('{}');",
+    '}',
+  ].join('\n'));
+  return pidFile;
+};
+
+/**
+ * Every node the morning starts, its own among them, loads a file first that
+ * ends the one whose program is `name` (a file name, as `brief-payload.js`) at
+ * once: `said` on stderr and exit `code`, as a program that crashed on load.
+ */
+const crashing = (world, name, code, said) => {
+  const preload = path.join(world.root, `crash-${name}`);
+  fs.writeFileSync(preload, [
+    `if (require('path').basename(process.argv[1] || '') === ${JSON.stringify(name)}) {`,
+    `  process.stderr.write(${JSON.stringify(`${said}\n`)});`,
+    `  process.exit(${code});`,
+    '}',
+  ].join('\n'));
+  world.env.NODE_OPTIONS = `--require ${preload}`;
+};
+
+// The job's bound as a case shortens it, in seconds: long enough for a step
+// that answers on a loaded machine, short against one that never does.
+const SHORT_BOUND = '20';
 
 // Every suite's skip value: the machine leg is a macOS job.
 const skipUnlessDarwin = () => process.platform !== 'darwin'
@@ -277,5 +338,5 @@ const skipUnlessDarwin = () => process.platform !== 'darwin'
 module.exports = {
   SCRIPT, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner,
   pushFromElsewhere, subjects, REFRESH, notified, notifiedMatching, settle, skipUnlessDarwin,
-  skipOnJobPathNode, withoutNode, skipOnUsrLocalBin, withBarePath,
+  skipOnUsrLocalBin, withBarePath, SHELL_TOOLS, withoutTools, hangingGh, crashing, SHORT_BOUND,
 };

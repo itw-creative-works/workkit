@@ -1,10 +1,11 @@
 // Runs alone: it reclaims the fixed ports 18693 and 14300 through the machine's process table.
 //
-// Tests for tower/start.sh: the terminal (the colors a half keeps, FORCE_COLOR on and
+// Tests for tower/start.js: the terminal (the colors a half keeps, FORCE_COLOR on and
 // off a terminal, a real Ctrl-C under a pty). Prologue: ./helpers.js.
 //
 
 const fs = require('fs');
+const { stripVTControlCharacters } = require('util');
 const { describe, test, expect, mkTmp } = require('../../lib/harness');
 const {
   cleanup, until, start, QUIET_PORTS, RED, CYAN, OFF, COLORED_APP,
@@ -56,7 +57,7 @@ describe('tower/start: the terminal', () => {
   });
 
   test('a tower on a real terminal hands its halves the colors back', { skip: skipWithoutExpect() }, async () => {
-    // Only a pty shows this: the half writes to a fifo, so it sees a non-tty
+    // Only a pty shows this: the half writes to a pipe, so it sees a non-tty
     // and paints nothing unless told to. The tower is the one that knows a
     // terminal is watching.
     const dir = mkTmp('tower-start-');
@@ -92,8 +93,9 @@ describe('tower/start: the terminal', () => {
     const pty = ptyRun(dir, "echo 'Dev server: https://localhost:14300'; exec sleep 30");
     try {
       expect(await until(() => pty.child.exitCode !== null), 'the run came down on the interrupt').toBeTruthy();
-      const text = pty.output();
-      expect(/✓ dashboard at/.test(text), 'the terminal saw the one line it should').toBeTruthy();
+      // A terminal gets the tower's own lines painted, so they are read under the paint.
+      const text = stripVTControlCharacters(pty.output());
+      expect(/✓ dashboard at/.test(text), `the terminal saw the one line it should, got: ${JSON.stringify(text)}`).toBeTruthy();
       expect(!/Terminated/.test(text), 'and no job-control obituary for the halves').toBeTruthy();
       expect(!/\bDone\b/.test(text), 'nor for their filters').toBeTruthy();
     } finally {

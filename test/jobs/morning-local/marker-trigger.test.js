@@ -4,6 +4,8 @@
 
 const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
+const { skipWithoutModes, stubToolJs } = require('../../lib/platform');
+const { recordArgvJs } = require('../../lib/argv-log');
 const { skipUnlessDarwin, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
 
 describe('jobs/morning (local)', { skip: skipUnlessDarwin() }, () => {
@@ -70,6 +72,58 @@ describe('jobs/morning (local)', { skip: skipUnlessDarwin() }, () => {
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(world.marker(), 'there is no board to read').toBe(null);
       expect(/marker: no home repo/.test(world.log()), `the log names the skip: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+    });
+
+    test('the marker is written whole over the one before it, nothing of the old left', () => {
+      // An old marker longer than the new one: a write that did not replace the
+      // file would leave its tail behind the new text.
+      const world = mkWorld({ home: 'owner/private-home', dispatch: true, posted: [{ title: `${BRIEF_TITLE_PREFIX}2026-08-17` }] });
+      fs.writeFileSync(world.markerFile, `${JSON.stringify({ version: 1, lastBrief: '2026-08-01', checkedAt: '2026-08-01T09:00:00Z', note: 'x'.repeat(200) }, null, 2)}\n`);
+      const res = runJob(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      expect(world.marker(), 'the whole file is the new marker, in its one shape')
+        .toMatch(/^\{\n {2}"version": 1,\n {2}"lastBrief": "2026-08-17",\n {2}"checkedAt": "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"\n\}\n$/);
+      cleanup(world.root);
+    });
+
+    test('a folder it cannot write leaves the old marker as it was, and says why in its line', { skip: skipWithoutModes('a read-only folder does not stop the write') }, () => {
+      const was = JSON.stringify({ version: 1, lastBrief: '2026-08-01', checkedAt: '2026-08-01T09:00:00Z' });
+      const world = mkWorld({ home: 'owner/private-home', dispatch: true, posted: [{ title: `${BRIEF_TITLE_PREFIX}2026-08-17` }] });
+      fs.writeFileSync(world.markerFile, was);
+      fs.chmodSync(world.workflowHome, 0o555);
+      try {
+        const res = runJob(world);
+        expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+        expect(world.marker(), 'the marker is untouched').toBe(was);
+        expect(world.log(), 'the line names it').toMatch(/marker: .*could not be written.*2026-08-17/);
+      } finally {
+        fs.chmodSync(world.workflowHome, 0o755);
+      }
+      cleanup(world.root);
+    });
+
+    test('a notice gh prints on stderr beside a good answer still records the date', () => {
+      const world = mkWorld({ home: 'owner/private-home', dispatch: true });
+      // The world's answers, with the update notice gh prints on stderr on the board read.
+      const nodes = JSON.stringify([{ title: `${BRIEF_TITLE_PREFIX}2026-08-17`, createdAt: '2026-08-17T09:00:00Z', body: '' }]);
+      stubToolJs(world.localBin, 'gh', [
+        'const argv = process.argv.slice(2);',
+        recordArgvJs(JSON.stringify(world.ghLog), 'argv'),
+        "const all = argv.join(' ');",
+        "if (all.startsWith('secret list')) {",
+        "  process.stdout.write('CLAUDE_CODE_OAUTH_TOKEN\\tUpdated 2026-07-01\\nWORKKIT_GITHUB_TOKEN\\tUpdated 2026-07-01\\n');",
+        "} else if (all.includes('discussions(first')) {",
+        "  process.stderr.write('A new release of gh is available: 2.60.0 -> 2.61.0\\n');",
+        `  process.stdout.write(JSON.stringify({ data: { repository: { discussions: { nodes: ${nodes} } } } }));`,
+        "} else if (!all.startsWith('workflow run')) {",
+        "  process.stdout.write('{}');",
+        '}',
+      ].join('\n'));
+      const res = runJob(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      const marker = world.marker();
+      expect(marker && JSON.parse(marker).lastBrief, `the date is recorded: ${world.log()}`).toBe('2026-08-17');
       cleanup(world.root);
     });
 

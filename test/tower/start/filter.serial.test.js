@@ -1,6 +1,6 @@
 // Runs alone: it reclaims the fixed ports 18693 and 14300 through the machine's process table.
 //
-// Tests for tower/start.sh: the log filter (the quiet default, the refusals it never
+// Tests for tower/start.js: the log filter (the quiet default, the refusals it never
 // swallows, the phase boundary, the doors to the whole wall). Prologue: ./helpers.js.
 //
 
@@ -100,10 +100,9 @@ describe('tower/start: the log filter', () => {
   });
 
   test('a signal to the script is a shutdown, not a boot that never happened', async () => {
-    // A TERM to the script's own pid runs cleanup from the trap, which removes
-    // the fifo directory and the announce marker with it, so the block after the
-    // poll loop must not read a run that had its dashboard as one that never
-    // came up.
+    // A TERM to the starter's own pid ends both halves, so the check that names
+    // a half ending before the announce must not read a run that had its
+    // dashboard as one that never came up.
     const dir = mkTmp('tower-start-');
     const tower = start(dir, 'exec sleep 30', ANNOUNCING_APP, QUIET_PORTS);
     const out = tower.output;

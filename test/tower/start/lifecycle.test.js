@@ -1,6 +1,7 @@
 //
-// Tests for tower/start.sh: the two halves' lifecycle (one interrupt or either
-// ending ends both) and a held port, replaced not collided with. Prologue: ./helpers.js.
+// Tests for tower/start.js: the two halves' lifecycle (one interrupt or either
+// ending ends both, a half's last line read before it is ended) and a held port,
+// replaced not collided with. Prologue: ./helpers.js.
 //
 
 const fs = require('fs');
@@ -8,9 +9,9 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp, endTree,
 } = require('../../lib/harness');
-const { IS_WINDOWS } = require('../../lib/platform');
+const { shellPath } = require('../../lib/platform');
 const {
-  cleanup, alive, until, pidIn, pidOnSight, start, standIn, STARTING, skipOnMsysPid,
+  cleanup, alive, until, pidIn, pidOnSight, start, standIn, nodeHalf, STARTING, skipOnWindowsTerm,
 } = require('./helpers');
 
 // A half stub that puts a child between itself and the sleeper, the way npm
@@ -21,7 +22,7 @@ const grandchild = (pidFile) => `bash -c "echo \\$\\$ > '${pidFile}'; exec sleep
 const recorded = (files) => files.map(pidIn).filter(Boolean);
 
 describe('tower/start: one command, both processes', () => {
-  test('both halves start, and one interrupt ends both', { skip: skipOnMsysPid() }, async () => {
+  test('both halves start, and one interrupt ends both', { skip: skipOnWindowsTerm() }, async () => {
     const dir = mkTmp('tower-start-');
     const apiPid = path.join(dir, 'api.pid');
     const appPid = path.join(dir, 'app.pid');
@@ -41,12 +42,10 @@ describe('tower/start: one command, both processes', () => {
     }
   });
 
-  test('either half ending takes the other with it - nothing lingers half-up', { skip: skipOnMsysPid() }, async () => {
+  test('either half ending takes the other with it - nothing lingers half-up', async () => {
     const dir = mkTmp('tower-start-');
     const appPid = path.join(dir, 'app.pid');
-    const tower = start(dir,
-      'sleep 0.3',
-      `echo $$ > '${appPid}'; exec sleep 30`);
+    const tower = start(dir, 'sleep 0.3', nodeHalf(dir, appPid));
     try {
       expect(await until(() => pidIn(appPid) > 0), 'the surviving half started').toBeTruthy();
       const pid = pidIn(appPid);
@@ -58,27 +57,45 @@ describe('tower/start: one command, both processes', () => {
     }
   });
 
-  test('a half that exits leaving a background child behind still ends the other', { skip: skipOnMsysPid() }, async () => {
-    // With the filter downstream in a pipeline, the pid to watch is not the
-    // pipeline's wrapper, which lives until every writer of the pipe has closed;
-    // this stub's leftover child holds that pipe.
+  test('a half that exits leaving a background child behind still ends the other', async () => {
+    // The half's end is its own exit, not the close of its output, which lives
+    // until every writer of it has closed; this stub's leftover child holds it,
+    // and the other half stays up, both past the wait.
     const dir = mkTmp('tower-start-');
     const appPid = path.join(dir, 'app.pid');
-    const tower = start(dir,
-      'sleep 15 & exit 0',
-      `echo $$ > '${appPid}'; exec sleep 30`);
+    const leftPid = path.join(dir, 'left.pid');
+    const tower = start(dir, `sleep 120 & echo $! > '${leftPid}'; exit 0`, nodeHalf(dir, appPid, 120000));
     try {
       expect(await until(() => pidIn(appPid) > 0), 'the surviving half started').toBeTruthy();
       const pid = pidIn(appPid);
       expect(await until(() => !alive(pid)), 'and ended when its sibling exited').toBeTruthy();
       expect(await until(() => tower.child.exitCode !== null), 'the wrapper itself ended too').toBeTruthy();
+      expect((await tower.done).timedOut, 'on its own, never by the run\'s deadline').toBe(false);
+    } finally {
+      await tower.end('SIGKILL');
+      recorded([leftPid]).forEach((left) => endTree(left, 'SIGKILL'));
+      cleanup(dir);
+    }
+  });
+
+  test('a half that prints its last line and exits at once has that line shown', async () => {
+    // The line has no newline, as a half that dies mid-line leaves it.
+    const dir = mkTmp('tower-start-');
+    const half = path.join(dir, 'last.js');
+    const last = 'omega: the last line before the end';
+    fs.writeFileSync(half, `process.stdout.write(${JSON.stringify(last)});\n`);
+    const tower = start(dir, 'exec sleep 30', `"${shellPath(process.execPath)}" "${shellPath(half)}"`);
+    try {
+      const { timedOut } = await tower.done;
+      expect(timedOut, 'the run ended when its half did').toBe(false);
+      expect(tower.output().includes(last), `the half's last line was shown: ${tower.output()}`).toBeTruthy();
     } finally {
       await tower.end('SIGKILL');
       cleanup(dir);
     }
   });
 
-  test('ending a half ends its whole tree - a grandchild server dies with it', { skip: skipOnMsysPid() }, async () => {
+  test('ending a half ends its whole tree - a grandchild server dies with it', { skip: skipOnWindowsTerm() }, async () => {
     const dir = mkTmp('tower-start-');
     const kidPid = path.join(dir, 'kid.pid');
     const tower = start(dir, 'exec sleep 30', grandchild(kidPid));
@@ -93,9 +110,9 @@ describe('tower/start: one command, both processes', () => {
     }
   });
 
-  test('a signal the instant a grandchild appears ends every tree promptly, ten times over', { skip: skipOnMsysPid() }, async () => {
-    // The signal goes the moment the app's grandchild records itself, while a
-    // trap may still sit behind a foreground wait: by the time the wrapper has
+  test('a signal the instant a grandchild appears ends every tree promptly, ten times over', { skip: skipOnWindowsTerm() }, async () => {
+    // The signal goes the moment the app's grandchild records itself, while the
+    // starter may still be starting a half: by the time the wrapper has
     // exited, every tree must already be gone. Both halves carry a grandchild,
     // so the case holds whichever half spawns first.
     for (let round = 1; round <= 10; round += 1) {
@@ -161,11 +178,11 @@ describe('tower/start: one command, both processes', () => {
     }
   });
 
-  test('a signal before either half has spawned is a clean exit with no error line',
-    { skip: IS_WINDOWS && 'Windows sends bash no TERM its trap can answer' }, async () => {
-      // The signal goes on the tower's first line, before it has started a half,
-      // with no port to reclaim: the run must end there, spawning nothing into
-      // the fifo folder its cleanup already removed.
+  test('a signal during startup is a clean exit with no error line',
+    { skip: skipOnWindowsTerm() }, async () => {
+      // The signal goes on the tower's first line, while it may still be starting
+      // its halves, with no port to reclaim: the run ends cleanly and leaves no
+      // half running.
       const dir = mkTmp('tower-start-');
       const halves = [path.join(dir, 'api.pid'), path.join(dir, 'app.pid')];
       const tower = start(dir,
@@ -186,8 +203,7 @@ describe('tower/start: one command, both processes', () => {
         expect(`${tower.child.exitCode}/${tower.child.signalCode}`, 'with status 0, its own exit rather than the signal\'s').toBe('0/null');
         const errors = out().split('\n').filter((line) => line.trim() && !STARTING.test(line));
         expect(errors.join('\n'), 'and it printed no error line, only that it was starting').toBe('');
-        // A half spawned late would still be writing its pid file; give it time.
-        expect(!(await until(() => halves.some((file) => fs.existsSync(file)), 300)), 'nor spawned a half after the signal').toBeTruthy();
+        expect(recorded(halves).every((pid) => !alive(pid)), 'and left no half running').toBeTruthy();
       } finally {
         await tower.end('SIGKILL');
         cleanup(dir);

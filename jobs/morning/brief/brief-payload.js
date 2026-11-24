@@ -19,7 +19,7 @@ const { collectCcNews, renderCcNews, renderVersionMark } = require('./cc-news');
 const { renderStatsMark } = require('./stats');
 
 // The digest instruction. It names the payload's sections rather than the shape
-// of a board file, and it fixes the first line of the response: morning.sh puts
+// of a board file, and it fixes the first line of the response: the morning puts
 // that line in the desktop notification a local rehearsal fires and in the one
 // line of proof of life a runner writes to the Actions log.
 const INSTRUCTION = `You are producing the owner's MORNING KICKOFF from the brief payload below.

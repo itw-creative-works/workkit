@@ -1,4 +1,4 @@
-// Tests for jobs/claude-nightly.sh: the summaries step the 9am job runs first,
+// Tests for jobs/claude-nightly.js: the summaries step the 9am job runs first,
 // which writes the day up and publishes it as a Discussion on the home repo.
 // It runs for real against `claude` and `gh` shims in a scratch HOME and
 // WORKFLOW_HOME, so it never reaches GitHub, writes a summary file, or notifies.
@@ -6,19 +6,19 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, mkTmp, SPAWN_DEADLINE, until,
+  describe, test, expect, mkTmp, run, start, until, alive,
 } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath, spawnBash,
+  SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, stubToolJs, joinPath,
 } = require('../lib/platform');
-const { skipOnJobPathNode, skipOnUsrLocalBin, NO_NODE_LINE } = require('../lib/job-path');
+const { skipOnUsrLocalBin } = require('../lib/job-path');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly.js');
 
-// The date the runner works in is the local one (`date '+%Y-%m-%d'`), which is not
-// always today in UTC: a fixture stamped from toISOString would be a different
-// day for half the world's clocks.
+// The date the runner works in is the local one, which is not always today in
+// UTC: a fixture stamped from toISOString would be a different day for half
+// the world's clocks.
 const today = () => new Date().toLocaleDateString('en-CA');
 
 // Every cadence title the runner would publish today. The script adds the
@@ -165,11 +165,7 @@ const mkWorld = ({
   };
 };
 
-const runJob = (world, args = []) => spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
-  encoding: 'utf8',
-  timeout: SPAWN_DEADLINE,
-  env: world.env,
-});
+const runJob = (world, args = []) => run(process.execPath, [SCRIPT, ...args], { env: world.env });
 
 describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the runner is a macOS launchd job (~/Library paths)' }, () => {
   describe('jobs/claude-nightly: no home repo is a named skip', () => {
@@ -292,6 +288,20 @@ describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the ru
       cleanup(world.root);
     });
 
+    test('with no override, the payload indexes ~/.claude/projects and the send is granted that same root', () => {
+      // The world's own root stays empty, so the day is sent only if the index read the home's.
+      const world = mkWorld({ home: 'owner/private-home', quiet: true });
+      delete world.env.WORKKIT_CLAUDE_PROJECTS;
+      const projects = path.join(world.home, '.claude', 'projects');
+      fs.mkdirSync(path.join(projects, 'a-repo'), { recursive: true });
+      fs.writeFileSync(path.join(projects, 'a-repo', 'session.jsonl'), '{"type":"user"}\n');
+      runJob(world);
+      const argv = world.calls()[0];
+      expect(argv, `the index found the day under ${projects}, so it was sent: ${world.log()}`).toBeTruthy();
+      expect(argv[argv.indexOf('--add-dir') + 1], 'and the grant names that root').toBe(projects);
+      cleanup(world.root);
+    });
+
     test('the send runs from an empty scratch directory, never from /', () => {
       // Under launchd the cwd is / and the job is its own TCC identity: a startup
       // scan from there trips the macOS privacy prompts.
@@ -300,6 +310,29 @@ describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the ru
       const cwd = world.cwds()[0];
       expect(cwd && cwd !== '/' && cwd !== world.home, `it worked from a scratch dir, got: ${cwd}`).toBeTruthy();
       expect(fs.existsSync(cwd), 'which went away with the run').toBe(false);
+      cleanup(world.root);
+    });
+
+    test('a run ended by TERM mid-send leaves no scratch folder in its temp folder', async (t) => {
+      const world = mkWorld({ home: 'owner/private-home' });
+      const temp = mkTmp('claude-nightly-temp-');
+      world.env.TMPDIR = temp;
+      // A send that never answers, saying where it runs and as whom first.
+      const sendFile = path.join(world.root, 'send.json');
+      stubToolJs(path.join(world.home, '.local', 'bin'), 'claude', [
+        `require('fs').writeFileSync(${JSON.stringify(sendFile)}, JSON.stringify({ pid: process.pid, cwd: process.cwd() }));`,
+        'setInterval(() => {}, 2 ** 30);',
+      ].join('\n'));
+      const send = () => (fs.existsSync(sendFile) ? JSON.parse(fs.readFileSync(sendFile, 'utf8')) : null);
+      t.after(() => { const s = send(); if (s && alive(s.pid)) process.kill(s.pid, 'SIGKILL'); });
+
+      const job = start(process.execPath, [SCRIPT], { env: world.env });
+      t.after(() => job.end('SIGKILL'));
+      expect(await until(() => send() !== null), `the send started: ${job.output()}`).toBeTruthy();
+      const scratches = () => fs.readdirSync(temp).filter((name) => name.startsWith('claude-nightly.'));
+      expect(scratches().length, `the run's scratch folder is there while it sends: ${fs.readdirSync(temp).join(', ')}`).toBe(1);
+      await job.end('SIGTERM');
+      expect(scratches(), `and gone once TERM ended the run: ${job.output()}`).toEqual([]);
       cleanup(world.root);
     });
 
@@ -322,21 +355,6 @@ describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the ru
       const seen = world.sendPaths();
       expect(seen.length, `the send happened once: ${fmtCalls(world.calls())}`).toBe(1);
       expect(seen[0].split(':').includes('/usr/local/bin'), `the job's own PATH adds it: ${seen[0]}`).toBeTruthy();
-      cleanup(world.root);
-    });
-
-    test('a PATH without node: the named line, nothing sent or posted, exit 0', { skip: skipOnJobPathNode() }, () => {
-      const world = mkWorld({ home: 'owner/private-home' });
-      world.env.PATH = joinPath(path.join(world.home, '.local', 'bin'), SYSTEM_PATH);
-      const res = runJob(world);
-      expect(res.status, `a missing node never fails the morning: ${res.stderr}`).toBe(0);
-      const lines = [...world.log().matchAll(NO_NODE_LINE)];
-      expect(lines.length, `one named line in the log: ${world.log()}`).toBe(1);
-      expect(lines[0][1].split(':').includes('/usr/bin'), `naming the PATH it searched: ${lines[0][1]}`).toBeTruthy();
-      expect(!/exit 127/.test(world.log()), `never the bare exit status of a missing command: ${world.log()}`).toBeTruthy();
-      expect(world.calls().length, `nothing was sent: ${fmtCalls(world.calls())}`).toBe(0);
-      const created = world.ghCalls().filter((c) => c.join(' ').includes('createDiscussion'));
-      expect(created.length, `and nothing was posted: ${fmtCalls(world.ghCalls())}`).toBe(0);
       cleanup(world.root);
     });
   });

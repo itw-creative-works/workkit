@@ -86,6 +86,10 @@ describe('markers: the marker paths', () => {
     expect(await markers().suiteMarkerPath('/repos/thing', WH), 'the path').toBe(`${WH}/markers/claude-suite-marker/${SHA1_THING}`);
   });
 
+  test('sessionKey spells a session id as a file name, every character but a letter or a digit as _', () => {
+    expect(markers().sessionKey('a1-b.c'), 'the key').toBe('a1_b_c');
+  });
+
   test('sessionMarker is the named dir plus the session id with every non-alphanumeric as _', async () => {
     expect(await markers().sessionMarker('workkit-thing', 'ab-12/c.d e', TMP), 'the path').toBe(`${TMP}/workkit-thing/ab_12_c_d_e`);
   });

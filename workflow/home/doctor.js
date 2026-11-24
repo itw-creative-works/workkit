@@ -5,7 +5,6 @@
  * Usage: const { doctor, runnerDoctor } = require('./doctor');
  */
 
-const fs = require('fs');
 const path = require('path');
 const { gitIn } = require('../lib/git');
 const { isDir, isFile } = require('../lib/lock');
@@ -17,7 +16,9 @@ const { towerDir } = require('../user-dir');
 const {
   kitDir, slug, homeState, homeReady, cloneSlug,
 } = require('./options');
-const { exportOf, scratchDir, sameBytes } = require('./seed');
+const { withScratch } = require('../lib/scratch');
+const { exportOf } = require('./committed');
+const { sameBytes } = require('./seed');
 const { downgrades } = require('./stamp');
 const { runnerList, runnerRetired } = require('./runner');
 
@@ -97,29 +98,27 @@ const runnerDoctor = () => {
     skip('runner: the kit could not be resolved beside this engine; the cloud brief\'s runner cannot be compared');
     return 0;
   }
-  const scratch = scratchDir();
-  if (scratch === null) {
-    skip('runner: could not make a scratch directory; the cloud brief\'s runner cannot be compared');
-    return 0;
-  }
-  let pairs;
-  let found;
-  try {
+  // The compare answers false when it could not be made (skipped), else the list and its counts.
+  const compared = withScratch((scratch) => {
     // The export's own warning is the seed's voice; here a failure is a skip.
     const from = exportOf(scratch, kit);
     if (!from) {
       skip(`runner: could not export the committed kit from ${nativePath(kit)}; the cloud brief's runner cannot be compared`);
-      return 0;
+      return false;
     }
-    pairs = runnerList(from);
+    const pairs = runnerList(from);
     if (pairs.length === 0) {
       skip(`runner: the committed kit at ${nativePath(kit)} carries no runner list; the cloud brief's runner cannot be compared`);
-      return 0;
+      return false;
     }
-    found = compareListed(from, pairs);
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+    return { pairs, found: compareListed(from, pairs) };
+  }, 'workkit-home.');
+  if (compared === null) {
+    skip('runner: could not make a scratch directory; the cloud brief\'s runner cannot be compared');
+    return 0;
   }
+  if (compared === false) return 0;
+  const { pairs, found } = compared;
   // The seed's prune waits on a missing file, so setup cannot clear the
   // retired files; the missing ones are what to fix.
   if (found.missing.length > 0) {

@@ -1,19 +1,20 @@
 /**
  * workflow/home/seed.js: the one-time seed of the tower project into an empty
- * clone, the by-content sync that keeps it current, and the export of a
- * folder's committed files both read from, with git alone.
- * Usage: const { seed, sync, source, file, tracked, manifestsOf } = require('./seed');
+ * clone and the by-content sync that keeps it current, both reading the app's
+ * committed files through committed.js.
+ * Usage: const { seed, sync, sameBytes, manifestsOf } = require('./seed');
  */
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { gitIn, textAt } = require('../lib/git');
 const { isDir, isFile } = require('../lib/lock');
 const { filesUnder } = require('../lib/read');
 const { nativePath } = require('../lib/platform');
+const { escapeRegex } = require('../lib/regex');
+const { withScratch } = require('../lib/scratch');
 const { ok, skip, warn } = require('../lib/voice');
 const { towerDir } = require('../user-dir');
+const { source } = require('./committed');
 const { towerApp, homeReady } = require('./options');
 const { repointFileSpecs } = require('./repo');
 const { downgrades, stampFolders, stampWrite } = require('./stamp');
@@ -32,24 +33,10 @@ const TOWER_APP_RETIRED = ['apps'];
 const TOWER_APP_KEEP = ['.env.example'];
 
 // Each exclusion as a whole-name pattern, `*` any run of characters.
-const EXCLUDE_PATTERNS = TOWER_APP_EXCLUDE.map((name) => new RegExp(`^${name.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`));
-
-// A tree entry's git mode, as the export makes it again.
-const MODE_EXEC = '100755';
-const MODE_LINK = '120000';
-const MODE_COMMIT = '160000';
+const EXCLUDE_PATTERNS = TOWER_APP_EXCLUDE.map((name) => new RegExp(`^${name.split('*').map(escapeRegex).join('.*')}$`));
 
 /** Whether an entry's name is one the copy never carries. */
 const pruned = (name) => EXCLUDE_PATTERNS.some((pattern) => pattern.test(name));
-
-
-/**
- * Does a git repo track the folder? The one test the copies agree on: a
- * folder sitting untracked inside some other repo is not tracked.
- * @param {string} folder
- * @returns {boolean}
- */
-const tracked = (folder) => gitIn(folder, ['ls-files', '--error-unmatch', '.'], { stdio: 'ignore' }).status === 0;
 
 /**
  * Whether TOWER_APP_EXCLUDE names this top-level folder, as written.
@@ -72,114 +59,6 @@ const appFolders = (app) => {
     return [];
   }
   return names.sort().filter((name) => !name.startsWith('.') && isDir(path.join(app, name)) && !excluded(name));
-};
-
-/** HEAD's entries under `folder`: mode, object and path from the folder, or null when git cannot list them. */
-const headEntries = (folder) => {
-  const res = gitIn(folder, ['ls-tree', '-r', '-z', 'HEAD'], { stdio: ['ignore', 'pipe', 'ignore'] });
-  if (res.status !== 0) return null;
-  return res.stdout.toString('utf8').split('\0').filter(Boolean).map((line) => {
-    const tab = line.indexOf('\t');
-    const [mode, , object] = line.slice(0, tab).split(' ');
-    return { mode, object, rel: line.slice(tab + 1) };
-  });
-};
-
-/** Each object's raw bytes, by object name, from one `git cat-file --batch`: no filter, so no line ending changes. */
-const blobsOf = (folder, objects) => {
-  const res = gitIn(folder, ['cat-file', '--batch'], { input: objects.map((o) => `${o}\n`).join(''), stdio: ['pipe', 'pipe', 'ignore'] });
-  if (res.status !== 0) throw new Error('git cat-file --batch failed');
-  const blobs = new Map();
-  let at = 0;
-  while (at < res.stdout.length) {
-    const end = res.stdout.indexOf(10, at);
-    const [object, type, size] = res.stdout.subarray(at, end).toString('utf8').split(' ');
-    if (type === 'missing') throw new Error(`git cat-file: ${object} is missing`);
-    const start = end + 1;
-    blobs.set(object, res.stdout.subarray(start, start + Number(size)));
-    at = start + Number(size) + 1;
-  }
-  return blobs;
-};
-
-/** HEAD's files under `folder` written into `dest`, each its bytes and its run bit; throws on any failure. */
-const exportHead = (folder, dest) => {
-  const entries = headEntries(folder);
-  if (entries === null) throw new Error('git ls-tree failed');
-  const blobs = blobsOf(folder, [...new Set(entries.filter((e) => e.mode !== MODE_COMMIT).map((e) => e.object))]);
-  for (const { mode, object, rel } of entries) {
-    const at = path.join(dest, rel);
-    if (mode === MODE_COMMIT) {
-      fs.mkdirSync(at, { recursive: true });
-      continue;
-    }
-    fs.mkdirSync(path.dirname(at), { recursive: true });
-    if (mode === MODE_LINK) fs.symlinkSync(blobs.get(object).toString('utf8'), at);
-    else fs.writeFileSync(at, blobs.get(object), { mode: mode === MODE_EXEC ? 0o755 : 0o644 });
-  }
-};
-
-/**
- * The folder a copy reads from. A folder a repo TRACKS gives HEAD's copy of
- * it, exported into `<scratch>/src`, so an uncommitted edit never travels; a
- * folder no repo tracks (even one inside some other repo) is itself. An
- * export holding no file is a failure too.
- * @param {string} scratch a scratch folder the caller removes
- * @param {string} folder
- * @returns {string} the folder to read, or '' when the export failed
- */
-const exportOf = (scratch, folder) => {
-  if (!tracked(folder)) return folder;
-  const dest = path.join(scratch, 'src');
-  try {
-    fs.mkdirSync(dest, { recursive: true });
-    exportHead(folder, dest);
-    return filesUnder(dest).length > 0 ? dest : '';
-  } catch {
-    return '';
-  }
-};
-
-/**
- * exportOf, a failed export named in the seed's voice.
- * @param {string} scratch a scratch folder the caller removes
- * @param {string} folder
- * @returns {string} the folder to read, or '' when the export failed (warned)
- */
-const source = (scratch, folder) => {
-  const from = exportOf(scratch, folder);
-  if (!from) warn(`home: could not export the committed files from ${nativePath(folder)} (HEAD holds none of it, or the extract failed); nothing was copied from it`);
-  return from;
-};
-
-/**
- * One file's text by the same rule: HEAD's copy when a repo tracks the
- * folder, else the disk's.
- * @param {string} folder
- * @param {string} rel the path from the folder
- * @returns {string|null} null when that side lacks it
- */
-const file = (folder, rel) => {
-  if (tracked(folder)) return textAt(folder, 'HEAD', `./${rel}`);
-  const at = path.join(folder, rel);
-  if (!isFile(at)) return null;
-  try {
-    return fs.readFileSync(at, 'utf8');
-  } catch {
-    return null;
-  }
-};
-
-/**
- * A scratch folder, or null when one cannot be made.
- * @returns {string|null}
- */
-const scratchDir = () => {
-  try {
-    return fs.mkdtempSync(path.join(os.tmpdir(), 'workkit-home.'));
-  } catch {
-    return null;
-  }
 };
 
 // The seed's two copies are its own, not tree-copy.js's copyEntry: that file
@@ -260,12 +139,7 @@ const seed = () => {
     warn(`home: the tower app is missing at ${app || 'this kit'}; nothing to seed the project from`);
     return false;
   }
-  const scratch = scratchDir();
-  if (scratch === null) {
-    warn(`home: could not make a scratch directory; nothing was seeded into ${nativePath(home)}`);
-    return false;
-  }
-  try {
+  const seeded = withScratch((scratch) => {
     const from = source(scratch, app);
     if (!from) return false;
     try {
@@ -288,9 +162,12 @@ const seed = () => {
     stampWrite(folders);
     ok(`home: seeded the tower project in ${nativePath(home)} from ${nativePath(app)}`);
     return true;
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+  }, 'workkit-home.');
+  if (seeded === null) {
+    warn(`home: could not make a scratch directory; nothing was seeded into ${nativePath(home)}`);
+    return false;
   }
+  return seeded;
 };
 
 /** The app's files to sync, the kept root names after the walk. */
@@ -392,28 +269,26 @@ const sync = () => {
   }
   // Never over a newer kit's work: nothing was written.
   if (downgrades()) return { code: 1, manifests: false };
-  const tmp = scratchDir();
-  if (tmp === null) {
-    warn(`sync: could not make a scratch directory; the tower project in ${nativePath(home)} was not refreshed`);
-    return { code: 1, manifests: false };
-  }
-  let copied;
-  let manifests;
-  let removed;
-  let synced;
-  try {
+  const walked = withScratch((tmp) => {
     const from = source(tmp, app);
     if (!from) return { code: 1, manifests: false };
     const into = syncIn(from, app, home, tmp);
-    ({ copied, manifests } = into);
     // Never the benign skip: committing or building it publishes half a refresh.
-    if (into.rc !== 0) return { code: into.rc, manifests };
+    if (into.rc !== 0) return { code: into.rc, manifests: into.manifests };
     const out = retire(from, home);
-    if (out.rc !== 0) return { code: out.rc, manifests };
-    ({ removed, synced } = out);
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    if (out.rc !== 0) return { code: out.rc, manifests: into.manifests };
+    return {
+      code: null, copied: into.copied, manifests: into.manifests, removed: out.removed, synced: out.synced,
+    };
+  }, 'workkit-home.');
+  if (walked === null) {
+    warn(`sync: could not make a scratch directory; the tower project in ${nativePath(home)} was not refreshed`);
+    return { code: 1, manifests: false };
   }
+  // A code is a stop inside the walk; null is a walk that finished.
+  if (walked.code !== null) return walked;
+  let { copied } = walked;
+  const { manifests, removed, synced } = walked;
   // The stamp last: a kit that moved on reaches the remote even when the app
   // did not change, and it records what this sync synced.
   if (stampWrite(synced)) copied += 1;
@@ -426,5 +301,5 @@ const sync = () => {
 };
 
 module.exports = {
-  TOWER_APP_EXCLUDE, TOWER_APP_RETIRED, TOWER_APP_KEEP, tracked, excluded, appFolders, exportOf, source, file, scratchDir, sameBytes, manifestsOf, seed, sync,
+  TOWER_APP_EXCLUDE, TOWER_APP_RETIRED, TOWER_APP_KEEP, excluded, appFolders, sameBytes, manifestsOf, seed, sync,
 };

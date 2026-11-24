@@ -309,29 +309,29 @@ describe('workkit: a checkout or an installer that cannot answer (macOS)', { ski
   });
 
   test('an installer that fails is reported, and the run still finishes', () => {
-    // install.sh exits hard on a missing template or a plist that fails lint.
-    // Unguarded under `set -e` that abort is invisible inside the hook, which
+    // install.js exits 1 on a missing template or a plist that fails lint.
+    // Unguarded under `set -e` that exit is invisible inside the hook, which
     // discards stderr, and retries silently every day.
     const world = mkWorld();
     world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
     const { kit, script } = mkPartialKit({
       installer: [
-        'if [[ "$1" == \'--check\' ]]; then printf \'com.workkit.claude-daily → out of date for this kit\\n\'; exit 0; fi',
-        'printf \'template missing\\n\' >&2',
-        'exit 1',
+        "if (process.argv[2] === '--check') { console.log('com.workkit.claude-daily → out of date for this kit'); process.exit(0); }",
+        "console.error('template missing');",
+        'process.exit(1);',
       ],
     });
     const { code, said } = runCli(world, ['update', '--auto'], { script });
     expect(code, 'a failed install never aborts the caller').toBe(0);
     expect(said.includes('did not finish'), `it says the install failed, got: ${said}`).toBeTruthy();
-    expect(said.includes('install.sh'), 'and names the command to run by hand').toBeTruthy();
+    expect(said.includes('install.js'), `and names the command to run by hand, got: ${said}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);
   });
 
   test('a drift check that cannot answer is not "current" either', () => {
     const world = mkWorld();
     world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
-    const { kit, script } = mkPartialKit({ installer: ['exit 3'] });
+    const { kit, script } = mkPartialKit({ installer: ['process.exit(3);'] });
     const { code, said } = runCli(world, ['update', '--auto'], { script });
     expect(code, 'exit 0').toBe(0);
     expect(said.includes('drift check did not finish'), `it says the check failed, got: ${said}`).toBeTruthy();

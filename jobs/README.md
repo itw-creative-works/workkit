@@ -2,7 +2,7 @@
 
 - Scheduled work the kit runs.
 - **One job, at 9am, in six steps, and one script that runs them**.
-  - `jobs/morning.sh` is that script, and both schedulers invoke it.
+  - `jobs/morning.sh` is that script's starter, and both schedulers invoke it; it hands every argument to `jobs/morning.js`, the morning in one program.
   - The two schedulers: this machine's launchd agent, and the GitHub Actions workflow seeded onto the home repo.
 - There is no laptop version and cloud version.
   - Each step asks whether the environment it woke up in has what that step needs.
@@ -38,7 +38,7 @@
 ## Install
 
 ```sh
-bash jobs/install.sh
+node jobs/install.js
 ```
 
 - Renders the plist into `~/Library/LaunchAgents/` and loads it.
@@ -49,7 +49,7 @@ bash jobs/install.sh
   - `workkit update` (which the standards hook calls once a day as `update --auto`) re-runs it when the job template changed.
   - So a changed template no longer waits for anyone to remember.
   - A moved clone needs no re-run, since the job is reached through the engine link.
-- The drift question is `bash jobs/install.sh --check`.
+- The drift question is `node jobs/install.js --check`.
   - It is the same render and compare, with nothing written and launchd never asked.
   - It prints one line per agent that is missing or out of date, and nothing at all when the machine matches.
 - The CLI carries no second copy of what a current install looks like; that answer lives here.
@@ -59,20 +59,23 @@ bash jobs/install.sh
 
 | File | What |
 |---|---|
-| `morning.sh` | the one entry point, in both environments: the summaries, the runner reconcile, the brief (dispatched from here, composed and published on a runner), the site publish, the marker, and the owner's `morning.d` scripts, each gated by what the environment can do, one section per step. Locally it appends to `~/Library/Logs/claude-daily.log`; on a runner the Actions log is the log |
-| `morning/` | the files only `morning.sh` uses: `brief-publish.sh` and the `brief/` folder, below. The cloud runner list seeds them beside it |
-| `brief-dispatch.sh` | sourced where the dispatch is made: the one function that hands the day to the cloud (`gh workflow run brief.yml` on the home repo), with every guard and every named refusal. Two callers (the scheduled morning here, and `workkit brief`) and each decides what a refusal is worth |
-| `morning/brief-publish.sh` | sourced on the cloud path: the one function that posts today's digest as a Discussion, check-before-post and category fallback included |
+| `morning.sh` | the starter both schedulers start by path, before any Node is chosen: on a machine it puts the folders launchd lacks on PATH, then hands every argument to `morning.js` under a node at the kit's floor. A kit missing `morning.js` or the engine's `platform.sh` is one `morning: the engine is missing at <dir>; the kit is incomplete` line and exit 1 |
+| `morning.js` | the one entry point, in both environments: the summaries, the runner reconcile, the brief (dispatched from here, composed and published on a runner), the site publish, the marker, and the owner's `morning.d` scripts, each gated by what the environment can do, one file each. Locally it appends to `~/Library/Logs/claude-daily.log`; on a runner the Actions log is the log |
+| `morning/` | the files only `morning.js` uses: the steps (`summaries.js`, `runner.js`, `brief.js`, `cloud-machine.js` for the brief on a runner, `site.js`, `marker.js`, `morning-d.js`), `brief-publish.js` and the `brief/` folder, below. The cloud runner list seeds them beside it |
+| `lib/` | what both jobs share: `notes.js`, the log's stamped blocks and the three note levels; `machine.js`, the home a job reads (`homeOf`), the transcripts root under it (`projectsRoot`, which the summaries gate, the nightly's grant and its payload's index all read), the PATH folders, the quiet Claude, the bound on a child and the notifier |
+| `brief-dispatch.js` | the one function that hands the day to the cloud (`gh workflow run brief.yml` on the home repo), with every guard and every named refusal: `dispatchBrief()`. Two callers (the scheduled morning here, in its own process, and `workkit brief`) and each decides what a refusal is worth |
+| `brief-dispatch.sh` | sourced by `workkit brief`, after `workflow/lib.sh`: `dispatch_brief` runs `brief-dispatch.js` under a node at the kit's floor and fills `DISPATCH_SLUG`, then `DISPATCH_LINE` or `DISPATCH_REASON` |
+| `morning/brief-publish.js` | required on the cloud path: `publishBrief()`, which posts today's digest as a Discussion, check-before-post and category fallback included, and answers its line and its code |
 | `morning/brief/brief-payload.js` | the morning payload, on stdout: the digest instruction, then the brief as JSON, then the upstream news. Pure gather: no Claude, no notification |
 | `morning/brief/cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, read back off the latest published brief |
 | `morning/brief/stats.js` | the `<!-- workkit-stats: … -->` line the published brief carries, the day in numbers: the open board by status, what the day closed, the inbox depth, each repo's open count. The only store the tower's history charts have; a failed sweep or an unusable stamp renders nothing, since a missing day is honest and a zero day is a cliff |
 | `../workflow/templates/github-workflows/brief.yml` | what runs `morning.sh` on a runner: `workflow_dispatch` for the machine's trigger, a 17:30 UTC cron as the backup. It lives on the HOME repo, seeded there by setup; this is its source |
 | `claude-nightly/nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON, or, with `--cadence weekly\|monthly`, the rollup instruction over the prior summaries handed in on stdin. Pure gather |
-| `claude-nightly.sh` | the summaries step: composes the day, sends it, and posts it as a Discussion on the home repo, logging what it decided to `~/Library/Logs/claude-nightly.log` |
+| `claude-nightly.js` | the summaries step, a program the morning starts in its own process: composes the day, sends it, and posts it as a Discussion on the home repo, logging what it decided to `~/Library/Logs/claude-nightly.log` |
 | `com.workkit.claude-daily.plist` | the schedule: 9:00 AM daily, `{{HOME}}` rendered at install, the job reached through the engine link |
-| `install.sh` | render, compare, and only on change copy and reload |
+| `install.js` | render, compare, and only on change copy and reload |
 
-- **`install.sh`**, the detail of its row:
+- **`install.js`**, the detail of its row:
   - "Loaded" means loaded from THIS plist.
     - So a label registered against some other path is re-registered rather than reported current.
   - launchd is machine-global, so a run whose `$HOME` is not the account's real home renders and copies but asks launchd nothing.
@@ -93,6 +96,8 @@ bash jobs/install.sh
 - The payload scripts print. Their one write is `brief-payload.js`'s marks.
   - The marks are the cursor and stats lines `writeBriefMarks` puts in the scratch file `WORKKIT_BRIEF_MARK_FILE` names.
   - The runner appends them to the post.
+- The morning's scratch folder goes however the run ends, as the summaries step's does: a TERM or an INT is held until it is removed, then ends the process.
+  - The morning stops at once while a step awaits a bounded child, which is not handed the signal; a sync child (the compose, the send, a `gh` read) is not interrupted. The step runs on to its next awaited call first, so a TERM during the compose still sends the brief.
 
 ## The payload
 
@@ -156,14 +161,15 @@ bash jobs/install.sh
 
 ## The morning on this machine
 
-- `morning.sh` does the summaries step first: it calls `claude-nightly.sh`, waits for it, and only then moves on.
-  - That step keeps its own script, its own guards, and its own log.
+- `morning.js` does the summaries step first: it starts `claude-nightly.js` in a process of its own, waits for it, and only then moves on.
+  - That step keeps its own program, its own guards, and its own log.
   - Calling it is all the wiring there is, so neither half of the logic lives in two places.
 - **A summaries failure is never the brief's failure**.
   - The exit status and output are logged as `[summaries exit N; the brief continues]`, and the morning carries on.
   - The reason: making sure nine o'clock says something is what the job is for.
 - A hang is that failure without an exit status.
-  - So the step is bounded at 15 minutes where `timeout` exists (homebrew coreutils, absent on a stock macOS).
+  - So the step is bounded at 15 minutes by Node's own timer, on every machine, and past it the step's whole process tree is ended.
+  - `WORKKIT_JOB_TIMEOUT` (seconds) moves that bound, for this step, the site publish and each `morning.d` script alike; the marker's read keeps its own, `WORKKIT_GH_TIMEOUT` (10 seconds).
   - Its 124 reads as any other failure.
 - A machine with no `~/.claude/projects` has no day to read, and that is the step's gate.
   - It prints one named line and goes on to the next step.
@@ -172,7 +178,7 @@ bash jobs/install.sh
   - Until now the only thing that refreshed them was `workkit setup`.
     - So a checkout that moved on kept publishing last month's brief until somebody remembered to re-run it.
     - That is how briefs went out for days carrying no stats line for the tower's history charts.
-- The step is the engine's own `wk_home_seed_runner`, called from here every morning behind a `pull --rebase` of the clone.
+- The step is the engine's own seed, `workflow/home.js seed-runner` in a process of its own, run every morning behind a `pull --rebase` of the clone (`home.js catch-up runner`).
   - The seed judges from the working copy.
   - So a clone another push left behind would seed over what the remote already carries, and commit what it can never push.
   - A pull that cannot finish skips the seed and says so.
@@ -195,7 +201,7 @@ bash jobs/install.sh
   - The scheduled brief is `gh workflow run brief.yml` on the **home repo**, the slug in `~/.workkit/settings.json`.
   - Only the scheduled brief does this; a `<message>` run and `--now` never do.
   - The reason: the home repo is where setup seeded the workflow and wrote the secrets.
-- The dispatch itself lives in `brief-dispatch.sh`, sourced where it is used.
+- The dispatch itself lives in `brief-dispatch.js`: the morning calls it in its own process, and `workkit brief` runs it through `brief-dispatch.sh`.
   - `workkit brief` is the same function on demand.
   - The only difference is that a refusal there is loud, because somebody asked for it just now.
 - **The secrets are checked before the day is handed over:** one `gh secret list` on that same repo has to name BOTH `CLAUDE_CODE_OAUTH_TOKEN` and `WORKKIT_GITHUB_TOKEN`.
@@ -224,8 +230,7 @@ bash jobs/install.sh
   - That also gives this morning's dispatch the longest chance to have posted before the board is read.
   - A brief posted after it leaves a marker one day behind, which is the ordinary morning the hook is silent about.
 - **It never writes a lie:** each of these leaves the existing marker exactly as it was and names the skip in the log:
-  - no engine library beside it;
-  - no `gh` or `jq`;
+  - no `gh`;
   - no home repo;
   - a read that did not answer;
   - a board carrying no brief.
@@ -236,28 +241,27 @@ bash jobs/install.sh
   - A name prefix such as `10-` or `20-` sets the order, since the folder runs in name order.
 - Each script gets its own block in `~/Library/Logs/claude-daily.log`, headed `--- <stamp> morning.d/<name> ---`.
   - Everything it prints on either stream goes under that header.
-- It runs under the same 15-minute bound as the other steps, where `timeout` exists.
+  - Both its streams are the log file itself, never a pipe: its lines land in the order they happened, a line it writes to `LOG_FILE` itself included.
+  - So a child it leaves running in the background holds nothing open on the morning.
+- It runs under the same 15-minute bound as the other steps.
   - Its environment holds `LOG_FILE`, `MANUAL` (1 on a `--now` rehearsal) and `WORK_DIR`.
 - A script that exits non-zero or runs past the bound gets a warning naming it.
   - The next one still runs, and the morning's own exit code never changes.
 - A file that is not executable is skipped without a line, and a machine with no folder hears nothing.
 - The scheduled morning and `--now` run the folder; a `<message>` run never reads it.
 - A runner names the skip and reads nothing.
-  - So does a checkout whose engine library is missing beside the job (`morning.d: the engine library is missing beside <dir>; skipped`).
-  - The reason: the library names the folder.
 - `morning.sh [message]` is otherwise a generic headless runner: an argument replaces the payload.
   - That is how you test a prompt without waiting for tomorrow.
   - It skips the summaries step and the publish for the same reason.
 - It is hardened for launchd, where the environment is bare and the job is its own TCC identity:
-  - **PATH is set by the script.** launchd provides almost none, so the job puts these ahead of it:
+  - **PATH is set by the job.** launchd provides almost none, so the starter puts these ahead of it before it looks for node, and the program again for what it starts:
     - `~/.local/bin`;
     - an nvm default link, where the machine keeps one;
     - Homebrew's `/opt/homebrew/bin` and `/usr/local/bin` (where the nodejs.org installer puts node too).
-    - A step that needs node and finds none logs `<step>: node is not on this machine's PATH: <the PATH>` and ends; the morning carries on.
-    - A scheduled run only logs it; the `--now` rehearsal also prints it on stderr.
-  - **The cwd is an empty scratch directory** under `~/Library/Caches/claude-daily`.
+    - With no node at the kit's floor the morning never starts: the starter prints `morning: no node at or above <floor> is installed` on stderr and exits 1.
+  - **The cwd is the job's own work folder**, `~/Library/Caches/claude-daily`.
     - launchd starts a job at `/`, and Claude Code's startup scan from there trips macOS privacy prompts.
-    - An empty directory gives it nothing to scan.
+    - A folder of the job's own gives it nothing to scan.
   - **The send is capped**: haiku, effort low, `--safe-mode`, no tools, no session persistence, and a hard budget of $0.25.
   - **The notification is detached.** Notifly does not return until it is dismissed, and the job must never wait on a human.
     - Its message is the response's first line, which is why the instruction fixes that line as `HEADLINE:`.
@@ -268,7 +272,6 @@ bash jobs/install.sh
   - It uses the same payload the runner sends, the same log file, and a desktop notification.
   - So the brief can be tested without waiting for tomorrow or reading an Actions log.
   - It dispatches nothing, and its log block is stamped `(manual)`.
-  - A missing node is said on stderr as well as logged.
   - It PUBLISHES NOTHING.
     - A run at noon that posted `brief: <today>` would make the nine o'clock brief find its own post already there and skip.
     - It would also advance the cursor on news that brief has yet to report.
@@ -282,14 +285,14 @@ bash jobs/install.sh
   - The response is the model's answer, never the payload it answered.
   - The title is the same convention the summaries keep.
 - The category is asked for as `Brief`.
-  - The name lives in `workflow/lib/discussions.sh`, where setup's check reads it too.
+  - The name is `BRIEF_CATEGORY` in `workflow/lib/discussions.js`, one of the `CATEGORIES` setup's check reads.
   - It is answered by the default-category fallback until the owner has made it, because categories cannot be created over the API.
   - The read-back filters on the TITLE for that reason, since it cannot know which category a repo landed in.
 - The body's last line is the upstream version the brief covered.
   - A run that never had a version publishes no line at all.
 - **Check before post.** A brief already on the board under today's title is not posted twice.
   - That is what lets the dispatch and its cron backup both fire on one morning.
-- `jobs/morning/brief-publish.sh` is the one place that knows how to post it, and the cloud path is the only caller.
+- `jobs/morning/brief-publish.js` is the one place that knows how to post it, and the cloud path is the only caller.
 - **This machine publishes no brief at all:**
   - the scheduled morning composes nothing;
   - a `<message>` run is the generic headless runner;
@@ -351,8 +354,6 @@ bash jobs/install.sh
     - So a payload that could not be composed, a send that failed, or a post that did not land exits non-zero and shows as a red run.
   - A brief already on the board is not a failure: it is the ordinary overlap, and it exits 0.
   - Each refusal names its own cause.
-    - A missing `jq` is reported as a missing tool, not as a settings file that names no home repo.
-    - An empty read would otherwise look like a settings file that names no home repo.
 - **The digest never reaches the Actions log.**
   - It summarizes issues across private repos, and an Actions log belongs to a repo that could be made public one day.
   - The log gets proof of life instead: the response's first line and its byte count.
@@ -406,7 +407,7 @@ bash jobs/install.sh
 
 ## The summaries step
 
-- `claude-nightly.sh` writes the day that just ended up and PUBLISHES it.
+- `claude-nightly.js` writes the day that just ended up and PUBLISHES it.
   - It publishes a Discussion on the home repo named by `site.repo` in `~/.workkit/settings.json`, over the API.
   - So a machine with no clone still publishes.
   - It is never a file: generated records are never files, not on a machine, not in a repo.
@@ -415,7 +416,7 @@ bash jobs/install.sh
 - Each of the three is titled `<cadence>: <date>`.
 - A rollup's inputs are the summaries ALREADY PUBLISHED, read back through the API.
   - It never reads the transcripts again, which the days already read.
-- `workflow/lib/discussions.sh` is the one place that speaks that API. It:
+- The jobs publish through `workflow/lib/discussions.js` (the morning's marker holds one bounded read of its own). It:
   - resolves the repository and category node ids;
   - caches them in `~/.workkit/.cache.json` under `homeCache` (refreshed on a miss);
   - posts, and lists.
@@ -437,6 +438,7 @@ bash jobs/install.sh
 - The send carries the three read tools and `--add-dir` on the transcripts root the payload indexed.
   - The reflection reads the day itself, so the grant and the index have to name the same root.
 - It runs from an empty scratch directory with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, for the same TCC reason the brief does.
+  - The folder goes however the run ends: a TERM or an INT is held until it is removed, then ends the process.
 - Its stderr goes to the log; only its stdout is ever the published body.
 - Every line either job writes wears the kit's one shape: a glyph for what happened, and the `task:` it belongs to.
   - The contract is `workflow/README.md` § Output.
@@ -444,6 +446,7 @@ bash jobs/install.sh
   - The reason: a log file outlives the day the line's clock can name.
 - Every reason not to publish is one timestamped block in `~/Library/Logs/claude-nightly.log`, and exit 0. The reasons:
   - `summaries: no home repo configured; skipped`;
+  - `summaries: <slug> is the home repo, but gh is what reaches it; skipped`;
   - a payload that could not be composed;
   - a Claude that answered with nothing;
   - an API that refused.
@@ -459,11 +462,11 @@ bash jobs/install.sh
 
 ## The publish step
 
-- After the brief has gone, `morning.sh` runs `workflow/publish.sh --quiet`.
+- After the brief has gone, `morning.js` runs `workflow/publish.js --quiet` in a process of its own.
   - The tower project in `~/.workkit/tower` is rebuilt.
   - Its output is pushed to the home repo's `gh-pages` branch, where GitHub Pages serves it.
 - It runs after the brief and only for the morning (a `morning.sh <message>` run publishes nothing).
-- It is bounded by the same 15-minute `timeout`.
+- It runs under the same 15-minute bound.
 - Its every reason not to publish is a silent skip: no home repo, no build tooling, a diverged clone, nothing changed.
 - A failure is logged as `[publish exit N; the brief was already sent]` and changes nothing about the morning.
 - The mechanics are the engine's: `workflow/README.md` § Publishing the dashboard.

@@ -1,6 +1,6 @@
 // Tests for jobs/morning.sh as a GitHub Actions runner runs it: publishing the
 // digest as a Discussion, and the log that carries no digest body.
-// The shared prologue (world factory, no-jq PATH, job runner) is ./helpers.js.
+// The shared prologue (world factory, job runner) is ./helpers.js.
 
 const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');

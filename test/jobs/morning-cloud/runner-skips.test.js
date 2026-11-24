@@ -1,12 +1,11 @@
 // Tests for jobs/morning.sh as a GitHub Actions runner runs it: the steps a
 // runner skips, and the cloud steps that run on a runner only.
-// The shared prologue (world factory, no-jq PATH, job runner) is ./helpers.js.
+// The shared prologue (world factory, job runner) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
-const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
+const { NO_RC, shellPath, spawnBash, spawnSync } = require('../../lib/platform');
 const {
   SCRIPT, HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');

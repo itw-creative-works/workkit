@@ -1,15 +1,19 @@
 // Tests for jobs/morning.sh as a GitHub Actions runner runs it: the machine it
 // makes (the settings file, the roster, the budget rails, the unreadable repos).
-// The shared prologue (world factory, no-jq PATH, job runner) is ./helpers.js.
+// The shared prologue (world factory, job runner) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { NO_RC, shellPath, skipWithoutNodeStub, spawnBash } = require('../../lib/platform');
 const {
-  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, mkWorld, withoutJq, runJob,
+  IS_WINDOWS, NO_RC, shellPath, samePath, skipWithoutNodeStub, spawnBash,
+} = require('../../lib/platform');
+const {
+  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');
+
+const KIT_DIR = path.join(__dirname, '..', '..', '..');
 
 describe('jobs/morning (cloud): the machine it makes', () => {
   test('an absent settings file is written from the repo the run belongs to', () => {
@@ -35,36 +39,40 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     cleanup(world.root);
   });
 
-  test('a runner without the seeded engine refuses, naming what is missing', () => {
-    // The cloud branch builds its roster through the seeded engine's
-    // predicates (the list in workflow/home/runner-files.js); without them every
-    // directory reads as no repo, so a named refusal beats an empty roster.
+  test('a runner seeded without the morning refuses at once, naming the engine', () => {
+    // The seeded starter and the engine library it sources are there, and the
+    // program they start is not: a red run with one line beats a half run. The
+    // machine's half, a kit missing the library, is ../morning-local/cloud-brief.test.js.
     const world = mkWorld();
     const seeded = path.join(world.root, 'brief');
-    fs.mkdirSync(path.join(seeded, 'jobs'), { recursive: true });
-    fs.mkdirSync(path.join(seeded, 'workflow'), { recursive: true });
-    // The seeded jobs files are all there; `brief/workflow/` is the empty half,
-    // so the gap under test is the engine and nothing else.
-    const copy = path.join(seeded, 'jobs', 'morning.sh');
     fs.cpSync(path.dirname(SCRIPT), path.join(seeded, 'jobs'), { recursive: true });
-    const res = spawnBash([...NO_RC, shellPath(copy)], {
+    fs.rmSync(path.join(seeded, 'jobs', 'morning.js'), { force: true });
+    const lib = path.join(seeded, 'workflow', 'lib');
+    fs.mkdirSync(lib, { recursive: true });
+    fs.copyFileSync(path.join(KIT_DIR, 'workflow', 'lib', 'platform.sh'), path.join(lib, 'platform.sh'));
+    const res = spawnBash([...NO_RC, shellPath(path.join(seeded, 'jobs', 'morning.sh'))], {
       encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env,
     });
     expect(res.status, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`).toBe(1);
-    expect(/engine/.test(res.stderr), `and names the engine as what is missing: ${res.stderr}`).toBeTruthy();
+    expect(res.stderr, 'one line, naming the engine folder').toMatch(/^morning: the engine is missing at \S*workflow; the kit is incomplete\n$/);
+    expect(res.stdout, 'and nothing else is said').toBe('');
     expect(world.calls().length, 'nothing was sent').toBe(0);
     cleanup(world.root);
   });
 
-  test('a missing jq is named as a missing tool, not as a missing home repo', () => {
-    // jq reads the home slug, so an absent one empties that read: the two
-    // refusals have to say which of them happened.
+  test('on Windows every path a line names is the native spelling', { skip: !IS_WINDOWS && 'a path is spelled apart from its POSIX form only on Windows' }, () => {
     const world = mkWorld();
-    const env = { ...world.env, PATH: withoutJq(world.root, path.join(world.root, 'bin')) };
-    const res = spawnBash([...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
-    expect(res.status, 'the run refuses').toBe(1);
-    expect(/jq is not installed/.test(res.stderr), `and names the tool: ${res.stderr}`).toBeTruthy();
-    expect(!/names no home repo/.test(res.stderr), 'never the key, which is right there').toBeTruthy();
+    const res = runJob(world);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    const named = [
+      [/settings: wrote (.+) for /, path.join(world.home, '.workkit', 'settings.json')],
+      [/roster: \d+ repos in (.+)$/m, path.join(world.home, '.workkit', '.repos.json')],
+    ];
+    for (const [line, file] of named) {
+      const said = line.exec(res.stdout)?.[1] ?? '';
+      expect(said, `a drive-letter path, never Git Bash's /c/ form: ${res.stdout}`).toMatch(/^[A-Za-z]:\//);
+      expect(samePath(said, file, 'win32'), `naming ${file}: ${said}`).toBeTruthy();
+    }
     cleanup(world.root);
   });
 

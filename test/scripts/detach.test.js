@@ -5,7 +5,7 @@
 // lock is taken over, the code two attached calls get (one through attachRun), the whole run an
 // INT ends, and askEnd's answers. Then the supervisor's
 // checks (frozen, busy, a look, an end on request or one that fails, a failed process read, the
-// awake hold), and body.js's signal codes.
+// awake hold), codeOf's reading of a spawnSync result, and body.js's signal codes.
 
 const fs = require('fs');
 const path = require('path');
@@ -709,6 +709,16 @@ describe('detach: the awake hold', () => {
     } finally {
       reap(pidIn(pidFile), supervisor);
     }
+  });
+});
+
+describe('detach: codeOf, a spawnSync result as a shell\'s code', () => {
+  test('a status is the code, a signal with no status is the signal\'s, and neither is 127', () => {
+    const { codeOf } = require(DETACH);
+    expect(codeOf({ status: 3, signal: null }), 'a status of 3').toBe(3);
+    expect(codeOf({ status: 0, signal: null }), 'a status of 0').toBe(0);
+    expect(codeOf({ status: null, signal: 'SIGTERM' }), 'ended by TERM').toBe(143);
+    expect(codeOf({ status: null, signal: null, error: new Error('spawnSync nowhere ENOENT') }), 'never started').toBe(127);
   });
 });
 

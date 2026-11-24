@@ -32,7 +32,7 @@ const SYSTEM_DIR = IS_WINDOWS ? findDir('bash.exe', 'sed.exe') : null;
 /**
  * The system tools and nothing else: no Homebrew, no node manager, no stubs.
  * jq and git join from wherever the machine keeps them, one directory each,
- * since every hook reads through jq and a run without it fails open.
+ * since the kit's shell still reads JSON through jq.
  */
 const systemPath = () => {
   const dirs = IS_WINDOWS ? [SYSTEM_DIR] : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
@@ -266,6 +266,26 @@ const stubTool = (dir, name, lines) => {
   fs.writeFileSync(script, `${lines.join('\n')}\n`, { mode: 0o755 });
   const exe = stubLauncher();
   if (exe) fs.copyFileSync(exe, `${script}.exe`);
+  return script;
+};
+
+/**
+ * Write a PATH stand-in named `name` that runs `source` as JavaScript under the
+ * node running this suite, named on its `#!` line. A shell finds it by bare name;
+ * a Node file finds it through workflow/lib/run.js, whose `#!` rule starts it
+ * under node on Windows, so no launcher is copied beside it.
+ * @param {string} dir - the PATH directory, which must exist
+ * @param {string} name - the tool being stood in for, with no extension
+ * @param {string} source - the stand-in's JavaScript, no `#!` line
+ * @returns {string} the script that was written
+ */
+const stubToolJs = (dir, name, source) => {
+  const node = shellPath(process.execPath);
+  // A `#!` line ends its program's path at the first space.
+  if (/\s/.test(node)) throw new Error(`test/lib/platform: stubToolJs cannot name ${node} on a #! line: it holds a space`);
+  const script = path.join(dir, name);
+  fs.writeFileSync(script, `#!${node}\n${source}\n`, { mode: 0o755 });
+  fs.chmodSync(script, 0o755);
   return script;
 };
 
@@ -673,7 +693,7 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubNode, crlfJq,
+  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubToolJs, stubNode, crlfJq,
   lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,

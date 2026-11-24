@@ -1,9 +1,9 @@
 // The shared prologue of the jobs/morning.sh cloud suites beside this one: the
 // script run for real as an Actions runner runs it, against a scratch HOME and a
 // PATH farm (a recording `claude`, a recording notifier, and a `gh` answering the
-// contents API and the Discussions GraphQL). `git`, `jq` and `node` are real, so
-// the roster it writes is read back by the tower's own composer. The machine leg
-// is the morning-local/ folder.
+// contents API and the Discussions GraphQL). `git` and `node` are real, so the
+// roster it writes is read back by the tower's own composer. The machine leg is
+// the morning-local/ folder.
 
 const fs = require('fs');
 const path = require('path');
@@ -11,8 +11,7 @@ const { pathToFileURL } = require('url');
 const { mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
-  NO_RC, shellPath, which, homeEnv, linkTool,
-  stubTool, pathWith, joinPath, spawnBash,
+  NO_RC, shellPath, homeEnv, stubTool, pathWith, spawnBash,
 } = require('../../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
@@ -189,26 +188,14 @@ const mkWorld = ({
   };
 };
 
-// A machine without jq, built as a farm of symlinks to exactly what the run
-// needs before it asks for jq: dropping jq's directory would take every other
-// tool in /usr/bin with it. `date` stamps every line the job prints.
-const NO_JQ_TOOLS = ['bash', 'dirname', 'mktemp', 'mkdir', 'rm', 'cat', 'date'];
-const withoutJq = (root, bin) => {
-  const farm = path.join(root, 'no-jq');
-  fs.mkdirSync(farm, { recursive: true });
-  for (const tool of NO_JQ_TOOLS) {
-    const found = which(tool);
-    if (found) linkTool(farm, found);
-  }
-  return joinPath(bin, farm);
-};
-
-const runJob = (world, args = []) => spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
+// The run as the workflow starts it: `script`, the kit's starter unless a case
+// names the copy a home repo carries.
+const runJob = (world, args = [], script = SCRIPT) => spawnBash([...NO_RC, shellPath(script), ...args], {
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,
   env: world.env,
 });
 
 module.exports = {
-  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, today, mkWorld, withoutJq, runJob,
+  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, today, mkWorld, runJob,
 };

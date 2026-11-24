@@ -73,6 +73,7 @@
     - A `workflow/lib` export asked under a world's env: `kitUnder(env, file, name, asks)` in `test/lib/kit-under.js` calls `<name>` of `workflow/lib/<file>` once per ask, each ask an argument list, all in one node of its own under `env`, so the machine folder, the temp folder and git's config it reads are the world's.
       - The answers come back in order, as JSON brings them. A call that throws in that node throws in the test with its message, and the asks after it are never made.
       - `kitUnderAsync(env, file, name, asks)` is the same asks started without waiting, so several nodes ask at one moment; it resolves the answers, or rejects as `kitUnder` throws.
+    - A job's function called in this process under a world's env: `underEnv(over, fn)` in `test/lib/under-env.js` awaits `fn` with the keys of `over` laid on `process.env`, and puts every key back after, however `fn` ended.
     - `run` of `lib/runs.js` driven the same way, as npm's script shell (`workflow/script-shell.js`) calls it, so a signal to the call reaches that node:
       - `runJob(dir, script, { lock, root })` is the job the script shell hands `run`: `node -e <script>`, its log in `<dir>`, its lock there unless `lock` names one, `root` null unless given.
       - `runUnder(job, { env, before, launch })` runs it to its end in a node of its own and answers `{ res, answers }`: the harness run's result (its status the `rc`, its output the run's) and what `run` resolved, null when the call ended first. `before` is source run once `runs.js` is loaded, `launch` a launch seam's source.

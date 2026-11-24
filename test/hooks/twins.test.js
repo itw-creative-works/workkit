@@ -2,7 +2,7 @@
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the suite log's path, the test script,
 // the marker path, the color gate, the voice lines, the plain mutex, the marker sweep, the opt-in read, the session rule, one setting, the machine folder and tower,
 // the hooks log, the slug, the native path, the repo slug and kit checkout, the clone rank, the atomic link, the safe JSON edit, the kit's hooks folder, git's value-taking global options,
-// the yes or no question, the opener choice, the Discussions category names, the spinner's frames and its one line, the poll's countdown frames,
+// the yes or no question, the opener choice, the spinner's frames and its one line, the poll's countdown frames,
 // and the home repo's Pages branch.
 // Plus one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
 // And three with no shell side, the repo flag, the public slug and the CHANGELOG test.
@@ -1040,7 +1040,7 @@ describe('twins: the shims\' shared readers, norm_dir, in_list, real_path and th
   });
 });
 
-describe('twins: the terminal questions, the category names and the spinner, workflow/lib/flows.sh, discussions.sh and voice.sh against flows.js, discussions.js and spin.js', () => {
+describe('twins: the terminal questions and the spinner, workflow/lib/flows.sh and voice.sh against flows.js and spin.js', () => {
   const nodeLib = (name) => require(path.join(KIT, 'workflow', 'lib', name));
   // The indent rides INDENT, since lib.sh resets WK_LOG_INDENT at load; the Node side reads WK_LOG_INDENT itself.
   const INDENTED = { INDENT: '  ', WK_LOG_INDENT: '  ' };
@@ -1108,15 +1108,6 @@ describe('twins: the terminal questions, the category names and the spinner, wor
     for (const [name, world] of Object.entries(WORLDS)) {
       expect(JSON.stringify(say('node', world)), `${name}: openUrl against wk_open_url`).toBe(JSON.stringify(shell[name]));
     }
-  });
-
-  test('WK_DISC_CATEGORIES and CATEGORIES name the same categories in the same order', () => {
-    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'discussions.sh')}"\nprintf '%s\\n' "\${WK_DISC_CATEGORIES[@]}"`], {
-      env: { PATH: SYSTEM_PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    const shell = (res.stdout || '').replace(/\r/g, '').split('\n').filter(Boolean);
-    expect(shell, `the shell's list, stderr: ${res.stderr}`).toEqual(['Daily', 'Weekly', 'Monthly', 'Brief']);
-    expect([...nodeLib('discussions.js').CATEGORIES], 'CATEGORIES against WK_DISC_CATEGORIES').toEqual(shell);
   });
 
   // wk_spin_draw run as wk_spin starts it, to a file, until four frames began; the first three are whole.

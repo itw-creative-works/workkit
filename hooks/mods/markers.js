@@ -1,7 +1,7 @@
 /**
  * hooks/mods/markers.js: the files the hooks name by content, the Node twin of
  * the engine's wk_marker_path: the review, full-panel,
- * triage, suite and package markers, the gh shim's journals, a call's mark of them
+ * triage, checkpoint, suite and package markers, the gh shim's journals, a call's mark of them
  * and the read of what it changed, the per-session marker, a file's age, and
  * the folder Git Bash means by a path the shell spelled, which the module's
  * variables and the guard facts go through, and the session's PATH with the
@@ -130,6 +130,15 @@ export const reviewFullMarkerPath = (root, home) => markerPath('claude-review-fu
 export const triageMarkerPath = (anchor, home) => markerPath('claude-triage-marker', anchor, home);
 /** The triage marker's age in seconds up to which a triage run is going. */
 export const TRIAGE_MAX_AGE_S = 1800;
+
+/**
+ * The checkpoint marker `workkit checkpoint safe` writes for a session, keyed
+ * by the id itself (sessionKey), not a digest, so a harness finds it by name.
+ * @param {string} sessionId the session id (CLAUDE_CODE_SESSION_ID)
+ * @param {string} home the machine folder (userDirOf in hooks/mods/log.js)
+ * @returns {string}
+ */
+export const checkpointMarkerPath = (sessionId, home) => `${markersDir(home)}/claude-checkpoint-marker/${sessionKey(sessionId)}`;
 
 /**
  * Whether a triage run is going, by its marker's age: the one rule
@@ -319,15 +328,24 @@ export function journalLines(text) {
 export const onIssue = (line) => line.verb === 'issue' || line.verb === 'api';
 
 /**
- * The per-session file under `${TMPDIR:-/tmp}/<name>`, the id with every
- * non-alphanumeric as `_`.
+ * A session id as a file name: every character but a letter or a digit as `_`.
+ * @param {string} sessionId the session id
+ * @returns {string}
+ */
+export function sessionKey(sessionId) {
+  return String(sessionId).replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+/**
+ * The per-session file under `${TMPDIR:-/tmp}/<name>`, the id as sessionKey
+ * spells it.
  * @param {string} name the folder's name
  * @param {string} sessionId the session id
  * @param {string} [tmpdir] TMPDIR, `/tmp` when unset
  * @returns {string}
  */
 export function sessionMarker(name, sessionId, tmpdir) {
-  return `${tmpdir || '/tmp'}/${name}/${String(sessionId).replace(/[^a-zA-Z0-9]/g, '_')}`;
+  return `${tmpdir || '/tmp'}/${name}/${sessionKey(sessionId)}`;
 }
 
 /**

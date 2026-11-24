@@ -4,11 +4,10 @@
 // driven by an inherited OSTYPE plus a `cygpath` on PATH.
 
 const fs = require('fs');
-const net = require('net');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { describe, test, expect, mkTmp, until, start, needs, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, until, start, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, shellPath, cygpathStub, lenientMkdir,
   stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, skipWithoutFileLink, spawnBash,
@@ -35,71 +34,6 @@ const cygpathWorld = () => {
   cygpathStub(dir);
   return dir;
 };
-
-/**
- * A PATH directory holding a `netstat` that prints what a real Windows
- * `netstat -ano` prints for one port, CRLF ends and all: the rows the branch
- * has to keep and every near miss it has to drop. Written as a stub so the
- * Windows lookup is answerable off a Windows machine, the way `cygpathWorld`
- * above answers the Windows path spelling.
- */
-const netstatWorld = () => {
-  const dir = mkTmp('wf-platform-');
-  stubTool(dir, 'netstat', [
-    '#!/bin/bash',
-    'printf "%s\\r\\n" \\',
-    '  "" \\',
-    '  "Active Connections" \\',
-    '  "" \\',
-    '  "  Proto  Local Address          Foreign Address        State           PID" \\',
-    '  "  TCP    0.0.0.0:8693           0.0.0.0:0              LISTENING       4242" \\',
-    '  "  TCP    [::]:8693              [::]:0                 LISTENING       4242" \\',
-    '  "  TCP    127.0.0.1:18693        0.0.0.0:0              LISTENING       5151" \\',
-    '  "  TCP    0.0.0.0:86930          0.0.0.0:0              LISTENING       5252" \\',
-    '  "  TCP    10.0.0.5:51300         93.184.216.34:8693     ESTABLISHED     5353" \\',
-    '  "  UDP    0.0.0.0:8693           *:*                                    5454"',
-  ]);
-  return dir;
-};
-
-// The port questions run on this machine's own PATH rather than the system one
-// every other case here uses: the tools they ask (`lsof`, and on Windows
-// `netstat` in system32 and the `kill.exe` beside bash) are not one directory,
-// and a real run of the tower has the whole PATH anyway.
-const PORT_TOOL_PATH = { PATH: process.env.PATH };
-// Off Windows the port read asks lsof alone.
-const noPortTool = !IS_WINDOWS && needs('lsof');
-
-/**
- * A child process listening on a free port, as the harness `start()` handle, and
- * the port it took: the shape a port takeover finds. Written with process.stdout rather than console.log,
- * which paints a number once FORCE_COLOR is set and would hand the case a port
- * wrapped in escapes.
- *
- * `ignoreTerm` gives the child a SIGTERM handler that does nothing, which is
- * the listener the tower's escalation exists for: it rides out the polite
- * signal and only the forced one ends it.
- * @param {boolean} [ignoreTerm]
- */
-const listener = (ignoreTerm = false) => new Promise((resolve, reject) => {
-  const handle = start(process.execPath, ['-e', [
-    ignoreTerm ? "process.on('SIGTERM',()=>{});" : '',
-    "const s=require('net').createServer();",
-    "s.listen(0,'127.0.0.1',()=>process.stdout.write(`${s.address().port}\\n`));",
-    'setInterval(()=>{},1000);',
-  ].join('')]);
-  handle.done.catch(reject);
-  handle.child.stdout.on('data', () => {
-    if (handle.stdout().includes('\n')) resolve({ ...handle, port: Number(handle.stdout().trim()) });
-  });
-});
-
-/** Whether the child is gone within the deadline. */
-const ended = (child, ms = SPAWN_DEADLINE) => new Promise((resolve) => {
-  if (child.exitCode !== null || child.signalCode !== null) { resolve(true); return; }
-  const timer = setTimeout(() => resolve(false), ms);
-  child.on('exit', () => { clearTimeout(timer); resolve(true); });
-});
 
 /** A scratch home and a PATH folder, each holding the node stubs `nodes` names (`path`, `default`, nvm `vX.Y.Z`). */
 const nodeWorld = (nodes) => {
@@ -282,69 +216,6 @@ describe("platform.sh: npm's script shell", () => {
     expect(out, `nothing on stdout, got: ${JSON.stringify(out)}`).toBe('');
     expect(err, `nothing on stderr, got: ${JSON.stringify(err)}`).toBe('');
     cleanup(dir);
-  });
-});
-
-describe('platform.sh: wk_port_pids and wk_end_pid', () => {
-  test('a port a real listener holds answers with its pid, and a free one answers nothing', { skip: noPortTool }, async () => {
-    // A listener this process owns, so the pid the seam prints is one the case
-    // already knows. Both halves of the answer are here: the pid while it
-    // listens, and nothing at all once it does not, which is what the tower's
-    // reclaim reads as "the port is free".
-    const server = net.createServer();
-    await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
-    const { port } = server.address();
-    try {
-      const { out } = inPlatform(`wk_port_pids ${port}`, PORT_TOOL_PATH);
-      expect(out.trim(), `the pid holding the port, got: ${JSON.stringify(out)}`).toBe(String(process.pid));
-    } finally {
-      await new Promise((resolve) => { server.close(resolve); });
-    }
-    const { out } = inPlatform(`wk_port_pids ${port}`, PORT_TOOL_PATH);
-    expect(out.trim(), `nothing listens there now, got: ${JSON.stringify(out)}`).toBe('');
-  });
-
-  test('the Windows branch reads netstat: one pid per listener, CRLF stripped, near misses dropped', () => {
-    // Windows answered off Windows: OSTYPE plus the branch's own tool on PATH.
-    // The stub's rows carry every near miss: one pid on both stacks (one answer),
-    // a port this one is only a suffix or a prefix of, a connection whose foreign
-    // port matches, and a UDP row.
-    const dir = netstatWorld();
-    try {
-      const { out } = inPlatform('wk_port_pids 8693', { OSTYPE: 'msys', PATH: pathWith(dir) });
-      expect(out, `the one listening pid, with no carriage return on it, got: ${JSON.stringify(out)}`).toBe('4242\n');
-      const free = inPlatform('wk_port_pids 8694', { OSTYPE: 'msys', PATH: pathWith(dir) });
-      expect(free.out, `a port nothing listens on answers nothing, got: ${JSON.stringify(free.out)}`).toBe('');
-      expect(free.code, 'and answers it successfully, so a caller reads the empty answer and not a status').toBe(0);
-    } finally {
-      cleanup(dir);
-    }
-  });
-
-  test('the pid a port answered with is ended by the seam, politely and forced alike', { skip: noPortTool }, async () => {
-    // The takeover the tower runs, in its two passes, against a child since the
-    // point is that it dies. The forced pass gets a child that ignores SIGTERM:
-    // one that dies on the polite signal would answer the same whether `-9` was
-    // carried or dropped.
-    for (const signal of ['', '-9']) {
-      const forced = signal === '-9';
-      const { child, port, end } = await listener(forced);
-      try {
-        const { out } = inPlatform(`wk_port_pids ${port}`, PORT_TOOL_PATH);
-        expect(out.trim(), `the child holds the port, got: ${JSON.stringify(out)}`).toBe(String(child.pid));
-        if (forced && !IS_WINDOWS) {
-          // What the escalation is for: the polite call leaves this one
-          // listening. Only where a polite end exists, since Windows has none
-          // for a process without a window and ends it on the first call.
-          inPlatform(`wk_end_pid ${child.pid}`, PORT_TOOL_PATH);
-          expect(await ended(child, 2000), 'the polite signal left the stubborn listener alive').toBe(false);
-        }
-        inPlatform(`wk_end_pid ${signal} ${child.pid}`, PORT_TOOL_PATH);
-        expect(await ended(child), `${signal || 'the polite signal'} ended it`).toBeTruthy();
-      } finally {
-        await end('SIGKILL');
-      }
-    }
   });
 });
 

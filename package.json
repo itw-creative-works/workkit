@@ -9,10 +9,10 @@
   ],
   "scripts": {
     "brief": "bash jobs/morning.sh --now",
-    "nightly": "bash jobs/claude-nightly.sh --now",
+    "nightly": "node jobs/claude-nightly.js --now",
     "start": "npm run tower",
     "test": "workkit test",
-    "tower": "bash tower/start.sh"
+    "tower": "node tower/start.js"
   },
   "devDependencies": {
     "workkit-core": "*"

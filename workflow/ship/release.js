@@ -23,6 +23,7 @@ const {
 } = require('./plan');
 const { spawnSync } = require('../lib/run');
 const { today } = require('../lib/day');
+const { escapeRegex } = require('../lib/regex');
 
 const USAGE = 'usage: workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
 // The files a repo keeps its version in, by path from the root: every one is in
@@ -73,8 +74,7 @@ const currentVersion = (text, version, name) => {
  * @returns {string}
  */
 const bumpVersion = (text, current, version) => {
-  const escaped = current.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const line = new RegExp(`("version"\\s*:\\s*")${escaped}(")`);
+  const line = new RegExp(`("version"\\s*:\\s*")${escapeRegex(current)}(")`);
   return text.replace(line, (_, open, close) => `${open}${version}${close}`);
 };
 

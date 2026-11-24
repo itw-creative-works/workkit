@@ -39,7 +39,7 @@ describe('tower/api/server: the edges', () => {
   });
 
   // A throw in a handler must not end the API process, which takes the dashboard
-  // down with it (tower/start.sh: either half ending ends both). A bug in a lib
+  // down with it (tower/start.js: either half ending ends both). A bug in a lib
   // is a 500 on that request and nothing more.
   test('a handler that throws answers 500 and the process keeps serving', async (t) => {
     const w = mkWorld();

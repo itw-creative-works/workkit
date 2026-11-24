@@ -12,6 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('../../workflow/lib/run');
+const { projectsRoot } = require('../lib/machine');
 
 const { discoverRepos } = require('../../tower/api/lib/repos');
 
@@ -82,7 +83,7 @@ const transcriptIndex = (opts = {}) => {
   const home = opts.home || os.homedir();
   const root = opts.projectsRoot
     || process.env.WORKKIT_CLAUDE_PROJECTS
-    || path.join(home, '.claude', 'projects');
+    || projectsRoot(home);
   const now = opts.now === undefined ? Date.now() : opts.now;
   const cutoff = now - WINDOW_MS;
 
@@ -278,7 +279,7 @@ if (require.main === module) {
     process.stdout.write(render(composeNightly()));
   } else if (cadence === 'weekly' || cadence === 'monthly') {
     // The prior summaries arrive on stdin: the API call belongs to the step that
-    // already holds the credentials (workflow/lib/discussions.sh), and this module
+    // already holds the credentials (workflow/lib/discussions.js), and this module
     // stays a pure composer. Unreadable input is an empty period, said plainly:
     // a rollup invented from nothing is worse than none.
     let raw = '';

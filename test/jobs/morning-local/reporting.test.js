@@ -7,11 +7,9 @@ const path = require('path');
 const {
   describe, test, expect,
 } = require('../../lib/harness');
-const { stubTool } = require('../../lib/platform');
 const {
-  skipUnlessDarwin, cleanup, mkWorld, runJob, notified, notifiedMatching, skipOnJobPathNode, withoutNode,
+  skipUnlessDarwin, cleanup, mkWorld, runJob, notified, notifiedMatching, crashing,
 } = require('./helpers');
-const { NO_NODE_LINE } = require('../../lib/job-path');
 
 // A Notifly installed for everyone, which a case must not fire for real.
 const SYSTEM_NOTIFLY = '/Applications/Notifly.app';
@@ -57,10 +55,9 @@ describe('jobs/morning (local): reporting', { skip: skipUnlessDarwin() }, () => 
 
   test('a payload-builder crash still logs and notifies', async () => {
     const world = mkWorld();
-    // Shadow node itself: the guard has to hold even when the builder cannot
+    // The builder dies as it loads: the guard has to hold even when it cannot
     // run at all, not just when it returns ok:false.
-    stubTool(path.join(world.root, 'bin'), 'node',
-      ['#!/usr/bin/env bash', 'echo "boom: cannot find module" >&2', 'exit 7']);
+    crashing(world, 'brief-payload.js', 7, 'boom: cannot find module');
     const res = runJob(world, ['--now']);
     expect(res.status, 'the builder status carries through').toBe(7);
     expect(world.calls().length, 'claude never ran: there was nothing to send').toBe(0);
@@ -68,21 +65,6 @@ describe('jobs/morning (local): reporting', { skip: skipUnlessDarwin() }, () => 
     expect(logText.includes('[brief-payload exit 7]'), 'the log names the failed stage').toBeTruthy();
     expect(logText.includes('boom: cannot find module'), 'and carries the stderr').toBeTruthy();
     await notifiedMatching(world, /brief-payload exit 7/);
-    cleanup(world.root);
-  });
-
-  test('a PATH without node: the named line, the brief skipped, exit 0', { skip: skipOnJobPathNode() }, () => {
-    const world = mkWorld();
-    withoutNode(world);
-    const res = runJob(world, ['--now']);
-    expect(res.status, `a missing node ends the step, never the job: ${res.stderr}`).toBe(0);
-    const lines = [...world.log().matchAll(NO_NODE_LINE)];
-    expect(lines.length, `one named line in the log: ${world.log()}`).toBe(1);
-    expect(lines[0][1].split(':').includes('/usr/bin'), `naming the PATH it searched: ${lines[0][1]}`).toBeTruthy();
-    // matchAll copies the /g pattern, so no lastIndex carries over from the log read.
-    const onScreen = [...res.stderr.matchAll(NO_NODE_LINE)].map((m) => m[0]);
-    expect(onScreen.includes(lines[0][0]), `the same line reaches stderr: ${res.stderr}`).toBeTruthy();
-    expect(world.calls().length, 'claude never ran: there was no brief to send').toBe(0);
     cleanup(world.root);
   });
 

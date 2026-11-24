@@ -25,6 +25,16 @@ const RS = '\x1e';
 const recordArgv = (logFile) => `printf '%s\\0' "$@" $'\\036' >> "${shellPath(logFile)}"`;
 
 /**
+ * The Node twin of `recordArgv`: one JavaScript statement that appends one
+ * record, in the same framing, as a single append.
+ *
+ * @param {string} fileExpr - JavaScript expression for the log path, e.g. `JSON.stringify(logFile)`
+ * @param {string} argvExpr - JavaScript expression for the argv array to record, e.g. `'process.argv.slice(2)'`
+ * @returns {string} JavaScript source, one line
+ */
+const recordArgvJs = (fileExpr, argvExpr) => `require('fs').appendFileSync(${fileExpr}, [...${argvExpr}, ${JSON.stringify(RS)}].map((f) => f + ${JSON.stringify(NUL)}).join(''));`;
+
+/**
  * Read a log written by `recordArgv` back into one argv array per invocation.
  * The path is Node's own to open, so it stays native: only the line the stub
  * runs is spelled for a shell.
@@ -78,4 +88,4 @@ const eqArgv = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
  */
 const fmtCalls = (calls) => calls.map((c) => JSON.stringify(c)).join(' | ');
 
-module.exports = { recordArgv, readArgv, isCall, eqArgv, fmtCalls };
+module.exports = { recordArgv, recordArgvJs, readArgv, isCall, eqArgv, fmtCalls };

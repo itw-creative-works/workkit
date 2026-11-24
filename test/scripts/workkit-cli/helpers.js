@@ -19,7 +19,7 @@ const { writeLogin } = require('../../lib/identity');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
-const JOBS_INSTALL = path.join(__dirname, '..', '..', '..', 'jobs', 'install.sh');
+const JOBS_INSTALL = path.join(__dirname, '..', '..', '..', 'jobs', 'install.js');
 const LABEL = 'com.workkit.claude-daily';
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -34,7 +34,7 @@ const COMMAND_TABLE = [
   ['ship items', 'allow'], ['ship release', 'allow'], ['ship watch', 'allow'],
   ['ship cut', 'allow'], ['ship plan', 'allow'], ['ship publish', 'allow'],
   ['ship deploy', 'ask'],
-  ['review', 'allow'], ['triage', 'allow'],
+  ['review', 'allow'], ['triage', 'allow'], ['checkpoint', 'allow'],
   ['proof red', 'none'],
   ['changelog', 'allow'], ['tower', 'none'], ['enable', 'allow'], ['decline', 'allow'],
   ['heal', 'allow'], ['state', 'allow'], ['note', 'allow'],
@@ -45,6 +45,12 @@ const COMMAND_TABLE = [
 const writeStub = (file, lines) => stubTool(
   path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines],
 );
+
+// A kit file a scratch kit holds in place of the real one, started by `node <file>`.
+const writeKitFile = (file, lines) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${lines.join('\n')}\n`);
+};
 
 // A secret listing as `gh secret list --json name,updatedAt` renders it. `days`
 // is how long ago the secret was last set: the only thing the age check reads.
@@ -226,7 +232,7 @@ const mkWorld = ({
       PATH: joinPath(...(binOnPath ? [shellPath(localBin)] : []), bin, SYSTEM_PATH),
       WORKFLOW_HOME: shellPath(path.join(root, 'workflow-home')),
       WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
-      // jobs/install.sh refuses a scratch HOME, since launchd is machine-global;
+      // jobs/install.js refuses a scratch HOME, since launchd is machine-global;
       // launchctl here is a recorder, so this world is the rehearsal the override
       // exists for. The guard itself is pinned in test/jobs.
       WORKKIT_LAUNCHD_OK: '1',
@@ -319,7 +325,7 @@ const signInEnv = (world, { node = true, extra = {} } = {}) => ({
   ...extra,
 });
 
-const installSchedule = (world) => spawnBash([...NO_RC, shellPath(JOBS_INSTALL)], { env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+const installSchedule = (world) => runSync(process.execPath, [JOBS_INSTALL], { env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
 
 // The machine's hand-edited settings file, written the way a heal seeds it.
 // `site` is whatever the test wants the site options to be: a `publish` of
@@ -379,8 +385,8 @@ const AT_TERMINAL = 'interactive() { return 0; }';
 /**
  * A partial checkout: this CLI copied whole (the entry and the `workkit/`
  * pieces it sources; a symlink would resolve back to the real one) into a
- * `workflow/` holding nothing else of the kit. `installer` is the body of a stub
- * `jobs/install.sh`, none without it. Returns the entry point to run.
+ * `workflow/` holding nothing else of the kit. `installer` is the lines of a
+ * stub `jobs/install.js`, none without it. Returns the entry point to run.
  */
 const mkPartialKit = ({ installer } = {}) => {
   const kit = mkTmp('workkit-cli-');
@@ -388,10 +394,7 @@ const mkPartialKit = ({ installer } = {}) => {
   fs.copyFileSync(CLI, path.join(kit, 'workflow', 'workkit.sh'));
   fs.cpSync(path.join(WORKFLOW_DIR, 'workkit'), path.join(kit, 'workflow', 'workkit'), { recursive: true });
   copySettingsKit(kit);
-  if (installer) {
-    fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
-    writeStub(path.join(kit, 'jobs', 'install.sh'), installer);
-  }
+  if (installer) writeKitFile(path.join(kit, 'jobs', 'install.js'), installer);
   return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
 };
 
@@ -434,10 +437,8 @@ const mkCacheKit = (world, version = '0.0.0') => {
   const kit = path.join(world.claudeHome, 'plugins', 'cache', 'workkit', 'workkit', version);
   // hooks/ beside workflow/, as the plugin ships it: the engine's settings read loads hooks/mods/settings.js.
   const engine = mkPluginCopy(kit, { version, dirs: ['workflow', 'hooks'] });
-  fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
-  writeStub(path.join(kit, 'jobs', 'install.sh'), ['exit 0']);
-  fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
-  writeStub(path.join(kit, 'tower', 'start.sh'), ['exit 0']);
+  writeKitFile(path.join(kit, 'jobs', 'install.js'), ['process.exit(0);']);
+  writeKitFile(path.join(kit, 'tower', 'start.js'), ['process.exit(0);']);
   return { kit, script: path.join(engine, 'workkit.sh') };
 };
 

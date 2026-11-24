@@ -27,13 +27,15 @@
 workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://localhost:4300
 ```
 
-- `npm run tower` from the checkout root is the same thing, and `npm start` is its alias: all of them run `tower/start.sh`.
+- `npm run tower` from the checkout root is the same thing, and `npm start` is its alias: all of them run `tower/start.js`.
 - Running it RESTARTS the tower.
   - Anything already listening on either port is a previous instance and is replaced, with a line saying so.
   - The ports belong to the tower, and a leftover server should never make the fresh one die on the address being in use.
 
-- `tower/start.sh` starts the API and the dashboard's dev server together.
+- `tower/start.js` starts the API and the dashboard's dev server together.
   - One interrupt ends both, and either process ending takes the other with it.
+  - A half has ended once its process exits and its last lines are read: its output to the end, or for at most a quarter second while a background child it left behind holds that output open, so such a half still takes the other with it at once.
+  - A port's listeners and the end of one are `workflow/lib/ports.js`; a half's whole process tree is ended through `endTreeOf` (`workflow/lib/tree.js`), on Windows by its Windows ids.
 - Each half can still be run alone (`node tower/api/server.js`, or `npm run dev` inside `tower/app`) when only one is wanted.
 
 - It is QUIET THROUGH STARTUP: whoever typed the command asked for a dashboard, not for the framework's boot wall.
@@ -72,7 +74,7 @@ workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://l
   - The reason: a filtered run has by definition shown less than the whole of it.
 - A tower taken down from the outside after its announce is an ordinary shutdown and says nothing.
 - It is quiet but not COLORLESS.
-  - Each half writes to a fifo, so omega's logger sees a non-tty and paints nothing.
+  - Each half writes to a pipe the starter reads line by line, so omega's logger sees a non-tty and paints nothing.
   - The terminal would end up with plain text the tower never stripped.
   - So when the tower's OWN stdout is a terminal, it exports `FORCE_COLOR=1` into both halves.
   - A run that is piped or redirected is left plain.
@@ -85,7 +87,7 @@ workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://l
 
 - Both halves speak the KIT's voice, not their own.
   - Every line either process writes for a person opens with the glyph for what happened (`✓ starting the dashboard`, `✖ could not free port 8693`).
-  - The API's lines come from `tower/api/lib/log.js`, the script's from `workflow/lib.sh`.
+  - The API's lines come from `tower/api/lib/log.js`, the starter's from `workflow/lib/voice.js`.
   - That is the contract `workflow/README.md` § Output describes.
 - Only what the two CHILDREN print passes through raw, since those lines are omega's and are already tagged as its own.
 

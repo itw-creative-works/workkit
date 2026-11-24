@@ -12,6 +12,7 @@ const {
   start, until, mkTmp, SPAWN_DEADLINE,
 } = require('./harness');
 const { BASH, NO_RC, jsPath, shellPath } = require('./platform');
+const { escapeRegex } = require('../../workflow/lib/regex');
 
 const KIT = path.join(__dirname, '..', '..');
 const MESSAGE = 'reading the roster';
@@ -79,7 +80,7 @@ const DRIVER = [
  * @returns {string[]}
  */
 const framesIn = (text, message = MESSAGE) => {
-  const words = message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const words = escapeRegex(message);
   const frame = new RegExp(`^ *[${FRAMES.join('')}] ${words} \\(\\d+s\\)$`);
   return text.split('\r').slice(1).filter((piece) => frame.test(stripVTControlCharacters(piece)));
 };

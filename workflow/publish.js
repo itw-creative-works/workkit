@@ -6,7 +6,7 @@
  * workflow/README.md § Publishing the dashboard.
  * Usage: node publish.js [--quiet]
  * Called by: `workkit publish`, `workkit update` (a human's run), and
- *            jobs/morning.sh after the brief has been sent.
+ *            jobs/morning/site.js after the brief has been sent.
  */
 
 const fs = require('fs');
@@ -22,6 +22,7 @@ const { onPath } = require('./lib/run');
 const { writeErr } = require('./lib/say');
 const { settingsAt } = require('./lib/settings');
 const { spin } = require('./lib/spin');
+const { withScratch } = require('./lib/scratch');
 const { readJsonText } = require('./lib/write');
 const { today } = require('./lib/day');
 const {
@@ -108,9 +109,8 @@ const gitWait = async (run, message, dir, args, { out = 'inherit' } = {}) => (aw
  * @returns {Promise<{code: number, tail: Buffer}>}
  */
 const logged = async (run, message, args) => {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'publish.'));
-  const log = path.join(scratch, 'log');
-  try {
+  const answer = await withScratch(async (scratch) => {
+    const log = path.join(scratch, 'log');
     const fd = fs.openSync(log, 'w');
     let res;
     try {
@@ -119,9 +119,9 @@ const logged = async (run, message, args) => {
       fs.closeSync(fd);
     }
     return { code: res.status === 0 ? 0 : 1, tail: lastLines(fs.readFileSync(log), TAIL_LINES) };
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
-  }
+  }, 'publish.');
+  if (answer === null) throw new Error(`publish: no scratch folder could be made in ${os.tmpdir()}`);
+  return answer;
 };
 
 /**

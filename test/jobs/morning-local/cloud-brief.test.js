@@ -57,22 +57,20 @@ describe('jobs/morning (local): the brief is the cloud’s', { skip: skipUnlessD
     cleanup(world.root);
   });
 
-  test('a checkout missing brief-dispatch.sh is a briefless morning, not an abort', async () => {
-    // The lib is sourced under `set -e`: without its own guard a partial
-    // checkout would end the morning at the source line, costing the publish.
+  test('a kit missing its engine stops at once: one line naming the engine, exit 1', () => {
+    // The starter alone, with no workflow/lib/platform.sh beside it: the kit is
+    // incomplete, and no step runs on half of it. The runner's half, a kit
+    // missing jobs/morning.js, is ../morning-cloud/machine.test.js.
     const world = mkWorld({ home: 'owner/private-home', dispatch: true });
-    const stray = path.join(world.root, 'stray-jobs');
+    const stray = path.join(world.root, 'stray', 'jobs');
     fs.mkdirSync(stray, { recursive: true });
     fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
     const res = spawnBash([...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
-    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(res.status, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr, 'one line, naming the engine folder').toMatch(/^morning: the engine is missing at \S*workflow; the kit is incomplete\n$/);
+    expect(res.stdout, 'and nothing else is said').toBe('');
+    expect(world.log(), 'no step ran to log anything').toBe('');
     expect(world.dispatched().length, 'nothing was triggered').toBe(0);
-    expect(/kit is incomplete/.test(world.log()), `the reason names the missing lib: ${world.log()}`).toBeTruthy();
-    expect(/no brief this morning/.test(world.log()), `and the morning is briefless, not broken: ${world.log()}`).toBeTruthy();
-    expect(/marker: the engine library is missing/.test(world.log()), `the marker names the missing lib: ${world.log()}`).toBeTruthy();
-    const said = [world.log(), res.stdout, res.stderr].join('\n');
-    expect(said.includes('morning.d: the engine library is missing'), `and so does the morning.d step: ${said}`).toBeTruthy();
-    await settle(world);
     cleanup(world.root);
   });
 

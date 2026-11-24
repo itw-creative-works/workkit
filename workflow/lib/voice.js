@@ -1,10 +1,11 @@
 /**
  * workflow/lib/voice.js: the kit's Node voice, the Node half of
  * workflow/lib/voice.sh (workflow/README.md § Output): the color gate, the
- * palette, each level's glyph and colors and the line they make, the four
- * levels, a tool's lines warned one by one, and a wait's one line. The tower's
- * logger builds its lines here too. Every variable is read at the call.
- * Usage: const { ok, skip, info, warn, warnLines, wait, colorOn, setQuiet } = require('../lib/voice');
+ * palette, each level's glyph and colors and the line they make, the five
+ * levels, a relayed line made plain, a tool's lines warned one by one, and a
+ * wait's one line. The tower's logger builds its lines here too. Every
+ * variable is read at the call.
+ * Usage: const { ok, skip, info, warn, error, plain, warnLines, wait, colorOn, setQuiet } = require('../lib/voice');
  */
 
 const { writeErr, writeOut } = require('./say');
@@ -117,6 +118,22 @@ const info = (message) => { if (!quiet()) out(lineOf('info', message)); };
 /** `wk_warn`: needs judgment, always on stderr. */
 const warn = (message) => { writeErr(lineOf('warn', message)); };
 
+/** `wk_error`: a stop, always on stderr. */
+const error = (message) => { writeErr(lineOf('error', message)); };
+
+// A relayed line's indent and glyph, as `wk_plain` strips them, and the palette's escapes.
+const GLYPH = /^ *(✓|·|›|⚠|✖|⏳) /;
+const ESCAPE = /\u001b\[[0-9;]*m/g;
+
+/**
+ * `wk_plain` and the color strip its shell callers run before it: each line of
+ * `text` with its colors, its indent and its glyph taken off, so a relay
+ * re-says it under its own.
+ * @param {string} text
+ * @returns {string}
+ */
+const plain = (text) => String(text).split('\n').map((line) => line.replace(ESCAPE, '').replace(GLYPH, '')).join('\n');
+
 /**
  * `wk_warn_lines`: each non-blank line of `text` warned on its own, prefixed
  * `<topic>: ` unless it opens with `<topic>:` already.
@@ -139,5 +156,5 @@ const wait = (message) => {
 };
 
 module.exports = {
-  colorOn, ok, skip, info, warn, warnLines, wait, setQuiet, PALETTE, paint, said,
+  colorOn, ok, skip, info, warn, error, plain, warnLines, wait, setQuiet, PALETTE, paint, said, ESCAPE,
 };

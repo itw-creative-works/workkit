@@ -1,22 +1,34 @@
 /**
- * workflow/lib/discussions.js: what home needs of GitHub's Discussions for the
- * home repo, the Node home of `wk_disc_ready`, `wk_disc_meta` (with its fetch),
- * `wk_disc_enable` and the category names of lib/discussions.sh. Best effort:
- * no `gh`, no network or a refusing token is a null or a failing code.
- * Usage: const { ready, meta, enable, CATEGORIES } = require('../lib/discussions');
+ * workflow/lib/discussions.js: GitHub's Discussions GraphQL for the home repo:
+ * its cached meta, the switch that turns them on, the category a post lands
+ * in, and the list and the create of posts. The morning's marker
+ * (jobs/morning/marker.js) holds one bounded read of its own. Best
+ * effort: no `gh`, no network or a refusing token is a null or a failing code.
+ * Categories cannot be created over the API.
+ * Usage: const { ready, meta, enable, resolveCategory, list, create, CATEGORIES, BRIEF_CATEGORY } = require('../lib/discussions');
  */
 
 const fs = require('fs');
-const { isPlain } = require('../../hooks/mods/settings.js');
-const { dropLock, stateLockPath, takeLock } = require('./lock');
+const { isPlain, parseJson } = require('../../hooks/mods/settings.js');
+const {
+  dropLock, isFile, stateLockPath, takeLock,
+} = require('./lock');
 const { readJsonOrNull } = require('./read');
 const { onPath, spawnSync } = require('./run');
 const { spin } = require('./spin');
 const { editJson } = require('./write');
 const { userDir } = require('../user-dir');
 
-// The four setup checks for, one per summary cadence plus the brief's.
-const CATEGORIES = ['Daily', 'Weekly', 'Monthly', 'Brief'];
+// The category the morning's brief posts in.
+const BRIEF_CATEGORY = 'Brief';
+
+// The four setup checks for, one per summary cadence plus the brief's. A repo
+// without them still gets its posts, in a fallback.
+const CATEGORIES = ['Daily', 'Weekly', 'Monthly', BRIEF_CATEGORY];
+const FALLBACKS = ['General', 'Announcements'];
+
+// The most of one GraphQL answer kept, ample for 50 posts with their bodies.
+const GRAPHQL_MAX_BUFFER = 64 * 1024 * 1024;
 
 // Everything about the home repo worth caching, in one round trip.
 const META_QUERY = `query($owner:String!,$name:String!){
@@ -33,12 +45,30 @@ const ENABLE_MUTATION = `mutation($repoId:ID!){
     }
   }`;
 
+const CREATE_MUTATION = `mutation($repoId:ID!,$catId:ID!,$title:String!,$body:String!){
+      createDiscussion(input:{repositoryId:$repoId, categoryId:$catId, title:$title, body:$body}){
+        discussion { url }
+      }
+    }`;
+
+// The API takes no date argument, so the list's window is applied here.
+const LIST_QUERY = `query($owner:String!,$name:String!,$catId:ID!,$limit:Int!){
+      repository(owner:$owner,name:$name){
+        discussions(first:$limit, categoryId:$catId, orderBy:{field:CREATED_AT, direction:DESC}){
+          nodes { title createdAt body }
+        }
+      }
+    }`;
+
 /** The disposable cache file in the machine folder (`WK_HOME_CACHE` of lib.sh). */
 const cacheFile = () => `${userDir()}/.cache.json`;
 
-/** `gh api graphql` with <fields> as `-f` pairs, its stdout read, its stderr dropped. */
-const graphql = (fields) => spawnSync('gh', ['api', 'graphql', ...fields.flatMap((field) => ['-f', field])], {
-  encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+/**
+ * `gh api graphql` with <fields>, its stdout read, its stderr dropped. A
+ * string field goes as an `-f` pair; an array goes as written (`['-F', 'limit=50']`).
+ */
+const graphql = (fields) => spawnSync('gh', ['api', 'graphql', ...fields.flatMap((field) => (Array.isArray(field) ? field : ['-f', field]))], {
+  encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GRAPHQL_MAX_BUFFER, windowsHide: true,
 });
 
 /**
@@ -48,8 +78,8 @@ const graphql = (fields) => spawnSync('gh', ['api', 'graphql', ...fields.flatMap
 const ready = () => onPath('gh') !== null;
 
 /**
- * The meta of an API answer, as wk_disc_fetch_meta's filter makes it: the
- * node id, whether Discussions are on, every category's id by its name.
+ * The meta of an API answer, what the cache keeps: the node id, whether
+ * Discussions are on, every category's id by its name.
  * @param {string} text the answer's JSON
  * @returns {{repositoryId: string, discussionsEnabled: boolean, categories: object}|null}
  */
@@ -69,7 +99,7 @@ const metaOf = (text) => {
   };
 };
 
-/** The fetch: one GraphQL read of <slug>, spun with no one line as the shell's sent its stderr away; null when it could not answer. */
+/** The fetch: one GraphQL read of <slug>, spun with no one line, since gh's stderr is dropped; null when it could not answer. */
 const fetchMeta = (slug) => {
   const owner = slug.split('/')[0];
   const name = slug.split('/').pop();
@@ -102,11 +132,11 @@ const cache = async (slug, fresh) => {
 };
 
 /**
- * `wk_disc_meta`: the home repo's meta, from the cache unless <refresh>, else
- * fetched and cached.
+ * The home repo's meta, from the cache unless <refresh>, else fetched and
+ * cached.
  * @param {string} slug `owner/name`
- * @param {{refresh?: boolean}} [opts] refresh: fetch past the cache, as `--refresh`
- * @returns {Promise<object|null>} the meta, null where the shell function fails
+ * @param {{refresh?: boolean}} [opts] refresh: fetch past the cache
+ * @returns {Promise<object|null>} the meta, null with no `gh` or when the API could not answer
  */
 const meta = async (slug, { refresh = false } = {}) => {
   if (!ready()) return null;
@@ -121,7 +151,7 @@ const meta = async (slug, { refresh = false } = {}) => {
 };
 
 /**
- * `wk_disc_enable`: Discussions turned on, after a fresh read, so a repo that
+ * Discussions turned on, after a fresh read, so a repo that
  * has them is not written to; the cache refreshed after the write.
  * @param {string} slug
  * @returns {Promise<number>} 0 turned on, 2 already on, 1 could not
@@ -138,6 +168,84 @@ const enable = async (slug) => {
   return 0;
 };
 
+/** The id <found> holds for the category <name>, or '' with none. */
+const idIn = (found, name) => {
+  const id = isPlain(found.categories) ? found.categories[name] : undefined;
+  return typeof id === 'string' ? id : '';
+};
+
+/**
+ * The category a post lands in. A miss is refreshed once (a category made by
+ * hand since), then falls back to `General`, `Announcements`, and last to the
+ * first category the repo has, so a repo whose categories were renamed still
+ * has somewhere to publish.
+ * @param {string} slug `owner/name`
+ * @param {string} name the category asked for
+ * @returns {Promise<{id: string, name: string, fellBack: boolean}|null>} fellBack: the name is not the one asked for; null when the API could not answer or the repo has no category
+ */
+const resolveCategory = async (slug, name) => {
+  let found = await meta(slug);
+  if (found === null) return null;
+  if (!idIn(found, name)) {
+    found = await meta(slug, { refresh: true });
+    if (found === null) return null;
+  }
+  const landed = [name, ...FALLBACKS].find((candidate) => idIn(found, candidate));
+  if (landed !== undefined) return { id: idIn(found, landed), name: landed, fellBack: landed !== name };
+  const [first] = Object.entries(isPlain(found.categories) ? found.categories : {});
+  if (first === undefined || typeof first[1] !== 'string' || !first[1]) return null;
+  return { id: first[1], name: first[0], fellBack: first[0] !== name };
+};
+
+/**
+ * The posts in a category since a moment, newest first. The category resolves
+ * as resolveCategory does, fallback included.
+ * @param {string} slug `owner/name`
+ * @param {string} category
+ * @param {string} since an ISO 8601 moment; a post created at it is kept
+ * @param {number} [limit] the most posts read
+ * @returns {Promise<Array<{title: string, createdAt: string, body: string}>|null>} null when the API could not answer
+ */
+const list = async (slug, category, since, limit = 50) => {
+  if (!ready()) return null;
+  const resolved = await resolveCategory(slug, category);
+  if (resolved === null) return null;
+  const owner = slug.split('/')[0];
+  const name = slug.split('/').pop();
+  const res = spin(`reading what ${slug} already carries`, () => graphql([
+    `owner=${owner}`, `name=${name}`, `catId=${resolved.id}`, ['-F', `limit=${limit}`], `query=${LIST_QUERY}`,
+  ]), { line: false });
+  const answer = res.status === 0 ? parseJson(res.stdout) : null;
+  if (answer === null) return null;
+  const nodes = answer.data?.repository?.discussions?.nodes;
+  if (!Array.isArray(nodes)) return [];
+  return nodes.filter((node) => isPlain(node) && typeof node.createdAt === 'string' && node.createdAt >= since);
+};
+
+/**
+ * One summary or brief posted. The body is a file, sent verbatim by `gh`'s
+ * `@file` form; the category is an id the caller resolved, so it can report a
+ * fallback.
+ * @param {string} slug `owner/name`
+ * @param {string} categoryId
+ * @param {string} title
+ * @param {string} bodyFile
+ * @returns {Promise<string|null>} the post's URL, '' when the answer holds none, null when the body file or the category id is missing or the API refused
+ */
+const create = async (slug, categoryId, title, bodyFile) => {
+  if (!ready()) return null;
+  if (!isFile(bodyFile) || !categoryId) return null;
+  const repoId = (await meta(slug))?.repositoryId;
+  if (typeof repoId !== 'string' || !repoId) return null;
+  const res = spin(`posting ${title}`, () => graphql([
+    `repoId=${repoId}`, `catId=${categoryId}`, `title=${title}`, ['-F', `body=@${bodyFile}`], `query=${CREATE_MUTATION}`,
+  ]), { line: false });
+  const answer = res.status === 0 ? parseJson(res.stdout) : null;
+  if (answer === null) return null;
+  const url = answer.data?.createDiscussion?.discussion?.url;
+  return typeof url === 'string' ? url : '';
+};
+
 module.exports = {
-  ready, meta, enable, CATEGORIES,
+  ready, meta, enable, resolveCategory, list, create, CATEGORIES, BRIEF_CATEGORY,
 };

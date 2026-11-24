@@ -26,11 +26,11 @@
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards.js + standards/, workkit.sh + workkit/, home.sh + home.js + home/, publish.sh + publish.js + publish/ (build.js, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, proof/, public/, gitshim/ (the `git` shim), templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards.js + standards/, workkit.sh + workkit/, home.sh + home.js + home/, publish.sh + publish.js + publish/ (build.js, site-repos.js), lib.sh + lib/, changelog/, ship/, review/, triage/, checkpoint/, proof/, public/, gitshim/ (the `git` shim), templates)
 ├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
 ├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run` and its `workflow/lib/expand-workspaces.js` and `workflow/lib/proc-state.js` packed for the runner and its library, a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
-├── jobs/                 # scheduled work: the 9am daily brief, its launchd plist, and install.sh
+├── jobs/                 # scheduled work: the 9am daily brief (morning.sh, the starter of morning.js), its launchd plist, and install.js
 ├── docs/                 # project-state.md (the spec) · agents.md (the crew contract) · hooks.md (the hook detail) · tests.md (the test bar and runner) · setup.md (the install walkthrough) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook)
 │   └── assets/           # the README's hero and its mark in two inks, rendered by the showcase repo (ITW-Creative-Works/showcase, private)
 ├── test/                 # the hook/script/tower suites (npm test, which is `workkit test`, workkit-core's runner)
@@ -89,12 +89,12 @@
   - The test library's `modCase` (`claude plugin test`) lives in `workkit-core`.
 - `workkit.sh` is the one command and the from-zero entry point:
   - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths] [--filter=<text>]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`;
-  - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `proof red` · `changelog lint`.
+  - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `checkpoint safe` · `proof red` · `changelog lint`.
 - Beside it live:
   - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
   - the ship's steps in `ship/`: `items.js`, `release.js`, `watch.js`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, and `hooks.js`;
     - `hooks.js` holds the hooks a repo declares for the release, the publish and the deploy, which those steps run;
-  - the review and triage markers and the review tier in `review/` and `triage/`, the verifier's red run in `proof/`;
+  - the review, triage and checkpoint markers and the review tier in `review/`, `triage/` and `checkpoint/`, the verifier's red run in `proof/`;
   - the templates a repo receives on enable, the bot identity in `identity/` (`workflow/README.md` § The bot identity), and the home repo's whole lifecycle.
 - Every file and every step: `workflow/README.md`.
 
@@ -114,7 +114,7 @@
 
 - ONE job, at 9am, in six steps:
   - the summaries, the runner reconcile, the brief, the publish, the stale-brief marker, the owner's `morning.d` scripts.
-- ONE script runs them: `morning.sh`, the entry point both schedulers invoke.
+- ONE program runs them: `morning.js`, started by `morning.sh`, the entry point both schedulers invoke.
   - The schedulers: this machine's launchd agent and the seeded `brief.yml` on a runner.
 - Each step is gated by what the environment it woke up in can do.
 - The brief itself runs in the CLOUD, on the home repo, since that is where the sweep token and the roster live.
@@ -132,7 +132,7 @@
 - The runner reads no list file: a suite that runs alone says so in its name, `*.serial.test.js`, and runs in the serial tail after the parallel wave (`docs/tests.md` § The kit's runner).
 - Every suite is Node's own shape, `describe`, `test` and `expect` from `test/lib/harness.js` (`docs/tests.md` § The shape).
 - A suite or case this machine cannot answer states a `skip` value, `false` or the reason; the runner names the skip.
-  - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnJobPathNode`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutModes`, `skipWithoutFileLink` in `test/lib/`.
+  - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutModes`, `skipWithoutFileLink` in `test/lib/`.
 - The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
 - This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
   - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`, `events`, `app-cases`, `mod-case`).
@@ -161,7 +161,8 @@
   - `samePath(a, b, platform)` is the one compare of two spellings of a path.
     - On `win32` a Git Bash `/d/x` reads as `D:/x`, `\` folds to `/` and case is ignored.
     - Elsewhere the strings compare as they are.
-  - `stubTool()` is the one writer of a PATH stub, which a shell starts by its bare name on either platform.
+  - `stubTool()` and `stubToolJs()` are the two writers of a PATH stub, which a shell starts by its bare name on either platform: `stubTool()` takes shell lines, `stubToolJs()` a Node program's source, the form of a new stand-in program.
+    - A Node stand-in records its arguments with `recordArgvJs()` of `test/lib/argv-log.js`.
     - Its `<name>.exe` launcher (`test/lib/stub-launcher.cs`, built once per machine) makes the stub startable from Node on Windows where the C# compiler exists.
     - A case resting on a stub written before it skips on Windows through `skipWithoutNodeStub()` (`NO_NODE_STUB`) until it is run there once.
   - `test/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions, so every suite spells a shape the same way.

@@ -88,9 +88,9 @@
 
 - `wk_sha1` in `workflow/lib/platform.sh`: the one digest.
   - macOS ships `shasum` and no `sha1sum`, a Linux machine often the reverse, and a key computed with a different tool is a different key.
-  - Every marker and cache name goes through the same digest.
-  - The four markers are the review and triage markers, through `reviewMarkerPath` and `triageMarkerPath` in `hooks/mods/markers.js`, and the suite and package records.
-    - A skill writes the first two, through `workkit review mark` and `workkit triage mark`.
+  - Every cache name goes through the same digest, and every marker name but the checkpoint marker's, which is keyed by its session (below).
+  - The four markers keyed by it are the review and triage markers, through `reviewMarkerPath` and `triageMarkerPath` in `hooks/mods/markers.js`, and the suite and package records.
+    - A skill writes three markers: the review and triage markers, through `workkit review mark` and `workkit triage mark`, and the checkpoint marker, through `workkit checkpoint safe`.
     - All four are named by `markerPath` in `hooks/mods/markers.js`, the Node twin of `wk_marker_path` over the same digest (`sha1Hex`); the records as `suiteMarkerPath` and `pkgMarkerPath`, written by `workflow/lib/records.js`; their writers and readers: `workflow/README.md`, the `lib/records.js` entry.
   - The same derivation names the run locks and fallback logs of the detached suite run, supervised run, CI watch and narrowed runs' slots: `runPaths` in `workflow/lib/run-paths.js` names them all.
   - A machine with neither tool is refused loudly rather than keyed to an empty string.
@@ -99,10 +99,12 @@
     - It sits beside `wk_marker_path`, the one derivation of a marker's path.
   - Every marker kind lives at `markers/<kind>/<sha1>` in the machine folder (`${WORKFLOW_HOME:-$HOME/.workkit}/markers`, `wk_markers_dir`).
     - It never lives in the temp folder a system cleaner empties, and nothing reads a marker anywhere else.
+    - One kind is keyed by its session id instead of a digest: the checkpoint marker, `markers/claude-checkpoint-marker/<session>` (`checkpointMarkerPath` in `hooks/mods/markers.js`), every character but a letter or a digit as `_`.
+    - `workkit checkpoint safe` writes it with the time in milliseconds, at the end of a `workkit:checkpoint` run that filed everything; a harness reads it, the kit nowhere.
   - The kit sweeps its own: each writer runs the sweep.
     - The shell writer runs `wk_sweep_markers`: the `gh` shim's journal append (`journal_append` in `workflow/identity/gh`), after it writes.
     - The package record writer (`writePkgRecord` in `workflow/lib/records.js`) runs its Node twin, `sweepMarkers` in `workflow/lib/lock.js`, before it writes.
-    - The suite record writer (`writeSuiteRecord`, beside it) and the review and triage marker verbs run it through `writeMarker` in `workflow/lib/lock.js`, after they write.
+    - The suite record writer (`writeSuiteRecord`, beside it) and the review, triage and checkpoint marker verbs run it through `writeMarker` in `workflow/lib/lock.js`, after they write.
     - The sweep removes every regular file one folder under that base whose mtime is older than `MARKER_KEEP_DAYS` (7 days).
     - It never enters a folder there (a run lock).
   - The hooks module runs no sweep.
@@ -220,8 +222,8 @@
   - When Windows refuses the link, the heal says so, naming Developer Mode or an administrator's shell, then `workkit update`.
 
 - The skills carry no platform-bound command at all.
-  - The two that record a marker run `workkit review mark` and `workkit triage mark` ([`workflow/review/mark.js`](../workflow/review/mark.js) and [`workflow/triage/mark.js`](../workflow/triage/mark.js)).
-  - Those name the marker through `hooks/mods/markers.js` and write exactly the path the guard reads.
+  - The three that record a marker run `workkit review mark`, `workkit triage mark` and `workkit checkpoint safe` ([`workflow/review/mark.js`](../workflow/review/mark.js), [`workflow/triage/mark.js`](../workflow/triage/mark.js) and [`workflow/checkpoint/mark.js`](../workflow/checkpoint/mark.js)).
+  - Those name the marker through `hooks/mods/markers.js`, so the review and triage ones write exactly the path the guard reads.
 
 ## The hooks module
 
@@ -405,7 +407,6 @@
     - the two shims' shared shell helpers, `norm_dir`, `real_path` and `in_list`, and their PATH walk to the real tool (`real_git` against `real_gh`), `workflow/gitshim/git` against `workflow/identity/gh`;
     - the yes or no question (`wk_ask_yes` in `workflow/lib/flows.sh`, `askYes` in `workflow/lib/flows.js`), which ask in the same words and take every answer alike under either default, a closed stdin no;
     - the opener choice (`wk_open_url` in `workflow/lib/flows.sh`, `openUrl` in `workflow/lib/flows.js`), which pick the same opener and, with none, print the same pointer;
-    - the category names (`WK_DISC_CATEGORIES` in `workflow/lib/discussions.sh`, `CATEGORIES` in `workflow/lib/discussions.js`), the same names in the same order;
     - the spinner (`wk_spin_draw` and `wk_spin` in `workflow/lib/voice.sh`, `spin` in `workflow/lib/spin.js`), which draw the same frames, and with the frames off print the same one line;
     - the poll's countdown (`wk_poll_draw` in `workflow/lib/flows.sh`, `poll` in `workflow/lib/flows.js`), the same frames in the same order;
     - the Pages branch (`WK_HOME_PAGES_BRANCH` in `workflow/home.sh`, `PAGES_BRANCH` in `workflow/home/options.js`), one branch;

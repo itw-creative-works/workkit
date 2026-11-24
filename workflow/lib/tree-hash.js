@@ -11,6 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('./run');
+const { withScratch } = require('./scratch');
 
 /** git in the root, under `index` when given; the trimmed stdout, or null when it fails. */
 const git = (root, args, index) => {
@@ -19,14 +20,14 @@ const git = (root, args, index) => {
   return res.status === 0 ? String(res.stdout).trim() : null;
 };
 
-/** `fn(dir)` in a new scratch folder under the temp folder, removed after. */
+/**
+ * `fn(dir)` in a scratch folder (lib/scratch.js). Its answer travels boxed, so
+ * a null id stays an answer and a folder that cannot be made is thrown.
+ */
 const inScratch = (fn) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'suite-index.'));
-  try {
-    return fn(dir);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const boxed = withScratch((dir) => [fn(dir)], 'suite-index.');
+  if (boxed === null) throw new Error(`tree-hash: no scratch folder could be made in ${os.tmpdir()}`);
+  return boxed[0];
 };
 
 /**

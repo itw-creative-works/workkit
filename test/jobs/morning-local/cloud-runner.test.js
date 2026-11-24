@@ -4,8 +4,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
+const { spawnSync } = require('../../lib/platform');
 const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner, pushFromElsewhere, subjects, REFRESH } = require('./helpers');
 
 describe('jobs/morning (local): the cloud brief’s runner', { skip: skipUnlessDarwin() }, () => {

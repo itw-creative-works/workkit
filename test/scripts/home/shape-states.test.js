@@ -1,4 +1,4 @@
-// Tests for workflow/home.sh and workflow/home/: its shape (the three libraries
+// Tests for workflow/home.sh and workflow/home/: its shape (the two libraries
 // load quietly, the copy's exclude list, the addresses, the site host, the paths
 // a line prints on Windows, the home repo's name) and the four states a home can
 // be in. The shared prologue is ./helpers.js.
@@ -16,13 +16,13 @@ const {
 const { settingsAt } = require('../../../workflow/lib/settings');
 
 describe('workflow/home: shape', () => {
-  test('the three libraries parse and run nothing at load', () => {
-    for (const lib of ['lib.sh', 'lib/discussions.sh', 'home.sh']) {
+  test('the two libraries parse and run nothing at load', () => {
+    for (const lib of ['lib.sh', 'home.sh']) {
       const file = path.join(WORKFLOW_DIR, lib);
       expect(spawnBash([...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, `bash -n is clean for ${lib}`).toBe(0);
     }
     const world = mkWorld();
-    // Sourcing all three prints nothing: a library that acted at load would
+    // Sourcing both prints nothing: a library that acted at load would
     // act every time the CLI, the heal or the job started.
     expect(inHome(world, 'true').out, 'sourcing says nothing').toBe('');
     cleanup(world.root);

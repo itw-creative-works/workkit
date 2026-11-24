@@ -1,7 +1,7 @@
 /**
  * workflow/home/install.js: the clone's dependencies, the catch-up and the
  * commit and push its writers use, and the clone's own heal, the committed
- * kit's `standards.sh --home` read through seed.js's export.
+ * kit's `standards.sh --home` read through committed.js's export.
  * Usage: const { install, catchUp, commitPush, heal } = require('./install');
  */
 
@@ -22,7 +22,8 @@ const { towerDir } = require('../user-dir');
 const {
   kitDir, homeBranch, homeReady,
 } = require('./options');
-const { source, scratchDir } = require('./seed');
+const { withScratch } = require('../lib/scratch');
+const { source } = require('./committed');
 
 /** git in the clone, its output read as text and its stderr dropped. */
 const git = (args) => gitIn(towerDir(), args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -156,27 +157,25 @@ const heal = async (quiet = false) => {
     warn('home: the kit could not be resolved beside this engine; the home repo\'s labels and issue templates were not healed');
     return 0;
   }
-  const scratch = scratchDir();
-  if (scratch === null) {
-    warn('home: could not make a scratch directory; the home repo\'s labels and issue templates were not healed');
-    return 0;
-  }
-  let healed;
-  try {
+  // The heal answers false when it could not run (warned), else its code and output.
+  const healed = withScratch((scratch) => {
     // The heal, its templates and its labels all come from the one export.
     const from = source(scratch, kit);
     if (!from) {
       warn('home: the home repo\'s labels and issue templates were not healed');
-      return 0;
+      return false;
     }
     if (!isFile(path.join(from, 'workflow', 'standards.sh'))) {
       warn(`home: the heal is missing at ${nativePath(from)}/workflow/standards.sh; the home repo's labels and issue templates were not healed`);
-      return 0;
+      return false;
     }
-    healed = runHeal(path.join(from, 'workflow', 'standards.sh'), path.join(scratch, 'heal.log'));
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+    return runHeal(path.join(from, 'workflow', 'standards.sh'), path.join(scratch, 'heal.log'));
+  }, 'workkit-home.');
+  if (healed === null) {
+    warn('home: could not make a scratch directory; the home repo\'s labels and issue templates were not healed');
+    return 0;
   }
+  if (healed === false) return 0;
   // Asked of the forms only, the one thing this heal writes into the tree, and
   // then of a commit a past failed push stranded locally.
   const changed = read(['status', '--porcelain', '--', '.github/ISSUE_TEMPLATE']) !== ''

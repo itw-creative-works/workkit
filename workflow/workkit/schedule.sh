@@ -13,8 +13,8 @@ cron_drift() {
     printf 'the installer is missing at %s; the kit is incomplete\n' "$(wk_native_path "$JOBS_INSTALL")"
     return 1
   fi
-  bash "$JOBS_INSTALL" --check 2>/dev/null | wk_plain || {
-    printf 'the drift check did not finish; run `bash %s --check` to see why\n' "$(wk_native_path "$JOBS_INSTALL")"
+  run_at_floor schedule 1 "$JOBS_INSTALL" --check 2>/dev/null | wk_plain || {
+    printf 'the drift check did not finish; run `node %s --check` to see why\n' "$(wk_native_path "$JOBS_INSTALL")"
     return 1
   }
 }
@@ -24,9 +24,9 @@ cron_drift() {
 # `set -e` abort would be invisible.
 run_installer() {
   local out rc=0
-  out="$(bash "$JOBS_INSTALL" 2>&1)" || rc=$?
+  out="$(run_at_floor schedule 1 "$JOBS_INSTALL" 2>&1)" || rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    wk_warn "schedule: the install did not finish (exit $rc); run \`bash $(wk_native_path "$JOBS_INSTALL")\` to see why"
+    wk_warn "schedule: the install did not finish (exit $rc); run \`node $(wk_native_path "$JOBS_INSTALL")\` to see why"
     return 0
   fi
   # "already installed and loaded" is the installer confirming a no-op; every

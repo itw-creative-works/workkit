@@ -1,7 +1,7 @@
 // The published summaries, read back: the newest daily (and on Mondays the
 // weekly) on the home repo, attached onto the brief (jobs/README.md § The
 // payload). A post is known by its title, never its category, which falls back
-// to `General` on a home repo without `Daily` (workflow/lib/discussions.sh).
+// to `General` on a home repo without `Daily` (workflow/lib/discussions.js).
 //
 // Usage:
 //   Object.assign(payload, briefSummaries({ generatedAt, workflowHome, exec }));
@@ -17,7 +17,7 @@ const { userDir } = require('../../../workflow/user-dir');
 const { homeSlug } = require('../../../workflow/lib/settings');
 
 // The title prefix each cadence publishes under, from the job that writes them
-// (`jobs/claude-nightly.sh`: `<cadence>: <date>`).
+// (`jobs/claude-nightly.js`: `<cadence>: <date>`).
 const CADENCE_PREFIX = {
   daily: 'daily: ',
   weekly: 'weekly: ',

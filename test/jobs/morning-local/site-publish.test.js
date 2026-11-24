@@ -3,8 +3,10 @@
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
+const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
+const { recordArgvJs, readArgv, fmtCalls } = require('../../lib/argv-log');
+const { skipUnlessDarwin, cleanup, mkWorld, runJob, settle } = require('./helpers');
 
 describe('jobs/morning (local): the site publish', { skip: skipUnlessDarwin() }, () => {
   test('the publish runs after the brief, quietly, and never before it', async () => {
@@ -17,10 +19,6 @@ describe('jobs/morning (local): the site publish', { skip: skipUnlessDarwin() },
     expect(logText.includes('HEADLINE: one thing today.'), `the brief reached the log: ${logText}`).toBeTruthy();
     expect(logText.indexOf('publish:') > logText.indexOf('HEADLINE: one thing today.'),
       `and nothing is built before the brief has gone: ${logText}`).toBeTruthy();
-
-    const text = fs.readFileSync(SCRIPT, 'utf8');
-    expect(/publish\.sh" --quiet/.test(text), 'the daily run asks for the quiet variant').toBeTruthy();
-    expect(/publish exit %d; the brief was already sent/.test(text), 'and a failure is logged, never fatal').toBeTruthy();
     await settle(world);
     cleanup(world.root);
   });
@@ -29,6 +27,26 @@ describe('jobs/morning (local): the site publish', { skip: skipUnlessDarwin() },
   // `brief: …` right beside it. Every line publish.sh prints is prefixed
   // `publish: `, including the warnings no `--quiet` suppresses.
   const SITE_BLOCK = /publish:/;
+
+  test('the publish is started with --quiet', () => {
+    // Every node the morning starts loads this first: the publish records its arguments and ends there.
+    const world = mkWorld();
+    const argvLog = path.join(world.root, 'publish-argv.log');
+    const preload = path.join(world.root, 'publish-stand-in.js');
+    fs.writeFileSync(preload, [
+      "if (require('path').basename(process.argv[1] || '') === 'publish.js') {",
+      `  ${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}`,
+      '  process.exit(0);',
+      '}',
+    ].join('\n'));
+    world.env.NODE_OPTIONS = `--require ${preload}`;
+    const res = runJob(world);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    const calls = readArgv(argvLog);
+    expect(calls.length, `the publish ran once: ${fmtCalls(calls)}\n${world.log()}`).toBe(1);
+    expect(calls[0], `and was told to be quiet: ${fmtCalls(calls)}`).toEqual(['--quiet']);
+    cleanup(world.root);
+  });
 
   test('a machine with no home repo hears nothing about publishing', async () => {
     const world = mkWorld();

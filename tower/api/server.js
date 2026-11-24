@@ -143,7 +143,7 @@ const createServer = (opts = {}) => {
   };
 
   // A bug in a lib is a 500 on the request that met it, never the end of this
-  // process: tower/start.sh takes the dashboard down with the API.
+  // process: tower/start.js takes the dashboard down with the API.
   return http.createServer((req, res) => {
     try {
       handle(req, res);

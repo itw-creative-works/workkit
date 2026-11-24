@@ -51,7 +51,7 @@ const passes = async (argv, facts) => {
   expect(r ?? null, `silently: gh ${argv.join(' ')}`).toBe(null);
 };
 
-// The argv workflow/lib/discussions.sh sends, with the body inline.
+// The argv `create` of workflow/lib/discussions.js sends, with the body inline.
 const mutation = (body) => [
   'api', 'graphql',
   '-f', 'repoId=R_kg1', '-f', 'catId=DIC_kw1', '-f', 'title=Daily: 2026-07-29',

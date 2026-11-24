@@ -4,9 +4,7 @@
 // Usage: const { listensTo, takesInput } = require('./triggers');
 
 const fs = require('fs');
-
-/** A name as a regex source that matches it alone. */
-const literal = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const { escapeRegex } = require('../lib/regex');
 
 /** The indent of a line: its leading spaces and tabs. */
 const indentOf = (line) => line.match(/^[ \t\v\f]*/)[0].length;
@@ -40,8 +38,8 @@ const yamlLines = (file) => {
 const listensTo = (file, event) => {
   const lines = yamlLines(file);
   if (!lines) return false;
-  const entry = new RegExp(`^"?${literal(event)}"?[ \\t\\v\\f]*(:|#|$)`);
-  const word = new RegExp(`(^|[^A-Za-z0-9_-])${literal(event)}([^A-Za-z0-9_-]|$)`);
+  const entry = new RegExp(`^"?${escapeRegex(event)}"?[ \\t\\v\\f]*(:|#|$)`);
+  const word = new RegExp(`(^|[^A-Za-z0-9_-])${escapeRegex(event)}([^A-Za-z0-9_-]|$)`);
   let inBlock = false;
   let want = -1;
   for (const line of lines) {
@@ -76,7 +74,7 @@ const listensTo = (file, event) => {
 const takesInput = (file, input) => {
   const lines = yamlLines(file);
   if (!lines) return false;
-  const keys = ['on', 'workflow_dispatch', 'inputs', input].map((key) => new RegExp(`^"?${literal(key)}"?[ \\t\\v\\f]*:`));
+  const keys = ['on', 'workflow_dispatch', 'inputs', input].map((key) => new RegExp(`^"?${escapeRegex(key)}"?[ \\t\\v\\f]*:`));
   // at[d] is the indent of the key matched at depth d, kid[d] that of the keys under it.
   const at = [];
   const kid = [];

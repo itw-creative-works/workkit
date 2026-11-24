@@ -29,16 +29,22 @@ class Interrupted extends Error {
  *   spawnSync answers (`status`, `signal`, `stdout`, `stderr`, `error`); a
  *   caught signal is handed on to it, and the run rejects with Interrupted.
  * - `interrupted()`: a turn, then the signal caught so far, or null.
+ * - `signalled()`: the first signal caught, once one is (at once when one was).
  * - `end()`: a last turn, the signals given back, and the caught one raised
  *   again, so the process ends by it; on Windows, which has no signal to end
  *   by, its code (signalCode) becomes the exit code, and a caller keeps it.
- * @returns {{run: Function, interrupted: () => Promise<string|null>, end: () => Promise<void>}}
+ * @returns {{run: Function, interrupted: () => Promise<string|null>, signalled: () => Promise<string>, end: () => Promise<void>}}
  */
 const holdSignals = () => {
   let caught = null;
+  let tell;
+  const first = new Promise((resolve) => { tell = resolve; });
   const children = new Set();
   const note = (signal) => {
-    if (caught === null) caught = signal;
+    if (caught === null) {
+      caught = signal;
+      tell(signal);
+    }
     for (const child of children) child.kill(signal);
   };
   for (const signal of END_SIGNALS) process.on(signal, note);
@@ -73,6 +79,7 @@ const holdSignals = () => {
       await turn();
       return caught;
     },
+    signalled: () => first,
     end: async () => {
       await turn();
       for (const signal of END_SIGNALS) process.removeListener(signal, note);

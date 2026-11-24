@@ -1,23 +1,18 @@
-// The shared prologue of the tower/start.sh suites beside this one, one concern
-// each. The script runs for real with both server commands injected
+// The shared prologue of the tower/start.js suites beside this one, one concern
+// each. The starter runs for real with both server commands injected
 // (WORKKIT_TOWER_API / WORKKIT_TOWER_APP): each stub records its pid and sleeps,
 // so no port opens and the assertions are about lifecycles.
 
 const fs = require('fs');
 const path = require('path');
 const {
-  mkTmp, SPAWN_DEADLINE, alive, until, elapsedUntil, pidIn, start: startHandle,
+  SPAWN_DEADLINE, alive, until, elapsedUntil, pidIn, start: startHandle,
 } = require('../../lib/harness');
-const { IS_WINDOWS, BASH, NO_RC, shellPath, which } = require('../../lib/platform');
+const { IS_WINDOWS, shellPath, which } = require('../../lib/platform');
 
-const SCRIPT = path.join(__dirname, '..', '..', '..', 'tower', 'start.sh');
+const SCRIPT = path.join(__dirname, '..', '..', '..', 'tower', 'start.js');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
-
-// The script makes its fifo folder under TMPDIR, and a case that ends a run with
-// SIGKILL skips the trap that removes it, so every run is handed a tracked one.
-const TMP = mkTmp('tower-start-tmp-');
-const TMP_ENV = { TMPDIR: shellPath(TMP) };
 
 // The pid in <file> the moment it is written, so a signal sent on sight lands
 // right after the writer spawned. 0 if never.
@@ -26,16 +21,28 @@ const pidOnSight = async (file) => (
 
 // The port takeover is aimed at nothing unless a test says otherwise, so a
 // run here never touches whatever this machine really has on 8693/4300. The
-// harness handle, detached, so an end reaches the stubs the script spawned.
+// harness handle, detached, so an end reaches the stubs the starter spawned.
 const start = (dir, api, app, ports = '', { args = [], env = {} } = {}) => {
   const childEnv = {
-    ...process.env, ...TMP_ENV, WORKKIT_TOWER_API: api, WORKKIT_TOWER_APP: app, WORKKIT_TOWER_PORTS: ports, ...env,
+    ...process.env, WORKKIT_TOWER_API: api, WORKKIT_TOWER_APP: app, WORKKIT_TOWER_PORTS: ports, ...env,
   };
-  // A FORCE_COLOR the outer shell exported would pass through the script
+  // A FORCE_COLOR the outer shell exported would pass through the starter
   // untouched, a red herring to every case that asserts what the tower itself
   // decides. The caller-owned path has its own pty case.
   if (!('FORCE_COLOR' in env)) delete childEnv.FORCE_COLOR;
-  return startHandle(BASH, [...NO_RC, shellPath(SCRIPT), ...args], { env: childEnv, cwd: dir, detached: true });
+  return startHandle(process.execPath, [SCRIPT, ...args], { env: childEnv, cwd: dir, detached: true });
+};
+
+// A half that records its own pid as Node sees one, a Windows id there, then
+// stays up for <life> ms: the command line for WORKKIT_TOWER_API or _APP.
+const nodeHalf = (dir, pidFile, life = 30000) => {
+  const half = path.join(dir, 'half.js');
+  fs.writeFileSync(half, [
+    "require('fs').writeFileSync(process.argv[2], String(process.pid));",
+    `setTimeout(() => {}, ${life});`,
+    '',
+  ].join('\n'));
+  return `"${shellPath(process.execPath)}" "${shellPath(half)}" "${shellPath(pidFile)}"`;
 };
 
 // The stand-in listener the port cases hand the wrapper. Node's
@@ -214,7 +221,7 @@ const probeStub = (dir) => {
   return { app: `bash '${shellPath(stub)}'`, seen };
 };
 
-// A run under a real terminal. The tower's whole color decision is `[ -t 1 ]`,
+// A run under a real terminal. The tower's whole color decision is its stdout's TTY,
 // which a piped run can never exercise - and piped is exactly the case that
 // must stay plain, so the positive half of it only shows up here. The expect
 // script waits for the announce and then ends the run the way a user does.
@@ -230,7 +237,7 @@ const ptyRun = (dir, app, exports = []) => {
     "export WORKKIT_TOWER_API='exec sleep 30'",
     `export WORKKIT_TOWER_APP="${app}"`,
     ...exports,
-    `exec bash '${shellPath(SCRIPT)}'`,
+    `exec '${shellPath(process.execPath)}' '${shellPath(SCRIPT)}'`,
     '',
   ].join('\n'));
   fs.writeFileSync(script, [
@@ -241,7 +248,7 @@ const ptyRun = (dir, app, exports = []) => {
     'expect eof',
     '',
   ].join('\n'));
-  return startHandle('expect', [script], { env: { ...process.env, ...TMP_ENV } });
+  return startHandle('expect', [script], { env: process.env });
 };
 
 // The pty case needs a real terminal to send a real Ctrl-C down; expect is the
@@ -249,15 +256,14 @@ const ptyRun = (dir, app, exports = []) => {
 // pretending the case ran. A skip value: false, or the reason.
 const skipWithoutExpect = () => !which('expect') && 'expect is not installed';
 
-// The skip value of a case that asks whether a half is still running. The stub
-// records itself with the shell's `$$`, which under Git Bash is an MSYS id Node
-// cannot ask about: process.kill() throws for a shell that is demonstrably
-// alive, so the question answers about nothing on that machine.
-const skipOnMsysPid = () => IS_WINDOWS && 'a Git Bash $$ is an MSYS id, not a pid Node can query';
+// The skip value of a case that signals the starter. Windows has no TERM a
+// process can answer: Node's kill there ends the starter at once, before it can
+// end its halves or choose its own exit.
+const skipOnWindowsTerm = () => IS_WINDOWS && 'Windows ends a process on TERM before it can answer the signal';
 
 module.exports = {
-  SCRIPT, TMP_ENV, cleanup, alive, until, pidIn, pidOnSight, start, standIn, QUIET_PORTS,
+  SCRIPT, cleanup, alive, until, pidIn, pidOnSight, start, standIn, nodeHalf, QUIET_PORTS,
   NOISY_APP, FAILURE_SHAPES, FAILING_APP, REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP,
   BENIGN_APP, WEB_APP, PHASED_APP, CHATTY_API, BUMPED_APP, STARTING, RED, CYAN, OFF, COLORED_APP,
-  probeStub, ptyRun, skipWithoutExpect, skipOnMsysPid,
+  probeStub, ptyRun, skipWithoutExpect, skipOnWindowsTerm,
 };

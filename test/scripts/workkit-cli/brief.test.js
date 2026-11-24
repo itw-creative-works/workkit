@@ -80,7 +80,7 @@ describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
   });
 
   test('tower runs the whole tower: the start wrapper, with the checkout resolved', () => {
-    // The commands are injected the same way tower/start.sh's own suite does
+    // The commands are injected the same way tower/start.js's own suite does
     // it, so the CLI path is proven end-to-end without opening a port.
     const world = mkWorld();
     const api = path.join(world.root, 'api.ran');

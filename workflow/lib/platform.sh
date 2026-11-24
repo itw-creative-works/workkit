@@ -168,38 +168,6 @@ wk_physical_path() {
   printf '%s/%s' "$dir" "$(basename "$1")"
 }
 
-# wk_port_pids: the pids listening on a TCP port, one per line, nothing when it
-# is free. netstat matches the `:<port>` suffix on either stack (`:18693` is not
-# 8693), each pid once; lsof `-b` skips stat() on every mount, which a stalled
-# network share blocks 15s a call. Neither tool: nothing, the port reads free.
-wk_port_pids() {
-  local port="$1"
-  case "${OSTYPE:-}" in
-    msys*|cygwin*)
-      netstat -ano | tr -d '\r' | awk -v suffix=":$port" '
-        $1 == "TCP" && $4 == "LISTENING" &&
-        index($2, suffix) == length($2) - length(suffix) + 1 &&
-        !seen[$5]++ { print $5 }'
-      ;;
-    *) lsof -bti "tcp:$port" -sTCP:LISTEN 2>/dev/null ;;
-  esac
-}
-
-# wk_end_pid [-9] <pid>: end a pid `wk_port_pids` answered with, never a shell's
-# own child (`$!`), which on Windows is an MSYS id. `env` skips bash's builtin
-# for the `kill.exe` that takes a Windows pid, and that path is always forceful:
-# Windows has no polite end for a windowless process.
-wk_end_pid() {
-  local signal=''
-  case "$1" in
-    -*) signal="$1"; shift ;;
-  esac
-  case "${OSTYPE:-}" in
-    msys*|cygwin*) env kill -f -W "$1" ;;
-    *) kill ${signal:+"$signal"} "$1" ;;
-  esac
-}
-
 # wk_claim_dir <dir>: 0 only for the one caller that creates <dir>/claim
 # create-only (noclobber), since a `mkdir` may answer 0 to two racing callers.
 # Its Node twin is claimDir in lib/lock.js, which also holds the run lock's form.

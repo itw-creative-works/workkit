@@ -84,6 +84,15 @@ user-invocable: true
 - The trail is the whole reply: nothing prints before it but the timestamp.
 - `**✅ Safe to compact or continue in a new session.**` prints ONLY when every enumerated item is on the board, and it is the reply's LAST line: nothing prints under it.
 - An item still unfiled: the last line starts `Still unfiled:` followed by what is left, and the bold line does not print. For example: `Still unfiled: the owner's ruling on the palette colors.`
+- A run that put every item on the board writes its marker, as its own bare Bash call, right before the reply:
+
+```sh
+workkit checkpoint safe
+```
+
+- A run that ends on `Still unfiled:` never runs it.
+- A command that fails or is refused is one line of the trail, above the bold line, and the bold line still prints: the text is the person's signal, the marker a program's.
+- The marker is for a harness; the kit reads it nowhere.
 - The bold line ends the checkpoint reply alone, whatever the reason the checkpoint ran: a reply in a turn that ran no checkpoint never ends on it.
 - A sign-off after a task notification is one short line with no bold line, never a second trail.
 - A local harness may bounce the checkpoint reply that breaks this; nothing in the kit does.
@@ -91,4 +100,4 @@ user-invocable: true
 ## Rules
 
 - Every rule under `workkit:triage` § Rules binds here, including never inventing priority and `(check placement)` for the ambiguous ones.
-- Idempotent: a run with nothing new says so and writes nothing.
+- Idempotent: a run with nothing new says so and writes nothing to the board. It is still a clean run, so it still writes its marker (§5).

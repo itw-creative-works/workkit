@@ -4,17 +4,29 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, run, SPAWN_DEADLINE,
+  describe, test, expect, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NO_EXEC_BIT, NO_RC, shellPath, spawnBash,
+  IS_WINDOWS, NO_EXEC_BIT, skipWithoutNodeStub, spawnSync,
 } = require('../../lib/platform');
 const {
-  KIT_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
+  KIT_DIR, cleanup, git, mkRemote, mkWorld, setup, runnerPairs, seeded, mkKitCopy, commitKit, kitCommitted,
   dropRunnerLine,
 } = require('./helpers');
+const {
+  mkWorld: mkCloudWorld, runJob: runCloud, today,
+} = require('../../jobs/morning-cloud/helpers');
+
+// The shell a cloud morning runs: the starter, and the engine library it sources.
+const RUNNER_SHELL = ['jobs/morning.sh', 'workflow/lib/platform.sh'];
+
+// The shell an older kit seeded under brief/, none of it on the list.
+const RETIRED_SHELL = [
+  'jobs/morning/brief-publish.sh', 'workflow/lib.sh', 'workflow/home.sh', 'workflow/lib/participation.sh',
+  'workflow/lib/slug.sh', 'workflow/lib/suite.sh', 'workflow/lib/voice.sh', 'workflow/lib/flows.sh',
+  'workflow/lib/state.sh', 'workflow/lib/discussions.sh', 'workflow/lib/command-log.sh',
+];
 
 describe('workflow/home: the cloud brief runner', () => {
   // The runner is seeded onto the home repo because a consumer cannot set
@@ -61,30 +73,40 @@ describe('workflow/home: the cloud brief runner', () => {
     cleanup(world.root);
   });
 
-  test('the runner’s home call answers from the clone alone', () => {
-    // The shell twin of the closure above: the cloud morning asks home.sh for
-    // the slug, and its hand-off runs the seeded home.js, so the list carries
-    // every file that call loads. One it misses loads here at the checkout and
-    // fails on the runner, a morning later.
-    const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
+  test('the seeded board reads its label groups from the clone alone', () => {
+    // The board finds the label vocabulary by a path beside itself, so a list
+    // without the vocabulary hands the runner a board with no groups.
+    const world = mkWorld();
     seeded(world);
-    const engine = path.join(world.tower, 'brief', 'workflow');
-    const driver = ['lib.sh', 'lib/discussions.sh', 'home.sh']
-      .map((lib) => `. ${JSON.stringify(shellPath(path.join(engine, lib)))}`).concat('wk_home_slug').join('\n');
-    const res = spawnBash([...NO_RC, '-c', `set -euo pipefail\n${driver}`], {
-      cwd: '/', env: bashEnv(world), encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    const board = path.join(world.tower, 'brief', 'tower', 'api', 'lib', 'board.js');
+    const res = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify([...require(${JSON.stringify(board)}).labelGroups()]))`], {
+      encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
-    expect(res.status, `the seeded engine answers from the clone alone: ${res.stderr}`).toBe(0);
-    expect(res.stdout.trim(), 'with the slug this machine is configured for').toBe('owner/workkit');
+    expect(res.status, `the seeded board loads from the clone alone: ${res.stderr}`).toBe(0);
+    expect(JSON.parse(res.stdout).includes('status'), `the copy's board reads the status group: ${res.stdout}`).toBeTruthy();
     cleanup(world.root);
   });
 
-  test('every piece the morning and the engine source, and every file the slug call loads, is on the list', () => {
-    // morning.sh, home.sh and lib.sh source their pieces from jobs/morning/,
-    // workflow/home/ and workflow/lib/, so a piece the list misses kills the
-    // runner at its source line. The pieces are read off disk, so a new one is
-    // held to the list at birth.
+  test('a cloud morning from the clone alone runs through to the publish', { skip: skipWithoutNodeStub() }, () => {
+    // The closure whole: the seeded starter, run as the workflow runs it, with
+    // the checkout out of its reach. A file the list misses fails here rather
+    // than on a runner, a morning later.
+    const world = mkWorld();
+    seeded(world);
+    const cloud = mkCloudWorld();
+    const res = runCloud(cloud, [], path.join(world.tower, 'brief', 'jobs', 'morning.sh'));
+    expect(res.status, `the seeded morning ran: ${res.stdout}${res.stderr}`).toBe(0);
+    expect(cloud.calls().length, 'the brief was composed and sent').toBe(1);
+    expect(cloud.created().length, 'and posted as a Discussion').toBe(1);
+    expect(res.stdout.includes(`posted brief: ${today()}`), `which the run says: ${res.stdout}`).toBeTruthy();
+    cleanup(cloud.root);
+    cleanup(world.root);
+  });
+
+  test('every file a cloud morning loads is on the list, and its shell is the starter and its engine library', { skip: skipWithoutNodeStub() }, () => {
     const pairs = runnerPairs();
+    const shell = pairs.map((p) => p.src).filter((src) => src.endsWith('.sh')).sort();
+    expect(shell, 'the shell on the list').toEqual(RUNNER_SHELL);
     const onTheList = (src) => {
       const pair = pairs.find((p) => p.src === src);
       expect(pair, `${src} is on the runner's list`).toBeTruthy();
@@ -92,25 +114,40 @@ describe('workflow/home: the cloud brief runner', () => {
       // same relative place under brief/.
       expect(pair.dest, `${src} lands beside its entry`).toBe(`brief/${src}`);
     };
-    for (const dir of ['jobs/morning', 'workflow/home', 'workflow/lib']) {
-      for (const file of fs.readdirSync(path.join(KIT_DIR, dir)).filter((f) => f.endsWith('.sh'))) onTheList(`${dir}/${file}`);
-    }
+    for (const src of RUNNER_SHELL) onTheList(src);
 
-    // The Node half: what the slug's hand-off loads, read off the run itself
-    // (every module in node's cache once it ends), never off the source text.
-    const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
-    const loaded = path.join(world.root, 'loaded.json');
-    const recorder = path.join(world.root, 'record-loads.js');
-    fs.writeFileSync(recorder, `process.on('exit', () => require('fs').writeFileSync(${JSON.stringify(loaded)}, JSON.stringify(Object.keys(require.cache))));\n`);
-    const res = run(process.execPath, ['-r', recorder, path.join(KIT_DIR, 'workflow', 'home.js'), 'slug'], { cwd: world.root, env: world.env });
-    expect(res.status, `the slug call ran: ${res.stderr}`).toBe(0);
-    expect(res.stdout.trim(), 'and answered').toBe('owner/workkit');
-    const kitFiles = JSON.parse(fs.readFileSync(loaded, 'utf8'))
+    // The Node half, read off the run itself: every node the morning starts
+    // writes the modules in its cache as it ends, never read off the source.
+    const cloud = mkCloudWorld();
+    const loaded = path.join(cloud.root, 'loaded.jsonl');
+    const recorder = path.join(cloud.root, 'record-loads.js');
+    fs.writeFileSync(recorder, `process.on('exit', () => require('fs').appendFileSync(${JSON.stringify(loaded)}, JSON.stringify(Object.keys(require.cache)) + '\\n'));\n`);
+    cloud.env.NODE_OPTIONS = `--require ${recorder}`;
+    const res = runCloud(cloud);
+    expect(res.status, `the cloud morning ran: ${res.stdout}${res.stderr}`).toBe(0);
+    const kitFiles = [...new Set(fs.readFileSync(loaded, 'utf8').split('\n').filter(Boolean).flatMap((line) => JSON.parse(line)))]
       .map((file) => path.relative(KIT_DIR, file))
       .filter((rel) => !rel.startsWith('..') && !path.isAbsolute(rel))
       .map((rel) => rel.split(path.sep).join('/'));
-    expect(kitFiles.includes('workflow/home.js'), `the recorder saw the entry: ${kitFiles.join(', ')}`).toBeTruthy();
+    expect(kitFiles.includes('jobs/morning.js'), `the recorder saw the morning: ${kitFiles.join(', ')}`).toBeTruthy();
     for (const rel of kitFiles) onTheList(rel);
+    cleanup(cloud.root);
+  });
+
+  test('a clone the older kit seeded loses its retired shell at the next seed, each counted as retired', () => {
+    const world = mkWorld();
+    seeded(world);
+    const old = RETIRED_SHELL.map((rel) => path.join(world.tower, 'brief', ...rel.split('/')));
+    for (const file of old) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '# a file the older kit seeded\n');
+    }
+
+    const { out } = seeded(world);
+    expect(/rc=0/.test(out), `the removal counts as a change: ${out}`).toBeTruthy();
+    expect(out.includes(`${RETIRED_SHELL.length} retired`), `and each is counted: ${out}`).toBeTruthy();
+    expect(!out.includes('missing'), `with no missing warning: ${out}`).toBeTruthy();
+    for (const file of old) expect(!fs.existsSync(file), `${path.relative(world.tower, file)} is gone`).toBeTruthy();
     cleanup(world.root);
   });
 
@@ -122,7 +159,10 @@ describe('workflow/home: the cloud brief runner', () => {
     seeded(world);
     const steps = ['doctor', 'install', 'options', 'repo', 'runner', 'seed', 'services', 'stamp', 'wizard'];
     const old = steps.map((step) => path.join(world.tower, 'brief', 'workflow', 'home', `${step}.sh`));
-    for (const file of old) fs.writeFileSync(file, '# a step the older kit seeded\n');
+    for (const file of old) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '# a step the older kit seeded\n');
+    }
 
     const { out } = seeded(world);
     expect(/rc=0/.test(out), `the removal counts as a change: ${out}`).toBeTruthy();

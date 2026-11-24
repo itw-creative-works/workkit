@@ -6,12 +6,10 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect, alive, pidIn } = require('../../lib/harness');
-const { stubTool, which } = require('../../lib/platform');
-const { skipUnlessDarwin, cleanup, mkWorld, runJob } = require('./helpers');
-
-// The job bounds a step only where a `timeout` exists, so the timeout case
-// needs a real one to hand the short bound to.
-const REAL_TIMEOUT = which('timeout') || which('gtimeout');
+const { escapeRegex } = require('../../../workflow/lib/regex');
+const {
+  skipUnlessDarwin, cleanup, mkWorld, runJob, withoutTools, SHORT_BOUND,
+} = require('./helpers');
 
 // A script in <dir>/morning.d that appends its name to `order` and prints a
 // line the log can be searched for; `body` replaces that, `mode` its bits.
@@ -26,8 +24,7 @@ const plant = (dir, name, { order, body, mode = 0o755 } = {}) => {
 const ran = (order) => (fs.existsSync(order) ? fs.readFileSync(order, 'utf8').split('\n').filter(Boolean) : []);
 
 const headerAt = (log, name) => {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const m = new RegExp(`^--- .+ morning\\.d/${escaped} ---$`, 'm').exec(log);
+  const m = new RegExp(`^--- .+ morning\\.d/${escapeRegex(name)} ---$`, 'm').exec(log);
   return m ? m.index : -1;
 };
 
@@ -75,30 +72,59 @@ describe('jobs/morning (local): the morning.d folder', { skip: skipUnlessDarwin(
     cleanup(world.root);
   });
 
-  test('a script past the timeout is ended and warned about, and the next still runs', { skip: !REAL_TIMEOUT && 'no timeout or gtimeout on this machine to bound a script with' }, () => {
+  test('a script past the bound is ended and warned about, and the next still runs, with no timeout program', () => {
     const world = mkWorld();
+    withoutTools(world, ['timeout']);
+    world.env.WORKKIT_JOB_TIMEOUT = SHORT_BOUND;
     const order = path.join(world.root, 'order.log');
-    // The job's own bound is minutes; this `timeout` hands the slow script two
-    // seconds and passes every other step, the next script included, through untouched.
-    const stub = [
-      '#!/bin/bash',
-      `case "$*" in */morning.d/10-slow.sh) shift; exec ${JSON.stringify(REAL_TIMEOUT)} 2 "$@" ;; esac`,
-      `exec ${JSON.stringify(REAL_TIMEOUT)} "$@"`,
-    ];
-    stubTool(path.join(world.root, 'bin'), 'timeout', stub);
-    stubTool(path.join(world.home, '.local', 'bin'), 'timeout', stub);
     // exec, so the recorded pid is the sleep itself and nothing outlives it.
     const pidFile = path.join(world.root, 'slow.pid');
-    plant(world.workflowHome, '10-slow.sh', { body: [`echo $$ > ${JSON.stringify(pidFile)}`, 'echo started', 'exec sleep 30'] });
+    plant(world.workflowHome, '10-slow.sh', { body: [`echo $$ > ${JSON.stringify(pidFile)}`, 'echo started', 'exec sleep 60'] });
     plant(world.workflowHome, '20-b.sh', { order });
 
     const res = runJob(world);
-    expect(res.status, `a script's timeout is not the morning's failure: ${res.stderr}`).toBe(0);
-    expect(ran(order).join(','), 'the next script still ran').toBe('20-b.sh');
-    expect(warnedAbout(world, res, '10-slow.sh').length > 0, `a warn line names it: ${world.log()}\n${res.stderr}`).toBeTruthy();
+    expect(res.status, `a script's overrun is not the morning's failure: ${res.stderr}`).toBe(0);
+    const logText = world.log();
+    expect(ran(order).join(','), `the next script still ran: ${logText}`).toBe('20-b.sh');
+    const said = 'morning.d: 10-slow.sh ran past the job\'s bound and was ended; the next script still runs';
+    expect(logText.includes(said), `the line says the bound ended it: ${logText}`).toBeTruthy();
+    expect(logText.indexOf(said) < headerAt(logText, '20-b.sh'), `before the next script's block: ${logText}`).toBeTruthy();
     // A loaded machine can end the script before it records its pid: ended either way.
     const pid = pidIn(pidFile);
     if (pid > 0) expect(!alive(pid), `the slow script ${pid} was ended, not waited out`).toBeTruthy();
+    cleanup(world.root);
+  });
+
+  test('a script that writes the log itself and prints lands in the order it happened', () => {
+    const world = mkWorld();
+    const logFile = '"$HOME/Library/Logs/claude-daily.log"';
+    plant(world.workflowHome, '10-mixed.sh', {
+      body: ['echo "one: printed"', `echo "two: written" >> ${logFile}`, 'echo "three: printed"'],
+    });
+    const res = runJob(world);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    const logText = world.log();
+    const at = ['one: printed', 'two: written', 'three: printed'].map((line) => logText.indexOf(line));
+    expect(headerAt(logText, '10-mixed.sh') >= 0 && at[0] > headerAt(logText, '10-mixed.sh'), `under its header: ${logText}`).toBeTruthy();
+    expect(at[0] < at[1] && at[1] < at[2], `printed, written, printed, as it ran: ${logText}`).toBeTruthy();
+    cleanup(world.root);
+  });
+
+  test('a script that leaves a background child behind does not hold the morning', async (t) => {
+    const world = mkWorld();
+    world.env.WORKKIT_JOB_TIMEOUT = SHORT_BOUND;
+    const order = path.join(world.root, 'order.log');
+    const pidFile = path.join(world.root, 'left.pid');
+    // The child keeps the script's stdout and stderr open long past the bound.
+    plant(world.workflowHome, '10-leaves.sh', { body: [`sleep 120 & echo $! > ${JSON.stringify(pidFile)}`, 'echo "left one running"'] });
+    plant(world.workflowHome, '20-b.sh', { order });
+    t.after(() => { const pid = pidIn(pidFile); if (pid > 0 && alive(pid)) process.kill(pid, 'SIGKILL'); });
+
+    const res = runJob(world);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    const logText = world.log();
+    expect(logText.includes('morning.d: 10-leaves.sh ran past the job\'s bound'), `its end is its own exit, not the bound: ${logText}`).toBe(false);
+    expect(ran(order).join(','), `the next script ran: ${logText}`).toBe('20-b.sh');
     cleanup(world.root);
   });
 

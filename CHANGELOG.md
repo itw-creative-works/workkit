@@ -7,6 +7,18 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#576](../../issues/576) - A checkpoint that filed everything now writes a marker for its session, through the new `workkit checkpoint safe`, so a harness can act on a clean checkpoint without reading the reply. The marker holds the time it was written; the kit reads it nowhere.
+
+### Changed
+
+- [#575](../../issues/575) - The 9am jobs and the dashboard starter run in Node: the morning, the summaries, the installer, the dispatch and `workkit tower` need no `jq`, `timeout` or `dscl`. Its summaries, site publish and `morning.d` scripts are bounded on every machine (`WORKKIT_JOB_TIMEOUT`), and a kit missing a file stops at once.
+
+### Fixed
+
+- (no issue) - The cloud brief's runner now carries `workflow/labels.json`: without it the board the runner swept read an empty label set.
+
 ## [0.102.0] - 2026-11-24
 
 ### Changed

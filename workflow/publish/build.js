@@ -9,6 +9,8 @@
 const fs = require('fs');
 const path = require('path');
 const { isPlain } = require('../../hooks/mods/settings.js');
+const { file } = require('../home/committed');
+const { towerApp, siteSidebar } = require('../home/options');
 const { physical } = require('../lib/link');
 const { isDir } = require('../lib/lock');
 const { nativePath } = require('../lib/platform');
@@ -88,9 +90,6 @@ const spliceSidebar = (app, rows) => {
  * @returns {(() => void)|null} the restore of the app's bytes, null when nothing was merged
  */
 const mergeSidebar = (clone) => {
-  // Loaded here: home's own files load this one, and tower/app needs neither.
-  const { towerApp, siteSidebar } = require('../home/options');
-  const { file } = require('../home/seed');
   const app = towerApp();
   if (physical(clone) === app) return null;
   const raw = siteSidebar();

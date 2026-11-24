@@ -12,7 +12,7 @@ WORKKIT_COMMANDS=(
   tools=allow convert=allow public=allow
   'ship items=allow' 'ship release=allow' 'ship watch=allow' 'ship cut=allow' 'ship plan=allow' 'ship publish=allow'
   'ship deploy=ask'
-  review=allow triage=allow
+  review=allow triage=allow checkpoint=allow
   'proof red=none'
   changelog=allow tower=none enable=allow decline=allow heal=allow state=allow note=allow
   prove=none supervise=none

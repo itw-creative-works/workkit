@@ -9,7 +9,7 @@ const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { resetIn, clockAt, mkLimited, mkRefused } = require('../lib/gh');
 
 const {
-  readDiscussions, briefHistory, briefFreshness, parseStatsMark, HISTORY_LIMIT, BRIEF_TITLE_PREFIX,
+  readDiscussions, briefHistory, briefFreshness, parseStatsMark, HISTORY_LIMIT,
 } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'history.js'));
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -141,12 +141,6 @@ describe('tower/history: the block itself', () => {
     const partial = parseStatsMark('<!-- workkit-stats: {"v":1,"date":"2026-08-03","totals":{"open":1}} -->');
     expect(partial.closedDay, 'a block from before closedDay reads as zero').toBe(0);
     expect(Object.keys(partial.repos).length, 'and its per-repo map is empty rather than absent').toBe(0);
-  });
-
-  test('the title prefix is the one the publish writes', () => {
-    expect(BRIEF_TITLE_PREFIX, 'the literal jobs/morning/brief-publish.sh titles a brief with').toBe('brief: ');
-    const shell = fs.readFileSync(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief-publish.sh'), 'utf8');
-    expect(shell.includes('title="brief: $date"'), 'and the shell still writes exactly that').toBeTruthy();
   });
 });
 

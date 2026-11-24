@@ -14,7 +14,7 @@ const { ask } = require('./board');
 const { homeSlugFor } = require('./summaries');
 
 /**
- * The title every published brief carries (`jobs/morning/brief-publish.sh` writes it,
+ * The title every published brief carries (`jobs/morning/brief-publish.js` writes it,
  * `jobs/morning/brief/cc-news.js` reads its cursor back by it). One home, three readers.
  */
 const BRIEF_TITLE_PREFIX = 'brief: ';

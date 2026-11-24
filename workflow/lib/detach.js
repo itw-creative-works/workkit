@@ -52,6 +52,17 @@ const signalCode = (signal) => {
  */
 const exitOf = (code, signal) => (code === null ? signalCode(signal) : code);
 
+// The code a shell gives a command that never started.
+const startFailed = 127;
+
+/**
+ * A spawnSync result's end as a shell's code: startFailed when it never
+ * started (no code and no signal), else exitOf.
+ * @param {{status: number|null, signal: string|null}} res
+ * @returns {number}
+ */
+const codeOf = (res) => (res.status === null && !res.signal ? startFailed : exitOf(res.status, res.signal));
+
 /**
  * Whether <env> is a supervised run's: the mark a supervisor sets on its command.
  * @param {object} env an environment, `process.env`
@@ -263,7 +274,7 @@ const supervise = (argv) => {
   const child = spawn(job.cmd, job.args, { stdio: ['ignore', out, out], env, windowsHide: true });
   child.on('error', (err) => {
     say(`detach: ${job.cmd}: ${err.message}`);
-    finish(127);
+    finish(startFailed);
   });
   child.on('exit', (code, signal) => {
     if (!ending) finish(exitOf(code, signal));
@@ -326,5 +337,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  awakeCommand, signalCode, exitOf, isSupervised, END_SIGNALS, INT_CODE,
+  awakeCommand, signalCode, exitOf, startFailed, codeOf, isSupervised, END_SIGNALS, INT_CODE,
 };

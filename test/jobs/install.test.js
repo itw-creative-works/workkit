@@ -1,4 +1,4 @@
-// Tests for jobs/install.sh, the LaunchAgent installer. HOME is scratch and
+// Tests for jobs/install.js, the LaunchAgent installer. HOME is scratch and
 // `launchctl` is a recorder on PATH, so the suite reads the plist that would be
 // installed and the commands that would load it, never the real gui domain.
 
@@ -6,12 +6,19 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
-const { NO_RC, shellPath, homeEnv, stubTool, pathWith, spawnBash } = require('../lib/platform');
+const {
+  recordArgv, recordArgvJs, readArgv, isCall, fmtCalls,
+} = require('../lib/argv-log');
+// The installer starts through run.js as every case's child does; the plist
+// tools below stay raw.
+const {
+  homeEnv, stubTool, stubToolJs, pathWith, spawnSync: spawnThroughRun,
+} = require('../lib/platform');
 const { mkPluginCopy } = require('../lib/plugin-copy');
 const { mkOriginRepo } = require('../lib/git-repo');
 
-const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.sh');
+const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.js');
+const TEMPLATE = path.join(__dirname, '..', '..', 'jobs', 'com.workkit.claude-daily.plist');
 const REPO = path.join(__dirname, '..', '..');
 
 // The one agent this checkout installs: the 9am job, which runs the summaries
@@ -74,6 +81,8 @@ const mkWorld = ({
   return {
     root,
     home,
+    bin,
+    logFile,
     calls: () => readArgv(logFile),
     plist: (label) => path.join(agents, `${label}.plist`),
     rendered: () => (fs.existsSync(agents) ? fs.readdirSync(agents).sort() : []),
@@ -82,8 +91,12 @@ const mkWorld = ({
   };
 };
 
-const install = (world) => spawnBash([...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
-const check = (world) => spawnBash([...NO_RC, shellPath(SCRIPT), '--check'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+// The calls that unload and load an agent, in the order they were made.
+const bootCalls = (calls) => calls.filter((c) => isCall(c, 'bootout') || isCall(c, 'bootstrap'));
+
+const runInstaller = (script, args, env) => spawnThroughRun(process.execPath, [script, ...args], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
+const install = (world) => runInstaller(SCRIPT, [], world.env);
+const check = (world) => runInstaller(SCRIPT, ['--check'], world.env);
 
 // A copy of the engine somewhere else: no git, no plugin cache around it.
 const strayKit = () => {
@@ -108,6 +121,17 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       expect(program, `${AGENT.runner} is reached through the engine address`).toBe(`${world.home}/.claude/workkit/../jobs/${AGENT.runner}`);
       expect(!plist.includes(fs.realpathSync(REPO)), `and no absolute kit path is baked in: ${plist}`).toBeTruthy();
       expect(plist.includes(`${world.home}/Library/Logs/${LABEL}.log`), 'and the log is under this home').toBeTruthy();
+      cleanup(world.root);
+    });
+
+    // launchd reads the file as written, so every byte is the template's but
+    // the home: the fixture is the committed template with HOME put in.
+    test('the rendered plist is the template with this home put in, byte for byte', () => {
+      const world = mkWorld();
+      const res = install(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      const fixture = fs.readFileSync(TEMPLATE, 'utf8').split('{{HOME}}').join(world.env.HOME);
+      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist').toBe(fixture);
       cleanup(world.root);
     });
 
@@ -151,6 +175,8 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       const link = `${world.home}/.claude/workkit`;
       const res = install(world);
       const checked = check(world);
+      expect(res.status, `install exits 0, stderr: ${res.stderr}`).toBe(0);
+      expect(checked.status, `--check exits 0, stderr: ${checked.stderr}`).toBe(0);
       const said = `${res.stdout}${res.stderr}${checked.stdout}${checked.stderr}`;
       expect(!said.includes(link), `no line names the link: ${said}`).toBeTruthy();
       cleanup(world.root);
@@ -180,7 +206,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       fs.symlinkSync(path.join(cloneRoot, 'workflow'), path.join(claude, 'workkit'));
       const cache = path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0');
       mkPluginCopy(cache, { dirs: ['workflow', 'jobs'] });
-      const res = spawnBash([...NO_RC, shellPath(path.join(cache, 'jobs', 'install.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+      const res = runInstaller(path.join(cache, 'jobs', 'install.js'), [], world.env);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       const said = `${res.stdout}${res.stderr}`;
       expect(!said.includes('⚠'), `the clone outranks the cache copy, so nothing is wrong: ${said}`).toBeTruthy();
@@ -194,9 +220,24 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
     test('a first install boots the agent out and back in', () => {
       const world = mkWorld();
       install(world);
-      const calls = world.calls();
-      expect(calls.some((c) => isCall(c, 'bootout', `gui/${process.getuid()}/${LABEL}`)), `the old one goes first: ${fmtCalls(calls)}`).toBeTruthy();
-      expect(calls.some((c) => isCall(c, 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL))), `then the new one loads: ${fmtCalls(calls)}`).toBeTruthy();
+      const loads = bootCalls(world.calls());
+      expect(loads.length, `one bootout, one bootstrap: ${fmtCalls(loads)}`).toBe(2);
+      expect(isCall(loads[0], 'bootout', `gui/${process.getuid()}/${LABEL}`), `the old one goes first: ${fmtCalls(loads)}`).toBeTruthy();
+      expect(isCall(loads[1], 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL)), `then the new one loads: ${fmtCalls(loads)}`).toBeTruthy();
+      cleanup(world.root);
+    });
+
+    test('a launchctl bootstrap that fails ends the installer with that command\'s code', () => {
+      const world = mkWorld();
+      // The agent is not loaded, and its load is refused with launchd's I/O error code.
+      stubToolJs(world.bin, 'launchctl', [
+        recordArgvJs(JSON.stringify(world.logFile), 'process.argv.slice(2)'),
+        'const verb = process.argv[2];',
+        "process.exitCode = verb === 'print' ? 1 : verb === 'bootstrap' ? 5 : 0;",
+      ].join('\n'));
+      const res = install(world);
+      expect(bootCalls(world.calls()).some((c) => isCall(c, 'bootstrap')), `the load was asked for: ${fmtCalls(world.calls())}`).toBeTruthy();
+      expect(res.status, `the refused load's code, stderr: ${res.stderr}`).toBe(5);
       cleanup(world.root);
     });
 
@@ -239,8 +280,10 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
 
       install(world);
       expect(!fs.readFileSync(world.installed, 'utf8').includes('stale'), 'the stale copy is replaced').toBeTruthy();
-      const added = world.calls().slice(before);
-      expect(added.some((c) => isCall(c, 'bootout', `gui/${process.getuid()}/${LABEL}`)), `and the running agent is booted out: ${fmtCalls(added)}`).toBeTruthy();
+      const loads = bootCalls(world.calls().slice(before));
+      expect(loads.length, `one bootout, one bootstrap: ${fmtCalls(loads)}`).toBe(2);
+      expect(isCall(loads[0], 'bootout', `gui/${process.getuid()}/${LABEL}`), `the running agent is booted out first: ${fmtCalls(loads)}`).toBeTruthy();
+      expect(isCall(loads[1], 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL)), `then the new copy loads: ${fmtCalls(loads)}`).toBeTruthy();
       cleanup(world.root);
     });
 
@@ -274,12 +317,15 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
   });
 
   describe('jobs/install: the real-home guard', () => {
+    // The line is the one `workkit update` relays.
     test('a run under a scratch home asks launchd for nothing', () => {
       const world = mkWorld({ launchdOk: false });
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(fmtCalls(world.calls()), 'not one launchctl call: the gui domain is the whole machine’s').toBe('');
-      expect(/would boot.*\(skipped: HOME is not this account's home/.test(res.stdout), `and it says what it would have done: ${res.stdout}`).toBeTruthy();
+      expect(res.stdout.split('\n'), `and it says what it would have done: ${res.stdout}`).toContain(
+        `✓ ${LABEL} → would bootout and bootstrap it (skipped: HOME is not this account's home; set WORKKIT_LAUNCHD_OK=1 to force)`,
+      );
       expect(fs.existsSync(world.installed), 'the plist is still rendered into the scratch home').toBeTruthy();
       cleanup(world.root);
     });
@@ -289,11 +335,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       install(world);
       const before = world.calls().length;
 
-      const res = spawnBash([...NO_RC, shellPath(SCRIPT)], {
-        encoding: 'utf8',
-        timeout: SPAWN_DEADLINE,
-        env: { ...world.env, WORKKIT_LAUNCHD_OK: '' },
-      });
+      const res = runInstaller(SCRIPT, [], { ...world.env, WORKKIT_LAUNCHD_OK: '' });
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(fmtCalls(world.calls().slice(before)), 'launchd is not even asked whether it is loaded').toBe('');
       expect(/would bootstrap it \(plist unchanged\)/.test(res.stdout), `it says so: ${res.stdout}`).toBeTruthy();
@@ -306,7 +348,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       const world = mkWorld();
       const res = check(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
-      expect(new RegExp(`✓ ${LABEL} → not installed`).test(res.stdout), `it says so: ${res.stdout}`).toBeTruthy();
+      expect(res.stdout, 'it says so, in the one line the update relays').toBe(`✓ ${LABEL} → not installed\n`);
       expect(world.rendered().join(','), 'and writes nothing').toBe('');
       cleanup(world.root);
     });
@@ -327,7 +369,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       install(world);
       fs.appendFileSync(world.installed, '\n<!-- from an older checkout -->\n');
       const res = check(world);
-      expect(new RegExp(`✓ ${LABEL} → out of date`).test(res.stdout), `it names the drift: ${res.stdout}`).toBeTruthy();
+      expect(res.stdout, 'it names the drift, in the one line the update relays').toBe(`✓ ${LABEL} → out of date for this kit\n`);
       expect(fs.readFileSync(world.installed, 'utf8').includes('older checkout'), 'and the check writes nothing').toBeTruthy();
       cleanup(world.root);
     });
