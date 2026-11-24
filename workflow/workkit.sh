@@ -61,6 +61,7 @@ for _lib in lib/platform.sh lib/suite.sh lib.sh lib/discussions.sh home.sh lib/c
     HOME_LIBS=0
   fi
 done
+[[ -f "$SCRIPT_DIR/home.js" ]] || HOME_LIBS=0
 
 # ── Output ────────────────────────────────────────────────────────────────────
 # A partial checkout with no lib.sh still speaks, plainly, through these.

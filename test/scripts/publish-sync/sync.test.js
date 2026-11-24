@@ -1,6 +1,6 @@
-// Tests for workflow/home.sh: the tower sync, asked as the library function it is
-// against fixture directories and a clone of a local bare "GitHub", and the
-// version stamp that keeps it from downgrading a clone a newer kit wrote.
+// Tests for workflow/home/seed.js: the tower sync, asked as the library function
+// it is against fixture directories and a clone of a local bare "GitHub", and
+// the version stamp that keeps it from downgrading a clone a newer kit wrote.
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
@@ -9,7 +9,7 @@ const { describe, test, expect } = require('../../lib/harness');
 const { shellPath, skipWithoutModes } = require('../../lib/platform');
 const { STAMP, kitVersion } = require('../../lib/version-stamp');
 const {
-  cleanup, git, write, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
+  cleanup, git, write, mkSyncWorld, commitCheckout, sync, seed, mtimes,
 } = require('./helpers');
 
 // A missing file reads as null, so its expect names what was expected.
@@ -37,7 +37,7 @@ describe('workflow/home: the tower sync', () => {
 
   test('a freshly seeded clone is already current: the seed and the sync agree', () => {
     const world = mkSyncWorld();
-    inHome(world, 'wk_home_seed');
+    seed(world);
     const { rc, out, err } = sync(world);
     expect(rc, `nothing to do: ${out}${err}`).toBe(2);
     expect(/already current/.test(out + err), `and it says so, got: ${out}${err}`).toBeTruthy();
@@ -171,8 +171,8 @@ describe('workflow/home: a checkout in a git repo copies its committed tree', ()
     write(path.join(world.app, 'README.md'), '# an uncommitted edit\n');
     write(path.join(world.app, 'targets', 'web', 'src', 'index.html'), '<html>an uncommitted board</html>\n');
 
-    const { code, out, err } = inHome(world, 'wk_home_seed');
-    expect(code, `the seed ran: ${out}${err}`).toBe(0);
+    const { rc, out, err } = seed(world);
+    expect(rc, `the seed ran: ${out}${err}`).toBe(0);
     expect(read(path.join(world.clone, 'README.md')), 'the seeded readme is the committed one').toBe('# the tower\n');
     expect(read(path.join(world.clone, 'targets', 'web', 'src', 'index.html')), 'and so is the seeded page').toBe('<html>the board</html>\n');
     cleanup(world.root);
@@ -206,19 +206,12 @@ describe('workflow/home: a checkout in a git repo copies its committed tree', ()
     cleanup(world.root);
   });
 
-  // The seed's rc, printed rather than ending the run, the way sync() reads the sync's.
-  const seedRc = (world) => {
-    const res = inHome(world, 'rc=0; wk_home_seed || rc=$?; printf "rc=%s\\n" "$rc"');
-    const rc = /rc=(\d+)/.exec(res.out + res.err);
-    return { ...res, rc: rc ? Number(rc[1]) : null };
-  };
-
   test('an app folder no repo tracks, though it sits inside one, is copied as it sits on disk', () => {
     for (const copy of ['sync', 'seed']) {
       const world = mkSyncWorld();
       commitCheckout(world, { app: false });
       write(path.join(world.app, 'README.md'), '# an edit no repo tracks\n');
-      const { rc, out, err } = copy === 'sync' ? sync(world) : seedRc(world);
+      const { rc, out, err } = copy === 'sync' ? sync(world) : seed(world);
       expect(rc, `the ${copy} ran: ${out}${err}`).toBe(0);
       expect(read(path.join(world.clone, 'README.md')), `the ${copy} carried the folder's readme, edit included`).toBe('# an edit no repo tracks\n');
       expect(read(path.join(world.clone, 'config', 'omega.json5')), `and the ${copy} carried the config`).toBe('{ brand: { id: "workkit" } }\n');
@@ -236,8 +229,8 @@ describe('workflow/home: a checkout in a git repo copies its committed tree', ()
     expect(read(path.join(world.clone, 'README.md')), 'the clone received no readme').toBe(null);
     expect(read(path.join(world.clone, 'config', 'omega.json5')), 'nor the config').toBe(null);
 
-    const seed = seedRc(world);
-    expect(seed.rc, `the seed stops too: ${seed.out}${seed.err}`).toBe(1);
+    const seedRun = seed(world);
+    expect(seedRun.rc, `the seed stops too: ${seedRun.out}${seedRun.err}`).toBe(1);
     expect(read(path.join(world.clone, 'README.md')), 'and the clone stays empty of the readme').toBe(null);
     expect(read(path.join(world.clone, 'config', 'omega.json5')), 'and of the config').toBe(null);
     cleanup(world.root);
@@ -279,17 +272,18 @@ describe('workflow/home: a top-level folder the app dropped', () => {
   });
 
   test('an excluded folder is never retired, listed or not', () => {
-    const world = dropAfterSync(['legacy', 'drafts']);
-    // What an install and a mint leave in the clone: excluded, listed nowhere.
+    const world = dropAfterSync(['legacy']);
+    // What an install, a mint and a run leave in the clone: excluded folders.
     write(path.join(world.clone, 'node_modules', '.bin', 'omega'), '#!/bin/sh\n');
     write(path.join(world.clone, '.omega', 'runs', 'one.json'), '{}\n');
-    // drafts/ is listed by the stamp, .omega/ by the retired list; both excluded.
-    const prelude = 'WK_TOWER_APP_EXCLUDE+=(drafts)\nWK_TOWER_APP_RETIRED+=(.omega)';
-    const { rc, out, err } = sync(world, { prelude });
+    write(path.join(world.clone, 'logs', 'deep', 'two.js'), 'export default 2;\n');
+    // logs/ and .omega/ listed by the stamp, as a stamp from elsewhere could.
+    fs.appendFileSync(path.join(world.clone, STAMP), '\nlogs\n.omega\n');
+    const { rc, out, err } = sync(world);
     expect(rc, `the sync ran: ${out}${err}`).toBe(0);
     expect(!fs.existsSync(path.join(world.clone, 'legacy')), 'the retirement ran: legacy/ went').toBeTruthy();
-    expect(read(path.join(world.clone, 'drafts', 'deep', 'two.js')), 'the stamp-listed excluded folder stayed').toBe('export default 2;\n');
-    expect(read(path.join(world.clone, '.omega', 'runs', 'one.json')), 'the retired-listed excluded folder stayed').toBe('{}\n');
+    expect(read(path.join(world.clone, 'logs', 'deep', 'two.js')), 'the stamp-listed excluded folder stayed').toBe('export default 2;\n');
+    expect(read(path.join(world.clone, '.omega', 'runs', 'one.json')), 'the stamp-listed dotted excluded folder stayed').toBe('{}\n');
     expect(read(path.join(world.clone, 'node_modules', '.bin', 'omega')), 'and the unlisted excluded folder stayed').toBe('#!/bin/sh\n');
     cleanup(world.root);
   });

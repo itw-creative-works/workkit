@@ -1,19 +1,21 @@
-// Tests for workflow/home.sh: the clone (an absent path is cloned, an empty repo
-// clones fine, and whatever is already at the path is left alone).
+// Tests for workflow/home/repo.js: the clone (an absent path is cloned, an empty
+// repo clones fine, and whatever is already at the path is left alone).
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
-const { cleanup, git, mkRemote, mkWorld, inHome } = require('./helpers');
+const { cleanup, git, mkRemote, mkWorld, inNode } = require('./helpers');
+
+const clone = (world) => inNode(world, [['repo', 'clone', ['owner/workkit']]]);
 
 describe('workflow/home: the clone', () => {
   test('an absent path is cloned, and ~/.workkit is never made a git repo', () => {
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, { seed: { 'package.json': '{ "name": "tower" }\n' } });
 
-    const { code, out } = inHome(world, 'wk_home_clone owner/workkit');
+    const { code, out } = clone(world);
     expect(code, `exit 0: ${out}`).toBe(0);
     expect(fs.existsSync(path.join(world.tower, '.git')), 'the tower folder is the git repo').toBeTruthy();
     expect(fs.existsSync(path.join(world.tower, 'package.json')), 'carrying the remote’s files').toBeTruthy();
@@ -27,7 +29,7 @@ describe('workflow/home: the clone', () => {
     // stderr and no branch checked out: the ordinary first-setup case.
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    const { code, out, err } = inHome(world, 'wk_home_clone owner/workkit');
+    const { code, out, err } = clone(world);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     expect(!/warning/i.test(out), `the warning is swallowed, got: ${out}`).toBeTruthy();
     expect(fs.existsSync(path.join(world.tower, '.git')), 'and the clone is there to seed').toBeTruthy();
@@ -40,8 +42,8 @@ describe('workflow/home: the clone', () => {
     fs.mkdirSync(world.tower, { recursive: true });
     fs.writeFileSync(path.join(world.tower, 'someone-elses.txt'), 'mine\n');
 
-    const { out } = inHome(world, 'rc=0; wk_home_clone owner/workkit || rc=$?; printf "rc=%s\\n" "$rc"');
-    expect(/rc=3/.test(out), `the caller is told to stop, got: ${out}`).toBeTruthy();
+    const { code, out } = clone(world);
+    expect(code, `the caller is told to stop, got: ${out}`).toBe(3);
     expect(/move it aside/.test(out), 'and nothing was converted').toBeTruthy();
     expect(fs.existsSync(path.join(world.tower, 'someone-elses.txt')), 'the folder is exactly as it was').toBeTruthy();
     expect(!fs.existsSync(path.join(world.tower, '.git')), 'and was never git init’d').toBeTruthy();
@@ -57,8 +59,8 @@ describe('workflow/home: the clone', () => {
     git(world.tower, 'init', '-q', '-b', 'main');
     git(world.tower, 'remote', 'add', 'origin', theirs);
 
-    const { out } = inHome(world, 'rc=0; wk_home_clone owner/workkit || rc=$?; printf "rc=%s\\n" "$rc"');
-    expect(/rc=3/.test(out), `the caller is told to stop, got: ${out}`).toBeTruthy();
+    const { code, out } = clone(world);
+    expect(code, `the caller is told to stop, got: ${out}`).toBe(3);
     expect(/pointing at/.test(out), `it names what it found, got: ${out}`).toBeTruthy();
     expect(spawnSync('git', ['-C', world.tower, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).stdout.trim(), 'the other remote is exactly as it was').toBe(theirs);
     cleanup(world.root);

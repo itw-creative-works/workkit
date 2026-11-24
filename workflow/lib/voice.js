@@ -4,7 +4,7 @@
  * palette, each level's glyph and colors and the line they make, the four
  * levels, a tool's lines warned one by one, and a wait's one line. The tower's
  * logger builds its lines here too. Every variable is read at the call.
- * Usage: const { ok, skip, info, warn, warnLines, wait, colorOn } = require('../lib/voice');
+ * Usage: const { ok, skip, info, warn, warnLines, wait, colorOn, setQuiet } = require('../lib/voice');
  */
 
 const { writeErr, writeOut } = require('./say');
@@ -93,7 +93,17 @@ const out = (line) => {
   else writeOut(line);
 };
 
-const quiet = () => process.env.QUIET === '1';
+// The process's own quiet, the shell's unexported QUIET: no child inherits it.
+let quietSet = false;
+
+/**
+ * Silence skip, info and the wait line for this process alone, as a script's
+ * `QUIET=1` shell variable does; QUIET=1 in the environment still counts.
+ * @param {boolean} on
+ */
+const setQuiet = (on) => { quietSet = Boolean(on); };
+
+const quiet = () => quietSet || process.env.QUIET === '1';
 
 /** `wk_ok`: something was done. */
 const ok = (message) => { out(lineOf('ok', message)); };
@@ -129,5 +139,5 @@ const wait = (message) => {
 };
 
 module.exports = {
-  colorOn, ok, skip, info, warn, warnLines, wait, PALETTE, paint, said,
+  colorOn, ok, skip, info, warn, warnLines, wait, setQuiet, PALETTE, paint, said,
 };

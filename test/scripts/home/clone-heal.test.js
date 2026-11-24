@@ -1,5 +1,5 @@
-// Tests for workflow/home.sh: the clone's own heal, the labels and issue forms
-// every other repo gets at SessionStart. The shared prologue is ./helpers.js.
+// Tests for workflow/home/install.js: the clone's own heal, the labels and issue
+// forms every other repo gets at SessionStart. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -8,7 +8,7 @@ const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, kitCommitted,
+  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, inNode, mkKitCopy, kitCommitted,
 } = require('./helpers');
 
 describe('workflow/home: the clone’s own heal', () => {
@@ -20,14 +20,15 @@ describe('workflow/home: the clone’s own heal', () => {
       settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } },
     });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, { seed: { 'package.json': '{}\n' } });
-    inHome(world, 'wk_home_clone owner/workkit');
+    inNode(world, [['repo', 'clone', ['owner/workkit']]]);
     return world;
   };
+  const heal = (world) => inNode(world, [['install', 'heal']]);
   const forms = ['bug', 'enhancement', 'idea', 'dump'];
 
   test('the home repo gets the labels and the forms, and they are pushed', () => {
     const world = cloned();
-    const { code, out, err } = inHome(world, 'wk_home_heal');
+    const { code, out, err } = heal(world);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
 
     const names = world.labels().map((l) => l.name);
@@ -58,17 +59,22 @@ describe('workflow/home: the clone’s own heal', () => {
 
   test('a second heal writes nothing, commits nothing and pushes nothing', () => {
     const world = cloned();
-    inHome(world, 'wk_home_heal');
+    heal(world);
     const head = spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
     const before = world.ghCalls().length;
     const body = fs.readFileSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE', 'bug.md'), 'utf8');
 
-    // The commit/push is spied on rather than inferred: an empty commit and a
-    // push with nothing to send both leave the same repo behind.
-    const { code, out } = inHome(world,
-      'wk_home_commit_push() { printf "COMMIT_PUSH %s\\n" "$1"; return 0; }\nwk_home_heal');
+    // Every git the second heal spawns is traced, rather than the result
+    // inferred: an empty commit and a push with nothing to send both leave the
+    // same repo behind.
+    const trace = path.join(world.root, 'git-trace.log');
+    world.env.GIT_TRACE = trace;
+    const { code, out } = heal(world);
     expect(code, `exit 0: ${out}`).toBe(0);
-    expect(!/COMMIT_PUSH/.test(out), `nothing was committed or pushed, got: ${out}`).toBeTruthy();
+    const traced = fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8') : '';
+    expect(/built-in: git /.test(traced), 'the trace recorded the run').toBeTruthy();
+    expect(!/built-in: git (commit|push)\b/.test(traced),
+      `nothing was committed or pushed: ${traced.split('\n').filter((l) => /git (commit|push)/.test(l)).join(' | ')}`).toBeTruthy();
     expect(spawnSync('git', ['-C', world.tower, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, 'the clone is exactly where the first run left it').toBe(head);
     expect(fs.readFileSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE', 'bug.md'), 'utf8'), 'and an existing form is never rewritten').toBe(body);
 
@@ -86,12 +92,12 @@ describe('workflow/home: the clone’s own heal', () => {
     const world = cloned();
     const remote = world.env.WORKKIT_HOME_REMOTE;
     fs.renameSync(remote, `${remote}.away`);
-    const first = inHome(world, 'wk_home_heal');
+    const first = heal(world);
     expect(first.code, `the morning carries on: ${first.out}${first.err}`).toBe(0);
     expect(/could not push/.test(`${first.out}${first.err}`), `the failed push is named, got: ${first.out}${first.err}`).toBeTruthy();
     fs.renameSync(`${remote}.away`, remote);
 
-    const { code, out, err } = inHome(world, 'wk_home_heal');
+    const { code, out, err } = heal(world);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     const check = path.join(world.root, 'check-stranded');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
@@ -105,11 +111,11 @@ describe('workflow/home: the clone’s own heal', () => {
       login: 'owner',
       settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } },
     });
-    const { code, out } = inHome(world, 'wk_home_heal\nprintf "carried on\\n"');
-    expect(code, 'exit 0: a heal that cannot run never stops its caller').toBe(0);
+    // A step after the heal, so the caller running on is a step that ran.
+    const { answers, out } = inNode(world, [['install', 'heal'], ['options', 'homeState']]);
     expect(/nothing is cloned at .*tower/.test(out), `it names the missing clone, got: ${out}`).toBeTruthy();
     expect(/not healed/.test(out), 'and what went unhealed is named').toBeTruthy();
-    expect(/carried on/.test(out), 'the caller runs on').toBeTruthy();
+    expect(answers.length, `a heal that cannot run never stops its caller: ${JSON.stringify(answers)}`).toBe(2);
     expect(!world.ghCalls().some((c) => c[0] === 'label'), 'nothing was asked of GitHub').toBeTruthy();
     cleanup(world.root);
   });
@@ -139,7 +145,7 @@ describe('workflow/home: the clone’s own heal', () => {
   test('a git-backed kit: an uncommitted form edit is not healed in, the committed form is', () => {
     const world = cloned();
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, ...FORM.split('/')), EDIT);
-    const { code, out } = inHome(world, 'wk_home_heal');
+    const { code, out } = heal(world);
     expect(code, `exit 0: ${out}`).toBe(0);
     const body = fs.readFileSync(healedBug(world), 'utf8');
     expect(body, 'the clone holds the kit’s committed bug form, byte for byte').toBe(kitCommitted(world, FORM));
@@ -151,7 +157,7 @@ describe('workflow/home: the clone’s own heal', () => {
     const world = cloned();
     world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
     fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, ...FORM.split('/')), EDIT);
-    const { code, out } = inHome(world, 'wk_home_heal');
+    const { code, out } = heal(world);
     expect(code, `exit 0: ${out}`).toBe(0);
     expect(fs.readFileSync(healedBug(world), 'utf8').includes('not yet committed'),
       'the folder’s bug form, edit included, reached the clone').toBeTruthy();
@@ -174,7 +180,7 @@ describe('workflow/home: the clone’s own heal', () => {
     const head = git(world.tower, 'rev-parse', 'HEAD').stdout;
     const before = world.ghCalls().length;
 
-    const { code, out } = inHome(world, 'wk_home_heal');
+    const { code, out } = heal(world);
     expect(code, `a heal that cannot run never stops its caller: ${out}`).toBe(0);
     expect(out.includes('labels and issue templates were not healed'), `it names what went unhealed, got: ${out}`).toBeTruthy();
     expect(!fs.existsSync(path.join(world.tower, '.github', 'ISSUE_TEMPLATE')), 'no form was written').toBeTruthy();

@@ -5,7 +5,12 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { describe, test, expect } = require('../../lib/harness');
+const {
+  describe, test, expect, start, until,
+} = require('../../lib/harness');
+const {
+  gitPath, shellPath, BASH, NO_RC,
+} = require('../../lib/platform');
 const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
 describe('workflow/publish: the published branch', () => {
@@ -24,7 +29,7 @@ describe('workflow/publish: the published branch', () => {
     expect(/^chore\(site\): publish \d{4}-\d{2}-\d{2}$/.test(subject), `one conventional subject, got: ${subject}`).toBeTruthy();
 
     // The wiring itself, pinned: the daily publish heals the home repo's labels
-    // on the way, so deleting the wk_home_heal call goes red here.
+    // on the way, so deleting publish.js's call of the heal goes red here.
     expect(world.ghCalls().some((argv) => /label list/.test(argv)),
       `the publish healed the home repo's labels: ${world.ghCalls().join(' | ')}`).toBeTruthy();
     cleanup(world.root);
@@ -89,6 +94,80 @@ describe('workflow/publish: the published branch', () => {
     expect(pages, 'the branch is back').toBeTruthy();
     const gitLog = spawnSync('git', ['-C', pages, 'log', '--oneline'], { encoding: 'utf8' }).stdout.trim().split('\n');
     expect(gitLog.length, `one commit, no old history: ${gitLog.join(' | ')}`).toBe(1);
+    cleanup(world.root);
+  });
+
+  test('a publish ended by SIGTERM mid-push leaves no worktree registered, and the next one publishes', {
+    skip: process.platform === 'win32' && 'Windows ends a process with no signal it can catch',
+  }, async (t) => {
+    // The remote holds the first gh-pages push, the step that runs inside the
+    // temp worktree, until the case writes `go`; that held push is refused.
+    const world = mkWorld();
+    const held = path.join(world.root, 'held');
+    const go = path.join(world.root, 'go');
+    const released = path.join(world.root, 'released');
+    const hook = path.join(world.bare, 'hooks', 'pre-receive');
+    fs.writeFileSync(hook, [
+      '#!/bin/sh',
+      'while read old new ref; do',
+      `  if [ "$ref" = refs/heads/gh-pages ] && [ ! -e ${JSON.stringify(go)} ]; then`,
+      `    : > ${JSON.stringify(held)}`,
+      `    while [ ! -e ${JSON.stringify(go)} ] && [ -d ${JSON.stringify(world.root)} ]; do sleep 0.1; done`,
+      `    : > ${JSON.stringify(released)}`,
+      '    exit 1',
+      '  fi',
+      'done',
+      'exit 0',
+      '',
+    ].join('\n'));
+    fs.chmodSync(hook, 0o755);
+    t.after(() => { if (fs.existsSync(world.root)) fs.writeFileSync(go, ''); });
+    const worktrees = () => spawnSync('git', ['-C', world.tower, 'worktree', 'list'], { encoding: 'utf8' }).stdout.trim().split('\n');
+
+    const call = start(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh'))], { env: world.env });
+    expect(await until(() => fs.existsSync(held)), `the push was reached: ${call.output()}`).toBeTruthy();
+    expect(worktrees().length, `the temp worktree is registered while the push runs: ${worktrees().join(' | ')}`).toBe(2);
+
+    // The step in hand ends once the held push is let go (refused); the run
+    // must stop there, by the signal, with its cleanup done.
+    process.kill(call.pid, 'SIGTERM');
+    fs.writeFileSync(go, '');
+    const { signal } = await call.done;
+    expect(signal, `publish ended by the signal it was sent: ${call.output()}`).toBe('SIGTERM');
+    expect(worktrees().length, `and no temp worktree is left registered: ${worktrees().join(' | ')}`).toBe(1);
+
+    expect(await until(() => fs.existsSync(released)), 'the held push was let go').toBeTruthy();
+    const { code, out } = publish(world);
+    expect(code, `the next publish succeeds: ${out}`).toBe(0);
+    expect(fs.readFileSync(path.join(fromPages(world), 'index.html'), 'utf8'), 'and publishes the build').toBe('<html>the board</html>\n');
+    cleanup(world.root);
+  });
+
+  test('--quiet stays the run\'s own: no program it starts sees QUIET', () => {
+    const world = mkWorld();
+    const { code, out } = publish(world, ['--quiet']);
+    expect(code, `exit 0: ${out}`).toBe(0);
+    expect(fs.existsSync(path.join(fromPages(world), 'index.html')), 'the quiet run published').toBeTruthy();
+    const seen = world.quietSeen();
+    expect(seen.length > 0, 'the heal\'s gh and the build\'s npm were started').toBeTruthy();
+    expect([...new Set(seen)].join(','), 'and each of them started with no QUIET in its environment').toBe('unset');
+    cleanup(world.root);
+  });
+
+  test('on Windows every path a line names is the native spelling', {
+    skip: process.platform !== 'win32' && 'a path has a second, POSIX spelling only under Git Bash on Windows',
+  }, () => {
+    const world = mkWorld();
+    const { code, out } = publish(world);
+    expect(code, `exit 0: ${out}`).toBe(0);
+    const lines = out.split(/\r?\n/).filter(Boolean);
+    const mounts = lines.filter((line) => /(^|[\s`'"(=])\/[a-zA-Z]\//.test(line));
+    expect(mounts.join('\n'), 'no line spells a drive as a Git Bash mount').toBe('');
+    const clone = gitPath(world.tower).toLowerCase();
+    for (const step of ['installing the tower project', 'minting the brand assets', 'building the dashboard']) {
+      const line = lines.find((l) => l.includes(step)) || '';
+      expect(line.toLowerCase().includes(clone), `the ${step} line names the clone as ${clone}, got: ${line}`).toBeTruthy();
+    }
     cleanup(world.root);
   });
 

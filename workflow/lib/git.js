@@ -1,7 +1,7 @@
 // workflow/lib/git.js: the git reads the kit's Node scripts share, the default
 // branch GitHub names among them, so a lookup has one spelling and every
 // caller keeps its own reaction to a miss.
-// Usage: const { repoRoot, headSha, gitIn, hasCommit, textAt, defaultBranch } = require('../lib/git');
+// Usage: const { repoRoot, headSha, gitIn, hasCommit, textAt, commitIdentity, defaultBranch } = require('../lib/git');
 
 const { spawnSync } = require('./run');
 
@@ -69,6 +69,16 @@ const textAt = (root, rev, file) => {
 };
 
 /**
+ * The `-c` pairs a kit commit runs under, so a machine with no git identity
+ * still commits: GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL when set, else workkit's.
+ * @returns {string[]}
+ */
+const commitIdentity = () => [
+  '-c', `user.name=${process.env.GIT_AUTHOR_NAME || 'workkit'}`,
+  '-c', `user.email=${process.env.GIT_AUTHOR_EMAIL || 'workkit@localhost'}`,
+];
+
+/**
  * The default branch of the repo at `root`, the one read the checks caller and
  * branch protection share: GitHub's answer, else origin/HEAD's, else null:
  * neither is a failure, never a guess.
@@ -87,5 +97,5 @@ const defaultBranch = (root) => {
 };
 
 module.exports = {
-  repoRoot, headSha, gitIn, hasCommit, textAt, defaultBranch, GIT_MAX_BUFFER,
+  repoRoot, headSha, gitIn, hasCommit, textAt, commitIdentity, defaultBranch, GIT_MAX_BUFFER,
 };

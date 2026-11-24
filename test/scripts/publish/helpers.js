@@ -25,16 +25,16 @@ const writeStub = (file, lines) => {
 
 /**
  * The engine and the libs the slug list reads, copied into `kit` so a run's
- * engine is the copy and never this checkout. The tower's temp folder rule
- * lives in the hooks module, which the home runner seeds the same way
- * (workflow/home.sh); the package.json makes the copy a module.
+ * engine is the copy and never this checkout. The engine requires the hooks
+ * module's shared rules (the tower's temp folder, the changelog's closed
+ * issues), so its mods/ travel whole; the package.json makes the copy a module.
  */
 const copyEngine = (kit) => {
   fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
   copySettingsKit(kit);
-  fs.copyFileSync(path.join(REPO_ROOT, 'hooks', 'mods', 'markers.js'), path.join(kit, 'hooks', 'mods', 'markers.js'));
+  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'hooks', 'mods'), path.join(kit, 'hooks')]);
 };
 
 /**
@@ -120,7 +120,11 @@ const mkWorld = ({
   // beside src/, as `omega build` does. It records the path prefix its env
   // carried, so a test can prove what the build was told the site serves at.
   const prefixLog = path.join(root, 'prefix.log');
+  // Both stand-ins record the QUIET their environment carried, `unset` for none.
+  const quietLog = path.join(root, 'quiet.log');
+  const recordQuiet = `printf '%s\\n' "\${QUIET-unset}" >> ${JSON.stringify(quietLog)}`;
   writeStub(path.join(bin, 'npm'), [
+    recordQuiet,
     `printf '%s' "\${OMEGA_PATH_PREFIX:-unset}" > ${JSON.stringify(prefixLog)}`,
     ...(buildFails
       ? ['printf \'omega: build failed\\n\' >&2', 'exit 1']
@@ -141,6 +145,7 @@ const mkWorld = ({
   // with no Pages, which the teardown reads as "already off", not a failure.
   const ghLog = path.join(root, 'gh-argv.log');
   writeStub(path.join(bin, 'gh'), [
+    recordQuiet,
     `printf '%s\\n' "$*" >> ${JSON.stringify(ghLog)}`,
     ...(pages === 'none'
       ? ['printf \'gh: Not Found (HTTP 404)\\n\' >&2', 'exit 1']
@@ -195,27 +200,28 @@ const mkWorld = ({
     source: path.join(tower, 'README.md'),
     ghCalls: () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').trim().split('\n').filter(Boolean) : []),
     buildPrefix: () => (fs.existsSync(prefixLog) ? fs.readFileSync(prefixLog, 'utf8') : null),
+    quietSeen: () => (fs.existsSync(quietLog) ? fs.readFileSync(quietLog, 'utf8').trim().split('\n').filter(Boolean) : []),
     dist: path.join(tower, 'targets', 'web', 'dist'),
     env,
   };
 };
 
 /**
- * A bin directory mirroring the real PATH with one tool left out: the suite's
- * idiom for a machine that is missing it. The whole PATH is mirrored rather
- * than a hand-listed set, so the run never dies of some other utility while
- * claiming to prove something about the excluded one.
+ * A bin directory mirroring the real PATH with the named tools left out: the
+ * suite's idiom for a machine that is missing them. The whole PATH is mirrored
+ * rather than a hand-listed set, so the run never dies of some other utility
+ * while claiming to prove something about the excluded ones.
  */
-const binDirWithout = (excluded) => {
+const binDirWithout = (...excluded) => {
   const binDir = mkTmp('workkit-publish-');
   const seen = new Set();
   for (const dir of [...SYSTEM_PATH.split(path.delimiter), NODE_DIR]) {
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
-      // The tool a name is, whatever extension this platform gives it: the
+      // The tool a name is, whatever extension this platform gives it: an
       // excluded one has to be missing under every spelling of itself.
       const tool = toolStem(name);
-      if (tool === excluded || seen.has(tool)) continue;
+      if (excluded.includes(tool) || seen.has(tool)) continue;
       seen.add(tool);
       linkTool(binDir, path.join(dir, name));
     }

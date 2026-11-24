@@ -32,10 +32,11 @@ const namesLinterCopy = (text, copy) => {
 };
 
 // Every plain file under `dir`, as `find -type f` lists them: a link is no
-// file, and a linked folder is never walked.
-const filesUnder = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+// file, and a linked folder is never walked. Unlike `filesUnder` of
+// lib/read.js, a folder that cannot be read throws, so the caller answers 2.
+const filesOrThrow = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
   const at = path.join(dir, entry.name);
-  if (entry.isDirectory()) return filesUnder(at);
+  if (entry.isDirectory()) return filesOrThrow(at);
   return entry.isFile() ? [at] : [];
 });
 
@@ -54,7 +55,7 @@ const workflowsRunCopy = (root, copy) => {
     return 1;
   }
   try {
-    text = filesUnder(dir).map((file) => fs.readFileSync(file, 'utf8')).join('');
+    text = filesOrThrow(dir).map((file) => fs.readFileSync(file, 'utf8')).join('');
   } catch {
     return 2;
   }

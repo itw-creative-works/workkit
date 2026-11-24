@@ -1,14 +1,17 @@
 // The shared prologue of the tower sync and publish-wiring suites beside this
 // one, in two layers, neither touching the real ~/.workkit: the sync as the
-// library function it is, against fixture directories and a clone of a local
-// bare "GitHub"; and the wiring (sync, install, mint, abort) end to end through
-// publish.sh with an `npm` shim and a stub `omega`. No omega, no network.
+// library function it is (home/seed.js, in a node of its own), against fixture
+// directories and a clone of a local bare "GitHub"; and the wiring (sync,
+// install, mint, abort) end to end through publish.sh with an `npm` shim and a
+// stub `omega`. No omega, no network.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
-const { spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
+const { expect, mkTmp, seeded, run, SPAWN_DEADLINE } = require('../../lib/harness');
+const {
+  spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, jsPath, homeEnv, stubTool, joinPath,
+} = require('../../lib/platform');
 const { copyEngine, mkTowerRemote } = require('../publish/helpers');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -129,33 +132,44 @@ const commitCheckout = (world, { app = true } = {}) => {
   return checkout;
 };
 
-/** Source the library and run one line of shell in it: how every caller uses it. */
-const inHome = (world, script, { env = {} } = {}) => {
-  // A script path handed into a shell is POSIX: each of these sources its own
-  // siblings off `${BASH_SOURCE[0]%/*}`, which cuts nothing out of a native
-  // path and leaves the source target a file with a directory pasted onto it.
-  const driver = [
-    'set -euo pipefail',
-    ...['lib.sh', 'lib/discussions.sh', 'home.sh'].map(
-      (file) => `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, file)))}`,
-    ),
-    script,
-  ].join('\n');
-  const res = spawnBash([...NO_RC, '-c', driver], {
-    env: { ...world.env, ...env }, input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
-  });
-  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
-  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
-};
+// The line a node below ends its stdout with: what the call handed back.
+const ANSWER = '\nanswer=';
 
 /**
- * `wk_home_sync`, with its return code printed rather than ending the run.
- * `prelude` is shell run after the library is sourced, before the sync.
+ * `<name>()` of workflow/home/seed.js, awaited in a node of its own under the
+ * world's env, as publish calls it in its own process. `out` is what the call
+ * printed, `answer` what it handed back (undefined when it threw).
  */
-const sync = (world, { env = {}, prelude = '' } = {}) => {
-  const res = inHome(world, `${prelude}\nrc=0\nwk_home_sync || rc=$?\nprintf 'rc=%s\\n' "$rc"`, { env });
-  const rc = /rc=(\d+)/.exec(res.out + res.err);
-  return { ...res, rc: rc ? Number(rc[1]) : null };
+const inHome = (world, name, { env = {} } = {}) => {
+  const script = [
+    `const seed = require(${jsPath(path.join(WORKFLOW_DIR, 'home', 'seed.js'))});`,
+    '(async () => {',
+    `  const answer = await seed[${JSON.stringify(name)}]();`,
+    `  process.stdout.write(${JSON.stringify(ANSWER)} + JSON.stringify(answer) + '\\n');`,
+    '})();',
+  ].join('\n');
+  const res = run(process.execPath, ['-e', script], { env: { ...world.env, ...env }, input: '' });
+  expect(!res.timedOut, `the ${name} call finished (no timeout)`).toBeTruthy();
+  const stdout = res.stdout || '';
+  const at = stdout.lastIndexOf(ANSWER);
+  return {
+    code: res.status,
+    out: at === -1 ? stdout : stdout.slice(0, at),
+    err: res.stderr || '',
+    answer: at === -1 ? undefined : JSON.parse(stdout.slice(at + ANSWER.length)),
+  };
+};
+
+/** The sync, its code as `rc`: 0 changed, 2 current, 1 nothing to sync from, 3 part written. */
+const sync = (world, { env = {} } = {}) => {
+  const res = inHome(world, 'sync', { env });
+  return { ...res, rc: res.answer ? res.answer.code : null };
+};
+
+/** The seed, its answer as the shell's code: 0 seeded, 1 not. */
+const seed = (world) => {
+  const res = inHome(world, 'seed');
+  return { ...res, rc: { true: 0, false: 1 }[res.answer] ?? null };
 };
 
 const mtimes = (dir) => {
@@ -319,6 +333,6 @@ const fromPages = (world) => {
 };
 
 module.exports = {
-  REPO_ROOT, cleanup, git, writeJson, write, writeStub, mkSyncWorld, commitCheckout, inHome, sync, mtimes,
+  REPO_ROOT, cleanup, git, writeJson, write, writeStub, mkSyncWorld, commitCheckout, sync, seed, mtimes,
   mkPublishWorld, publish, fromPages,
 };

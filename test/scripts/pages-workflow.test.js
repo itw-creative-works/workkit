@@ -1,12 +1,18 @@
 // Tests for the central dashboard's deploy (.github/workflows/pages.yml): built
-// from tower/app by workflow/publish/build.sh and deployed to this repo's own
-// Pages. The shape is read off the lines: the kit has no YAML dependency and
-// every question here is line-shaped.
+// from tower/app by workflow/publish/build.js and deployed to this repo's own
+// Pages. The shape is read off the lines, since the kit has no YAML dependency;
+// the build steps' run: lines are also run, against a scratch checkout.
 
 const path = require('path');
 const fs = require('fs');
-const { describe, test, expect } = require('../lib/harness');
+const {
+  describe, test, expect, mkTmp,
+} = require('../lib/harness');
+const {
+  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, joinPath, samePath, spawnBash,
+} = require('../lib/platform');
 const { indentOf, isComment, isContent, childrenOf } = require('../lib/workflow-yaml');
+const { copyEngine, writeStub } = require('./publish/helpers');
 
 const ROOT = path.join(__dirname, '..', '..');
 const PAGES = path.join(ROOT, '.github', 'workflows', 'pages.yml');
@@ -66,6 +72,46 @@ describe('pages.yml: when it runs and what it may touch', () => {
     expect(block.some((e) => /^group: \S/.test(e)), `the key names a group, got: ${block.join(', ')}`).toBeTruthy();
     const cancel = block.filter((e) => /^cancel-in-progress:/.test(e));
     expect(cancel.every((e) => e === 'cancel-in-progress: false'), `a run in flight is never cancelled, got: ${cancel}`).toBeTruthy();
+  });
+});
+
+describe('pages.yml: the build steps', () => {
+  test('each of its three run: lines reaches the stand-in with the arguments the build gives it', () => {
+    // A scratch checkout: the engine copied as the publish suites copy it, and a
+    // project at tower/app whose omega stub records its calls, as npm's does.
+    const root = mkTmp('workkit-pages-');
+    const checkout = path.join(root, 'checkout');
+    const app = path.join(checkout, 'tower', 'app');
+    copyEngine(checkout);
+    fs.mkdirSync(path.join(app, 'targets', 'web'), { recursive: true });
+    const log = path.join(root, 'calls.log');
+    const record = (who) => `printf '%s|%s|%s|%s\\n' ${who} "$PWD" "$*" "\${OMEGA_PATH_PREFIX:-unset}" >> ${JSON.stringify(shellPath(log))}`;
+    writeStub(path.join(root, 'bin', 'npm'), [record('npm'), 'if [[ "$1" == --prefix ]]; then mkdir -p "$2/dist"; fi', 'exit 0']);
+    writeStub(path.join(app, 'node_modules', '.bin', 'omega'), [record('omega'), 'mkdir -p "$PWD/.omega/assets/logo"', 'exit 0']);
+    const env = homeEnv(path.join(root, 'home'), {
+      PATH: joinPath(path.join(root, 'bin'), SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: shellPath(path.join(root, 'home', '.workkit')),
+    });
+
+    const commands = runLines(lines()).map((line) => line.replace(/^\s*(?:- )?run:\s*/, ''));
+    expect(commands.length, `three run: lines, got: ${commands.join(' | ')}`).toBe(3);
+    for (const command of commands) {
+      const res = spawnBash([...NO_RC, '-c', command], { cwd: checkout, env, encoding: 'utf8' });
+      expect(res.status, `${command} exits 0: ${res.stdout}${res.stderr}`).toBe(0);
+    }
+
+    const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => line.split('|'));
+    expect(calls.length, `three calls: ${calls.join(' / ')}`).toBe(3);
+    const [install, mint, built] = calls;
+    expect(`${install[0]} ${install[2]}`, 'the install is npm install').toBe('npm install');
+    expect(`${mint[0]} ${mint[2]}`, 'the mint is the project\'s omega').toBe('omega manage --service=assets');
+    expect([install, mint].every(([, cwd]) => samePath(cwd, app, process.platform)), `both run in tower/app: ${calls.join(' / ')}`).toBeTruthy();
+    const words = built[2].split(' ');
+    expect(built[0] === 'npm' && words.length === 4 && words[0] === '--prefix' && words.slice(2).join(' ') === 'run build',
+      `the build is the web target's build script: ${built.join('|')}`).toBeTruthy();
+    const target = path.isAbsolute(words[1]) ? words[1] : path.join(checkout, words[1]);
+    expect(samePath(target, path.join(app, 'targets', 'web'), process.platform), `in tower/app's web target: ${built.join('|')}`).toBeTruthy();
+    expect(built[3], 'told the prefix the central copy serves at').toBe('/workkit/');
   });
 });
 

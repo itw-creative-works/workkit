@@ -89,7 +89,7 @@ const cleanPath = (href) => {
 /**
  * The prefix this copy is served under: '' at a site's root, `/<name>` on a
  * project Pages site. Read off the `data-omega-path-prefix` stamp the build
- * leaves (workflow/publish.sh hands it `OMEGA_PATH_PREFIX`), never guessed from
+ * leaves (workflow/publish/build.js hands it `OMEGA_PATH_PREFIX`), never guessed from
  * the path, and off the DOM rather than the framework's reader for api.js's
  * reason. The normalization mirrors the build's.
  *

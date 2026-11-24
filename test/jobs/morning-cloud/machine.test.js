@@ -37,7 +37,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
 
   test('a runner without the seeded engine refuses, naming what is missing', () => {
     // The cloud branch builds its roster through the seeded engine's
-    // predicates (home.sh's WK_HOME_RUNNER_FILES); without them every
+    // predicates (the list in workflow/home/runner-files.js); without them every
     // directory reads as no repo, so a named refusal beats an empty roster.
     const world = mkWorld();
     const seeded = path.join(world.root, 'brief');

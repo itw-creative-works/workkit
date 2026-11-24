@@ -1,18 +1,24 @@
 // Tests for workflow/lib/lock.js, the lock folder's rules in Node: the create-only claim,
 // plain and tagged, the mark a run lock's claim names, the retire by that mark, the adopt
-// of a folder with no mark, the judged retire every remover shares and the plain mutex. Each
+// of a folder with no mark, the judged retire every remover shares, the plain mutex and the state lock's path. Each
 // yes or no is a boolean, compared exactly. The 7-day sweep is held by its twin in twins.test.js.
 
 const fs = require('fs');
 const path = require('path');
-const { describe, test, expect, mkTmp } = require('../lib/harness');
+const {
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
+} = require('../lib/harness');
+const {
+  SYSTEM_PATH, NO_RC, shellPath, spawnBash,
+} = require('../lib/platform');
 const {
   handLock, claimNaming, tagOf, deadPid, holding,
 } = require('../lib/supervise');
 
 const LOCK = path.join(__dirname, '..', '..', 'workflow', 'lib', 'lock.js');
+const LIB_SH = path.join(__dirname, '..', '..', 'workflow', 'lib.sh');
 const {
-  claimDir, lockMark, retireLock, adoptLock, retireJudged, takeLock, dropLock,
+  claimDir, lockMark, retireLock, adoptLock, retireJudged, takeLock, dropLock, stateLockPath,
 } = require(LOCK);
 
 /** A run lock folder made by hand in a scratch folder, holding <files>. */
@@ -180,5 +186,21 @@ describe('lock.js: takeLock and dropLock', () => {
     const lock = lockOf({ claim: '', next: '' });
     dropLock(lock);
     expect(holding(lock), 'the folder stays with the other file alone').toBe('next');
+  });
+});
+
+describe('lock.js: stateLockPath', () => {
+  test('names the state lock the shell takes: while wk_take_state_lock holds it for one machine folder, takeLock of stateLockPath there cannot, and can after the drop', async () => {
+    const userDir = mkTmp('lock-state-');
+    const inLib = (line) => spawnBash([...NO_RC, '-c', `. "${shellPath(LIB_SH)}"\n${line}`], {
+      env: { PATH: SYSTEM_PATH, HOME: shellPath(mkTmp('lock-state-home-')), WORKFLOW_HOME: shellPath(userDir) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    const taken = inLib('wk_take_state_lock');
+    expect(taken.status, `the shell takes the state lock, stderr: ${taken.stderr}`).toBe(0);
+    expect(await takeLock(stateLockPath(userDir)), 'the Node side cannot take what the shell holds').toBe(false);
+    const dropped = inLib('wk_drop_state_lock');
+    expect(dropped.status, `the shell drops it, stderr: ${dropped.stderr}`).toBe(0);
+    expect(await takeLock(stateLockPath(userDir)), 'and then it can').toBe(true);
+    dropLock(stateLockPath(userDir));
   });
 });

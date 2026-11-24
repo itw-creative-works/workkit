@@ -1,4 +1,4 @@
-// Tests for workflow/home.sh: the setup wizard on a first machine (the repo
+// Tests for workflow/home/wizard.js: the setup wizard on a first machine (the repo
 // created, cloned, seeded and recorded; a second run finds it and pulls nothing).
 // The shared prologue is ./helpers.js.
 
@@ -31,7 +31,7 @@ describe('workflow/home: the wizard, a first machine', () => {
     const subjects = spawnSync('git', ['-C', world.tower, 'log', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim().split('\n');
     expect(subjects[subjects.length - 1], 'the first commit says what it is').toBe('chore(home): seed the tower project');
     // The wiring itself, pinned: setup runs the clone's heal, so deleting the
-    // wk_home_heal calls in wk_home_setup goes red here.
+    // heal's call in the wizard goes red here.
     expect(subjects.includes('chore(home): install the issue templates'),
       `and setup healed the clone's issue forms, its log: ${subjects.join(' | ')}`).toBeTruthy();
     cleanup(world.root);

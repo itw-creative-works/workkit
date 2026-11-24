@@ -403,6 +403,12 @@
     - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/slug.js`);
     - git's global options that take a value (`VALUE_FLAGS` in `workflow/gitshim/git`, `GIT_VALUE_FLAGS` in `hooks/mods/tree-guard.js`);
     - the two shims' shared shell helpers, `norm_dir`, `real_path` and `in_list`, and their PATH walk to the real tool (`real_git` against `real_gh`), `workflow/gitshim/git` against `workflow/identity/gh`;
+    - the yes or no question (`wk_ask_yes` in `workflow/lib/flows.sh`, `askYes` in `workflow/lib/flows.js`), which ask in the same words and take every answer alike under either default, a closed stdin no;
+    - the opener choice (`wk_open_url` in `workflow/lib/flows.sh`, `openUrl` in `workflow/lib/flows.js`), which pick the same opener and, with none, print the same pointer;
+    - the category names (`WK_DISC_CATEGORIES` in `workflow/lib/discussions.sh`, `CATEGORIES` in `workflow/lib/discussions.js`), the same names in the same order;
+    - the spinner (`wk_spin_draw` and `wk_spin` in `workflow/lib/voice.sh`, `spin` in `workflow/lib/spin.js`), which draw the same frames, and with the frames off print the same one line;
+    - the poll's countdown (`wk_poll_draw` in `workflow/lib/flows.sh`, `poll` in `workflow/lib/flows.js`), the same frames in the same order;
+    - the Pages branch (`WK_HOME_PAGES_BRANCH` in `workflow/home.sh`, `PAGES_BRANCH` in `workflow/home/options.js`), one branch;
     - and the hooks log line (`logLine` in `hooks/mods/log.js`).
   - The prompt shape (`hooks/mods/frame.js`) and the manager config and model tier (`hooks/mods/manager.js`) have no shell side.
 - **State.**

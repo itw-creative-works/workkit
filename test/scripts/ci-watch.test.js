@@ -318,6 +318,7 @@ describe('ship watch: no run', () => {
     ['no workflows folder', null],
     ['a workflow with only workflow_dispatch', { 'manual.yml': DISPATCH }],
     ['a pull_request trigger whose branch is called push', { 'pr.yaml': PR_BRANCH_PUSH }],
+    ['a push named only in a comment after the on: key', { 'ci.yml': 'name: CI\non: pull_request # push comes later\njobs: {}\n' }],
   ];
   for (const [label, workflows] of noCi) {
     test(`${label}: no CI configured for push, exit 0`, async () => {
@@ -329,12 +330,22 @@ describe('ship watch: no run', () => {
     });
   }
 
+  test('a folder named like a workflow, which cannot be read: no trigger, no CI configured for push, exit 0', async () => {
+    const w = makeWorld({ empty: 99, workflows: {} });
+    fs.mkdirSync(path.join(w.repo, '.github', 'workflows', 'ci.yml'));
+    const r = runWatch(w, [SHA]);
+    expect(r.code, `exit 0 (stderr: ${r.err})`).toBe(0);
+    expect(answered(r), 'the one quiet line').toBe('ci-watch: no CI configured for push\n');
+    cleanup(w.dir);
+  });
+
   const pushForms = [
     ['the block form', { 'checks.yml': 'name: Checks\non:\n  pull_request:\n  push:\n    branches: [main]\njobs: {}\n' }],
     ['`on: push` in a .yaml', { 'ci.yaml': 'name: CI\non: push\njobs: {}\n' }],
     ['`on: [pull_request, push]`', { 'ci.yml': 'name: CI\non: [pull_request, push]\njobs: {}\n' }],
     ['the list form beside a dispatch-only file', { 'a.yml': DISPATCH, 'b.yml': 'on:\n  - push\n' }],
     ["a CRLF file with a quoted 'on': key", { 'crlf.yml': "name: CI\r\n'on':\r\n  push:\r\n    branches: [main]\r\njobs: {}\r\n" }],
+    ['a block whose first lines are a comment and a blank', { 'ci.yml': 'name: CI\non:\n# the triggers\n\n      # one deeper\n  push:\njobs: {}\n' }],
   ];
   for (const [label, workflows] of pushForms) {
     test(`a push trigger in ${label}: run not queued yet, exit 3`, async () => {

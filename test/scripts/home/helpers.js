@@ -1,14 +1,17 @@
-// The shared prologue of the workflow/home.sh suites beside this one, one
-// lifecycle stage each. Every world is a scratch HOME and ~/.workkit, a `gh` shim
-// answering with canned JSON, a local bare repo as the remote, and a tower app
-// fixture (WORKKIT_TOWER_APP) with no omega, install or build. The library is
-// sourced by a one-line driver, the way the CLI and the heal ask it.
+// The shared prologue of the home suites beside this one, one lifecycle stage
+// each. Every world is a scratch HOME and ~/.workkit, a `gh` shim answering with
+// canned JSON, a local bare repo as the remote, and a tower app fixture
+// (WORKKIT_TOWER_APP) with no omega, install or build. A function home.sh hands
+// off is asked through a one-line driver, the way the CLI and the jobs ask it;
+// any other step is asked of its workflow/home/ file in a node of the world's own.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 // Aliased: `seeded` here is the runner-seeded world below.
-const { expect, mkTmp, seeded: seedOnce, SPAWN_DEADLINE } = require('../../lib/harness');
+const {
+  expect, mkTmp, run, start, seeded: seedOnce, SPAWN_DEADLINE,
+} = require('../../lib/harness');
 const { spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { STAMP } = require('../../lib/version-stamp');
@@ -306,27 +309,124 @@ const inHome = (world, script, { input = '' } = {}) => {
   };
 };
 
-/** A full setup run against a world whose remote is an empty bare repo. */
+/**
+ * The exit code a step's answer stands for: true 0, false 1, a number itself,
+ * the sync's `{ code }` its code, anything else (a value, nothing) 0. Its source
+ * also runs in the node `inNode` starts, so the two read an answer alike.
+ */
+const codeOf = (answer) => {
+  if (answer === false) return 1;
+  if (typeof answer === 'number') return answer;
+  if (answer && typeof answer === 'object' && typeof answer.code === 'number') return answer.code;
+  return 0;
+};
+
+// The node a step runs in: each `[file, name, args]` of argv[1] awaited in turn,
+// stopping after the first whose answer is not 0 (the drivers' `set -e`), and the
+// answers written to argv[2]. With argv[3] `1` its stdin is a terminal: the pipe
+// fed through a stream that says it is a TTY, which is all a question asks of it.
+const NODE_STEPS = [
+  "const fs = require('fs');",
+  'const [steps, answerFile, terminal] = process.argv.slice(1);',
+  `const codeOf = ${codeOf};`,
+  'let held = null;',
+  "if (terminal === '1') {",
+  "  const { PassThrough } = require('stream');",
+  '  held = process.stdin;',
+  '  const tty = Object.assign(new PassThrough(), { isTTY: true, setRawMode() { return this; } });',
+  '  held.pipe(tty);',
+  "  Object.defineProperty(process, 'stdin', { configurable: true, get: () => tty });",
+  '}',
+  '(async () => {',
+  '  const answers = [];',
+  '  for (const [file, name, args] of JSON.parse(steps)) {',
+  '    const answer = await require(file)[name](...args);',
+  '    answers.push(answer === undefined ? null : answer);',
+  '    if (codeOf(answer) !== 0) break;',
+  '  }',
+  '  fs.writeFileSync(answerFile, JSON.stringify(answers));',
+  '  if (held) held.destroy();',
+  '})();',
+].join('\n');
+
+let stepRuns = 0;
+
+/** The argv of a NODE_STEPS node over `steps`, and the file its answers land in. */
+const stepCall = (world, steps, terminal) => {
+  stepRuns += 1;
+  const answerFile = path.join(world.root, `steps-${stepRuns}.json`);
+  const resolved = steps.map(([file, name, args = []]) => [path.join(WORKFLOW_DIR, 'home', `${file}.js`), name, args]);
+  return { answerFile, argv: ['-e', NODE_STEPS, JSON.stringify(resolved), answerFile, terminal ? '1' : '0'] };
+};
+
+/** inHome's shape from a finished step node: its answers, the last one's code. */
+const stepsResult = (status, stdout, stderr, answerFile) => {
+  expect(status === 0 && fs.existsSync(answerFile), `the steps answered (exit ${status}): ${stdout}${stderr}`).toBeTruthy();
+  const answers = JSON.parse(fs.readFileSync(answerFile, 'utf8'));
+  return {
+    code: codeOf(answers[answers.length - 1]), answers, out: `${stdout}${stderr}`, err: stderr,
+  };
+};
+
+/**
+ * Run home's steps in a node under the world's env, from its root, the way
+ * inHome runs a line of shell: `steps` is a list of `[file, name, args]`, `file`
+ * a workflow/home/ stem (`repo`). `terminal` gives the node a terminal for its
+ * stdin, `input` what is typed there.
+ * @returns {{code: number, answers: Array, out: string, err: string}}
+ */
+const inNode = (world, steps, { input = '', terminal = false } = {}) => {
+  const { answerFile, argv } = stepCall(world, steps, terminal);
+  const res = run(process.execPath, argv, { cwd: world.root, env: world.env, input });
+  return stepsResult(res.status, res.stdout, res.stderr, answerFile);
+};
+
+/**
+ * inNode at a terminal whose stdin stays open after `input` until the steps are
+ * done: a key that never comes is a wait, never a close.
+ * @returns {Promise<{code: number, answers: Array, out: string, err: string}>}
+ */
+const inNodeHeld = async (world, steps, { input = '' } = {}) => {
+  const { answerFile, argv } = stepCall(world, steps, true);
+  const call = start(process.execPath, argv, {
+    cwd: world.root, env: world.env, input, stdin: 'open',
+  });
+  const { status } = await call.done;
+  call.child.stdin.end();
+  return stepsResult(status, call.stdout(), call.stderr(), answerFile);
+};
+
+/** A full setup at a terminal, answered with `input`, against a world whose remote is an empty bare repo. */
 const setup = (world, { input = 'y\n' } = {}) => {
   if (!world.env.WORKKIT_HOME_REMOTE) {
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
   }
-  return inHome(world, 'interactive() { return 0; }\nwk_home_setup', { input });
+  return inNode(world, [['wizard', 'setup']], { input, terminal: true });
 };
 
 // The cloud brief runner's fixtures, shared by the runner, version stamp and
 // doctor suites.
 
-/** The src:dest pairs the library ships, read from it rather than restated. */
-const runnerPairs = () => fs.readFileSync(path.join(WORKFLOW_DIR, 'home.sh'), 'utf8')
-  .split('\n')
-  .map((l) => l.trim().match(/^'(\S+):(\S+)'$/))
-  .filter(Boolean)
-  .map((m) => ({ src: m[1], dest: m[2] }));
+// The runner list's home, under a kit folder.
+const RUNNER_FILES = path.join('workflow', 'home', 'runner-files.js');
 
+/** The list a runner-files.js module holds: the module itself, or the one array it exports. */
+const listOf = (loaded) => (Array.isArray(loaded) ? loaded : Object.values(loaded).find(Array.isArray));
+
+/** The src:dest pairs the library ships, read from it rather than restated. */
+const runnerPairs = () => {
+  const list = listOf(require(path.join(KIT_DIR, RUNNER_FILES)));
+  expect(Array.isArray(list) && list.length > 0, `${RUNNER_FILES} holds the list`).toBeTruthy();
+  return list.map(([src, dest]) => ({ src, dest }));
+};
+
+/** The world's home cloned, then the runner seeded through home.sh, its code printed as `rc=N`. */
 const seeded = (world) => {
   if (!world.env.WORKKIT_HOME_REMOTE) world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-  return inHome(world, 'wk_home_clone owner/workkit\nrc=0\nwk_home_seed_runner || rc=$?\nprintf "rc=%s\\n" "$rc"');
+  const cloned = inNode(world, [['repo', 'clone', ['owner/workkit']]]);
+  if (cloned.code !== 0) return cloned;
+  const res = inHome(world, 'rc=0\nwk_home_seed_runner || rc=$?\nprintf "rc=%s\\n" "$rc"');
+  return { code: res.code, out: `${cloned.out}${res.out}`, err: `${cloned.err}${res.err}` };
 };
 
 /** Every file under this checkout's workflow/ folder, relative to the kit. */
@@ -392,16 +492,16 @@ const kitCommitted = (world, src) => {
   return res.stdout;
 };
 
-/** Drop one `src:dest` line from a kit copy's runner list, on disk only. */
+/** Drop the pair whose source is `src` from a kit copy's runner list, on disk only: its one line. */
 const dropRunnerLine = (kit, src) => {
-  const file = path.join(kit, 'workflow', 'home.sh');
+  const file = path.join(kit, RUNNER_FILES);
   const lines = fs.readFileSync(file, 'utf8').split('\n');
-  const kept = lines.filter((l) => !l.trim().startsWith(`'${src}:`));
-  expect(kept.length === lines.length - 1, `the kit's list named ${src} once`).toBeTruthy();
+  const kept = lines.filter((l) => ![`['${src}',`, `["${src}",`].some((lead) => l.trim().startsWith(lead)));
+  expect(kept.length === lines.length - 1, `the kit's list named ${src} once, on a line of its own`).toBeTruthy();
   fs.writeFileSync(file, kept.join('\n'));
 };
 
 module.exports = {
-  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, runnerPairs, seeded, mkKitCopy,
-  mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP,
+  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, inNode, inNodeHeld, setup, runnerPairs, seeded,
+  mkKitCopy, mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP,
 };

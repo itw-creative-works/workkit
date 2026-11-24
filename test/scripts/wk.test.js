@@ -8,7 +8,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  NO_RC, shellPath, gitPath, homeEnv, stubTool, basePathWithout,
+  NO_RC, shellPath, gitPath, homeEnv, nodeEnv, stubTool, basePathWithout,
   systemPathWith, joinPath, spawnBash,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
@@ -88,6 +88,7 @@ const spawnOpts = (cwd, { home, bin }, extraEnv = {}) => ({
   env: homeEnv(home, {
     WORKFLOW_HOME: '',
     PATH: systemPathWith(bin),
+    ...nodeEnv,
     ...extraEnv,
   }),
   encoding: 'utf8',

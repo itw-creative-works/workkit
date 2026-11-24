@@ -1,4 +1,4 @@
-# Pages: builds the central dashboard from tower/app with workflow/publish/build.sh
+# Pages: builds the central dashboard from tower/app with workflow/publish/build.js
 # and deploys it to this repo's GitHub Pages, on a published release or a dispatch:
 # checks.yml's release job dispatches it, since a release CI makes starts no workflow.
 # It writes no data/home.json, no data/repos.json and no CNAME on purpose: with
@@ -31,11 +31,11 @@ jobs:
         with:
           node-version-file: tower/app/targets/web/.nvmrc
       - name: Install
-        run: bash workflow/publish/build.sh install tower/app
+        run: node workflow/publish/build.js install tower/app
       - name: Mint
-        run: bash workflow/publish/build.sh mint tower/app
+        run: node workflow/publish/build.js mint tower/app
       - name: Build
-        run: bash workflow/publish/build.sh build tower/app /workkit/
+        run: node workflow/publish/build.js build tower/app /workkit/
       # Dot folders ride along (the build writes .well-known/), as they do in
       # a copy published from a home repo.
       - uses: actions/upload-pages-artifact@v5

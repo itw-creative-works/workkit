@@ -16,7 +16,8 @@ const { isKitCheckout } = require('../lib/repo');
 const { spawnSync, onPath } = require('../lib/run');
 const { writeErr } = require('../lib/say');
 const { settingsAt } = require('../lib/settings');
-const { ok, skip, warn, warnLines, wait } = require('../lib/voice');
+const { spin } = require('../lib/spin');
+const { ok, skip, warn, warnLines } = require('../lib/voice');
 const { SLUG_RE, runGh } = require('../public/lib');
 const { CALLER } = require('../ship/caller');
 const { TEMPLATE, checksRewrite } = require('../changelog/job');
@@ -124,8 +125,7 @@ const ensureBranchProtection = (run) => {
   if (!read.ok) return;
   const repo = chomp(read.stdout);
   // The heal's one gh wait a person sees: every other call's output is captured.
-  wait('reading the default branch');
-  const branch = defaultBranch(run.root);
+  const branch = spin('reading the default branch', () => defaultBranch(run.root));
   if (!repo || !branch) return;
 
   // The caller's job `checks` runs ci.yml's `test`, which GitHub reports as

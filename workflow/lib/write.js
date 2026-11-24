@@ -2,7 +2,7 @@
  * workflow/lib/write.js: the write of a file a reader must never see
  * half-written, for the kit's Node scripts, the sign-in file included, and the
  * JSON file changed whole on it (`wk_json_edit` in lib/state.sh).
- * Usage: const { writeWhole, editJson } = require('../lib/write');
+ * Usage: const { writeWhole, editJson, readJsonText } = require('../lib/write');
  */
 
 const fs = require('fs');
@@ -117,4 +117,4 @@ const editJson = (file, change, { create = false } = {}) => {
   return true;
 };
 
-module.exports = { writeWhole, editJson };
+module.exports = { writeWhole, editJson, readJsonText };

@@ -1,26 +1,30 @@
 #!/usr/bin/env bash
 # workflow/workkit/identity.sh: the agent's GitHub identity, workkit-agent[bot]: setup's sign-in
 # and install steps, and the two doctor lines. Sourced by
-# workkit.sh, functions and the lookup's bound only; every other name it reads, and the IDENTITY_* status it sets, are the entry's,
+# workkit.sh, functions, the lookup's bound and the client's node only; every other name it reads, and the IDENTITY_* status it sets, are the entry's,
 # save the install poll's own IDENTITY_INSTALL_*. `token.js` answers, and this says what it did.
 
 # One installation lookup's bound, past the client's worst case (a 5s repo read,
 # the 15s ask, a 5s id read), so the client's own refusal lands inside it.
 IDENTITY_LOOKUP_TIMEOUT=45
 
-# Whether the client can be asked at all: node, jq, the engine library, and
-# token.js beside this engine. Each failure is a named skip: not drift.
+# The node the client runs under, found by the precheck once per shell.
+IDENTITY_NODE=''
+
+# Whether the client can be asked at all: jq, the engine library, a node at the
+# kit's floor (wk_node, from that library) and token.js beside this engine.
+# Each failure is a named skip: not drift.
 identity_precheck() {
-  if ! command -v node >/dev/null 2>&1; then
-    wk_skip "identity: reading the sign-in needs node"
-    return 1
-  fi
   if ! command -v jq >/dev/null 2>&1; then
     wk_skip "identity: reading the sign-in needs jq"
     return 1
   fi
   if [[ "$HOME_LIBS" -ne 1 ]]; then
     wk_skip "identity: the engine library is missing beside $(wk_native_path "$SCRIPT_DIR"); the kit is incomplete"
+    return 1
+  fi
+  if [[ -z "$IDENTITY_NODE" ]] && ! IDENTITY_NODE="$(wk_node)"; then
+    wk_skip "identity: no node at or above $WK_NODE_FLOOR is installed"
     return 1
   fi
   if [[ ! -f "$IDENTITY_CLIENT" ]]; then
@@ -37,7 +41,7 @@ identity_read_status() {
   local json fields rc=0 sep=$'\x1f'
   [[ -n "$IDENTITY_SIGNED_IN" ]] && return 0
 
-  json="$(node "$IDENTITY_CLIENT" --status 2>&1)" || rc=$?
+  json="$("$IDENTITY_NODE" "$IDENTITY_CLIENT" --status 2>&1)" || rc=$?
   if [[ "$rc" -eq 0 ]]; then
     fields="$(printf '%s' "$json" | wk_jq -r '[(.signedIn | tostring), (.login // "")] | join("\u001f")' 2>/dev/null)" || rc=$?
   fi
@@ -54,7 +58,7 @@ identity_read_status() {
 # first line, the client's message after it. `--probe` asks for the verdict alone.
 # Usage: identity_installation <slug> [--probe]
 identity_installation() {
-  SECRETS_TIMEOUT="$IDENTITY_LOOKUP_TIMEOUT" bounded_read node "$IDENTITY_CLIENT" "${2:---installation}" "$1" 2>&1
+  SECRETS_TIMEOUT="$IDENTITY_LOOKUP_TIMEOUT" bounded_read "$IDENTITY_NODE" "$IDENTITY_CLIENT" "${2:---installation}" "$1" 2>&1
 }
 
 # The installation lookup under the spinner, its answer as identity_installation
@@ -130,7 +134,7 @@ identity_step() {
   # A declined or abandoned sign-in is reported by the status read below,
   # except a forced one, which fails whatever file stands.
   # The device code is a sign-in's own, so it shows on the terminal, never in a log.
-  if ! wk_secret_step 'the GitHub sign-in (identity/login.js)' node "$IDENTITY_LOGIN" ${opener:+--open "$opener"} \
+  if ! wk_secret_step 'the GitHub sign-in (identity/login.js)' "$IDENTITY_NODE" "$IDENTITY_LOGIN" ${opener:+--open "$opener"} \
     && [[ -n "$force" ]]; then
     wk_warn "identity: the sign-in did not finish; run \`workkit setup --login\` again"
     return 1
@@ -153,6 +157,8 @@ identity_report() {
   fi
 
   if [[ "$scope" == 'repo' ]]; then
+    # In this shell, so the lookup below has the node the slug's subshell finds.
+    identity_precheck >/dev/null || return 0
     slug="$(identity_signed_slug)" && wk_roster_path "$slug" >/dev/null || return 0
     answer="$(identity_install_lookup "$slug")" || rc=$?
     identity_install_say "$slug" "$rc" "$answer"
@@ -195,10 +201,13 @@ identity_bot_slug() {
 # runs in any repo with a GitHub origin and returns 1 unless the App ends installed.
 identity_install_step() {
   local force="${1:-}" fail=0 slug owner page line
+  # In this shell, so the lookups below have the node the slug's subshell finds.
   if [[ -n "$force" ]]; then
     fail=1
+    identity_precheck >&2 || return 1
     slug="$(identity_bot_slug)" || return 1
   else
+    identity_precheck >/dev/null || return 0
     [[ "$(repo_state)" == 'enabled' ]] && slug="$(identity_signed_slug)" || return 0
   fi
   IDENTITY_INSTALL_RC=0

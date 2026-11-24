@@ -15,6 +15,7 @@ const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo, OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { copySettingsKit } = require('../../lib/settings-kit');
+const { writeLogin } = require('../../lib/identity');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
@@ -332,6 +333,13 @@ const seedSettings = (world, site) => {
 };
 
 /**
+ * The world's machine signed in, as `workkit setup --login` leaves it: the login
+ * file in its user dir, the world's WORKFLOW_HOME. The doctor then says signed
+ * in and counts nothing for the sign-in.
+ */
+const signIn = (world) => writeLogin(world.home, { token: 'ghu_doctoruser', login: 'octocat' }, world.workflowHome);
+
+/**
  * One of the CLI's own functions, called directly, the way the home suites call
  * the engine's libraries: sourcing with `help` loads every function. Answers
  * arrive on stdin from a file, not spawnSync's `input`: node's pipes are
@@ -424,7 +432,8 @@ const mkSetupKit = () => mkKitCopy('checkout/workkit', true);
  */
 const mkCacheKit = (world, version = '0.0.0') => {
   const kit = path.join(world.claudeHome, 'plugins', 'cache', 'workkit', 'workkit', version);
-  const engine = mkPluginCopy(kit, { version });
+  // hooks/ beside workflow/, as the plugin ships it: the engine's settings read loads hooks/mods/settings.js.
+  const engine = mkPluginCopy(kit, { version, dirs: ['workflow', 'hooks'] });
   fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
   writeStub(path.join(kit, 'jobs', 'install.sh'), ['exit 0']);
   fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
@@ -447,6 +456,6 @@ const mkHomeWorld = (opts = {}) => {
 
 module.exports = {
   WORKFLOW_DIR, CLI, LABEL, COMMAND_TABLE, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
-  installSchedule, seedSettings, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
+  installSchedule, seedSettings, signIn, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
   SLUG, HOME, mkHomeWorld,
 };

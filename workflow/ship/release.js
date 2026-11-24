@@ -22,6 +22,7 @@ const {
   expandWorkspaces, PlanError, npmEnd,
 } = require('./plan');
 const { spawnSync } = require('../lib/run');
+const { today } = require('../lib/day');
 
 const USAGE = 'usage: workkit ship release <x.y.z> [--keep N,M] [--dir <root>] [--dry-run]';
 // The files a repo keeps its version in, by path from the root: every one is in
@@ -37,13 +38,6 @@ class ReleaseError extends Error {
     this.name = 'ReleaseError';
   }
 }
-
-/** Today in the local calendar, as the section heading spells it. */
-const today = () => {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
 
 /** A version file's top-level version, refusing a file that does not parse. */
 const versionOf = (text, name) => {

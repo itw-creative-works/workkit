@@ -1,4 +1,4 @@
-// Tests for workflow/home.sh: the setup wizard on a second machine (a clone
+// Tests for workflow/home/wizard.js: the setup wizard on a second machine (a clone
 // another machine seeded, its install, the catch-up before the runner refresh).
 // The shared prologue is ./helpers.js.
 

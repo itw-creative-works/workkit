@@ -1,6 +1,6 @@
-// Tests for workflow/home.sh: the setup wizard's question (no terminal hands over
-// the command, an answer short of yes leaves everything alone, the prompt on
-// stderr, something in the way stops it). The shared prologue is ./helpers.js.
+// Tests for workflow/home/wizard.js: the setup wizard's question (no terminal
+// hands over the command, an answer short of yes leaves everything alone, the
+// prompt on stderr, something in the way stops it). The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -10,12 +10,15 @@ const { cleanup, mkRemote, mkWorld, inHome, setup } = require('./helpers');
 
 describe('workflow/home: the wizard, the question', () => {
   test('without a terminal it names workkit setup --home, and asks nothing', () => {
+    // Through home.sh, as `workkit setup` asks it: the hand-off's stdin is a
+    // pipe, so the node it starts has no terminal to ask at.
     const world = mkWorld({ login: 'owner' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
 
-    const { code, out } = inHome(world, 'interactive() { return 1; }\nwk_home_setup');
+    const { code, out } = inHome(world, 'wk_home_setup', { input: 'y\n' });
     expect(code, 'it finishes rather than waiting for an answer').toBe(0);
     expect(out.includes('`workkit setup --home`'), `and hands over the command that does it, got: ${out}`).toBeTruthy();
+    expect(!/\[y\/N\]/.test(out), `no question is put, got: ${out}`).toBeTruthy();
     const calls = world.ghCalls().map((c) => c.join(' '));
     expect(!calls.some((c) => c.includes('repo create')), `nothing is created: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
     expect(world.settings().site.repo, 'a machine that never answered gets no home').toBe(null);
@@ -24,6 +27,7 @@ describe('workflow/home: the wizard, the question', () => {
   });
 
   test('an answer that is not yes leaves everything alone, and the function returns 0', () => {
+    // Enter alone is the question's default, so the default is no.
     for (const [label, input] of [['n', 'n\n'], ['maybe', 'maybe\n'], ['Enter alone', '\n'], ['a closed stdin', '']]) {
       const world = mkWorld({ login: 'owner' });
       const { code, out } = setup(world, { input });

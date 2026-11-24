@@ -212,8 +212,8 @@ workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://l
 - **Where a published copy comes from.**
   - This app is also the SEED of the home repo: `workkit setup` copies it into `~/.workkit/tower`.
     - There it becomes a project in its own right.
-  - `workflow/publish.sh` builds THAT clone and pushes the output to the home repo's `gh-pages` branch.
-    - It builds through `workflow/publish/build.sh`, the one home of the install, the mint and the build.
+  - `workflow/publish.sh` starts `workflow/publish.js`, which builds THAT clone and pushes the output to the home repo's `gh-pages` branch.
+    - It builds through `workflow/publish/build.js`, the one home of the install, the mint and the build.
     - GitHub Pages serves that branch from the branch root.
     - It runs as the daily job after the morning brief, or as `workkit publish` on demand.
   - So nothing built is ever committed as source.
@@ -273,7 +273,7 @@ workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://l
   - The roster keeps refreshing either way.
 
 - **The central copy** is this folder built straight from this repo and served at `https://itw-creative-works.github.io/workkit/`.
-  - `.github/workflows/pages.yml` builds it with the same `workflow/publish/build.sh`, on this repo's `tower/app` with the prefix `/workkit/`.
+  - `.github/workflows/pages.yml` builds it with the same `workflow/publish/build.js`, run as `node workflow/publish/build.js`, on this repo's `tower/app` with the prefix `/workkit/`.
   - It deploys `targets/web/dist` with GitHub's own Pages actions.
     - That happens whenever a release is published, or on a manual dispatch from the Actions tab.
   - It writes no `data/home.json`, no roster and no CNAME.

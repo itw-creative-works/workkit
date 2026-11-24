@@ -39,6 +39,8 @@ const PAGES = 'name: pages\non:\n  release:\n    types: [published]\n  workflow_
 const NOTIFY = 'name: notify\non:\n  release:\n    types: [published]\njobs:\n  send:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo notify\n';
 // A release workflow whose dispatch requires the tag to build, as a vsix release does.
 const VSIX = 'name: vsix\non:\n  release:\n    types: [published]\n  workflow_dispatch:\n    inputs:\n      tag:\n        required: true\njobs:\n  vsix:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo vsix\n';
+// VSIX as a CRLF file with quoted keys, and a blank line and a comment line inside its dispatch.
+const VSIX_CRLF = "name: vsix\r\n'on':\r\n  release:\r\n  'workflow_dispatch':\r\n\r\n# the tag to build\r\n    \"inputs\":\r\n      'tag':\r\n        required: true\r\njobs:\r\n  vsix:\r\n    runs-on: ubuntu-latest\r\n";
 // A `tag:` key outside workflow_dispatch.inputs: a step's `with:` and a dispatch input's property.
 const STRAY_TAG = 'name: docs\non:\n  release:\n  workflow_dispatch:\n    inputs:\n      ref:\n        tag: v0\njobs:\n  docs:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: some/action@v1\n        with:\n          tag: v1\n';
 const BUILD = 'name: build\non:\n  push:\n  workflow_dispatch:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo build\n';
@@ -377,6 +379,16 @@ describe('ci-release.js: the workflows a published release would have started', 
     expect(code, `exit 0, got: ${all}`).toBe(0);
     const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
     expect(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), `pages.yml with no input, vsix.yml with the newest tag, got: ${fmtCalls(gh.calls())}`).toBe(JSON.stringify([['pages.yml', undefined], ['vsix.yml', 'tag=v1.2.0']]));
+  });
+
+  test('a CRLF file with quoted keys, a blank and a comment line inside its dispatch: run with -f tag=v1.2.3', () => {
+    const { g, before } = mkWorld({ '.github/workflows/vsix.yml': VSIX_CRLF });
+    releaseCommit(g, '1.2.3');
+    const gh = releaseGh(g);
+    const { code, all } = scan(g, gh, before);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    const runs = gh.calls().filter((c) => isCall(c, 'workflow', 'run'));
+    expect(JSON.stringify(runs.map((c) => [c[2], flagValue(c, '-f')])), `vsix.yml with the tag, got: ${fmtCalls(gh.calls())}`).toBe(JSON.stringify([['vsix.yml', 'tag=v1.2.3']]));
   });
 
   test('a tag: key outside workflow_dispatch.inputs (a step\'s with:, an input\'s property): no -f', () => {

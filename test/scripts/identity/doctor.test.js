@@ -12,9 +12,9 @@ const {
   IDENTITY_NA, INSTALL_FIX, BOT_HINT, repoRoute, writeLogin, useTokenService, startServer, startService, attentionCount,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
-const { NODE_DIR, joinPath } = require('../../lib/platform');
+const { NODE_DIR, joinPath, shellPath } = require('../../lib/platform');
 const {
-  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit, seedSettings,
+  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit, seedSettings, inCli,
 } = require('../workkit-cli/helpers');
 
 /**
@@ -167,6 +167,24 @@ describe('workkit doctor: identity', () => {
       const res = doctor(scene);
       expect(repoLines(res.said).length, `no installation line for acme/rostered, got: ${res.said}`).toBe(0);
       expect(service.requests().length, `the service is never asked, got: ${JSON.stringify(service.requests())}`).toBe(0);
+    } finally {
+      await service.close();
+      cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
+    }
+  });
+
+  test('This repo run first, with no machine line before it in the same shell, still asks the service and says installed', async () => {
+    const scene = mkScene();
+    writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
+    const service = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
+    try {
+      useTokenService(scene.world.home, `${service.url}/token`);
+      const res = inCli(scene.world, `cd ${JSON.stringify(shellPath(scene.repo))}\nidentity_report repo`, {
+        entry: scene.script, env: signInEnv(scene.world),
+      });
+      expect(res.code, `the repo scope needs no attention, got: ${res.said}`).toBe(0);
+      expect(/identity: workkit-agent\[bot\] installed on acme\/rostered$/m.test(res.out), `it says the App is installed, got: ${res.said}`).toBeTruthy();
+      expect(service.requests().some((r) => r.method === 'POST' && r.url === '/token'), `the service was asked, got: ${JSON.stringify(service.requests())}`).toBeTruthy();
     } finally {
       await service.close();
       cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);

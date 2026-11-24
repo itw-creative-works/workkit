@@ -2,10 +2,11 @@
  * workflow/lib/lock.js: the lock folder's rules bound to the disk, CJS: the
  * create-only claim, a run lock's mark (`id.<tag>`, `gone.<tag>`, `id.orphan`),
  * its retire and its adopt, the judged retire every remover shares, the plain
- * mutex, the marker write and the 7-day sweep of the marker folders. The mutex
- * and the sweep have shell twins in lib/platform.sh (`wk_take_lock`, `wk_drop_lock`,
- * `wk_claim_dir`, `wk_sweep_markers`), which callers outside the run layer use.
- * Usage: const { takeLock, dropLock } = require('./lock');
+ * mutex and the state mutex's path, the marker write and the 7-day sweep of
+ * the marker folders. The mutex and the sweep have shell twins in
+ * lib/platform.sh (`wk_take_lock`, `wk_drop_lock`, `wk_claim_dir`,
+ * `wk_sweep_markers`), which callers outside the run layer use.
+ * Usage: const { takeLock, dropLock, stateLockPath } = require('./lock');
  */
 
 const crypto = require('crypto');
@@ -253,6 +254,14 @@ const retireJudged = async (dir, judge) => {
 };
 
 /**
+ * The state mutex's path in the machine folder <userDir> (`WK_STATE_LOCK` of
+ * lib.sh): the lock every writer of the machine's own files takes.
+ * @param {string} userDir
+ * @returns {string}
+ */
+const stateLockPath = (userDir) => `${userDir}/.state.lock`;
+
+/**
  * Take the mutex <dir>: its parent made, then claimDir tried 50 times 100ms
  * apart, wk_take_lock's steps. Only a caller that took it drops it.
  * @param {string} dir
@@ -330,6 +339,6 @@ const writeMarker = (file, home, text = '') => {
 };
 
 module.exports = {
-  claimDir, lockMark, retireLock, adoptLock, retireJudged, takeLock, dropLock, sweepMarkers, writeMarker,
+  claimDir, lockMark, retireLock, adoptLock, retireJudged, takeLock, dropLock, stateLockPath, sweepMarkers, writeMarker,
   lockTag, tagPid, pidAlive, isFile, isDir, DAY_MS,
 };

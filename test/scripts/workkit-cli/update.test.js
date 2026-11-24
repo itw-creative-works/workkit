@@ -14,7 +14,7 @@ const {
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, signInEnv, ACTED, mkRepo, installSchedule,
-  mkPartialKit, mkSetupKit,
+  mkPartialKit, mkSetupKit, signIn,
 } = require('./helpers');
 const { writeLogin } = require('../../lib/identity');
 
@@ -98,7 +98,9 @@ describe('workkit update: the three links', () => {
     expect(viaLink.out.includes(gitPath(kit)), `it names the real checkout, got: ${viaLink.out}`).toBeTruthy();
     expect(fs.readlinkSync(world.link), 'and its own address still points at the real CLI').toBe(script);
 
-    // The world has no node, so the identity check is a skip and counts nothing.
+    // Signed in, the identity check counts nothing; the repo has no origin, so
+    // no installation is asked.
+    signIn(world);
     const doctor = runCli(world, ['doctor'], { cwd: repo, script: world.link });
     expect(doctor.out.includes('Everything this command can see is current'), `no invented drift through the link, got: ${doctor.out}`).toBeTruthy();
     cleanup(world.root); cleanup(kit); cleanup(repo);

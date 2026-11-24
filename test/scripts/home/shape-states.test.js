@@ -1,12 +1,18 @@
-// Tests for workflow/home.sh: its shape (the three libraries load quietly,
-// the copy's exclude list, the addresses, the site host)
-// and the four states a home can be in. The shared prologue is ./helpers.js.
+// Tests for workflow/home.sh and workflow/home/: its shape (the three libraries
+// load quietly, the copy's exclude list, the addresses, the site host, the paths
+// a line prints on Windows, the home repo's name) and the four states a home can
+// be in. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { describe, test, expect } = require('../../lib/harness');
-const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
-const { WORKFLOW_DIR, KIT_DIR, cleanup, mkRemote, mkWorld, inHome } = require('./helpers');
+const {
+  IS_WINDOWS, NO_RC, shellPath, spawnBash,
+} = require('../../lib/platform');
+const {
+  WORKFLOW_DIR, KIT_DIR, cleanup, mkRemote, mkWorld, inHome, inNode, seeded,
+} = require('./helpers');
 const { settingsAt } = require('../../../workflow/lib/settings');
 
 describe('workflow/home: shape', () => {
@@ -23,14 +29,10 @@ describe('workflow/home: shape', () => {
   });
 
   test('the copy’s exclude list covers everything the app’s .gitignore names', () => {
-    // The list is the gitignore's set, so both are read and held to it: an
-    // ignore rule the list misses is a tree the seed and the sync copy into the
-    // published clone.
-    const world = mkWorld();
-    const { out } = inHome(world, 'printf "%s\\n" "${WK_TOWER_APP_EXCLUDE[@]}"; echo --; printf "%s\\n" "${WK_TOWER_APP_KEEP[@]}"');
-    const [excluded, kept] = out.trim().split('\n--\n').map((half) => half.split('\n'));
-    cleanup(world.root);
-
+    // The list is the gitignore's set, so the seed is held to it: an ignore rule
+    // the list misses is a tree the seed and the sync copy into the published
+    // clone. Each rule's name is planted in the app at its root and one folder
+    // down (a `*` read as one letter), and the seed must carry none of them.
     const rules = fs.readFileSync(path.join(KIT_DIR, 'tower', 'app', '.gitignore'), 'utf8')
       .split('\n')
       .map((line) => line.trim())
@@ -40,15 +42,35 @@ describe('workflow/home: shape', () => {
       .map((line) => line.replace(/\/$/, ''))
       .filter((line) => !line.includes('/'));
     const ignored = rules.filter((line) => !line.startsWith('!'));
-    // A `!` line is what git gives back after a rule took it, and the copy
-    // gives it back the same way: the keep list is those lines, exactly.
     const negated = rules.filter((line) => line.startsWith('!')).map((line) => line.slice(1));
 
     expect(ignored.length > 0, 'the app’s ignore rules were read').toBeTruthy();
-    for (const name of ignored) {
-      expect(excluded.includes(name), `the exclude list carries ${name}`).toBeTruthy();
+
+    const world = mkWorld();
+    world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
+    const planted = ignored.map((rule) => rule.replace(/\*/g, 'x'));
+    for (const name of planted) {
+      for (const dir of [world.towerApp, path.join(world.towerApp, 'targets', 'web')]) {
+        fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+        fs.writeFileSync(path.join(dir, name), 'never copied\n');
+      }
     }
-    expect(kept.join(','), 'and the keep list is the gitignore’s negations, no more and no fewer').toBe(negated.join(','));
+    for (const name of negated) fs.writeFileSync(path.join(world.towerApp, name), 'given back\n');
+    const { code, out } = inNode(world, [['repo', 'clone', ['owner/workkit']], ['seed', 'seed']]);
+    expect(code, `the seed ran: ${out}`).toBe(0);
+
+    // Also the keep list's "no more": a name it gave back past the negations is
+    // a planted name arriving here. One the gitignore never names is copied anyway.
+    for (const name of planted) {
+      expect(!fs.existsSync(path.join(world.tower, name)), `the seed carries no ${name}`).toBeTruthy();
+      expect(!fs.existsSync(path.join(world.tower, 'targets', 'web', name)), `at any depth: ${name}`).toBeTruthy();
+    }
+    // A `!` line is what git gives back after a rule took it, and the copy
+    // gives it back the same way.
+    for (const name of negated) {
+      expect(fs.existsSync(path.join(world.tower, name)), `the seed gives back ${name}, as the gitignore does`).toBeTruthy();
+    }
+    cleanup(world.root);
   });
 
   test('the addresses are the new layout: a plain folder with one repo in it', () => {
@@ -83,12 +105,57 @@ describe('workflow/home: shape', () => {
       cleanup(world.root);
     }
   });
+
+  test('the dashboard names the home repo as the engine does', async () => {
+    // Browser code loads no engine file, so the dashboard keeps its own copy of
+    // the name: the central copy finds a board only where the wizard made one.
+    const roster = path.join(KIT_DIR, 'tower', 'app', 'targets', 'web', 'src', 'assets', 'js', 'libs', 'tower', 'github', 'roster.js');
+    const { HOME_NAME } = await import(pathToFileURL(roster).href);
+    const { HOME_REPO_NAME } = require('../../../workflow/home/repo');
+    expect(HOME_NAME, 'and the dashboard reads the same name').toBe(HOME_REPO_NAME);
+  });
+
+  test('home.js answers a verb it cannot run with the one usage line on stderr and exit 64', () => {
+    const usage = 'usage: home.js <setup [force]|doctor|runner-doctor|slug|host|set-slug <slug>|state|ready|catch-up <prefix>|seed-runner|commit-push <subject>>\n';
+    const world = mkWorld();
+    // An unknown verb, a verb missing its argument, and setup with a word it does not take.
+    for (const call of ['_wk_home_run publish', 'wk_home_set_slug', 'wk_home_setup x']) {
+      const { code, out, err } = inHome(world, call);
+      expect(code, `${call} exits 64, got: ${out}`).toBe(64);
+      expect(err, `${call} prints the usage line on stderr`).toBe(usage);
+      expect(out, `${call} prints nothing on stdout`).toBe(err);
+    }
+    cleanup(world.root);
+  });
+});
+
+describe('workflow/home: the paths a line prints on Windows', {
+  skip: !IS_WINDOWS && 'the native spelling differs from the shell’s only under Git Bash on Windows',
+}, () => {
+  // `D:/a/x`, git's own spelling, never Git Bash's `/d/a/x`: a person pastes it
+  // into any program. Compared without case, as Windows reads a path.
+  const native = (p) => p.replace(/\\/g, '/').toLowerCase();
+
+  test('the doctor and the runner seed name their folders in the native spelling', () => {
+    const world = mkWorld();
+    const unset = inHome(world, 'wk_home_doctor').out;
+    expect(unset.toLowerCase().includes(`clones it into ${native(world.tower)}`), `the doctor's clone path, got: ${unset}`).toBeTruthy();
+
+    const { out } = seeded(world);
+    const line = out.split('\n').find((l) => l.includes('seeded the cloud brief')) || '';
+    expect(line.toLowerCase().includes(`runner in ${native(world.tower)} (`), `the clone the runner landed in, got: ${out}`).toBeTruthy();
+    expect(line.toLowerCase().includes(`from ${native(world.env.WORKKIT_KIT_DIR)},`), `and the kit it came from, got: ${line}`).toBeTruthy();
+    cleanup(world.root);
+  });
 });
 
 describe('workflow/home: the four states', () => {
+  // The state is one word; a line end after it is no part of it.
+  const state = (world) => inHome(world, 'wk_home_state').out.trim();
+
   test('no home slug is `unset`', () => {
     const world = mkWorld();
-    expect(inHome(world, 'wk_home_state').out, 'nothing has been decided').toBe('unset');
+    expect(state(world), 'nothing has been decided').toBe('unset');
     cleanup(world.root);
   });
 
@@ -108,22 +175,22 @@ describe('workflow/home: the four states', () => {
 
   test('a slug with nothing cloned is `absent`', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
-    expect(inHome(world, 'wk_home_state').out, 'setup has the clone left to do').toBe('absent');
+    expect(state(world), 'setup has the clone left to do').toBe('absent');
     cleanup(world.root);
   });
 
   test('the clone of the home repo is `clone`', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, { seed: { 'package.json': '{}\n' } });
-    inHome(world, 'wk_home_clone owner/workkit');
-    expect(inHome(world, 'wk_home_state').out, 'the one state everything else needs').toBe('clone');
+    inNode(world, [['repo', 'clone', ['owner/workkit']]]);
+    expect(state(world), 'the one state everything else needs').toBe('clone');
     cleanup(world.root);
   });
 
   test('anything else at that path is `other`, and is never adopted', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     fs.mkdirSync(path.join(world.tower, 'something'), { recursive: true });
-    expect(inHome(world, 'wk_home_state').out, 'a folder somebody else made').toBe('other');
+    expect(state(world), 'a folder somebody else made').toBe('other');
     cleanup(world.root);
   });
 });

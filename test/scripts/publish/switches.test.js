@@ -6,9 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
-const { gitPath, joinPath } = require('../../lib/platform');
+const { gitPath } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
-const { cleanup, git, mkWorld, binDirWithout, publish, setSite, fromPages, onMain } = require('./helpers');
+const { cleanup, git, mkWorld, publish, setSite, fromPages, onMain } = require('./helpers');
 
 describe('workflow/publish: the owner’s switches', () => {
   test('the slug list is written to the home repo’s default branch: names and each machine’s entry, nothing else', () => {
@@ -102,24 +102,6 @@ describe('workflow/publish: the owner’s switches', () => {
     cleanup(world.root);
   });
 
-  test('no node: the site publishes and the skip says what it will be missing', () => {
-    const world = mkWorld();
-    const { code, out } = publish({
-      ...world,
-      // The build shim stays on the PATH: the case is a machine without node,
-      // not a machine that cannot build.
-      env: { ...world.env, PATH: joinPath(path.join(world.root, 'bin'), binDirWithout('node')) },
-    });
-    expect(code, 'exit 0: a missing tool is not a crash').toBe(0);
-    expect(/node is not on this machine/.test(out), `it names the tool, got: ${out}`).toBeTruthy();
-    expect(/no repos to sweep/.test(out), `and what will be missing, got: ${out}`).toBeTruthy();
-    // The list feeds the cloud brief as well as the pages, so a skip that names
-    // only one reader understates by half what is now stale.
-    expect(/dashboard/.test(out) && /cloud brief/.test(out), `and both readers of it, got: ${out}`).toBeTruthy();
-    expect(fs.existsSync(path.join(fromPages(world), 'index.html')), 'and the pages still publish').toBeTruthy();
-    cleanup(world.root);
-  });
-
   test('the roster is refreshed with the switch off: the cloud brief reads it too', () => {
     // `data/repos.json` on the home repo's default branch is the
     // cloud brief's roster as well as the dashboard's, and the two do not share
@@ -168,7 +150,7 @@ describe('workflow/publish: the owner’s switches', () => {
     expect(fs.readFileSync(path.join(fromPages(world), 'CNAME'), 'utf8'), 'the scheme is not part of a CNAME').toBe('board.example.com\n');
 
     // A trailing slash is not part of one either: the engine's one reader of the
-    // option (`wk_site_host` in home/options.sh) is where both the scheme and
+    // option (`siteHost` in home/options.js) is where both the scheme and
     // the slash come off, for this file and for the handover's site URL alike.
     setSite(world, { url: 'https://board.example.com/' });
     publish(world);
@@ -254,22 +236,6 @@ describe('workflow/publish: the owner’s switches', () => {
     const { code, out } = publish(world);
     expect(code, 'exit 0').toBe(0);
     expect(/`site.publish` is off/.test(out), `the absent key is the off answer, got: ${out}`).toBeTruthy();
-    cleanup(world.root);
-  });
-
-  test('no jq: the skip names jq, not a switch that is already on', () => {
-    // The switch is read through jq, so a machine without it reads empty, which
-    // is indistinguishable from off. Blaming the switch would send an owner who
-    // already said yes to turn on what is already on.
-    const world = mkWorld();
-    const { code, out } = publish({
-      ...world,
-      env: { ...world.env, PATH: binDirWithout('jq') },
-    });
-    expect(code, 'exit 0: a missing tool is not a crash').toBe(0);
-    expect(/jq/.test(out), `it names the missing tool, got: ${out}`).toBeTruthy();
-    expect(!/is off/.test(out), `and never calls an unreadable switch an off one, got: ${out}`).toBeTruthy();
-    expect(fs.existsSync(world.dist), 'nothing was built').toBe(false);
     cleanup(world.root);
   });
 

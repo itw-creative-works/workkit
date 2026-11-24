@@ -1,13 +1,20 @@
-// Tests for workflow/home.sh: doctor, the home clone's state and the seeded
-// runner's drift, read and never written. The shared prologue is ./helpers.js.
+// Tests for workflow/home/doctor.js through home.sh: doctor, the home clone's
+// state and the seeded runner's drift, read and never written. The shared
+// prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
 const {
-  cleanup, git, mkRemote, mkWorld, inHome, mkKitCopy, commitKit, dropRunnerLine, STAMP,
+  cleanup, git, mkRemote, mkWorld, inHome, inNode, mkKitCopy, commitKit, dropRunnerLine, STAMP,
 } = require('./helpers');
+
+/** The world's home cloned, seeded and pushed, as a first setup leaves it. */
+const seedAndPush = (world) => {
+  inNode(world, [['repo', 'clone', ['owner/workkit']], ['seed', 'seed']]);
+  inHome(world, 'wk_home_commit_push "chore(home): seed the tower project"');
+};
 
 describe('workflow/home: doctor', () => {
   test('no home configured is a notice naming the command', () => {
@@ -52,7 +59,7 @@ describe('workflow/home: doctor', () => {
   test('a clone in step with its upstream is green', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
+    seedAndPush(world);
     const { out } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
     expect(/is its clone/.test(out), `it reports the clone, got: ${out}`).toBeTruthy();
     expect(/rc=0/.test(out), 'and nothing needs attention').toBeTruthy();
@@ -62,7 +69,7 @@ describe('workflow/home: doctor', () => {
   test('a clone with unpushed commits says the daily publish will push them', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
+    seedAndPush(world);
     fs.writeFileSync(path.join(world.tower, 'README.md'), '# the tower, edited\n');
     git(world.tower, 'add', '-A');
     git(world.tower, '-c', 'user.name=t', '-c', 'user.email=t@localhost', 'commit', '-q', '-m', 'chore(home): a project edit');
@@ -77,7 +84,7 @@ describe('workflow/home: doctor', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     const remote = mkRemote(world.root);
     world.env.WORKKIT_HOME_REMOTE = remote;
-    inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
+    seedAndPush(world);
 
     // Someone else pushed. This machine only learns it on a fetch.
     const other = path.join(world.root, 'other');
@@ -99,7 +106,7 @@ describe('workflow/home: doctor', () => {
     // whose job is to say what needs attention.
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed\nwk_home_commit_push "chore(home): seed the tower project"');
+    seedAndPush(world);
     fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
 
     const { out, err } = inHome(world, 'rc=0; wk_home_doctor || rc=$?; printf "rc=%s\\n" "$rc"');
@@ -123,7 +130,8 @@ describe('workflow/home: doctor', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     if (!repo) world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
-    inHome(world, 'wk_home_clone owner/workkit\nwk_home_seed_runner');
+    inNode(world, [['repo', 'clone', ['owner/workkit']]]);
+    inHome(world, 'wk_home_seed_runner');
     return world;
   };
 

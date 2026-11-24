@@ -7,6 +7,11 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#574](../../issues/574) - Home and publish run in Node: neither needs `jq`, `awk` or `tar`, and a publish no longer skips without `jq`. The animated wait line is Node's, so the heal's read of the default branch spins at a terminal again. `WORKKIT_SPIN=1` forces the frames.
+- (no issue) - Two workflow file rules, whether a workflow listens to an event and whether its dispatch takes an input, moved from `awk` to Node (`workflow/ship/triggers.js`). The identity step of `workkit setup` finds Node through the kit's one finder (`wk_node`), so a Node off PATH is found.
+
 ## [0.101.0] - 2026-11-23
 
 ### Changed

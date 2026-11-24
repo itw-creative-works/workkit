@@ -73,6 +73,9 @@
       - `runJob(dir, script, { lock, root })` is the job the script shell hands `run`: `node -e <script>`, its log in `<dir>`, its lock there unless `lock` names one, `root` null unless given.
       - `runUnder(job, { env, before, launch })` runs it to its end in a node of its own and answers `{ res, answers }`: the harness run's result (its status the `rc`, its output the run's) and what `run` resolved, null when the call ended first. `before` is source run once `runs.js` is loaded, `launch` a launch seam's source.
       - `startRun(job, { env, before, launch, detached })` is `runUnder` started without waiting: the harness start handle, its pid the call's, plus `answers()`, null until `run` resolved.
+    - A spin of `workflow/lib/spin.js` driven in a node of its own: `driveSpin(mode, { env, frames, commandLog })` in `test/lib/spin-call.js` spins around a real child that holds until the case releases it, so a case sees the frames while the call runs.
+      - `drivePoll(key, { env, frames, counts })` drives the poll of `workflow/lib/flows.js` the same way, the key typed once its countdown drew; `framesIn`, `secondsOf` and `spinArgs` read and start them.
+    - The streams a terminal question of `workflow/lib/flows.js` is handed in place of the process's own: `ioOf(input, { tty, open })` in `test/lib/io-streams.js`, a stdin holding the input and a stderr that keeps what it was told (`said()`).
   - A skip value is `false` or the reason text, never another falsy value: `false` and `undefined` run the case, and `true` or a reason skips it.
     - For `''`, `0` or `null`, Node runs a case's body anyway and labels it skipped, and on a `describe` it cancels the children, which fails the run.
   - A helper that decides a skip (the kit's, a repo's own) returns `false` or the reason. `needs` alone also throws for a missing tool outside a cloud session (its bullets below).

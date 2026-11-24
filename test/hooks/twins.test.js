@@ -1,7 +1,9 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
 // function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the suite log's path, the test script,
 // the marker path, the color gate, the voice lines, the plain mutex, the marker sweep, the opt-in read, the session rule, one setting, the machine folder and tower,
-// the hooks log, the slug, the native path, the repo slug and kit checkout, the clone rank, the atomic link, the safe JSON edit, the kit's hooks folder, git's value-taking global options.
+// the hooks log, the slug, the native path, the repo slug and kit checkout, the clone rank, the atomic link, the safe JSON edit, the kit's hooks folder, git's value-taking global options,
+// the yes or no question, the opener choice, the Discussions category names, the spinner's frames and its one line, the poll's countdown frames,
+// and the home repo's Pages branch.
 // Plus one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
 // And three with no shell side, the repo flag, the public slug and the CHANGELOG test.
 
@@ -10,11 +12,16 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, mkTmp, needs, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, needs, run, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, gitPath, stubTool, spawnSystemBash, nodeEnv, samePath,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, gitPath, jsPath, stubTool, spawnSystemBash, nodeEnv, samePath, homeEnv, joinPath, basePathWithout,
 } = require('../lib/platform');
+const { recordArgv, readArgv } = require('../lib/argv-log');
+const { ioOf } = require('../lib/io-streams');
+const {
+  driveSpin, drivePoll, framesIn, MESSAGE, POLL_MESSAGE, POLL_SECONDS,
+} = require('../lib/spin-call');
 const { mkRepo, mkOriginRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods } = require('../lib/mods-inputs');
 const commitGate = require('./commit-gate/helpers');
@@ -1030,5 +1037,145 @@ describe('twins: the shims\' shared readers, norm_dir, in_list, real_path and th
     const expected = ROWS.map(([, pick]) => pick);
     agree(expected.map((_, i) => i), git, (i) => gh[i], 'git shim real_git against gh shim real_gh (by index into the PATHs)');
     expect(JSON.stringify(git), 'the entry each PATH leads to').toBe(JSON.stringify(expected));
+  });
+});
+
+describe('twins: the terminal questions, the category names and the spinner, workflow/lib/flows.sh, discussions.sh and voice.sh against flows.js, discussions.js and spin.js', () => {
+  const nodeLib = (name) => require(path.join(KIT, 'workflow', 'lib', name));
+  // The indent rides INDENT, since lib.sh resets WK_LOG_INDENT at load; the Node side reads WK_LOG_INDENT itself.
+  const INDENTED = { INDENT: '  ', WK_LOG_INDENT: '  ' };
+  const COLORED = { WORKKIT_COLOR: '1', TERM: 'xterm-256color' };
+  /** <script> in a bash that sourced lib.sh, under <env> and a scratch home; spawnSync's result, its streams without returns. */
+  const inLibSh = (script, { env = {}, input, args = [] } = {}) => {
+    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib.sh')}"\nWK_LOG_INDENT="\${INDENT-}"\n${script}`, 'twin', ...args], {
+      env: { PATH: SYSTEM_PATH, HOME: shellPath(mkTmp('twins-libsh-')), ...env }, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    expect(res.status, `the shell ran, stderr: ${res.stderr}`).toBe(0);
+    return { out: (res.stdout || '').replace(/\r/g, ''), err: (res.stderr || '').replace(/\r/g, '') };
+  };
+
+  test('wk_ask_yes and askYes ask in the same words, take every answer alike under either default, and read a closed stdin as no', async () => {
+    const { askYes } = nodeLib('flows.js');
+    const QUESTION = 'Join the workflow?';
+    const ANSWERS = ['y', 'Y', 'yes', 'YES', 'Yes', 'n', 'N', 'no', '', 'x'];
+    // Each answer a line of one stdin, its end the closed stdin the last question meets.
+    const shellOf = (fallback) => inLibSh(
+      `for ((i = 0; i <= ${ANSWERS.length}; i++)); do if wk_ask_yes "$1" "$2"; then echo 1; else echo 0; fi; done`,
+      { input: ANSWERS.map((a) => `${a}\n`).join(''), args: [QUESTION, fallback] },
+    );
+    const nodeOf = async (fallback) => {
+      const answers = [];
+      let said = '';
+      for (const input of [...ANSWERS.map((a) => `${a}\n`), '']) {
+        const streams = ioOf(input);
+        answers.push((await askYes(QUESTION, fallback, streams.io)) ? '1' : '0');
+        said += streams.said();
+      }
+      return { out: `${answers.join('\n')}\n`, err: said };
+    };
+    const shell = { y: shellOf('y'), n: shellOf('n') };
+    expect(shell.y.out.split('\n').filter(Boolean).join(''), 'the shell under yes: Enter is yes, Yes and x are no, a closed stdin no').toBe('11110000100');
+    expect(shell.n.err.startsWith(`${QUESTION} [y/N] `) && shell.y.err.endsWith(`${QUESTION} [Y/n] \n`), `the shell's hint by the default, a newline after a closed read, got: ${JSON.stringify(shell)}`).toBe(true);
+    for (const fallback of ['y', 'n']) {
+      expect(JSON.stringify(await nodeOf(fallback)), `askYes against wk_ask_yes under the default ${fallback}`).toBe(JSON.stringify(shell[fallback]));
+    }
+  });
+
+  test('wk_open_url and openUrl pick the same opener and hand it the URL, and with none both print the same pointer, plain and styled', () => {
+    const URL = 'https://example.invalid/owner/workkit/discussions/categories';
+    const OPENERS = ['open', 'xdg-open'];
+    // A PATH with no opener on it: this platform's, by the shell's own choice of name, is the one there could be.
+    const bare = basePathWithout(mkTmp('twins-opener-'), process.platform === 'darwin' ? 'open' : 'xdg-open');
+    const say = (side, { stubs, vars = {} }) => {
+      const bin = mkTmp('twins-opener-');
+      const log = (tool) => path.join(bin, `${tool}.log`);
+      if (stubs) for (const tool of OPENERS) stubTool(bin, tool, ['#!/usr/bin/env bash', recordArgv(log(tool)), 'exit 0']);
+      const env = { PATH: stubs ? joinPath(bin, SYSTEM_PATH) : bare, ...vars };
+      const err = side === 'shell'
+        ? inLibSh('wk_open_url "$1"', { env, args: [URL] }).err
+        : run(process.execPath, ['-e', `Promise.resolve(require(${jsPath(path.join(KIT, 'workflow', 'lib', 'flows.js'))}).openUrl(process.argv[1]))`, URL], {
+          env: homeEnv(mkTmp('twins-opener-home-'), env),
+        }).stderr.replace(/\r/g, '');
+      return { err, opened: Object.fromEntries(OPENERS.map((tool) => [tool, readArgv(log(tool))])) };
+    };
+    const WORLDS = { opener: { stubs: true }, none: { stubs: false }, styled: { stubs: false, vars: { ...COLORED, ...INDENTED } } };
+    const shell = Object.fromEntries(Object.entries(WORLDS).map(([name, world]) => [name, say('shell', world)]));
+    const ran = Object.values(shell.opener.opened).filter((calls) => calls.length);
+    expect(JSON.stringify(ran), `the shell ran one opener, once, with the URL, got: ${JSON.stringify(shell.opener)}`).toBe(JSON.stringify([[[URL]]]));
+    const POINTER = '(no browser could be launched: open the URL above by hand)';
+    expect(shell.none.err, 'the shell with no opener: the pointer line').toBe(`${POINTER}\n`);
+    expect(shell.styled.err, 'styled: dim, at the indent').toBe(`  \x1b[0;90m${POINTER}\x1b[0m\n`);
+    for (const [name, world] of Object.entries(WORLDS)) {
+      expect(JSON.stringify(say('node', world)), `${name}: openUrl against wk_open_url`).toBe(JSON.stringify(shell[name]));
+    }
+  });
+
+  test('WK_DISC_CATEGORIES and CATEGORIES name the same categories in the same order', () => {
+    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'discussions.sh')}"\nprintf '%s\\n' "\${WK_DISC_CATEGORIES[@]}"`], {
+      env: { PATH: SYSTEM_PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    const shell = (res.stdout || '').replace(/\r/g, '').split('\n').filter(Boolean);
+    expect(shell, `the shell's list, stderr: ${res.stderr}`).toEqual(['Daily', 'Weekly', 'Monthly', 'Brief']);
+    expect([...nodeLib('discussions.js').CATEGORIES], 'CATEGORIES against WK_DISC_CATEGORIES').toEqual(shell);
+  });
+
+  // wk_spin_draw run as wk_spin starts it, to a file, until four frames began; the first three are whole.
+  const DRAW = `: > "$OUT"
+wk_spin_draw "$MSG" 2>"$OUT" &
+pid=$!
+for ((i = 0; i < 1200; i++)); do
+  s=$(<"$OUT"); r=\${s//[!$'\\r']/}
+  (( \${#r} >= 4 )) && break
+  sleep 0.05
+done
+kill "$pid"; wait "$pid" 2>/dev/null
+exit 0`;
+  // The seconds count is the clock's, so both sides' read as one.
+  const anySeconds = (frames) => frames.slice(0, 3).map((frame) => frame.replace(/\(\d+s\)/, '(Ns)'));
+
+  test('wk_spin_draw and spin draw the same frames in the same order, plain and styled at the indent', async () => {
+    for (const [name, vars] of [['plain', {}], ['styled', { ...COLORED, ...INDENTED }]]) {
+      const out = path.join(mkTmp('twins-spin-'), 'frames');
+      inLibSh(DRAW, { env: { ...vars, OUT: shellPath(out), MSG: MESSAGE } });
+      const shell = anySeconds(framesIn(fs.readFileSync(out, 'utf8')));
+      expect(shell.length, `${name}: the shell drew three whole frames, got: ${JSON.stringify(shell)}`).toBe(3);
+      const node = await driveSpin('call', { env: homeEnv(mkTmp('twins-spin-home-'), { PATH: SYSTEM_PATH, WORKKIT_SPIN: '1', ...vars }), frames: 3 });
+      expect(JSON.stringify(anySeconds(framesIn(node.stderr))), `${name}: spin's first frames against wk_spin_draw's`).toBe(JSON.stringify(shell));
+    }
+  });
+
+  test('wk_poll_draw and poll draw the same countdown frames in the same order, plain and styled at the indent', async () => {
+    // wk_poll_draw as wk_poll starts it, its deadline one interval out.
+    const POLL_DRAW = DRAW.replace('wk_spin_draw "$MSG"', `deadline=$(( $(date +%s) + ${POLL_SECONDS} ))\nwk_poll_draw "$MSG" "$deadline"`);
+    for (const [name, vars] of [['plain', {}], ['styled', { ...COLORED, ...INDENTED }]]) {
+      const out = path.join(mkTmp('twins-poll-'), 'frames');
+      inLibSh(POLL_DRAW, { env: { ...vars, OUT: shellPath(out), MSG: POLL_MESSAGE } });
+      const shell = anySeconds(framesIn(fs.readFileSync(out, 'utf8'), `${POLL_MESSAGE}...`));
+      expect(shell.length, `${name}: the shell drew three whole frames, got: ${JSON.stringify(shell)}`).toBe(3);
+      const node = await drivePoll('s', { env: homeEnv(mkTmp('twins-poll-home-'), { PATH: SYSTEM_PATH, WORKKIT_SPIN: '1', ...vars }), frames: 3 });
+      expect(JSON.stringify(anySeconds(node.frames)), `${name}: poll's first frames against wk_poll_draw's`).toBe(JSON.stringify(shell));
+    }
+  });
+
+  test('wk_spin and spin print the same one line with the frames off, plain, at the indent and none under QUIET=1', async () => {
+    for (const [name, vars] of [['plain', {}], ['indented', INDENTED], ['quiet', { QUIET: '1' }]]) {
+      const shell = inLibSh('wk_spin "$MSG" true\nprintf \'after\\n\' >&2', { env: { ...vars, WORKKIT_SPIN: '0', MSG: MESSAGE } });
+      if (name === 'plain') expect(shell.err, 'the shell\'s one line').toBe(`⏳ ${MESSAGE}...\nafter\n`);
+      const node = await driveSpin('call', { env: homeEnv(mkTmp('twins-spin-home-'), { PATH: SYSTEM_PATH, WORKKIT_SPIN: '0', ...vars }) });
+      expect(node.stderr, `${name}: spin's stderr against wk_spin's`).toBe(shell.err);
+    }
+  });
+});
+
+describe('twins: the Pages branch, WK_HOME_PAGES_BRANCH in workflow/home.sh against PAGES_BRANCH in workflow/home/options.js', () => {
+  // The shell name stays for the setup files of a later stage; the Node one is
+  // what the wizard asks Pages for and the publish pushes to.
+  test('the two name one branch', () => {
+    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib.sh')}"\n. "${lib('workflow', 'home.sh')}"\nprintf '%s' "$WK_HOME_PAGES_BRANCH"`], {
+      env: { PATH: SYSTEM_PATH, HOME: shellPath(mkTmp('twins-pages-')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    expect(res.status, `the shell sourced home.sh, stderr: ${res.stderr}`).toBe(0);
+    const { PAGES_BRANCH } = require(path.join(KIT, 'workflow', 'home', 'options.js'));
+    expect(res.stdout, 'home.sh names the branch options.js does').toBe(PAGES_BRANCH);
   });
 });

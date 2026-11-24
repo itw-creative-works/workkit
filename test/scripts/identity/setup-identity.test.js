@@ -2,8 +2,8 @@
 // and named otherwise), `setup --login` (that step alone and forced), the App
 // install offer under This repo, and `setup --bot` (that offer alone and forced).
 // Each setup run is a scratch kit with the user's dir the scratch home's ~/.workkit.
-// The world has no node unless a case adds it: without it the step is a named
-// skip. GitHub is never reached: its hosts point at a local stand-in or nothing.
+// The world's node is the kit's, `WORKKIT_NODE`, unless a case empties it: without
+// it the step is a named skip. GitHub is never reached: its hosts point at a local stand-in or nothing.
 // The shared prologue is ../workkit-cli/helpers.js.
 
 const fs = require('fs');
@@ -12,7 +12,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W, until,
 } = require('../../lib/harness');
 const {
-  skipWithoutNodeStub, shellPath,
+  skipWithoutNodeStub, shellPath, stubNode, joinPath,
 } = require('../../lib/platform');
 const {
   INSTALL_FIX, PRESELECTED, UNREADABLE, hostsOf, deviceFlowRoutes, repoRoute, writeLogin, readWrittenLogin, useTokenService, startServer,
@@ -74,13 +74,13 @@ const deviceRequests = (github) => github.requests().filter((r) => r.method === 
 
 /**
  * Run `workkit setup` with no terminal in a fresh scene whose GitHub is the
- * sign-in stand-in; `before` prepares the world, `node: false` leaves node off PATH.
+ * sign-in stand-in; `before` prepares the world.
  */
-const setup = ({ node = true, before = () => {} } = {}) => withSetupScene(SIGN_IN_ROUTES, async ({
+const setup = ({ before = () => {} } = {}) => withSetupScene(SIGN_IN_ROUTES, async ({
   world, kit, script, repo, server,
 }) => {
   before(world);
-  const res = runCli(world, ['setup'], { cwd: repo, script, env: signInEnv(world, { node, extra: hostsOf(server) }) });
+  const res = runCli(world, ['setup'], { cwd: repo, script, env: signInEnv(world, { extra: hostsOf(server) }) });
   return {
     ...res, envMade: fs.existsSync(path.join(kit, '.env')), opened: world.openerCalls(), device: deviceRequests(server),
   };
@@ -110,11 +110,12 @@ const installWarnings = (said, page = INSTALL_NEW) => said.split('\n').filter((l
  * `input` is given, else with no terminal. The same stand-in is GitHub's API,
  * answering `GET /repos/<remote>` with `github`'s `[full name, owner id]`, a 501
  * when null; `idReads` are its reads of that repo. The install page opens in the
- * shell, so its call is read at once.
+ * shell, so its call is read at once. `oldNodeFirst` puts a node below the floor
+ * first on PATH, this suite's own node only as `WORKKIT_NODE`.
  */
 const installSetup = ({
   signedIn = true, optIn = true, rostered = false, answers, input, bot = false, origin = true,
-  remote = 'acme/rostered', github = ['acme/rostered', OWNER_ID],
+  remote = 'acme/rostered', github = ['acme/rostered', OWNER_ID], oldNodeFirst = false,
 }) => withSetupScene([
   { method: 'POST', url: '/token', answers },
   ...(github ? [repoRoute(remote, ...github)] : []),
@@ -122,6 +123,10 @@ const installSetup = ({
   world, script, repo, server,
 }) => {
   const env = signInEnv(world, { extra: { GITHUB_API_URL: server.url } });
+  if (oldNodeFirst) {
+    const old = stubNode(path.join(world.root, 'old-node'), '20.15.1');
+    Object.assign(env, { PATH: joinPath(path.dirname(old), env.PATH), WORKKIT_NODE: shellPath(process.execPath) });
+  }
   if (rostered) rosterRepo(world, repo, remote, { script, env });
   else if (origin) mkOriginRepo(repo, `https://github.com/${remote}.git`);
   if (!optIn) fs.rmSync(path.join(repo, W, 'settings.json'));
@@ -140,7 +145,7 @@ const installSetup = ({
 });
 
 describe('workkit setup: identity', () => {
-  test('case 18: not signed in with no keyboard warns naming workkit setup --login and starts no device flow; signed in says so; no node is the named skip; no .env is made', async () => {
+  test('case 18: not signed in with no keyboard warns naming workkit setup --login and starts no device flow; signed in says so; no .env is made', async () => {
     const bare = await setup();
     expect(bare.device.length, `no keyboard: no device flow started, got: ${JSON.stringify(bare.device)}`).toBe(0);
     expect(bare.said.includes('workkit setup --login'), `the warning names workkit setup --login, got: ${bare.said}`).toBeTruthy();
@@ -153,11 +158,6 @@ describe('workkit setup: identity', () => {
     const signed = await setup({ before: (world) => writeLogin(world.home, { token: 'ghu_setupuser', login: 'octocat' }) });
     expect(signed.said.includes('identity: signed in as @octocat'), `it names the login, got: ${signed.said}`).toBeTruthy();
     expect(signed.envMade, 'signed in: no .env at the kit root').toBe(false);
-
-    const noNode = await setup({ node: false });
-    expect(/identity: [^\n]*needs node/.test(noNode.said), `the step is the named node skip, got: ${noNode.said}`).toBeTruthy();
-    expect(!noNode.said.includes('signed in as @'), `and reads no sign-in, got: ${noNode.said}`).toBeTruthy();
-    expect(noNode.envMade, 'no node: no .env at the kit root').toBe(false);
   });
 
   test('case 22: not signed in at a keyboard, Enter, y or YES answers the sign-in question by signing in with the device page opened', async (t) => {
@@ -398,5 +398,12 @@ describe('workkit setup --bot', () => {
     expect(res.said.includes(INSTALLED), `the ok line names the repo, got: ${res.said}`).toBeTruthy();
     expect(!res.said.includes(INSTALL_QUESTION), `no install question, got: ${res.said}`).toBeTruthy();
     expect(JSON.stringify(res.opened), 'nothing opened').toBe('[]');
+  });
+
+  test('setup --bot with a node below the floor first on PATH runs the client under the node the kit finds: the sign-in is read and the installed line said, exit 0', async () => {
+    const res = await installSetup({ answers: [MINTED], bot: true, oldNodeFirst: true });
+    expect(res.code, `exit 0, got: ${res.said}`).toBe(0);
+    expect(res.said.includes(INSTALLED), `the ok line names the repo, got: ${res.said}`).toBeTruthy();
+    expect(res.asked.length, `the service was asked once, got: ${JSON.stringify(res.asked)}`).toBe(1);
   });
 });

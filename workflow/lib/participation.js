@@ -2,8 +2,9 @@
  * workflow/lib/participation.js: what the kit means by its own git hooks
  * folder, for the kit's Node scripts: a kit's folder under any spelling, one
  * spelled as a kit's, and one a kit's or its leftover. The Node half of the
- * `wk_githooks_*` rules in lib/participation.sh.
- * Usage: const { githooksKit, githooksSpelled, githooksKitlike } = require('../lib/participation');
+ * `wk_githooks_*` rules in lib/participation.sh. Also the check a file is
+ * there and executable, which those rules use.
+ * Usage: const { githooksKit, githooksSpelled, githooksKitlike, executable } = require('../lib/participation');
  */
 
 const fs = require('fs');
@@ -62,4 +63,4 @@ const githooksKitlike = (root, folder) => {
   return !(isDir(root) && fs.existsSync(path.resolve(root, folder)));
 };
 
-module.exports = { githooksKit, githooksSpelled, githooksKitlike };
+module.exports = { githooksKit, githooksSpelled, githooksKitlike, executable };

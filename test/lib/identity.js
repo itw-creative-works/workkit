@@ -67,9 +67,12 @@ const userRoute = (login, id) => ({
   method: 'GET', url: `/users/${login}`, status: 200, body: JSON.stringify({ login, id }),
 });
 
-/** Write `<home>/.workkit/identity/login.json` as `{ token, login }`, the folder made; returns its path. */
-const writeLogin = (home, { token, login }) => {
-  const file = path.join(home, '.workkit', 'identity', 'login.json');
+/**
+ * Write `<user dir>/identity/login.json` as `{ token, login }`, the folder made; returns its path.
+ * The user dir is `<home>/.workkit` unless a world keeps it elsewhere (its WORKFLOW_HOME).
+ */
+const writeLogin = (home, { token, login }, userDir = path.join(home, '.workkit')) => {
+  const file = path.join(userDir, 'identity', 'login.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ token, login })}\n`);
   return file;

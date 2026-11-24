@@ -8,7 +8,7 @@ const path = require('path');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  NO_RC, shellPath, homeEnv, stubTool, basePathWithout, systemPathWith, joinPath, spawnBash,
+  NO_RC, shellPath, homeEnv, nodeEnv, stubTool, basePathWithout, systemPathWith, joinPath, spawnBash,
 } = require('../lib/platform');
 
 const LIB = path.join(__dirname, '..', '..', 'jobs', 'brief-dispatch.sh');
@@ -56,6 +56,7 @@ const mkWorld = ({
     dispatched: () => readArgv(ghLog).filter((c) => c[0] === 'workflow' && c[1] === 'run'),
     env: homeEnv(path.join(root, 'home'), {
       ...process.env,
+      ...nodeEnv,
       WORKFLOW_HOME: workflowHome,
       // Only the shim and the system tools, except in the world that has no
       // `gh` at all, which gets a mirror of the system PATH with gh left out,

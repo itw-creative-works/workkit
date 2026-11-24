@@ -20,15 +20,11 @@ const {
   sectionBody, noSection, releaseCommits, isReleased, missingBefore, ReleaseViewError,
 } = require('../../workflow/ship/cut');
 const { compareVersions } = require('../../workflow/ship/semver');
-const { listensTo } = require('../../workflow/ship/triggers');
+const { listensTo, takesInput } = require('../../workflow/ship/triggers');
 
-const INPUTS = path.join(__dirname, '../../workflow/ship/dispatch-input.awk');
 const WORKFLOWS = '.github/workflows';
 
 const say = sayAs('ci-release');
-
-/** Whether the workflow file's `workflow_dispatch` declares the input (dispatch-input.awk). */
-const takesInput = (file, input) => spawnSync('awk', ['-v', `input=${input}`, '-f', INPUTS, file], { stdio: 'ignore' }).status === 0;
 
 /**
  * git log's revisions for the push: before..after, or the pushed commit alone

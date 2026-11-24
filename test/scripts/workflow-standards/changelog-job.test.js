@@ -173,4 +173,20 @@ describe('standards.sh: a checks.yml job running the copy', () => {
       `the keep names the unread folder, got: ${output}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir);
   });
+
+  test('a copy is kept when a folder under the workflows cannot be read, and the heal says why', { skip: skipWithoutModes('a folder it cannot read') }, () => {
+    const repo = makeRepo();
+    const stub = makeGhStub();
+    const cjs = writeCopy(repo, 'changelog-lint.cjs', VENDORED_COPY);
+    const locked = path.join(repo, '.github', 'workflows', 'nested');
+    fs.mkdirSync(locked, { recursive: true });
+    fs.writeFileSync(path.join(locked, 'lint.yml'), 'jobs:\n  x:\n    steps:\n      - run: node .github/changelog-lint.cjs\n');
+    fs.chmodSync(locked, 0o000);
+    const { output } = runScript(repo, { pathPrefix: stub.binDir });
+    fs.chmodSync(locked, 0o755);
+    expect(readFile(cjs), `the unread folder may still run the copy, so it stays, got: ${output}`).toBe(VENDORED_COPY);
+    expect(output.includes('changelog lint: kept .github/changelog-lint.cjs: .github/workflows could not be read'),
+      `the keep names the unread folder, got: ${output}`).toBeTruthy();
+    cleanup(repo); cleanup(stub.dir);
+  });
 });

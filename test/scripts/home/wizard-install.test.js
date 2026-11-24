@@ -1,4 +1,4 @@
-// Tests for workflow/home.sh: the setup wizard's install (keyed from the clone's
+// Tests for workflow/home/install.js: the setup wizard's install (keyed from the clone's
 // real path, the retry for bins linked late, the warning when they never are).
 // The shared prologue is ./helpers.js.
 

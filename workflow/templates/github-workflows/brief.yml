@@ -5,7 +5,7 @@
 # secrets on a repo they do not own, so the cloud brief runs where the
 # credentials can honestly live: `<login>/workkit`, this machine's own home
 # repo. `workkit setup` seeds this file and the scripts it runs into the home
-# clone (workflow/home.sh), and the plugin checkout stays their one source.
+# clone (workflow/home/runner.js), and the plugin checkout stays their one source.
 #
 # The laptop's 9am job dispatches this workflow and then stays out of the way;
 # the schedule below is the backup for the morning the laptop is asleep. Both

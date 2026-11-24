@@ -1,11 +1,12 @@
 /**
  * workflow/lib/read.js: the one read of a file that may not be there, as text
- * or as JSON, and whether anything is there at all, for the kit's Node
- * scripts; every caller keeps its own reaction to null.
- * Usage: const { readOrNull, readJsonOrNull, present } = require('../lib/read');
+ * or as JSON, whether anything is there at all, and the plain files a folder
+ * holds, for the kit's Node scripts; every caller keeps its own reaction to null.
+ * Usage: const { readOrNull, readJsonOrNull, present, filesUnder } = require('../lib/read');
  */
 
 const fs = require('fs');
+const path = require('path');
 
 /**
  * A file's text, or null when it cannot be read.
@@ -49,4 +50,37 @@ const present = (p) => {
   }
 };
 
-module.exports = { readOrNull, readJsonOrNull, present };
+/**
+ * Every plain file under `root`, as `find -type f` lists them: a link is no
+ * file, a linked folder is never walked (the root included), and a name
+ * `skipName` answers true for is neither listed nor walked into. A folder that
+ * cannot be read, the root included, holds nothing.
+ * @param {string} root
+ * @param {(name: string) => boolean} [skipName]
+ * @returns {string[]} the files' paths, `root` joined in front, in name order
+ */
+const filesUnder = (root, skipName = () => false) => {
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries.sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap((entry) => {
+      if (skipName(entry.name)) return [];
+      const at = path.join(dir, entry.name);
+      if (entry.isDirectory()) return walk(at);
+      return entry.isFile() ? [at] : [];
+    });
+  };
+  try {
+    return fs.lstatSync(root).isDirectory() ? walk(root) : [];
+  } catch {
+    return [];
+  }
+};
+
+module.exports = {
+  readOrNull, readJsonOrNull, present, filesUnder,
+};

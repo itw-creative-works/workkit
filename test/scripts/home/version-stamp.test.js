@@ -1,5 +1,5 @@
-// Tests for workflow/home.sh: the version stamp that keeps an older checkout
-// from writing over a clone a newer kit seeded. The shared prologue is ./helpers.js.
+// Tests for workflow/home/stamp.js: the version stamp that keeps an older
+// checkout from writing over a clone a newer kit seeded. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -7,7 +7,7 @@ const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
 const { readStamp, kitVersion } = require('../../lib/version-stamp');
 const {
-  KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, setup, seeded, mkKitCopy, commitKit, kitCommitted, STAMP,
+  KIT_DIR, cleanup, git, mkRemote, mkWorld, setup, seeded, mkKitCopy, commitKit, kitCommitted, STAMP,
 } = require('./helpers');
 
 describe('workflow/home: the version stamp', () => {
@@ -15,23 +15,6 @@ describe('workflow/home: the version stamp', () => {
   // which kit wrote what is in it, and an older checkout writes nothing at all.
 
   const stampOf = (world) => readStamp(path.join(world.tower, STAMP));
-
-  test('the versions compare as numbers, never as text', () => {
-    const world = mkWorld();
-    const gt = (a, b) => {
-      const { out, err } = inHome(world, `if wk_semver_gt ${JSON.stringify(a)} ${JSON.stringify(b)}; then printf 'yes\\n'; else printf 'no\\n'; fi`);
-      return (out + err).trim();
-    };
-    // The one a text compare gets wrong, and the reason this is not `>`.
-    expect(gt('0.9.0', '0.48.1'), '0.9.0 is OLDER than 0.48.1').toBe('no');
-    expect(gt('0.48.1', '0.9.0'), 'and 0.48.1 is newer than it').toBe('yes');
-    expect(gt('0.48.10', '0.48.9'), 'ten is past nine in the patch too').toBe('yes');
-    expect(gt('1.0.0', '0.99.99'), 'the major decides first').toBe('yes');
-    expect(gt('0.48.1', '0.48.1'), 'equal is not newer').toBe('no');
-    expect(gt('0.48.1', '0.48.1-rc.1'), 'a prerelease suffix is dropped, not compared').toBe('no');
-    expect(gt('', '0.48.1'), 'and nothing readable is never newer').toBe('no');
-    cleanup(world.root);
-  });
 
   test('a clone stamped NEWER is left exactly as it is, and the skip names the fix', () => {
     const world = mkWorld();
@@ -142,6 +125,35 @@ describe('workflow/home: the version stamp', () => {
     expect(/not downgrading/.test(said), `and what it refused to do: ${said}`).toBeTruthy();
     expect(fs.readFileSync(dest, 'utf8'), 'the clone’s runner is untouched').toBe('# the newer machine’s runner\n');
     expect(stampOf(world), 'and so is its stamp').toBe('1.2.4');
+    cleanup(world.root);
+  });
+
+  test('a prerelease is older than its release: the clone stamped with the release is not downgraded', () => {
+    // The one compare the kit keeps, in its one home: a prerelease sorts below
+    // the release it leads to, so a release candidate never writes over it.
+    const world = mkWorld();
+    seeded(world);
+    const kit = world.env.WORKKIT_KIT_DIR;
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    writeVersion(kit, '1.2.3-rc.1');
+    commitKit(kit, 'chore(release): 1.2.3-rc.1');
+    fs.writeFileSync(dest, '# the release’s runner\n');
+    fs.writeFileSync(path.join(world.tower, STAMP), '1.2.3\n');
+
+    const refused = seeded(world);
+    const said = refused.out + refused.err;
+    expect(/rc=1/.test(said), `the caller is told nothing was written: ${said}`).toBeTruthy();
+    expect(said.includes('the clone carries workkit 1.2.3 and this kit is 1.2.3-rc.1; not downgrading'),
+      `in today's words: ${said}`).toBeTruthy();
+    expect(fs.readFileSync(dest, 'utf8'), 'the release’s runner stands').toBe('# the release’s runner\n');
+
+    // The other way round, the release is the newer kit and writes.
+    writeVersion(kit, '1.2.3');
+    commitKit(kit, 'chore(release): 1.2.3');
+    fs.writeFileSync(path.join(world.tower, STAMP), '1.2.3-rc.1\n');
+    const wrote = seeded(world);
+    expect(/rc=0/.test(wrote.out + wrote.err), `the release writes over its candidate: ${wrote.out}${wrote.err}`).toBeTruthy();
+    expect(stampOf(world), 'and stamps the clone with itself').toBe('1.2.3');
     cleanup(world.root);
   });
 

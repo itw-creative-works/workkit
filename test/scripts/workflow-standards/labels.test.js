@@ -4,13 +4,14 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  describe, test, expect, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  gitPath, joinPath, skipWithoutNodeStub, shellPath, spawnBash, NO_RC, SYSTEM_PATH, NODE_DIR,
+  gitPath, joinPath, skipWithoutNodeStub, shellPath, spawnBash, stubTool, BASH, NO_RC, SYSTEM_PATH, NODE_DIR,
 } = require('../../lib/platform');
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
 const { PTY, atTerminal } = require('../../lib/identity');
+const { framesIn, CLEAR } = require('../../lib/spin-call');
 const {
   SCRIPT, WORKFLOW_DIR, copyKitSiblings, desiredLabels, cleanup, makeRepo, makeGhStub, ghCalls, runScript,
 } = require('./helpers');
@@ -222,19 +223,50 @@ describe('standards.sh: the wait line of a gh call', () => {
     };
   };
 
-  test('off a terminal and at one: the default branch\'s wait line is the one wait line on stderr, and no cursor code', { skip: !PTY && 'no `script` here to give the heal a terminal' }, () => {
+  test('off a terminal: the default branch\'s wait line is the one wait line on stderr, and no cursor code', () => {
     const piped = runScript(makeRepo(), { pathPrefix: makeGhStub({ labels: desiredLabels() }).binDir, env: { NO_COLOR: '1' } });
+    const waits = piped.stderr.split('\n').filter((l) => l.trimStart().startsWith('⏳'));
+    expect(waits, `one wait line, the default branch's, at the heal's indent, got: ${JSON.stringify(piped.stderr)}`).toEqual([`  ${WAIT}`]);
+    expect(/[\r\x1b]/.test(piped.stderr), `no cursor code, got: ${JSON.stringify(piped.stderr)}`).toBe(false);
+  });
+
+  test('at a terminal: the read of the default branch spins, so no wait line, and its line is cleared', { skip: !PTY && 'no `script` here to give the heal a terminal' }, () => {
     const repo = makeRepo();
     const stub = makeGhStub({ labels: desiredLabels() });
     const tty = atTerminal(['bash', shellPath(SCRIPT), shellPath(repo)], { env: healEnv(stub), cwd: repo, dir: mkTmp('wf-std-') });
-    // The terminal turns each newline into a carriage return and a newline, and BSD script
-    // opens on its echo of the empty stdin's end; any other return or escape is a cursor move.
-    const shown = tty.terminal.replace(/^\^D\x08\x08/, '').replace(/\r\n/g, '\n');
-    for (const [where, text] of [['off a terminal', piped.stderr], ['at a terminal', shown]]) {
-      const waits = text.split('\n').filter((l) => l.trimStart().startsWith('⏳'));
-      expect(waits, `${where}: one wait line, the default branch's, at the heal's indent, got: ${JSON.stringify(text)}`).toEqual([`  ${WAIT}`]);
-      expect(/[\r\x1b]/.test(text), `${where}: no cursor code, got: ${JSON.stringify(text)}`).toBe(false);
-    }
+    const waits = tty.terminal.split(/\r?\n/).filter((l) => l.trimStart().startsWith('⏳'));
+    expect(waits, `no wait line at a terminal, got: ${JSON.stringify(tty.terminal)}`).toEqual([]);
+    expect(tty.terminal.includes(CLEAR), `the spinner's line cleared, got: ${JSON.stringify(tty.terminal)}`).toBe(true);
+  });
+
+  test('with the frames forced: frames while the default branch is read, then the line cleared', async (t) => {
+    const stub = makeGhStub({ labels: desiredLabels() });
+    // A gh ahead of the stub that holds the protection step's read of the default branch (the one after its
+    // `.full_name` read) until the case has seen a frame; the checks step's read before it passes through.
+    const dir = mkTmp('wf-std-');
+    const [armed, release, bin] = ['armed', 'release', 'bin'].map((name) => path.join(dir, name));
+    fs.mkdirSync(bin);
+    t.after(() => fs.writeFileSync(release, ''));
+    stubTool(bin, 'gh', [
+      '#!/usr/bin/env bash',
+      'case "$*" in',
+      `  *.full_name*) : > "${shellPath(armed)}" ;;`,
+      `  *.default_branch*) if [[ -f "${shellPath(armed)}" ]]; then for ((i = 0; i < 1200; i++)); do [[ -f "${shellPath(release)}" ]] && break; sleep 0.05; done; fi ;;`,
+      'esac',
+      `exec "${shellPath(path.join(stub.binDir, 'gh'))}" "$@"`,
+    ]);
+    const heal = start(BASH, [...NO_RC, shellPath(SCRIPT), shellPath(makeRepo())], {
+      env: healEnv({ binDir: joinPath(bin, stub.binDir) }, { WORKKIT_SPIN: '1' }),
+    });
+    const seen = await until(() => framesIn(heal.stderr(), 'reading the default branch').length > 0);
+    fs.writeFileSync(release, '');
+    const { status } = await heal.done;
+    const err = heal.stderr();
+    expect(seen, `a frame while the read was held, got: ${JSON.stringify(err)}`).toBe(true);
+    const cleared = err.indexOf(CLEAR);
+    expect(cleared > err.lastIndexOf('reading the default branch ('), `the clear after the last frame, got: ${JSON.stringify(err)}`).toBe(true);
+    expect(err.includes(WAIT), `and no wait line, got: ${JSON.stringify(err)}`).toBe(false);
+    expect(status, `the heal ran clean, got: ${heal.output()}`).toBe(0);
   });
 
   test('under QUIET=1: no wait line, and the labels still read', () => {

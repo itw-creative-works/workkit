@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
 const {
-  cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit,
+  cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit, signIn,
 } = require('./helpers');
 
 describe('workkit publish', () => {
@@ -41,7 +41,9 @@ describe('workkit doctor', () => {
     const repo = mkRepo({ optIn: true });
     const { kit, script } = mkSetupKit();
     runCli(world, ['setup'], { cwd: repo, script });
-    // The world has no node, so the identity check is a skip and counts nothing.
+    // Signed in, the identity check counts nothing; the repo has no origin, so
+    // no installation is asked.
+    signIn(world);
     const { out } = runCli(world, ['doctor'], { cwd: repo, script });
     expect(out.includes('Everything this command can see is current'), `no drift after a setup, got: ${out}`).toBeTruthy();
     cleanup(world.root); cleanup(kit); cleanup(repo);

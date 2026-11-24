@@ -13,7 +13,7 @@ const path = require('path');
 const { repoFlag } = require('../../hooks/mods/gate.js');
 const { isPlain, repoSettingsFile } = require('../../hooks/mods/settings.js');
 const { physical } = require('../lib/link');
-const { dropLock, isDir, isFile, takeLock } = require('../lib/lock');
+const { dropLock, isDir, isFile, stateLockPath, takeLock } = require('../lib/lock');
 const { nativePath } = require('../lib/platform');
 const { readJsonOrNull, readOrNull } = require('../lib/read');
 const { ok, warn } = require('../lib/voice');
@@ -35,10 +35,9 @@ const COMMITTED = new Set(['true', 'false', 'unreadable']);
 // The flags that keep a registered repo in the roster: on, or not readable.
 const KEPT = new Set(['true', 'unreadable']);
 
-// The machine's files and the state mutex, in the user's workflow folder.
+// The machine's files, in the user's workflow folder.
 const userSettings = (run) => `${run.userDir}/settings.json`;
 const userRepos = (run) => `${run.userDir}/.repos.json`;
-const stateLock = (run) => `${run.userDir}/.state.lock`;
 
 /** A settings file's `enabled` answer (repoFlag); a file that cannot be read is `unreadable`. */
 const flagOf = (file) => repoFlag(readOrNull(file));
@@ -189,7 +188,7 @@ const recordDecline = async (run) => {
     return false;
   }
 
-  const locked = await takeLock(stateLock(run));
+  const locked = await takeLock(stateLockPath(run.userDir));
   if (!locked) warn('decline: proceeding without the lock (held for 5s by another run)');
   try {
     const recorded = editJson(file, (value) => ({ ...objectOf(value), repos: { ...reposOf(value), [run.rosterKey]: 'declined' } }));
@@ -204,7 +203,7 @@ const recordDecline = async (run) => {
     }
     return true;
   } finally {
-    if (locked) dropLock(stateLock(run));
+    if (locked) dropLock(stateLockPath(run.userDir));
   }
 };
 
@@ -266,12 +265,12 @@ const registerInRoster = async (run) => {
 
   // The shared mutex, since sessions opening together would otherwise keep
   // only the last registration; released here, not at the end of the heal.
-  const locked = await takeLock(stateLock(run));
+  const locked = await takeLock(stateLockPath(run.userDir));
   editJson(file, (value) => {
     const kept = Object.fromEntries(Object.entries(reposOf(value)).filter(([key]) => !stale.includes(key)));
     return { ...objectOf(value), repos: { ...kept, [run.rosterKey]: 'enabled' } };
   });
-  if (locked) dropLock(stateLock(run));
+  if (locked) dropLock(stateLockPath(run.userDir));
 };
 
 /**
