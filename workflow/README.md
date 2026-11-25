@@ -405,7 +405,7 @@
     - A bare name is searched on the given env's PATH (else the parent's) dir by dir, each entry trimmed of its quotes.
     - It tries the name, then `.exe`, `.com`, `.cmd`, `.bat`.
     - An extensionless file counts only when its first line starts `#!`.
-    - A `#!` naming node (`#!/usr/bin/env node`, or a path ending `/node`) runs under `process.execPath`.
+    - A `#!` naming node (`#!/usr/bin/env node`, or a path ending `/node` or `/node.exe`, in any letter case) runs under `process.execPath`.
     - Any other runs through Git Bash. The script path comes first either way.
   - Git Bash is found as `script-shell.cs`'s `FindBash` finds it.
     - It is the first `bash.exe` on PATH outside `%SystemRoot%` and `%LOCALAPPDATA%\Microsoft\WindowsApps` (by prefix, any letter case), where WSL's live.

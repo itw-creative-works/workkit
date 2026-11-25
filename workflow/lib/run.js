@@ -103,8 +103,8 @@ const shebangOf = (file) => {
   }
 };
 
-/** Whether a `#!` line names node: `#!/usr/bin/env node`, or an interpreter path ending `/node`. */
-const namesNode = (line) => /^#!\s*(?:\S*\/env\s+node|\S*\/node)(?:\s|$)/.test(line);
+/** Whether a `#!` line names node: `#!/usr/bin/env node`, or an interpreter path ending `/node` or `/node.exe`, in any letter case. */
+const namesNode = (line) => /^#!\s*(?:\S*\/env\s+node|\S*\/node(?:\.exe)?)(?:\s|$)/i.test(line);
 
 /**
  * Git Bash, found as script-shell.cs's FindBash finds it: the first bash.exe on

@@ -18,6 +18,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 ### Fixed
 
 - (no issue) - The cloud brief's runner now carries `workflow/labels.json`: without it the board the runner swept read an empty label set.
+- (no issue) - On Windows the kit's program starter (`workflow/lib/run.js`, `workkit-core/run`) now runs a script whose `#!` line names a `node.exe` path under Node. It ran such a script through Git Bash as shell, so the script failed.
 
 ## [0.102.0] - 2026-11-24
 

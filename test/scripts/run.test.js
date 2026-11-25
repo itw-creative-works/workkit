@@ -196,12 +196,17 @@ describe('run.js: launchOf on win32', () => {
     const envDir = path.join(root, 'env-node');
     const viaEnv = put(envDir, 'tool', NODE_SCRIPT);
     const viaPath = put(path.join(root, 'path-node'), 'tool', '#!/usr/local/bin/node\n');
+    // The line a Git Bash spelling of a Windows node.exe makes, as stubToolJs writes one there.
+    const viaExe = put(path.join(root, 'exe-node'), 'tool', '#!/c/hostedtoolcache/windows/node/22.22.0/x64/node.exe\n');
     const other = put(path.join(root, 'other'), 'tool', '#!/usr/bin/env nodejs\n');
     const { dir, bash } = gitBash(root);
     const byEnv = onWin32('tool', ARGS, { env: { PATH: [envDir, dir].join(';') } });
     expect(byEnv.file, '#!/usr/bin/env node runs under this node').toBe(process.execPath);
     expect(JSON.stringify(byEnv.args), 'the script first, every argument quoted').toBe(JSON.stringify([`"${viaEnv}"`, ...QUOTED]));
     expect(onWin32(viaPath, [], { env: { PATH: dir } }).file, 'a path ending /node runs under this node').toBe(process.execPath);
+    expect(onWin32(viaExe, [], { env: { PATH: dir } }).file, 'a path ending /node.exe runs under this node').toBe(process.execPath);
+    const viaUpper = put(path.join(root, 'upper-node'), 'tool', '#!/c/nodejs/NODE.EXE\n');
+    expect(onWin32(viaUpper, [], { env: { PATH: dir } }).file, 'a path ending /NODE.EXE runs under this node').toBe(process.execPath);
     expect(onWin32(other, [], { env: { PATH: dir } }).file, 'any other #! line runs through Git Bash').toBe(bash);
     expect(onWin32('tool', [], { env: { PATH: envDir } }).file, 'a node script needs no Git Bash').toBe(process.execPath);
   });
