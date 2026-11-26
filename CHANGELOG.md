@@ -7,13 +7,15 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.104.0] - 2026-11-26
+
 ### Added
 
-- [#577](../../issues/577) - The 9am job runs on Windows, as a Task Scheduler task that runs while you are signed in: `workkit setup` registers it, `workkit update` keeps it current and `workkit doctor` reports it. The Mac's launchd schedule is unchanged.
+- [#577](../../issues/577) [`937706e5`](../../commit/937706e5) Thanks [@ianwieds]! - The 9am job runs on Windows, as a Task Scheduler task that runs while you are signed in: `workkit setup` registers it, `workkit update` keeps it current and `workkit doctor` reports it. The Mac's launchd schedule is unchanged.
 
 ### Changed
 
-- [#577](../../issues/577) - `WORKKIT_LAUNCHD_OK` is now `WORKKIT_SCHEDULE_OK`, since it guards both schedulers. A system with neither scheduler reads `schedule: the 9am job runs on macOS and Windows`. The machine's morning suites now run off a Mac.
+- [#577](../../issues/577) [`937706e5`](../../commit/937706e5) Thanks [@ianwieds]! - `WORKKIT_LAUNCHD_OK` is now `WORKKIT_SCHEDULE_OK`, since it guards both schedulers. A system with neither scheduler reads `schedule: the 9am job runs on macOS and Windows`. The machine's morning suites now run off a Mac.
 
 ### Fixed
 
