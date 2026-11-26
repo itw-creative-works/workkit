@@ -8,9 +8,11 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp, run, start, until, alive,
 } = require('../lib/harness');
-const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, stubToolJs, joinPath,
+  recordArgv, recordArgvJs, readArgv, fmtCalls,
+} = require('../lib/argv-log');
+const {
+  SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, stubToolJs, joinPath, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
 } = require('../lib/platform');
 const { skipOnUsrLocalBin } = require('../lib/job-path');
 
@@ -87,15 +89,15 @@ const mkWorld = ({
   const ghLog = path.join(root, 'gh-argv.log');
   const notifLog = path.join(root, 'notifly-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
-  const claude = stubTool(bin, 'claude', [
-    '#!/usr/bin/env bash',
-    recordArgv(claudeLog),
-    `printf '%s\\n' "$PWD" >> "${claudeCwdLog}"`,
-    `printf '%s\\n' "$PATH" >> "${claudePathLog}"`,
-    ...(claudeStderr ? [`printf '%s' ${JSON.stringify(claudeStderr)} >&2`] : []),
-    `printf '%s' ${JSON.stringify(summary)}`,
-    'exit 0',
-  ]);
+  // Node, so the folder and the PATH it records are spelled as the job's node spells them.
+  stubToolJs(bin, 'claude', [
+    "const fs = require('fs');",
+    recordArgvJs(JSON.stringify(claudeLog), 'process.argv.slice(2)'),
+    `fs.appendFileSync(${JSON.stringify(claudeCwdLog)}, \`\${process.cwd()}\\n\`);`,
+    `fs.appendFileSync(${JSON.stringify(claudePathLog)}, \`\${process.env.PATH}\\n\`);`,
+    ...(claudeStderr ? [`process.stderr.write(${JSON.stringify(claudeStderr)});`] : []),
+    `process.stdout.write(${JSON.stringify(summary)});`,
+  ].join('\n'));
   const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
 
   // The three shapes the delivery asks for, told apart by the query text;
@@ -151,23 +153,27 @@ const mkWorld = ({
     },
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
     cache: () => JSON.parse(fs.readFileSync(path.join(workflowHome, '.cache.json'), 'utf8')),
-    env: homeEnv(homeDir, {
-      ...process.env,
-      NOTIFLY: notifly,
-      // The system tools plus the shims, and nothing else: `gh` is present only
-      // when this world put it there.
-      PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: workflowHome,
-      // The transcripts root the payload indexes and the send is granted: the
-      // same root, which is the whole point of the grant.
-      WORKKIT_CLAUDE_PROJECTS: projects,
-    }),
+    env: {
+      ...homeEnv(homeDir, {
+        ...process.env,
+        NOTIFLY: notifly,
+        // The system tools plus the shims, and nothing else: `gh` is present only
+        // when this world put it there.
+        PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
+        WORKFLOW_HOME: workflowHome,
+        // The transcripts root the payload indexes and the send is granted: the
+        // same root, which is the whole point of the grant.
+        WORKKIT_CLAUDE_PROJECTS: projects,
+      }),
+      // The job is a node the case starts itself, which reads its home native.
+      HOME: homeDir,
+    },
   };
 };
 
 const runJob = (world, args = []) => run(process.execPath, [SCRIPT, ...args], { env: world.env });
 
-describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the runner is a macOS launchd job (~/Library paths)' }, () => {
+describe('jobs/claude-nightly', () => {
   describe('jobs/claude-nightly: no home repo is a named skip', () => {
     test('no home repo configured: it skips and says so', async () => {
       const world = mkWorld();
@@ -313,7 +319,7 @@ describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the ru
       cleanup(world.root);
     });
 
-    test('a run ended by TERM mid-send leaves no scratch folder in its temp folder', async (t) => {
+    test('a run ended by TERM mid-send leaves no scratch folder in its temp folder', { skip: skipWithoutCaughtSignal() }, async (t) => {
       const world = mkWorld({ home: 'owner/private-home' });
       const temp = mkTmp('claude-nightly-temp-');
       world.env.TMPDIR = temp;
@@ -348,7 +354,7 @@ describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the ru
   });
 
   describe('jobs/claude-nightly: node and the PATH', () => {
-    test('the send runs on a PATH that carries /usr/local/bin', { skip: skipOnUsrLocalBin() }, () => {
+    test('the send runs on a PATH that carries /usr/local/bin', { skip: skipOnUsrLocalBin() || skipWithoutHomebrewPath() }, () => {
       // Intel Homebrew and the nodejs.org installer both put node there.
       const world = mkWorld({ home: 'owner/private-home' });
       runJob(world);
@@ -429,5 +435,37 @@ describe('jobs/claude-nightly', { skip: process.platform !== 'darwin' && 'the ru
       expect(/no home repo configured/.test(world.log()), `the log says which reason: ${world.log()}`).toBeTruthy();
       cleanup(world.root);
     });
+  });
+});
+
+// The PATH the job's enterMachine builds, asked in this process on an env of the case's own.
+describe('jobs/lib/machine: enterMachine', () => {
+  test('with no HOME, USERPROFILE is the home its PATH starts from', () => {
+    const home = mkTmp('machine-home-');
+    const env = { USERPROFILE: home, PATH: '/usr/bin' };
+    require('../../jobs/lib/machine').enterMachine(env);
+    expect(env.PATH.split(path.delimiter)[0], `the first PATH entry, got: ${env.PATH}`).toBe(path.join(home, '.local', 'bin'));
+  });
+
+  test('on Windows the two home folders and the running node\'s lead the PATH key the env already holds', () => {
+    const env = { USERPROFILE: 'C:\\Users\\Ada', Path: 'C:\\Windows' };
+    require('../../jobs/lib/machine').enterMachine(env, { platform: 'win32', node: 'C:\\Program Files\\nodejs\\node.exe' });
+    expect(env.Path, 'no Homebrew folder, the old value last')
+      .toBe('C:\\Users\\Ada\\.local\\bin;C:\\Users\\Ada\\.nvm\\default-bin;C:\\Program Files\\nodejs;C:\\Windows');
+    expect(Object.keys(env).filter((key) => key.toUpperCase() === 'PATH'), 'and no second spelling of the key').toEqual(['Path']);
+  });
+
+  test('on a Mac the PATH leads with the two home folders and the two Homebrew ones', () => {
+    const env = { HOME: '/Users/ada', PATH: '/usr/bin' };
+    require('../../jobs/lib/machine').enterMachine(env, { platform: 'darwin' });
+    expect(env.PATH).toBe('/Users/ada/.local/bin:/Users/ada/.nvm/default-bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin');
+  });
+
+  test('with neither HOME nor USERPROFILE, the PATH still starts from an absolute home', () => {
+    const env = { PATH: '/usr/bin' };
+    require('../../jobs/lib/machine').enterMachine(env, { platform: 'darwin' });
+    // Cut at the folder's own name, not at `:`, which a Windows home's drive letter holds.
+    const first = env.PATH.slice(0, env.PATH.indexOf('.local/bin') + '.local/bin'.length);
+    expect(path.isAbsolute(first) && first.endsWith('/.local/bin'), `the first PATH entry, got: ${env.PATH}`).toBe(true);
   });
 });

@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, run, start, until,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, joinPath, samePath,
+  SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, joinPath, samePath, skipWithoutCaughtSignal,
 } = require('../../lib/platform');
 const {
   REPO_ROOT, writeStub, readJson5, binDirWithout,
@@ -368,7 +368,7 @@ describe('workflow/publish/build.js: the sidebar merge', () => {
   });
 
   test('a build ended by SIGTERM while it runs still puts the app\'s bytes back', {
-    skip: process.platform === 'win32' && 'Windows ends a process with no signal it can catch',
+    skip: skipWithoutCaughtSignal(),
   }, async (t) => {
     const world = mkProject({ site: { repo: 'owner/workkit', sidebar: [ADS] }, app: SCRATCH_APP, build: 'hold' });
     t.after(() => { if (fs.existsSync(world.root)) fs.writeFileSync(world.go, ''); });

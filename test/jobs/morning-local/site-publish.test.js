@@ -6,9 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
 const { recordArgvJs, readArgv, fmtCalls } = require('../../lib/argv-log');
-const { skipUnlessDarwin, cleanup, mkWorld, runJob, settle } = require('./helpers');
+const { cleanup, mkWorld, runJob, settle } = require('./helpers');
 
-describe('jobs/morning (local): the site publish', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local): the site publish', () => {
   test('the publish runs after the brief, quietly, and never before it', async () => {
     // The order is proved by the log rather than by the file: a rehearsal that
     // warns from the publish writes both blocks, and the brief's is the earlier.

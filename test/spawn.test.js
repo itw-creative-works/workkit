@@ -133,6 +133,12 @@ describe('spawn: run()', () => {
     const done = run(BASH, [...NO_RC, '-c', 'printf %s "$1"', 'bash', quoted]);
     expect(done.stdout, `the argument as given, got: ${JSON.stringify(done)}`).toBe(quoted);
   });
+
+  test('run keeps a child\'s stdout past 1 MB whole', () => {
+    const done = run(process.execPath, ['-e', 'process.stdout.write("x".repeat(2 * 1024 * 1024));']);
+    expect(done.status, `the exit status, stderr: ${done.stderr}`).toBe(0);
+    expect(done.stdout.length, 'all 2 MB of it').toBe(2097152);
+  });
 });
 
 describe('spawn: start()', () => {

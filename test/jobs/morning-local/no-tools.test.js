@@ -9,11 +9,11 @@ const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
 const { which } = require('../../lib/platform');
 const {
-  skipUnlessDarwin, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, plantStaleRunner, subjects, REFRESH,
+  BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, plantStaleRunner, subjects, REFRESH,
   SHELL_TOOLS, withoutTools, settle,
 } = require('./helpers');
 
-describe('jobs/morning (local): no jq, awk, sed, base64 or timeout', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local): no jq, awk, sed, base64 or timeout', () => {
   test('a whole morning runs every step', async () => {
     const world = mkWorld({
       home: 'owner/private-home',

@@ -15,18 +15,25 @@ const { isDir } = require('./lock');
 const { physical } = require('./link');
 const { isKitCheckout } = require('./repo');
 
-// Read once at load, as lib/run.js reads it.
-const WINDOWS = process.platform === 'win32';
+// Read once at load, as lib/run.js reads it: nativePath's `platform` is the seam.
+const PLATFORM = process.platform;
+
+// A path already spelled for Windows: a drive letter and `:` then a separator, or two separators.
+const WINDOWS_SPELLED = /^(?:[A-Za-z]:[\\/]|[\\/]{2})/;
 
 /**
  * The native spelling of a path (`wk_native_path`): `D:/a/x`, never `/d/a/x`,
- * through `cygpath -m` on Windows, the letter case kept; unchanged elsewhere.
+ * the letter case kept. On Windows a path WINDOWS_SPELLED matches only has each
+ * `\` made `/`, with no program started; any other goes through `cygpath -m`.
+ * Unchanged elsewhere.
  * @param {string} p
+ * @param {{ platform?: string }} [context] - the platform the spelling is for
  * @returns {string}
  * @throws {Error} when cygpath fails: an empty key is worse than none
  */
-const nativePath = (p) => {
-  if (!WINDOWS) return p;
+const nativePath = (p, { platform = PLATFORM } = {}) => {
+  if (platform !== 'win32') return p;
+  if (WINDOWS_SPELLED.test(p)) return p.replace(/\\/g, '/');
   const res = spawnSync('cygpath', ['-m', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   if (res.status !== 0) throw new Error(`nativePath: cygpath -m ${p} ${endOf(res)}`);
   return res.stdout.replace(/[\r\n]+$/, '');

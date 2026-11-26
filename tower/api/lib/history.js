@@ -48,6 +48,7 @@ const HISTORY_QUERY = `query($owner:String!,$name:String!){
 const defaultExec = (cmd, args) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
+  windowsHide: true,
 });
 
 /**

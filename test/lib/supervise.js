@@ -34,6 +34,10 @@ const skipOnWindows = () => IS_WINDOWS && NO_PROCESS_READ;
 // The line a frozen run's log ends with, its minutes as the supervisor spells them.
 const FROZEN_LINE = /^detach: no output and no processor use for \S+ minutes, so the run was ended \(exit 124\)$/;
 
+// 2^30: past macOS's 99999, Linux's 2^22 and Windows's below 2^26, and a multiple of 4, as
+// Windows drops a pid's two low bits; no system gives it to a process.
+const NO_PID = 1073741824;
+
 /** A `.workkit/settings.json` body setting `tests.check` to <check>, `enabled` on when <optIn>. */
 const checkSettings = (check, optIn = false) => `${JSON.stringify({ ...(optIn ? { enabled: true } : {}), tests: { check } })}\n`;
 
@@ -110,9 +114,9 @@ const writesAfter = (trigger, file, ms, text, stays = false) => {
   return actsAfter(trigger, ms, `fs.writeFileSync(${jsPath(next)}, ${text}); fs.renameSync(${jsPath(next)}, ${jsPath(file)});`, stays);
 };
 
-/** A pid that was real a moment ago and has ended. */
-const deadPid = () => {
-  const pid = spawnSync(process.execPath, ['-e', '0']).pid;
+/** A pid no process can hold: the <nth> one (0 the first), each another, for a case that needs two. */
+const deadPid = (nth = 0) => {
+  const pid = NO_PID + 4 * nth;
   expect(!alive(pid), `the pid ${pid} is gone`).toBeTruthy();
   return pid;
 };

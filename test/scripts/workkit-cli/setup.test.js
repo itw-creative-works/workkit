@@ -1,4 +1,5 @@
-// Tests for workflow/workkit.sh: `setup`, its site question, and its site publish.
+// Tests for workflow/workkit.sh: `setup`, its site question, its site publish,
+// and the schedule on each system.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -13,8 +14,8 @@ const {
   isCall, fmtCalls, recordArgv, readArgv,
 } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
-  writeStub, mkSetupKit, mkPartialKit,
+  WORKFLOW_DIR, LABEL, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
+  writeStub, mkSetupKit, mkPartialKit, SYSTEMS, nameSystem, mkScheduleKit,
 } = require('./helpers');
 
 // The world's env with a scratch npmrc and this suite's node on PATH after the
@@ -377,6 +378,43 @@ describe('workkit setup: the site publish', () => {
       expect(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`).toBeTruthy();
       cleanup(world.root); cleanup(kit);
     }
+  });
+});
+
+// The road a Mac and a Windows machine share, read from the installer's
+// `--check` alone: the system is named through `uname`, the installer a stand-in.
+describe('workkit setup: the schedule on each system', () => {
+  for (const [system, name] of [['a Mac', SYSTEMS.mac], ['Windows', SYSTEMS.windows]]) {
+    test(`${system}: a job not installed or out of date is installed, a current one is left`, () => {
+      const world = mkWorld();
+      nameSystem(world, name);
+      const sched = mkScheduleKit(`${LABEL} → not installed`);
+      const fresh = runCli(world, ['setup'], { script: sched.script });
+      expect(fresh.code, 'exit 0').toBe(0);
+      expect(sched.installs().length, `not installed: one install run: ${fmtCalls(sched.runs())}`).toBe(1);
+      expect(fresh.said.includes(`schedule: ${LABEL} → installed (9:00 AM daily)`), `and its line, got: ${fresh.said}`).toBeTruthy();
+
+      sched.check(`${LABEL} → out of date for this kit`);
+      runCli(world, ['setup'], { script: sched.script });
+      expect(sched.installs().length, `out of date: a second install run: ${fmtCalls(sched.runs())}`).toBe(2);
+
+      sched.check('');
+      const current = runCli(world, ['setup'], { script: sched.script });
+      expect(sched.installs().length, `current: no install run: ${fmtCalls(sched.runs())}`).toBe(2);
+      expect(current.said.includes(`schedule: ${LABEL} is installed and current`), `it says so, got: ${current.said}`).toBeTruthy();
+      cleanup(world.root); cleanup(sched.kit);
+    });
+  }
+
+  test('any other system: the skip line, and the installer never runs', () => {
+    const world = mkWorld();
+    nameSystem(world, SYSTEMS.linux);
+    const sched = mkScheduleKit(`${LABEL} → not installed`);
+    const { code, said } = runCli(world, ['setup'], { script: sched.script });
+    expect(code, 'exit 0').toBe(0);
+    expect(said.includes('schedule: the 9am job runs on macOS and Windows; it is not available here'), `the skip line, got: ${said}`).toBeTruthy();
+    expect(sched.runs(), `no installer run at all: ${fmtCalls(sched.runs())}`).toEqual([]);
+    cleanup(world.root); cleanup(sched.kit);
   });
 });
 

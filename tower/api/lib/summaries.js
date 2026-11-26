@@ -41,6 +41,7 @@ const SUMMARY_QUERY = `query($owner:String!,$name:String!){
 const defaultExec = (cmd, args) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
+  windowsHide: true,
 });
 
 /** Where ~/.workkit is for this call: the same resolution cc-news.js makes. */

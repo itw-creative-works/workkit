@@ -14,7 +14,9 @@ const { StringDecoder } = require('string_decoder');
 const { setTimeout: sleep } = require('timers/promises');
 const { spawn } = require('./run');
 const { readOrNull } = require('./read');
-const { exitOf, END_SIGNALS } = require('./detach');
+const {
+  exitOf, startFailed, notRunnable, END_SIGNALS,
+} = require('./detach');
 const { writeWhole } = require('./write');
 const { colorOn } = require('./voice');
 const {
@@ -232,8 +234,8 @@ const startOf = (cmd, args, options) => {
  * refusal of lib/run.js's own (no `syscall`) keeps its message.
  */
 const unstartedOf = (cmd, err) => {
-  const code = err.code === 'ENOENT' ? 127 : 126;
-  const why = err.syscall === undefined ? err.message : code === 127 ? 'command not found' : `cannot be run (${err.code})`;
+  const code = err.code === 'ENOENT' ? startFailed : notRunnable;
+  const why = err.syscall === undefined ? err.message : code === startFailed ? 'command not found' : `cannot be run (${err.code})`;
   return { code, line: `detach: ${cmd}: ${why}\n` };
 };
 

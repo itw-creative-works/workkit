@@ -11,7 +11,9 @@ const { spawn, spawnSync } = require('./lib/run');
 const { repoRoot, gitIn } = require('./lib/git');
 const { run } = require('./lib/runs');
 const { bodyEnd, endTraps } = require('./lib/body');
-const { exitOf, isSupervised, END_SIGNALS } = require('./lib/detach');
+const {
+  exitOf, startFailed, isSupervised, END_SIGNALS,
+} = require('./lib/detach');
 const { samePath } = require('./lib/attach');
 const {
   runPaths, lockPathOf, clearSlot, removeSlot, LogsDirError,
@@ -53,7 +55,7 @@ const sh = (args, onStart = () => {}) => new Promise((resolve) => {
   onStart(child);
   child.on('error', (err) => {
     say(`could not start sh: ${err.message}`);
-    resolve(127);
+    resolve(startFailed);
   });
   child.on('close', (code, signal) => resolve(exitOf(code, signal)));
 });

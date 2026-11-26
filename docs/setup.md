@@ -92,8 +92,9 @@ claude plugin install workkit@workkit
      - One that is not valid JSON, or whose `permissions.allow` or `permissions.ask` is not a list, is left alone and warned about by a human's run and by doctor, never by the daily run.
      - `workkit update` and the daily `update --auto` keep the rules too (the daily run creates no `~/.claude`).
      - `workkit doctor` names each one that is missing, an ask rule with `permissions.ask`.
-  7. **The 9am schedule.** Loads the daily-brief schedule through `jobs/install.js`.
-     - This is macOS only (launchd); everywhere else the brief runs in the cloud.
+  7. **The 9am schedule.** Installs the daily-brief schedule through `jobs/install.js`, with the machine's own scheduler.
+     - On a Mac it loads a launchd agent; on Windows it registers a Task Scheduler task, which runs only while you are signed in.
+     - Any other system gets one skip line, and the brief still runs in the cloud.
   8. **The dashboard.** Says how to start it: `workkit tower`, the local one of the [three ways to see your board](#three-ways-to-see-your-board).
 - **Home repo**
 
@@ -204,6 +205,7 @@ claude plugin install workkit@workkit
 - Once a day per repo, the session-start heal runs `workkit update --auto`.
 - It re-renders the 9am schedule when the job template changed.
   - The job runs through the engine's address, so a moved kit or a plugin update needs nothing.
+  - On Windows the task names the Node that installed it, so a Node update that moves that Node registers the task again.
 - It only ever updates a schedule you already installed; a machine with none never gets one this way.
 - It never creates a folder your machine does not already have.
 
@@ -235,6 +237,7 @@ claude plugin install workkit@workkit
     - Setup asks the publish question once and never again.
   - `.repos.json` is the engine's list of repos on this machine, plus the ones you declined.
   - `.cache.json` is throwaway state, and `jobs/` is the daily job's state.
+  - `scheduled/` holds, on Windows, the copy of the task file the installer registered, its "installed" mark ([`jobs/README.md`](../jobs/README.md#install)).
   - `logs/` holds the last run of `workkit setup`, `update`, `doctor` and `publish`, one plain file each (`setup.log` and so on), ending `workkit <command>: exit <code>`; the terminal shows the same run in color. The token mint and the GitHub sign-in show on the terminal only, never in a log.
   - `morning.d/` is yours too: every executable `*.sh` in it is the 9am job's sixth step, run in name order ([`jobs/README.md`](../jobs/README.md#the-morning-on-this-machine)).
 - The full rules for this global layer: [`project-state.md`](project-state.md) § The global layer.
@@ -280,7 +283,7 @@ briefs/           the role brief templates, one per crew job (the manager fills 
 skills/           the nine workflow skills (namespaced workkit:<name>)
 workflow/         the agent-agnostic engine, and the scripts behind its verbs (workkit review covers is the ship's review tier)
 tower/            the dashboard: api/ (the JSON API) + app/ (the OMEGA dashboard)
-jobs/             the 9am job: summaries, brief, publish: payload builders, runners, launchd schedule
+jobs/             the 9am job: summaries, brief, publish: payload builders, runners, the launchd and Task Scheduler schedules
 docs/             project-state.md (the spec) · agents.md (the crew contract) · hooks.md (what each hook does) · setup.md (this page) · cloud.md (remote provisioning) · history-purge.md (the rewrite runbook) · assets/ (the README's hero and mark)
 test/             npm test
 ```

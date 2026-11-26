@@ -5,6 +5,7 @@
 // Usage: const { pairing, publicLink, gh } = require('./lib');
 
 const { spawnSync } = require('../lib/run');
+const { lastErrLine } = require('../lib/say');
 const git = require('../lib/git');
 const { settingsAt } = require('../lib/settings');
 
@@ -46,7 +47,7 @@ const runGh = (args, { cwd, input }) => {
  */
 const ghWrite = (gh, args, cwd) => {
   const r = gh(args, { cwd });
-  if (!r.ok) throw new PublicError(`gh ${args.slice(0, 2).join(' ')} failed: ${r.stderr.trim().split('\n').pop() || 'gh failed'}`);
+  if (!r.ok) throw new PublicError(`gh ${args.slice(0, 2).join(' ')} failed: ${lastErrLine(r) || 'gh failed'}`);
   return r.stdout;
 };
 

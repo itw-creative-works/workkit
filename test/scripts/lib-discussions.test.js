@@ -194,11 +194,8 @@ describe('discussions.js: list', () => {
       "const nodes = Array.from({ length: 50 }, (_, i) => ({ title: `daily: post ${i}`, createdAt: '2026-07-28T09:00:00Z', body: 'x'.repeat(30000) }));",
       'process.stdout.write(JSON.stringify({ data: { repository: { discussions: { nodes } } } }));',
     ].join('\n'));
-    // A digest comes back, not the posts: the harness's own read of a child keeps only 1 MB too.
-    const script = `require(${jsPath(DISCUSSIONS)}).list(process.argv[1], 'Daily', '2026-07-21T00:00:00Z').then((posts) => process.stdout.write(JSON.stringify(posts && { count: posts.length, title: posts[0].title, bodyLength: posts[49].body.length })));`;
-    const res = run(process.execPath, ['-e', script, SLUG], { env });
-    expect(res.status, `list answered, stderr: ${res.stderr}`).toBe(0);
-    expect(JSON.parse(res.stdout), 'every post, each body whole').toEqual({ count: 50, title: 'daily: post 0', bodyLength: 30000 });
+    const posts = askWith(env, 'list', SLUG, 'Daily', '2026-07-21T00:00:00Z');
+    expect({ count: posts.length, title: posts[0].title, bodyLength: posts[49].body.length }, 'every post, each body whole').toEqual({ count: 50, title: 'daily: post 0', bodyLength: 30000 });
   });
 });
 

@@ -346,7 +346,7 @@ describe('workkit watch: attaching to the live run', () => {
 
   test('a narrowed run at its start clears a slot whose lock holds only the gone mark of a gone remover and no done file, and keeps one whose remover lives', { skip: skipOnWindows() || skipWithoutWrapper() }, async () => {
     const world = narrowedWorld();
-    const [abandoned, removing] = [deadPid(), deadPid()].map((pid) => slotOf(world, pid));
+    const [abandoned, removing] = [deadPid(), deadPid(1)].map((pid) => slotOf(world, pid));
     for (const [slot, remover] of [[abandoned, deadPid()], [removing, process.pid]]) {
       fs.mkdirSync(path.dirname(slot.log), { recursive: true });
       fs.writeFileSync(slot.log, '');

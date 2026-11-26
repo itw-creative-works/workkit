@@ -6,9 +6,9 @@ const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
 const { skipWithoutModes, stubToolJs } = require('../../lib/platform');
 const { recordArgvJs } = require('../../lib/argv-log');
-const { skipUnlessDarwin, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
+const { INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob } = require('./helpers');
 
-describe('jobs/morning (local)', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local)', () => {
   describe('jobs/morning (local): the cloud brief marker', () => {
     // A cloud runner whose token expired fails quietly, so the morning records
     // what is actually on the board and the session hook reads that one file.

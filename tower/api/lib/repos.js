@@ -24,6 +24,7 @@ const { readJsonOrNull, readOrNull } = require('../../../workflow/lib/read');
 const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'ignore'],
+  windowsHide: true,
   ...opts,
 });
 

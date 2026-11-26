@@ -85,7 +85,7 @@ cloud_na() {
   local why label="$1"
   case "$1" in
     plugin)   why="the session installs plugins from its settings" ;;
-    schedule) why="the 9am job is a Mac's launchd" ;;
+    schedule) why="the 9am job belongs to a machine's own scheduler" ;;
     tower)    why="the dashboard runs on your own machine" ;;
     home)     why="the home repo is cloned on your own machine" ;;
     runner)   why="the cloud brief's runner is compared on your own machine" ;;

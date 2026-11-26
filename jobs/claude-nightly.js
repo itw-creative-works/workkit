@@ -22,7 +22,7 @@ const { withScratch } = require('../workflow/lib/scratch');
 const { homeSlug } = require('../workflow/lib/settings');
 const { spin } = require('../workflow/lib/spin');
 const { userDir } = require('../workflow/user-dir');
-const { enterMachine, projectsRoot } = require('./lib/machine');
+const { enterMachine, machineHome, projectsRoot } = require('./lib/machine');
 const { fileNotes, logStamp } = require('./lib/notes');
 
 const PAYLOAD = path.join(__dirname, 'claude-nightly', 'nightly-payload.js');
@@ -31,10 +31,10 @@ const PAYLOAD = path.join(__dirname, 'claude-nightly', 'nightly-payload.js');
 const STDERR_LINES = 20;
 
 /** The step's log, under the home the shell's `$HOME` names. */
-const logFile = () => path.join(os.homedir(), 'Library', 'Logs', 'claude-nightly.log');
+const logFile = () => path.join(machineHome(), 'Library', 'Logs', 'claude-nightly.log');
 
 /** The transcripts root the payload indexes, so the send's grant names the same one. */
-const transcriptsRoot = () => process.env.WORKKIT_CLAUDE_PROJECTS || projectsRoot(os.homedir());
+const transcriptsRoot = () => process.env.WORKKIT_CLAUDE_PROJECTS || projectsRoot(machineHome());
 
 /**
  * The cadences due on <now>: daily always, weekly on a Sunday, monthly on the 1st.

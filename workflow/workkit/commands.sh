@@ -217,15 +217,15 @@ cmd_doctor() {
   # is one cloud_na line (workkit/setup.sh), counted by nothing.
   if wk_is_cloud; then
     cloud_na schedule
-  elif [[ "$(uname -s)" != "Darwin" ]]; then
-    wk_skip "schedule: launchd is macOS"
-  elif [[ ! -f "$DAILY_PLIST" ]]; then
-    wk_warn "schedule: the 9am job is not installed; run \`workkit setup\`"
-    attention=$((attention + 1))
+  elif ! schedule_here; then
+    wk_skip "schedule: the 9am job runs on macOS and Windows"
   else
     local drift
     if ! drift="$(cron_drift)"; then
       wk_warn "schedule: $drift"
+      attention=$((attention + 1))
+    elif drift_not_installed "$drift"; then
+      wk_warn "schedule: the 9am job is not installed; run \`workkit setup\`"
       attention=$((attention + 1))
     elif [[ -z "$drift" ]]; then
       wk_ok "schedule: $DAILY_LABEL is installed and current"

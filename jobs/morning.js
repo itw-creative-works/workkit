@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * jobs/morning.js: the morning, started by morning.sh under a node at the
- * kit's floor, from the 9am LaunchAgent and from the brief.yml workflow on the
- * home repo. Six steps in one order, each gated on what the environment it
- * woke up in can do: jobs/README.md tells which runs where.
+ * kit's floor from the 9am LaunchAgent and the brief.yml workflow on the home
+ * repo, and by workflow/morning-task.js from the 9am Windows task. Six steps
+ * in one order, each gated on what the environment it woke up in can do:
+ * jobs/README.md tells which runs where.
  * Usage: node morning.js [--now | message]. None is the scheduled morning;
  *        --now is the rehearsal, sent here and publishing nothing; a message
  *        is the generic headless runner. Log: ~/Library/Logs/claude-daily.log,
@@ -16,7 +17,7 @@ const path = require('path');
 const { holdSignals, Interrupted } = require('../workflow/lib/interrupt');
 const { withScratch } = require('../workflow/lib/scratch');
 const { homeUserDir } = require('../workflow/user-dir');
-const { enterMachine, homeOf } = require('./lib/machine');
+const { enterMachine, machineHome } = require('./lib/machine');
 const { logStamp, fileNotes, plainNotes } = require('./lib/notes');
 const { summaries } = require('./morning/summaries');
 const { reconcileRunner } = require('./morning/runner');
@@ -29,9 +30,9 @@ const { runMorningD } = require('./morning/morning-d');
 /**
  * The run every step is handed, from the arguments and the one clock read.
  * On a runner the machine folder is pinned for both halves of the run; on a
- * machine the folders launchd lacks go on PATH and the cwd is the job's own work
- * folder under ~/Library/Caches, since Claude Code's startup scan from / trips
- * macOS privacy prompts.
+ * machine the folders a scheduler's PATH lacks go on PATH and the cwd is the
+ * job's own work folder under ~/Library/Caches, since Claude Code's startup
+ * scan from / trips macOS privacy prompts.
  * @param {string[]} args
  * @param {Date} now
  * @param {string} scratch the run's scratch folder
@@ -39,7 +40,7 @@ const { runMorningD } = require('./morning/morning-d');
  */
 const newRun = (args, now, scratch) => {
   const manual = args[0] === '--now';
-  const home = homeOf(process.env);
+  const home = machineHome();
   // brief-payload.js writes the upstream-version line here; nothing in the
   // scratch folder outlives the run, since the cursor is the Discussion.
   const markFile = path.join(scratch, 'cc-version');

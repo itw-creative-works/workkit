@@ -55,6 +55,9 @@ const exitOf = (code, signal) => (code === null ? signalCode(signal) : code);
 // The code a shell gives a command that never started.
 const startFailed = 127;
 
+// The code a shell gives a command it found and cannot run.
+const notRunnable = 126;
+
 /**
  * A spawnSync result's end as a shell's code: startFailed when it never
  * started (no code and no signal), else exitOf.
@@ -337,5 +340,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  awakeCommand, signalCode, exitOf, startFailed, codeOf, isSupervised, END_SIGNALS, INT_CODE,
+  awakeCommand, signalCode, exitOf, startFailed, notRunnable, codeOf, isSupervised, END_SIGNALS, INT_CODE,
 };

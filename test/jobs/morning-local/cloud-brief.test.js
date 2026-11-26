@@ -7,9 +7,9 @@ const path = require('path');
 const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
-const { skipUnlessDarwin, SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
+const { SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
 
-describe('jobs/morning (local): the brief is the cloud’s', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local): the brief is the cloud’s', () => {
   // Everything below is about the day going over, or not going over, which is
   // a briefless morning and never a local compose.
 

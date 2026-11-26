@@ -34,9 +34,8 @@ BRIEF_DISPATCH="$KIT_DIR/jobs/brief-dispatch.sh"
 # The plugin, as `claude plugin list` names it, and the marketplace this repo is.
 PLUGIN_ID="workkit@workkit"
 
-# The installed daily schedule: the marker that says a human ran the install.
+# The daily schedule's label, as the installer names it.
 DAILY_LABEL="com.workkit.claude-daily"
-DAILY_PLIST="${HOME:-}/Library/LaunchAgents/$DAILY_LABEL.plist"
 
 # The PATH line for this is printed and never written: someone's rc file is
 # theirs.

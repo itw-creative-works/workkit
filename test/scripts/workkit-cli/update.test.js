@@ -1,6 +1,6 @@
 // Tests for workflow/workkit.sh: `update`: the three links, the quiet
-// `--auto` variant, and on macOS the schedule and a checkout or an installer
-// that cannot answer.
+// `--auto` variant, the schedule on each system, and a checkout or an
+// installer that cannot answer.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -14,7 +14,7 @@ const {
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, signInEnv, ACTED, mkRepo, installSchedule,
-  mkPartialKit, mkSetupKit, signIn,
+  mkPartialKit, mkSetupKit, signIn, SYSTEMS, nameSystem, mkInstallerKit, mkScheduleKit,
 } = require('./helpers');
 const { writeLogin } = require('../../lib/identity');
 
@@ -256,11 +256,9 @@ describe('workkit update: the sign-in line', () => {
   });
 });
 
-// Everything below is launchd's: a machine without `launchctl` has no
-// schedule to name, install or keep current, and the engine says so itself
-// rather than acting (`launchd is macOS`). The cases are named as skips there
-// instead of asserting a capability that is not on the machine.
-describe('workkit update: the schedule (macOS)', { skip: !hasLaunchd() && 'launchd is macOS (#114)' }, () => {
+// These run the real installer, whose launchd half lints the plist with
+// plutil; the schedule on each system, through a stand-in installer, is below.
+describe('workkit update: the schedule (macOS)', { skip: !hasLaunchd() && 'the real installer\'s launchd half needs plutil, a macOS tool' }, () => {
   test('run by a human, a missing schedule names the command that installs it', () => {
     const world = mkWorld();
     const { out } = runCli(world, ['update']);
@@ -295,10 +293,12 @@ describe('workkit update: the schedule (macOS)', { skip: !hasLaunchd() && 'launc
   });
 });
 
-describe('workkit: a checkout or an installer that cannot answer (macOS)', { skip: !hasLaunchd() && 'launchd is macOS (#114)' }, () => {
+// The shell asks the installer alone whether the job is installed, so no case
+// plants a file of the installed job; each names the system a Mac.
+describe('workkit: a checkout or an installer that cannot answer', () => {
   test('a checkout missing its installer says so, never "current"', () => {
     const world = mkWorld();
-    world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
+    nameSystem(world, SYSTEMS.mac);
     const { kit, script } = mkPartialKit();
     const { code, said } = runCli(world, ['update'], { script });
     expect(code, 'exit 0').toBe(0);
@@ -313,28 +313,78 @@ describe('workkit: a checkout or an installer that cannot answer (macOS)', { ski
     // Unguarded under `set -e` that exit is invisible inside the hook, which
     // discards stderr, and retries silently every day.
     const world = mkWorld();
-    world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
-    const { kit, script } = mkPartialKit({
-      installer: [
-        "if (process.argv[2] === '--check') { console.log('com.workkit.claude-daily → out of date for this kit'); process.exit(0); }",
-        "console.error('template missing');",
-        'process.exit(1);',
-      ],
-    });
-    const { code, said } = runCli(world, ['update', '--auto'], { script });
+    nameSystem(world, SYSTEMS.mac);
+    const sched = mkInstallerKit([
+      `if (process.argv[2] === '--check') { console.log('${LABEL} → out of date for this kit'); process.exit(0); }`,
+      "console.error('template missing');",
+      'process.exit(1);',
+    ]);
+    const { code, said } = runCli(world, ['update', '--auto'], { script: sched.script });
     expect(code, 'a failed install never aborts the caller').toBe(0);
-    expect(said.includes('did not finish'), `it says the install failed, got: ${said}`).toBeTruthy();
+    expect(sched.runs(), `the check, then one install run: ${fmtCalls(sched.runs())}`).toEqual([['--check'], []]);
+    expect(said.includes('the install did not finish (exit 1)'), `it says the install failed with its exit, got: ${said}`).toBeTruthy();
     expect(said.includes('install.js'), `and names the command to run by hand, got: ${said}`).toBeTruthy();
-    cleanup(world.root); cleanup(kit);
+    cleanup(world.root); cleanup(sched.kit);
   });
 
   test('a drift check that cannot answer is not "current" either', () => {
     const world = mkWorld();
-    world.seedPlist(LABEL, '<!-- installed by a human, once -->\n');
-    const { kit, script } = mkPartialKit({ installer: ['process.exit(3);'] });
-    const { code, said } = runCli(world, ['update', '--auto'], { script });
+    nameSystem(world, SYSTEMS.mac);
+    const sched = mkInstallerKit(['process.exit(3);']);
+    const { code, said } = runCli(world, ['update', '--auto'], { script: sched.script });
     expect(code, 'exit 0').toBe(0);
+    expect(sched.runs(), `the check alone ran: ${fmtCalls(sched.runs())}`).toEqual([['--check']]);
     expect(said.includes('drift check did not finish'), `it says the check failed, got: ${said}`).toBeTruthy();
-    cleanup(world.root); cleanup(kit);
+    cleanup(world.root); cleanup(sched.kit);
+  });
+});
+
+// The road a Mac and a Windows machine share, read from the installer's
+// `--check` alone: the system is named through `uname`, the installer a stand-in.
+describe('workkit update: the schedule on each system', () => {
+  for (const [system, name] of [['a Mac', SYSTEMS.mac], ['Windows', SYSTEMS.windows]]) {
+    test(`${system}: a job not installed is named, and the installer is never run to install it`, () => {
+      const world = mkWorld();
+      nameSystem(world, name);
+      const sched = mkScheduleKit(`${LABEL} → not installed`);
+      const { code, out } = runCli(world, ['update'], { script: sched.script });
+      expect(code, 'exit 0').toBe(0);
+      expect(out.includes('schedule: not installed on this machine; `workkit setup` installs the 9am job'), `it points at setup, got: ${out}`).toBeTruthy();
+      expect(sched.installs(), `no install run: ${fmtCalls(sched.runs())}`).toEqual([]);
+      cleanup(world.root); cleanup(sched.kit);
+    });
+
+    test(`${system}: a job out of date is installed again`, () => {
+      const world = mkWorld();
+      nameSystem(world, name);
+      const sched = mkScheduleKit(`${LABEL} → out of date for this kit`);
+      const { code, out } = runCli(world, ['update', '--auto'], { script: sched.script });
+      expect(code, 'exit 0').toBe(0);
+      expect(sched.installs().length, `one install run: ${fmtCalls(sched.runs())}`).toBe(1);
+      expect(out.includes(`schedule: ${LABEL} → installed (9:00 AM daily)`), `the session hears what changed, got: ${out}`).toBeTruthy();
+      cleanup(world.root); cleanup(sched.kit);
+    });
+
+    test(`${system}: a current job is left alone`, () => {
+      const world = mkWorld();
+      nameSystem(world, name);
+      const sched = mkScheduleKit('');
+      const { code, out } = runCli(world, ['update'], { script: sched.script });
+      expect(code, 'exit 0').toBe(0);
+      expect(out.includes(`schedule: ${LABEL} is current`), `it says so, got: ${out}`).toBeTruthy();
+      expect(sched.installs(), `no install run: ${fmtCalls(sched.runs())}`).toEqual([]);
+      cleanup(world.root); cleanup(sched.kit);
+    });
+  }
+
+  test('any other system: the skip line, and the installer never runs', () => {
+    const world = mkWorld();
+    nameSystem(world, SYSTEMS.linux);
+    const sched = mkScheduleKit(`${LABEL} → out of date for this kit`);
+    const { code, out } = runCli(world, ['update'], { script: sched.script });
+    expect(code, 'exit 0').toBe(0);
+    expect(out.includes('schedule: the 9am job runs on macOS and Windows; nothing to keep current here'), `the skip line, got: ${out}`).toBeTruthy();
+    expect(sched.runs(), `no installer run at all: ${fmtCalls(sched.runs())}`).toEqual([]);
+    cleanup(world.root); cleanup(sched.kit);
   });
 });

@@ -1,17 +1,18 @@
 // The shared prologue of the workflow/workkit.sh suites beside this one, which
-// test the one command. Every world is a scratch HOME with `launchctl`, `claude`
-// and `gh` recorders on PATH, so the suite reads what would be installed and
-// which commands would have run; WORKFLOW_HOME and WORKFLOW_CLAUDE_HOME point
-// at the same scratch tree.
+// test the one command. Every world is a scratch HOME with `launchctl`,
+// `schtasks`, `claude` and `gh` recorders on PATH, so the suite reads what would
+// be installed and which commands would have run; WORKFLOW_HOME and
+// WORKFLOW_CLAUDE_HOME point at the same scratch tree.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, nodeEnv, stubTool, joinPath, spawnSync: runSync, spawnBash,
+  SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, nodeEnv, stubTool, stubToolJs, joinPath, spawnSync: runSync, spawnBash,
 } = require('../../lib/platform');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
+const { schtasksStub } = require('../../lib/schtasks-stub');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo, OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { copySettingsKit } = require('../../lib/settings-kit');
@@ -86,6 +87,8 @@ const mkWorld = ({
 
   const launchctlLog = path.join(root, 'launchctl-argv.log');
   writeStub(path.join(bin, 'launchctl'), [recordArgv(launchctlLog), 'if [[ "$1" == \'print\' ]]; then exit 1; fi', 'exit 0']);
+  // A run of the real installer on Windows registers through this, never the machine's.
+  schtasksStub(bin);
 
   const claudeLog = path.join(root, 'claude-argv.log');
   if (claude) {
@@ -218,10 +221,6 @@ const mkWorld = ({
     // removes both: the mint's capture file and the handover page, each of which
     // carries a token value, so anything at all left here is a leak.
     tmpFiles: () => fs.readdirSync(tmp),
-    seedPlist: (label, text) => {
-      fs.mkdirSync(agents, { recursive: true });
-      fs.writeFileSync(path.join(agents, `${label}.plist`), text);
-    },
     env: homeEnv(home, {
       // Scratch too: the mint writes its capture file here, and a test that
       // asks whether one was left behind must be asking about this world's.
@@ -232,10 +231,10 @@ const mkWorld = ({
       PATH: joinPath(...(binOnPath ? [shellPath(localBin)] : []), bin, SYSTEM_PATH),
       WORKFLOW_HOME: shellPath(path.join(root, 'workflow-home')),
       WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
-      // jobs/install.js refuses a scratch HOME, since launchd is machine-global;
-      // launchctl here is a recorder, so this world is the rehearsal the override
-      // exists for. The guard itself is pinned in test/jobs.
-      WORKKIT_LAUNCHD_OK: '1',
+      // jobs/install.js refuses a scratch HOME, since a scheduler is machine-global;
+      // launchctl and schtasks here are recorders, so this world is the rehearsal
+      // the override exists for. The guard itself is pinned in test/jobs.
+      WORKKIT_SCHEDULE_OK: '1',
       // The kit's node for the heal, off PATH: node and npm stay absent there,
       // which the npm and sign-in cases read.
       ...nodeEnv,
@@ -385,16 +384,15 @@ const AT_TERMINAL = 'interactive() { return 0; }';
 /**
  * A partial checkout: this CLI copied whole (the entry and the `workkit/`
  * pieces it sources; a symlink would resolve back to the real one) into a
- * `workflow/` holding nothing else of the kit. `installer` is the lines of a
- * stub `jobs/install.js`, none without it. Returns the entry point to run.
+ * `workflow/` holding nothing else of the kit, and no `jobs/install.js`.
+ * Returns the entry point to run.
  */
-const mkPartialKit = ({ installer } = {}) => {
+const mkPartialKit = () => {
   const kit = mkTmp('workkit-cli-');
   fs.mkdirSync(path.join(kit, 'workflow'), { recursive: true });
   fs.copyFileSync(CLI, path.join(kit, 'workflow', 'workkit.sh'));
   fs.cpSync(path.join(WORKFLOW_DIR, 'workkit'), path.join(kit, 'workflow', 'workkit'), { recursive: true });
   copySettingsKit(kit);
-  if (installer) writeKitFile(path.join(kit, 'jobs', 'install.js'), installer);
   return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
 };
 
@@ -427,6 +425,49 @@ const mkKit = (slug) => mkKitCopy(slug, false);
  */
 const mkSetupKit = () => mkKitCopy('checkout/workkit', true);
 
+// The `uname -s` answers the schedule steps branch on, one per road.
+const SYSTEMS = { mac: 'Darwin', windows: 'MINGW64_NT-10.0-19045', linux: 'Linux' };
+
+/** Name the system for the world's shell: a `uname` on its PATH answering `name`. */
+const nameSystem = (world, name) => stubToolJs(world.bin, 'uname', `process.stdout.write(${JSON.stringify(`${name}\n`)});`);
+
+/**
+ * mkKit's kit under the workkit origin, with a stand-in installer: `lines` as `jobs/install.js`,
+ * each run's arguments recorded first. `runs()` is every run's arguments,
+ * `installs()` the runs in install mode. Returns them with `{ kit, script }`.
+ */
+const mkInstallerKit = (lines) => {
+  const { kit, script } = mkKitCopy('checkout/workkit', false);
+  const runLog = path.join(kit, 'installer-argv.log');
+  writeKitFile(path.join(kit, 'jobs', 'install.js'), [recordArgvJs(JSON.stringify(runLog), 'process.argv.slice(2)'), ...lines]);
+  const runs = () => readArgv(runLog);
+  return {
+    kit, script, runs, installs: () => runs().filter((args) => args[0] !== '--check'),
+  };
+};
+
+/**
+ * mkInstallerKit's kit whose installer's `--check` prints `check(line)`'s line
+ * ('' for nothing, a `→ not installed` or `→ out of date for this kit` line),
+ * and whose run in install mode prints the installed line. Returns `check`
+ * with mkInstallerKit's answer.
+ */
+const mkScheduleKit = (answer = '') => {
+  // The answer sits beside jobs/, where the installer finds it from its own folder.
+  const sched = mkInstallerKit([
+    "const fs = require('fs');",
+    "if (process.argv[2] === '--check') {",
+    "  const line = fs.readFileSync(require('path').join(__dirname, '..', 'check-answer'), 'utf8');",
+    '  if (line) console.log(line);',
+    '} else {',
+    `  console.log(${JSON.stringify(`✓ ${LABEL} → installed (9:00 AM daily)`)});`,
+    '}',
+  ]);
+  const check = (line) => fs.writeFileSync(path.join(sched.kit, 'check-answer'), line);
+  check(answer);
+  return { ...sched, check };
+};
+
 /**
  * The kit as a plugin install leaves it: a copy with no `.git` and no origin,
  * in the world's own Claude plugin cache, whose manifest names the kit. The
@@ -458,5 +499,5 @@ const mkHomeWorld = (opts = {}) => {
 module.exports = {
   WORKFLOW_DIR, CLI, LABEL, COMMAND_TABLE, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
   installSchedule, seedSettings, signIn, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
-  SLUG, HOME, mkHomeWorld,
+  SYSTEMS, nameSystem, mkInstallerKit, mkScheduleKit, SLUG, HOME, mkHomeWorld,
 };

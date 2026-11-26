@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * jobs/install.js: install this kit's LaunchAgent, the 9am daily job: renders
- * jobs/<label>.plist into ~/Library/LaunchAgents/ and (re)loads it, only when
- * something changed. Copied, never symlinked: launchd expands nothing, and
- * `launchctl bootstrap` is unreliable with symlinked plists. launchd is
- * machine-global, so it is asked only when HOME is this account's real home
- * (jobs/README.md § The pieces).
+ * jobs/install.js: install this kit's 9am daily job with the machine's own
+ * scheduler, only when something changed. On a Mac: renders jobs/<label>.plist
+ * into ~/Library/LaunchAgents/ and (re)loads it, copied, never symlinked:
+ * launchd expands nothing, and `launchctl bootstrap` is unreliable with
+ * symlinked plists. On Windows: registers jobs/<label>.xml as a Task Scheduler
+ * task (lib/task-scheduler.js). A scheduler is machine-global, so it is asked
+ * only when HOME is this account's real home (jobs/README.md § The pieces).
  * Usage: node jobs/install.js [--check]
  * Called by: workflow/workkit/schedule.sh (`workkit setup`, `update`, `doctor`).
  */
@@ -21,8 +22,23 @@ const { writeErr, writeOut } = require('../workflow/lib/say');
 const { withScratch } = require('../workflow/lib/scratch');
 const { spin } = require('../workflow/lib/spin');
 const { ok, warn, error } = require('../workflow/lib/voice');
+const { userDir } = require('../workflow/user-dir');
+const { machineHome } = require('./lib/machine');
+const { holds, skippedLine } = require('./lib/schedule');
+const {
+  renderTask, installTask, checkTask, copyPath,
+} = require('./lib/task-scheduler');
 
 const USAGE = 'usage: install.js [--check]\n';
+
+// The one job this kit schedules.
+const LABEL = 'com.workkit.claude-daily';
+
+// Its schedule as a person reads it, the same on both systems.
+const WHEN = '9:00 AM daily';
+
+// Read once at load, as lib/run.js reads it; main's `platform` is the seam.
+const PLATFORM = process.platform;
 
 // The physical folders: a symlinked HOME must not read as a different home than
 // the one the account record names.
@@ -44,25 +60,26 @@ const accountHome = () => {
 };
 
 /**
- * May this run talk to launchd? WORKKIT_LAUNCHD_OK=1 says yes outright.
+ * May this run talk to the scheduler, on either system? WORKKIT_SCHEDULE_OK=1
+ * says yes outright.
  * @param {string} home
  * @returns {boolean}
  */
-const launchdAllowed = (home) => {
-  if (process.env.WORKKIT_LAUNCHD_OK === '1') return true;
+const scheduleAllowed = (home) => {
+  if (process.env.WORKKIT_SCHEDULE_OK === '1') return true;
   const here = physicalDir(home);
   const record = accountHome();
   if (here === null || !record) return false;
   return here === physicalDir(record);
 };
 
-/** `<label> → would <what> (skipped ...)`: what a run kept from launchd would have done. */
+/** The Mac half's skip line, said `ok`. */
 const skipLaunchd = (label, what) => {
-  ok(`${label} → would ${what} (skipped: HOME is not this account's home; set WORKKIT_LAUNCHD_OK=1 to force)`);
+  ok(skippedLine(label, what));
 };
 
 /**
- * The plist reaches the job through ~/.claude/workkit, so a link that is missing
+ * The plist and the task reach the job through ~/.claude/workkit, so a link that is missing
  * or names another kit runs no job or that kit's; a workkit clone outranking this
  * cached copy is the one other answer that holds. Both modes say it.
  * @param {string} home
@@ -77,16 +94,6 @@ const checkEngineLink = (home, label) => {
     warn(`${label} → the job runs through ${nativePath(link)}, which does not resolve, so it cannot reach this kit; run \`workkit update\``);
   } else {
     warn(`${label} → the job runs through ${nativePath(link)}, which resolves to ${nativePath(linked)}, not this kit's ${nativePath(WORKKIT_DIR)}/workflow; run \`workkit update\``);
-  }
-};
-
-/** Whether <file> holds exactly <text>; a file that cannot be read does not. */
-const holds = (file, text) => {
-  try {
-    return fs.readFileSync(file).equals(Buffer.from(text));
-  } catch (err) {
-    if (!err.code) throw err;
-    return false;
   }
 };
 
@@ -150,7 +157,7 @@ const confirmLoaded = (label, target, uid) => {
 
 /**
  * Render, compare, and only on change copy and reload.
- * @param {{mode: string, home: string, launchdOk: boolean}} run
+ * @param {{mode: string, home: string, scheduleOk: boolean}} run
  * @param {string} label
  * @param {string} when the schedule, as a person reads it
  * @returns {number} the code the run ends with
@@ -179,7 +186,7 @@ const installAgent = (run, label, when) => {
   }
 
   if (installed && holds(target, rendered)) {
-    if (!run.launchdOk) {
+    if (!run.scheduleOk) {
       skipLaunchd(label, 'bootstrap it (plist unchanged)');
       return 0;
     }
@@ -190,7 +197,7 @@ const installAgent = (run, label, when) => {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, rendered, { mode: 0o600 });
 
-  if (!run.launchdOk) {
+  if (!run.scheduleOk) {
     ok(`${label} → installed, not loaded (${when})`);
     skipLaunchd(label, 'bootout and bootstrap it');
     return 0;
@@ -207,12 +214,63 @@ const installAgent = (run, label, when) => {
   return 0;
 };
 
+/** `bytes` as UTF-8 text, or null when they are not valid UTF-8. */
+const textOf = (bytes) => {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+    return null;
+  }
+};
+
+/**
+ * Render the task for this Node, home and account, then the `--check` or the
+ * registration of lib/task-scheduler.js.
+ * @param {{mode: string, home: string, scheduleOk: boolean}} run
+ * @param {string} label
+ * @param {string} when the schedule, as a person reads it
+ * @returns {number} the code the run ends with
+ */
+const installTaskFile = (run, label, when) => {
+  const template = path.join(SCRIPT_DIR, `${label}.xml`);
+  if (!isFile(template)) {
+    error(`template missing: ${nativePath(template)}`);
+    return 1;
+  }
+  const source = textOf(fs.readFileSync(template));
+  if (source === null) {
+    error(`${label} → the task template is not valid UTF-8 text`);
+    return 1;
+  }
+  // The real Node, so a version manager's moving link never names another one.
+  const text = renderTask(source, {
+    node: fs.realpathSync(process.execPath),
+    home: path.win32.normalize(run.home),
+    user: os.userInfo().username,
+  });
+  checkEngineLink(run.home, label);
+  const copy = copyPath(label, userDir(run.home));
+  if (run.mode === 'check') {
+    const { line } = checkTask({ label, text, copy });
+    if (line) ok(line);
+    return 0;
+  }
+  const { code, line } = installTask({
+    label, text, copy, when, scheduleOk: run.scheduleOk,
+  });
+  if (code === 0) ok(line);
+  else error(line);
+  return code;
+};
+
 /**
  * The call.
  * @param {string[]} args
- * @returns {number} 0; 1 for an unknown flag, a missing template or a plist plutil refuses; a failed bootstrap's own code
+ * @param {{platform?: string}} [context] the system the run is for
+ * @returns {number} 0; 1 for an unknown flag, another system, a missing template or a task file that is not valid text; a failed bootstrap's or `schtasks /create`'s own code
  */
-const main = (args) => {
+const main = (args, { platform = PLATFORM } = {}) => {
   let mode = 'install';
   const first = args[0] ?? '';
   if (first === '--check') {
@@ -227,10 +285,15 @@ const main = (args) => {
   // The engine's voice, as lib.sh sets it: `workkit update` relays these lines
   // under its own glyph, stripping this one, so a line never wears two.
   process.env.WK_LOG_INDENT = '';
-  const home = process.env.HOME;
-  // `--check` never asks launchd anything, so it never asks this question either.
-  const run = { mode, home, launchdOk: mode === 'install' && launchdAllowed(home) };
-  return installAgent(run, 'com.workkit.claude-daily', '9:00 AM daily');
+  if (platform !== 'darwin' && platform !== 'win32') {
+    error(`install: the 9am job runs on macOS and Windows; ${platform} has no scheduler it knows`);
+    return 1;
+  }
+  const home = machineHome();
+  // `--check` never asks a scheduler anything, so it never asks this question either.
+  const run = { mode, home, scheduleOk: mode === 'install' && scheduleAllowed(home) };
+  if (platform === 'win32') return installTaskFile(run, LABEL, WHEN);
+  return installAgent(run, LABEL, WHEN);
 };
 
 if (require.main === module) {

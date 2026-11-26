@@ -7,9 +7,17 @@ const fs = require('fs');
 const path = require('path');
 const { describe, test, expect, alive, pidIn } = require('../../lib/harness');
 const { escapeRegex } = require('../../../workflow/lib/regex');
+const { IS_WINDOWS, NO_EXEC_BIT } = require('../../lib/platform');
 const {
-  skipUnlessDarwin, cleanup, mkWorld, runJob, withoutTools, SHORT_BOUND,
+  cleanup, mkWorld, runJob, withoutTools, SHORT_BOUND,
 } = require('./helpers');
+
+// The skip of a case that reads a script's own output from the log.
+const NO_APPEND_OUTPUT = IS_WINDOWS && 'morning.d hands Git Bash the log opened to append, and a Git Bash child cannot write to that handle on Windows';
+
+// A shell line writing the process `pid` names (`$$`, `$!`) to `file`, as the system knows it:
+// a Git Bash pid is no Windows pid, and Git Bash keeps the Windows one under /proc.
+const pidLine = (pid, file) => `p=${pid}; [ -r /proc/${pid}/winpid ] && read -r p < /proc/${pid}/winpid; echo "$p" > ${JSON.stringify(file)}`;
 
 // A script in <dir>/morning.d that appends its name to `order` and prints a
 // line the log can be searched for; `body` replaces that, `mode` its bits.
@@ -35,8 +43,8 @@ const allLines = (world, res) => [world.log(), res.stdout, res.stderr].join('\n'
 const warnedAbout = (world, res, name) => allLines(world, res)
   .filter((l) => l.includes(name) && !/^--- .+ ---$/.test(l));
 
-describe('jobs/morning (local): the morning.d folder', { skip: skipUnlessDarwin() }, () => {
-  test('two executable scripts run in name order after the brief status, each under its own header', () => {
+describe('jobs/morning (local): the morning.d folder', () => {
+  test('two executable scripts run in name order after the brief status, each under its own header', { skip: NO_APPEND_OUTPUT }, () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
     // Written out of order, so the run order is the names', not the files'.
@@ -79,7 +87,7 @@ describe('jobs/morning (local): the morning.d folder', { skip: skipUnlessDarwin(
     const order = path.join(world.root, 'order.log');
     // exec, so the recorded pid is the sleep itself and nothing outlives it.
     const pidFile = path.join(world.root, 'slow.pid');
-    plant(world.workflowHome, '10-slow.sh', { body: [`echo $$ > ${JSON.stringify(pidFile)}`, 'echo started', 'exec sleep 60'] });
+    plant(world.workflowHome, '10-slow.sh', { body: [pidLine('$$', pidFile), 'echo started', 'exec sleep 60'] });
     plant(world.workflowHome, '20-b.sh', { order });
 
     const res = runJob(world);
@@ -95,7 +103,7 @@ describe('jobs/morning (local): the morning.d folder', { skip: skipUnlessDarwin(
     cleanup(world.root);
   });
 
-  test('a script that writes the log itself and prints lands in the order it happened', () => {
+  test('a script that writes the log itself and prints lands in the order it happened', { skip: NO_APPEND_OUTPUT }, () => {
     const world = mkWorld();
     const logFile = '"$HOME/Library/Logs/claude-daily.log"';
     plant(world.workflowHome, '10-mixed.sh', {
@@ -116,7 +124,7 @@ describe('jobs/morning (local): the morning.d folder', { skip: skipUnlessDarwin(
     const order = path.join(world.root, 'order.log');
     const pidFile = path.join(world.root, 'left.pid');
     // The child keeps the script's stdout and stderr open long past the bound.
-    plant(world.workflowHome, '10-leaves.sh', { body: [`sleep 120 & echo $! > ${JSON.stringify(pidFile)}`, 'echo "left one running"'] });
+    plant(world.workflowHome, '10-leaves.sh', { body: ['sleep 120 &', pidLine('$!', pidFile), 'echo "left one running"'] });
     plant(world.workflowHome, '20-b.sh', { order });
     t.after(() => { const pid = pidIn(pidFile); if (pid > 0 && alive(pid)) process.kill(pid, 'SIGKILL'); });
 
@@ -128,7 +136,7 @@ describe('jobs/morning (local): the morning.d folder', { skip: skipUnlessDarwin(
     cleanup(world.root);
   });
 
-  test('a non-executable file in the folder is skipped without a line', () => {
+  test('a non-executable file in the folder is skipped without a line', { skip: IS_WINDOWS && NO_EXEC_BIT }, () => {
     const world = mkWorld();
     const order = path.join(world.root, 'order.log');
     plant(world.workflowHome, '10-a.sh', { order, mode: 0o644 });

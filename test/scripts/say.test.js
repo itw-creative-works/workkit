@@ -1,5 +1,6 @@
 // Tests for workflow/lib/say.js: sayAs writes its whole line, once, to a stderr
-// pipe that is full when it is called, and returns once a slow reader drains it.
+// pipe that is full when it is called, and returns once a slow reader drains it;
+// lastErrLine reads the last thing a child said on stderr.
 
 const fs = require('fs');
 const path = require('path');
@@ -9,6 +10,7 @@ const {
 const { IS_WINDOWS, BASH, NO_RC, spawnSync } = require('../lib/platform');
 
 const SAY = path.join(__dirname, '..', '..', 'workflow', 'lib', 'say.js');
+const { lastErrLine } = require(SAY);
 
 // Past ASCII throughout and longer than a pipe takes in one write, so a retry
 // that goes on from the wrong byte cuts a character or repeats one.
@@ -73,5 +75,14 @@ describe('say.js: sayAs on a full stderr pipe', {
     const seen = `${tail.length} characters after the ${burst}-byte burst, starting ${JSON.stringify(tail.slice(0, 120))}`;
     expect(status, `the child's exit, sayAs throwing nothing; ${seen}`).toBe(0);
     expect(tail === `probe: ${LINE}\n`, `the line whole and once after the burst; ${seen}`).toBe(true);
+  });
+});
+
+describe('say.js: lastErrLine', () => {
+  test('a stderr in CRLF lines ending on a blank one: its last line with words, trimmed; none at all: the empty string', () => {
+    const res = { status: 1, stderr: 'WARNING: first\r\n  ERROR: the value is incorrectly formatted.  \r\n\r\n' };
+    expect(lastErrLine(res), 'the last line that says something').toBe('ERROR: the value is incorrectly formatted.');
+    expect(lastErrLine({ status: 1, stderr: ' \r\n\r\n' }), 'a stderr of blank lines').toBe('');
+    expect(lastErrLine({ status: null, stderr: null }), 'a child that never started').toBe('');
   });
 });

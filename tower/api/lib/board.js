@@ -26,6 +26,7 @@ const LABELS_FILE = path.join(__dirname, '..', '..', '..', 'workflow', 'labels.j
 const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
+  windowsHide: true,
   ...opts,
 });
 

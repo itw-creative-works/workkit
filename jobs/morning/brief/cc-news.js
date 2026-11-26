@@ -54,6 +54,7 @@ const TOPICS = [
 const defaultExec = (cmd, args) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'ignore'],
+  windowsHide: true,
 });
 
 /** The upstream text, or null when it could not be read. */

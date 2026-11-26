@@ -19,6 +19,9 @@ const IS_WINDOWS = process.platform === 'win32';
 const LADDER = ['SIGINT', 'SIGTERM', 'SIGKILL'];
 const END_GRACE = 1500;
 
+// The most output `run` keeps of each stream of one child.
+const RUN_MAX_BUFFER = 64 * 1024 * 1024;
+
 /**
  * Send <signal> to <target> (a pid, or a group as -pid).
  * @returns {'sent'|'gone'|'refused'} gone on ESRCH, refused on EPERM
@@ -131,7 +134,7 @@ export const endGroup = async (pid) => {
  */
 export const run = (cmd, args, { cwd, env, input, deadline = SPAWN_DEADLINE } = {}) => {
   const result = spawnSync(cmd, args, {
-    cwd, env, input, timeout: deadline, killSignal: 'SIGKILL', encoding: 'utf8', stdio: 'pipe',
+    cwd, env, input, timeout: deadline, killSignal: 'SIGKILL', encoding: 'utf8', stdio: 'pipe', maxBuffer: RUN_MAX_BUFFER,
   });
   const timedOut = result.error?.code === 'ETIMEDOUT';
   if (result.error && !timedOut) throw result.error;

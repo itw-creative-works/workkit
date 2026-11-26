@@ -15,9 +15,10 @@ const {
   describe, test, expect, mkTmp, needs, run, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, gitPath, jsPath, stubTool, spawnSystemBash, nodeEnv, samePath, homeEnv, joinPath, basePathWithout,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, EMPTY_PATH, shellPath, gitPath, jsPath, stubTool, stubToolJs, spawnSystemBash, nodeEnv, samePath, homeEnv, joinPath, basePathWithout, pathWith,
 } = require('../lib/platform');
-const { recordArgv, readArgv } = require('../lib/argv-log');
+const { recordArgv, recordArgvJs, readArgv } = require('../lib/argv-log');
+const { underEnv } = require('../lib/under-env');
 const { ioOf } = require('../lib/io-streams');
 const {
   driveSpin, drivePoll, framesIn, MESSAGE, POLL_MESSAGE, POLL_SECONDS,
@@ -639,11 +640,30 @@ describe('the public slug, SLUG_RE against the Public: link in workflow/public/l
 
 describe('twins: the native path, wk_native_path in workflow/lib/platform.sh against nativePath in workflow/lib/platform.js', () => {
   test('both spell every path alike on this machine: unchanged off Windows, git\'s drive form on it', () => {
-    const PATHS = ['/c/Users/x/repo', 'C:/Users/x', '/w/a b/repo', 'rel/dir', '/d/a/x/'];
+    // The last three are spelled for Windows already (a `\`, a `..`, two separators): on Windows each only has `\` made `/`.
+    const PATHS = ['/c/Users/x/repo', 'C:/Users/x', '/w/a b/repo', 'rel/dir', '/d/a/x/', 'C:\\Users\\a b\\x', 'C:/a/../b', '//host/share/x'];
     const shell = bashLines(lib('workflow', 'lib', 'platform.sh'), 'wk_native_path', PATHS);
     expect(shell[0], 'the drive-mount spelling').toBe(IS_WINDOWS ? 'C:/Users/x/repo' : '/c/Users/x/repo');
     const { nativePath } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
     agree(PATHS, shell, (p) => nativePath(p), 'wk_native_path against nativePath');
+  });
+});
+
+describe('workflow/lib/platform: nativePath on Windows, asked from any system', () => {
+  const { nativePath } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
+
+  test('a drive path and a share path answer with forward slashes, on a PATH where no cygpath starts', async () => {
+    const said = await underEnv({ PATH: EMPTY_PATH }, () => ['C:\\Users\\a b\\x', '\\\\host\\share\\x'].map((p) => nativePath(p, { platform: 'win32' })));
+    expect(said).toEqual(['C:/Users/a b/x', '//host/share/x']);
+  });
+
+  test('a POSIX path still goes through cygpath -m, and its answer is cygpath\'s', async () => {
+    const bin = mkTmp('twins-cygpath-');
+    const argvLog = path.join(bin, 'cygpath-argv.log');
+    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}\nprocess.stdout.write('D:/from/cygpath\\n');`);
+    const said = await underEnv({ PATH: pathWith(bin) }, () => nativePath('/c/Users/x', { platform: 'win32' }));
+    expect(readArgv(argvLog), 'cygpath ran once, asked for the mixed form').toEqual([['-m', '/c/Users/x']]);
+    expect(said).toBe('D:/from/cygpath');
   });
 });
 

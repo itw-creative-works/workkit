@@ -2,20 +2,21 @@
 
 - Scheduled work the kit runs.
 - **One job, at 9am, in six steps, and one script that runs them**.
-  - `jobs/morning.sh` is that script's starter, and both schedulers invoke it; it hands every argument to `jobs/morning.js`, the morning in one program.
-  - The two schedulers: this machine's launchd agent, and the GitHub Actions workflow seeded onto the home repo.
+  - `jobs/morning.js` is the morning in one program.
+  - On a Mac and on a runner `jobs/morning.sh` starts it, every argument handed over; on Windows `workflow/morning-task.js` does.
+  - The schedulers: this machine's launchd agent (a Mac) or Task Scheduler task (Windows), and the GitHub Actions workflow seeded onto the home repo.
 - There is no laptop version and cloud version.
   - Each step asks whether the environment it woke up in has what that step needs.
   - A step that cannot run here says so by name.
 
 | Step | What it needs | Where it runs |
 |---|---|---|
-| the **summaries** | this machine's session transcripts and git history | the Mac; a named skip on a runner |
-| the **runner** | the kit beside this script, and the home clone | the Mac; a named skip on a runner, which IS the seeded copy |
-| the **brief** | the sweep token and the roster, which live on the home repo | the **cloud**; on the Mac the step is the dispatch and nothing else |
-| the **publish** | the home clone and its build tooling | the Mac; a named skip on a runner |
-| the **marker** | a home that outlives the job, for a session to read the file in | the Mac; a named skip on a runner |
-| the **morning.d** scripts | the owner's own `~/.workkit/morning.d` folder | the Mac; a named skip on a runner |
+| the **summaries** | this machine's session transcripts and git history | the machine; a named skip on a runner |
+| the **runner** | the kit beside this script, and the home clone | the machine; a named skip on a runner, which IS the seeded copy |
+| the **brief** | the sweep token and the roster, which live on the home repo | the **cloud**; on the machine the step is the dispatch and nothing else |
+| the **publish** | the home clone and its build tooling | the machine; a named skip on a runner |
+| the **marker** | a home that outlives the job, for a session to read the file in | the machine; a named skip on a runner |
+| the **morning.d** scripts | the owner's own `~/.workkit/morning.d` folder | the machine; a named skip on a runner |
 
 1. The summaries step goes first: it writes the day that just ended up and publishes it as a Discussion on the home repo.
 2. Then the runner step refreshes the cloud brief's seeded copies on the home repo from this checkout.
@@ -41,28 +42,48 @@
 node jobs/install.js
 ```
 
-- Renders the plist into `~/Library/LaunchAgents/` and loads it.
-- Idempotent: a second run with an unchanged plist confirms the agent is loaded and does nothing else.
-- launchd expands nothing, so the plist names the job through the engine's address (`~/.claude/workkit/../jobs/morning.sh`).
+- It installs with the machine's own scheduler: launchd on a Mac, Task Scheduler on Windows.
+  - Any other system is one `install: the 9am job runs on macOS and Windows; ...` error line and exit 1.
+- **On a Mac** it renders the plist into `~/Library/LaunchAgents/` and loads it.
+  - Idempotent: a second run with an unchanged plist confirms the agent is loaded and does nothing else.
+  - launchd expands nothing, so the plist names the job through the engine's address (`~/.claude/workkit/../jobs/morning.sh`).
   - A moved clone or a plugin update repoints that link and needs no re-run.
+- **On Windows** it registers the task `workkit\com.workkit.claude-daily`, rendered from `com.workkit.claude-daily.xml`.
+  - The task starts at 9:00 AM every day. A morning the machine was off or you were signed out is set to run at the next chance (`StartWhenAvailable`), on battery too.
+  - It runs as you, only while you are signed in.
+    - The reason: `gh` and Git keep their sign-in in Windows Credential Manager, and a task that runs with no stored password cannot read it.
+  - Its command is the real path of the Node that ran the installer. Its one argument is the starter, named through the engine's address (`~/.claude/workkit/morning-task.js`).
+    - So a moved clone or a plugin update needs no re-run.
+    - A Node update that moves that Node makes `--check` read the task as out of date, and `workkit update` registers it again.
+  - Node is a console program, so a window can show for a moment at 9:00 while the starter runs. The morning and every program it starts run hidden.
+  - It keeps a copy of the task file it registered at `<machine folder>/scheduled/com.workkit.claude-daily.xml` (`~/.workkit`, or `WORKFLOW_HOME`).
+    - The copy is the "installed" mark and what `--check` compares, as the plist is on a Mac.
+    - It is written only after a `schtasks /create` that answered 0, so a failed one is tried again on the next run; that run ends with `schtasks`' own code.
+    - `schtasks` reads a task file as UTF-16LE with a byte order mark, so the installer hands it a scratch file in that form. The copy is kept as UTF-8.
+  - Idempotent: with the copy unchanged and the task there, a second run says `already installed` and registers nothing.
+    - A task removed by hand is registered again from the same file: `registered again (task file unchanged)`.
+- **The guard.** A scheduler is machine-global, so a run whose home is not the account's real home talks to neither one.
+  - On Windows it says `would register it (skipped: ...)` and writes no copy; `WORKKIT_SCHEDULE_OK=1` forces the calls on either system.
+  - The home is `HOME`, else `USERPROFILE`, else the account's home folder (`machineHome` of `lib/machine.js`), so a run with neither variable holds.
 - **This script is also driven for you.** `workkit setup` runs it for the first install.
   - `workkit update` (which the standards hook calls once a day as `update --auto`) re-runs it when the job template changed.
   - So a changed template no longer waits for anyone to remember.
   - A moved clone needs no re-run, since the job is reached through the engine link.
 - The drift question is `node jobs/install.js --check`.
-  - It is the same render and compare, with nothing written and launchd never asked.
-  - It prints one line per agent that is missing or out of date, and nothing at all when the machine matches.
+  - It is the same render and compare, with nothing written and no scheduler asked: neither launchd nor `schtasks`.
+  - It prints one line per job that is missing (`<label> → not installed`) or out of date (`<label> → out of date for this kit`), and nothing at all when the machine matches.
 - The CLI carries no second copy of what a current install looks like; that answer lives here.
+  - `workkit setup`, `update` and `doctor` read it alone, on a Mac and on Windows alike, and hold no path of an installed job.
 - A schedule is only ever installed FRESH by a human: the automatic path updates and never introduces one.
 
 ## The pieces
 
 | File | What |
 |---|---|
-| `morning.sh` | the starter both schedulers start by path, before any Node is chosen: on a machine it puts the folders launchd lacks on PATH, then hands every argument to `morning.js` under a node at the kit's floor. A kit missing `morning.js` or the engine's `platform.sh` is one `morning: the engine is missing at <dir>; the kit is incomplete` line and exit 1 |
+| `morning.sh` | the starter the launchd agent and the runner start by path, before any Node is chosen: on a machine it puts the folders launchd lacks on PATH, then hands every argument to `morning.js` under a node at the kit's floor. A kit missing `morning.js` or the engine's `platform.sh` is one `morning: the engine is missing at <dir>; the kit is incomplete` line and exit 1 |
 | `morning.js` | the one entry point, in both environments: the summaries, the runner reconcile, the brief (dispatched from here, composed and published on a runner), the site publish, the marker, and the owner's `morning.d` scripts, each gated by what the environment can do, one file each. Locally it appends to `~/Library/Logs/claude-daily.log`; on a runner the Actions log is the log |
 | `morning/` | the files only `morning.js` uses: the steps (`summaries.js`, `runner.js`, `brief.js`, `cloud-machine.js` for the brief on a runner, `site.js`, `marker.js`, `morning-d.js`), `brief-publish.js` and the `brief/` folder, below. The cloud runner list seeds them beside it |
-| `lib/` | what both jobs share: `notes.js`, the log's stamped blocks and the three note levels; `machine.js`, the home a job reads (`homeOf`), the transcripts root under it (`projectsRoot`, which the summaries gate, the nightly's grant and its payload's index all read), the PATH folders, the quiet Claude, the bound on a child and the notifier |
+| `lib/` | what both jobs share: `notes.js`, the log's stamped blocks and the three note levels; `machine.js`, the transcripts root (`projectsRoot`, which the summaries gate, the nightly's grant and its payload's index all read) under the home a job reads (`machineHome`: `HOME`, else `USERPROFILE`, else the account's), the PATH folders, the quiet Claude, the bound on a child and the notifier |
 | `brief-dispatch.js` | the one function that hands the day to the cloud (`gh workflow run brief.yml` on the home repo), with every guard and every named refusal: `dispatchBrief()`. Two callers (the scheduled morning here, in its own process, and `workkit brief`) and each decides what a refusal is worth |
 | `brief-dispatch.sh` | sourced by `workkit brief`, after `workflow/lib.sh`: `dispatch_brief` runs `brief-dispatch.js` under a node at the kit's floor and fills `DISPATCH_SLUG`, then `DISPATCH_LINE` or `DISPATCH_REASON` |
 | `morning/brief-publish.js` | required on the cloud path: `publishBrief()`, which posts today's digest as a Discussion, check-before-post and category fallback included, and answers its line and its code |
@@ -72,15 +93,25 @@ node jobs/install.js
 | `../workflow/templates/github-workflows/brief.yml` | what runs `morning.sh` on a runner: `workflow_dispatch` for the machine's trigger, a 17:30 UTC cron as the backup. It lives on the HOME repo, seeded there by setup; this is its source |
 | `claude-nightly/nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON, or, with `--cadence weekly\|monthly`, the rollup instruction over the prior summaries handed in on stdin. Pure gather |
 | `claude-nightly.js` | the summaries step, a program the morning starts in its own process: composes the day, sends it, and posts it as a Discussion on the home repo, logging what it decided to `~/Library/Logs/claude-nightly.log` |
-| `com.workkit.claude-daily.plist` | the schedule: 9:00 AM daily, `{{HOME}}` rendered at install, the job reached through the engine link |
-| `install.js` | render, compare, and only on change copy and reload |
+| `com.workkit.claude-daily.plist` | the Mac's schedule: 9:00 AM daily, `{{HOME}}` rendered at install, the job reached through the engine link |
+| `com.workkit.claude-daily.xml` | the Windows schedule, a Task Scheduler task file: 9:00 AM daily, only while the person is signed in, its command `{{NODE}}` and its argument the starter under `{{HOME}}`, the account `{{USER}}`, each rendered at install. It holds no `<?xml?>` line, so the tracked file claims no encoding |
+| `install.js` | the scheduler picked by the system, then render, compare, and only on change copy and reload (a Mac) or register (Windows) |
+| `lib/schedule.js` | what both halves of `install.js` share: `holds` (whether the kept plist or task copy holds the rendered text) and `skippedLine` (the line a run kept from the scheduler says) |
+| `lib/task-scheduler.js` | the Windows half of `install.js`: `renderTask` (the markers replaced, each value escaped for XML), `encodeTask` (the UTF-16LE bytes `schtasks` reads), `installTask` and `checkTask` (each answers its line and prints nothing; `install.js` says it), `copyPath` (the kept copy) |
+| `../workflow/morning-task.js` | the starter the Windows task runs: `jobs/morning.js` of the real kit, found from its own real folder, started hidden and detached with its output appended to `~/Library/Logs/com.workkit.claude-daily.log`, and then it ends. A job that cannot start is one `morning-task: could not start` line there and exit 1 |
 
 - **`install.js`**, the detail of its row:
   - "Loaded" means loaded from THIS plist.
     - So a label registered against some other path is re-registered rather than reported current.
-  - launchd is machine-global, so a run whose `$HOME` is not the account's real home renders and copies but asks launchd nothing.
-    - That run prints what it WOULD have loaded; `WORKKIT_LAUNCHD_OK=1` forces the calls.
-  - `--check` is the same comparison as a report, touching neither disk nor launchd.
+  - A scheduler is machine-global, so a run whose home is not the account's real home asks no scheduler anything.
+    - On a Mac it renders and copies the plist, then prints what it WOULD have loaded.
+    - On Windows it prints what it WOULD have registered and writes no copy.
+    - `WORKKIT_SCHEDULE_OK=1` forces the calls on either system.
+  - `--check` is the same comparison as a report, writing nothing and asking neither launchd nor `schtasks`.
+  - Both halves warn when the engine's address is missing or names another kit, since the job is reached through it.
+- **`lib/machine.js`**, the PATH folders a job puts in front of PATH, so its programs are found whatever PATH the scheduler hands it:
+  - on a Mac, `~/.local/bin`, `~/.nvm/default-bin`, `/opt/homebrew/bin` and `/usr/local/bin`;
+  - on Windows, `~/.local/bin`, `~/.nvm/default-bin` and the running Node's own folder, under the PATH key the environment already spells (`Path`), else `PATH`.
 
 ## Where the output goes
 
@@ -88,7 +119,7 @@ node jobs/install.js
   - It belongs to the machine that ran it, so a clone is never dirtied and a second checkout never disagrees with the first.
 - Two homes, and no third:
   - state under `~/.workkit/jobs/` (whatever a job needs to remember);
-  - logs under `~/Library/Logs/`.
+  - logs under `~/Library/Logs/`, the same path on Windows, so one path rule holds on both systems.
 - One file sits beside them rather than inside them: `~/.workkit/brief-status.json`, the marker step's output.
   - It lives with the machine's other settings because its reader is not a job at all but the `docs:session` hook.
 - Nothing a job GENERATES is written anywhere.
@@ -243,6 +274,7 @@ node jobs/install.js
   - Everything it prints on either stream goes under that header.
   - Both its streams are the log file itself, never a pipe: its lines land in the order they happened, a line it writes to `LOG_FILE` itself included.
   - So a child it leaves running in the background holds nothing open on the morning.
+  - On Windows a script's own output does not reach the log, since Git Bash cannot write to the log Node opened to append.
 - It runs under the same 15-minute bound as the other steps.
   - Its environment holds `LOG_FILE`, `MANUAL` (1 on a `--now` rehearsal) and `WORK_DIR`.
 - A script that exits non-zero or runs past the bound gets a warning naming it.
@@ -253,20 +285,21 @@ node jobs/install.js
 - `morning.sh [message]` is otherwise a generic headless runner: an argument replaces the payload.
   - That is how you test a prompt without waiting for tomorrow.
   - It skips the summaries step and the publish for the same reason.
-- It is hardened for launchd, where the environment is bare and the job is its own TCC identity:
-  - **PATH is set by the job.** launchd provides almost none, so the starter puts these ahead of it before it looks for node, and the program again for what it starts:
+- It is hardened for a scheduler's start, where the environment is bare, and on a Mac the job is its own TCC identity:
+  - **PATH is set by the job.** launchd provides almost none, so on a machine the starter puts these ahead of it before it looks for node, and the program again for what it starts:
     - `~/.local/bin`;
     - an nvm default link, where the machine keeps one;
     - Homebrew's `/opt/homebrew/bin` and `/usr/local/bin` (where the nodejs.org installer puts node too).
     - With no node at the kit's floor the morning never starts: the starter prints `morning: no node at or above <floor> is installed` on stderr and exits 1.
-  - **The cwd is the job's own work folder**, `~/Library/Caches/claude-daily`.
+  - On Windows the task names its Node, so nothing looks for one. The program puts `~/.local/bin`, the nvm default link and the running Node's own folder ahead of PATH.
+  - **The cwd is the job's own work folder**, `~/Library/Caches/claude-daily`, on both systems.
     - launchd starts a job at `/`, and Claude Code's startup scan from there trips macOS privacy prompts.
     - A folder of the job's own gives it nothing to scan.
   - **The send is capped**: haiku, effort low, `--safe-mode`, no tools, no session persistence, and a hard budget of $0.25.
   - **The notification is detached.** Notifly does not return until it is dismissed, and the job must never wait on a human.
     - Its message is the response's first line, which is why the instruction fixes that line as `HEADLINE:`.
     - The app is looked for in `~/Applications`, then `/Applications`.
-    - With neither, the log names the skip and nothing is shown.
+    - With neither, the log names the skip and nothing is shown. The kit looks for no notifier on Windows yet, so a send there logs that skip.
 - `morning.sh --now` (or `npm run brief`) is the REHEARSAL.
   - It is the one path that still composes and sends the brief here.
   - It uses the same payload the runner sends, the same log file, and a desktop notification.
@@ -318,7 +351,7 @@ node jobs/install.js
   - The free allowance covers a daily brief many times over.
 - **Only the brief travels.** The summaries read this machine's git history and its session transcripts.
   - The publish builds the home clone.
-  - None of that exists on a runner, so both name their skip in the Actions log and stay on the Mac.
+  - None of that exists on a runner, so both name their skip in the Actions log and stay on the machine.
 - **The cloud steps are gated on `GITHUB_ACTIONS`,** the variable Actions always sets.
   - Everything the cloud path writes goes into `~/.workkit`, and the roster it writes REPLACES what is there.
   - On a runner that folder dies with the job.
@@ -348,8 +381,8 @@ node jobs/install.js
 - Publishing being OFF is no longer one of those reasons.
   - The roster is refreshed by every publish run whether or not a site is built.
 - **Failures are loud here, deliberately.**
-  - On the Mac every reason a step could not run is a logged line and exit 0.
-    - The reason: launchd is nobody's screen, and the morning must not end on a red job.
+  - On a machine every reason a step could not run is a logged line and exit 0.
+    - The reason: a scheduler is nobody's screen, and the morning must not end on a red job.
   - In the cloud the Actions log IS the delivery (a runner has no desktop to notify).
     - So a payload that could not be composed, a send that failed, or a post that did not land exits non-zero and shows as a red run.
   - A brief already on the board is not a failure: it is the ordinary overlap, and it exits 0.
@@ -479,7 +512,9 @@ node jobs/install.js
   - a fixture projects tree with fixture mtimes for the transcript index;
   - a fake `claude` and notifier plus a scratch `HOME` and `WORKFLOW_HOME` for the entry point;
   - a `gh` answering the Discussions API with canned JSON, and for the cloud the contents API with a base64 slug list;
-  - a recording `launchctl` for the installer.
+  - a recording `launchctl` for the installer's Mac half, and a Node stand-in for `schtasks` (`test/lib/schtasks-stub.js`) for its Windows half.
+- `test/jobs/task-scheduler.test.js` calls the Windows half in process on every system; the whole installer's Windows cases, and its refusal on any other system, run on every system too, through `main`'s system argument.
+  - The starter has its own suite, `test/scripts/morning-task.test.js`.
 - The entry point's suites are the two ENVIRONMENTS of the one script.
   - `morning-local` runs with `GITHUB_ACTIONS` stripped, and `morning-cloud` with it set.
   - The local one hands those same seams to the summaries step it calls.

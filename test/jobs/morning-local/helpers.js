@@ -331,12 +331,8 @@ const crashing = (world, name, code, said) => {
 // that answers on a loaded machine, short against one that never does.
 const SHORT_BOUND = '20';
 
-// Every suite's skip value: the machine leg is a macOS job.
-const skipUnlessDarwin = () => process.platform !== 'darwin'
-  && 'the machine leg is a macOS launchd job (Notifly, ~/Library paths)';
-
 module.exports = {
   SCRIPT, INSTRUCTION, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, STALE_RUNNER, plantStaleRunner,
-  pushFromElsewhere, subjects, REFRESH, notified, notifiedMatching, settle, skipUnlessDarwin,
+  pushFromElsewhere, subjects, REFRESH, notified, notifiedMatching, settle,
   skipOnUsrLocalBin, withBarePath, SHELL_TOOLS, withoutTools, hangingGh, crashing, SHORT_BOUND,
 };

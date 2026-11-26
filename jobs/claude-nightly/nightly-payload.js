@@ -9,10 +9,9 @@
 //   composeNightly({ projectsRoot, workflowHome, exec })  // offline, against fixtures
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync } = require('../../workflow/lib/run');
-const { projectsRoot } = require('../lib/machine');
+const { machineHome, projectsRoot } = require('../lib/machine');
 
 const { discoverRepos } = require('../../tower/api/lib/repos');
 
@@ -66,6 +65,7 @@ the document itself.
 const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'ignore'],
+  windowsHide: true,
   ...opts,
 });
 
@@ -80,7 +80,7 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
  * @returns {Array<{path: string, bytes: number, modifiedAt: string}>}
  */
 const transcriptIndex = (opts = {}) => {
-  const home = opts.home || os.homedir();
+  const home = opts.home || machineHome();
   const root = opts.projectsRoot
     || process.env.WORKKIT_CLAUDE_PROJECTS
     || projectsRoot(home);

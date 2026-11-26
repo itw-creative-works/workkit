@@ -8,7 +8,7 @@ const {
   describe, test, expect,
 } = require('../../lib/harness');
 const {
-  skipUnlessDarwin, cleanup, mkWorld, runJob, notified, notifiedMatching, crashing,
+  cleanup, mkWorld, runJob, notified, notifiedMatching, crashing,
 } = require('./helpers');
 
 // A Notifly installed for everyone, which a case must not fire for real.
@@ -16,7 +16,7 @@ const SYSTEM_NOTIFLY = '/Applications/Notifly.app';
 const skipOnSystemNotifly = () => fs.existsSync(SYSTEM_NOTIFLY)
   && `${SYSTEM_NOTIFLY} is installed here, and the job would fire it for real`;
 
-describe('jobs/morning (local): reporting', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local): reporting', () => {
   test('the response is printed, logged, and its first line notified', async () => {
     const world = mkWorld();
     const res = runJob(world, ['hello']);

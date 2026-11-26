@@ -9,7 +9,7 @@ const {
   describe, test, expect, start, until,
 } = require('../../lib/harness');
 const {
-  gitPath, shellPath, BASH, NO_RC,
+  gitPath, shellPath, BASH, NO_RC, skipWithoutCaughtSignal,
 } = require('../../lib/platform');
 const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
@@ -98,7 +98,7 @@ describe('workflow/publish: the published branch', () => {
   });
 
   test('a publish ended by SIGTERM mid-push leaves no worktree registered, and the next one publishes', {
-    skip: process.platform === 'win32' && 'Windows ends a process with no signal it can catch',
+    skip: skipWithoutCaughtSignal(),
   }, async (t) => {
     // The remote holds the first gh-pages push, the step that runs inside the
     // temp worktree, until the case writes `go`; that held push is refused.

@@ -2,10 +2,14 @@
 // one along the pipeline, each judged before `gh` and gated where the spec
 // gates it. server.js requires it; no piece requires server.js.
 
+const { lastErrLine } = require('../../../workflow/lib/say');
 const { sendJson, readPayload, urlFrom } = require('./http');
 const {
   validateIntake, validateMove, PROOF_LINE, PROOF_GATED, SPEC_GATED, specOk,
 } = require('./validate');
+
+/** A thrown `exec` error's detail: the last line of its stderr, else of its message. */
+const detailOf = (err) => lastErrLine({ stderr: String(err.stderr || err.message || '') });
 
 /**
  * The two writes one server answers.
@@ -39,8 +43,7 @@ const createWrites = ({ exec, slugsNow }) => {
     } catch (err) {
       // gh being absent, unauthenticated, or offline is an expected condition
       // for a tower on a phone: the page renders the reason, not an error page.
-      const detail = String(err.stderr || err.message || '').trim().split('\n').pop();
-      sendJson(res, 200, { ok: false, reason: `gh issue create failed: ${detail}` });
+      sendJson(res, 200, { ok: false, reason: `gh issue create failed: ${detailOf(err)}` });
       return;
     }
 
@@ -64,10 +67,9 @@ const createWrites = ({ exec, slugsNow }) => {
       ]);
       return { ok: true, value: JSON.parse(view)[field] };
     } catch (err) {
-      const detail = String(err.stderr || err.message || '').trim().split('\n').pop();
       sendJson(res, 200, {
         ok: false,
-        reason: `the ${noun} on issue #${checked.number} could not be read (${detail}), so the move to status:${checked.to} was refused. Nothing was changed.`,
+        reason: `the ${noun} on issue #${checked.number} could not be read (${detailOf(err)}), so the move to status:${checked.to} was refused. Nothing was changed.`,
       });
       return { ok: false };
     }
@@ -130,8 +132,7 @@ const createWrites = ({ exec, slugsNow }) => {
       ]);
     } catch (err) {
       // Soft, like intake's: the page reverts the card and shows this sentence.
-      const detail = String(err.stderr || err.message || '').trim().split('\n').pop();
-      sendJson(res, 200, { ok: false, reason: `gh issue edit failed: ${detail}` });
+      sendJson(res, 200, { ok: false, reason: `gh issue edit failed: ${detailOf(err)}` });
       return;
     }
 

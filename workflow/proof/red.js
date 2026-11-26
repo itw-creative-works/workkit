@@ -12,7 +12,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('../lib/run');
 const { repoRoot, gitIn } = require('../lib/git');
-const { signalCode, exitOf, END_SIGNALS } = require('../lib/detach');
+const {
+  signalCode, exitOf, startFailed, notRunnable, END_SIGNALS,
+} = require('../lib/detach');
 const { proofBase, proofDir } = require('../lib/proof-dir');
 const { workingPaths } = require('../lib/snapshot');
 const { present } = require('../lib/read');
@@ -229,7 +231,7 @@ const runCommand = (job, [cmd, ...args], cwd, env) => new Promise((resolve) => {
     Promise.all([...flushed, new Promise(setImmediate)])
       .then(() => resolve({ rc, out: Buffer.concat(out).toString(), err: Buffer.concat(err).toString() }));
   };
-  child.on('error', (error) => done(error.code === 'ENOENT' ? 127 : 126));
+  child.on('error', (error) => done(error.code === 'ENOENT' ? startFailed : notRunnable));
   child.on('close', (code, signal) => done(exitOf(code, signal)));
 });
 
@@ -265,7 +267,7 @@ const judge = async (job, place, { cmd, paths }) => {
     verdict(`green: the tests pass without ${paths.join(' ')}`);
     return 1;
   }
-  if (ran.rc === 126 || ran.rc === 127) fail(`command not runnable: ${cmd[0]}`);
+  if (ran.rc === notRunnable || ran.rc === startFailed) fail(`command not runnable: ${cmd[0]}`);
   // The copy's own folder, unique to this run (its parent and its run id), so
   // another run's copy never matches; in the live mode the repo root.
   const marker = job.live ? `${forward(job.root)}/` : `/${path.basename(path.dirname(job.tmp))}/${path.basename(job.tmp)}/copy/`;

@@ -7,10 +7,10 @@
 const { describe, test, expect, alive, pidIn } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  skipUnlessDarwin, cleanup, mkWorld, runJob, plantStaleRunner, withoutTools, hangingGh, SHORT_BOUND,
+  cleanup, mkWorld, runJob, plantStaleRunner, withoutTools, hangingGh, SHORT_BOUND,
 } = require('./helpers');
 
-describe('jobs/morning (local): the bound, with no timeout program', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local): the bound, with no timeout program', () => {
   test('a summaries run that outlasts the bound is ended, logged as 124, and the brief still goes', () => {
     const world = mkWorld({ home: 'owner/private-home' });
     withoutTools(world, ['timeout']);

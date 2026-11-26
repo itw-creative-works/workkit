@@ -246,7 +246,7 @@ describe('script-shell detached', { skip: skipWithoutWrapper() }, () => {
       const repo = mkRepo({ scripts: { test: 'echo after-takeover' } });
       const tree = treeHash(repo);
       const lock = suiteLockPath(world.workflowHome, repo);
-      // A pid that was real a moment ago and has ended: the supervisor that died mid-run.
+      // A pid no process holds: the supervisor that died mid-run.
       const dead = deadPid();
       fs.mkdirSync(lock, { recursive: true });
       fs.writeFileSync(path.join(lock, 'pid'), `${dead}\n`);

@@ -5,9 +5,9 @@
 const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { skipUnlessDarwin, INSTRUCTION, cleanup, mkWorld, runJob, notifiedMatching, settle } = require('./helpers');
+const { INSTRUCTION, cleanup, mkWorld, runJob, notifiedMatching, settle } = require('./helpers');
 
-describe('jobs/morning (local): the summaries step', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local): the summaries step', () => {
   test('the summaries step runs, and with no home repo it only logs its skip', async () => {
     const world = mkWorld();
     const res = runJob(world);

@@ -269,5 +269,5 @@ const spawn = (cmd, args, options) => {
 };
 
 module.exports = {
-  spawnSync, spawn, execFileSync, launchOf, windowsQuoted, onPath,
+  spawnSync, spawn, execFileSync, launchOf, windowsQuoted, onPath, keyOf,
 };

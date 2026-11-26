@@ -126,7 +126,8 @@
   - `safety:release-taken` names the repo in its github-release bounce through that same `slugFromRemote`.
 - `wk_native_path <path>`: the spelling of a path a person reads.
   - Git Bash hands a script `/d/a/x` where Windows and Node print `D:/a/x`.
-  - So every path a kit shell line prints for a person goes through it: `cygpath -m` on Windows, the path unchanged elsewhere.
+  - So every path a kit shell line prints for a person goes through it, the path unchanged off Windows.
+    - On Windows a path already spelled for it (a drive letter, `:` and a separator, or two separators) only has each `\` made `/`; any other goes through `cygpath -m`.
   - It is git's spelling too, so a path git printed is in it already, and a roster key is written and looked up through it.
   - Node prints the native spelling already, through `path`.
 - `copyTree` in `workflow/lib/tree-copy.js`: the snapshot copy, in Node, since the copy is the one step whose tool differs per platform.
@@ -217,7 +218,7 @@
 
 - On Windows the engine's address must be a real symlink.
   - A copy of the engine at `~/.claude/workkit` would hide the kit's folders beside it.
-  - The schedule reaches those folders through the address (`~/.claude/workkit/../jobs/morning.sh`).
+  - The 9am task reaches its starter through the address (`~/.claude/workkit/morning-task.js`), and the starter finds `jobs/morning.js` from its own real folder.
   - The heal makes the link in Node (`workflow/lib/link.js`), which makes a link or fails, never a copy.
   - When Windows refuses the link, the heal says so, naming Developer Mode or an administrator's shell, then `workkit update`.
 

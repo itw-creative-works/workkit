@@ -9,18 +9,20 @@ const {
 } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  BASH, NO_RC, shellPath, spawnBash, stubToolJs,
+  IS_WINDOWS, BASH, NO_RC, shellPath, spawnBash, stubToolJs, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
 } = require('../../lib/platform');
 const {
-  skipUnlessDarwin, SCRIPT, INSTRUCTION, cleanup, mkWorld, runJob, skipOnUsrLocalBin, withBarePath,
+  SCRIPT, INSTRUCTION, cleanup, mkWorld, runJob, skipOnUsrLocalBin, withBarePath,
 } = require('./helpers');
 
-describe('jobs/morning (local)', { skip: skipUnlessDarwin() }, () => {
+describe('jobs/morning (local)', () => {
   describe('jobs/morning (local): the folder it runs from', () => {
     // launchd runs the job as `<home>/.claude/workkit/../jobs/morning.sh`. A
     // logical cd reads that `..` lexically, so a stray ~/.claude/jobs would
     // become the job's folder; it must resolve its real one through the link.
-    test('run through the engine address, a stray ~/.claude/jobs is not its folder', () => {
+    test('run through the engine address, a stray ~/.claude/jobs is not its folder', {
+      skip: IS_WINDOWS && 'Windows reads a `..` after a link before it follows the link; its task names workflow/morning-task.js',
+    }, () => {
       const world = mkWorld();
       fs.symlinkSync(path.join(path.dirname(SCRIPT), '..', 'workflow'), path.join(world.home, '.claude', 'workkit'));
       fs.mkdirSync(path.join(world.home, '.claude', 'jobs'));
@@ -35,7 +37,7 @@ describe('jobs/morning (local)', { skip: skipUnlessDarwin() }, () => {
   });
 
   describe('jobs/morning (local): sending', () => {
-    test('the send runs on a PATH that carries /usr/local/bin', { skip: skipOnUsrLocalBin() }, () => {
+    test('the send runs on a PATH that carries /usr/local/bin', { skip: skipOnUsrLocalBin() || skipWithoutHomebrewPath() }, () => {
       // Intel Homebrew and the nodejs.org installer both put node there.
       const world = mkWorld();
       withBarePath(world);
@@ -47,7 +49,7 @@ describe('jobs/morning (local)', { skip: skipUnlessDarwin() }, () => {
       cleanup(world.root);
     });
 
-    test('a run ended by TERM mid-send leaves no morning- scratch folder in its temp folder', async (t) => {
+    test('a run ended by TERM mid-send leaves no morning- scratch folder in its temp folder', { skip: skipWithoutCaughtSignal() }, async (t) => {
       const world = mkWorld();
       const temp = mkTmp('morning-local-temp-');
       world.env.TMPDIR = temp;

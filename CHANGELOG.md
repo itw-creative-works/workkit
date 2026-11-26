@@ -7,6 +7,18 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Added
+
+- [#577](../../issues/577) - The 9am job runs on Windows, as a Task Scheduler task that runs while you are signed in: `workkit setup` registers it, `workkit update` keeps it current and `workkit doctor` reports it. The Mac's launchd schedule is unchanged.
+
+### Changed
+
+- [#577](../../issues/577) - `WORKKIT_LAUNCHD_OK` is now `WORKKIT_SCHEDULE_OK`, since it guards both schedulers. A system with neither scheduler reads `schedule: the 9am job runs on macOS and Windows`. The machine's morning suites now run off a Mac.
+
+### Fixed
+
+- (no issue) - The test runner's `run` (`workkit-core/test`) now reads a child's output past 1 MB. It kept 1 MB of each stream and threw `ENOBUFS` past it.
+
 ## [0.103.0] - 2026-11-24
 
 ### Added

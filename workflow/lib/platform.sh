@@ -54,14 +54,18 @@ wk_mv_link() {
 }
 
 # wk_native_path <path>: the native spelling (`D:/a/x`, never `/d/a/x`), git's
-# own: `cygpath -m` on Windows, keeping the letter case it is handed, the path
-# unchanged elsewhere. Every path a kit shell line prints for a person, hands to
-# a native program, or keys the roster by goes through it. A failure is passed
-# on: an empty key is worse than none.
+# own, the path unchanged off Windows. On Windows a path already spelled for it
+# (a drive letter, `:` and a separator, or two separators) has each `\` made `/`;
+# any other goes through `cygpath -m`, keeping the letter case, a failure passed on.
 wk_native_path() {
   local p="$1"
   case "${OSTYPE:-}" in
-    msys*|cygwin*) p="$(cygpath -m "$p")" || return 1 ;;
+    msys*|cygwin*)
+      case "$p" in
+        [A-Za-z]:[\\/]*|[\\/][\\/]*) p="${p//\\//}" ;;
+        *) p="$(cygpath -m "$p")" || return 1 ;;
+      esac
+      ;;
   esac
   printf '%s' "$p"
 }

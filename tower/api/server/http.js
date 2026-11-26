@@ -16,6 +16,7 @@ const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
 const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
+  windowsHide: true,
   ...opts,
 });
 

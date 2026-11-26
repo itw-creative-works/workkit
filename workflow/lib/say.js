@@ -1,6 +1,6 @@
 // workflow/lib/say.js: the one-line stderr writer the kit's Node commands share,
 // its stdout twin, and how a child process ended or why it failed, phrased for such a line.
-// Usage: const { sayAs, writeErr, writeOut, endOf, errLine } = require('../lib/say');
+// Usage: const { sayAs, writeErr, writeOut, endOf, errLine, lastErrLine } = require('../lib/say');
 
 const fs = require('fs');
 const { pause } = require('./pause');
@@ -68,6 +68,14 @@ const endOf = (res) => {
  */
 const errLine = (res, fallback = endOf(res)) => (res.stderr || '').trim().split('\n')[0].trim() || fallback;
 
+/**
+ * A child's last stderr line that is not empty, trimmed, for a reason a refusal
+ * ends on; the empty string when stderr says nothing.
+ * @param {object} res - the `spawnSync` result, its stderr read as text
+ * @returns {string}
+ */
+const lastErrLine = (res) => (res.stderr || '').trim().split('\n').pop().trim();
+
 module.exports = {
-  sayAs, writeErr, writeOut, endOf, errLine,
+  sayAs, writeErr, writeOut, endOf, errLine, lastErrLine,
 };

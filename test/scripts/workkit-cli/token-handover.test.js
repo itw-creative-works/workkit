@@ -8,7 +8,7 @@ const { describe, test, expect } = require('../../lib/harness');
 const { IS_WINDOWS } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  cleanup, writeStub, mkWorld, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, mkSetupKit,
+  cleanup, writeStub, mkWorld, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, mkSetupKit, SYSTEMS, nameSystem,
 } = require('./helpers');
 
 describe('workkit setup: the token handover', () => {
@@ -93,7 +93,7 @@ describe('workkit setup: the token handover', () => {
     // answers no for that one name here.
     const world = mkPagesWorld(PUBLISHED);
     fs.rmSync(path.join(world.bin, 'xdg-open'));
-    writeStub(path.join(world.bin, 'uname'), ["printf '%s\\n' Linux"]);
+    nameSystem(world, SYSTEMS.linux);
     const noOpener = `command() { [[ "$1" == '-v' && "$2" == 'xdg-open' ]] && return 1; builtin command "$@"; }`;
     const { code, out } = inCli(world, `${AT_TERMINAL}\n${noOpener}\nhandover_token`);
     expect(code, 'exit 0').toBe(0);

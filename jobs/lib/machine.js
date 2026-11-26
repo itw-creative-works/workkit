@@ -1,17 +1,22 @@
 /**
  * jobs/lib/machine.js: what a job needs from the machine it wakes up on under
- * launchd: its home and the transcripts root under it, the folders its programs
- * live in, the quiet Claude, the bound on a child, and the notifier.
- * Usage: const { homeOf, projectsRoot, enterMachine, secondsOf, jobTimeout, bounded, notify } = require('../lib/machine');
+ * launchd or Task Scheduler: its home and the transcripts root under it, the
+ * folders its programs live in, the quiet Claude, the bound on a child, and the
+ * notifier.
+ * Usage: const { machineHome, projectsRoot, enterMachine, secondsOf, jobTimeout, bounded, notify } = require('../lib/machine');
  */
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { exitOf, startFailed } = require('../../workflow/lib/detach');
-const { spawn } = require('../../workflow/lib/run');
+const { spawn, keyOf } = require('../../workflow/lib/run');
 const { endTreeOf } = require('../../workflow/lib/tree');
 const { nativePath } = require('../../workflow/lib/platform');
+const { homeOf } = require('../../hooks/mods/log.js');
+
+// Read once at load, as lib/run.js reads it: enterMachine's `platform` is the seam.
+const PLATFORM = process.platform;
 
 // The bound on a child when WORKKIT_JOB_TIMEOUT names none: 15 minutes.
 const DEFAULT_TIMEOUT_S = 900;
@@ -22,8 +27,13 @@ const TIMED_OUT = 124;
 // The longest a notification's message runs, in characters.
 const NOTE_CHARS = 180;
 
-/** The home the shell reads: HOME, else the account's. */
-const homeOf = (env) => env.HOME || os.homedir();
+/**
+ * A job's home, its one home rule: HOME, else USERPROFILE, else the account's
+ * home folder, so a job started with neither variable still has one.
+ * @param {object} [env]
+ * @returns {string}
+ */
+const machineHome = (env = process.env) => homeOf(env) || os.homedir();
 
 /** Claude Code's session transcripts root under <home>. */
 const projectsRoot = (home) => path.join(home, '.claude', 'projects');
@@ -31,13 +41,22 @@ const projectsRoot = (home) => path.join(home, '.claude', 'projects');
 /**
  * Puts `~/.local/bin`, `~/.nvm/default-bin`, `/opt/homebrew/bin` and
  * `/usr/local/bin` at the front of `env.PATH`, in that order, and turns off
- * Claude Code's nonessential traffic: launchd's PATH holds none of them.
+ * Claude Code's nonessential traffic: launchd's PATH holds none of them. On
+ * Windows the front is the first two and `node`'s own folder, in the PATH key
+ * `env` already spells (`Path`), else `PATH`.
  * @param {object} [env]
+ * @param {{ platform?: string, node?: string }} [context] - the platform the PATH is for, and the running node
  */
-const enterMachine = (env = process.env) => {
-  const home = homeOf(env);
-  const front = [path.join(home, '.local', 'bin'), path.join(home, '.nvm', 'default-bin'), '/opt/homebrew/bin', '/usr/local/bin'];
-  env.PATH = [...front, env.PATH ?? ''].join(path.delimiter);
+const enterMachine = (env = process.env, { platform = PLATFORM, node = process.execPath } = {}) => {
+  const home = machineHome(env);
+  if (platform === 'win32') {
+    const key = keyOf(env, 'PATH') ?? 'PATH';
+    const front = [path.win32.join(home, '.local', 'bin'), path.win32.join(home, '.nvm', 'default-bin'), path.win32.dirname(node)];
+    env[key] = [...front, env[key] ?? ''].join(path.win32.delimiter);
+  } else {
+    const front = [path.posix.join(home, '.local', 'bin'), path.posix.join(home, '.nvm', 'default-bin'), '/opt/homebrew/bin', '/usr/local/bin'];
+    env.PATH = [...front, env.PATH ?? ''].join(path.posix.delimiter);
+  }
   env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
 };
 
@@ -134,7 +153,7 @@ const notifierPath = (home) => {
  * @param {{noteSkip: function}} notes the job's note levels
  */
 const notify = (message, notes) => {
-  const home = homeOf(process.env);
+  const home = machineHome();
   const app = notifierPath(home);
   if (app === null) {
     notes.noteSkip(`notify: Notifly is in neither ${nativePath(home)}/Applications nor /Applications; the notification was skipped`);
@@ -158,5 +177,5 @@ const notify = (message, notes) => {
 };
 
 module.exports = {
-  homeOf, projectsRoot, enterMachine, secondsOf, jobTimeout, bounded, notify,
+  machineHome, projectsRoot, enterMachine, secondsOf, jobTimeout, bounded, notify,
 };

@@ -89,6 +89,7 @@
 | `script-shell.cs` | npm's script shell on Windows, a C# 5 console program |
 | `prove.js` | `workkit prove`, the root suite on exactly the staged tree, the suite record's second writer |
 | `supervise.js` | `workkit supervise -- <command>`, any command run detached under the supervisor, as the root suite runs |
+| `morning-task.js` | The program the 9am Task Scheduler task starts on Windows, through the engine's address: it starts `jobs/morning.js` of the real kit hidden and detached, its output appended to `~/Library/Logs/com.workkit.claude-daily.log`, and ends at once; a job that cannot start is one line in that log and exit 1, CJS (`../jobs/README.md` § Install) |
 | `watch.js` | `workkit watch [--end] [suite\|run\|<pid>]`, the call attached again to the repo's live run, given the code of one that ended with no call attached, or that run ended on request |
 | `githooks/` | Git's own hooks, set as a repo's `core.hooksPath` by the heal |
 | `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right capture file |
@@ -332,7 +333,7 @@
     - So a value read bare carries a `\r` into whatever is compared or written next.
     - Every jq call in the kit's shell, `lib/state.sh`'s JSON helpers among them, goes through it.
     - jq's own exit status comes back, so a predicate (`jq -e`, `jq empty`) answers what it always answered.
-  - `wk_native_path`: the native spelling of a path (`cygpath -m` on Windows, the identity elsewhere), which is git's own.
+  - `wk_native_path`: the native spelling of a path, which is git's own, by `nativePath`'s rule (`lib/platform.js` below): the identity off Windows, `\` made `/` for a path already spelled for Windows, `cygpath -m` for any other.
     - Every kit shell line prints a path for a person in it, so Windows output never mixes `/d/a` and `D:/a`.
     - It is the one spelling a machine-roster key is written and looked up under.
     - So `C:/Users/x` and the Git Bash `/c/Users/x` cannot become two keys for one repo.
@@ -401,6 +402,7 @@
     - Off Windows they are its own calls.
   - `onPath(name, { platform, env })` is the engine's one `command -v`: the program a bare name names on PATH, null when none. On Windows it is the launch's own search below; elsewhere the first executable file.
     - The suites have their own, the test library's `onPath` (`packages/core/test/lib/on-path.js`).
+  - `keyOf(env, name)` is the key `env` holds `name` under in any letter case, the first in sorted order, undefined when none: how `enterMachine` (`jobs/lib/machine.js`) writes the PATH Windows spells `Path`.
   - On Windows `launchOf(cmd, args, options, { platform, parentEnv })` answers the real launch `{ file, args, options }`.
     - A bare name is searched on the given env's PATH (else the parent's) dir by dir, each entry trimmed of its quotes.
     - It tries the name, then `.exe`, `.com`, `.cmd`, `.bat`.
@@ -772,7 +774,8 @@
   - `node detach.js <log> <done> [--root <root>] -- <cmd> [args...]`, which `lib/runs.js` runs as a process of its own.
   - `signalCode(signal)` is the one code a shell gives a command a signal ended (an unknown name throws).
     - `exitOf(code, signal)` is a child's end as that code: its exit code, else `signalCode` of its signal. Every Node file that waits on a child reads it.
-    - `startFailed` (127) is the code of a child that never started, beside it: the supervisor's, the jobs' and the installer's.
+    - `startFailed` (127) is the code of a child that never started, beside it: the supervisor's, the jobs', the installer's, the script shell's, `prove`'s, the CI watch's, the red proof's and `runHere`'s.
+    - `notRunnable` (126) is the code of a command found that cannot run, which the red proof and `runHere` give apart from `startFailed`.
     - `codeOf(res)` is a `spawnSync` result read as that code: `startFailed` when it has no code and no signal, else `exitOf`. The jobs and the installer read a sync child's end through it.
   - `END_SIGNALS` are the three signals that end a run's caller (HUP, INT, TERM), and `INT_CODE` the code of an interrupted call.
   - The rule it runs (the checks, the verdicts, the evidence, the ends and every line they write): `../docs/tests.md` § The checks.
@@ -852,6 +855,8 @@
   - `errLine(res, fallback)` is a failed child's first stderr line, else `fallback` (`endOf(res)` by default).
     - It is the why of a failure line.
     - Its callers: `ship/cut.js`'s gh view failure, `.github/scripts/ci-release.js`'s dispatch failure, `ship/publish.js`'s npm check, with `npmEnd` as its fallback.
+  - `lastErrLine(res)` is its last-line twin: a child's last stderr line that is not empty, trimmed, else the empty string.
+    - Its callers: `jobs/lib/task-scheduler.js` (the reason a refused `schtasks /create` ends its line on), `public/lib.js`'s `ghWrite` and `tower/api/server/writes.js`'s `detailOf`.
 - `lib/read.js`:
   - `readOrNull(file)` is its text, or null when it cannot be read.
   - `readJsonOrNull(file)` is its parsed JSON, or null when it cannot be read or does not parse.
@@ -908,8 +913,10 @@
   - `poll`'s `check` may be async; its countdown draws through `lib/spin.js`, under the rule the frames follow.
   - Its callers: home's setup question (`home/wizard.js`) and the categories' walkthrough (`home/services.js`).
 - `lib/platform.js`:
-  - `nativePath(path)`, `inPluginCache(kitDir)` and `cloneOutranks(kitDir, linkedDir)`: the Node twins of `wk_native_path`, `wk_in_plugin_cache` and `wk_clone_outranks` (`lib/platform.sh`).
-  - `nativePath` is `cygpath -m` on Windows and the path unchanged elsewhere; a failed `cygpath` throws, since an empty roster key is worse than none.
+  - `nativePath(path, { platform })`, `inPluginCache(kitDir)` and `cloneOutranks(kitDir, linkedDir)`: the Node twins of `wk_native_path`, `wk_in_plugin_cache` and `wk_clone_outranks` (`lib/platform.sh`).
+  - `nativePath` is the path unchanged off Windows. `platform` is the system it spells for, read once at load by default.
+    - On Windows a path that starts with a drive letter, `:` and a separator, or with two separators, only has each `\` made `/`, with no program started, so a task's PATH without Git Bash still answers.
+    - Any other path goes through `cygpath -m`; a failed `cygpath` throws, since an empty roster key is worse than none.
   - `claudeHome()` is the claude home's one Node reader, read at the call: `WORKFLOW_CLAUDE_HOME`, else `<HOME>/.claude` with `HOME` as the shell reads it, else `os.homedir()`.
     - `inPluginCache` and the heal's run object (`standards.js`) both call it.
   - `physicalDir(dir)` is a folder's physical path, or null when it is not one: the read `inPluginCache` makes of both folders, and the installer's of the home and the engine link (`jobs/install.js`).
@@ -956,7 +963,7 @@
   - `withScratch(run, prefix)` makes a folder under the temp folder (`prefix`, `workkit.` by default, before mkdtemp's tail), calls `run(scratch)` and hands back what it handed back.
     - The folder goes whatever `run` did, a throw included; an async `run`'s once its promise settles.
     - No folder made: null, and `run` is never called; each caller says its own line for that.
-  - Its callers: home's seed, runner, doctor and heal (`home/`, prefix `workkit-home.`), the index copy (`lib/tree-hash.js`), the publish (`publish.js`), the morning (`jobs/morning.js`), the summaries (`jobs/claude-nightly.js`) and the installer (`jobs/install.js`).
+  - Its callers: home's seed, runner, doctor and heal (`home/`, prefix `workkit-home.`), the index copy (`lib/tree-hash.js`), the publish (`publish.js`), the morning (`jobs/morning.js`), the summaries (`jobs/claude-nightly.js`) and the installer (`jobs/install.js`, and its Windows half `jobs/lib/task-scheduler.js`).
 - `lib/command-log.sh`, sourced by `workkit.sh` alone:
   - `wk_command_log_name <args...>` is the name a call logs under, or nothing: `setup`, `update`, `doctor`, `publish`, `ship <step>` for each `SHIP_VERBS` step but `watch`, and `proof red`.
   - `wk_command_log_path <name>` is its file.
@@ -1738,7 +1745,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - A machine without the compiler gets one skip line, and nothing is set.
 - It adds each of the kit's allow rules and ask rules missing from `~/.claude/settings.json`, made from `WORKKIT_COMMANDS` (the `workkit/command-list.sh` entry).
   - Every other key is untouched, and a file already holding them all is never written.
-- It installs the 9am schedule through `jobs/install.js`.
+- It installs the 9am schedule through `jobs/install.js`: a launchd agent on a Mac, a Task Scheduler task on Windows, and one skip line on any other system.
 - It creates the home repo, and clones the tower project into `~/.workkit/tower`.
 - It wires the cloud brief's secrets onto the home repo, where that brief runs and where it is delivered.
 - It says whether this machine is signed in for the bot identity, signing in there at a keyboard.
@@ -1869,7 +1876,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - A moved kit needs nothing, since the schedule reaches its job through the engine's address.
   - A job template that changed is corrected the next morning, instead of waiting for someone to remember the installer.
   - Two boundaries keep that safe:
-    - **It only ever UPDATES a schedule a human already installed**: the installed `com.workkit.claude-daily.plist` is the marker. A machine with no schedule never gets one at session start.
+    - **It only ever UPDATES a schedule a human already installed**: the installer's `--check` saying `not installed` is the one reading of the marker, the installed plist on a Mac and the kept copy of the task file on Windows. A machine with no schedule never gets one at session start.
     - **It creates no convention it did not find.** `~/.local/bin` is linked when the directory already exists; making it is a human's `setup`, or in the cloud `setup --cloud`'s or `standards.sh --command-link`'s. The same restraint the engine's address shows toward `~/.claude`.
 - **Setup is pestered for, never performed.** The same hook checks one thing above every gate it has: `~/.local/bin/workkit`, the command `setup` installs.
   - While that is missing (absent, dangling, or not executable), EVERY session is told to run `bash <engine>/workkit.sh setup` itself before other work.
@@ -1880,10 +1887,10 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - `standards.sh --command-link` makes the command link alone, for a bootstrap that runs no setup at all.
   - A cloud bootstrap that does run setup calls `workkit setup --cloud`, which makes the link itself.
   - It never runs anything itself.
-- The drift question is answered by `jobs/install.js --check`, which renders and compares without asking launchd anything.
+- The drift question is answered by `jobs/install.js --check`, which renders and compares without asking a scheduler anything.
   - Most session starts never get that far: the hook's daily marker returns first.
-  - The once-a-day run that does costs a few short shell invocations and a `plutil` lint, with no launchd call and no network.
-- Agents themselves never issue launchd commands. Their path is `workkit doctor`, which reports and fixes nothing.
+  - The once-a-day run that does costs a few short shell invocations, and on a Mac a `plutil` lint, with no scheduler call and no network.
+- Agents themselves never issue launchd or `schtasks` commands. Their path is `workkit doctor`, which reports and fixes nothing.
 
 ## Output
 
@@ -1936,9 +1943,9 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - So the relay re-says it under its own glyph, rather than letting a line wear two.
 - **A spinner on every awaited call.** `wk_spin "<message>" <command...>` wraps each awaited call:
   - each `gh` call, each `git clone` / `fetch` / `pull` / `push`;
-  - the publish build, the Pages poll and the launchctl waits.
+  - the publish build, the Pages poll and the launchctl and `schtasks` waits.
   - On a terminal it animates omega's braille frames on stderr, with the elapsed seconds beside them, and erases the line when the call returns.
-  - Anywhere else (a pipe, a log file, launchd, the suites) it prints `⏳ <message>...` once on stderr.
+  - Anywhere else (a pipe, a log file, a scheduler, the suites) it prints `⏳ <message>...` once on stderr.
   - The wrapped command runs in the foreground, so its stdout and its exit status pass through untouched.
     - So `x="$(wk_spin 'reading the roster' gh api ...)"` captures the answer alone.
   - `WORKKIT_SPIN=0` forces the static form.
@@ -2734,7 +2741,7 @@ bash ~/.claude/workkit/standards.sh --git-hooks <repo>  # set git's hooks alone,
 - A plugin install takes it too: a folder under `<claude home>/plugins/cache/` whose `.claude-plugin/plugin.json` names `workkit`.
   - The home is read by its physical path, so a symlinked `~/.claude` counts.
   - A clone outranks it: a cache engine leaves an address naming a workkit clone alone.
-  - The 9am job runs `~/.claude/workkit/../jobs/morning.sh` through this address.
+  - The 9am job runs through this address: `~/.claude/workkit/../jobs/morning.sh` on a Mac, `~/.claude/workkit/morning-task.js` on Windows.
     - So a plugin update that repoints it needs no reinstall of the schedule.
 - It is one path for the whole machine, so it is written ATOMICALLY.
   - It is made under a temporary name and renamed onto the address, which is also how `~/.local/bin/workkit` is written.

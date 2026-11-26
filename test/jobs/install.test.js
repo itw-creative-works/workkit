@@ -1,6 +1,7 @@
-// Tests for jobs/install.js, the LaunchAgent installer. HOME is scratch and
-// `launchctl` is a recorder on PATH, so the suite reads the plist that would be
-// installed and the commands that would load it, never the real gui domain.
+// Tests for jobs/install.js, the 9am job's installer. HOME is scratch and
+// `launchctl` (on a Mac) or `schtasks` (the Windows half, on every system) is a recorder on PATH, so the
+// suite reads what would be installed and the commands that would register it,
+// never the machine's own scheduler.
 
 const fs = require('fs');
 const path = require('path');
@@ -12,8 +13,9 @@ const {
 // The installer starts through run.js as every case's child does; the plist
 // tools below stay raw.
 const {
-  homeEnv, stubTool, stubToolJs, pathWith, spawnSync: spawnThroughRun,
+  homeEnv, stubTool, stubToolJs, pathWith, gitPath, spawnSync: spawnThroughRun,
 } = require('../lib/platform');
+const { schtasksStub } = require('../lib/schtasks-stub');
 const { mkPluginCopy } = require('../lib/plugin-copy');
 const { mkOriginRepo } = require('../lib/git-repo');
 
@@ -35,15 +37,13 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * difference between one already running and one never bootstrapped) and
  * `loadedPath` the plist that answer says the label is registered from, which
  * is the checkout's own unless a test wants a stray registration.
- *
- * HOME here is never the account's home, so the installer's own guard would
- * skip every launchctl call: `launchdOk` sets the override the guard reads, and
- * every test that asserts on launchd behaviour is rehearsing against the
- * recorder rather than the machine. `engineLink` is the ~/.claude/workkit
- * address the plist runs the job through, at this checkout's engine.
+ * HOME is never the account's home, so the guard would skip every launchctl
+ * call: `scheduleOk` sets the override it reads, so a launchd case rehearses
+ * against the recorder. `engineLink` is the ~/.claude/workkit address the plist
+ * runs the job through, at this checkout's engine.
  */
 const mkWorld = ({
-  loaded = false, loadedPath = null, launchdOk = true, engineLink = true,
+  loaded = false, loadedPath = null, scheduleOk = true, engineLink = true,
 } = {}) => {
   const root = mkTmp('workkit-install-');
   const bin = path.join(root, 'bin');
@@ -75,8 +75,8 @@ const mkWorld = ({
   ]);
 
   const env = homeEnv(home, { ...process.env, PATH: pathWith(bin) });
-  if (launchdOk) env.WORKKIT_LAUNCHD_OK = '1';
-  else delete env.WORKKIT_LAUNCHD_OK;
+  if (scheduleOk) env.WORKKIT_SCHEDULE_OK = '1';
+  else delete env.WORKKIT_SCHEDULE_OK;
 
   return {
     root,
@@ -205,7 +205,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       fs.mkdirSync(claude, { recursive: true });
       fs.symlinkSync(path.join(cloneRoot, 'workflow'), path.join(claude, 'workkit'));
       const cache = path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0');
-      mkPluginCopy(cache, { dirs: ['workflow', 'jobs'] });
+      mkPluginCopy(cache, { dirs: ['workflow', 'jobs', 'hooks'] });
       const res = runInstaller(path.join(cache, 'jobs', 'install.js'), [], world.env);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       const said = `${res.stdout}${res.stderr}`;
@@ -319,12 +319,12 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
   describe('jobs/install: the real-home guard', () => {
     // The line is the one `workkit update` relays.
     test('a run under a scratch home asks launchd for nothing', () => {
-      const world = mkWorld({ launchdOk: false });
+      const world = mkWorld({ scheduleOk: false });
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(fmtCalls(world.calls()), 'not one launchctl call: the gui domain is the whole machine’s').toBe('');
       expect(res.stdout.split('\n'), `and it says what it would have done: ${res.stdout}`).toContain(
-        `✓ ${LABEL} → would bootout and bootstrap it (skipped: HOME is not this account's home; set WORKKIT_LAUNCHD_OK=1 to force)`,
+        `✓ ${LABEL} → would bootout and bootstrap it (skipped: HOME is not this account's home; set WORKKIT_SCHEDULE_OK=1 to force)`,
       );
       expect(fs.existsSync(world.installed), 'the plist is still rendered into the scratch home').toBeTruthy();
       cleanup(world.root);
@@ -335,7 +335,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       install(world);
       const before = world.calls().length;
 
-      const res = runInstaller(SCRIPT, [], { ...world.env, WORKKIT_LAUNCHD_OK: '' });
+      const res = runInstaller(SCRIPT, [], { ...world.env, WORKKIT_SCHEDULE_OK: '' });
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(fmtCalls(world.calls().slice(before)), 'launchd is not even asked whether it is loaded').toBe('');
       expect(/would bootstrap it \(plist unchanged\)/.test(res.stdout), `it says so: ${res.stdout}`).toBeTruthy();
@@ -373,5 +373,99 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       expect(fs.readFileSync(world.installed, 'utf8').includes('older checkout'), 'and the check writes nothing').toBeTruthy();
       cleanup(world.root);
     });
+  });
+});
+
+/**
+ * A scratch home and machine folder plus the `schtasks` stand-in. HOME is native,
+ * as Git Bash hands it to a Windows program, and so is USERPROFILE. `scheduleOk`
+ * sets the guard's override; `engineLink` is the ~/.claude/workkit address.
+ * `entry` is a scratch program running the installer for `platform` on any system,
+ * its Windows half by default.
+ */
+const mkTaskWorld = ({ scheduleOk = true, engineLink = true, platform = 'win32' } = {}) => {
+  const root = mkTmp('workkit-install-');
+  const bin = path.join(root, 'bin');
+  const home = path.join(root, 'home');
+  const machine = path.join(root, 'machine');
+  const entry = path.join(root, `install-${platform}.js`);
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  if (engineLink) {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.symlinkSync(path.join(REPO, 'workflow'), path.join(home, '.claude', 'workkit'), 'junction');
+  }
+  fs.writeFileSync(entry, `process.exitCode = require(${JSON.stringify(SCRIPT)}).main(process.argv.slice(2), { platform: ${JSON.stringify(platform)} });\n`);
+  const env = { ...homeEnv(home, { ...process.env, PATH: pathWith(bin), WORKFLOW_HOME: machine }), HOME: home };
+  if (scheduleOk) env.WORKKIT_SCHEDULE_OK = '1';
+  else delete env.WORKKIT_SCHEDULE_OK;
+  return {
+    root, home, env, entry, stub: schtasksStub(bin), copy: path.join(machine, 'scheduled', `${LABEL}.xml`),
+  };
+};
+
+const installWin = (world) => runInstaller(world.entry, [], world.env);
+const checkWin = (world) => runInstaller(world.entry, ['--check'], world.env);
+
+describe('jobs/install on Windows, reached through the system argument', () => {
+  test('a first run registers the task through the starter and keeps its copy', () => {
+    const world = mkTaskWorld();
+    const res = installWin(world);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(res.stdout.split('\n'), `the installed line: ${res.stdout}`).toContain(`✓ ${LABEL} → installed (9:00 AM daily)`);
+    expect(world.stub.creates().length, `one /create: ${fmtCalls(world.stub.calls())}`).toBe(1);
+    const task = world.stub.kept().subarray(2).toString('utf16le');
+    // The task names the home in the Windows spelling, which a Mac's home is not.
+    const winHome = world.home.split(path.sep).join('\\');
+    expect(task, 'the task starts the starter through the engine address').toContain(`${winHome}\\.claude\\workkit\\morning-task.js`);
+    expect(task, 'under the Node that ran the installer').toContain(fs.realpathSync(process.execPath));
+    expect(task, 'only while the person is signed in').toContain('InteractiveToken');
+    expect(fs.readFileSync(world.copy, 'utf8'), `the machine folder keeps the task text at ${world.copy}`).toBe(task);
+    cleanup(world.root);
+  });
+
+  test('--check after a first run prints nothing, and never asks schtasks', () => {
+    const world = mkTaskWorld();
+    installWin(world);
+    const before = world.stub.calls().length;
+    const res = checkWin(world);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(res.stdout, 'silence is "current"').toBe('');
+    expect(world.stub.calls().length, `no schtasks call: ${fmtCalls(world.stub.calls().slice(before))}`).toBe(before);
+    cleanup(world.root);
+  });
+
+  test('a scratch home asks schtasks for nothing, and says what it would have done', () => {
+    const world = mkTaskWorld({ scheduleOk: false });
+    const res = installWin(world);
+    expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+    expect(fmtCalls(world.stub.calls()), 'not one schtasks call').toBe('');
+    expect(res.stdout.split('\n'), `the would-register line: ${res.stdout}`).toContain(
+      `✓ ${LABEL} → would register it (skipped: HOME is not this account's home; set WORKKIT_SCHEDULE_OK=1 to force)`,
+    );
+    cleanup(world.root);
+  });
+
+  test('no engine address: install and --check both name the missing link', () => {
+    const world = mkTaskWorld({ engineLink: false });
+    const link = gitPath(path.join(world.home, '.claude', 'workkit'));
+    for (const [mode, res] of [['install', installWin(world)], ['--check', checkWin(world)]]) {
+      const said = `${res.stdout}${res.stderr}`;
+      expect(res.status, `${mode} exits 0, stderr: ${res.stderr}`).toBe(0);
+      expect(said.split('\n').some((l) => l.includes('⚠') && l.includes(link)), `${mode} warns, naming ${link}: ${said}`).toBeTruthy();
+    }
+    cleanup(world.root);
+  });
+});
+
+describe('jobs/install on another system, reached through the system argument', () => {
+  test('linux: exit 1, one line naming the two systems it knows, and no scheduler asked', () => {
+    const world = mkTaskWorld({ platform: 'linux' });
+    const res = runInstaller(world.entry, [], world.env);
+    expect(res.status, `exit 1, stdout: ${res.stdout}`).toBe(1);
+    expect(res.stderr, 'the refusal, whole').toBe('✖ install: the 9am job runs on macOS and Windows; linux has no scheduler it knows\n');
+    expect(fmtCalls(world.stub.calls()), 'not one schtasks call').toBe('');
+    expect(fs.existsSync(world.copy), 'and no copy').toBe(false);
+    cleanup(world.root);
   });
 });

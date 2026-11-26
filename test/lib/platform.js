@@ -271,9 +271,10 @@ const stubTool = (dir, name, lines) => {
 
 /**
  * Write a PATH stand-in named `name` that runs `source` as JavaScript under the
- * node running this suite, named on its `#!` line. A shell finds it by bare name;
- * a Node file finds it through workflow/lib/run.js, whose `#!` rule starts it
- * under node on Windows, so no launcher is copied beside it.
+ * node running this suite, named on its `#!` line, or through sh when that
+ * node's path holds a space. A shell finds it by bare name; a Node file finds it
+ * through workflow/lib/run.js, whose `#!` rule starts it under node or Git Bash
+ * on Windows, so no launcher is copied beside it.
  * @param {string} dir - the PATH directory, which must exist
  * @param {string} name - the tool being stood in for, with no extension
  * @param {string} source - the stand-in's JavaScript, no `#!` line
@@ -281,10 +282,11 @@ const stubTool = (dir, name, lines) => {
  */
 const stubToolJs = (dir, name, source) => {
   const node = shellPath(process.execPath);
-  // A `#!` line ends its program's path at the first space.
-  if (/\s/.test(node)) throw new Error(`test/lib/platform: stubToolJs cannot name ${node} on a #! line: it holds a space`);
+  // A `#!` line ends its program's path at the first space, so a node path with
+  // one goes through sh: line 2 is `:` and an exec to sh, a string and a comment to node.
+  const head = /\s/.test(node) ? `#!/bin/sh\n":" //; exec "${node}" "$0" "$@"` : `#!${node}`;
   const script = path.join(dir, name);
-  fs.writeFileSync(script, `#!${node}\n${source}\n`, { mode: 0o755 });
+  fs.writeFileSync(script, `${head}\n${source}\n`, { mode: 0o755 });
   fs.chmodSync(script, 0o755);
   return script;
 };
@@ -306,6 +308,18 @@ const skipWithoutNodeStub = () => IS_WINDOWS && NO_NODE_STUB;
  */
 const skipWithoutModes = (what) => (IS_WINDOWS || process.getuid() === 0)
   && `${what} here (Windows ignores the mode, root ignores it)`;
+
+/**
+ * The skip value of a case that signals a process and reads what its handler did.
+ * @returns {false|string} false, or on Windows the reason
+ */
+const skipWithoutCaughtSignal = () => IS_WINDOWS && 'Windows ends a process with no signal it can catch';
+
+/**
+ * The skip value of a case about the Homebrew folders a job puts on its PATH.
+ * @returns {false|string} false, or on Windows the reason
+ */
+const skipWithoutHomebrewPath = () => IS_WINDOWS && 'a job puts the Homebrew folders on its PATH off Windows alone';
 
 let fileLinkSkip;
 
@@ -695,7 +709,7 @@ module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubToolJs, stubNode, crlfJq,
   lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeEnv, basePathWithout,
-  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, asWindows, samePath, recordingRun, signalsRefused,
+  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.
   spawnSync: run.spawnSync,

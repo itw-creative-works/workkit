@@ -147,7 +147,7 @@ claude
 - the Claude Code CLI (`claude`)
 
 - It runs on macOS, on Linux, and on Windows under Git Bash.
-  - The 9am schedule on your own machine is macOS only.
+  - The 9am schedule on your own machine runs on macOS (launchd) and on Windows (Task Scheduler).
   - Everywhere else the same brief runs in the cloud from your home repo.
 
 ## Docs

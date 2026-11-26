@@ -11,7 +11,7 @@ const { spawn, onPath } = require('./lib/run');
 const { repoRoot, headSha, gitIn } = require('./lib/git');
 const { run } = require('./lib/runs');
 const { bodyEnd } = require('./lib/body');
-const { exitOf } = require('./lib/detach');
+const { exitOf, startFailed } = require('./lib/detach');
 const { runPaths, LogsDirError } = require('./lib/run-paths');
 const { proofBase, proofDir } = require('./lib/proof-dir');
 const {
@@ -51,7 +51,7 @@ const git = (root, args, { env = process.env, quiet = false } = {}) => gitIn(roo
 /** `npm test` in `dir` with npm's script shell `sh`, its output on this process's own; its code. */
 const npmTest = (dir, sh) => new Promise((resolve) => {
   const child = spawn('npm', ['test', `--script-shell=${sh}`], { cwd: dir, stdio: 'inherit', windowsHide: true });
-  child.on('error', () => resolve(127));
+  child.on('error', () => resolve(startFailed));
   child.on('close', (code, signal) => resolve(exitOf(code, signal)));
 });
 

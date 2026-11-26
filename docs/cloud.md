@@ -45,7 +45,7 @@
 
 | Machine piece | Why it stays | The cloud twin |
 |---|---|---|
-| launchd / cron schedules | machine-global schedulers | a GitHub Actions cron (the daily brief already runs this way) |
+| launchd / Task Scheduler schedules | machine-global schedulers | a GitHub Actions cron (the daily brief already runs this way) |
 | Browser and Electron MCP upstreams | need a local process to attach to | none: scope the session's work away from them |
 | Session transcripts and local git history | this machine's private state | none, by construction: the nightly summaries name that skip |
 | Keychain auth | OS secret store | the environment secrets above |

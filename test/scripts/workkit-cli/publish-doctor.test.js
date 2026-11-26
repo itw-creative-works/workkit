@@ -1,12 +1,13 @@
-// Tests for workflow/workkit.sh: `publish`, `doctor`, and the output
-// contract the two speak with `update --auto`.
+// Tests for workflow/workkit.sh: `publish`, `doctor` (the schedule on each
+// system among it), and the output contract the two speak with `update --auto`.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
+const { fmtCalls } = require('../../lib/argv-log');
 const {
-  cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit, signIn,
+  LABEL, cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit, signIn, SYSTEMS, nameSystem, mkScheduleKit,
 } = require('./helpers');
 
 describe('workkit publish', () => {
@@ -130,6 +131,45 @@ describe('workkit doctor', () => {
     expect(line && !/repo\(s\) registered/.test(line), `an empty roster never reads as a count, got: ${line}`).toBeTruthy();
     expect(/fills as a session opens/.test(line), `and it says how it fills, got: ${line}`).toBeTruthy();
     cleanup(world.root);
+  });
+});
+
+// The road a Mac and a Windows machine share, read from the installer's
+// `--check` alone: the system is named through `uname`, the installer a stand-in.
+describe('workkit doctor: the schedule on each system', () => {
+  const attention = (said) => Number((said.match(/(\d+) item\(s\) need attention/) || [])[1] || 0);
+
+  for (const [system, name] of [['a Mac', SYSTEMS.mac], ['Windows', SYSTEMS.windows]]) {
+    test(`${system}: a current job is reported, one not installed or out of date is one more thing to fix`, () => {
+      const world = mkWorld();
+      nameSystem(world, name);
+      const sched = mkScheduleKit('');
+      const current = runCli(world, ['doctor'], { script: sched.script }).said;
+      expect(current.includes(`schedule: ${LABEL} is installed and current`), `current, got: ${current}`).toBeTruthy();
+
+      sched.check(`${LABEL} → not installed`);
+      const missing = runCli(world, ['doctor'], { script: sched.script }).said;
+      expect(missing.includes('schedule: the 9am job is not installed; run `workkit setup`'), `not installed, got: ${missing}`).toBeTruthy();
+      expect(attention(missing), `one more item than a current job: ${missing}`).toBe(attention(current) + 1);
+
+      sched.check(`${LABEL} → out of date for this kit`);
+      const drifted = runCli(world, ['doctor'], { script: sched.script }).said;
+      expect(drifted.includes(`schedule: ${LABEL} → out of date for this kit; run \`workkit update\``), `out of date, got: ${drifted}`).toBeTruthy();
+      expect(attention(drifted), `one more item than a current job: ${drifted}`).toBe(attention(current) + 1);
+      expect(sched.installs(), `the doctor installs nothing: ${fmtCalls(sched.runs())}`).toEqual([]);
+      cleanup(world.root); cleanup(sched.kit);
+    });
+  }
+
+  test('any other system: the skip line, and the installer never runs', () => {
+    const world = mkWorld();
+    nameSystem(world, SYSTEMS.linux);
+    const sched = mkScheduleKit(`${LABEL} → not installed`);
+    const { code, said } = runCli(world, ['doctor'], { script: sched.script });
+    expect(code, 'exit 0').toBe(0);
+    expect(said.split('\n').some((l) => / schedule: the 9am job runs on macOS and Windows$/.test(l)), `the skip line, got: ${said}`).toBeTruthy();
+    expect(sched.runs(), `no installer run at all: ${fmtCalls(sched.runs())}`).toEqual([]);
+    cleanup(world.root); cleanup(sched.kit);
   });
 });
 
