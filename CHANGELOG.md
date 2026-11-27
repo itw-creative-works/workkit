@@ -7,21 +7,23 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.105.0] - 2026-11-26
+
 ### Added
 
-- [#578](../../issues/578) - On Windows `workkit setup` and `workkit update` write `workkit.cmd` beside the `workkit` link, so the command starts from cmd and PowerShell. `workkit doctor` reports a missing or different one, and a PATH without `~/.local/bin`.
+- [#578](../../issues/578) [`6f117787`](../../commit/6f117787) Thanks [@ianwieds]! - On Windows `workkit setup` and `workkit update` write `workkit.cmd` beside the `workkit` link, so the command starts from cmd and PowerShell. `workkit doctor` reports a missing or different one, and a PATH without `~/.local/bin`.
 
 ### Changed
 
-- [#578](../../issues/578) - The `workkit` command is Node. `workflow/workkit.js` checks the Node floor (22.22), stops with one line below it, and runs each verb from `workflow/workkit/`; the session-start hook and the home heal start `node`, never `bash`. Verbs, flags, lines and exit codes are otherwise unchanged: the issue lists the edges.
+- [#578](../../issues/578) [`6f117787`](../../commit/6f117787) Thanks [@ianwieds]! - The `workkit` command is Node. `workflow/workkit.js` checks the Node floor (22.22), stops with one line below it, and runs each verb from `workflow/workkit/`; the session-start hook and the home heal start `node`, never `bash`. Verbs, flags, lines and exit codes are otherwise unchanged: the issue lists the edges.
 
 ### Removed
 
-- [#578](../../issues/578) - The command's shell is gone: `workflow/workkit.sh`, its 19 verb files, `wk.sh`, `home.sh`, `lib.sh`, `jobs/brief-dispatch.sh` and five shell libraries. Anything that started `bash workflow/workkit.sh` starts `node workflow/workkit.js`. `workkit note` replaces `wk.sh note`.
+- [#578](../../issues/578) [`6f117787`](../../commit/6f117787) Thanks [@ianwieds]! - The command's shell is gone: `workflow/workkit.sh`, its 19 verb files, `wk.sh`, `home.sh`, `lib.sh`, `jobs/brief-dispatch.sh` and five shell libraries. Anything that started `bash workflow/workkit.sh` starts `node workflow/workkit.js`. `workkit note` replaces `wk.sh note`.
 
 ### Fixed
 
-- [#578](../../issues/578) - `workkit proof red` reads a designed red as red when a test loads a named new file through a link in a scratch folder. It answered "not runnable".
+- [#578](../../issues/578) [`6f117787`](../../commit/6f117787) Thanks [@ianwieds]! - `workkit proof red` reads a designed red as red when a test loads a named new file through a link in a scratch folder. It answered "not runnable".
 - (no issue) - `workkit ship publish` publishes what the commit holds. When the folder differs from HEAD it publishes from a copy of HEAD and says so, where it packed the folder and sent held work to npm. A copy it cannot make stops the publish.
 - (no issue) - `workkit prove` and `workkit proof red` give the copy's run its own empty Claude home, so a program started there cannot point the machine's `~/.claude/workkit` link at a folder about to be removed, which turned git hooks off.
 - (no issue) - A junk value in a wait setting reads as the default: `WORKKIT_CI_WATCH_TRIES`, `WORKKIT_CI_WATCH_WAIT`, `WORKKIT_HOME_POLL_INTERVAL`, and the cut's `WORKKIT_CUT_RELEASE_TIMEOUT` and `WORKKIT_CUT_RELEASE_POLL`. The first three gave a CI watch that never asked and a poll with no wait; the cut's two stopped the cut with an error.
