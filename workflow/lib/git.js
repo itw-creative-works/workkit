@@ -1,7 +1,7 @@
 // workflow/lib/git.js: the git reads the kit's Node scripts share, the default
 // branch GitHub names among them, so a lookup has one spelling and every
 // caller keeps its own reaction to a miss.
-// Usage: const { repoRoot, headSha, gitIn, hasCommit, textAt, commitIdentity, defaultBranch } = require('../lib/git');
+// Usage: const { repoRoot, headSha, gitIn, hasCommit, textAt, localConfig, commitIdentity, defaultBranch } = require('../lib/git');
 
 const { spawnSync } = require('./run');
 
@@ -69,6 +69,19 @@ const textAt = (root, rev, file) => {
 };
 
 /**
+ * A local git config value in `root`, its trailing newlines dropped, or ''
+ * when git has none.
+ * @param {string} root
+ * @param {string[]} args the config arguments after `--local`
+ * @returns {string}
+ */
+const localConfig = (root, args) => {
+  const res = gitIn(root, ['config', '--local', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  // Spelled here, not chomp: --git-hooks runs this in a kit that is workflow/ alone, with no hooks/mods/text.js.
+  return res.status === 0 ? res.stdout.replace(/\n+$/, '') : '';
+};
+
+/**
  * The `-c` pairs a kit commit runs under, so a machine with no git identity
  * still commits: GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL when set, else workkit's.
  * @returns {string[]}
@@ -97,5 +110,5 @@ const defaultBranch = (root) => {
 };
 
 module.exports = {
-  repoRoot, headSha, gitIn, hasCommit, textAt, commitIdentity, defaultBranch, GIT_MAX_BUFFER,
+  repoRoot, headSha, gitIn, hasCommit, textAt, localConfig, commitIdentity, defaultBranch, GIT_MAX_BUFFER,
 };

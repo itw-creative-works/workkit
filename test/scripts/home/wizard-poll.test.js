@@ -4,11 +4,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { describe, test, expect } = require('../../lib/harness');
+const {
+  describe, test, expect, until,
+} = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const { basePathWithout, joinPath, NODE_DIR } = require('../../lib/platform');
 const {
-  cleanup, mkWorld, inNode, inNodeHeld,
+  cleanup, mkWorld, runHomeSteps, runHomeStepsHeld, startHomeStepsHeld,
 } = require('./helpers');
 
 describe('workflow/home: the wizard, Discussions and the categories poll', () => {
@@ -18,7 +20,7 @@ describe('workflow/home: the wizard, Discussions and the categories poll', () =>
     // GitHub has no mutation that creates a discussion category, probed
     // against the live schema, so the only honest step is to name the page.
     const world = mkWorld({ login: 'owner', categories: ['General'] });
-    const { code, out } = inNode(world, DISCUSSIONS);
+    const { code, out } = runHomeSteps(world, DISCUSSIONS);
     expect(code, 'exit 0').toBe(0);
     expect(/Discussions enabled/.test(out), `it turns them on, got: ${out}`).toBeTruthy();
     expect(/Daily, Weekly, Monthly, Brief/.test(out), 'names every category that is missing, the brief\'s included (#244)').toBeTruthy();
@@ -30,7 +32,7 @@ describe('workflow/home: the wizard, Discussions and the categories poll', () =>
 
   // The keys are typed at the step's terminal, and its stdin closes once they
   // are read: a close mid-poll reads as a skip.
-  const atTerminal = (world, keys) => inNode(world, DISCUSSIONS, { input: keys, terminal: true });
+  const atTerminal = (world, keys) => runHomeSteps(world, DISCUSSIONS, { input: keys, terminal: true });
   const categoriesCalls = (world) => world.ghCalls().filter((c) => c.join(' ').includes('discussionCategories')).length;
 
   test('at a terminal, setup opens the page that makes the categories and polls until they are there (#244)', () => {
@@ -70,11 +72,24 @@ describe('workflow/home: the wizard, Discussions and the categories poll', () =>
     // The stdin stays open past the poll, so the check that passes is the
     // interval's: no key and no close ever comes.
     world.env.WORKKIT_HOME_POLL_INTERVAL = '1';
-    const { code, out } = await inNodeHeld(world, DISCUSSIONS, { input: '\n' });
+    const { code, out } = await runHomeStepsHeld(world, DISCUSSIONS, { input: '\n' });
     expect(code, 'exit 0').toBe(0);
     expect(/✓.*categories are there/.test(out), `the interval's own check passed, got: ${out}`).toBeTruthy();
     expect(categoriesCalls(world), `enable, the step's own read, the poll's first check, the interval's: ${categoriesCalls(world)} reads`).toBe(4);
     cleanup(world.root);
+  });
+
+  test('an interval that is no number above 0 is the default five seconds: no second check comes at once', async (t) => {
+    const world = mkWorld({ login: 'owner', discussionsOn: true, categories: ['General'] });
+    world.installOpener({ makes: ['General', 'Daily', 'Weekly', 'Monthly', 'Brief'], afterReads: 1 });
+    world.env.WORKKIT_HOME_POLL_INTERVAL = 'abc';
+    const { call } = startHomeStepsHeld(world, DISCUSSIONS, { input: '\n' });
+    t.after(async () => {
+      await call.end('SIGKILL');
+      cleanup(world.root);
+    });
+    expect(await until(() => categoriesCalls(world) >= 3), `the poll's first check came: ${call.output()}`).toBeTruthy();
+    expect(await until(() => categoriesCalls(world) >= 4, 500), `the next check waits out the default: ${categoriesCalls(world)} reads`).toBe(false);
   });
 
   test('s skips the poll and keeps the pointer; the pipe closing counts as a skip too (#244)', () => {
@@ -120,7 +135,7 @@ describe('workflow/home: the wizard, Discussions and the categories poll', () =>
 
   test('Discussions already on are left alone', () => {
     const world = mkWorld({ login: 'owner', discussionsOn: true });
-    const { out } = inNode(world, DISCUSSIONS);
+    const { out } = runHomeSteps(world, DISCUSSIONS);
     expect(/Discussions are on/.test(out), `it reports the state, got: ${out}`).toBeTruthy();
     const calls = world.ghCalls().map((c) => c.join(' '));
     expect(!calls.some((c) => c.includes('updateRepository')), `and never writes: ${fmtCalls(world.ghCalls())}`).toBeTruthy();

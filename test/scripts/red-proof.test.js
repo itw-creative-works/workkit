@@ -8,12 +8,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Writable } = require('stream');
 const {
-  describe, test, expect, SPAWN_DEADLINE, alive, pidIn, until,
+  describe, test, expect, SPAWN_DEADLINE, alive, pidIn,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, jsPath, gitPath, joinPath, spawnSync, spawn, skipWithoutModes,
+  BASH, jsPath, gitPath, joinPath, spawnSync, spawn, skipWithoutModes, skipWithoutCaughtSignal,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { skipWithoutNpm } = require('../lib/core-repo');
@@ -122,6 +121,27 @@ const mkExports = () => {
 
 // A test loading `spec` and asserting it exports 3.
 const LOADS = (spec) => `if (require(${JSON.stringify(spec)}) !== 3) throw new Error('not 3');\n`;
+
+// A test loading `src/<file>` through a link to its src/ in a scratch folder of
+// its own, the folder removed before the test ends, and asserting it exports 3.
+const LINKED_LOADS = (file) => [
+  "const fs = require('fs'), os = require('os'), path = require('path');",
+  "const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'link-'));",
+  "fs.symlinkSync(path.join(__dirname, '..', 'src'), path.join(scratch, 'src'), 'junction');",
+  `try { if (require(path.join(scratch, 'src', ${JSON.stringify(file)})) !== 3) throw new Error('not 3'); }`,
+  'finally { fs.rmSync(scratch, { recursive: true, force: true }); }',
+  '',
+].join('\n');
+
+// A test loading `<rel>` from an empty scratch folder of its own, the folder
+// removed before the test ends.
+const GONE_LOADS = (rel) => [
+  "const fs = require('fs'), os = require('os'), path = require('path');",
+  "const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gone-'));",
+  `try { require(path.join(scratch, ${JSON.stringify(rel)})); }`,
+  'finally { fs.rmSync(scratch, { recursive: true, force: true }); }',
+  '',
+].join('\n');
 
 // `@scope/b`'s build: a tag naming the build, and `@scope/a` as it loads.
 const BUILT = (tag) => `module.exports = { built: '${tag}', a: require('@scope/a') };\n`;
@@ -860,6 +880,79 @@ describe('proof red: a module that fails to load', () => {
     cleanup(w.dir);
   });
 
+  test('a named new file a test loads through a link in a scratch folder it removes before it ends: red, exit 0', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/new.js', 'module.exports = 3;\n');
+    w.write('tests/new.test.js', LINKED_LOADS('new.js'));
+    const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/new.test.js']);
+    expect(err.includes(path.join('src', 'new.js')), `node named it through the scratch link: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a named new file a test loads with no extension through a link in a scratch folder it removes before it ends: red, exit 0', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/new.js', 'module.exports = 3;\n');
+    w.write('tests/new.test.js', LINKED_LOADS('new'));
+    const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/new.test.js']);
+    expect(err.includes(path.join('src', 'new')), `node named it through the scratch link: ${err}`).toBeTruthy();
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(lines(out).pop(), `the last stdout line: ${out}`).toBe('red-proof: red');
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a missing file under a scratch folder removed before the end, its name a named path the copy holds: exit 2 naming the module, never red', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/held.test.js', GONE_LOADS('lib/x.js'));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/held.test.js']);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    const last = lines(err).pop() || '';
+    expect(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(path.join('lib', 'x.js')),
+      `the last stderr line names the module: ${err}`).toBeTruthy();
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a missing file no named path covers, loaded through a scratch link removed before the end: exit 2 naming the module, never red', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    w.write('tests/gone.test.js', LINKED_LOADS('gone.js'));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', 'node', 'tests/gone.test.js']);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    const last = lines(err).pop() || '';
+    expect(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(path.join('src', 'gone.js')),
+      `the last stderr line names the module: ${err}`).toBeTruthy();
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
+  test('a file beside the repo the copy cannot reach, its name a named path\'s: exit 2 naming the module, never red', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    fs.mkdirSync(path.join(w.dir, 'lib'));
+    fs.writeFileSync(path.join(w.dir, 'lib', 'new.js'), 'module.exports = 3;\n');
+    w.write('src/new.js', 'module.exports = 3;\n');
+    w.write('tests/beside.test.js', "if (require(require('path').join(__dirname, '..', '..', 'lib', 'new.js')) !== 3) throw new Error('not 3');\n");
+    const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/beside.test.js']);
+    expect(code, `exit 2: ${out}${err}`).toBe(2);
+    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+    const last = lines(err).pop() || '';
+    expect(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(path.join('lib', 'new.js')),
+      `the last stderr line names the module: ${err}`).toBeTruthy();
+    assertNoWorktree(w);
+    cleanup(w.dir);
+  });
+
   // The same two loads of a file no named path covers, and the module each names.
   for (const [label, world, module] of [
     ['through the exports map', mkExports, path.join('node_modules', '@scope', 'a', 'src', 'gone.js')],
@@ -1236,7 +1329,7 @@ describe('proof red --live', () => {
   });
 
   test('--live and a TERM to the script mid-run: exit 143, the file back', {
-    skip: IS_WINDOWS && 'Node ends a Windows process outright, with no signal a trap can catch',
+    skip: skipWithoutCaughtSignal(),
   }, async () => {
     const w = mkWorld();
     takeSnapshot(w);
@@ -1318,29 +1411,6 @@ describe('proof red --live', () => {
   });
 });
 
-describe('drained', () => {
-  test('one small chunk still being written: pending until the stream takes it, then settled', async () => {
-    const { drained } = require(SCRIPT);
-    // The first chunk is held until released; any later one is taken at once.
-    let release = null;
-    const stream = new Writable({
-      write: (chunk, encoding, done) => {
-        if (release) done();
-        else release = done;
-      },
-    });
-    expect(stream.write('x'), 'the chunk is under the high-water mark').toBe(true);
-    let settled = false;
-    const flushed = Promise.resolve(drained(stream)).then(() => { settled = true; });
-    for (let i = 0; i < 3; i += 1) await new Promise((resolve) => { setImmediate(resolve); });
-    expect(settled, 'pending while the chunk is held').toBe(false);
-    expect(typeof release, 'the stream holds the chunk').toBe('function');
-    release();
-    expect(await until(() => settled), 'settled once the stream has taken the chunk').toBeTruthy();
-    await flushed;
-  });
-});
-
 describe('proof red: a closed stdout in the copy mode', () => {
   test('the copy mode whose stdout reader has closed: exit 2, the worktree and the run folder gone', async () => {
     const w = mkWorld();
@@ -1356,7 +1426,7 @@ describe('proof red: a closed stdout in the copy mode', () => {
 
 describe('proof red: a signal in the copy mode', () => {
   test('a TERM to the script mid-run: the command gone, the worktree and the run folder gone, the call ended by TERM', {
-    skip: IS_WINDOWS && 'Node ends a Windows process outright, with no signal a handler can catch',
+    skip: skipWithoutCaughtSignal(),
   }, async () => {
     const w = mkWorld();
     takeSnapshot(w);
@@ -1398,6 +1468,47 @@ describe('proof red: the run folder', () => {
       cleanup(w.dir);
     });
   }
+
+  // A command printing the Claude home it was handed (as given, its real path and its entries, null for no folder)
+  // and npm's script shell it was handed (null for none).
+  const ENV_SEEN = [
+    "const fs = require('fs');",
+    "const home = process.env.WORKFLOW_CLAUDE_HOME || '';",
+    "const dir = home !== '' && fs.existsSync(home) && fs.statSync(home).isDirectory();",
+    "console.log('claude', JSON.stringify({ home, real: dir ? fs.realpathSync(home) : null, entries: dir ? fs.readdirSync(home) : null }));",
+    "console.log('shell', JSON.stringify(process.env.npm_config_script_shell ?? null));",
+  ].join(' ');
+
+  test('the command runs with an empty WORKFLOW_CLAUDE_HOME of its own in the run folder, never the caller\'s, gone after', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const caller = path.join(w.dir, 'caller-claude');
+    fs.mkdirSync(caller);
+    const { out, err } = runScript(w, ['src/x.js', '--', 'node', '-e', ENV_SEEN], w.repo, { ...w.env, WORKFLOW_CLAUDE_HOME: caller });
+    const seen = JSON.parse(field(out, 'claude') || 'null');
+    expect(seen?.entries, `an existing empty folder: ${out}${err}`).toEqual([]);
+    const rel = path.relative(fs.realpathSync(proofBase(homeOf(w))), seen.real).split(path.sep);
+    expect(rel.length === 2 && /^[^/\\]{6}$/.test(rel[0]) && rel[1] !== 'copy', `a folder of its own in the run folder, beside the copy: ${seen.real}`).toBeTruthy();
+    expect(seen.real === fs.realpathSync(caller), 'not the caller\'s').toBe(false);
+    expect(fs.existsSync(seen.home), 'gone after the run').toBe(false);
+    cleanup(w.dir);
+  });
+
+  // An npm in the copy runs its script with plain sh, as in `workkit prove`, so no configured wrapper is needed there.
+  test('the copy mode\'s command is handed the sh on PATH as npm\'s script shell, a --live command the caller\'s', () => {
+    const w = mkWorld();
+    takeSnapshot(w);
+    w.write('src/x.js', 'module.exports = 2;\n');
+    const env = { ...w.env, npm_config_script_shell: path.join(w.dir, 'caller-shell') };
+    const copy = runScript(w, ['src/x.js', '--', 'node', '-e', ENV_SEEN], w.repo, env);
+    const shell = JSON.parse(field(copy.out, 'shell') || 'null');
+    expect(typeof shell === 'string' && /^sh(\.exe)?$/i.test(path.basename(shell)) && fs.statSync(shell).isFile(),
+      `the copy's command names an existing sh: ${copy.out}${copy.err}`).toBeTruthy();
+    const live = runScript(w, ['--live', 'src/x.js', '--', 'node', '-e', ENV_SEEN], w.repo, env);
+    expect(JSON.parse(field(live.out, 'shell') || 'null'), `the --live command keeps the caller's: ${live.out}${live.err}`).toBe(env.npm_config_script_shell);
+    cleanup(w.dir);
+  });
 
   test('a run folder under proof/ changed over a day ago is removed by the next run, one changed within the day is left', () => {
     const w = mkWorld();

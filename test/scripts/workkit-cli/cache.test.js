@@ -1,16 +1,15 @@
-// Tests for workflow/workkit.sh run from Claude's plugin cache: `setup` and
+// Tests for workflow/workkit.js run from Claude's plugin cache: `setup` and
 // `doctor` from a plugin install, a copy with no git under it.
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
-const { describe, test, expect } = require('../../lib/harness');
-const { spawnSync } = require('child_process');
-const { gitPath } = require('../../lib/platform');
+const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
+const { gitPath, spawnSync } = require('../../lib/platform');
 const {
-  cleanup, mkWorld, runCli, mkCacheKit, mkKit, seedSettings, inCli,
+  cleanup, mkWorld, runCli, mkCacheKit, mkKit, seedSettings,
 } = require('./helpers');
-const { KIT_DIR, runnerPairs, inNode } = require('../home/helpers');
+const { KIT_DIR, runnerPairs, runHomeSteps } = require('../home/helpers');
 
 // The cloud brief's runner sources, copied into a cache-shaped kit so the
 // runner doctor has something of its own to compare a seeded clone against.
@@ -29,11 +28,15 @@ const seedHomeClone = (world, script) => {
   const remote = path.join(world.root, 'home-remote.git');
   spawnSync('git', ['init', '-q', '--bare', '-b', 'main', remote], { encoding: 'utf8' });
   world.env.WORKKIT_HOME_REMOTE = remote;
-  // The clone's node is started here, not by Git Bash, so it is handed the native folder.
-  const cloned = inNode({ ...world, env: { ...world.env, WORKFLOW_HOME: world.workflowHome } }, [['repo', 'clone', ['owner/home']]]);
+  // Both nodes are started here, not by Git Bash, so they are handed the native folder.
+  const env = { ...world.env, WORKFLOW_HOME: world.workflowHome };
+  const cloned = runHomeSteps({ ...world, env }, [['repo', 'clone', ['owner/home']]]);
   expect(cloned.code, `the home is cloned, got: ${cloned.out}`).toBe(0);
-  const res = inCli(world, 'wk_home_seed_runner', { entry: script });
-  expect(res.code, `the clone is seeded, got: ${res.said}`).toBe(0);
+  // The cache kit's own home program seeds it, as the engine's seed step starts it.
+  const seeded = spawnSync(process.execPath, [path.join(path.dirname(script), 'home.js'), 'seed-runner'], {
+    cwd: world.root, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  });
+  expect(seeded.status, `the clone is seeded, got: ${seeded.stdout}${seeded.stderr}`).toBe(0);
 };
 
 describe('workkit from the plugin cache', () => {
@@ -61,7 +64,7 @@ describe('workkit from the plugin cache', () => {
     const engine = lines.find((l) => l.includes('engine:')) || '';
     expect(engine.includes(`→ ${engineDir}`), `the engine reads as current, got: ${engine}`).toBeTruthy();
     const command = lines.find((l) => l.includes('command:')) || '';
-    expect(command.includes(`→ ${engineDir}/workkit.sh`), `and the command too, got: ${command}`).toBeTruthy();
+    expect(command.includes(`→ ${engineDir}/workkit.js`), `and the command too, got: ${command}`).toBeTruthy();
     const checkout = lines.filter((l) => /checkout/i.test(l));
     expect(checkout.join('\n'), 'a plugin install is never named a checkout').toBe('');
     cleanup(world.root);

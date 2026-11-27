@@ -34,6 +34,7 @@ const {
 } = require('./home/options');
 const { catchUp, commitPush, heal } = require('./home/install');
 const { manifestsOf, sync } = require('./home/seed');
+const { chomp } = require('../hooks/mods/text.js');
 
 const BUILD = path.join(__dirname, 'publish', 'build.js');
 
@@ -263,9 +264,9 @@ const publishRoster = (run) => {
  */
 const publishSourceSide = async (run) => {
   const subject = run.syncChanged ? 'chore(home): sync the tower project' : 'chore(home): refresh the repo list';
-  const untracked = gitIn(run.home, ['ls-files', '--others', '--exclude-standard'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout ?? '';
+  const untracked = gitIn(run.home, ['ls-files', '--others', '--exclude-standard'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout;
   const clean = git(run.home, ['diff', '--quiet']) === 0 && git(run.home, ['diff', '--cached', '--quiet']) === 0
-    && untracked.replace(/\n+$/, '') === '';
+    && chomp(untracked) === '';
   if (!clean && !(await commitPush(subject))) run.sourceRc = 1;
   return undefined;
 };
@@ -518,8 +519,8 @@ const STEPS = [
  */
 const main = async (args) => {
   const run = newRun(args);
-  // The voice reads both at every line, home's steps included: no indent, as
-  // lib.sh sets it, and quiet when asked, for this process alone.
+  // The voice reads both at every line, home's steps included: no indent,
+  // and quiet when asked, for this process alone.
   process.env.WK_LOG_INDENT = '';
   setQuiet(run.quiet);
   // An end signal stops the run: inside a wait it reaches the program and the

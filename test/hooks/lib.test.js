@@ -1,7 +1,6 @@
 /* eslint-disable no-console */
 // Tests for the engine's shell library under workflow/lib/: one group per
-// helper, the digest, the platform seam, wk_jq, the test package and the marker
-// path's refusal. The suite and package records are test/hooks/lib-record.test.js.
+// helper, the digest, the platform seam, wk_jq and the marker path's refusal. The suite and package records are test/hooks/lib-record.test.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -100,27 +99,6 @@ describe('the engine\'s shell library', { skip: !real && 'this machine has neith
       expect(runLib(`printf 'not json' | wk_jq . >/dev/null 2>&1; printf '%s' "$?"`, env).stdout,
         'a parse failure is jq\'s own 5').toBe('5');
       fs.rmSync(dir, { recursive: true, force: true });
-    });
-  });
-
-  describe('the test package', () => {
-    test('wk_has_test_script: a package.json that defines scripts.test, and nothing else', () => {
-      const root = mkTmp('lib-testscript-');
-      for (const d of ['tested', 'bare', 'none']) fs.mkdirSync(path.join(root, d));
-      fs.writeFileSync(path.join(root, 'tested', 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
-      fs.writeFileSync(path.join(root, 'bare', 'package.json'), JSON.stringify({ name: 'bare', scripts: { lint: 'x' } }));
-      const ask = (d) => runLib(`wk_has_test_script "${shellPath(path.join(root, d))}"`, {}, ['suite.sh']).code;
-      expect(ask('tested'), 'a package.json with a test script answers yes').toBe(0);
-      expect(ask('bare'), 'a package.json without a test script answers no').toBe(1);
-      expect(ask('none'), 'a folder with no package.json answers no').toBe(1);
-      fs.rmSync(root, { recursive: true, force: true });
-    });
-
-    test('an empty scripts.test is no script', () => {
-      const root = mkTmp('lib-emptyscript-');
-      fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: '' } }));
-      expect(runLib(`wk_has_test_script "${shellPath(root)}"`, {}, ['suite.sh']).code, 'wk_has_test_script answers no').toBe(1);
-      fs.rmSync(root, { recursive: true, force: true });
     });
   });
 

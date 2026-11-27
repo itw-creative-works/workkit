@@ -9,7 +9,7 @@ const { stripVTControlCharacters } = require('util');
 const {
   describe, test, expect, mkTmp, run,
 } = require('./lib/harness');
-const { NODE_DIR, joinPath, basePathWithout } = require('./lib/platform');
+const { NODE_DIR, joinPath } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
 const { cleanup, mkWorld, runCli } = require('./scripts/workkit-cli/helpers');
 
@@ -688,7 +688,7 @@ describe('workkit convert: paths', () => {
 });
 
 describe('workkit convert: the global command', () => {
-  test('workflow/workkit.sh convert <file> in a repo converts it as the package bin does', () => {
+  test('workflow/workkit.js convert <file> in a repo converts it as the package bin does', () => {
     const world = mkWorld({ claude: false });
     const repo = mkSuites({ 'test/two.test.js': TWO_GROUPS });
     run('git', ['init', '-q'], { cwd: repo });
@@ -711,20 +711,6 @@ describe('workkit convert: the global command', () => {
     expect(code, `exit 0, got: ${said}`).toBe(0);
     expect(stripVTControlCharacters(said).split(/\r?\n/).includes('converted test/two.test.js (4 cases)'), `the converted line, got: ${said}`).toBeTruthy();
     expect(readText(repo, 'test/two.test.js').includes("describe('adding', "), `the root's suite rewritten, got:\n${readText(repo, 'test/two.test.js')}`).toBeTruthy();
-    cleanup(world.root);
-  });
-
-  test('no node on PATH: one convert: error line naming node, exit 1, the file untouched', () => {
-    const world = mkWorld({ claude: false });
-    const repo = mkSuites({ 'test/two.test.js': TWO_GROUPS });
-    run('git', ['init', '-q'], { cwd: repo });
-    const noNode = basePathWithout(world.root, 'node');
-    const { code, said } = runCli(world, ['convert', 'test/two.test.js'], { cwd: repo, env: { PATH: joinPath(world.bin, noNode) } });
-    expect(code, `exit 1, got: ${said}`).toBe(1);
-    const printed = stripVTControlCharacters(said).split(/\r?\n/).filter((line) => line.trim());
-    expect(printed.length, `one line, got: ${said}`).toBe(1);
-    expect(printed[0].includes('convert:') && /\bnode\b/.test(printed[0]), `a convert: line naming node, got: ${said}`).toBeTruthy();
-    expect(readText(repo, 'test/two.test.js'), 'the file untouched').toBe(TWO_GROUPS);
     cleanup(world.root);
   });
 });

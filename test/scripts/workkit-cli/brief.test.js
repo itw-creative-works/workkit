@@ -1,4 +1,4 @@
-// Tests for workflow/workkit.sh: `brief` (today's brief, asked for now),
+// Tests for workflow/workkit.js: `brief` (today's brief, asked for now),
 // and `tower` and `decline` beside it.
 // The shared prologue is ./helpers.js.
 
@@ -8,9 +8,9 @@ const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const { shellPath, gitPath } = require('../../lib/platform');
-const { recordArgv, readArgv, fmtCalls } = require('../../lib/argv-log');
+const { recordArgvJs, readArgv, fmtCalls } = require('../../lib/argv-log');
 const {
-  cleanup, writeStub, mkWorld, runCli, mkRepo, seedSettings, mkPartialKit,
+  cleanup, mkWorld, runCli, mkRepo, seedSettings, mkPartialKit,
 } = require('./helpers');
 
 describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
@@ -54,7 +54,7 @@ describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
     const { kit, script } = mkPartialKit();
     const morningLog = path.join(kit, 'morning-argv.log');
     fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
-    writeStub(path.join(kit, 'jobs', 'morning.sh'), [recordArgv(morningLog), 'exit 0']);
+    fs.writeFileSync(path.join(kit, 'jobs', 'morning.js'), `${recordArgvJs(JSON.stringify(morningLog), 'process.argv.slice(2)')}\n`);
     const { code } = runCli(world, ['brief', '--local'], { script });
     expect(code, 'exit 0').toBe(0);
     expect(readArgv(morningLog).map((c) => c.join(' ')).join('; '), 'the rehearsal: composed here, publishing nothing').toBe('--now');
@@ -68,6 +68,16 @@ describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
     const { code, err } = runCli(world, ['brief'], { script });
     expect(code, 'exit 1').toBe(1);
     expect(err.includes('needs the whole kit'), `the error names the kit as the cause, got: ${err}`).toBeTruthy();
+    cleanup(world.root); cleanup(kit);
+  });
+
+  test('brief --local in a kit with no jobs/morning.js names the missing job, exit 1', () => {
+    const world = mkWorld({ secrets: BOTH_SECRETS });
+    const { kit, script } = mkPartialKit();
+    const { code, err } = runCli(world, ['brief', '--local'], { script });
+    expect(code, `exit 1, got: ${err}`).toBe(1);
+    const line = `✖ no morning job beside this engine (${gitPath(path.join(kit, 'jobs', 'morning.js'))}), and this command needs the whole kit`;
+    expect(err.split('\n').includes(line), `the line naming morning.js, got: ${err}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);
   });
 
@@ -114,7 +124,7 @@ describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
   test('decline records the answer in the user’s own settings, not the repo’s', () => {
     const world = mkWorld();
     const repo = mkRepo();
-    const { code } = runCli(world, ['decline', shellPath(repo)]);
+    const { code } = runCli(world, ['decline', repo]);
     expect(code, 'exit 0').toBe(0);
     const user = JSON.parse(fs.readFileSync(path.join(world.workflowHome, '.repos.json'), 'utf8'));
     expect(user.repos[gitPath(fs.realpathSync(repo))] || user.repos[gitPath(repo)], 'the personal file carries it').toBe('declined');

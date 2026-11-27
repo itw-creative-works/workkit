@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * workflow/home.js: the home repo's one entry, a verb per function of
- * home.sh, which hands each over. Only `setup` creates the repo, the clone and
+ * workflow/home.js: the home repo's one entry, a verb per step the command
+ * (homeRun in workkit/kit.js) hands over. Only `setup` creates the repo, the clone and
  * its services; see workflow/README.md § The home repo's lifecycle.
  * Usage: node home.js <verb> [argument]
  */

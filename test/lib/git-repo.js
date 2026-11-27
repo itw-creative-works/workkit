@@ -44,7 +44,7 @@ const mkRepo = (prefix, files, when, { optIn = true } = {}) => {
   const tmp = path.join(dir, 'tmp');
   for (const d of [repo, home, tmp]) fs.mkdirSync(d, { recursive: true });
   const workflowHome = path.join(home, '.workkit');
-  const env = homeEnv(home, { PATH: process.env.PATH, TMPDIR: shellPath(tmp), WORKFLOW_HOME: shellPath(workflowHome) });
+  const env = homeEnv(home, { PATH: process.env.PATH, TMPDIR: tmp, WORKFLOW_HOME: workflowHome });
   const git = (...args) => {
     const res = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
     if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);

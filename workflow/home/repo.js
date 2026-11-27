@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { isPlain } = require('../../hooks/mods/settings.js');
+const { chomp } = require('../../hooks/mods/text.js');
 const { spawnSync, onPath } = require('../lib/run');
 const { gitIn } = require('../lib/git');
 const { isDir, isFile } = require('../lib/lock');
@@ -34,7 +35,7 @@ const gh = (args) => spawnSync('gh', args, { encoding: 'utf8', stdio: ['ignore',
 const login = async () => {
   if (!onPath('gh')) return '';
   const res = await spin('reading the gh login', () => gh(['api', 'user', '-q', '.login']), { line: false });
-  return res.status === 0 ? res.stdout.replace(/\n+$/, '') : '';
+  return res.status === 0 ? chomp(res.stdout) : '';
 };
 
 /**

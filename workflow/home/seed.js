@@ -108,7 +108,7 @@ const sameBytes = (a, b) => {
 
 /**
  * A project's manifests that are files: the root `package.json`, then each
- * target's, a dot-named folder skipped as the shell's `targets/*` was.
+ * target's in name order, a dot-named folder skipped.
  * @param {string} home the project folder
  * @returns {string[]}
  */

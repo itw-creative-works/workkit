@@ -1,6 +1,6 @@
 //
 // Tests for tower/api/lib/log.js in a real piped node (the no-tty branch; the
-// WORKKIT_COLOR seam asks for styling). test/scripts/lib-log.test.js is the shell half.
+// WORKKIT_COLOR seam asks for styling). The voice's levels it builds on are test/scripts/lib-log.test.js's.
 //
 
 const { spawnSync } = require('child_process');
@@ -56,13 +56,13 @@ describe('tower/api/lib/log: the task and the colors', () => {
     expect(!`${out}${err}`.includes(ESCAPE), `nothing is styled off a terminal, got: ${JSON.stringify(out + err)}`).toBeTruthy();
   });
 
-  test('NO_COLOR beats the seam, the way it does in the shell half', () => {
+  test('NO_COLOR beats the seam, the way it does in the engine\'s voice', () => {
     const { out } = inNode("createLogger().ok('board: swept');", { WORKKIT_COLOR: '1', NO_COLOR: '1' });
     expect(!out.includes(ESCAPE), `nothing is styled, got: ${JSON.stringify(out)}`).toBeTruthy();
     expect(out, `and the words are the same, got: ${JSON.stringify(out)}`).toBe('✓ board: swept\n');
   });
 
-  test('a TERM that cannot render it is a final no too, as in the shell half', () => {
+  test('a TERM that cannot render it is a final no too, as in the engine\'s voice', () => {
     const { out } = inNode("createLogger().ok('board: swept');", { WORKKIT_COLOR: '1', TERM: 'dumb' });
     expect(!out.includes(ESCAPE), `nothing is styled, got: ${JSON.stringify(out)}`).toBeTruthy();
     expect(out, `and the words are the same, got: ${JSON.stringify(out)}`).toBe('✓ board: swept\n');

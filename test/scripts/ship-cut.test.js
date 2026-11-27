@@ -205,6 +205,27 @@ describe('ship cut: the wait', () => {
     expect(g.order(), 'no hook').toBe(null);
   });
 
+  test('a WORKKIT_CUT_RELEASE_TIMEOUT that is no number of 0 or more is the default: a release on the second view is waited for, exit 0', () => {
+    for (const timeout of ['soon', '-1']) {
+      const g = mkCutRepo();
+      const gh = commitGh({ late: { 'v1.2.3': 1 }, onView: g.note('view') });
+      const { code, err } = runShip(waiting(g, timeout), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
+      expect(code, `${timeout}: exit 0, got: ${err}`).toBe(0);
+      expect(g.order(), `${timeout}: one miss, the release, then the hook, got: ${fmtCalls(gh.calls())}`).toBe('view\nview\nhook\n');
+    }
+  });
+
+  test('a WORKKIT_CUT_RELEASE_POLL that is no number of 0 or more is never read as 0: a one-second wait asks twice at most', () => {
+    for (const poll of ['often', '-1']) {
+      const g = mkCutRepo();
+      const gh = commitGh({ runs: RUNS });
+      const env = { ...g.env, WORKKIT_CUT_RELEASE_TIMEOUT: '1', WORKKIT_CUT_RELEASE_POLL: poll };
+      const { err } = runShip({ ...g, env }, 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
+      expect(lines(err).includes(`ship-cut: no release v1.2.3 after 1s; check the release job: ${RUN_URL}`), `${poll}: the wait line, got: ${err}`).toBeTruthy();
+      expect(views(gh) <= 2, `${poll}: a first view and one after the gap, got: ${fmtCalls(gh.calls())}`).toBeTruthy();
+    }
+  });
+
   test('gh release view failing for a reason other than not found: its line at once, exit 1, no hook', () => {
     const g = mkCutRepo();
     const gh = commitGh({ fails: true });

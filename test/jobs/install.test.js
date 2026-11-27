@@ -13,7 +13,7 @@ const {
 // The installer starts through run.js as every case's child does; the plist
 // tools below stay raw.
 const {
-  homeEnv, stubTool, stubToolJs, pathWith, gitPath, spawnSync: spawnThroughRun,
+  homeEnv, nodeHomeEnv, stubTool, stubToolJs, pathWith, gitPath, spawnSync: spawnThroughRun,
 } = require('../lib/platform');
 const { schtasksStub } = require('../lib/schtasks-stub');
 const { mkPluginCopy } = require('../lib/plugin-copy');
@@ -74,7 +74,8 @@ const mkWorld = ({
     'exit 0',
   ]);
 
-  const env = homeEnv(home, { ...process.env, PATH: pathWith(bin) });
+  // The Claude home named, so a caller's WORKFLOW_CLAUDE_HOME (a proof run's) never stands in for it.
+  const env = homeEnv(home, { ...process.env, PATH: pathWith(bin), WORKFLOW_CLAUDE_HOME: path.join(home, '.claude') });
   if (scheduleOk) env.WORKKIT_SCHEDULE_OK = '1';
   else delete env.WORKKIT_SCHEDULE_OK;
 
@@ -396,7 +397,9 @@ const mkTaskWorld = ({ scheduleOk = true, engineLink = true, platform = 'win32' 
     fs.symlinkSync(path.join(REPO, 'workflow'), path.join(home, '.claude', 'workkit'), 'junction');
   }
   fs.writeFileSync(entry, `process.exitCode = require(${JSON.stringify(SCRIPT)}).main(process.argv.slice(2), { platform: ${JSON.stringify(platform)} });\n`);
-  const env = { ...homeEnv(home, { ...process.env, PATH: pathWith(bin), WORKFLOW_HOME: machine }), HOME: home };
+  const env = nodeHomeEnv(home, {
+    ...process.env, PATH: pathWith(bin), WORKFLOW_HOME: machine, WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
+  });
   if (scheduleOk) env.WORKKIT_SCHEDULE_OK = '1';
   else delete env.WORKKIT_SCHEDULE_OK;
   return {

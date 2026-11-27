@@ -4,11 +4,15 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
-const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
-const { fmtCalls } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, inNode, mkKitCopy, kitCommitted,
+  describe, test, expect, mkTmp, SPAWN_DEADLINE,
+} = require('../../lib/harness');
+const {
+  NO_RC, SYSTEM_PATH, shellPath, which, spawnBash, stubToolJs, joinPath, samePath,
+} = require('../../lib/platform');
+const { recordArgvJs, readArgv, fmtCalls } = require('../../lib/argv-log');
+const {
+  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, runHomeSteps, mkKitCopy, kitCommitted,
 } = require('./helpers');
 
 describe('workflow/home: the clone’s own heal', () => {
@@ -20,10 +24,10 @@ describe('workflow/home: the clone’s own heal', () => {
       settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } },
     });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, { seed: { 'package.json': '{}\n' } });
-    inNode(world, [['repo', 'clone', ['owner/workkit']]]);
+    runHomeSteps(world, [['repo', 'clone', ['owner/workkit']]]);
     return world;
   };
-  const heal = (world) => inNode(world, [['install', 'heal']]);
+  const heal = (world) => runHomeSteps(world, [['install', 'heal']]);
   const forms = ['bug', 'enhancement', 'idea', 'dump'];
 
   test('the home repo gets the labels and the forms, and they are pushed', () => {
@@ -54,6 +58,30 @@ describe('workflow/home: the clone’s own heal', () => {
     expect(fs.existsSync(path.join(check, '.github', 'ISSUE_TEMPLATE', 'idea.md')), 'the push landed the forms').toBeTruthy();
     const subject = spawnSync('git', ['-C', world.tower, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim();
     expect(subject, 'in a commit that says what it is').toBe('chore(home): install the issue templates');
+    cleanup(world.root);
+  });
+
+  test('the heal starts standards.js --home with the running node: no bash of the kit and no node by name', () => {
+    const world = cloned();
+    // A bash and a node first on PATH, each recording its start, then handing it to the real one.
+    const starts = mkTmp('heal-starts-');
+    const logOf = (name) => path.join(starts, `${name}.log`);
+    for (const [name, real] of [['bash', which('bash', SYSTEM_PATH)], ['node', process.execPath]]) {
+      stubToolJs(starts, name, [
+        recordArgvJs(JSON.stringify(logOf(name)), 'process.argv.slice(2)'),
+        `const res = require('child_process').spawnSync(${JSON.stringify(real)}, process.argv.slice(2), { stdio: 'inherit' });`,
+        'process.exit(res.status === null ? 1 : res.status);',
+      ].join('\n'));
+    }
+    const { code, out, err } = heal({ ...world, env: { ...world.env, PATH: joinPath(starts, world.env.PATH) } });
+    expect(code, `exit 0: ${out}${err}`).toBe(0);
+    expect(world.labels().some((l) => l.name === 'status:inbox'), `the heal ran: the labels were made, got: ${out}${err}`).toBe(true);
+    // The world's gh and npm are bash scripts, so a bash start of one of them is the world's own.
+    const bin = path.join(world.root, 'bin');
+    const kitBash = readArgv(logOf('bash')).filter((argv) => !samePath(path.dirname(argv[0] || ''), bin, process.platform));
+    expect(fmtCalls(kitBash), 'no bash was started but the world\'s own stand-ins').toBe(fmtCalls([]));
+    const byName = readArgv(logOf('node')).filter((argv) => argv.some((a) => /standards\.(js|sh)$/.test(a)));
+    expect(fmtCalls(byName), 'and the engine was never started by a node found on PATH').toBe(fmtCalls([]));
     cleanup(world.root);
   });
 
@@ -112,7 +140,7 @@ describe('workflow/home: the clone’s own heal', () => {
       settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } },
     });
     // A step after the heal, so the caller running on is a step that ran.
-    const { answers, out } = inNode(world, [['install', 'heal'], ['options', 'homeState']]);
+    const { answers, out } = runHomeSteps(world, [['install', 'heal'], ['options', 'homeState']]);
     expect(/nothing is cloned at .*tower/.test(out), `it names the missing clone, got: ${out}`).toBeTruthy();
     expect(/not healed/.test(out), 'and what went unhealed is named').toBeTruthy();
     expect(answers.length, `a heal that cannot run never stops its caller: ${JSON.stringify(answers)}`).toBe(2);

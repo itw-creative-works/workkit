@@ -14,12 +14,13 @@ import { closedIssues, closesAny, isDocPath, isManifest, namedIssues, sharedTrai
 import { budgetLine } from './commit-gate/budget.js';
 import { HealHeld, exitOf, healArms, held, started } from './commit-gate/heal.js';
 import { issueView } from './gh.js';
-import { userDirOf } from './log.js';
+import { scriptShellExeOf, userDirOf } from './log.js';
 import { markerPath, reviewMarkerPath, suiteMarkerPath, windowsKit } from './markers.js';
 import { viewHasProof, viewStage } from './proof.js';
 import { loadSettings, parseJson } from './settings.js';
 import { LONG_RUN_MS, hasTestScript, suiteProved, suiteRecordMs, treeHash } from './suite.js';
 import { isCodePath, isTestPath } from './test-reminder.js';
+import { chomp } from './text.js';
 
 /** What every one of the gate's denies opens with. */
 export const BLOCK_PREFIX = 'commit-gate: BLOCKED this commit: ';
@@ -41,7 +42,7 @@ const lines = (text) => String(text ?? '').split('\n').filter(Boolean);
 
 const newFilesText = (list) => `the commit adds new source files (${list}) but touches no test file. The test obligation scales with the change (AGENTS.md §6): write/extend tests for the new files, stage them, then commit.`;
 // npm's script shell (workflow/script-shell.js) says it too.
-export const lintText = (stderr) => `the CHANGELOG entry does not match the format (see docs/project-state.md). ${String(stderr ?? '').replace(/\n+$/, '')}`;
+export const lintText = (stderr) => `the CHANGELOG entry does not match the format (see docs/project-state.md). ${chomp(stderr)}`;
 const unpassedText = (list) => `the message names issues the owner has not passed: ${list}. The owner's pass moves an issue to status:complete before a commit names it (docs/project-state.md, "The park"): leave the work uncommitted until then, or drop the reference.`;
 const unprovedText = (list) => `the message closes${list}, and no comment there opens with a \`Proof:\` line. A proof is a hard gate (docs/project-state.md, "The proof"): the agent that built the item comments the Proof: line first, one entry per layer with the command or the reason it was skipped, and only then does the trailer close the issue.`;
 const sharedText = (trailers) => {
@@ -51,7 +52,7 @@ const sharedText = (trailers) => {
 };
 const noGreenText = (log) => `the commit carries code and no green run proves this tree. Run \`npm test\` at the repo root (once per tree; npm's script shell records a green run and writes its output to ${log}), then commit.`;
 
-// A folder's real path joined to the name as written (wk_physical_path); null when it cannot be resolved.
+// A folder's real path joined to the name as written; null when it cannot be resolved.
 async function physical(real, path) {
   const spelled = path.replace(/\\/g, '/');
   const cut = spelled.lastIndexOf('/');
@@ -66,7 +67,7 @@ async function physical(real, path) {
 async function unwired(facts) {
   const shell = await facts.scriptShell;
   if (typeof shell !== 'string') return false;
-  const value = shell.replace(/\r/g, '').replace(/\n+$/, '');
+  const value = chomp(shell.replace(/\r/g, ''));
   if (['', 'null', 'undefined'].includes(value)) return true;
   let want;
   if (facts.isWindows) {
@@ -80,7 +81,7 @@ async function unwired(facts) {
 
 // The repo's log folder, `logs.dir` as wk_setting prints it walked to a path
 // from the root ('' the root itself, empty read as `.workkit`), as `{ dir }`,
-// or `{ error }`, the line naming the key: wk_log_dir's twin (lib/suite.sh).
+// or `{ error }`, the line naming the key.
 function logDirOf(settings) {
   const raw = settings.logs?.dir;
   const value = (typeof raw === 'string' ? raw : raw == null ? '' : JSON.stringify(raw)) || '.workkit';
@@ -96,7 +97,7 @@ function logDirOf(settings) {
   return { dir: kept.join('/') };
 }
 
-// wk_log_path's rule without its two reads: the log <name> as `{ rel }` from
+// Where a log goes, without its two reads: the log <name> as `{ rel }` from
 // the root, kept there where git ignores it, else under the marker folder
 // `{ marker }` with `{ suffix }` after it (`.<id>` ends both); or logDirOf's `{ error }`.
 export function logPlaceOf(settings, name, id = '') {
@@ -340,7 +341,7 @@ function gatherFacts(g, root) {
     get scriptShell() { return scriptShell(); },
     isWindows: windowsKit(kit),
     kitRoot: kit,
-    scriptShellExe: `${home}/script-shell.exe`,
+    scriptShellExe: scriptShellExeOf(g.env),
     userSettings: `${home}/settings.json`,
     real: g.real,
     home,

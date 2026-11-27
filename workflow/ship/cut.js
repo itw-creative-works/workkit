@@ -18,6 +18,7 @@ const { runHooks } = require('./hooks');
 const { RELEASE_SUBJECT } = require('../../hooks/mods/release-taken.js');
 const { sayAs, endOf, errLine } = require('../lib/say');
 const { pause } = require('../lib/pause');
+const { nonNegativeOf } = require('../lib/bounded');
 const { CALLER, hasReleaseJob, callerAtHead } = require('./caller');
 
 const USAGE = 'usage: workkit ship cut <x.y.z>';
@@ -106,23 +107,14 @@ const missingBefore = (root, commits, version) => {
   return [];
 };
 
-/** A whole-number wait setting from the environment, `fallback` when unset. */
-const knob = (name, fallback, min) => {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < min) throw new Error(`ship-cut: ${name} is ${raw}, not a whole number of at least ${min}`);
-  return value;
-};
-
 /**
  * One wait every version of a cut shares: `gh release view` asked every POLL
  * seconds until TIMEOUT seconds in all have passed, about ten minutes by default.
  * @returns {{seconds: number, until: (root: string, tag: string) => boolean}}
  */
 const releaseWait = () => {
-  const seconds = knob('WORKKIT_CUT_RELEASE_TIMEOUT', 600, 0);
-  const poll = knob('WORKKIT_CUT_RELEASE_POLL', 10, 0);
+  const seconds = nonNegativeOf(process.env.WORKKIT_CUT_RELEASE_TIMEOUT, 600);
+  const poll = nonNegativeOf(process.env.WORKKIT_CUT_RELEASE_POLL, 10);
   const deadline = Date.now() + seconds * 1000;
   const until = (root, tag) => {
     while (!isReleased(root, tag)) {

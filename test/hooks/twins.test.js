@@ -1,32 +1,31 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the suite log's path, the test script,
-// the marker path, the color gate, the voice lines, the plain mutex, the marker sweep, the opt-in read, the session rule, one setting, the machine folder and tower,
-// the hooks log, the slug, the native path, the repo slug and kit checkout, the clone rank, the atomic link, the safe JSON edit, the kit's hooks folder, git's value-taking global options,
-// the yes or no question, the opener choice, the spinner's frames and its one line, the poll's countdown frames,
-// and the home repo's Pages branch.
-// Plus one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
-// And three with no shell side, the repo flag, the public slug and the CHANGELOG test.
+// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the marker path, the marker sweep,
+// the opt-in read, the session rule, one setting, the machine folder, the slug, the native path, the repo slug and kit checkout,
+// the kit's hooks folder and git's value-taking global options. Plus one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
+// And the rows with no shell side, each its Node function alone: the suite log's path, the test script, the color gate, the voice lines,
+// the plain mutex, the tower folder, the hooks log, the clone rank, the physical path, the atomic link, the safe JSON edit, the yes or no question,
+// the opener choice, the spinner's frames and its one line, the poll's countdown frames, the repo flag, the public slug and the CHANGELOG test.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, mkTmp, needs, run, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, run, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, EMPTY_PATH, shellPath, gitPath, jsPath, stubTool, stubToolJs, spawnSystemBash, nodeEnv, samePath, homeEnv, joinPath, basePathWithout, pathWith,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, EMPTY_PATH, shellPath, gitPath, jsPath, stubTool, stubToolJs, spawnSystemBash, nodeEnv, samePath, homeEnv, joinPath, basePathWithout, pathWith, skipWithoutFileLink,
 } = require('../lib/platform');
 const { recordArgv, recordArgvJs, readArgv } = require('../lib/argv-log');
 const { underEnv } = require('../lib/under-env');
 const { ioOf } = require('../lib/io-streams');
+const { speak } = require('../lib/speak');
 const {
-  driveSpin, drivePoll, framesIn, MESSAGE, POLL_MESSAGE, POLL_SECONDS,
+  driveSpin, drivePoll, framesIn, MESSAGE, POLL_MESSAGE,
 } = require('../lib/spin-call');
 const { mkRepo, mkOriginRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mods } = require('../lib/mods-inputs');
 const commitGate = require('./commit-gate/helpers');
-const { runLib } = require('../lib/hook-lib');
 const { agedFile, daysAgo } = require('../lib/workflow-home');
 const { readOrNull } = require('../../workflow/lib/read');
 
@@ -140,32 +139,25 @@ const LOG_DIRS = [
 ];
 const settingsOf = (dir) => `${JSON.stringify({ enabled: true, ...(dir === undefined ? {} : { logs: { dir } }) }, null, 2)}\n`;
 
-describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh against the path the commit gate\'s record block names', () => {
-  // One spelling for both sides: the root as <root>, a markers path from markers/ on, its repo key as <sha>.
+describe('the suite log\'s path, the path the commit gate\'s record block names', () => {
+  // One spelling for every answer: the root as <root>, a markers path from markers/ on, its repo key as <sha>.
   const norm = (p, root) => {
     const at = p.indexOf('/markers/');
     if (at >= 0) return p.slice(at + 1).replace(/[0-9a-f]{40}$/, '<sha>');
     return p.startsWith(`${root}/`) ? `<root>${p.slice(root.length)}` : p;
   };
 
-  test('wk_log_path and the gate name one suite log for every logs.dir and .gitignore', async () => {
-    const shell = [];
+  test('the gate names one suite log for every logs.dir and .gitignore', async () => {
     const js = [];
     for (const [dir, ignore] of LOG_DIRS) {
+      // The repo whose .gitignore answers each ignore question the gate asks.
       const w = mkRepo('twins-logdir-', { '.gitignore': ignore, '.workkit/settings.json': settingsOf(dir) }, undefined, { optIn: false });
-      const root = w.git('rev-parse', '--show-toplevel').trim();
-      const res = runLib(`wk_log_path "${root}" suite.log`, {
-        HOME: shellPath(path.dirname(w.workflowHome)), WORKFLOW_HOME: shellPath(w.workflowHome), ...nodeEnv,
-      }, ['suite.sh']);
-      // A refused value is one answer on both sides: the shell's non-zero exit, the gate's line naming logs.dir.
-      shell.push(res.code === 0 ? norm(res.stdout.trim(), root) : 'refused');
-
       const r = commitGate.mkReleaseRepo();
       commitGate.stage(r, '.workkit/settings.json', settingsOf(dir));
       commitGate.commit(r);
       commitGate.stage(r, 'app.js', 'const x = 2;\n');
       commitGate.touchMarker(r);
-      // Every ignore question the gate asks, answered by git in the shell side's repo.
+      // Every ignore question the gate asks, answered by git in that repo.
       r.failOn = (argv) => (path.basename(argv[0]) === 'git' && argv.includes('check-ignore')
         ? { exitCode: spawnSync('git', ['check-ignore', '-q', argv[argv.length - 1].replace(`${commitGate.ROOT}/`, '')], { cwd: w.repo, env: w.env }).status }
         : null);
@@ -176,9 +168,8 @@ describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh aga
         ? norm(deny.slice(deny.indexOf(head) + head.length, deny.length - commitGate.T.recordTail.length), commitGate.ROOT)
         : (deny.includes('logs.dir') ? 'refused' : deny));
     }
-    agree(LOG_DIRS.map((_, i) => i), shell, (i) => js[i], `the (logs.dir, .gitignore) fixtures by index, the gate's answers ${JSON.stringify(js)}`);
     // A dot, a dot-dot that stays inside and a trailing slash all name logs/; a backslash is a separator; empty is the default.
-    expect(JSON.stringify(shell), 'each folder git ignores holds the log, the markers folder takes it otherwise').toBe(JSON.stringify([
+    expect(JSON.stringify(js), 'each folder git ignores holds the log, the markers folder takes it otherwise').toBe(JSON.stringify([
       '<root>/.workkit/suite.log', '<root>/logs/suite.log', '<root>/out/logs/suite.log',
       'markers/claude-suite.log/<sha>', 'markers/claude-suite.log/<sha>',
       '<root>/logs/suite.log', '<root>/logs/suite.log', '<root>/logs/sub/suite.log', '<root>/.workkit/suite.log',
@@ -186,23 +177,13 @@ describe('twins: the suite log\'s path, wk_log_path in workflow/lib/suite.sh aga
   });
 });
 
-describe('twins: the test script, wk_has_test_script in workflow/lib/suite.sh against hasTestScript in hooks/mods/suite.js', () => {
-  // package.json texts; null writes none.
-  const PACKAGES = [
-    '{"scripts":{"test":"node --test"}}', '{"scripts":{"test":""}}', '{"name":"bare","scripts":{"lint":"x"}}', '{"scripts":{"test":1}}',
-    '{"scripts":null}', '{}', 'not json', null,
-  ];
+describe('the test script, hasTestScript in hooks/mods/suite.js', () => {
+  // The package.json shapes test/hooks/suite.test.js leaves out.
+  const PACKAGES = [{ scripts: { test: 1 } }, { scripts: null }, {}];
 
-  test('wk_has_test_script and hasTestScript answer every package.json alike, and only a non-empty string scripts.test is one', () => {
-    const dirs = PACKAGES.map((text) => {
-      const dir = mkTmp('twins-testscript-');
-      if (text !== null) fs.writeFileSync(path.join(dir, 'package.json'), text);
-      return dir;
-    });
-    const shell = bashAnswers([lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'suite.sh')], 'wk_has_test_script', dirs.map(shellPath));
-    const parsed = (text) => { try { return JSON.parse(text); } catch { return null; } };
-    agree(PACKAGES.map((_, i) => i), shell, (i) => mods('suite').hasTestScript(parsed(PACKAGES[i])), 'the package.json texts by index');
-    expect(JSON.stringify(shell.slice(0, 3)), 'a test script is one, an empty one and none are not').toBe(JSON.stringify([true, false, false]));
+  test('a scripts.test that is no string, a null scripts and no scripts at all are no test script', () => {
+    expect(JSON.stringify(PACKAGES.map((pkg) => mods('suite').hasTestScript(pkg))), 'none of them is a test script')
+      .toBe(JSON.stringify([false, false, false]));
   });
 });
 
@@ -221,9 +202,8 @@ describe('twins: the marker path, wk_marker_path in workflow/lib/platform.sh aga
   });
 });
 
-describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against colorOn in workflow/lib/voice.js', () => {
-  // Environments with no terminal on stdout, each the gate's variables alone; a TERM is named
-  // wherever one matters, since bash sets a dumb one when none is given.
+describe('the color gate, colorOn in workflow/lib/voice.js', () => {
+  // Environments with no terminal on stdout, each the gate's variables alone.
   const ENVS = [
     {}, { WORKKIT_COLOR: '1', TERM: 'xterm-256color' }, { WORKKIT_COLOR: '0', TERM: 'xterm-256color' }, { WORKKIT_COLOR: '0' },
     { WORKKIT_COLOR: '1', TERM: 'xterm-256color', NO_COLOR: '1' }, { NO_COLOR: '1', TERM: 'xterm-256color' },
@@ -231,15 +211,8 @@ describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against co
   ];
   const GATE_VARS = ['WORKKIT_COLOR', 'NO_COLOR', 'TERM', 'FORCE_COLOR'];
 
-  test('wk_color_on and colorOn give every environment the same answer on a stdout that is no terminal', () => {
+  test('on a stdout that is no terminal only the forced gate paints, and NO_COLOR or a dumb TERM beats it', () => {
     const { colorOn } = require(path.join(KIT, 'workflow', 'lib', 'voice.js'));
-    const shell = ENVS.map((vars) => {
-      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'voice.sh')}"\nif wk_color_on; then echo 1; else echo 0; fi`], {
-        env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...vars }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
-      expect(res.status, `the shell answered for ${JSON.stringify(vars)}, stderr: ${res.stderr}`).toBe(0);
-      return res.stdout.trim() === '1';
-    });
     const saved = Object.fromEntries(GATE_VARS.map((name) => [name, process.env[name]]));
     const node = ENVS.map((vars) => {
       for (const name of GATE_VARS) delete process.env[name];
@@ -250,16 +223,15 @@ describe('twins: the color gate, wk_color_on in workflow/lib/voice.sh against co
         for (const name of GATE_VARS) if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name];
       }
     });
-    agree(ENVS.map((_, i) => i), shell, (i) => node[i], `the environments by index, colorOn's answers ${JSON.stringify(node)}`);
-    expect(JSON.stringify(shell.slice(0, 3)), 'nothing set is off, the gate forced on is on, forced off is off').toBe(JSON.stringify([false, true, false]));
-    expect(shell[4], 'NO_COLOR wins over the forced gate').toBe(false);
+    expect(JSON.stringify(node), `the environments by index: ${JSON.stringify(ENVS)}`)
+      .toBe(JSON.stringify([false, true, false, false, false, false, false, false]));
   });
 });
 
-describe('twins: the voice lines, wk_ok, wk_skip, wk_info, wk_warn and wk_warn_lines in workflow/lib/voice.sh against workflow/lib/voice.js', () => {
+describe('the voice lines, ok, skip, info, warn and warnLines in workflow/lib/voice.js', () => {
   // A task split, two clauses no task, a percent and a backslash, a colon past the task.
   const MESSAGES = ['labels: 3 created', 'Two words: no task', '50% of a\\b', 'a: b: c'];
-  // wk_warn_lines' text: a prefixed line, a blank, a bare one, one already prefixed with no space.
+  // warnLines' text: a prefixed line, a blank, a bare one, one already prefixed with no space.
   const [TOPIC, TEXT] = ['hooks', 'hooks: set\n\nmoved by a script\nhooks:x'];
   // The variables the lines read, each environment beside nothing else.
   const ENVS = {
@@ -270,66 +242,53 @@ describe('twins: the voice lines, wk_ok, wk_skip, wk_info, wk_warn and wk_warn_l
     stderr: { WK_LOG_STDERR: '1', WK_LOG_INDENT: '    ' },
     all: { QUIET: '1', WORKKIT_COLOR: '1', TERM: 'xterm-256color', WK_LOG_INDENT: '  ', WK_LOG_STDERR: '1' },
   };
-  const BASH_VOICE = `. "${lib('workflow', 'lib', 'voice.sh')}"
-wk_palette
-topic="$1" text="$2"; shift 2
-for m in "$@"; do wk_ok "$m"; wk_skip "$m"; wk_info "$m"; wk_warn "$m"; done
-wk_warn_lines "$topic" "$text"`;
-  const NODE_VOICE = `const v = require(${JSON.stringify(path.join(KIT, 'workflow', 'lib', 'voice.js'))});
-const [topic, text, ...messages] = process.argv.slice(1);
-for (const m of messages) { v.ok(m); v.skip(m); v.info(m); v.warn(m); }
-v.warnLines(topic, text);`;
-  const say = (side, vars) => {
-    const env = { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...vars };
-    const opts = { env, encoding: 'utf8', timeout: SPAWN_DEADLINE };
-    const res = side === 'bash'
-      ? spawnSystemBash([...NO_RC, '-c', BASH_VOICE, 'voice', TOPIC, TEXT, ...MESSAGES], opts)
-      : spawnSync(process.execPath, ['-e', NODE_VOICE, TOPIC, TEXT, ...MESSAGES], opts);
-    expect(res.status, `${side} said its lines under ${JSON.stringify(vars)}, stderr: ${res.stderr}`).toBe(0);
+  const VOICE_LINES = [
+    `const [topic, text, ...messages] = ${JSON.stringify([TOPIC, TEXT, ...MESSAGES])};`,
+    'for (const m of messages) { v.ok(m); v.skip(m); v.info(m); v.warn(m); }',
+    'v.warnLines(topic, text);',
+  ];
+  const say = (vars) => {
+    const res = speak(VOICE_LINES, vars);
     return { out: res.stdout.replace(/\r/g, ''), err: res.stderr.replace(/\r/g, '') };
   };
 
-  test('both print every line alike, plain, colored, quiet, indented and on stderr, each to the same stream', () => {
-    const bash = Object.fromEntries(Object.entries(ENVS).map(([name, vars]) => [name, say('bash', vars)]));
-    const each = (glyphs) => MESSAGES.flatMap((m) => glyphs.map((g) => `${g} ${m}\n`)).join('');
-    const warned = '⚠ hooks: set\n⚠ hooks: moved by a script\n⚠ hooks:x\n';
-    expect(bash.plain.out, 'plain: the three reporting lines per message on stdout').toBe(each(['✓', '·', '›']));
-    expect(bash.plain.err, 'plain: the warnings on stderr, each line of the text under its topic').toBe(each(['⚠']) + warned);
-    expect(bash.quiet.out, 'quiet: only the acted line').toBe(each(['✓']));
-    expect(bash.colored.out.split('\n')[0], 'colored: the glyph and the task painted')
+  test('every line plain, colored, quiet, indented and on stderr, each to its stream', () => {
+    const said = Object.fromEntries(Object.entries(ENVS).map(([name, vars]) => [name, say(vars)]));
+    const each = (glyphs, indent = '') => MESSAGES.flatMap((m) => glyphs.map((g) => `${indent}${g} ${m}\n`)).join('');
+    const warned = (indent = '') => `${indent}⚠ hooks: set\n${indent}⚠ hooks: moved by a script\n${indent}⚠ hooks:x\n`;
+    expect(said.plain.out, 'plain: the three reporting lines per message on stdout').toBe(each(['✓', '·', '›']));
+    expect(said.plain.err, 'plain: the warnings on stderr, each line of the text under its topic').toBe(each(['⚠']) + warned());
+    expect(said.quiet.out, 'quiet: only the acted line').toBe(each(['✓']));
+    expect(said.colored.out.split('\n')[0], 'colored: the glyph and the task painted')
       .toBe('\x1b[1m\x1b[0;32m✓\x1b[0m \x1b[1mlabels:\x1b[0m 3 created');
-    expect(bash.stderr.out, 'WK_LOG_STDERR: nothing on stdout').toBe('');
-    expect(bash.stderr.err.split('\n')[0], 'WK_LOG_STDERR: the indent leads the line').toBe('    ✓ labels: 3 created');
-    for (const [name, vars] of Object.entries(ENVS)) {
-      expect(JSON.stringify(say('node', vars)), `${name}: voice.js's stdout and stderr against voice.sh's`).toBe(JSON.stringify(bash[name]));
-    }
+    expect(JSON.stringify(said.indented), 'indented: each line opens with WK_LOG_INDENT')
+      .toBe(JSON.stringify({ out: each(['✓', '·', '›'], '  '), err: each(['⚠'], '  ') + warned('  ') }));
+    expect(said.stderr.out, 'WK_LOG_STDERR: nothing on stdout').toBe('');
+    expect(said.stderr.err.split('\n')[0], 'WK_LOG_STDERR: the indent leads the line').toBe('    ✓ labels: 3 created');
+    expect(said.all.out, 'all of them: nothing on stdout').toBe('');
+    expect(said.all.err.split('\n')[0], 'all of them: the acted line on stderr, at the indent, painted')
+      .toBe('  \x1b[1m\x1b[0;32m✓\x1b[0m \x1b[1mlabels:\x1b[0m 3 created');
   });
 });
 
-describe('twins: the plain mutex and the marker sweep, wk_take_lock and wk_sweep_markers in workflow/lib/platform.sh against takeLock and sweepMarkers in workflow/lib/lock.js', () => {
+describe('the plain mutex, takeLock in workflow/lib/lock.js', () => {
+  test('two takers exclude each other on one folder: while one holds it the other cannot take it, and can after the drop', async () => {
+    const { takeLock, dropLock } = require(path.join(KIT, 'workflow', 'lib', 'lock.js'));
+    const dir = path.join(mkTmp('twins-mutex-'), 'state', 'lock');
+    expect(await takeLock(dir), 'the first taker takes the free folder').toBe(true);
+    expect(await takeLock(dir), 'a second taker cannot take the folder the first holds').toBe(false);
+    dropLock(dir);
+    expect(await takeLock(dir), 'and takes it after the drop').toBe(true);
+    dropLock(dir);
+  });
+});
+
+describe('twins: the marker sweep, wk_sweep_markers in workflow/lib/platform.sh against sweepMarkers in workflow/lib/lock.js', () => {
   // Required in each case, so a missing module fails these cases alone.
   const lockJs = () => require(path.join(KIT, 'workflow', 'lib', 'lock.js'));
   /** <line> in a bash that sourced platform.sh, <env> added; spawnSync's result. */
   const inPlatform = (line, env = {}) => spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"\n${line}`], {
     env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-  });
-
-  test('wk_take_lock and takeLock exclude each other on one folder: while one side holds it the other cannot take it, and can after the drop', async () => {
-    const { takeLock, dropLock } = lockJs();
-    const dir = path.join(mkTmp('twins-mutex-'), 'state', 'lock');
-    const L = { L: shellPath(dir) };
-    const shellTake = () => inPlatform('wk_take_lock "$L"', L);
-    const first = shellTake();
-    expect(first.status, `the shell takes the free folder, stderr: ${first.stderr}`).toBe(0);
-    expect(await takeLock(dir), 'takeLock cannot take the folder the shell holds').toBe(false);
-    const dropped = inPlatform('wk_drop_lock "$L"', L);
-    expect(dropped.status, `the shell drops it, stderr: ${dropped.stderr}`).toBe(0);
-    expect(await takeLock(dir), 'takeLock takes it after the shell\'s drop').toBe(true);
-    const refused = shellTake();
-    expect(refused.status, `wk_take_lock cannot take the folder takeLock holds, stderr: ${refused.stderr}`).toBe(1);
-    await dropLock(dir);
-    const after = shellTake();
-    expect(after.status, `wk_take_lock takes it after takeLock's drop, stderr: ${after.stderr}`).toBe(0);
   });
 
   test('wk_sweep_markers and sweepMarkers leave the same files of one marker tree', async () => {
@@ -522,24 +481,17 @@ describe('twins: the machine folder, wk_user_dir against userDir in hooks/mods/l
     }
   });
 
-  test('wk_tower_dir and towerDir name one tower folder for every WORKFLOW_HOME and HOME', () => {
+  test('towerDir names the tower folder under the machine folder for every WORKFLOW_HOME and HOME', () => {
     const { towerDir } = require(path.join(KIT, 'workflow', 'user-dir.js'));
-    const shell = HOMES.map(([workflowHome, home]) => {
-      const env = { PATH: SYSTEM_PATH, HOME: home, ...(workflowHome === undefined ? {} : { WORKFLOW_HOME: workflowHome }) };
-      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_tower_dir`], {
-        env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
-      return (res.stdout || '').replace(/\r?\n$/, '');
-    });
-    expect(JSON.stringify(shell.slice(0, 2)), 'tower under the machine folder, WORKFLOW_HOME unset and set')
-      .toBe(JSON.stringify(['/w/home/.workkit/tower', '/w/moved/tower']));
     const saved = process.env.WORKFLOW_HOME;
     try {
-      agree(HOMES.map((_, i) => i), shell, (i) => {
-        const [workflowHome, home] = HOMES[i];
+      const node = HOMES.map(([workflowHome, home]) => {
         if (workflowHome === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = workflowHome;
         return towerDir(nodeUserDir(home)).replace(/\\/g, '/');
-      }, `wk_tower_dir against towerDir (by index into ${JSON.stringify(HOMES)})`);
+      });
+      expect(JSON.stringify(node), `the tower folder by index into ${JSON.stringify(HOMES)}`).toBe(JSON.stringify([
+        '/w/home/.workkit/tower', '/w/moved/tower', '/w/home/.workkit/tower', '/w/moved/tower', '/w/a b/.workkit/tower',
+      ]));
     } finally {
       if (saved === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = saved;
     }
@@ -562,7 +514,7 @@ describe('the CHANGELOG test, isChangelog in hooks/mods/changelog-guard.js', () 
   });
 });
 
-describe('twins: the hooks log, wk_hooks_log in workflow/lib/platform.sh against the log hooks/mods/log.js writes', () => {
+describe('the hooks log, hooksLogOf and the line hooks/mods/log.js writes', () => {
   // [hook, event, session id, cwd, verdict], the fields of one fire's line.
   const FIRES = [
     ['safety:commit-gate', 'PreToolUse', 's1', '/w/repo', 'run'],
@@ -570,29 +522,14 @@ describe('twins: the hooks log, wk_hooks_log in workflow/lib/platform.sh against
     ['workflow:snapshot', 'PostToolUse', undefined, undefined, 'crashed'],
   ];
 
-  test('the module writes its log where wk_hooks_log looks, and each line reads back as its six fields', () => {
-    const { userDirOf, logLine, appendLog } = mods('log');
-    const scratch = mkTmp('twins-log-');
-    for (const env of [{ HOME: path.join(scratch, 'home') }, { HOME: path.join(scratch, 'home'), WORKFLOW_HOME: path.join(scratch, 'moved') }]) {
-      const iso = '2026-10-21T12:00:00Z';
-      const text = appendLog('', FIRES.map(([hook, event, sid, cwd, verdict]) => logLine(iso, hook, event, sid, cwd, verdict)).join(''));
-      const file = `${userDirOf(env)}/hooks.log`;
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, text);
-      const shellEnv = { PATH: SYSTEM_PATH, HOME: shellPath(env.HOME), ...(env.WORKFLOW_HOME ? { WORKFLOW_HOME: shellPath(env.WORKFLOW_HOME) } : {}) };
-      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_hooks_log; printf '%s\\n' "$WK_HOOKS_LOG"; cat "$WK_HOOKS_LOG"`], {
-        env: shellEnv, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
-      const [where, ...rest] = (res.stdout || '').split('\n');
-      const label = env.WORKFLOW_HOME ? 'WORKFLOW_HOME set' : 'WORKFLOW_HOME unset';
-      expect(where, `${label}: the file wk_hooks_log names, stderr: ${res.stderr}`).toBe(shellPath(file));
-      expect(rest.join('\n'), `${label}: the shell reads the module's lines back unchanged`).toBe(text);
-      const rows = text.split('\n').filter(Boolean).map((l) => l.split('\t'));
-      expect(JSON.stringify(rows.map((r) => r.length)), `${label}: six fields a line`).toBe(JSON.stringify(FIRES.map(() => 6)));
-      expect(JSON.stringify(rows.map((r) => [r[1], r[5]])),
-        `${label}: the hook second and the verdict last`).toBe(JSON.stringify(FIRES.map((f) => [f[0], f[4]])));
-    }
-    fs.rmSync(scratch, { recursive: true, force: true });
+  test('the log is hooks.log in the machine folder, and each line reads back as its six fields', () => {
+    const { hooksLogOf, logLine, appendLog } = mods('log');
+    expect(hooksLogOf({ HOME: '/w/home' }), 'WORKFLOW_HOME unset: under the home\'s .workkit').toBe('/w/home/.workkit/hooks.log');
+    expect(hooksLogOf({ HOME: '/w/home', WORKFLOW_HOME: '/w/moved' }), 'WORKFLOW_HOME set: in it').toBe('/w/moved/hooks.log');
+    const text = appendLog('', FIRES.map(([hook, event, sid, cwd, verdict]) => logLine('2026-10-21T12:00:00Z', hook, event, sid, cwd, verdict)).join(''));
+    const rows = text.split('\n').filter(Boolean).map((l) => l.split('\t'));
+    expect(JSON.stringify(rows.map((r) => r.length)), 'six fields a line').toBe(JSON.stringify(FIRES.map(() => 6)));
+    expect(JSON.stringify(rows.map((r) => [r[1], r[5]])), 'the hook second and the verdict last').toBe(JSON.stringify(FIRES.map((f) => [f[0], f[4]])));
   });
 });
 
@@ -715,7 +652,7 @@ describe('twins: the repo slug and the kit checkout, wk_repo_slug and wk_is_kit_
   });
 });
 
-describe('twins: the clone rank, wk_clone_outranks in workflow/lib/platform.sh against cloneOutranks in workflow/lib/platform.js', () => {
+describe('the clone rank, cloneOutranks and inPluginCache in workflow/lib/platform.js', () => {
   /** A kit folder whose manifest names `name`, at `dir`. */
   const manifested = (dir, name) => {
     fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
@@ -723,7 +660,7 @@ describe('twins: the clone rank, wk_clone_outranks in workflow/lib/platform.sh a
     return dir;
   };
 
-  test('both rank a clone over the cached kit alike, the Claude home named directly or through a link', () => {
+  test('the cached kit with a clone alone is outranked, the Claude home named directly or through a link', () => {
     const base = mkTmp('twins-outranks-');
     const claude = path.join(base, 'claude');
     const cached = manifested(path.join(claude, 'plugins', 'cache', 'itw', 'workkit', '1.2.3'), 'workkit');
@@ -737,27 +674,20 @@ describe('twins: the clone rank, wk_clone_outranks in workflow/lib/platform.sh a
       [cached, clone], [cached, widgets], [cached, ''], [cached, path.join(base, 'missing')],
       [other, clone], [clone, clone], [path.join(base, 'gone'), clone],
     ];
-    const sources = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'slug.sh')];
-    const homes = [claude, linked];
-    const shell = homes.map((home) => bashPairs(sources, 'wk_clone_outranks', PAIRS.map((pair) => pair.map((p) => (p && shellPath(p)))),
-      { WORKFLOW_CLAUDE_HOME: shellPath(home) }).map((out) => out !== null));
-    for (const answers of shell) {
-      expect(JSON.stringify(answers), 'the cached kit with a clone alone outranks, the home named directly or through a link')
-        .toBe(JSON.stringify([true, false, false, false, false, false, false]));
-    }
     const { cloneOutranks } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
     const saved = process.env.WORKFLOW_CLAUDE_HOME;
     try {
-      homes.forEach((home, h) => {
+      for (const home of [claude, linked]) {
         process.env.WORKFLOW_CLAUDE_HOME = home;
-        agree(PAIRS.map((_, i) => i), shell[h], (i) => cloneOutranks(...PAIRS[i]), `wk_clone_outranks against cloneOutranks (by index into the pairs), the home ${home}`);
-      });
+        expect(JSON.stringify(PAIRS.map((pair) => cloneOutranks(...pair))), `the pairs by index, the home ${home}`)
+          .toBe(JSON.stringify([true, false, false, false, false, false, false]));
+      }
     } finally {
       if (saved === undefined) delete process.env.WORKFLOW_CLAUDE_HOME; else process.env.WORKFLOW_CLAUDE_HOME = saved;
     }
   });
 
-  test('with no WORKFLOW_CLAUDE_HOME, inPluginCache reads the Claude home under HOME, as the shell does', () => {
+  test('with no WORKFLOW_CLAUDE_HOME, inPluginCache reads the Claude home under HOME', () => {
     const home = mkTmp('twins-cache-home-');
     const cached = manifested(path.join(home, '.claude', 'plugins', 'cache', 'itw', 'workkit', '1.2.3'), 'workkit');
     const { inPluginCache } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
@@ -766,11 +696,38 @@ describe('twins: the clone rank, wk_clone_outranks in workflow/lib/platform.sh a
       delete process.env.WORKFLOW_CLAUDE_HOME;
       process.env.HOME = home;
       expect(inPluginCache(cached), `the kit under ${home}/.claude/plugins/cache is the cached kit`).toBe(true);
-      const [shell] = bashAnswers(lib('workflow', 'lib', 'platform.sh'), 'wk_in_plugin_cache', [shellPath(cached)], { HOME: shellPath(home) });
-      expect(shell, 'and so it is to wk_in_plugin_cache').toBe(true);
     } finally {
       for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
     }
+  });
+});
+
+describe('the physical path, physicalPath in workflow/lib/platform.js', () => {
+  const physicalPath = (p) => require(path.join(KIT, 'workflow', 'lib', 'platform.js')).physicalPath(p);
+
+  test('a file named through a linked folder reads as the physical folder plus its name', () => {
+    const dir = mkTmp('twins-physical-');
+    const real = path.join(dir, 'real');
+    fs.mkdirSync(real);
+    fs.writeFileSync(path.join(real, 'shell.sh'), '');
+    // A junction on Windows, a symlink elsewhere (where the type is ignored).
+    fs.symlinkSync(real, path.join(dir, 'linked'), 'junction');
+    expect(physicalPath(`${path.join(dir, 'linked')}/shell.sh`), 'the real folder, then the name').toBe(`${fs.realpathSync(real)}/shell.sh`);
+  });
+
+  test("a link to a file keeps the link's own folder and name", { skip: skipWithoutFileLink() }, () => {
+    const dir = mkTmp('twins-physical-');
+    const away = path.join(dir, 'away');
+    const here = path.join(dir, 'here');
+    fs.mkdirSync(away);
+    fs.mkdirSync(here);
+    fs.writeFileSync(path.join(away, 'target.sh'), '');
+    fs.symlinkSync(path.join(away, 'target.sh'), path.join(here, 'link.sh'), 'file');
+    expect(physicalPath(`${here}/link.sh`), "the link's folder and name, never the target's").toBe(`${fs.realpathSync(here)}/link.sh`);
+  });
+
+  test('a folder that is not there: null', () => {
+    expect(physicalPath(`${mkTmp('twins-physical-')}/missing/shell.sh`), 'no physical path').toBe(null);
   });
 });
 
@@ -783,17 +740,11 @@ const whatsAt = (p) => {
   return `file ${fs.readFileSync(p, 'utf8')}`;
 };
 
-describe('twins: the atomic link, wk_link in workflow/lib/flows.sh and wk_mv_link in workflow/lib/platform.sh against link and mvLink in workflow/lib/link.js',
+describe('the atomic link, link and mvLink in workflow/lib/link.js',
   { skip: IS_WINDOWS && 'Windows makes no symlink without a privilege this run may lack' }, () => {
     const linkJs = () => require(path.join(KIT, 'workflow', 'lib', 'link.js'));
-    /** `snippet` with platform.sh and flows.sh sourced; '1' or '0' for its exit. */
-    const shellAnswer = (snippet, env) => {
-      const res = runLib(`if ${snippet}; then echo 1; else echo 0; fi`, env, ['flows.sh']);
-      expect(res.code, `the shell answered, stderr: ${res.stderr}`).toBe(0);
-      return res.stdout.trim() === '1';
-    };
 
-    test('wk_link and link leave the same address, answer alike and leave no temp file: missing, pointing elsewhere, already right', () => {
+    test('link leaves the address the link to the target, answers true and leaves no temp file: missing, pointing elsewhere, already right', () => {
       const base = fs.realpathSync(mkTmp('twins-link-'));
       const [target, other] = ['target', 'other'].map((name) => {
         fs.mkdirSync(path.join(base, name));
@@ -801,73 +752,69 @@ describe('twins: the atomic link, wk_link in workflow/lib/flows.sh and wk_mv_lin
       });
       // Each address's state before the call; `elsewhere` points at a folder, so a rename that follows it lands inside.
       const STATES = { missing: null, elsewhere: other, right: target };
-      const sides = ['shell', 'node'].map((side) => Object.entries(STATES).map(([state, points]) => {
-        const dir = path.join(base, side, state);
+      const node = Object.entries(STATES).map(([state, points]) => {
+        const dir = path.join(base, state);
         fs.mkdirSync(dir, { recursive: true });
         const address = path.join(dir, 'address');
         if (points) fs.symlinkSync(points, address);
-        const answer = side === 'shell' ? shellAnswer('wk_link "$T" "$A"', { T: target, A: address }) : linkJs().link(target, address);
+        const answer = linkJs().link(target, address);
         return `${state}: ${answer} ${whatsAt(address)}; folder ${whatsAt(dir)}; other ${whatsAt(other)}`;
-      }));
-      expect(JSON.stringify(sides[0]), 'the shell: every address now the link to the target, nothing else beside it')
+      });
+      expect(JSON.stringify(node), 'every address now the link to the target, nothing else beside it')
         .toBe(JSON.stringify(Object.keys(STATES).map((state) => `${state}: true link -> ${target}; folder dir address; other dir `)));
-      expect(JSON.stringify(sides[1]), 'link against wk_link').toBe(JSON.stringify(sides[0]));
     });
 
-    test('wk_mv_link and mvLink move a link onto the same addresses alike, never into a folder an address points at', () => {
+    test('mvLink moves a link onto each address, never into a folder an address points at, and answers false with no link to move', () => {
       const base = fs.realpathSync(mkTmp('twins-mv-link-'));
       const other = path.join(base, 'other');
       fs.mkdirSync(other);
       // The `to` address before the move; `from` is a link to `target`, or nothing for `gone`.
       const STATES = ['missing', 'link to a folder', 'file', 'gone'];
-      const sides = ['shell', 'node'].map((side) => STATES.map((state, i) => {
-        const dir = path.join(base, side, String(i));
+      const node = STATES.map((state, i) => {
+        const dir = path.join(base, String(i));
         fs.mkdirSync(dir, { recursive: true });
         const [from, to] = [path.join(dir, 'from'), path.join(dir, 'to')];
         if (state !== 'gone') fs.symlinkSync('target', from);
         if (state === 'link to a folder') fs.symlinkSync(other, to);
         if (state === 'file') fs.writeFileSync(to, 'old\n');
-        const answer = side === 'shell' ? shellAnswer('wk_mv_link "$F" "$T"', { F: from, T: to }) : linkJs().mvLink(from, to);
+        const answer = linkJs().mvLink(from, to);
         return `${state}: ${answer} ${whatsAt(to)}; folder ${whatsAt(dir)}; other ${whatsAt(other)}`;
-      }));
-      expect(JSON.stringify(sides[0].slice(0, 3)), 'the shell: the link takes each address\'s place, the folder it pointed at untouched')
-        .toBe(JSON.stringify(STATES.slice(0, 3).map((state) => `${state}: true link -> target; folder dir to; other dir `)));
-      expect(JSON.stringify(sides[1]), 'mvLink against wk_mv_link').toBe(JSON.stringify(sides[0]));
+      });
+      expect(JSON.stringify(node), 'the link takes each address\'s place, the folder it pointed at untouched; with none, nothing moves')
+        .toBe(JSON.stringify([
+          ...STATES.slice(0, 3).map((state) => `${state}: true link -> target; folder dir to; other dir `),
+          'gone: false none; folder dir ; other dir ',
+        ]));
     });
   });
 
-describe('twins: the safe JSON edit, wk_json_edit in workflow/lib/state.sh against editJson in workflow/lib/write.js', { skip: needs('jq') }, () => {
-  // [name, file text, jq filter, the same change in Node]: a change, a change that fails, a file that is no JSON.
+describe('the safe JSON edit, editJson in workflow/lib/write.js', () => {
+  // [name, file text, the change]: a change that fails, a file that is no JSON.
   const EDITS = [
-    ['a change', '{"a":1}', '.b = [2]', (value) => ({ ...value, b: [2] })],
-    ['a change that fails', '{"a":1}', 'error("refused")', () => { throw new Error('refused'); }],
-    ['a file that is no JSON', '{"a":', '.b = [2]', (value) => ({ ...value, b: [2] })],
+    ['a change that fails', '{"a":1}', () => { throw new Error('refused'); }],
+    ['a file that is no JSON', '{"a":', (value) => ({ ...value, b: [2] })],
   ];
   // Windows keeps no mode to compare.
   const MODE = IS_WINDOWS ? 'no mode' : '640';
   const modeOf = (file) => (IS_WINDOWS ? 'no mode' : (fs.statSync(file).mode & 0o777).toString(8));
 
-  test('both leave the same bytes and mode, answer alike and leave no temp file', () => {
+  test('each failure leaves the file as it was, its mode kept, and no temp file left', () => {
     const { editJson } = require(path.join(KIT, 'workflow', 'lib', 'write.js'));
     const base = mkTmp('twins-json-edit-');
-    const sides = ['shell', 'node'].map((side) => EDITS.map(([name, text, filter, change], i) => {
-      const dir = path.join(base, side, String(i));
+    const node = EDITS.map(([name, text, change], i) => {
+      const dir = path.join(base, String(i));
       fs.mkdirSync(dir, { recursive: true });
       const file = path.join(dir, 'settings.json');
       fs.writeFileSync(file, text);
       fs.chmodSync(file, 0o640);
-      const answer = side === 'shell'
-        ? runLib('wk_json_edit "$F" "$J"', { F: shellPath(file), J: filter }, ['voice.sh', 'state.sh']).code === 0
-        : editJson(file, change);
+      const answer = editJson(file, change);
       return [name, answer, fs.readFileSync(file, 'utf8'), modeOf(file), whatsAt(dir)];
-    }));
-    expect(JSON.stringify(sides[0]), 'the shell: the change written whole as two-space JSON, the mode kept; each failure leaves the file as it was')
+    });
+    expect(JSON.stringify(node), 'each edit\'s answer, bytes, mode and folder')
       .toBe(JSON.stringify([
-        ['a change', true, '{\n  "a": 1,\n  "b": [\n    2\n  ]\n}\n', MODE, 'dir settings.json'],
         ['a change that fails', false, '{"a":1}', MODE, 'dir settings.json'],
         ['a file that is no JSON', false, '{"a":', MODE, 'dir settings.json'],
       ]));
-    expect(JSON.stringify(sides[1]), 'editJson against wk_json_edit').toBe(JSON.stringify(sides[0]));
   });
 });
 
@@ -1060,29 +1007,16 @@ describe('twins: the shims\' shared readers, norm_dir, in_list, real_path and th
   });
 });
 
-describe('twins: the terminal questions and the spinner, workflow/lib/flows.sh and voice.sh against flows.js and spin.js', () => {
+describe('the terminal questions and the spinner, workflow/lib/flows.js and spin.js', () => {
   const nodeLib = (name) => require(path.join(KIT, 'workflow', 'lib', name));
-  // The indent rides INDENT, since lib.sh resets WK_LOG_INDENT at load; the Node side reads WK_LOG_INDENT itself.
-  const INDENTED = { INDENT: '  ', WK_LOG_INDENT: '  ' };
+  const INDENTED = { WK_LOG_INDENT: '  ' };
   const COLORED = { WORKKIT_COLOR: '1', TERM: 'xterm-256color' };
-  /** <script> in a bash that sourced lib.sh, under <env> and a scratch home; spawnSync's result, its streams without returns. */
-  const inLibSh = (script, { env = {}, input, args = [] } = {}) => {
-    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib.sh')}"\nWK_LOG_INDENT="\${INDENT-}"\n${script}`, 'twin', ...args], {
-      env: { PATH: SYSTEM_PATH, HOME: shellPath(mkTmp('twins-libsh-')), ...env }, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    expect(res.status, `the shell ran, stderr: ${res.stderr}`).toBe(0);
-    return { out: (res.stdout || '').replace(/\r/g, ''), err: (res.stderr || '').replace(/\r/g, '') };
-  };
 
-  test('wk_ask_yes and askYes ask in the same words, take every answer alike under either default, and read a closed stdin as no', async () => {
+  test('askYes asks in its words, takes every answer under either default, and reads a closed stdin as no', async () => {
     const { askYes } = nodeLib('flows.js');
     const QUESTION = 'Join the workflow?';
     const ANSWERS = ['y', 'Y', 'yes', 'YES', 'Yes', 'n', 'N', 'no', '', 'x'];
-    // Each answer a line of one stdin, its end the closed stdin the last question meets.
-    const shellOf = (fallback) => inLibSh(
-      `for ((i = 0; i <= ${ANSWERS.length}; i++)); do if wk_ask_yes "$1" "$2"; then echo 1; else echo 0; fi; done`,
-      { input: ANSWERS.map((a) => `${a}\n`).join(''), args: [QUESTION, fallback] },
-    );
+    // Each answer typed once, then the closed stdin the last question meets.
     const nodeOf = async (fallback) => {
       const answers = [];
       let said = '';
@@ -1091,102 +1025,69 @@ describe('twins: the terminal questions and the spinner, workflow/lib/flows.sh a
         answers.push((await askYes(QUESTION, fallback, streams.io)) ? '1' : '0');
         said += streams.said();
       }
-      return { out: `${answers.join('\n')}\n`, err: said };
+      return { answers: answers.join(''), said };
     };
-    const shell = { y: shellOf('y'), n: shellOf('n') };
-    expect(shell.y.out.split('\n').filter(Boolean).join(''), 'the shell under yes: Enter is yes, Yes and x are no, a closed stdin no').toBe('11110000100');
-    expect(shell.n.err.startsWith(`${QUESTION} [y/N] `) && shell.y.err.endsWith(`${QUESTION} [Y/n] \n`), `the shell's hint by the default, a newline after a closed read, got: ${JSON.stringify(shell)}`).toBe(true);
-    for (const fallback of ['y', 'n']) {
-      expect(JSON.stringify(await nodeOf(fallback)), `askYes against wk_ask_yes under the default ${fallback}`).toBe(JSON.stringify(shell[fallback]));
-    }
+    expect(JSON.stringify(await nodeOf('y')), 'under yes: Enter is yes, Yes and x are no, a closed stdin no, the hint [Y/n], a newline after the closed read')
+      .toBe(JSON.stringify({ answers: '11110000100', said: `${`${QUESTION} [Y/n] `.repeat(ANSWERS.length + 1)}\n` }));
+    expect(JSON.stringify(await nodeOf('n')), 'under no: Enter is no, the hint [y/N]')
+      .toBe(JSON.stringify({ answers: '11110000000', said: `${`${QUESTION} [y/N] `.repeat(ANSWERS.length + 1)}\n` }));
   });
 
-  test('wk_open_url and openUrl pick the same opener and hand it the URL, and with none both print the same pointer, plain and styled', () => {
+  test('openUrl hands the URL to one opener, and with none prints the pointer, plain and styled', () => {
     const URL = 'https://example.invalid/owner/workkit/discussions/categories';
     const OPENERS = ['open', 'xdg-open'];
-    // A PATH with no opener on it: this platform's, by the shell's own choice of name, is the one there could be.
+    // A PATH with no opener on it: this platform's is the one there could be.
     const bare = basePathWithout(mkTmp('twins-opener-'), process.platform === 'darwin' ? 'open' : 'xdg-open');
-    const say = (side, { stubs, vars = {} }) => {
+    const say = ({ stubs, vars = {} }) => {
       const bin = mkTmp('twins-opener-');
       const log = (tool) => path.join(bin, `${tool}.log`);
       if (stubs) for (const tool of OPENERS) stubTool(bin, tool, ['#!/usr/bin/env bash', recordArgv(log(tool)), 'exit 0']);
       const env = { PATH: stubs ? joinPath(bin, SYSTEM_PATH) : bare, ...vars };
-      const err = side === 'shell'
-        ? inLibSh('wk_open_url "$1"', { env, args: [URL] }).err
-        : run(process.execPath, ['-e', `Promise.resolve(require(${jsPath(path.join(KIT, 'workflow', 'lib', 'flows.js'))}).openUrl(process.argv[1]))`, URL], {
-          env: homeEnv(mkTmp('twins-opener-home-'), env),
-        }).stderr.replace(/\r/g, '');
+      const err = run(process.execPath, ['-e', `Promise.resolve(require(${jsPath(path.join(KIT, 'workflow', 'lib', 'flows.js'))}).openUrl(process.argv[1]))`, URL], {
+        env: homeEnv(mkTmp('twins-opener-home-'), env),
+      }).stderr.replace(/\r/g, '');
       return { err, opened: Object.fromEntries(OPENERS.map((tool) => [tool, readArgv(log(tool))])) };
     };
-    const WORLDS = { opener: { stubs: true }, none: { stubs: false }, styled: { stubs: false, vars: { ...COLORED, ...INDENTED } } };
-    const shell = Object.fromEntries(Object.entries(WORLDS).map(([name, world]) => [name, say('shell', world)]));
-    const ran = Object.values(shell.opener.opened).filter((calls) => calls.length);
-    expect(JSON.stringify(ran), `the shell ran one opener, once, with the URL, got: ${JSON.stringify(shell.opener)}`).toBe(JSON.stringify([[[URL]]]));
+    const opener = say({ stubs: true });
+    const ran = Object.values(opener.opened).filter((calls) => calls.length);
+    expect(JSON.stringify(ran), `one opener ran, once, with the URL, got: ${JSON.stringify(opener)}`).toBe(JSON.stringify([[[URL]]]));
+    expect(opener.err, 'and nothing is said').toBe('');
     const POINTER = '(no browser could be launched: open the URL above by hand)';
-    expect(shell.none.err, 'the shell with no opener: the pointer line').toBe(`${POINTER}\n`);
-    expect(shell.styled.err, 'styled: dim, at the indent').toBe(`  \x1b[0;90m${POINTER}\x1b[0m\n`);
-    for (const [name, world] of Object.entries(WORLDS)) {
-      expect(JSON.stringify(say('node', world)), `${name}: openUrl against wk_open_url`).toBe(JSON.stringify(shell[name]));
-    }
+    const none = { open: [], 'xdg-open': [] };
+    expect(JSON.stringify(say({ stubs: false })), 'with no opener: the pointer line').toBe(JSON.stringify({ err: `${POINTER}\n`, opened: none }));
+    expect(JSON.stringify(say({ stubs: false, vars: { ...COLORED, ...INDENTED } })), 'styled: dim, at the indent')
+      .toBe(JSON.stringify({ err: `  \x1b[0;90m${POINTER}\x1b[0m\n`, opened: none }));
   });
 
-  // wk_spin_draw run as wk_spin starts it, to a file, until four frames began; the first three are whole.
-  const DRAW = `: > "$OUT"
-wk_spin_draw "$MSG" 2>"$OUT" &
-pid=$!
-for ((i = 0; i < 1200; i++)); do
-  s=$(<"$OUT"); r=\${s//[!$'\\r']/}
-  (( \${#r} >= 4 )) && break
-  sleep 0.05
-done
-kill "$pid"; wait "$pid" 2>/dev/null
-exit 0`;
-  // The seconds count is the clock's, so both sides' read as one.
+  // The seconds count is the clock's, so every frame reads as one.
   const anySeconds = (frames) => frames.slice(0, 3).map((frame) => frame.replace(/\(\d+s\)/, '(Ns)'));
+  // The first three frames around <words>, plain and styled at the indent.
+  const framesOf = (words) => ({
+    plain: ['⠋', '⠙', '⠹'].map((f) => `${f} ${words} (Ns)`),
+    styled: ['⠋', '⠙', '⠹'].map((f) => `  \x1b[0;36m${f}\x1b[0m ${words} \x1b[0;90m(Ns)\x1b[0m`),
+  });
 
-  test('wk_spin_draw and spin draw the same frames in the same order, plain and styled at the indent', async () => {
+  test('spin draws its first frames in order, plain and styled at the indent', async () => {
+    const want = framesOf(MESSAGE);
     for (const [name, vars] of [['plain', {}], ['styled', { ...COLORED, ...INDENTED }]]) {
-      const out = path.join(mkTmp('twins-spin-'), 'frames');
-      inLibSh(DRAW, { env: { ...vars, OUT: shellPath(out), MSG: MESSAGE } });
-      const shell = anySeconds(framesIn(fs.readFileSync(out, 'utf8')));
-      expect(shell.length, `${name}: the shell drew three whole frames, got: ${JSON.stringify(shell)}`).toBe(3);
       const node = await driveSpin('call', { env: homeEnv(mkTmp('twins-spin-home-'), { PATH: SYSTEM_PATH, WORKKIT_SPIN: '1', ...vars }), frames: 3 });
-      expect(JSON.stringify(anySeconds(framesIn(node.stderr))), `${name}: spin's first frames against wk_spin_draw's`).toBe(JSON.stringify(shell));
+      expect(JSON.stringify(anySeconds(framesIn(node.stderr))), `${name}: spin's first frames`).toBe(JSON.stringify(want[name]));
     }
   });
 
-  test('wk_poll_draw and poll draw the same countdown frames in the same order, plain and styled at the indent', async () => {
-    // wk_poll_draw as wk_poll starts it, its deadline one interval out.
-    const POLL_DRAW = DRAW.replace('wk_spin_draw "$MSG"', `deadline=$(( $(date +%s) + ${POLL_SECONDS} ))\nwk_poll_draw "$MSG" "$deadline"`);
+  test('poll draws its first countdown frames in order, plain and styled at the indent', async () => {
+    const want = framesOf(`${POLL_MESSAGE}...`);
     for (const [name, vars] of [['plain', {}], ['styled', { ...COLORED, ...INDENTED }]]) {
-      const out = path.join(mkTmp('twins-poll-'), 'frames');
-      inLibSh(POLL_DRAW, { env: { ...vars, OUT: shellPath(out), MSG: POLL_MESSAGE } });
-      const shell = anySeconds(framesIn(fs.readFileSync(out, 'utf8'), `${POLL_MESSAGE}...`));
-      expect(shell.length, `${name}: the shell drew three whole frames, got: ${JSON.stringify(shell)}`).toBe(3);
       const node = await drivePoll('s', { env: homeEnv(mkTmp('twins-poll-home-'), { PATH: SYSTEM_PATH, WORKKIT_SPIN: '1', ...vars }), frames: 3 });
-      expect(JSON.stringify(anySeconds(node.frames)), `${name}: poll's first frames against wk_poll_draw's`).toBe(JSON.stringify(shell));
+      expect(JSON.stringify(anySeconds(node.frames)), `${name}: poll's first frames`).toBe(JSON.stringify(want[name]));
     }
   });
 
-  test('wk_spin and spin print the same one line with the frames off, plain, at the indent and none under QUIET=1', async () => {
+  test('spin prints one line with the frames off, plain, at the indent and none under QUIET=1', async () => {
+    const LINES = { plain: `⏳ ${MESSAGE}...\nafter\n`, indented: `  ⏳ ${MESSAGE}...\nafter\n`, quiet: 'after\n' };
     for (const [name, vars] of [['plain', {}], ['indented', INDENTED], ['quiet', { QUIET: '1' }]]) {
-      const shell = inLibSh('wk_spin "$MSG" true\nprintf \'after\\n\' >&2', { env: { ...vars, WORKKIT_SPIN: '0', MSG: MESSAGE } });
-      if (name === 'plain') expect(shell.err, 'the shell\'s one line').toBe(`⏳ ${MESSAGE}...\nafter\n`);
       const node = await driveSpin('call', { env: homeEnv(mkTmp('twins-spin-home-'), { PATH: SYSTEM_PATH, WORKKIT_SPIN: '0', ...vars }) });
-      expect(node.stderr, `${name}: spin's stderr against wk_spin's`).toBe(shell.err);
+      expect(node.stderr, `${name}: spin's stderr`).toBe(LINES[name]);
     }
-  });
-});
-
-describe('twins: the Pages branch, WK_HOME_PAGES_BRANCH in workflow/home.sh against PAGES_BRANCH in workflow/home/options.js', () => {
-  // The shell name stays for the setup files of a later stage; the Node one is
-  // what the wizard asks Pages for and the publish pushes to.
-  test('the two name one branch', () => {
-    const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib.sh')}"\n. "${lib('workflow', 'home.sh')}"\nprintf '%s' "$WK_HOME_PAGES_BRANCH"`], {
-      env: { PATH: SYSTEM_PATH, HOME: shellPath(mkTmp('twins-pages-')) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
-    expect(res.status, `the shell sourced home.sh, stderr: ${res.stderr}`).toBe(0);
-    const { PAGES_BRANCH } = require(path.join(KIT, 'workflow', 'home', 'options.js'));
-    expect(res.stdout, 'home.sh names the branch options.js does').toBe(PAGES_BRANCH);
   });
 });

@@ -5,24 +5,12 @@
  * Usage: const { ensureGitHooks } = require('./githooks');
  */
 
-const { gitIn } = require('../lib/git');
+const { gitIn, localConfig } = require('../lib/git');
 const { isLink, physical } = require('../lib/link');
 const { nativePath, cloneOutranks } = require('../lib/platform');
 const { githooksKit, githooksKitlike } = require('../lib/participation');
 const { ok, skip } = require('../lib/voice');
 const { flag } = require('./flag');
-
-/**
- * A local git config value in `root`, its trailing newlines dropped, or ''
- * when git has none.
- * @param {string} root
- * @param {string[]} args the config arguments after `--local`
- * @returns {string}
- */
-const localConfig = (root, args) => {
-  const res = gitIn(root, ['config', '--local', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  return res.status === 0 ? res.stdout.replace(/\n+$/, '') : '';
-};
 
 /**
  * Sets a local git config key in `root`, git's own error left on stderr.

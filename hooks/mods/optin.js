@@ -4,7 +4,7 @@
  * the folder a gh journal line's call acted on.
  */
 
-import { userDirOf } from './log.js';
+import { rosterFile, userDirOf } from './log.js';
 import { parseJson } from './settings.js';
 import { slugFromRemote } from './slug.js';
 
@@ -16,7 +16,7 @@ import { slugFromRemote } from './slug.js';
  * @returns {Promise<object|null>}
  */
 export async function rosterOf(env, read) {
-  return parseJson(await read(`${userDirOf(env)}/.repos.json`));
+  return parseJson(await read(rosterFile(userDirOf(env))));
 }
 
 /**

@@ -13,6 +13,7 @@ import { journalFor, journalTail, onIssue, sha1Hex } from './markers.js';
 import { rowsOf } from './session-guard.js';
 import { findingsOn, settingsOf } from './settings.js';
 import { CODE_EXT } from './test-reminder.js';
+import { chomp } from './text.js';
 
 const STATE_FILE = '.workkit/agents/.change-tracker';
 const PROMPT = 'hooks/mods/change-tracker/prompt.md';
@@ -20,9 +21,6 @@ const PROMPT = 'hooks/mods/change-tracker/prompt.md';
 const FINDINGS_ON = 'FINDINGS: findings.file is on. File each finding outside the issue in hand as a `status:inbox` issue and print the `Filed:` trail for what you filed. If GitHub cannot be reached, put the finding in chat and stop there. The owner decides.';
 const FINDINGS_OFF = 'FINDINGS: findings.file is off. Build a finding that belongs to the issue in hand into it; say every other finding in chat under **🧭 Findings**, one bullet each in the cold-reader line, for the owner to answer file or drop. File nothing on your own.';
 const BOARD = "BOARD: PROGRESS.md still exists in this repo. Migrate it to issues (recipe: the workkit plugin's docs/project-state.md § Migration), then delete the file. Until that happens, keep it true this turn.";
-
-// What a command substitution keeps of a text: every trailing newline dropped.
-const chomp = (text) => text.replace(/\n+$/, '');
 
 // A journal line that ends work in hand: a close, or a park or a block flip.
 const endsWork = (line) => onIssue(line)

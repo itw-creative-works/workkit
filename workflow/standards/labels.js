@@ -22,12 +22,10 @@ const { SLUG_RE, runGh } = require('../public/lib');
 const { CALLER } = require('../ship/caller');
 const { TEMPLATE, checksRewrite } = require('../changelog/job');
 const { flag } = require('./flag');
+const { chomp } = require('../../hooks/mods/text.js');
 
 const LABELS_JSON = path.join(__dirname, '..', 'labels.json');
 const MIRROR = path.join(__dirname, '..', 'public', 'mirror.js');
-
-/** `text` less its trailing newlines, as a shell's `$(...)` takes it. */
-const chomp = (text) => text.replace(/\n+$/, '');
 
 /**
  * gh run in the repo, `input` its stdin when given. Its output is captured,

@@ -1,14 +1,15 @@
-// Tests for workflow/workkit.sh: the token handover, `setup`'s hand of
-// the gh token to the published site.
-// The shared prologue is ./helpers.js.
+// Tests for the Node `workkit` command's token handover, `setup`'s hand of the
+// gh token to the published site. The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
-const { describe, test, expect } = require('../../lib/harness');
-const { IS_WINDOWS } = require('../../lib/platform');
+const {
+  describe, test, expect, until, start,
+} = require('../../lib/harness');
+const { IS_WINDOWS, skipWithoutCaughtSignal } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
-  cleanup, writeStub, mkWorld, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, mkSetupKit, SYSTEMS, nameSystem,
+  cleanup, mkWorld, runCli, seedSettings, inNode, startInNode, mkKit, mkSetupKit,
 } = require('./helpers');
 
 describe('workkit setup: the token handover', () => {
@@ -34,9 +35,13 @@ describe('workkit setup: the token handover', () => {
   // the wait reads, told apart from every other `gh api` a run makes.
   const pagesPolls = (world) => world.ghCalls().filter((c) => isCall(c, 'api') && /pages\/builds\/latest$/.test(c[1] || ''));
 
+  // handoverToken(kit) at the terminal seam; a case adds env, kit or thenSignal.
+  const HANDOVER_CALL = { file: 'workkit/token.js', fn: 'handoverToken', kit: { interactive: true } };
+  const WAIT_60 = { WORKKIT_PAGES_WAIT: '60' };
+
   test('the token reaches the browser in a file, never in an argument', async (t) => {
     const world = mkPagesWorld(PUBLISHED);
-    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    const { code, out } = inNode(world, { ...HANDOVER_CALL, env: WAIT_60 });
     expect(code, `exit 0, got: ${out}`).toBe(0);
     const polls = pagesPolls(world);
     expect(polls.length, `it polled until Pages had served the push: ${fmtCalls(polls)}`).toBe(2);
@@ -57,16 +62,35 @@ describe('workkit setup: the token handover', () => {
     cleanup(world.root);
   });
 
+  test('the page outlives the step while the run ends, so the browser can read it, and is gone once the run ended', async () => {
+    const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
+    const call = startInNode(world, { ...HANDOVER_CALL, env: WAIT_60 });
+    let during;
+    let end;
+    try {
+      const handed = await until(() => call.stdout().includes('the browser now holds it'));
+      expect(handed, `the step handed the token over, got: ${call.output()}`).toBe(true);
+      during = world.tmpFiles();
+      end = await call.done;
+    } finally {
+      await call.end('SIGKILL');
+    }
+    expect(end.status, `exit 0, got: ${call.output()}`).toBe(0);
+    expect(during.some((f) => f.endsWith('.html')), `the page was still on disk after the step answered, got: ${during.join(',')}`).toBeTruthy();
+    expect(world.tmpFiles().join(','), 'and it is gone once the run ended').toBe('');
+    cleanup(world.root);
+  });
+
   test('the URL is the site’s own address, github.io or the custom domain', () => {
-    // The publish's own rule (workflow/publish.sh): a custom domain serves at
-    // its root, and the default project site serves a path deeper. Only the
-    // owner is lowercased, because that half is a hostname.
+    // The publish's own rule: a custom domain serves at its root, and the
+    // default project site serves a path deeper. Only the owner is lowercased,
+    // because that half is a hostname.
     for (const [site, expected] of [
       [{ repo: 'Owner/Home', publish: true, url: null }, 'https://owner.github.io/Home/settings'],
       [{ repo: 'owner/home', publish: true, url: 'https://tower.example.com/' }, 'https://tower.example.com/settings'],
     ]) {
       const world = mkPagesWorld(site, [['built', PUSHED]]);
-      const { out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+      const { out } = inNode(world, { ...HANDOVER_CALL, env: WAIT_60 });
       const page = world.openedPage();
       expect(page && page.text.includes(`${expected}#token=${HANDOVER}`), `${expected} is what was opened, got: ${page ? page.text : out}`).toBeTruthy();
       expect(!out.includes(HANDOVER), 'and no line of output carries the token').toBeTruthy();
@@ -76,7 +100,7 @@ describe('workkit setup: the token handover', () => {
 
   test('a publish Pages has not served yet prints the URL and opens nothing', () => {
     const world = mkPagesWorld(PUBLISHED, [['building', '']]);
-    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '0' } });
+    const { code, out } = inNode(world, { ...HANDOVER_CALL, env: { WORKKIT_PAGES_WAIT: '0' } });
     expect(code, 'a wait that ran out is not a failure').toBe(0);
     expect(/GitHub Pages has not served the publish/.test(out), `it names what it was waiting for, got: ${out}`).toBeTruthy();
     expect(out.includes(SETTINGS_URL), 'and the page to hand the token over on by hand').toBeTruthy();
@@ -88,14 +112,13 @@ describe('workkit setup: the token handover', () => {
 
   test('a machine with no browser opener is the same named skip', () => {
     // `/usr/bin/open` is on every mac, so the machine without an opener is a
-    // `uname` saying Linux, sent looking for an `xdg-open` this world lacks. A
-    // Linux runner keeps a real one on the base PATH, so `command -v` itself
-    // answers no for that one name here.
+    // Linux one, sent looking for an `xdg-open` this world lacks. A Linux runner
+    // keeps a real one on the base PATH, so the PATH is the world's own alone.
     const world = mkPagesWorld(PUBLISHED);
     fs.rmSync(path.join(world.bin, 'xdg-open'));
-    nameSystem(world, SYSTEMS.linux);
-    const noOpener = `command() { [[ "$1" == '-v' && "$2" == 'xdg-open' ]] && return 1; builtin command "$@"; }`;
-    const { code, out } = inCli(world, `${AT_TERMINAL}\n${noOpener}\nhandover_token`);
+    const { code, out } = inNode(world, {
+      ...HANDOVER_CALL, kit: { interactive: true, platform: 'linux' }, env: { PATH: world.bin },
+    });
     expect(code, 'exit 0').toBe(0);
     expect(/the token handover needs a browser opener/.test(out), `the skip names what is missing, got: ${out}`).toBeTruthy();
     expect(out.includes(SETTINGS_URL), 'and where to do it instead').toBeTruthy();
@@ -119,28 +142,56 @@ describe('workkit setup: the token handover', () => {
     cleanup(world.root); cleanup(kit);
   });
 
-  test('an interrupt while setup carries on takes the page with it', () => {
-    // The page outlives the step by design (the browser reads it asynchronously),
-    // so a Ctrl-C at one of setup's later prompts has to remove it too. The
-    // signal goes to the shell that called the step, which is exactly where a
-    // Ctrl-C would land.
-    const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
-    const during = path.join(world.root, 'during-the-window');
-    const script = `${AT_TERMINAL}\nhandover_token\nls "$TMPDIR" > ${JSON.stringify(during)}\nkill -INT $$`;
-    const { code } = inCli(world, script, { env: { WORKKIT_PAGES_WAIT: '60' } });
-    expect(code, 'the interrupt is not swallowed: 128 plus SIGINT').toBe(130);
-    expect(/\.html$/m.test(fs.readFileSync(during, 'utf8')), 'the page was still on disk when the interrupt arrived').toBeTruthy();
-    expect(world.tmpFiles().join(','), 'and it is gone after it').toBe('');
-    cleanup(world.root);
-  });
+  for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+    test(`${signal} once the step answered takes the page with it, and the run ends ${code}`, { skip: skipWithoutCaughtSignal() }, () => {
+      // The page outlives the step by design (the browser reads it
+      // asynchronously), so a Ctrl-C or a TERM at one of setup's later steps
+      // has to remove it too.
+      const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
+      const res = inNode(world, { ...HANDOVER_CALL, env: WAIT_60, thenSignal: signal });
+      expect(res.code, `the signal is not swallowed: 128 plus its number, got: ${res.said}`).toBe(code);
+      expect(world.openedPage() !== undefined, 'the page was written and opened before the signal').toBeTruthy();
+      expect(world.tmpFiles().join(','), 'and it is gone after it').toBe('');
+      cleanup(world.root);
+    });
+  }
+
+  // The page lingers for the run's last seconds; a signal then must not wait them out.
+  const htmlLeft = (world) => world.tmpFiles().some((f) => f.endsWith('.html'));
+  const SETUP_DONE = 'Setup is idempotent: re-run it any time.';
+
+  for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+    test(`${signal} in setup's last seconds, its closing line printed and the page lingering, removes it at once, and the run ends ${code}`, { skip: skipWithoutCaughtSignal() }, async () => {
+      // A command under a logged one runs in place, so the signal reaches the
+      // process that holds the page, as a Ctrl-C at the terminal does.
+      const world = mkPagesWorld(PUBLISHED, [['built', PUSHED]]);
+      const { kit, script } = mkSetupKit();
+      const run = start(process.execPath, [script, 'setup'], {
+        cwd: world.root, env: { ...world.env, WK_COMMAND_LOGGED: path.join(world.root, 'outer-raw.log') },
+      });
+      let lingering;
+      let end;
+      try {
+        lingering = await until(() => run.stdout().includes(SETUP_DONE) && htmlLeft(world));
+        if (lingering) process.kill(run.pid, signal);
+        end = await run.done;
+      } finally {
+        await run.end('SIGKILL');
+      }
+      expect(lingering, `setup's closing line printed with the page still on disk, got: ${run.output()}`).toBe(true);
+      expect(end.status, `the signal ends the run ${code}, got: status ${end.status}, signal ${end.signal}: ${run.output()}`).toBe(code);
+      expect(world.tmpFiles().join(','), 'and the page is gone').toBe('');
+      cleanup(world.root); cleanup(kit);
+    });
+  }
 
   test('a publish that did not finish holds the handover back', () => {
     // A token handed to a publish that failed is a token handed to whatever
-    // Pages was already serving. `cmd_publish` never fails a run, so the step
-    // reads what it did off PUBLISH_FAILED.
+    // Pages was already serving. The publish never fails a run, so the step
+    // reads what it did off the run's publishFailed answer.
     const world = mkPagesWorld(PUBLISHED);
     const { kit, script } = mkKit('owner/kit');
-    writeStub(path.join(kit, 'workflow', 'publish.sh'), ["printf '%s\\n' 'publish: this one broke' >&2", 'exit 1']);
+    fs.writeFileSync(path.join(kit, 'workflow', 'publish.js'), "process.stderr.write('publish: this one broke\\n');\nprocess.exit(1);\n");
     const { code, said } = runCli(world, ['setup'], { script });
     expect(code, 'setup still finishes').toBe(0);
     expect(/site: the publish did not finish/.test(said), `the publish named its own failure, got: ${said}`).toBeTruthy();
@@ -151,11 +202,11 @@ describe('workkit setup: the token handover', () => {
 
   test('three empty reads end the wait, with both causes named', () => {
     // Two things read as nothing: a repo whose Pages step was refused (its
-    // `pages/builds/latest` 404s for ever) and a fired `bounded_read` bound.
-    // The line states the condition and names both rather than diagnosing one
-    // of them as fact.
+    // `pages/builds/latest` 404s for ever) and a fired bound on the read. The
+    // line states the condition and names both rather than diagnosing one of
+    // them as fact.
     const world = mkPagesWorld(PUBLISHED, []);
-    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    const { code, out } = inNode(world, { ...HANDOVER_CALL, env: WAIT_60 });
     expect(code, 'exit 0').toBe(0);
     expect(out.includes("three reads of owner/home's latest Pages build came back with nothing"), `it says what happened, got: ${out}`).toBeTruthy();
     expect(out.includes('Pages may be off (https://github.com/owner/home/settings/pages) or unreachable'), 'and names both causes, neither as the answer').toBeTruthy();
@@ -166,12 +217,12 @@ describe('workkit setup: the token handover', () => {
   });
 
   test('a site.url that cannot go in a URL is refused, never escaped', () => {
-    // `ask_site_url` takes whatever was typed at its word, so the address is
+    // The site question takes whatever was typed at its word, so the address is
     // checked before it reaches a message or the redirect page's JS string. A
     // `#` is refused as well: a fragment of its own would swallow the token's.
     for (const url of ['tower.example.com/"onerror="x', 'tower.example.com/#board']) {
       const world = mkPagesWorld({ repo: 'owner/home', publish: true, url });
-      const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+      const { code, out } = inNode(world, { ...HANDOVER_CALL, env: WAIT_60 });
       expect(code, 'exit 0').toBe(0);
       expect(out.includes('cannot be put in a URL as it stands'), `${url} is refused, got: ${out}`).toBeTruthy();
       expect(world.openerCalls().length, 'nothing was opened').toBe(0);
@@ -186,7 +237,7 @@ describe('workkit setup: the token handover', () => {
     // which is the shape of a login that expired or was never made.
     const world = mkWorld({ pagesRef: PUSHED, pagesBuilds: [['built', PUSHED]] });
     seedSettings(world, PUBLISHED);
-    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    const { code, out } = inNode(world, { ...HANDOVER_CALL, env: WAIT_60 });
     expect(code, 'exit 0').toBe(0);
     expect(out.includes('`gh auth token` returned nothing, so there was no token to hand over'), `the skip names what was missing, got: ${out}`).toBeTruthy();
     expect(out.includes('run `gh auth login`'), 'with the command that makes one').toBeTruthy();
@@ -202,7 +253,7 @@ describe('workkit setup: the token handover', () => {
     // never something to encode on a guess.
     const world = mkWorld({ authToken: 'gho_a/b', pagesRef: PUSHED, pagesBuilds: [['built', PUSHED]] });
     seedSettings(world, PUBLISHED);
-    const { code, out } = inCli(world, `${AT_TERMINAL}\nhandover_token`, { env: { WORKKIT_PAGES_WAIT: '60' } });
+    const { code, out } = inNode(world, { ...HANDOVER_CALL, env: WAIT_60 });
     expect(code, 'exit 0').toBe(0);
     expect(out.includes('characters a URL fragment would have to escape'), `the shape is refused, got: ${out}`).toBeTruthy();
     expect(out.includes(SETTINGS_URL), 'and the Settings URL is printed for the paste by hand').toBeTruthy();

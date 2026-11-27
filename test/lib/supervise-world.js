@@ -11,16 +11,16 @@ const {
   mkTmp, seeded, run, start,
 } = require('./harness');
 const {
-  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, jsPath, joinPath, homeEnv,
+  NODE_DIR, SYSTEM_PATH, jsPath, joinPath, homeEnv,
 } = require('./platform');
 const { checkSettings, writesPid } = require('./supervise');
 
-const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
+const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.js');
 
 // A check far longer than any case, so only the case ends the run.
 const LONG_CHECK = 10;
 
-// The env that forces the shell's color gate on: a real TERM beside it, since the
+// The env that forces the color gate (`colorOn`, workflow/lib/voice.js) on: a real TERM beside it, since the
 // gate refuses the dumb one bash sets when none is given.
 const COLOR_ON = { WORKKIT_COLOR: '1', TERM: 'xterm-256color' };
 
@@ -62,9 +62,10 @@ const mkWorld = ({ check = LONG_CHECK, files = {} } = {}) => {
     repo: path.join(dir, 'repo'),
     out,
     workflowHome,
+    // Native paths: the command is a node, which reads a shell's /d/a/x as D:\d\a\x.
     env: homeEnv(home, {
-      TMPDIR: shellPath(tmp),
-      WORKFLOW_HOME: shellPath(workflowHome),
+      TMPDIR: tmp,
+      WORKFLOW_HOME: workflowHome,
       PATH: joinPath(NODE_DIR, SYSTEM_PATH),
     }),
   };
@@ -73,8 +74,11 @@ const mkWorld = ({ check = LONG_CHECK, files = {} } = {}) => {
 const runLog = (world) => path.join(world.repo, '.workkit', 'run.log');
 const suiteLog = (world) => path.join(world.repo, '.workkit', 'suite.log');
 
-/** `workkit <args>` started and not waited on; its own group, so `end` reaches all it started in its session. */
-const workkitStart = (args, { cwd, env }) => start(BASH, [...NO_RC, shellPath(CLI), ...args],
+/**
+ * `workkit <args>`, workflow/workkit.js under the running node, started and not waited on;
+ * its own group, so `end` reaches the command and every program it started as a child.
+ */
+const workkitStart = (args, { cwd, env }) => start(process.execPath, [CLI, ...args],
   { cwd, env, input: '', detached: true });
 
 /** `workkit <args>` run to its end: its code, and its output in the order it was written. */

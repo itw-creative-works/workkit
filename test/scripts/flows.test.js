@@ -1,6 +1,6 @@
 // Tests for workflow/lib/flows.js, the terminal questions in Node: the terminal test, the yes or no question, the
-// press Enter to open step and the poll, each handed its own streams (test/lib/io-streams.js). The words and keys
-// held to the shell copy in workflow/lib/flows.sh are test/hooks/twins.test.js's.
+// press Enter to open step and the poll, each handed its own streams (test/lib/io-streams.js). Every answer's words
+// and keys, the opener's choice and the first frames drawn are test/hooks/twins.test.js's.
 
 const path = require('path');
 const {
@@ -101,6 +101,20 @@ describe('flows: poll', () => {
       expect(before.slice(before.lastIndexOf('\r') + 1), 'a frame is the last thing before the clear').toBe(res.frames[res.frames.length - 1]);
     });
   }
+
+  test('WK_COMMAND_TERMINAL naming a file, the frames forced: the countdown\'s frames and its clear land in that file, and none reach stderr', async () => {
+    const terminal = path.join(mkTmp('flows-poll-device-'), 'tty');
+    const env = homeEnv(mkTmp('flows-poll-home-'), {
+      PATH: SYSTEM_PATH, WORKKIT_SPIN: '1', WK_COMMAND_LOGGED: path.join(mkTmp('flows-poll-log-'), 'setup.log.raw'),
+    });
+    const res = await drivePoll('\n', { env, frames: 2, terminal });
+    expect(res.drawn.endsWith(CLEAR), `the device ends on the clear, got: ${JSON.stringify(res.drawn.slice(-200))}`).toBe(true);
+    const before = res.drawn.slice(0, -CLEAR.length);
+    expect(res.frames.length >= 2 && before.split('\r').length - 1 === res.frames.length,
+      `the device holds the countdown's frames and nothing else before the clear, got: ${JSON.stringify(before.slice(-200))}`).toBe(true);
+    expect(res.stderr, 'stderr, the stream the log reads, holds the key hint and the answer, no frame and no clear')
+      .toBe('\n(enter)=check now, (s)=skip\n\nanswer: true\n');
+  });
 
   test('a closed stdin skips', async () => {
     const check = checkOf([false]);

@@ -1,8 +1,9 @@
 /**
  * workflow/lib/proof-dir.js: a proof run's folder, CJS: `proof/` in the kit's
- * cache folder (cacheDirOf in hooks/mods/log.js), where `workkit prove` and
- * `workkit proof red` each make theirs, and the sweep of the old ones.
- * Usage: const { proofBase, proofDir } = require('./proof-dir');
+ * cache folder (cacheDirOf in hooks/mods/log.js), where `workkit prove`,
+ * `workkit proof red` and `workkit ship publish` each make theirs, and the
+ * sweep of the old ones; and the empty Claude home a run hands its copy.
+ * Usage: const { proofBase, proofDir, proofClaudeHome } = require('./proof-dir');
  */
 
 const fs = require('fs');
@@ -52,4 +53,23 @@ const proofDir = () => {
   }
 };
 
-module.exports = { proofBase, proofDir };
+/**
+ * An empty Claude home made in the run folder `dir`, `<dir>/claude-home`: the
+ * WORKFLOW_CLAUDE_HOME of what a proof run starts in its copy, gone with the folder.
+ * The copy is a worktree of a kit checkout, so a start there that inherited the
+ * caller's Claude home could point the machine's engine address at a folder the
+ * run removes.
+ * @param {string} dir a run folder proofDir made
+ * @returns {string|null} the folder, null when it cannot be made
+ */
+const proofClaudeHome = (dir) => {
+  const home = `${dir}/claude-home`;
+  try {
+    fs.mkdirSync(home);
+    return home;
+  } catch {
+    return null;
+  }
+};
+
+module.exports = { proofBase, proofDir, proofClaudeHome };

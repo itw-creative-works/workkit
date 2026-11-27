@@ -9,6 +9,7 @@ const { isFile } = require('../lib/lock');
 const { onPath, spawnSync } = require('../lib/run');
 const { skip, warn } = require('../lib/voice');
 const { flag } = require('./flag');
+const { chomp } = require('../../hooks/mods/text.js');
 
 // The hooks module and the guards in the shims fail open without these, so
 // this list makes a missing one visible. A `|` joins one tool's spellings
@@ -35,7 +36,7 @@ const checkHookModule = (run) => {
     encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'],
   });
   if (res.status === 0) return true;
-  const lines = (res.stderr ?? '').replace(/\r/g, '').replace(/\n+$/, '').split('\n');
+  const lines = chomp((res.stderr ?? '').replace(/\r/g, '')).split('\n');
   const line = lines.find((each) => ERROR_LINE.test(each)) ?? lines[0];
   flag(run, `hooks: the hooks module fails to load: ${line}`);
   return false;

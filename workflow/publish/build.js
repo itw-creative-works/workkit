@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { isPlain } = require('../../hooks/mods/settings.js');
+const { chomp } = require('../../hooks/mods/text.js');
 const { file } = require('../home/committed');
 const { towerApp, siteSidebar } = require('../home/options');
 const { physical } = require('../lib/link');
@@ -72,14 +73,14 @@ const sidebarRows = (raw) => {
  * @returns {string|null}
  */
 const spliceSidebar = (app, rows) => {
-  const lines = app.replace(/\n+$/, '').split('\n');
+  const lines = chomp(app).split('\n');
   const close = lines.findLastIndex((line) => CLOSING.test(line));
   if (close < 0) return null;
   if (!lines.slice(close + 1).every((line) => TRAILING.test(line))) return null;
   let prev = close - 1;
   while (prev > 0 && EMPTY_OR_COMMENT.test(lines[prev])) prev -= 1;
   if (prev >= 0 && !OPEN_ENDED.test(lines[prev])) lines[prev] += ',';
-  return [...lines.slice(0, close), ...rows, ...lines.slice(close)].join('\n').replace(/\n+$/, '');
+  return chomp([...lines.slice(0, close), ...rows, ...lines.slice(close)].join('\n'));
 };
 
 /**

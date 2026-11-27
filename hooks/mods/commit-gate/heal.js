@@ -10,6 +10,7 @@
 
 import { CALLER } from '../../../workflow/ship/caller.js';
 import { LONG_RUN_MS } from '../suite.js';
+import { chomp } from '../text.js';
 import { versionOnly } from './checks.js';
 
 const lines = (text) => text.split('\n').filter(Boolean);
@@ -28,7 +29,7 @@ export class HealHeld extends Error {}
  * @returns {HealHeld}
  */
 export function held(check, cmd, rc, stderr) {
-  const err = String(stderr ?? '').replace(/\n+$/, '');
+  const err = chomp(stderr);
   const how = rc === 'did not start' ? rc : `exited ${rc}`;
   return new HealHeld(`the ${check} check could not run: \`${cmd}\` ${how}${err ? ` (${err})` : ''}. Its answer is unknown, so the commit is held; fix what failed, then commit.`);
 }

@@ -8,7 +8,8 @@
 const fs = require('fs');
 const path = require('path');
 const { isPlain } = require('../../hooks/mods/settings.js');
-const { settingsAt, homeSlug } = require('../lib/settings');
+const { chomp } = require('../../hooks/mods/text.js');
+const { siteOption, homeSlug } = require('../lib/settings');
 const { userDir, towerDir } = require('../user-dir');
 const { gitIn } = require('../lib/git');
 const { repoSlug } = require('../lib/repo');
@@ -20,7 +21,6 @@ const { editJson } = require('../lib/write');
 const { physical } = require('../lib/link');
 
 // Pages serves this branch's root, so no build output is committed as source.
-// Its twin is WK_HOME_PAGES_BRANCH in workflow/home.sh, which later shell reads.
 const PAGES_BRANCH = 'gh-pages';
 
 // The kit root, resolved from this file, since the engine travels as a folder.
@@ -42,13 +42,6 @@ const kitDir = () => process.env.WORKKIT_KIT_DIR || physical(KIT_ROOT) || '';
 
 /** The machine's settings file, `<user dir>/settings.json`. */
 const settingsFile = () => path.join(userDir(), 'settings.json');
-
-/** A site option as the shell's setting read prints it: a string as it is, any other value as JSON, '' for none. */
-const siteOption = (key) => {
-  const value = settingsAt(null, settingsFile()).site?.[key];
-  if (value === null || value === undefined) return '';
-  return typeof value === 'string' ? value : JSON.stringify(value);
-};
 
 /**
  * The clone's remote URL for a slug. WORKKIT_HOME_REMOTE is the suite's seam:
@@ -91,7 +84,7 @@ const siteSidebar = () => siteOption('sidebar');
  */
 const homeBranch = () => {
   const res = gitIn(towerDir(), ['symbolic-ref', '--quiet', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  return res.status === 0 ? res.stdout.replace(/\n+$/, '') : 'main';
+  return res.status === 0 ? chomp(res.stdout) : 'main';
 };
 
 /** The settings' value with `site.repo` set, as jq's `.site = ((.site // {}) + { repo: $s })`. */
@@ -139,7 +132,7 @@ const cloneSlug = () => repoSlug(towerDir());
  */
 const matches = (repo) => {
   const res = gitIn(towerDir(), ['remote', 'get-url', 'origin'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  const actual = res.status === 0 ? res.stdout.replace(/\n+$/, '') : '';
+  const actual = res.status === 0 ? chomp(res.stdout) : '';
   if (!actual) return false;
   if (actual === remoteUrl(repo)) return true;
   return (slugFromRemote(actual) ?? '') === repo;

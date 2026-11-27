@@ -2,7 +2,7 @@
  * jobs/lib/notes.js: the jobs' record of what a run did. On a machine each note
  * is one stamped block appended to the job's log; on a runner it is one line
  * under its glyph, since the Actions log is the record there.
- * Usage: const { logStamp, fileNotes, plainNotes, block, heading, captured } = require('../lib/notes');
+ * Usage: const { logStamp, fileNotes, plainNotes, block, heading } = require('../lib/notes');
  */
 
 const fs = require('fs');
@@ -11,9 +11,7 @@ const { today } = require('../../workflow/lib/day');
 const {
   ok, skip, warn, said,
 } = require('../../workflow/lib/voice');
-
-/** A number as two digits. */
-const pad = (n) => String(n).padStart(2, '0');
+const { pad } = require('../../hooks/mods/log.js');
 
 /**
  * The stamp a block opens with: `YYYY-MM-DD HH:MM:SS` of `now` in local time,
@@ -26,13 +24,6 @@ const logStamp = (now, manual) => {
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   return `${today(now)} ${time}${manual ? ' (manual)' : ''}`;
 };
-
-/**
- * A child's output as the log holds it: its trailing newlines dropped.
- * @param {string} text
- * @returns {string}
- */
-const captured = (text) => text.replace(/\n+$/, '');
 
 /**
  * The line a block opens with, its newline included.
@@ -72,5 +63,5 @@ const fileNotes = (file, stamp) => {
 const plainNotes = () => ({ note: ok, noteSkip: skip, noteWarn: warn });
 
 module.exports = {
-  logStamp, fileNotes, plainNotes, block, heading, captured,
+  logStamp, fileNotes, plainNotes, block, heading,
 };

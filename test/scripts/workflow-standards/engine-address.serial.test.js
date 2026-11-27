@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE, start,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, spawnBash, execFileSync,
+  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, joinPath, spawnBash, execFileSync,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith, copyKitSiblings,
@@ -315,5 +315,24 @@ describe("standards.sh: the engine's address", () => {
     expect(!fs.existsSync(path.join(claude, 'workkit')), 'a manifest alone does not make a copy the machine engine').toBeTruthy();
     expect(!(res.stdout + res.stderr).includes('engine:'), `and says nothing: a skip, not a fault, got: ${res.stderr}`).toBeTruthy();
     cleanup(claude);
+  });
+
+  test('a copy that is the workflow/ folder alone sets a repo\'s git hooks: --git-hooks exits 0, core.hooksPath its githooks', () => {
+    const repo = makeRepo();
+    const copy = mkPluginCopy(path.join(mkTmp('wf-std-'), 'workkit', 'workkit', '0.0.0'));
+    const scratch = mkTmp('wf-std-');
+    const res = spawnSync(process.execPath, [path.join(copy, 'standards.js'), '--git-hooks', repo], {
+      env: {
+        ...process.env,
+        WORKFLOW_HOME: path.join(scratch, 'wh'),
+        WORKFLOW_CLAUDE_HOME: path.join(scratch, 'claude'),
+      },
+      encoding: 'utf8',
+      timeout: SPAWN_DEADLINE,
+    });
+    expect(res.status, `the step runs: ${res.stderr}`).toBe(0);
+    const hooksPath = spawnSync('git', ['config', '--local', '--get', 'core.hooksPath'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+    expect(hooksPath, 'core.hooksPath is the copy\'s own githooks').toBe(gitPath(path.join(fs.realpathSync(copy), 'githooks')));
+    cleanup(repo);
   });
 });

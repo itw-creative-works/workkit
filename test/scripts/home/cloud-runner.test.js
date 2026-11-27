@@ -39,8 +39,8 @@ describe('workflow/home: the cloud brief runner', () => {
     // core.autocrlf=true, and the clone must still hold HEAD's bytes.
     const world = mkWorld();
     Object.assign(world.env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'true' });
-    const { out } = seeded(world);
-    expect(/rc=0/.test(out), `it wrote something: ${out}`).toBeTruthy();
+    const { code, out } = seeded(world);
+    expect(code, `it wrote something: ${out}`).toBe(0);
     for (const { src, dest } of runnerPairs()) {
       expect(fs.existsSync(path.join(world.tower, dest)), `${dest} is in the clone`).toBeTruthy();
       expect(fs.readFileSync(path.join(world.tower, dest), 'utf8'), `${dest} is the kit's committed ${src}, byte for byte`).toBe(kitCommitted(world, src));
@@ -143,8 +143,8 @@ describe('workflow/home: the cloud brief runner', () => {
       fs.writeFileSync(file, '# a file the older kit seeded\n');
     }
 
-    const { out } = seeded(world);
-    expect(/rc=0/.test(out), `the removal counts as a change: ${out}`).toBeTruthy();
+    const { code, out } = seeded(world);
+    expect(code, `the removal counts as a change: ${out}`).toBe(0);
     expect(out.includes(`${RETIRED_SHELL.length} retired`), `and each is counted: ${out}`).toBeTruthy();
     expect(!out.includes('missing'), `with no missing warning: ${out}`).toBeTruthy();
     for (const file of old) expect(!fs.existsSync(file), `${path.relative(world.tower, file)} is gone`).toBeTruthy();
@@ -164,8 +164,8 @@ describe('workflow/home: the cloud brief runner', () => {
       fs.writeFileSync(file, '# a step the older kit seeded\n');
     }
 
-    const { out } = seeded(world);
-    expect(/rc=0/.test(out), `the removal counts as a change: ${out}`).toBeTruthy();
+    const { code, out } = seeded(world);
+    expect(code, `the removal counts as a change: ${out}`).toBe(0);
     expect(out.includes('9 retired'), `and each is counted: ${out}`).toBeTruthy();
     expect(!out.includes('missing'), `with no missing warning: ${out}`).toBeTruthy();
     for (const file of old) expect(!fs.existsSync(file), `${path.basename(file)} is gone`).toBeTruthy();
@@ -190,7 +190,7 @@ describe('workflow/home: the cloud brief runner', () => {
     const before = fs.statSync(dest).mtimeMs;
 
     const again = seeded(world);
-    expect(/rc=2/.test(again.out), `nothing was written the second time: ${again.out}`).toBeTruthy();
+    expect(again.code, `nothing was written the second time: ${again.out}`).toBe(2);
     expect(/is current/.test(again.out), `and it says so: ${again.out}`).toBeTruthy();
     expect(fs.statSync(dest).mtimeMs, 'the file was not rewritten').toBe(before);
 
@@ -198,7 +198,7 @@ describe('workflow/home: the cloud brief runner', () => {
     // clone differs from the checkout it came from.
     fs.writeFileSync(dest, '# an older runner\n');
     const refreshed = seeded(world);
-    expect(/rc=0/.test(refreshed.out), `the drift is healed: ${refreshed.out}`).toBeTruthy();
+    expect(refreshed.code, `the drift is healed: ${refreshed.out}`).toBe(0);
     expect(fs.readFileSync(dest, 'utf8'), 'back to the kit’s committed copy').toBe(kitCommitted(world, 'jobs/morning.sh'));
     cleanup(world.root);
   });
@@ -215,7 +215,7 @@ describe('workflow/home: the cloud brief runner', () => {
     fs.writeFileSync(retiredDeep, '// also gone\n');
 
     const pruned = seeded(world);
-    expect(/rc=0/.test(pruned.out), `the removal counts as a change: ${pruned.out}`).toBeTruthy();
+    expect(pruned.code, `the removal counts as a change: ${pruned.out}`).toBe(0);
     expect(!fs.existsSync(retired), 'the retired script is gone').toBeTruthy();
     expect(!fs.existsSync(retiredDeep), 'and so is one under a folder of its own').toBeTruthy();
     expect(!fs.existsSync(path.join(world.tower, 'brief', 'gone')), 'the folder it emptied went with it').toBeTruthy();
@@ -225,7 +225,7 @@ describe('workflow/home: the cloud brief runner', () => {
 
     // Idempotent: with nothing left to prune the run is a no-op again.
     const again = seeded(world);
-    expect(/rc=2/.test(again.out), `a second run removes nothing: ${again.out}`).toBeTruthy();
+    expect(again.code, `a second run removes nothing: ${again.out}`).toBe(2);
     cleanup(world.root);
   });
 
@@ -238,7 +238,7 @@ describe('workflow/home: the cloud brief runner', () => {
     fs.writeFileSync(path.join(world.tower, 'README.md'), '# the home repo\n');
 
     const again = seeded(world);
-    expect(/rc=2/.test(again.out), `nothing in the clone counted as a change: ${again.out}`).toBeTruthy();
+    expect(again.code, `nothing in the clone counted as a change: ${again.out}`).toBe(2);
     expect(fs.readFileSync(mine, 'utf8'), 'the project’s file is untouched').toBe('# the project’s own\n');
     expect(fs.existsSync(path.join(world.tower, 'README.md')), 'and so is what sits at the root').toBeTruthy();
     cleanup(world.root);
@@ -264,11 +264,11 @@ describe('workflow/home: the cloud brief runner', () => {
     const script = path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh');
     const before = fs.readFileSync(script, 'utf8');
     const first = seeded(world);
-    expect(/rc=0/.test(first.out), `the first seed wrote the runner: ${first.out}`).toBeTruthy();
+    expect(first.code, `the first seed wrote the runner: ${first.out}`).toBe(0);
 
     fs.appendFileSync(script, '# an edit not yet committed\n');
     const again = seeded(world);
-    expect(/rc=2/.test(again.out), `the refresh is already current: ${again.out}`).toBeTruthy();
+    expect(again.code, `the refresh is already current: ${again.out}`).toBe(2);
     const clone = fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8');
     expect(!clone.includes('# an edit not yet committed'), 'the edit stayed in the kit folder').toBeTruthy();
     expect(clone, 'the clone holds the committed bytes').toBe(before);
@@ -281,8 +281,8 @@ describe('workflow/home: the cloud brief runner', () => {
 
     fs.writeFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '# a committed runner\n');
     commitKit(world.env.WORKKIT_KIT_DIR, 'fix: a newer runner');
-    const { out } = seeded(world);
-    expect(/rc=0/.test(out), `the refresh wrote it: ${out}`).toBeTruthy();
+    const { code, out } = seeded(world);
+    expect(code, `the refresh wrote it: ${out}`).toBe(0);
     expect(/seeded the cloud brief/.test(out), `and said so: ${out}`).toBeTruthy();
     expect(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'), 'the clone holds the new commit').toBe('# a committed runner\n');
     cleanup(world.root);
@@ -293,7 +293,7 @@ describe('workflow/home: the cloud brief runner', () => {
     // until the kit is whole again.
     const world = mkWorld();
     const first = seeded(world);
-    expect(/rc=0/.test(first.out), `the whole kit seeded first: ${first.out}`).toBeTruthy();
+    expect(first.code, `the whole kit seeded first: ${first.out}`).toBe(0);
     const retired = path.join(world.tower, 'brief', 'jobs', 'claude-cloud.sh');
     fs.writeFileSync(retired, '# last month’s runner\n');
     const kit = world.env.WORKKIT_KIT_DIR;
@@ -317,11 +317,11 @@ describe('workflow/home: the cloud brief runner', () => {
   test('a git-backed kit: a list line dropped but not committed retires nothing', () => {
     const world = mkWorld();
     const first = seeded(world);
-    expect(/rc=0/.test(first.out), `the whole kit seeded first: ${first.out}`).toBeTruthy();
+    expect(first.code, `the whole kit seeded first: ${first.out}`).toBe(0);
     dropRunnerLine(world.env.WORKKIT_KIT_DIR, STATS);
 
-    const { out } = seeded(world);
-    expect(/rc=2/.test(out) && /is current/.test(out), `the refresh is current: ${out}`).toBeTruthy();
+    const { code, out } = seeded(world);
+    expect(code === 2 && /is current/.test(out), `the refresh is current: ${out}`).toBeTruthy();
     expect(!out.includes('missing'), `with no missing warning: ${out}`).toBeTruthy();
     const copy = path.join(world.tower, 'brief', 'jobs', 'morning', 'brief', 'stats.js');
     expect(fs.existsSync(copy), 'the clone keeps the copy HEAD still ships').toBeTruthy();
@@ -337,8 +337,8 @@ describe('workflow/home: the cloud brief runner', () => {
     fs.rmSync(path.join(kit, ...STATS.split('/')));
     commitKit(kit, 'refactor: retire the stats module');
 
-    const { out } = seeded(world);
-    expect(/rc=0/.test(out), `the removal counts as a change: ${out}`).toBeTruthy();
+    const { code, out } = seeded(world);
+    expect(code, `the removal counts as a change: ${out}`).toBe(0);
     expect(out.includes('1 retired'), `and is counted: ${out}`).toBeTruthy();
     expect(!out.includes('missing'), `with no missing warning: ${out}`).toBeTruthy();
     expect(!fs.existsSync(path.join(world.tower, 'brief', 'jobs', 'morning', 'brief', 'stats.js')),

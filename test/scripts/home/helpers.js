@@ -1,18 +1,18 @@
 // The shared prologue of the home suites beside this one, one lifecycle stage
 // each. Every world is a scratch HOME and ~/.workkit, a `gh` shim answering with
 // canned JSON, a local bare repo as the remote, and a tower app fixture
-// (WORKKIT_TOWER_APP) with no omega, install or build. A function home.sh hands
-// off is asked through a one-line driver, the way the CLI and the jobs ask it;
-// any other step is asked of its workflow/home/ file in a node of the world's own.
+// (WORKKIT_TOWER_APP) with no omega, install or build. A verb of workflow/home.js
+// is asked of that program, the way the command asks it; any other step is
+// asked of its workflow/home/ file in a node of the world's own.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 // Aliased: `seeded` here is the runner-seeded world below.
 const {
-  expect, mkTmp, run, start, seeded: seedOnce, SPAWN_DEADLINE,
+  expect, mkTmp, run, start, seeded: seedOnce,
 } = require('../../lib/harness');
-const { spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
+const { SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { STAMP } = require('../../lib/version-stamp');
 
@@ -291,38 +291,32 @@ const mkWorld = ({
 const bashEnv = (world) => ({ ...world.env, WORKFLOW_HOME: shellPath(world.env.WORKFLOW_HOME) });
 
 /**
- * Source the library and run one line of shell in it: how every caller uses
- * it. stdin is a pipe, so any prompt that forgot its tty guard hangs the test
- * rather than production.
+ * One verb of workflow/home.js in a node under the world's env, the way the
+ * command hands one over: the caller's voice at its defaults. stdin is a pipe,
+ * so any prompt that forgot its tty guard hangs the test rather than production.
+ * @param {{root: string, env: object}} world
+ * @param {string[]} args - the verb and its arguments (`['set-slug', 'owner/workkit']`)
+ * @param {{input?: string}} [opts] - what the pipe holds
+ * @returns {{code: number, out: string, err: string}}
  */
-const inHome = (world, script, { input = '' } = {}) => {
-  const driver = [
-    'set -euo pipefail',
-    `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib.sh')))}`,
-    `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'home.sh')))}`,
-    script,
-  ].join('\n');
+const inHome = (world, args, { input = '' } = {}) => {
   // From the world's own root, never the caller's: a shim that keys anything
   // off the cwd (as npm does) must key it off a scratch directory rather
   // than this checkout.
-  const res = spawnBash([...NO_RC, '-c', driver], {
-    cwd: world.root, env: bashEnv(world), input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  const res = run(process.execPath, [path.join(WORKFLOW_DIR, 'home.js'), ...args], {
+    cwd: world.root, env: { ...world.env, WK_LOG_STDERR: '0', WK_LOG_INDENT: '', QUIET: '0' }, input,
   });
-  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
+  expect(res.status !== null, `home.js finished (no timeout): ${res.stderr}`).toBeTruthy();
   // `out` is both streams in the order a terminal shows them, since what these
   // tests read is what the user was told; `err` stays separate for the checks
   // about the stream.
-  return {
-    code: res.status,
-    out: `${res.stdout || ''}${res.stderr || ''}`,
-    err: res.stderr || '',
-  };
+  return { code: res.status, out: `${res.stdout}${res.stderr}`, err: res.stderr };
 };
 
 /**
  * The exit code a step's answer stands for: true 0, false 1, a number itself,
  * the sync's `{ code }` its code, anything else (a value, nothing) 0. Its source
- * also runs in the node `inNode` starts, so the two read an answer alike.
+ * also runs in the node `runHomeSteps` starts, so the two read an answer alike.
  */
 const codeOf = (answer) => {
   if (answer === false) return 1;
@@ -385,33 +379,43 @@ const stepsResult = (status, stdout, stderr, answerFile) => {
  * stdin, `input` what is typed there.
  * @returns {{code: number, answers: Array, out: string, err: string}}
  */
-const inNode = (world, steps, { input = '', terminal = false } = {}) => {
+const runHomeSteps = (world, steps, { input = '', terminal = false } = {}) => {
   const { answerFile, argv } = stepCall(world, steps, terminal);
   const res = run(process.execPath, argv, { cwd: world.root, env: world.env, input });
   return stepsResult(res.status, res.stdout, res.stderr, answerFile);
 };
 
 /**
- * inNode at a terminal whose stdin stays open after `input` until the steps are
- * done: a key that never comes is a wait, never a close.
- * @returns {Promise<{code: number, answers: Array, out: string, err: string}>}
+ * runHomeStepsHeld's node, started and not waited on: `call` the harness handle a
+ * case may end, `result()` the finished steps once it exits.
+ * @returns {{call: object, result: () => Promise<{code: number, answers: Array, out: string, err: string}>}}
  */
-const inNodeHeld = async (world, steps, { input = '' } = {}) => {
+const startHomeStepsHeld = (world, steps, { input = '' } = {}) => {
   const { answerFile, argv } = stepCall(world, steps, true);
   const call = start(process.execPath, argv, {
     cwd: world.root, env: world.env, input, stdin: 'open',
   });
-  const { status } = await call.done;
-  call.child.stdin.end();
-  return stepsResult(status, call.stdout(), call.stderr(), answerFile);
+  const result = async () => {
+    const { status } = await call.done;
+    call.child.stdin.end();
+    return stepsResult(status, call.stdout(), call.stderr(), answerFile);
+  };
+  return { call, result };
 };
+
+/**
+ * runHomeSteps at a terminal whose stdin stays open after `input` until the steps are
+ * done: a key that never comes is a wait, never a close.
+ * @returns {Promise<{code: number, answers: Array, out: string, err: string}>}
+ */
+const runHomeStepsHeld = (world, steps, options) => startHomeStepsHeld(world, steps, options).result();
 
 /** A full setup at a terminal, answered with `input`, against a world whose remote is an empty bare repo. */
 const setup = (world, { input = 'y\n' } = {}) => {
   if (!world.env.WORKKIT_HOME_REMOTE) {
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
   }
-  return inNode(world, [['wizard', 'setup']], { input, terminal: true });
+  return runHomeSteps(world, [['wizard', 'setup']], { input, terminal: true });
 };
 
 // The cloud brief runner's fixtures, shared by the runner, version stamp and
@@ -430,12 +434,12 @@ const runnerPairs = () => {
   return list.map(([src, dest]) => ({ src, dest }));
 };
 
-/** The world's home cloned, then the runner seeded through home.sh, its code printed as `rc=N`. */
+/** The world's home cloned, then the runner seeded through home.js, its code the seed's. */
 const seeded = (world) => {
   if (!world.env.WORKKIT_HOME_REMOTE) world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-  const cloned = inNode(world, [['repo', 'clone', ['owner/workkit']]]);
+  const cloned = runHomeSteps(world, [['repo', 'clone', ['owner/workkit']]]);
   if (cloned.code !== 0) return cloned;
-  const res = inHome(world, 'rc=0\nwk_home_seed_runner || rc=$?\nprintf "rc=%s\\n" "$rc"');
+  const res = inHome(world, ['seed-runner']);
   return { code: res.code, out: `${cloned.out}${res.out}`, err: `${cloned.err}${res.err}` };
 };
 
@@ -512,6 +516,6 @@ const dropRunnerLine = (kit, src) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, inHome, inNode, inNodeHeld, setup, runnerPairs, seeded,
+  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, inHome, runHomeSteps, runHomeStepsHeld, startHomeStepsHeld, setup, runnerPairs, seeded,
   mkKitCopy, mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP,
 };

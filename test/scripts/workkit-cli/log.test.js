@@ -1,13 +1,13 @@
-// Tests for workflow/workkit.sh: `workkit log`, which prints the tail of the
+// Tests for workflow/workkit.js: `workkit log`, which prints the tail of the
 // hook log in the workkit home (WORKFLOW_HOME/hooks.log).
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
-const { describe, test, expect, mkTmp, until, start } = require('../../lib/harness');
-const { IS_WINDOWS, BASH, NO_RC, shellPath } = require('../../lib/platform');
+const { describe, test, expect, until, start } = require('../../lib/harness');
+const { IS_WINDOWS } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, CLI, cleanup, mkWorld, runCli,
+  CLI, cleanup, mkWorld, runCli,
 } = require('./helpers');
 
 // A world whose hook log holds `count` numbered lines; returns them too.
@@ -20,6 +20,11 @@ const withLog = (count) => {
 };
 
 const printed = (out) => out.split('\n').filter(Boolean);
+
+// `workkit log --follow` started by this node, the head of its own group off Windows.
+const startFollow = (world) => start(process.execPath, [CLI, 'log', '--follow'], {
+  cwd: world.root, env: world.env, detached: !IS_WINDOWS,
+});
 
 describe('workkit log', () => {
   test('a 60-line log prints its last 40 lines', () => {
@@ -51,11 +56,7 @@ describe('workkit log', () => {
   test('--follow prints a line appended after it started, while it is still running', async () => {
     const { world, lines } = withLog(3);
     const logFile = path.join(world.workflowHome, 'hooks.log');
-    // Its own process group off Windows, so the kill reaches a `tail` the
-    // command did not exec into as well as the shell.
-    const follow = start(BASH, [...NO_RC, shellPath(CLI), 'log', '--follow'], {
-      cwd: world.root, env: world.env, detached: !IS_WINDOWS,
-    });
+    const follow = startFollow(world);
     const said = follow.output;
     let ended = false;
     follow.child.on('exit', () => { ended = true; });
@@ -71,14 +72,19 @@ describe('workkit log', () => {
     cleanup(world.root);
   });
 
-  test('a checkout with no workflow/home.sh still prints the log and exits 0', () => {
-    const { world, lines } = withLog(60);
-    const kit = mkTmp('workkit-cli-');
-    fs.cpSync(WORKFLOW_DIR, path.join(kit, 'workflow'), { recursive: true });
-    fs.rmSync(path.join(kit, 'workflow', 'home.sh'));
-    const { code, out, said } = runCli(world, ['log'], { script: path.join(kit, 'workflow', 'workkit.sh') });
-    expect(code, `exit 0, got: ${said}`).toBe(0);
-    expect(JSON.stringify(printed(out)), `the last 40 lines, in order, got: ${said}`).toBe(JSON.stringify(lines.slice(-40)));
-    cleanup(world.root); cleanup(kit);
+  test('--follow ends 130 on INT, as a Ctrl-C at its terminal ends it', { skip: IS_WINDOWS && 'Windows has no INT a test can send to a running process' }, async () => {
+    const { world, lines } = withLog(3);
+    const follow = startFollow(world);
+    try {
+      expect(await until(() => follow.output().includes(lines[2])), `it is following, got: ${follow.output()}`).toBeTruthy();
+      // The whole group, as a terminal's Ctrl-C reaches it; never the end ladder, whose TERM would end it too.
+      process.kill(-follow.pid, 'SIGINT');
+      const res = await follow.done;
+      expect(!res.timedOut, `it ended on the INT, not at the deadline, got: ${follow.output()}`).toBeTruthy();
+      expect(res.status, `the follow catches the INT and ends 130, got status ${res.status}, signal ${res.signal}`).toBe(130);
+    } finally {
+      await follow.end('SIGKILL');
+    }
+    cleanup(world.root);
   });
 });

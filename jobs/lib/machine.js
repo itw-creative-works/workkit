@@ -3,15 +3,14 @@
  * launchd or Task Scheduler: its home and the transcripts root under it, the
  * folders its programs live in, the quiet Claude, the bound on a child, and the
  * notifier.
- * Usage: const { machineHome, projectsRoot, enterMachine, secondsOf, jobTimeout, bounded, notify } = require('../lib/machine');
+ * Usage: const { machineHome, projectsRoot, enterMachine, jobTimeout, bounded, notify } = require('../lib/machine');
  */
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { exitOf, startFailed } = require('../../workflow/lib/detach');
 const { spawn, keyOf } = require('../../workflow/lib/run');
-const { endTreeOf } = require('../../workflow/lib/tree');
+const { bounded: runBounded, secondsOf } = require('../../workflow/lib/bounded');
 const { nativePath } = require('../../workflow/lib/platform');
 const { homeOf } = require('../../hooks/mods/log.js');
 
@@ -20,9 +19,6 @@ const PLATFORM = process.platform;
 
 // The bound on a child when WORKKIT_JOB_TIMEOUT names none: 15 minutes.
 const DEFAULT_TIMEOUT_S = 900;
-
-// The code a bounded child that ran past its bound answers, as `timeout` exits.
-const TIMED_OUT = 124;
 
 // The longest a notification's message runs, in characters.
 const NOTE_CHARS = 180;
@@ -61,17 +57,6 @@ const enterMachine = (env = process.env, { platform = PLATFORM, node = process.e
 };
 
 /**
- * A positive number of seconds from the environment, else the default.
- * @param {string|undefined} value the variable's value
- * @param {number} fallback the seconds when it is unset or not a positive number
- * @returns {number}
- */
-const secondsOf = (value, fallback) => {
-  const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds : fallback;
-};
-
-/**
  * The bound on a job's child, in milliseconds: WORKKIT_JOB_TIMEOUT seconds,
  * 900 when it is unset or not a positive number.
  * @param {object} [env]
@@ -80,56 +65,14 @@ const secondsOf = (value, fallback) => {
 const jobTimeout = (env = process.env) => secondsOf(env.WORKKIT_JOB_TIMEOUT, DEFAULT_TIMEOUT_S) * 1000;
 
 /**
- * Runs one child to its end, stdin closed. Past the bound its whole tree is
- * ended and it answers 124, as a hang is a failure with no code of its own.
+ * A job's child run to its end under `bounded` of workflow/lib/bounded.js,
+ * the bound jobTimeout() of the env unless one is given.
  * @param {string} command
  * @param {string[]} args
- * @param {object} [options] spawn's, plus `bound`: the bound in ms, jobTimeout() of the env by default;
- *   `stdio` is spawn's, stdin closed and both streams read by default
- * @returns {Promise<{status: number, output: string, stdout: string, timedOut: boolean}>} output: stdout
- *   and stderr in the order they came, and the bound's own line; stdout: stdout alone
+ * @param {object} [options] as workflow/lib/bounded.js takes them, `bound` optional here
+ * @returns {Promise<{status: number, output: string, stdout: string, stderr: string, timedOut: boolean}>}
  */
-const bounded = (command, args, { bound, stdio = ['ignore', 'pipe', 'pipe'], ...options } = {}) => new Promise((resolve) => {
-  const chunks = [];
-  const outChunks = [];
-  let timedOut = false;
-  let done = false;
-  const child = spawn(command, args, { windowsHide: true, ...options, stdio });
-  const finish = (status) => {
-    if (done) return;
-    done = true;
-    clearTimeout(timer);
-    // A grandchild that outlived the end may hold a pipe: the answer waits on no one.
-    child.stdout?.destroy();
-    child.stderr?.destroy();
-    resolve({
-      status: timedOut ? TIMED_OUT : status,
-      output: Buffer.concat(chunks).toString('utf8'),
-      stdout: Buffer.concat(outChunks).toString('utf8'),
-      timedOut,
-    });
-  };
-  // A tree that cannot be read or ended still loses its head, and the output says why.
-  const timer = setTimeout(() => {
-    timedOut = true;
-    endTreeOf(child.pid)
-      .catch((err) => {
-        chunks.push(Buffer.from(`${err.message}\n`));
-        child.kill('SIGKILL');
-      })
-      .then(() => finish(TIMED_OUT));
-  }, bound ?? jobTimeout(options.env));
-  child.stdout?.on('data', (chunk) => {
-    chunks.push(chunk);
-    outChunks.push(chunk);
-  });
-  child.stderr?.on('data', (chunk) => chunks.push(chunk));
-  child.on('error', (err) => {
-    chunks.push(Buffer.from(`${command}: ${err.message}\n`));
-    finish(startFailed);
-  });
-  child.on('close', (code, signal) => finish(exitOf(code, signal)));
-});
+const bounded = (command, args, { bound, ...options } = {}) => runBounded(command, args, { bound: bound ?? jobTimeout(options.env), ...options });
 
 /** Notifly's binary: NOTIFLY first, then a per-user install, then a machine-wide one; null when none. */
 const notifierPath = (home) => {
@@ -177,5 +120,5 @@ const notify = (message, notes) => {
 };
 
 module.exports = {
-  machineHome, projectsRoot, enterMachine, secondsOf, jobTimeout, bounded, notify,
+  machineHome, projectsRoot, enterMachine, jobTimeout, bounded, notify,
 };

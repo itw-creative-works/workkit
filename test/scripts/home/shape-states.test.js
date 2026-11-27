@@ -1,33 +1,22 @@
-// Tests for workflow/home.sh and workflow/home/: its shape (the two libraries
-// load quietly, the copy's exclude list, the addresses, the site host, the paths
-// a line prints on Windows, the home repo's name) and the four states a home can
-// be in. The shared prologue is ./helpers.js.
+// Tests for workflow/home.js and workflow/home/: its shape (the copy's exclude
+// list, the addresses, the site host, the paths a line prints on Windows, the
+// home repo's name, the usage line) and the four states a home can be in.
+// The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { describe, test, expect } = require('../../lib/harness');
+const { IS_WINDOWS } = require('../../lib/platform');
+const { underEnv } = require('../../lib/under-env');
 const {
-  IS_WINDOWS, NO_RC, shellPath, spawnBash,
-} = require('../../lib/platform');
-const {
-  WORKFLOW_DIR, KIT_DIR, cleanup, mkRemote, mkWorld, inHome, inNode, seeded,
+  KIT_DIR, cleanup, mkRemote, mkWorld, inHome, runHomeSteps, seeded,
 } = require('./helpers');
 const { settingsAt } = require('../../../workflow/lib/settings');
+const { userDir: userDirOf, towerDir } = require('../../../workflow/user-dir');
+const { settingsFile } = require('../../../workflow/home/options');
 
 describe('workflow/home: shape', () => {
-  test('the two libraries parse and run nothing at load', () => {
-    for (const lib of ['lib.sh', 'home.sh']) {
-      const file = path.join(WORKFLOW_DIR, lib);
-      expect(spawnBash([...NO_RC, '-n', shellPath(file)], { encoding: 'utf8' }).status, `bash -n is clean for ${lib}`).toBe(0);
-    }
-    const world = mkWorld();
-    // Sourcing both prints nothing: a library that acted at load would
-    // act every time the CLI, the heal or the job started.
-    expect(inHome(world, 'true').out, 'sourcing says nothing').toBe('');
-    cleanup(world.root);
-  });
-
   test('the copy’s exclude list covers everything the app’s .gitignore names', () => {
     // The list is the gitignore's set, so the seed is held to it: an ignore rule
     // the list misses is a tree the seed and the sync copy into the published
@@ -56,7 +45,7 @@ describe('workflow/home: shape', () => {
       }
     }
     for (const name of negated) fs.writeFileSync(path.join(world.towerApp, name), 'given back\n');
-    const { code, out } = inNode(world, [['repo', 'clone', ['owner/workkit']], ['seed', 'seed']]);
+    const { code, out } = runHomeSteps(world, [['repo', 'clone', ['owner/workkit']], ['seed', 'seed']]);
     expect(code, `the seed ran: ${out}`).toBe(0);
 
     // Also the keep list's "no more": a name it gave back past the negations is
@@ -73,25 +62,20 @@ describe('workflow/home: shape', () => {
     cleanup(world.root);
   });
 
-  test('the addresses are the new layout: a plain folder with one repo in it', () => {
+  test('the addresses are the new layout: a plain folder with one repo in it', async () => {
     const world = mkWorld();
-    const { out } = inHome(world, 'printf "%s\\n%s\\n%s\\n" "$WK_USER_DIR" "$WK_HOME_DIR" "$WK_HOME_SETTINGS"');
-    const [userDir, homeDir, settings] = out.trim().split('\n');
-    expect(userDir, 'the user folder is ~/.workkit').toBe(shellPath(world.workflowHome));
-    expect(homeDir, 'and the clone is the tower under it').toBe(shellPath(path.join(world.workflowHome, 'tower')));
-    expect(settings, 'the site options live beside the roster, outside the clone the user never edits').toBe(shellPath(path.join(world.workflowHome, 'settings.json')));
-
-    // Nothing addresses anything inside the clone but the app it builds.
-    const lib = fs.readFileSync(path.join(WORKFLOW_DIR, 'lib.sh'), 'utf8');
-    expect(!/WK_HOME_CONFIG|WK_HOME_INBOX/.test(lib), 'no address is kept for either retired file').toBeTruthy();
+    const [userDir, homeDir, settings] = await underEnv({ WORKFLOW_HOME: world.workflowHome }, () => [userDirOf(), towerDir(), settingsFile()]);
+    expect(userDir, 'the user folder is ~/.workkit').toBe(world.workflowHome);
+    expect(homeDir, 'and the clone is the tower under it').toBe(path.join(world.workflowHome, 'tower'));
+    expect(settings, 'the site options live beside the roster, outside the clone the user never edits').toBe(path.join(world.workflowHome, 'settings.json'));
     cleanup(world.root);
   });
 
   test('the site host reads one way, whatever shape the domain was typed in', () => {
     // One reader, because the CNAME, the path prefix and the site URL all want
     // the same answer. A CNAME carries a host and never a path, so the scheme and
-    // any trailing slash come off here rather than at a caller. Bracketed so the
-    // empty answer is an answer and not a missing line.
+    // any trailing slash come off here rather than at a caller. One line each,
+    // so the empty answer is an answer and not a missing line.
     for (const [typed, host] of [
       ['board.example.com', 'board.example.com'],
       ['board.example.com/', 'board.example.com'],
@@ -99,9 +83,9 @@ describe('workflow/home: shape', () => {
       [null, ''],
     ]) {
       const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: typed } } });
-      const { code, out } = inHome(world, 'printf "[%s]" "$(wk_site_host)"');
+      const { code, out } = inHome(world, ['host']);
       expect(code, `exit 0 for ${JSON.stringify(typed)}`).toBe(0);
-      expect(out, `${JSON.stringify(typed)} reads as the host alone`).toBe(`[${host}]`);
+      expect(out, `${JSON.stringify(typed)} reads as the host alone`).toBe(`${host}\n`);
       cleanup(world.root);
     }
   });
@@ -119,8 +103,9 @@ describe('workflow/home: shape', () => {
     const usage = 'usage: home.js <setup [force]|doctor|runner-doctor|slug|host|set-slug <slug>|state|ready|catch-up <prefix>|seed-runner|commit-push <subject>>\n';
     const world = mkWorld();
     // An unknown verb, a verb missing its argument, and setup with a word it does not take.
-    for (const call of ['_wk_home_run publish', 'wk_home_set_slug', 'wk_home_setup x']) {
-      const { code, out, err } = inHome(world, call);
+    for (const args of [['publish'], ['set-slug'], ['setup', 'x']]) {
+      const call = args.join(' ');
+      const { code, out, err } = inHome(world, args);
       expect(code, `${call} exits 64, got: ${out}`).toBe(64);
       expect(err, `${call} prints the usage line on stderr`).toBe(usage);
       expect(out, `${call} prints nothing on stdout`).toBe(err);
@@ -138,7 +123,7 @@ describe('workflow/home: the paths a line prints on Windows', {
 
   test('the doctor and the runner seed name their folders in the native spelling', () => {
     const world = mkWorld();
-    const unset = inHome(world, 'wk_home_doctor').out;
+    const unset = inHome(world, ['doctor']).out;
     expect(unset.toLowerCase().includes(`clones it into ${native(world.tower)}`), `the doctor's clone path, got: ${unset}`).toBeTruthy();
 
     const { out } = seeded(world);
@@ -151,7 +136,7 @@ describe('workflow/home: the paths a line prints on Windows', {
 
 describe('workflow/home: the four states', () => {
   // The state is one word; a line end after it is no part of it.
-  const state = (world) => inHome(world, 'wk_home_state').out.trim();
+  const state = (world) => inHome(world, ['state']).out.trim();
 
   test('no home slug is `unset`', () => {
     const world = mkWorld();
@@ -164,7 +149,7 @@ describe('workflow/home: the four states', () => {
     // hand-edited file itself. The switch is left to the kit defaults, so it reads
     // unanswered and setup still has a question to put.
     const world = mkWorld({ settings: null });
-    const { code } = inHome(world, 'wk_home_set_slug owner/workkit');
+    const { code } = inHome(world, ['set-slug', 'owner/workkit']);
     expect(code, 'exit 0').toBe(0);
     const { site } = settingsAt(null, path.join(world.workflowHome, 'settings.json'));
     expect(site.repo, 'the slug it was asked to record').toBe('owner/workkit');
@@ -182,7 +167,7 @@ describe('workflow/home: the four states', () => {
   test('the clone of the home repo is `clone`', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root, { seed: { 'package.json': '{}\n' } });
-    inNode(world, [['repo', 'clone', ['owner/workkit']]]);
+    runHomeSteps(world, [['repo', 'clone', ['owner/workkit']]]);
     expect(state(world), 'the one state everything else needs').toBe('clone');
     cleanup(world.root);
   });

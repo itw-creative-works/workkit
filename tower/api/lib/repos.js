@@ -18,6 +18,7 @@ const { slugFromRemote } = require('../../../workflow/slug');
 const { homeUserDir, towerDir, WORKKIT_DIR } = require('../../../workflow/user-dir');
 const { tempDirOf } = require('../../../hooks/mods/markers.js');
 const { settingsOptedIn } = require('../../../hooks/mods/gate.js');
+const { rosterFile } = require('../../../hooks/mods/log.js');
 const { homeSlug } = require('../../../workflow/lib/settings');
 const { readJsonOrNull, readOrNull } = require('../../../workflow/lib/read');
 
@@ -71,7 +72,7 @@ const tempRoot = (exec = defaultExec) => {
  * @returns {{status: 'ok'|'missing'|'unreadable', roster: object|null}}
  */
 const readRoster = (workflowHome) => {
-  const file = path.join(workflowHome, '.repos.json');
+  const file = rosterFile(workflowHome);
   if (!fs.existsSync(file)) return { status: 'missing', roster: null };
   const roster = readJsonOrNull(file);
   return roster ? { status: 'ok', roster } : { status: 'unreadable', roster: null };
@@ -127,7 +128,7 @@ const discoverRepos = (opts = {}) => {
   // The home repo, which the roster never carries: known by path, and listed
   // only when not declined and its origin matches `site.repo`, never a foreign
   // checkout parked there. The path is in git's spelling, so both compares
-  // below match the roster keys on Windows. wk_tower_dir's rule.
+  // below match the roster keys on Windows.
   const tower = gitPath(towerDir(workflowHome));
   const towerDeclined = !!registered && typeof registered === 'object' && registered[tower] === 'declined';
   if (!towerDeclined && !found.some((r) => r.path === tower) && fs.existsSync(path.join(tower, '.git'))) {

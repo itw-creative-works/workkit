@@ -1,16 +1,15 @@
-// Tests for workflow/workkit.sh: the `test` verb, the repo's own `npm test` run
+// Tests for workflow/workkit.js: the `test` verb, the repo's own `npm test` run
 // from its root, so npm's script shell records what the run proved. The repo is
 // on the workkit-core package (test/lib/core-repo.js); the shared prologue is
 // ./helpers.js; the script shell's world is test/lib/script-shell.js.
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 const {
   describe, test, expect,
 } = require('../../lib/harness');
 const {
-  NODE_DIR, shellPath, joinPath, basePathWithout,
+  NODE_DIR, shellPath, joinPath, basePathWithout, spawnSync,
 } = require('../../lib/platform');
 const { treeHash } = require('../../lib/suite-record');
 const {
@@ -100,7 +99,7 @@ describe('workkit test: the repo\'s npm test, from its root', { skip: skipWithou
     });
   }
 
-  // `workkit` on PATH is this CLI, which the script reaches with no package
+  // `workkit` on PATH is this command, which the script reaches with no package
   // installed. Without the guard the script shell's lock refuses the nested root
   // run, and past that the stub refuses a third call, so no chain outlives the deadline.
   test('a test script of workkit test with no workkit-core installed: non-zero with the missing-package line, no loop', () => {
@@ -112,7 +111,7 @@ describe('workkit test: the repo\'s npm test, from its root', { skip: skipWithou
     writeStub(path.join(bin, 'workkit'), [
       'export WK_LOOP_DEPTH=$(( ${WK_LOOP_DEPTH:-0} + 1 ))',
       'if [ "$WK_LOOP_DEPTH" -gt 2 ]; then exit 99; fi',
-      `exec bash "${shellPath(CLI)}" "$@"`,
+      `exec "${shellPath(process.execPath)}" "${shellPath(CLI)}" "$@"`,
     ]);
     const { code, said } = runTest(world, [], { cwd: repo, env: { PATH: joinPath(bin, NODE_DIR, world.env.PATH) } });
     expect(code !== 0, `non-zero, got ${code}: ${said}`).toBeTruthy();

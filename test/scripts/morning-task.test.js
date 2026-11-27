@@ -8,7 +8,7 @@ const {
   describe, test, expect, mkTmp, until, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  homeEnv, jsPath, samePath, spawnSync, stubToolJs,
+  nodeHomeEnv, jsPath, samePath, spawnSync, stubToolJs,
 } = require('../lib/platform');
 const { escapeRegex } = require('../../workflow/lib/regex');
 
@@ -101,8 +101,7 @@ describe('workflow/morning-task: the starter', () => {
     const res = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${jsPath(path.join(link, 'morning-task.js'))}).jobFile())`], {
       encoding: 'utf8',
       timeout: SPAWN_DEADLINE,
-      // A node started from the case reads its home native.
-      env: { ...homeEnv(home, { ...process.env }), HOME: home, WORKFLOW_HOME: path.join(home, '.workkit') },
+      env: nodeHomeEnv(home, { ...process.env, WORKFLOW_HOME: path.join(home, '.workkit') }),
     });
     expect(res.status, `the starter loads through the link: ${res.stderr}`).toBe(0);
     const real = fs.realpathSync(path.join(KIT, 'jobs', 'morning.js'));

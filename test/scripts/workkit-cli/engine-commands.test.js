@@ -1,4 +1,5 @@
-// Tests for workflow/workkit.sh: the engine commands (note, enable, heal).
+// Tests for workflow/workkit.js: the engine commands (note, enable, heal), and
+// publish in a kit without its program.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -6,7 +7,10 @@ const fs = require('fs');
 const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
-const { cleanup, mkWorld, runCli, mkRepo } = require('./helpers');
+const { gitPath } = require('../../lib/platform');
+const {
+  cleanup, mkWorld, runCli, mkRepo, mkPartialKit,
+} = require('./helpers');
 
 describe('workkit: the engine commands', () => {
   test('note delegates to the capture CLI', () => {
@@ -24,7 +28,7 @@ describe('workkit: the engine commands', () => {
     const repo = mkRepo({ optIn: true });
     const { code, err } = runCli(world, ['note'], { cwd: repo });
     expect(code, 'exit 1').toBe(1);
-    expect(err.includes('usage: wk.sh note'), `the delegate’s own usage, got: ${err}`).toBeTruthy();
+    expect(err.includes('usage: workkit note'), `the delegate’s own usage, got: ${err}`).toBeTruthy();
     cleanup(world.root); cleanup(repo);
   });
 
@@ -48,5 +52,28 @@ describe('workkit: the engine commands', () => {
     expect(runCli(world, ['heal'], { cwd: here }).code, 'exit 0 with no argument').toBe(0);
     expect(fs.existsSync(path.join(here, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'and no argument heals the repo the shell is in').toBeTruthy();
     cleanup(world.root); cleanup(named); cleanup(here);
+  });
+
+  // publish answers 0 whatever came of it: setup reads the failure, never the code.
+  test('publish in a kit with no publish.js names the file and the incomplete kit, exit 0', () => {
+    const world = mkWorld();
+    const { kit, script } = mkPartialKit();
+    const { code, err } = runCli(world, ['publish'], { script });
+    expect(code, `exit 0, got: ${err}`).toBe(0);
+    const line = `⚠ site: publish.js is missing at ${gitPath(path.join(kit, 'workflow', 'publish.js'))}; the kit is incomplete`;
+    expect(err.split(/\r?\n/).includes(line), `the line naming publish.js, got: ${err}`).toBeTruthy();
+    cleanup(world.root); cleanup(kit);
+  });
+
+  test('heal, note and changelog lint in a kit with no standards.js, note.js or changelog/lint.js: each one line naming its file and the incomplete kit, exit 1', () => {
+    const world = mkWorld();
+    const { kit, script } = mkPartialKit();
+    const CALLS = [[['heal', 'x'], 'heal', 'standards.js'], [['note', 'x'], 'note', 'note.js'], [['changelog', 'lint', 'x'], 'changelog lint', 'changelog/lint.js']];
+    for (const [argv, step, file] of CALLS) {
+      const { code, err } = runCli(world, argv, { script });
+      expect(code, `${step}: exit 1, got: ${err}`).toBe(1);
+      expect(err, `${step}: the one line`).toBe(`✖ ${step}: ${path.basename(file)} is missing at ${gitPath(path.join(kit, 'workflow', file))}; the kit is incomplete\n`);
+    }
+    cleanup(world.root); cleanup(kit);
   });
 });

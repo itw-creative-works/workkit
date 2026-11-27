@@ -37,7 +37,7 @@ const mkScene = () => {
 };
 
 /** PATH with `dir` ahead of the world's own. */
-const pathFirst = (world, dir) => ({ PATH: joinPath(shellPath(dir), world.env.PATH) });
+const pathFirst = (world, dir) => ({ PATH: joinPath(dir, world.env.PATH) });
 
 /**
  * A folder holding a `git` that is no shim: it hands every call to the real git,

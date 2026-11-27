@@ -806,7 +806,7 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
 - What is left on disk is scratch (the capture inbox, session state, caches, logs), and none of it is a source of truth.
 - Two surfaces, both generic.
   - There is no assumed folder layout anywhere, and no path outside them but one.
-  - The one is the kit's cache folder, `~/.cache/workkit`: scratch, the run folders of `workkit prove` and `workkit proof red` under `proof/`, and the red-proof snapshots under `snapshot/` (`workflow/README.md`, `cacheDirOf` in `hooks/mods/log.js`).
+  - The one is the kit's cache folder, `~/.cache/workkit`: scratch, the run folders of `workkit prove`, `workkit proof red` and `workkit ship publish` (when the folder differs from HEAD) under `proof/`, and the red-proof snapshots under `snapshot/` (`workflow/README.md`, `cacheDirOf` in `hooks/mods/log.js`).
 - **1. `~/.workkit`**: workkit's user-level home on any machine (`$WORKFLOW_HOME` overrides it).
   - It is a PLAIN FOLDER and never a git repo.
   - Nothing in it is versioned, so nothing in it has to be kept out of a commit.
@@ -1042,7 +1042,7 @@ released       - [#4](../../issues/4) [`1de1308`](../../commit/1de1308) Thanks [
 - Corollary, **a pointer may carry reference detail, never sole enforcement**: every rule that must bind every session gets a hook.
 - This spec is where detail lives, not where obedience comes from.
 
-- **`workflow:standards`** (SessionStart, once per repo per day): runs `~/.claude/workkit/standards.sh`.
+- **`workflow:standards`** (SessionStart, once per repo per day): runs the engine's heal, `node <engine>/standards.js`.
   - The script:
     - creates every label from `labels.json` and corrects description/color drift;
     - installs the issue templates;

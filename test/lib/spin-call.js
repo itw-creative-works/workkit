@@ -11,12 +11,12 @@ const { stripVTControlCharacters } = require('util');
 const {
   start, until, mkTmp, SPAWN_DEADLINE,
 } = require('./harness');
-const { BASH, NO_RC, jsPath, shellPath } = require('./platform');
+const { jsPath } = require('./platform');
 const { escapeRegex } = require('../../workflow/lib/regex');
 
 const KIT = path.join(__dirname, '..', '..');
 const MESSAGE = 'reading the roster';
-// lib.sh's WK_SPIN_FRAMES, and the clear wk_spin writes once the call is back.
+// The frames spin.js draws, in order, and the clear it writes once the call is back.
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const CLEAR = `\r${' '.repeat(72)}\r`;
 // What the held call prints on the stdout it shares with the driver.
@@ -105,26 +105,19 @@ const spinArgs = (mode, dir) => {
  * `last` (nothing after), `unlined` (`call` with `{ line: false }`), `resolves` and `rejects` (a run whose
  * promise settles once the held call ends; `value: <value>` or `caught: <message>` on stderr), `throws` (the run throws; `caught: <message>` on stderr) or `answer` (what spin
  * handed back, written to a file). With <frames>, the call holds until that many frames reached the stream
- * they are watched on, then is released; with none it is released before the start. <commandLog> runs it
- * under a command log as lib/command-log.sh holds one: WK_COMMAND_LOGGED set, 7, 8 and 9 open on files.
+ * they are watched on, then is released; with none it is released before the start. <terminal> is a file
+ * the logger's terminal device stands in for: WK_COMMAND_TERMINAL names it, and the frames are watched there.
  * @param {string} mode
- * @param {{env: object, frames?: number, commandLog?: boolean}} opts
- * @returns {Promise<{status: ?number, timedOut: boolean, stdout: string, stderr: string, held: string, answers: ?object}>}
- *   `held` is what reached 8 under a command log
+ * @param {{env: object, frames?: number, terminal?: string}} opts
+ * @returns {Promise<{status: ?number, timedOut: boolean, stdout: string, stderr: string, drawn: string, answers: ?object}>}
+ *   `drawn` is what reached the <terminal> file
  */
-const driveSpin = async (mode, { env, frames = 0, commandLog = false }) => {
+const driveSpin = async (mode, { env, frames = 0, terminal = null }) => {
   const dir = mkTmp('spin-call-');
   const { args, release, answers } = spinArgs(mode, dir);
-  const fd = (n) => path.join(dir, `fd${n}`);
   if (!frames) fs.writeFileSync(release, '');
-  const call = commandLog
-    ? start(BASH, [...NO_RC, '-c', 'exec "$@" 7>>"$FD7" 8>>"$FD8" 9>>"$FD9"', 'spin', shellPath(process.execPath), ...args], {
-      env: {
-        ...env, WK_COMMAND_LOGGED: '1', FD7: shellPath(fd(7)), FD8: shellPath(fd(8)), FD9: shellPath(fd(9)),
-      },
-    })
-    : start(process.execPath, args, { env });
-  const watched = () => (commandLog ? readOr(fd(8)) : call.stderr());
+  const call = start(process.execPath, args, { env: terminal ? { ...env, WK_COMMAND_TERMINAL: terminal } : env });
+  const watched = () => (terminal ? readOr(terminal) : call.stderr());
   if (frames) {
     await until(() => framesIn(watched()).length >= frames);
     fs.writeFileSync(release, '');
@@ -135,7 +128,7 @@ const driveSpin = async (mode, { env, frames = 0, commandLog = false }) => {
     timedOut,
     stdout: call.stdout(),
     stderr: call.stderr(),
-    held: readOr(fd(8)),
+    drawn: terminal ? readOr(terminal) : '',
     answers: fs.existsSync(answers) ? JSON.parse(fs.readFileSync(answers, 'utf8')) : null,
   };
 };
@@ -157,21 +150,29 @@ const secondsOf = (frame) => Number(stripVTControlCharacters(frame).match(/\((\d
 
 /**
  * The poll in a node of its own under <env>, its stdin a pipe kept open: once its countdown drew <frames> frames
- * showing at least <counts> different seconds, <key> is typed; once it answered, the stdin is closed.
+ * showing at least <counts> different seconds, <key> is typed; once it answered, the stdin is closed. <terminal>
+ * is a file standing in for the logger's terminal device, as driveSpin's: WK_COMMAND_TERMINAL names it, and the
+ * frames are watched there.
  * @param {string} key
- * @param {{env: object, frames?: number, counts?: number}} opts
- * @returns {Promise<{status: ?number, timedOut: boolean, stderr: string, frames: string[]}>} `frames` the countdown's
+ * @param {{env: object, frames?: number, counts?: number, terminal?: string}} opts
+ * @returns {Promise<{status: ?number, timedOut: boolean, stderr: string, frames: string[], drawn: string}>}
+ *   `frames` the countdown's, `drawn` what reached the <terminal> file
  */
-const drivePoll = async (key, { env, frames = 1, counts = 1 }) => {
-  const call = start(process.execPath, ['-e', POLLER, String(POLL_SECONDS)], { env, stdin: 'open' });
-  const drawn = () => framesIn(call.stderr(), `${POLL_MESSAGE}...`);
+const drivePoll = async (key, {
+  env, frames = 1, counts = 1, terminal = null,
+}) => {
+  const call = start(process.execPath, ['-e', POLLER, String(POLL_SECONDS)], {
+    env: terminal ? { ...env, WK_COMMAND_TERMINAL: terminal } : env, stdin: 'open',
+  });
+  const watched = () => (terminal ? readOr(terminal) : call.stderr());
+  const drawn = () => framesIn(watched(), `${POLL_MESSAGE}...`);
   await until(() => drawn().length >= frames && new Set(drawn().map(secondsOf)).size >= counts);
   call.child.stdin.write(key);
   await until(() => call.stderr().includes('answer: '));
   call.child.stdin.end();
   const { status, timedOut } = await call.done;
   return {
-    status, timedOut, stderr: call.stderr(), frames: drawn(),
+    status, timedOut, stderr: call.stderr(), frames: drawn(), drawn: terminal ? readOr(terminal) : '',
   };
 };
 

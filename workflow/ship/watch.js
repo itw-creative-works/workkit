@@ -14,6 +14,7 @@ const { spawn, spawnSync } = require('../lib/run');
 const { repoRoot, headSha } = require('../lib/git');
 const { readOrNull } = require('../lib/read');
 const { exitOf, startFailed } = require('../lib/detach');
+const { nonNegativeOf } = require('../lib/bounded');
 const { lastLines } = require('../lib/attach');
 const { run } = require('../lib/runs');
 const { bodyEnd } = require('../lib/body');
@@ -21,6 +22,7 @@ const { runPaths, LogsDirError } = require('../lib/run-paths');
 const { sayAs } = require('../lib/say');
 const { listensTo } = require('./triggers');
 const { parseJson, isPlain } = require('../../hooks/mods/settings.js');
+const { chomp } = require('../../hooks/mods/text.js');
 
 const USAGE = [
   'usage: workkit ship watch <sha>',
@@ -89,8 +91,10 @@ const gh = (args) => new Promise((resolve) => {
  */
 const stepsOf = (sha, aborted) => {
   const root = rootHere();
-  const tries = Number(process.env.WORKKIT_CI_WATCH_TRIES || 6);
-  const wait = Number(process.env.WORKKIT_CI_WATCH_WAIT || 10);
+  // A count that is no whole number of 1 or more would ask nothing or wait past its last ask.
+  const triesSet = Number(process.env.WORKKIT_CI_WATCH_TRIES);
+  const tries = Number.isInteger(triesSet) && triesSet >= 1 ? triesSet : 6;
+  const wait = nonNegativeOf(process.env.WORKKIT_CI_WATCH_WAIT, 10);
   const halted = () => {
     if (aborted.aborted) throw new Done(1);
   };
@@ -225,7 +229,7 @@ const foreground = async (sha) => {
     say(`a watch is already running for ${await watchedSha(log)} (pid ${done.held}); its output is in ${log}`);
     return 5;
   }
-  const last = lastLines(Buffer.from(readOrNull(log) ?? ''), 1).toString().replace(/\n+$/, '');
+  const last = chomp(lastLines(Buffer.from(readOrNull(log) ?? ''), 1).toString());
   if (done.rc !== 0 && (done.code === null || last !== `ci-watch: exit ${done.rc}`)) {
     say(`the watch did not finish, so there is no answer; its output is in ${log}`);
     return 4;

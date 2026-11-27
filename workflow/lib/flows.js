@@ -1,28 +1,27 @@
 /**
- * workflow/lib/flows.js: the questions asked at a terminal, the Node home of
- * `interactive` (workkit.sh) and of `wk_ask_yes`, `wk_enter_to_open`,
- * `wk_open_url` and `wk_poll` (lib/flows.sh): the same words, keys, defaults
- * and streams. Each takes `io`, `{ stdin, stderr }`, the process's own by default.
- * Usage: const { interactive, askYes, enterToOpen, openUrl, poll } = require('../lib/flows');
+ * workflow/lib/flows.js: the questions asked at a terminal: whether one is
+ * there, a yes or no, the Enter gate before a browser opens, and a poll.
+ * Each takes `io`, `{ stdin, stderr }`, the process's own by default.
+ * Usage: const { interactive, askYes, readLine, enterToOpen, opener, openUrl, poll } = require('../lib/flows');
  */
 
 const { onPath, spawnSync } = require('./run');
 const { writeErr } = require('./say');
-const { framesOn, spinFd, startFrames } = require('./spin');
-const { PALETTE, colorOn, paint } = require('./voice');
+const { startSpinner } = require('./spin');
+const {
+  PALETTE, colorOn, paint, indent,
+} = require('./voice');
 
 const IO = { stdin: process.stdin, stderr: process.stderr };
 
-// The answers wk_ask_yes takes as yes.
+// The answers askYes takes as yes.
 const YES = new Set(['y', 'Y', 'yes', 'YES']);
 
 // What a stream holds past the last answer read from it, kept for the next
-// read, as the shell's `read` leaves it in the pipe.
+// read, as a pipe keeps it.
 const unread = new WeakMap();
 
-const indent = () => process.env.WK_LOG_INDENT ?? '';
-
-/** <text> in the palette's <name>, where lib.sh's palette is on (judged on stdout). */
+/** <text> in the palette's <name>, where the palette is on (judged on stdout). */
 const painted = (text, name) => paint(text, PALETTE[name], colorOn(process.stdout));
 
 /** <text> on the caller's stderr; the process's own straight to its descriptor. */
@@ -86,7 +85,22 @@ const line = (text) => {
 };
 
 /**
- * One key of a poll, as wk_poll's `read -rsn1` loop takes it: Enter (or a raw
+ * One line read as `read -r` reads it, after whatever an earlier question left
+ * unread on the same stdin; a last line with no newline is still the answer.
+ * @param {{stdin: object}} [io]
+ * @returns {Promise<string>} the line trimmed, '' for a closed stdin with nothing left
+ */
+const readLine = async (io = IO) => {
+  let seen = '';
+  const read = await take(io.stdin, (text) => {
+    seen = text;
+    return line(text);
+  });
+  return read.end ? line(`${seen}\n`).answer : read.answer;
+};
+
+/**
+ * One key of a poll, read one at a time: Enter (or a raw
  * terminal's carriage return) is `enter`, `s` or `S` is `s`, a raw terminal's
  * Ctrl-C is `int`; any other key is read and dropped.
  */
@@ -108,7 +122,7 @@ const key = (text) => {
 const interactive = (io = IO) => Boolean(io.stdin.isTTY);
 
 /**
- * `wk_ask_yes`: <prompt> and its hint on stderr, then one line read. Empty is
+ * <prompt> and its hint on stderr, then one line read. Empty is
  * <fallback>; a closed stdin is no whatever it is, after a newline.
  * @param {string} prompt
  * @param {'y'|'n'} fallback the answer an empty line gives
@@ -126,17 +140,27 @@ const askYes = async (prompt, fallback, io = IO) => {
 };
 
 /**
- * `wk_open_url`: <url>, which the caller has printed, handed to this machine's
- * opener (`wk_opener`: `open` on macOS, else `xdg-open`); with none on PATH, one
- * dim line points back at the printed URL.
+ * This machine's browser opener, `open` on macOS and `xdg-open`
+ * elsewhere, when it is on PATH.
+ * @param {{ platform?: string, env?: object }} [context] the system and the variables PATH is read from
+ * @returns {string|null} its name, or null for none
+ */
+const opener = ({ platform = process.platform, env = process.env } = {}) => {
+  const name = platform === 'darwin' ? 'open' : 'xdg-open';
+  return onPath(name, { env }) ? name : null;
+};
+
+/**
+ * <url>, which the caller has printed, handed to this machine's
+ * opener (`opener`); with none on PATH, one dim line points back at the printed URL.
  * @param {string} url
  * @param {{stderr: object}} [io]
  * @returns {true}
  */
 const openUrl = (url, io = IO) => {
-  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
-  if (onPath(opener)) {
-    spawnSync(opener, [url], { stdio: 'ignore', windowsHide: true });
+  const found = opener();
+  if (found) {
+    spawnSync(found, [url], { stdio: 'ignore', windowsHide: true });
   } else {
     say(io, `${indent()}${painted('(no browser could be launched: open the URL above by hand)', 'DIM')}\n`);
   }
@@ -144,7 +168,7 @@ const openUrl = (url, io = IO) => {
 };
 
 /**
- * `wk_enter_to_open`: <what> and the URL on stderr, the green `?` Enter gate
+ * <what> and the URL on stderr, the green `?` Enter gate
  * naming <label>, one line read whatever it holds, then openUrl.
  * @param {string} url
  * @param {string} label what the URL is, in the gate's words
@@ -178,8 +202,8 @@ const keyWithin = async (stdin, seconds) => {
 };
 
 /**
- * `wk_poll`: the key hint on stderr, then <check> until it answers true. Each
- * miss waits <seconds> under a countdown drawn as wk_poll_draw draws it (or the
+ * The key hint on stderr, then <check> until it answers true. Each miss
+ * waits <seconds> under a countdown drawn with spin's frames (or the
  * `⏳` line where spin draws no frames); Enter checks now, `s` or a closed
  * stdin skips. An interrupt clears the countdown, then goes on as one.
  * @param {string} message
@@ -202,9 +226,8 @@ const poll = async (message, seconds, check, io = IO) => {
   try {
     for (;;) {
       if (await check()) return true;
-      const fd = spinFd();
-      if (framesOn(fd)) stop = startFrames(fd, message, Math.floor(Date.now() / 1000) + Number(seconds));
-      else say(io, `${indent()}⏳ ${message}...\n`);
+      stop = startSpinner(message, Math.floor(Date.now() / 1000) + Number(seconds));
+      if (stop === null) say(io, `${indent()}⏳ ${message}...\n`);
       const pressed = await keyWithin(io.stdin, Number(seconds));
       stop?.();
       stop = null;
@@ -221,5 +244,5 @@ const poll = async (message, seconds, check, io = IO) => {
 };
 
 module.exports = {
-  interactive, askYes, enterToOpen, openUrl, poll,
+  interactive, askYes, readLine, enterToOpen, opener, openUrl, poll,
 };

@@ -203,7 +203,7 @@ const endHalves = async (halves) => {
  * @returns {Promise<number>} 0 when a half ends or a signal ends it; 1 when a port cannot be freed
  */
 const main = async (args) => {
-  // The engine's voice, as lib.sh sets it.
+  // The engine's voice with no indent.
   process.env.WK_LOG_INDENT = '';
   const ports = (process.env.WORKKIT_TOWER_PORTS ?? DEFAULT_PORTS).split(/\s+/).filter(Boolean);
   const verbose = Boolean(process.env.WORKKIT_TOWER_VERBOSE) || args.some((arg) => arg === '-v' || arg === '--verbose');

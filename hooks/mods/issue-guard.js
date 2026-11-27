@@ -7,6 +7,7 @@
  */
 
 import { repoSlug } from './optin.js';
+import { chomp } from './text.js';
 
 // The public GitHub names a text spells: a github.com/<o>/<n> URL, a REST
 // repos/<o>/<n> path and a --repo/-R <o>/<n> flag (-R attached too, the value
@@ -127,7 +128,7 @@ function tokenLeak(text) {
  */
 export function leakVerdict({ text, bodies = [], envFiles, slug, parseEnv }) {
   if (typeof parseEnv !== 'function') throw new TypeError('leakVerdict: no parseEnv; the gate hands in util.parseEnv');
-  const all = [text, ...bodies.map((body) => body.replace(/\n+$/, ''))].join('\n');
+  const all = [text, ...bodies.map((body) => chomp(body))].join('\n');
   const key = envLeak(envFiles, all, publicNames(all, slug), parseEnv);
   const found = key ? `the value of ${key} from a local .env file` : tokenLeak(all);
   if (!found) return null;

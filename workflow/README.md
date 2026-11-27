@@ -1,7 +1,7 @@
 # workflow: the issue-workflow core
 
 - The agent-agnostic core of the issue workflow.
-- It calls the `claude` CLI in one place only: the setup commands in `workkit/`.
+- It calls the `claude` CLI in one place only: the command's machine steps in `workkit/`.
   - Those are the plugin's install and list, and `claude setup-token` for the cloud brief's secret.
   - The test runner and its library, whose `modCase` runs `claude plugin test`, are the `workkit-core` package (`../packages/core/`).
 - Past that it knows nothing about Claude Code. That is why it lives at the plugin's top level instead of under `hooks/`.
@@ -10,24 +10,23 @@
 | File | What it is |
 |---|---|
 | `labels.json` | Machine SSOT for the label vocabulary: every label is `group:value`, with its description and color |
-| `standards.sh` | The heal's starter, the path every caller runs: `--command-link` here, every other mode handed to `standards.js` under a node at the kit's floor |
-| `standards.js` | Brings a repo to the standard, idempotently: the heal's modes and its flow, CJS |
+| `standards.sh` | The heal's shell hand-over: every mode and argument handed to `standards.js` under a node at the kit's floor (`run_at_floor`), for `script-shell.sh` and a by-hand call |
+| `standards.js` | Brings a repo to the standard, idempotently: the heal's modes and its flow, CJS; the session-start hook, the home heal and the command start it by path with `node` |
 | `standards/` | The heal's steps `standards.js` requires, one CJS file per concern |
 | `templates/issue-forms/` | The markdown GitHub issue templates (bug · enhancement · idea · dump) installed into a repo's `.github/ISSUE_TEMPLATE/`. Each pre-fills the issue anatomy (`## Description` then `## Spec`) and auto-applies `status:inbox` + its `type:` label |
 | `templates/github-workflows/` | Two workflows, installed into two different places |
 | `templates/capture.md` · `templates/session.md` | The two gitignored working files seeded into a participating repo's `.workkit/`: the capture file at its root, the session file under `agents/`. A file that already has content is never overwritten |
-| `workkit.sh` | The one command: the front door to everything below |
-| `workkit/` | The commands `workkit.sh` sources, one file per concern |
-| `lib.sh` | Sourced helpers the home-repo machinery shares |
-| `lib/` | The shell library's pieces, functions only and nothing run at load, save the MSYS link flag `platform.sh` exports |
+| `workkit.js` | The one command: the front door to everything below, a Node program (`#!/usr/bin/env node`) that `~/.local/bin/workkit` links to |
+| `workkit.cmd` | The template of the command's Windows file, one line, `@node "{{ENGINE}}\workkit.js" %*`, which `workkit setup` and `update` write to `~/.local/bin/workkit.cmd` |
+| `workkit/` | The pieces `workkit.js` requires, one CJS file per concern, and `mint-pty.exp`, the token mint's Expect script |
+| `lib/` | The engine's shared libraries: Node files, one concern each, and the shell seams the git hooks, the shims and the starters source, functions only and nothing run at load, save the MSYS link flag `platform.sh` exports |
 | `lib/platform.sh` | The spellings that differ per platform, and the read shapes built on them |
 | `lib/run.js` | The one Node home for starting a program |
 | `lib/participation.sh` | The sibling of `platform.sh` for what the KIT means rather than for what a platform spells |
 | `lib/slug.sh` | The third of the seams beside `platform.sh` and `participation.sh`: what a repo is CALLED |
-| `lib/suite.sh` | The shell's has-a-test-script read, and where a detached run logs |
 | `lib/tree-hash.js` | The one home of the tree ids the records hold: the working tree's, a package's own and the real index's, and the index's scratch copy and its tree `prove.js` takes, CJS, requiring `lib/run.js` and, for a package, `lib/workspaces.js` |
-| `lib/tree-copy.js` | The Node home of a tree copy: the copy less `.git`, every package's `node_modules` and the kit's own paths, the fill that links each package's `node_modules`, and the worktree a copy is made in, CJS |
-| `lib/proof-dir.js` | A proof run's folder under `~/.cache/workkit/proof` and its one-day sweep, CJS |
+| `lib/tree-copy.js` | The Node home of a tree copy: the copy less `.git`, every package's `node_modules` and the kit's own paths, the fill that links each package's `node_modules`, and the worktree a copy is made in, checked out and filled with the live repo's gitignored files, CJS |
+| `lib/proof-dir.js` | A proof run's folder under `~/.cache/workkit/proof`, its one-day sweep, and the empty Claude home a run hands its copy, CJS |
 | `lib/snapshot.js` | The red-proof snapshot: `take`, `add`, `stale` and `drop`, as exports and as the command `workflow:snapshot` runs, CJS |
 | `lib/records.js` | The suite and package records' writes and reads, the rules in `hooks/mods/suite.js` bound to the disk, CJS |
 | `lib/workspaces.js` | The workspace members a package's tree id leaves out |
@@ -41,7 +40,9 @@
 | `lib/proc-state.js` | A process's state: its `/proc` fields, and whether it ended and waits uncollected, CJS, requiring nothing beyond Node; a program it starts goes through the starter its caller hands it |
 | `lib/attach.js` | A call attached to a run: the tail of its log, painted in process, its look, the run under a supervisor already, and the view, the log reads and the path compare `watch.js` shares, CJS |
 | `lib/detach.js` | The detached runner's launcher (`node detach.js`, which `lib/runs.js` runs as a process of its own) and its supervisor: its checks and its ends, requiring `lib/run.js`, `lib/pulse.js`, `lib/tree.js` and `lib/write.js`, and `lib/settings.js` only with `--root` |
-| `lib/command-log.sh` | The command log: a `workkit` command that does work runs again with its two streams teed to the terminal, and its run kept plain in its log file |
+| `lib/command-log.js` | The command log: a `workkit` command that does work runs again as a child whose two streams reach the call's own as they come, and its run kept plain in its log file, CJS |
+| `lib/child-end.js` | The wait on a child as a shell waits on its foreground command: INT held off, HUP and TERM passed on, the end read as a shell's code, CJS, requiring only `lib/detach.js` |
+| `lib/bounded.js` | One program run to its end under a bound, both streams read; past the bound its whole tree is ended and it answers 124; and the rules a bound's and a wait's variable are read by, CJS, requiring `lib/run.js`, `lib/detach.js` and `lib/tree.js` |
 | `lib/pulse.js` | The supervisor's verdict on a run from one reading per check, CJS, requiring nothing: `judge`, and the counts, the work floor and the two codes |
 | `lib/tree.js` | The processes under a pid by parent with their processor time (`treeOf`), and the end of that tree (`endTreeOf`, on Windows from both the Windows and the Git Bash process tables), CJS, requiring only `lib/run.js` |
 | `lib/discussions.js` | The home repo's Discussions API (GraphQL through `gh`): enabling, resolving and caching the repo and category ids, posting a summary or a brief, reading prior posts back, and the category names, CJS |
@@ -50,20 +51,20 @@
 | `lib/scratch.js` | The scratch folder's one frame, `withScratch(run, prefix)`: a folder under the temp folder made for one piece of work and removed whatever the work did, CJS, requiring nothing beyond Node |
 | `lib/git.js` | The git reads the kit's Node scripts share, CJS, requiring only `lib/run.js` |
 | `lib/pause.js` | The one blocking wait the kit's synchronous Node commands share, CJS, requiring nothing beyond Node: `pause(seconds)` blocks the process through `Atomics.wait`, a fraction allowed, so a poll loop sleeps with no child process (`identity/rest-pr.js`'s `pr checks --watch`, `ship/cut.js`'s release wait, `lib/tree-copy.js`'s worktree add retries, `lib/say.js`'s full pipe) |
-| `lib/day.js` | A day in the local calendar, `today(now)`, the one spelling of a dated line the kit's Node commands share, CJS, requiring nothing beyond Node |
+| `lib/day.js` | A day in the local calendar, `today(now)`, the one spelling of a dated line the kit's Node commands share, CJS, requiring `hooks/mods/log.js` for its `pad` |
 | `lib/interrupt.js` | An end signal held off for a run that must clean up first, as a shell's EXIT trap lets a script: the run stops, cleans up, then ends by that same signal (on Windows, by its code), CJS, requiring `lib/run.js` and `lib/detach.js` |
 | `lib/say.js` | The line helpers the kit's Node commands share, CJS, requiring only `lib/pause.js` |
 | `lib/read.js` | The read of a file that may not be there, CJS, requiring nothing beyond Node |
 | `lib/write.js` | The write of a file through a temp file and a rename (`writeWhole`), so a reader never sees it half-written, a JSON file changed whole on it (`editJson`), and a JSON file's value as jq reads it (`readJsonText`), CJS, requiring `lib/voice.js`, `lib/platform.js` and `lib/link.js` (the `lib/write.js` entry) |
-| `lib/voice.js` | The kit's Node voice, the Node half of `lib/voice.sh`: the color gate, the five levels, a relayed line made plain, a tool's lines warned, the wait line, the process's own quiet, CJS, requiring only `lib/say.js` |
-| `lib/spin.js` | The moving wait line, the Node home of `wk_spin`: a worker thread draws the frames while the caller's call runs, CJS, requiring only `lib/voice.js` |
-| `lib/flows.js` | The questions asked at a terminal, the Node home of `interactive` and of `lib/flows.sh`'s yes or no question, Enter gate, opener and poll, CJS, requiring `lib/run.js`, `lib/say.js`, `lib/spin.js` and `lib/voice.js` |
+| `lib/voice.js` | The kit's one voice: the color gate, the five levels, the title, the section and the closing line, a relayed line made plain, a tool's lines warned, the wait line, the process's own quiet and indent, CJS, requiring only `lib/say.js` |
+| `lib/spin.js` | The moving wait line: a worker thread draws the frames while the caller's call runs, on the terminal device a logged command names or on stderr, CJS, requiring only `lib/voice.js` |
+| `lib/flows.js` | The questions asked at a terminal: whether stdin is one, the yes or no question, a line read, the Enter gate, the opener and the poll, CJS, requiring `lib/run.js`, `lib/say.js`, `lib/spin.js` and `lib/voice.js` |
 | `lib/platform.js` | The platform reads the kit's Node scripts share: a path's native spelling, a folder's physical path, and whether the kit runs from Claude's plugin cache, where a clone outranks it, CJS |
 | `lib/link.js` | A machine address made a link, renamed onto it, and the link reads, CJS, requiring nothing beyond Node |
 | `lib/participation.js` | What the kit means by its own git hooks folder, the Node half of the `wk_githooks_*` rules in `lib/participation.sh`, and whether a file is executable, CJS |
 | `lib/repo.js` | What a repo is: its origin slug, whether it is a clone of the kit, whether its `package.json` takes the kit's test runner, CJS |
 | `lib/settings.js` | The settings loader bound to the disk for the kit's Node scripts, CJS |
-| `lib/cloud.js` | Whether this is a claude.ai/code cloud session, CJS, requiring nothing beyond Node: `isCloud(env)` is `CLAUDE_CODE_REMOTE` being `true` (`env` is `process.env` when absent), the workflow layer's Node twin of `wk_is_cloud` in `lib/platform.sh`, read by `ship/hooks.js` and `identity/gate.js` |
+| `lib/cloud.js` | Whether this is a claude.ai/code cloud session, CJS, requiring nothing beyond Node: `isCloud(env)` is `CLAUDE_CODE_REMOTE` being `true` (`env` is `process.env` when absent), the workflow layer's Node twin of `wk_is_cloud` in `lib/platform.sh`, read by `ship/hooks.js`, `identity/gate.js` and `workkit/`: `allow`, `doctor`, `doctor-machine`, `identity`, `install`, `update` |
 | `public/` | The public pairing's three verbs, each a Node script run from the private repo |
 | `slug.js` | The Node twin of `slug.sh`, required rather than re-spelled |
 | `user-dir.js` | The Node twin of `wk_user_dir` in `lib/platform.sh` |
@@ -77,7 +78,6 @@
 | `identity/rest.js` | The shim's cloud half |
 | `identity/rest-pr.js` | The REST forms of `pr create`, `pr list`, `pr view`, `pr checks` and `pr merge` |
 | `identity/rest-release.js` | The REST form of `release view`, built on `rest.js`'s helpers as `rest-pr.js` is |
-| `home.sh` | Sourced: the home repo's hand-offs, one function per verb of `home.js`, run under a node at the kit's floor |
 | `home.js` | The home repo's lifecycle, its one entry: `node home.js <verb> [argument]` |
 | `home/` | The steps `home.js` requires, one CJS file per stage, the reads of a folder's committed copy (`committed.js`), and the cloud runner's list (`runner-files.js`) |
 | `publish.sh` | The starter of `publish.js`, under a node at the kit's floor, every argument handed over |
@@ -92,22 +92,22 @@
 | `morning-task.js` | The program the 9am Task Scheduler task starts on Windows, through the engine's address: it starts `jobs/morning.js` of the real kit hidden and detached, its output appended to `~/Library/Logs/com.workkit.claude-daily.log`, and ends at once; a job that cannot start is one line in that log and exit 1, CJS (`../jobs/README.md` § Install) |
 | `watch.js` | `workkit watch [--end] [suite\|run\|<pid>]`, the call attached again to the repo's live run, given the code of one that ended with no call attached, or that run ended on request |
 | `githooks/` | Git's own hooks, set as a repo's `core.hooksPath` by the heal |
-| `wk.sh` | The capture CLI: `wk.sh note <text...>` appends one bullet to the right capture file |
+| `note.js` | The capture command, `workkit note`'s program: `node note.js <text...>` appends one bullet to the right capture file, or files an issue on the home repo outside one |
 | `changelog/lint.js` | Machine SSOT for the CHANGELOG entry rules, and the CLI both guarding hooks call (`linterPath` in `hooks/mods/changelog-guard.js`) and npm's script shell runs (`script-shell.js`): `workkit changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]` |
 | `changelog/changelog-links.js` | Release-time backfill of each entry's commit link and contributor handle: `node changelog-links.js [--file X] [--range A..B] [--dry-run]` |
 | `changelog/job.js` | A repo's `checks.yml` as the heal writes it, and the retired linter copies: the heal requires it, the commit gate runs it, `node job.js rewrite [template] \| copies \| names <file\|-> [copy]` |
 | `ship/release.js` | The ship's release commit, the three edits in their order |
 | `ship/plan.js` | The ship's publish plan: which packages go to npm, in dependency order, and which are skipped and why |
-| `ship/publish.js` | The ship's publish, `workkit ship publish [--dir <root>]` |
+| `ship/publish.js` | The ship's publish, `workkit ship publish [--dir <root>]`, of what HEAD holds: from a copy of HEAD when the folder differs from it |
 | `ship/cut.js` | The ship's GitHub release, which CI makes: `workkit ship cut <x.y.z>` creates nothing |
 | `ship/caller.js` | A repo's checks caller, a library with no CLI: `CALLER` (its path, `.github/workflows/checks.yml`), `hasReleaseJob(text)`, `callerAtHead(root)` (its text at HEAD, or null) and `callerPending(root)` (changed, staged or untracked); `cut.js` and `release.js` require it |
 | `ship/deploy.js` | The ship's deploy: `workkit ship deploy`, from inside the repo, run at its root |
 | `ship/hooks.js` | The ship hooks, a library with no CLI |
 | `ship/entries.js` | The one shape of a `hooks.<event>` declaration and its check, CJS, requiring `isPlain` from `hooks/mods/settings.js`: `commandsOf(settings, event)` answers `[{ command, local }]` or throws `HooksError` naming the first misshapen entry; `ship/hooks.js` and `.github/scripts/ci-hooks.js` (`hooks.ciSetup`, `hooks.ciPostInstall`, on the kit's Node) both call it |
-| `ship/watch.js` | The ship's CI watch: `workkit ship watch <sha>`, under a node at the kit's floor (`lib/platform.sh`) |
+| `ship/watch.js` | The ship's CI watch: `workkit ship watch <sha>`, under a node at the kit's floor |
 | `ship/triggers.js` | Two rules over one workflow file, read in Node: `listensTo(file, event)`, whether its top-level `on:` names an event, which `ship/watch.js` and `.github/scripts/ci-release.js` require, and `takesInput(file, input)`, whether its dispatch declares an input, which `ci-release.js` requires |
 | `ship/semver.js` | The kit's one version comparison, `compareVersions(a, b)` in semver's order (a missing part reads as 0, a prerelease sorts below its release), and `isSemver(v)` beside it. Required by `plan.js`, `release.js` and `cut.js` for the version shape and by `jobs/morning/brief/cc-news.js` for the upstream releases; it requires nothing |
-| `ship/items.js` | The ship's Step 0c read, `workkit ship items [--repo owner/name]`, under a node at the kit's floor (`lib/platform.sh`): every open issue at `status:qa` or `status:complete`, one line each |
+| `ship/items.js` | The ship's Step 0c read, `workkit ship items [--repo owner/name]`, under a node at the kit's floor: every open issue at `status:qa` or `status:complete`, one line each |
 | `review/covers.js` | The ship's review tier, under a node at the kit's floor: whether the full-panel review marker covers the working diff, `workkit review covers` |
 | `review/mark.js` | The review marker's writer, `workkit review mark [full]`, under a node at the kit's floor: the `workkit:review` skill's record that it ran on this repo, keyed on the repo root; `full` writes the full-panel marker `review/covers.js` reads as well. An unknown argument, or no repo, exits 1 |
 | `triage/mark.js` | The triage marker's writer, `workkit triage mark`, under a node at the kit's floor: the `workkit:triage` skill's record that a drain is under way, keyed on the repo root or `$HOME` outside one, which `safety:capture-guard` reads before it lets the capture file open (`docs/hooks.md` § `safety:capture-guard`) |
@@ -119,12 +119,12 @@
 - `labels.json`:
   - A color is not free-chosen. It is the LIGHT-mode value of the theme token the tower draws that label in.
     - The token side lives in the dashboard's `libs/tower/format.js`, so the board and the issue page agree.
-  - `standards.sh` keeps existing labels on it rather than only creating them: every fixed label, with no exception.
+  - The heal keeps existing labels on it rather than only creating them: every fixed label, with no exception.
   - A color is unique WITHIN its group and shared freely across them, since every chip on the board carries its own word and its own glyph.
     - `type:idea` wears `status:specced`'s purple.
     - `priority:high` wears `status:blocked`'s alarm red.
     - `priority:low` wears `status:backlog`'s faint gray.
-- `standards.sh`:
+- The heal (`standards.js`):
   - It creates the labels from `labels.json`, and corrects description/color drift.
   - It installs the issue templates.
   - It rewrites `.github/workflows/checks.yml` to the kit's CI caller whenever it differs.
@@ -148,13 +148,16 @@
     - The label is the claim. An assignee is a person's mark and moves nothing, and the release leaves it in place.
   - It checks that the hook layer beside it is alive.
   - It reports an open issue whose status labels are missing or doubled, and flags the run so the next session hears it again.
-  - It is the starter: it loads `lib/platform.sh`, keeps `--command-link` (§ Participation: the tri-state), and hands every other mode, every argument with it, to `standards.js` under a node at the kit's floor (`run_at_floor`).
+  - The session-start hook, the home heal and the command start `standards.js` by path with `node`.
+    - `standards.sh` is only its shell hand-over: it loads `lib/platform.sh` and hands every mode, every argument with it, to `standards.js` under a node at the kit's floor (`run_at_floor`). `script-shell.sh` starts the git hooks mode through it.
   - Its modes: `--state`, `--announce`, `--enable`, `--decline`, `--engine-link`, `--command-link`, `--home` and `--git-hooks`; no mode is the heal.
     - A mode that reads a repo takes its folder last, the current one by default; `--engine-link` and `--command-link` read none.
 - `standards.js`:
   - The heal itself, CJS: the mode parse and the flow. Each step it runs lives in `standards/`, loaded only when the mode in hand calls it.
-    - So `--state`, run at every session start, loads only the state step, and `--engine-link` answers from a `workflow/` folder with nothing beside it.
-  - Its modes: `--state`, `--announce`, `--enable`, `--decline`, `--engine-link`, `--home`, `--git-hooks <repo>`, and no mode for the heal (§ Participation: the tri-state).
+    - So `--state`, run at every session start, loads only the state step.
+    - A kit that is a `workflow/` folder alone answers `--engine-link`, `--git-hooks` and a folder that is no repo; `--command-link` and each mode that reads the participation load `hooks/mods/` beside it.
+  - Its modes: `--state`, `--announce`, `--enable`, `--decline`, `--engine-link`, `--command-link`, `--home`, `--git-hooks <repo>`, and no mode for the heal (§ Participation: the tri-state).
+  - `--command-link` makes `~/.local/bin/workkit` alone, through `linkCommand` of `workkit/links.js`, the link `workkit setup` makes.
   - `--git-hooks <repo>` runs the git hooks step alone, with no participation check, exit 1 when the step flagged the repo, else 0.
     - It prints in its caller's voice: it sets neither `WK_LOG_STDERR` nor `WK_LOG_INDENT`, so a bare call prints on stdout, flush left.
     - Every other mode sets both (stderr, two spaces), keeping stdout for the answer of `--state` and `--announce`.
@@ -173,7 +176,7 @@
     - It reads a settings file's flag through `repoFlag` (`hooks/mods/gate.js`), and edits a settings file or the roster through `editJson` (`lib/write.js`), a decline and the roster under the state mutex (`stateLockPath` in `lib/lock.js`).
   - `gitignore.js`: `.gitignore` and the local working files (`ensureWorkflowIgnored`, `ensureGitignoreBasics`, `ensureLocalFile`).
   - `githooks.js`: `ensureGitHooks(run)`, for the run's root.
-    - It runs after the `.gitignore` basics, and alone through `standards.sh --git-hooks <repo>`, which `script-shell.sh` and `workkit setup` run.
+    - It runs after the `.gitignore` basics, and alone through `--git-hooks <repo>`, which `script-shell.sh` runs through `standards.sh` and `workkit setup` runs on `standards.js`.
     - It sets git's `core.hooksPath` to the folder `githooksAddress` names, in git's spelling of the path.
     - That is `~/.claude/workkit/githooks` when the engine link points at this engine, so a plugin update leaves the path good.
     - It is this kit's own `githooks/` folder where the link is missing.
@@ -185,7 +188,7 @@
       - a gone folder, always;
       - another kit, unless it is a workkit clone, which outranks the plugin cache as the engine's address does.
     - The ok line is `git hooks: installed (<path>)`. The changed line is `git hooks: set|repointed core.hooksPath → <path>`.
-    - Whether the hooks are set is `git_hooks_installed <root>`, a shell read with no node (the `lib/participation.sh` entry).
+    - Whether the hooks are set is `core.hooksPath` naming a kit's hooks folder: `git_hooks_installed <root>` for the script shell, a shell read with no node (the `lib/participation.sh` entry), and the same read in Node for `workkit setup` and `doctor` (`localConfig` of `lib/git.js`, then `githooksKit`).
   - `templates.js`: the issue forms (`ensureIssueForms`).
   - `checks.js`: `checks.yml`, the kit's caller (`ensureCiWorkflow`).
     - It writes the rendered template (`checksRewrite`, `changelog/job.js`) through `writeWhole` (`lib/write.js`) whenever the file differs, and nothing when it matches.
@@ -232,7 +235,7 @@
     - What they run: the Node version, the repo's `hooks.ciSetup` before the dependency install, its `hooks.ciPostInstall` after it, the suite under `xvfb-run -a`.
     - Every kit script runs on the kit's own Node, never the repo's, which may be older: right after the kit's clone, `actions/setup-node` sets up `lts/*`, and a `Kit Node` step keeps its path in `WORKKIT_NODE`.
       - Each script's step is `"$WORKKIT_NODE" "<kit>/.github/scripts/<name>.js"`. The kit's own `checks.yml` has the same two steps in its `scope` job.
-      - The repo's Node is set up after the `Scope` step, at the version `ci-node-version.js` names; the install, the hook commands and the suite run on it, through PATH. A `workkit` verb started inside them at the floor (`run_at_floor`) runs on the kit's Node, since `wk_node` tries `$WORKKIT_NODE` first; a verb `run_verb` starts runs on PATH's.
+      - The repo's Node is set up after the `Scope` step, at the version `ci-node-version.js` names; the install, the hook commands and the suite run on it, through PATH. A `workkit` command started inside them runs on PATH's `node`, the repo's, and stops on its floor line where that Node is below the kit's floor (§ The one command).
     - A newer run on the same pull request cancels the older.
   - A release push runs no setup, install or suite.
     - A `Scope` step right after the kit's Node answers `run=true` for a pull request.
@@ -268,133 +271,111 @@
       - The job exits 1 once every one was tried.
     - It names a workflow on `release` alone in a `ci-release: warning:` line.
   - The heal rewrites the caller whenever it differs, so a hand edit lasts until the next heal (`standards/checks.js`).
-- `workkit.sh`:
+- `workkit.js`:
   - Its verbs: `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `state` · `note` · `test [paths] [--filter=<text>]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`.
   - And: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `checkpoint safe` · `proof red` · `changelog lint`.
-  - It keeps the map, the constants and the dispatch, and sources its commands from `workkit/`.
-  - The dispatch refuses a command whose first word has no entry in `WORKKIT_COMMANDS` (`workkit/command-list.sh`) before it runs anything, its command log included: `unknown command <word>` and the map, exit 1, whether or not it has a branch for the word. `help`, `-h`, `--help` and no word print the map, exit 0.
-  - A verb with subcommands follows one rule: `workkit <verb> <sub>` runs `<verb>/<sub>.sh` or `.js` (`run_verb`).
-    - It is exec'd, so the script's output and exit code are the command's.
+  - Its first line is `#!/usr/bin/env node`, so the Node it runs on is the first `node` on PATH. Giving one at the kit's floor is the machine's job; the kit looks for no other.
+    - On Windows cmd and PowerShell reach it through `~/.local/bin/workkit.cmd` (the `workkit.cmd` row), Git Bash through the link.
+  - The floor check comes first, in syntax an older Node still reads (`workkit/floor.js`).
+    - The floor is the root `package.json`'s `engines.node`, 22.22. A Node below it prints `workkit: this Node is <version>; the kit needs 22.22 or newer` on stderr and stops, with no other Node searched for.
+    - The code is 2 for `review covers` and `proof red`, whose 1 means stale or green, and 1 for any other command.
+    - An engine copied without its kit's root has no `package.json` there, and no floor is checked.
+  - Then `main` (`workkit/main.js`) runs the list guard, the command log and the route, in that order.
+    - The guard refuses a first word with no entry in `COMMANDS` (`workkit/command-list.js`) before anything runs, its log included: `unknown command <word>`, an empty line and the map on stderr, exit 1. `help`, `-h`, `--help` and no word print the map on stdout, exit 0.
+    - A command the log names runs again under it as a child (the `lib/command-log.js` entry); a call made inside a logged command is in that log already, and routes here.
+    - The route loads each verb's file where it runs it, so one missing file stops only the commands that need it.
+  - A program the command starts is its child, started by the running Node (`process.execPath`); its output and exit code are the command's.
+    - That is every verb file of a verb with subcommands, `standards.js` for `enable`, `decline`, `heal` and `state`, `tower/start.js`, `prove.js`, `supervise.js`, `watch.js` and `note.js`.
+    - A Ctrl-C at the terminal reaches the child too; HUP and TERM are passed on to it; an INT sent to the command's pid alone is not.
+  - A verb with subcommands follows one rule: `workkit <verb> <sub>` runs `<verb>/<sub>.js`, but `checkpoint safe`, which runs `checkpoint/mark.js` (`workkit/verbs.js`).
     - An unknown or missing subcommand exits 1 with one line naming the ones there are.
-  - `prove`, `supervise`, `watch`, `ship watch`, `ship items`, `review covers`, `review mark`, `triage mark`, `checkpoint safe` and `proof red` require the kit's ES modules, so each starts through `run_at_floor <prefix> <code> <file>` (`lib/platform.sh`) instead.
-    - With no node at the floor (22.22) each prints `<prefix>: no node at or above 22.22 is installed` and exits 1, but `review covers` and `proof red`, whose 1 means stale or green, which exit 2.
-    - The prefix is the verb's own, but `ship items` (`ship-items`), `review covers` (`review-covers`), `review mark` (`review-marker`), `triage mark` (`triage-marker`), `checkpoint safe` (`checkpoint-marker`) and `proof red` (`red-proof`).
-    - npm's script shell starts a `test` event the same way (`script-shell.sh`).
+  - A kit missing one of the command's own files ends with `workkit: the kit is incomplete: <path> is missing` and 1. A program it starts that is missing gives the line of the step that guards it, naming the `.js` file (`site: publish.js is missing at <path>; the kit is incomplete`), else Node's own `Cannot find module` error and 1.
+    - The programs of each `<verb> <sub>` and of `enable`, `decline`, `heal`, `state`, `prove`, `supervise`, `watch` and `note` are guarded in the routing table: `<verb>: <file>.js is missing at <path>; the kit is incomplete` (`<verb> <sub>:` for a subcommand) as an error, and 1.
+  - A reader that closes early (`workkit log | head`) ends the command quietly with 141.
+  - The command starts loud whatever its caller set (`QUIET=0`); `update --auto` quiets itself.
 - `workkit/`:
-  - Functions only, each sourced by the entry and never executed; `links.sh` by `standards.sh --command-link` as well.
-  - `command-list.sh`: `WORKKIT_COMMANDS`, the kit's one list of its commands, each `<command>=<permission>` with a permission of `allow`, `ask` or `none`, and its three readers.
-    - `wk_commands_with <permission>` prints that permission's commands, one per line in the list's order; `wk_command_listed <word>` is 0 when an entry's first word is `<word>`.
-    - `wk_command_verbs <word>` prints the second word of each entry whose first word is `<word>`, one per line in the list's order; `SHIP_VERBS` (`ship.sh`) is built from it, so no other file reads an entry's shape.
-    - The entry sources it before every other piece, and it needs none of them: sourced alone in a bare shell, the list and its readers work.
-    - The ship's verbs are entries one by one (`ship items` to `ship deploy`), so `SHIP_VERBS` and each rule are read off it and a deploy gets a rule of its own.
-    - A new command needs its line here, or the dispatch refuses it.
-  - `links.sh`: the engine's address, the two `~/.local/bin` symlinks (`workkit` and the `gh` shim), and npm's `script-shell` and its Windows executable.
-    - Plus `machine_links`, the sequence `update`, the wizard and `setup --cloud` share.
-    - That sequence is the links, the script shell, then the kit's allow and ask rules in the global settings (`keep_allow_rules` in `allow.sh`).
-  - `schedule.sh`: the 9am schedule's drift, update and first install.
-  - `install.sh`: the plugin, the gh login, the tower pointer, this repo's opt-in.
-  - `site.sh`: the publish question and the domain.
-  - `token.sh`: the token handover.
-  - `secrets.sh`: the cloud brief's secrets.
-  - `identity.sh`: the bot identity's sign-in and install steps and doctor lines.
-    - It asks through `wk_ask_yes` and opens the install page through `wk_open_url`.
-  - `setup.sh`: the wizard, its `--cloud` form and the `cloud_na` lines doctor shares, the roster report, the home steps.
-  - `commands.sh`: `update`, `publish`, `brief`, `doctor`, `test`, `tools`, `convert`; the last two through one helper, `run_core_bin <verb>`.
-  - `log.sh`: `log`, the hooks log's last 40 lines, or `-n N`, `--follow` tailing it.
-    - It prints one skip line when there is no log yet.
-  - `public.sh`: `public`, each subcommand handed to its `public/` script.
-  - `allow.sh`: the kit's allow rules (`ALLOW_RULES`, at `permissions.allow`) and ask rules (`ASK_RULES`, at `permissions.ask`) in the global `~/.claude/settings.json`, setup's step and doctor's lines.
-    - `ALLOW_RULES` is `Bash(workkit <command>:*)` for each `allow` entry of `WORKKIT_COMMANDS`, then `Bash(npm publish:*)`; `ASK_RULES` the same for each `ask` entry. A `none` entry gets no rule.
+  - CJS, each file one concern, each step `fn(kit, ...args)` answering a number: the step's code, or a count of lines that need attention. Only `workkit.js` and `main.js` end the process.
+  - `floor.js`: `floorOf()` (the floor off the root `package.json`, `[22, 22]`), `floorLine(version, floor)` and `floorCode(argv)`, in syntax an older Node still reads.
+  - `main.js`: `main(argv)`, the guard, the command log and the route; `dispatch(kit, argv)`, the route alone, which the command log runs in its own process for a call it writes no log for (a repo command outside a repo, a log that cannot be made).
+  - `kit.js`: `kitOf(overrides)`, the one context every step takes: the variables, the system (`platform`), the home, the engine and the kit's root, the kit's own files, the machine addresses, `interactive`, the secrets' names and bounds, and `run`, the answers one run carries between steps.
+    - `nodeRun(kit, file, args, options)` starts a Node program of the kit with the running Node on this terminal and answers its code; `nodeRead` does the same with its two streams read.
+    - `homeEnv(kit)` and `homeRun(kit, args, options)` start a verb of `home.js` in the caller's voice: its stream, its indent and its quiet.
+    - `missingLine(step, file)` is the line a step prints for a program of the kit that is not there: `<step>: <file name> is missing at <path>; the kit is incomplete`. `homeMissing(kit, step)` is that line for `home.js`.
+    - `flagged(code)` is a step's code as one count.
+    - A program's output as a shell's `$(...)` takes it, its trailing newlines dropped, is `chomp(text)` of `hooks/mods/text.js`.
+  - `command-list.js`: `COMMANDS`, the kit's one list of its commands, each `{ command, permission }` with a permission of `allow`, `ask` or `none`, and its three readers.
+    - `commandsWith(permission)` answers that permission's commands in the list's order; `commandListed(word)` whether an entry's first word is `<word>`.
+    - `commandVerbs(word)` answers the second word of each entry whose first word is `<word>`, in the list's order: the ship's verbs and the command log's names are read through it, so no other file reads an entry's shape.
+    - It requires nothing, so the guard reads it before any other piece loads.
+    - The ship's verbs are entries one by one (`ship items` to `ship deploy`), so each rule is read off it and a deploy gets a rule of its own.
+    - A new command needs its entry here, or the guard refuses it.
+  - `help.js`: `HELP`, the map, and `usage(stream)`.
+  - `verbs.js`: `route(kit, verb, args)`, the routing table of every command that hands its whole run to a program of the kit: the seven verbs with subcommands, `tower`, `enable`, `decline`, `heal`, `state`, `prove`, `supervise`, `watch` and `note`.
+  - `links.js`: the pointers the command keeps on the machine, and `machineLinks`, the one order `update`, the wizard and `setup --cloud` make them in.
+    - That order is the engine's address (`standards.js --engine-link`, its lines re-said), the `workkit` command and its PATH line, on Windows `workkit.cmd`, the `gh` shim, npm's `script-shell`, then the kit's allow and ask rules (`keepAllowRules` in `allow.js`).
+    - `linkCommand(kit)` is the command link alone, which `standards.js --command-link` runs; `renderCmd(template, { engine })` is `workkit.cmd`'s text.
+  - `npm-shell.js`: npm's `script-shell` pointed at the kit (`scriptShell(kit, mode)`), the Windows executable built from `script-shell.cs` (`scriptShellExe`), and `windowsPath(p)`, a path's Windows form.
+  - `allow.js`: the kit's allow rules (`ALLOW_RULES`, at `permissions.allow`) and ask rules (`ASK_RULES`, at `permissions.ask`) in the global `~/.claude/settings.json`, setup's step (`keepAllowRules`) and doctor's lines (`reportAllowRules`).
+    - `ALLOW_RULES` is `Bash(workkit <command>:*)` for each `allow` entry of `COMMANDS`, then `Bash(npm publish:*)`; `ASK_RULES` the same for each `ask` entry. A `none` entry gets no rule.
     - `RETIRED_ALLOW_RULES` (`Bash(workkit ship:*)`) is taken out at every run.
-  - `ship.sh`: `SHIP_VERBS`, read off the `ship <verb>` entries of `WORKKIT_COMMANDS` in their order, each handed to `run_verb`, but `ship watch` and `ship items`, handed to `run_at_floor` (`lib/platform.sh`).
-  - `review.sh`, `triage.sh`, `checkpoint.sh`, `proof.sh` and `changelog.sh`: each its verb's subcommand list, handed to `run_verb`, but `review covers`, `review mark`, `triage mark`, `checkpoint safe` and `proof red`, handed to `run_at_floor`.
-- `lib.sh`:
-  - The global layer's addresses: `~/.workkit`, the tower clone in it, its config and its build output.
-  - A safe JSON edit.
-  - The ONE voice everything else prints in (the line shape, the colors, the spinner, the browser walkthrough, the relay untag): [Output](#output).
-  - The entry keeps the addresses and every line that runs at load (the palette, the state lock's address).
-  - It sources its function groups from `lib/`.
+  - `schedule.js`: the 9am schedule's drift (`cronDrift`), its update (`updateCron`) and its first install (`installCron`), through `jobs/install.js`.
+  - `install.js`: the plugin, the gh login, the tower pointer, this repo's state and its opt-in offer.
+  - `site.js`: the publish question and the domain, and `settingsOf(kit)`, the machine settings file's path, which the token handover names too.
+  - `token.js`: the token handover (`handoverToken`).
+  - `secrets.js`: the cloud brief's secrets ([The cloud brief's secrets](#the-cloud-briefs-secrets)).
+  - `pty.js`: `runUnderPty(kit, command, capture, stdio)`, a command under a pseudo-terminal for the token mint (below).
+  - `mint-pty.exp`: the Expect script that pty runs the mint under at a terminal.
+  - `identity.js`: the bot identity's sign-in and install steps and doctor lines.
+    - It asks through `askYes`, opens the install page through `openUrl` and waits through `poll` (`lib/flows.js`).
+  - `setup.js`: the wizard, its flags, its `--cloud` form, the home steps, the git hooks line, and `cloudNa`, the not-applicable line `update` and `doctor` print too.
+  - `update.js`: `update` and `update --auto`.
+  - `doctor.js`: `doctor`, every report in its order under its four sections, and the closing line; `doctor-machine.js` holds its checks of this machine, `roster.js` the roster's line.
+  - `commands.js`: `publish`, `brief`, `test`, `tools` and `convert`, each handing its run to a program; the last two run the kit's own `packages/core/bin/workkit.js`.
+  - `log.js`: `log`, the hooks log's last 40 lines, or `-n N`, and `--follow` printing each line added after.
+    - It prints one skip line when there is no log yet.
 - `lib/`:
-  - Three are `lib.sh`'s own groups, reached by sourcing it:
-    - `voice.sh`: the color gate, the palette, the line shape and its levels, the headings, the relay untag, the spinner;
-    - `flows.sh`: the browser walkthrough's Enter gate, its opener `wk_open_url` and its poll; the yes/no question `wk_ask_yes`; and `wk_link`, the atomic link maker;
-    - `state.sh`: the safe JSON edit and the state mutex.
-  - Four are seams the hooks and the entries source directly as well, each with its own row: `platform.sh`, `participation.sh`, `slug.sh` and `suite.sh`.
+  - Three are shell seams the hooks, the shims and the starters source, each with its own entry: `platform.sh`, `participation.sh` and `slug.sh`.
   - `runs.js` is the Node home of a detached run (with `run-lock.js`, `lock.js`, `attach.js` and `detach.js`).
     - `supervise.js`, `prove.js`, `script-shell.js` and the CI watch (`ship/watch.js`) call its `run` in process.
     - `watch.js` calls no `runs.js`: it reads and follows a run through `attach.js`, `run-lock.js` and `run-paths.js`.
-  - One is `workkit.sh`'s alone, with a row of its own: `command-log.sh`.
+  - `command-log.js` is the command's, with an entry of its own.
 - `lib/platform.sh`:
-  - Sourced by `lib.sh`, by `standards.sh` and by the shims and git's hooks alike.
+  - Sourced by `standards.sh`, `publish.sh`, `script-shell.sh` and `jobs/morning.sh`, and by the shims and git's hooks alike.
   - It is the shell twin of `test/lib/platform.js`, and of `lib/run.js` on the Node side.
   - A shape sits here beside the spelling it is built on.
   - Its functions, each below.
   - `wk_jq`, since jq on Windows is a native program whose stdout is in TEXT MODE.
     - So a value read bare carries a `\r` into whatever is compared or written next.
-    - Every jq call in the kit's shell, `lib/state.sh`'s JSON helpers among them, goes through it.
+    - Every jq call in the kit's shell (the `gh` shim, `lib/participation.sh`, `lib/slug.sh`) goes through it.
     - jq's own exit status comes back, so a predicate (`jq -e`, `jq empty`) answers what it always answered.
   - `wk_native_path`: the native spelling of a path, which is git's own, by `nativePath`'s rule (`lib/platform.js` below): the identity off Windows, `\` made `/` for a path already spelled for Windows, `cygpath -m` for any other.
     - Every kit shell line prints a path for a person in it, so Windows output never mixes `/d/a` and `D:/a`.
     - It is the one spelling a machine-roster key is written and looked up under.
     - So `C:/Users/x` and the Git Bash `/c/Users/x` cannot become two keys for one repo.
     - Its Node twin is `nativePath` in `lib/platform.js`, which the heal keys the roster through.
-  - `wk_mv_link <from> <to>`: the rename that never follows a link at its destination (`-T` where mv is GNU, `-h` where it is BSD).
-    - `wk_link` in `lib/flows.sh` renames a fresh link through it, so an address is replaced atomically.
-    - Their Node halves are `mvLink` and `link` in `lib/link.js`.
   - `wk_sha1`: the one digest (`shasum` or `sha1sum`).
     - A machine with neither is refused loudly, rather than keyed to an empty string.
   - `wk_keyed_path <folder> <anchor>`, beside it: the path `<folder>/<sha1 of anchor>`, 1 when no digest comes out: the keyed-name step of `wk_marker_path`.
   - `wk_marker_path <dir> <anchor>`: the one derivation of a marker's path, `<markers dir>/<dir>/<sha1 of anchor>`, through `wk_keyed_path`.
-    - It serves a log's marker path (`wk_log_path`, `lib/suite.sh`) and the `gh` shim's journal alike.
+    - It serves the `gh` shim's journal; a log's marker path is keyed in Node (`logPathOf` in `lib/run-paths.js`).
     - The review and triage markers and the suite and package records are keyed in Node, by `markerPath` in `hooks/mods/markers.js` (the records: the `lib/records.js` entry).
     - The checkpoint marker is keyed by its session id instead, every character but a letter or a digit as `_` (`checkpointMarkerPath` in `hooks/mods/markers.js`), so a harness names it without the digest.
   - `wk_markers_dir`: that base, `markers/` in `wk_user_dir`'s folder, out of reach of a system temp cleaner.
   - `wk_sweep_markers`: the kit's own cleaner. Every shell marker writer calls it; the two record writers in `lib/records.js` and the marker verbs' `writeMarker` run its Node twin, `sweepMarkers` in `lib/lock.js`.
     - It removes each regular file one folder under the base whose mtime is older than `MARKER_KEEP_DAYS` (7 days, set here).
     - It never enters a folder there.
-  - `wk_tower_dir`: the tower clone, `tower/` in the same folder, the one spelling `lib.sh`'s `WK_HOME_DIR` reads.
-  - `wk_user_dir`: the one spelling of the machine folder (`WORKFLOW_HOME` else `~/.workkit`), the engine's, the hooks' and the jobs' alike.
-  - `wk_hooks_log`, beside it: it sets `WK_HOOKS_LOG` to the hooks log in that folder.
-    - That is `hooks.log`, the one path `workkit log` reads.
-    - The hooks module writes it, and spells the same path in `hooks/mods/log.js`.
-  - npm's script shell on Windows:
-    - `wk_script_shell_exe`: the one spelling of the executable's path (`script-shell.exe` in the machine folder). Setup builds to it and the commit gate checks for it.
-    - `wk_npm_script_shell`: npm's `script-shell` value without the carriage return a Windows npm ends it with, npm's own exit status coming back.
-    - That is the one read setup, `doctor` and the gate compare.
-    - `wk_physical_path <path>`: the one compare they share.
-    - A path's folder is resolved through every link (`pwd -P`), and its file name kept as written.
-    - It gives nothing and a non-zero return when the folder cannot be entered.
-    - So the kit's shell reached through a linked folder is the kit's. A link to the file itself, set in another folder, is not.
-  - `wk_in_plugin_cache <kit dir>`: whether a kit is the workkit plugin's copy in Claude's plugin cache.
-    - That is: its manifest names `workkit`, and its physical path lies under the physical `<claude home>/plugins/cache/`.
-    - It is the one answer the engine's address, the setup nudge, the command link, `doctor` and the job installer ask.
-  - `wk_clone_outranks <kit dir> <linked dir>`, beside it: the rule that a clone outranks the plugin cache.
-    - A cached kit finding a machine-wide link that names a workkit clone (`wk_is_kit_checkout`) leaves it as current.
-    - The engine's address, the command link, the `gh` shim link, `doctor` and the job installer read it alike.
-    - The two have Node twins in `lib/platform.js`, `inPluginCache` and `cloneOutranks`, which the heal's engine address and git hooks step read.
+  - `wk_user_dir`: the shell's one spelling of the machine folder (`WORKFLOW_HOME` else `~/.workkit`), the shims' and the seams' alike; its Node twins are `userDir` in `hooks/mods/log.js` and `user-dir.js`.
   - `wk_is_cloud`: whether this is a claude.ai/code cloud session (`CLAUDE_CODE_REMOTE` is `true`).
-    - `workkit setup --cloud`, `doctor` and the `gh` shim read it.
-    - Its Node twin is `isCloud` in `lib/cloud.js`.
+    - The `gh` shim reads it.
+    - Its Node twin is `isCloud` in `lib/cloud.js`, which `workkit setup --cloud`, `update` and `doctor` read.
   - `wk_node`: the path of the first node whose `--version` reaches `WK_NODE_FLOOR`.
-    - `WK_NODE_FLOOR` is 22.22, set here: the kit's one lowest Node, the `engines` floor of the root `package.json` and of `packages/core/package.json` alike.
+    - `WK_NODE_FLOOR` is 22.22, set here: the kit's one lowest Node, the `engines` floor of the root `package.json` and of `packages/core/package.json` alike. The command reads the floor off the root `package.json` itself (`workkit/floor.js`).
     - It tries, in order: `$WORKKIT_NODE`, `node` on PATH, `~/.nvm/default-bin/node` (the dotfiles pin, on a Mac and on Windows), and nvm's newest `~/.nvm/versions/node/v*/bin/node`.
     - It gives nothing and 1 when none fits.
-    - It is the node the `gh` shim's gate and the git hooks' judge run under.
+    - It is the node the `gh` shim's gate, the `git` shim's judge, the git hooks' judge and `wk_settings_enabled` (`lib/participation.sh`) run under.
   - `run_at_floor <prefix> <code> <file> [args]`: `<file>` exec'd under `wk_node`'s pick, or one `<prefix>: no node at or above <floor> is installed` line and exit `<code>`.
-    - `workkit.sh`, `workkit/ship.sh`, `workkit/review.sh`, `workkit/triage.sh`, `workkit/checkpoint.sh`, `workkit/proof.sh`, `workkit/schedule.sh`, `script-shell.sh`, `standards.sh`, `home.sh`, `publish.sh`, `jobs/morning.sh` and `jobs/brief-dispatch.sh` start their Node files through it.
-  - The one mutex shape:
-    - `wk_claim_dir <dir>`: 0 only for the one caller that creates `<dir>/claim`.
-      - A `mkdir` may answer 0 to two racing callers, so the one whose `mkdir` answered 0 must also create `<dir>/claim` under noclobber, which opens it create-only.
-      - One caller alone gets the file, whatever `mkdir` answered.
-    - `wk_take_lock <dir>`: a `wk_claim_dir` of `<dir>`, its parent made first.
-    - It is 0 holding it, and 1 after a 5-second wait, its caller going ahead either way.
-    - `wk_drop_lock <dir>`, beside it, run only by a caller that took it: an `rm` of the claim, then an `rmdir` of the folder, never one removal of both.
-      - A taker that claims the folder between the two keeps it, since the `rmdir` then fails.
-    - The machine-state mutex is its caller (`lib/state.sh` and the site).
-    - Its Node twin is `lib/lock.js`'s `claimDir`, `takeLock` and `dropLock`, and the two sides exclude each other on one folder.
-      - The package record's write (`lib/records.js`) takes its lock so.
-      - So does the state mutex at `stateLockPath`: the heal's state step (`standards/state.js`), the home slug's write (`home/options.js`) and the Discussions cache (`lib/discussions.js`).
-  - The run lock's own rules (its tagged claim, its mark, its retire and adopt) are Node's alone: `lib/lock.js`, below.
+    - `script-shell.sh`, `standards.sh`, `publish.sh` and `jobs/morning.sh` start their Node files through it.
+  - The locks are Node's alone, the plain mutex and the run lock: `lib/lock.js`, below.
 - `lib/run.js`:
   - CJS, requiring nothing beyond Node, the Node twin of `lib/platform.sh`.
   - workkit-core ships it as `workkit-core/run`; its prepack copies it to `run.cjs`.
@@ -439,7 +420,7 @@
       - its `packages/core/test/lib/members.js` starts each member's `npm` through the starter `packages/core/test/run.js` hands it, so it imports none;
     - the root `test/` files still on the check's list, which only shrinks.
 - `lib/participation.sh`:
-  - Sourced by `lib.sh` and by the shims and git's hooks alike.
+  - Sourced by `script-shell.sh` and by the shims and git's hooks alike.
   - `wk_is_repo_root <dir>`: it asks `.git` with `-e` and never `-d`.
     - A worktree's and a submodule's `.git` is a FILE, and a `-d` reading skips a repo that works perfectly.
   - `wk_opted_in <root>`: 0 when the repo turned workkit on.
@@ -447,7 +428,7 @@
       - It reads the key through the node `wk_node` finds, which asks `repoFlag` in `hooks/mods/gate.js`, so a nested `enabled` (`manager.enabled`) changes nothing; a text match only where there is no node.
     - No file, an empty one, `{}` or one with no key is off, the default. The machine's file has no say.
     - It is the shell side's one opt-in test, the twin of `settingsOptedIn` in `hooks/mods/gate.js`.
-    - `wk_session_judges`, `wk.sh`'s `participating` and `script-shell.sh`'s repoint ask it.
+    - `wk_session_judges` and `script-shell.sh`'s repoint ask it; the capture command's `participating` (`note.js`) asks its Node twin.
   - `wk_setting <root> <dotted.key>`: one setting from the merged view.
     - The view is the kit's `defaults/settings.json`, then `$(wk_user_dir)/settings.json`, then `<root>/.workkit/settings.json`, none with an empty root.
     - They merge key by key in jq as `loadSettings` in `hooks/mods/settings.js` merges them, `enabled` the root's own alone.
@@ -455,7 +436,7 @@
     - The defaults are found at `defaults/settings.json` two folders above `participation.sh` itself (`${BASH_SOURCE[0]%/*}/../../`).
     - That holds because every caller sources the file by absolute path.
     - Defaults missing or not an object give an error naming the file, and 1.
-    - The site options are read through it with an empty root (`workkit/site.sh`); `home/options.js`, `publish.js` and the jobs read them through `settingsAt` (`lib/settings.js`) with a null root.
+    - The site options are read in Node: `home/options.js`, the command's site step (`workkit/site.js`), `publish.js` and the jobs read them through `settingsAt` or `siteOption` (`lib/settings.js`) with a null root.
   - `wk_session_judges <root>`: 0 when a Claude session's checks rule in that root.
     - That is `CLAUDECODE=1`, `HOOK_DISABLE` not `1`, and `wk_opted_in`.
     - It is the one gate of the git hooks (`githooks/hook.sh`), the `git` shim (`gitshim/git`) and the `gh` shim's session gates (`identity/gh`).
@@ -472,10 +453,10 @@
     - The twins, rule for rule: `githooksKit`, `githooksSpelled` and `githooksKitlike` in `lib/participation.js`.
   - `git_hooks_installed <root>`: 0 and the folder printed when `core.hooksPath`, read with `--path` so a `~/` spelling is expanded, names a kit's hooks folder by `wk_githooks_kit`; 1 for any other value or none.
     - It asks git alone and starts no node, so an install-time script in a repo whose hooks are set starts none.
-    - `workkit doctor` and `workkit setup` print their This repo line from it, and `script-shell.sh`'s re-point asks it first.
-    - Where it fails, setup and the re-point set the hooks through `standards.sh --git-hooks <root>`.
+    - `script-shell.sh`'s re-point asks it first; `workkit setup` and `doctor` make the same read in Node for their This repo line (`gitHooksLine` in `workkit/setup.js`).
+    - Where it fails, the re-point sets the hooks through `standards.sh --git-hooks <root>`, and setup through `standards.js --git-hooks <root>`.
 - `lib/slug.sh`:
-  - Sourced by `lib.sh` and by the `gh` shim alike.
+  - Sourced by the `gh` shim.
   - `wk_slug_from_remote <url>` is `owner/repo` out of a remote in every form git writes one, the SSH shorthand and the HTTPS URL.
     - It also reads one out of a local path in EITHER separator.
     - Git stores a remote exactly as it was typed, and a path typed natively on Windows comes back with backslashes.
@@ -485,29 +466,14 @@
     - The hooks module reads it as `repoSlug` in `hooks/mods/optin.js`, over `hooks/mods/slug.js`'s copy of `slugFromRemote`.
     - That copy is the one `safety:release-taken` names the repo in its github-release bounce through.
     - `wk_is_kit_checkout <dir>` asks it whether a tree is a clone of workkit itself.
-    - That is the rule the engine's address and `wk_clone_outranks` both read.
+    - Its Node twin, `isKitCheckout` in `lib/repo.js`, is the rule the engine's address and `cloneOutranks` (`lib/platform.js`) read.
   - `wk_roster_path <owner/name> [<match>]` runs it the other way.
     - It gives the machine roster's enabled folder whose origin is that slug, matched without regard to case, or 1.
     - Given a `<match>` function, it gives the first enabled folder it accepts instead (the `gh` shim's `names_public`).
     - The hooks module follows it as `rosterPath` in `hooks/mods/optin.js`.
     - That is how `safety:proof-guard`, `workflow:snapshot` and `workflow:public-mirror` find the repo a flip names.
-- `lib/suite.sh`:
-  - Sourced by `workkit.sh`; `lib/command-log.sh` reads `wk_log_path` from it.
-  - `wk_has_test_script` is the one has-a-test-script predicate (a non-empty string `scripts.test`); its module twin is `hasTestScript` in `hooks/mods/suite.js`.
-  - `wk_log_dir <root>` is the repo's log folder: `logs.dir` (`wk_setting`), a path from the root, default `.workkit`.
-    - Each `.` and `..` in it is walked, so `./logs/` reads as `logs`, and `.` is the root itself; an empty value reads as `.workkit`, as it does with no jq.
-    - An absolute value (`/`, `\` or a drive letter first), or one whose `..` leaves the repo, is `workkit: logs.dir must be a folder inside the repo, written from its root (got <value>)` on stderr, and 1.
-    - Every caller of a log path stops on that line: a root or narrowed `npm test`, `workkit prove`, `supervise` and `watch` exit 1, `workkit ship watch` 4 (no answer).
-    - Its twin is `logDirOf` in `hooks/mods/commit-gate.js`, so the gate's bounce names the same `suite.log`.
-    - `logPlaceOf(settings, name, id)` beside it is `wk_log_path`'s rule with no read: the log's place from the root, and its marker folder. The gate's suite log and `lib/run-paths.js` both go through it, each asking git whether the place is ignored.
-  - `wk_log_path <root> <name> [<id>]` is where a detached run logs.
-    - That is `<root>/<log folder>/<name>` when git ignores it there, else `~/.workkit/markers/claude-<name>/<sha1 of the repo root>`.
-    - An `<id>` keeps one of several runs apart: `.<id>` ends the name in both places.
-    - So a log never changes the tree hash.
-    - Its Node twin is `runPaths` in `lib/run-paths.js`; the parity suite holds the suite log's path to the one the commit gate's bounce names.
-  - The hooks module reads the records through `hooks/mods/suite.js`.
-    - It takes a tree id through `node lib/tree-hash.js`, the index's with `-i` as its only flag, with no bash between.
 - `lib/tree-hash.js`:
+  - The hooks module reads the records through `hooks/mods/suite.js`, and takes a tree id through `node lib/tree-hash.js`, the index's with `-i` as its only flag, with no bash between.
   - The one home of the tree ids the records hold, CJS: `treeId(root, pkg)` and `indexTreeId(root)`, which `script-shell.js` and `prove.js` require, and beside them `copyIndex(root, dir)` and `writeTree(root, index)`, which `prove.js` requires.
   - `node tree-hash.js <root> [<pkg>]` prints the working tree's id, or a package's own.
     - It runs `git add -A` into a scratch index in a new temp folder, removed after.
@@ -532,7 +498,7 @@
   - The package record is its sibling: the packages a green `npm test` other than the bare root run proved.
     - It has its own file, `~/.workkit/markers/claude-package-marker/<sha1 of the repo root>` (`pkgRecordPath`), never the suite's.
     - It holds one line per package, `<id> <pkg>`: the package folder relative to the root (`.` for the root), after its own tree id hashed before the run.
-    - `writePkgRecord(root, tree, pkg)` works under the record's lock, `<record>.lock`, taken by `takeLock` in `lib/lock.js`, `wk_take_lock`'s twin (the folder, then its `claim` create-only).
+    - `writePkgRecord(root, tree, pkg)` works under the record's lock, `<record>.lock`, taken by `takeLock` in `lib/lock.js` (the folder, then its `claim` create-only).
     - It keeps every line whose package is not `<pkg>` and appends `<tree> <pkg>` (`pkgRecordText`), moved onto the record from `<record>.tmp.<pid>`, so overlapping package runs each keep their line.
   - Each write sweeps the markers folder, removing every regular file one folder under it older than 7 days (`sweepMarkers` in `lib/lock.js`, `wk_sweep_markers`'s twin); a lock folder there is left alone.
     - The package record sweeps before its write; the suite record after it, through `writeMarker`.
@@ -548,13 +514,14 @@
   - `proofBase()` is `proof/` in the kit's cache folder (`cacheDirOf` in `hooks/mods/log.js`), `~/.cache/workkit/proof`, where every proof run folder lives.
     - `HOME` moves the cache folder; `WORKFLOW_HOME` does not, since on a machine where `~/.workkit` is a link into a repo a copy under it would sit inside that repo.
   - `proofDir()` makes a new run folder, `<proofBase>/<id>` with `<id>` six random characters, and answers it; null when none can be made.
-    - `workkit prove` and `workkit proof red` each make theirs through it, so `HOME` moves the copy and `TMPDIR` does not.
+    - `workkit prove`, `workkit proof red` and `workkit ship publish` (when the folder differs from HEAD) each make theirs through it, so `HOME` moves the copy and `TMPDIR` does not.
     - The copy's path stays short (43 bytes under a default macOS home) and has no crowded parent.
     - It first removes each run folder there last changed more than a day ago, since no system cleaner reaches the cache folder.
     - One holding `live` is left: a `--live` run that could not restore keeps the live files there.
     - One it cannot remove is left, and never fails the run; a removed copy's worktree entry is left for git's own prune.
+  - `proofClaudeHome(dir)` makes the empty `<dir>/claude-home` that `workkit prove` hands its suite and `workkit proof red` its copy's command as `WORKFLOW_CLAUDE_HOME`, so nothing run in a copy reaches the machine's Claude home; null when it cannot be made.
 - `lib/tree-copy.js`:
-  - The Node home of a tree copy, CJS, which `lib/snapshot.js`, `prove.js` and `proof/place.js` share.
+  - The Node home of a tree copy, CJS, which `lib/snapshot.js`, `prove.js`, `proof/place.js` and `ship/publish.js` share.
   - `copyTree(src, root, dest, only)` copies every entry of `src` but `.git`, or only the paths in `only` whose parent `dest` holds.
     - It leaves out each package's `node_modules` the live repo `root` holds (`heldModules`) and the kit's paths inside it; the list and the walk: `../docs/hooks.md` § Platforms.
     - Each platform's copy and its flags: `../docs/hooks.md` § Platforms.
@@ -564,6 +531,11 @@
     - On Windows a folder's link is a junction, which needs no privilege.
   - `heldModules(root)` is each package's `node_modules` that exists: one beside a `package.json` git lists, tracked or untracked and not ignored, outside every `node_modules`.
   - `worktreeAdd(root, dest)` adds a detached worktree of HEAD with nothing checked out, tried three times a second apart against a racing add or prune.
+  - `checkOut(copy, tree)` checks a tree or commit out into a worktree the add left empty (`read-tree`, then `checkout-index -a`); false when either fails, git's words on stderr.
+  - `fillIgnored(root, dest)` fills the copy from the live repo with only the paths an ignore pattern matches there, through `fillCopy`, so an untracked or unstaged file stays out; none fills nothing.
+    - It lists them with `status --ignored=matching`, never refreshing the index, and throws `could not list the gitignored files of <root>` when git cannot.
+    - A failed fill throws `could not fill the copy's gitignored files from <root>`, the fill's own words its `cause`.
+    - `prove.js` and `ship/publish.js` fill their copies through it.
   - `worktreeRemove(root, dest)` removes it, deleting the folder and pruning the list when git cannot; false when the prune fails too.
   - Each throws its step's own words, which its caller puts in its line.
 - `lib/snapshot.js`:
@@ -651,8 +623,16 @@
   - Under a supervisor already (`WORKKIT_SUPERVISED=1`, which `detach.js` sets), `run` starts no second supervisor: it runs `<cmd>` in the foreground (`runForeground`), its code in `code`.
   - It also exports `endOnInt(lock, pid, { endRun })`; the launcher and the end of a run's processes are injectable, the real ones by default.
 - `lib/run-paths.js`:
+  - The repo's log folder is `logs.dir`, a path from the root, default `.workkit` (`logDirOf` in `hooks/mods/commit-gate.js`, so the gate's bounce names the same `suite.log`).
+    - Each `.` and `..` in it is walked, so `./logs/` reads as `logs`, and `.` is the root itself; an empty value reads as `.workkit`.
+    - An absolute value (`/`, `\` or a drive letter first), or one whose `..` leaves the repo, is `workkit: logs.dir must be a folder inside the repo, written from its root (got <value>)` on stderr, and 1.
+    - Every caller of a log path stops on that line: a root or narrowed `npm test`, `workkit prove`, `supervise` and `watch` exit 1, `workkit ship watch` 4 (no answer).
+  - `logPathOf(root, name, id)` is where a log of that name goes: `<root>/<log folder>/<name>` when git ignores it there, else `~/.workkit/markers/claude-<name>/<sha1 of the repo root>`.
+    - Its place comes from `logPlaceOf(settings, name, id)` beside `logDirOf`, the rule with no read: the log's place from the root, and its marker folder. The gate's suite log and this file both go through it, each asking git whether the place is ignored.
+    - An `<id>` keeps one of several runs apart: `.<id>` ends the name in both places. So a log never changes the tree hash.
+    - The command log names its repo logs through it.
   - `runPaths(root, which, slot)` answers `{ log, lock }` for `which` of `suite`, `run`, `ci` or `test` (a `test` takes the slot's pid), keyed by the root as `git rev-parse --show-toplevel` prints it, the key `script-shell.js` uses.
-    - The log is `suite.log`, `run.log`, `ci.log` or `test.log.<pid>`, placed by `wk_log_path`'s rule (`lib/suite.sh`) through `logPlaceOf` in `hooks/mods/commit-gate.js`; a bad `logs.dir` throws `LogsDirError`, its message the line that names the key.
+    - The log is `suite.log`, `run.log`, `ci.log` or `test.log.<pid>`, placed by `logPathOf`; a bad `logs.dir` throws `LogsDirError`, its message the line that names the key.
     - The lock is the `claude-suite-lock`, `claude-run-lock`, `claude-ci-watch-lock` marker path, or `claude-test-lock`'s with `.<pid>` after it; `lockPathOf(root, which, slot)` answers it alone.
   - `testSlots(root)` is the pid of each narrowed run whose lock folder stands, live or not, through `slotsAt` in `lib/run-lock.js`, the one listing of a repo's slots.
   - `clearSlot(root, pid)` removes a slot's log and its lock's record, once a call has read its end.
@@ -661,7 +641,7 @@
   - `attachRun(log, lock, pid, offset, { signal, view })` tails `<log>` to stdout from byte `<offset>` (0), so a later verb attaches to a run already going.
     - Its view is `viewOf()`, the painted or the plain view, made at the call unless one is given: `watch.js` writes the log's last lines through its own view first, so one painter paints both.
     - The log is plain text. When the kit's color gate says yes, each whole line is painted on its way to stdout by the painter, `packages/core/test/lib/paint.js` beside this engine, required in process with `FORCE_COLOR=1`; otherwise stdout gets the log's bytes.
-      - The gate is `colorOn` in `lib/voice.js`, the Node home of `wk_color_on`'s rule (`lib/voice.sh`), on stdout: `WORKKIT_COLOR=0`, `NO_COLOR` or a dumb `TERM` is no, `WORKKIT_COLOR=1` stands in for a terminal.
+      - The gate is `colorOn` in `lib/voice.js`, the kit's one color gate, on stdout: `WORKKIT_COLOR=0`, `NO_COLOR` or a dumb `TERM` is no, `WORKKIT_COLOR=1` stands in for a terminal.
       - A kit copy without the painter (the engine alone) is the plain view, and so is a call whose own Node is below the kit's floor (`WK_NODE_FLOOR`, read from `lib/platform.sh`), since the painter is an ES module. A painter that is there and fails to load throws.
       - A line split across reads waits for its end; what is left is painted when the call ends.
       - A painted view whose stdout is gone (its reader went away) ends the tail: `detach: the painted view of the run ended, so this call stops; the run goes on, and workkit watch follows it`, the lock kept for a watch, and 1.
@@ -700,7 +680,7 @@
     - Since a command may return 3 itself, `held=` is answered, the holder's pid, only then.
   - A lock whose run is over is taken over: its done file written, its pid gone, or no pid once its taker is gone or its wait has run out.
     - A lock with no pid file is judged by its taker, the process that took it: the pid that is the first field of the tag its claim names (`tagPid`).
-      - A taker that lives is waited for, up to `WK_LAUNCH_WAIT` seconds (60; a value that is not a finite number of 0 or more counts as unset, `secondsOf`), while the lock has no pid file. Once the pid file is there, the lock is judged by it, so a launch slower than five seconds keeps its lock and the second call answers 3.
+      - A taker that lives is waited for, up to `WK_LAUNCH_WAIT` seconds (60; a value that is not a finite number of 0 or more counts as unset, `nonNegativeOf` in `lib/bounded.js`), while the lock has no pid file. Once the pid file is there, the lock is judged by it, so a launch slower than five seconds keeps its lock and the second call answers 3.
       - Still no pid file when that wait runs out: the run is over, and the take takes the lock, as for a lock with no taker. A live taker only makes the take wait longer, never fail, so a launcher ended before its pid write whose pid another process now holds blocks nothing.
       - A taker that is gone: the run is over, and the lock is taken at once.
       - No taker to read (no claim, an empty claim, a `gone` or `id.orphan` mark): no pid five seconds after the take is over.
@@ -723,7 +703,7 @@
   - `endRun(pid)`: a detached run's supervisor ended with what it started.
     - Elsewhere than Windows the supervisor leads its own group: INT so the body logs its own code, then TERM and KILL, each 1.5 seconds after the last while the group lives.
     - On Windows its process tree, through `endTreeOf` in `lib/tree.js`. A table reader (PowerShell or Git Bash's `ps`) that cannot start, runs past 60 seconds, exits nonzero or prints a table it cannot read, an unset `SystemRoot`, a refused signal (`could not signal <pids> (<message>)`), or a process left after the forced end is its one stderr line and a failed end.
-  - `askEnd(lock, pid)` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30; a value that is not a finite number of 0 or more counts as unset, `secondsOf`).
+  - `askEnd(lock, pid)` writes `<lock>/end`, the supervisor's end request, while `<lock>/pid` holds `<pid>` and `<pid>` is alive, then waits up to `WK_END_WAIT` seconds (30; a value that is not a finite number of 0 or more counts as unset, `nonNegativeOf` in `lib/bounded.js`).
     - While `<lock>/ending` stands, the supervisor's answer that it is ending the run (`lib/detach.js`), the wait has no end of its own: it goes on while `<pid>` lives, and answers as below.
       - An `ending` file that goes again (the end failed) puts the wait back on its `WK_END_WAIT` clock, counted from the request.
       - So 1 is a supervisor that never answered, or whose end failed: one that is ending its run is waited for, however long its end takes.
@@ -759,8 +739,8 @@
     - The take's judge answers a live holder's pid; every other yes or no of `lib/lock.js` and `lib/run-lock.js` is a boolean.
     - So a caller acting on an old judgment never removes a lock made after it: that lock holds another mark.
     - The callers: the take's takeover and the owner's drop, a foreground run's too, and `sweepSlots`; a signal before the pid and a failed launch retire by the run's own mark.
-  - `takeLock(dir)` and `dropLock(dir)` are the plain mutex, `wk_take_lock` and `wk_drop_lock`'s twins: its parent made, then `claimDir(dir)` tried 50 times 100 ms apart; the claim dropped before the folder. The package record's write and the heal's state step take their locks so.
-  - `stateLockPath(userDir)` is the state mutex's path, `<user dir>/.state.lock`, `WK_STATE_LOCK` of `lib.sh`: the one spelling the heal's state step, the home slug's write and the Discussions cache take it by.
+  - `takeLock(dir)` and `dropLock(dir)` are the plain mutex: its parent made, then `claimDir(dir)` tried 50 times 100 ms apart, the caller going ahead either way; the claim dropped before the folder, so a taker that claims it between the two keeps it. The package record's write and the heal's state step take their locks so.
+  - `stateLockPath(userDir)` is the state mutex's path, `<user dir>/.state.lock`: the one spelling the heal's state step, the home slug's write, the command's site writes and the Discussions cache take it by.
   - `sweepMarkers(home)` is `wk_sweep_markers`'s twin: every regular file one folder under the markers folder (`markersDir` in `hooks/mods/markers.js`) older than 7 days removed, a folder there never entered.
   - `writeMarker(file, home, text)` is the one writer of a marker and of the suite record: `<text>` at `<file>` (empty by default), its folder made first, then `sweepMarkers(home)`.
     - Its callers: `review/mark.js` and `triage/mark.js`, with no text, `checkpoint/mark.js`, with the time in milliseconds, and `lib/records.js`'s `writeSuiteRecord`, with the record's text.
@@ -774,7 +754,7 @@
   - `node detach.js <log> <done> [--root <root>] -- <cmd> [args...]`, which `lib/runs.js` runs as a process of its own.
   - `signalCode(signal)` is the one code a shell gives a command a signal ended (an unknown name throws).
     - `exitOf(code, signal)` is a child's end as that code: its exit code, else `signalCode` of its signal. Every Node file that waits on a child reads it.
-    - `startFailed` (127) is the code of a child that never started, beside it: the supervisor's, the jobs', the installer's, the script shell's, `prove`'s, the CI watch's, the red proof's and `runHere`'s.
+    - `startFailed` (127) is the code of a child that never started, beside it: the supervisor's, the jobs', the installer's, the script shell's, `prove`'s, the CI watch's, the red proof's, `runHere`'s, `bounded`'s and the token mint's pty.
     - `notRunnable` (126) is the code of a command found that cannot run, which the red proof and `runHere` give apart from `startFailed`.
     - `codeOf(res)` is a `spawnSync` result read as that code: `startFailed` when it has no code and no signal, else `exitOf`. The jobs and the installer read a sync child's end through it.
   - `END_SIGNALS` are the three signals that end a run's caller (HUP, INT, TERM), and `INT_CODE` the code of an interrupted call.
@@ -819,7 +799,7 @@
     - `changelog/changelog-links.js` prints `changelog-links: not a git repository.` and exits 1;
     - `ship/cut.js` refuses the run on a null `repoRoot`, and its `runUrl` reads a null `headSha` as no run, naming the repo's Actions page;
     - `ship/deploy.js` refuses the run;
-    - `ship/publish.js` reads its afterPublish hooks from its `--dir` itself;
+    - `ship/publish.js` reads its afterPublish hooks from its `--dir` itself on a null `repoRoot`, and refuses a folder that differs from HEAD on a null `headSha` (`publish-plan: could not make a copy of HEAD to publish from (the repo has no commit); nothing was published.`, exit 1);
     - `lib/io.js`'s `top` answers it as is;
     - `prove.js` stops with `prove: <root> has no commit to add a worktree of` on a null `headSha`;
     - `lib/snapshot.js` reads a null `headSha` as a repo with no commit: its take stops with `<root> has no HEAD commit`, and its working-diff list reads the staged list instead;
@@ -827,13 +807,15 @@
     - `triage/mark.js` keys its marker on the home folder instead.
   - `gitIn(root, args, options)` is `git -C <root> <args>` through `lib/run.js`'s `spawnSync`, its answer as `spawnSync` gives it.
     - Its defaults are `maxBuffer: GIT_MAX_BUFFER` and `windowsHide: true`; a caller's options win, and each passes its own stdio, encoding and env.
-    - Its callers: `prove.js`, `lib/snapshot.js`, `lib/tree-copy.js`, `proof/red.js` and `proof/place.js`, for every git read of theirs but the two above; `ship/caller.js`'s status read; `script-shell.js`'s status read; `.github/scripts/ci-release.js`'s workflows diff.
+    - Its callers: `prove.js`, `lib/snapshot.js`, `lib/tree-copy.js`, `proof/red.js` and `proof/place.js`, for every git read of theirs but the two above; `ship/caller.js`'s status read; `ship/publish.js`'s status read (`changedCount`); `script-shell.js`'s status read; `.github/scripts/ci-release.js`'s workflows diff.
     - And the fetch and the path list of `.github/scripts/release-push.js`, and the two reads below.
     - And home's git calls (`home/*.js`) and the publish's (`publish.js`), but two that start git themselves: home's clone (`clone` in `home/repo.js`, `lib/run.js`'s `spawnSync` under the spinner) and the publish's waited calls (`gitWait`, through `waitFor` under the signal hold).
   - `hasCommit(root, rev)` is whether `rev` names a commit the repo holds (`git cat-file -e <rev>^{commit}`), false for any other answer.
     - Its callers: `.github/scripts/release-push.js` and `.github/scripts/ci-release.js`, for a push's `before`.
   - `textAt(root, rev, file)` is the text of `file` at `rev` (`git show <rev>:<file>`), or null when git cannot read it there.
     - Its callers: `ship/caller.js`'s `callerAtHead`, `review/covers.js`'s settings file at HEAD, `.github/scripts/release-push.js`'s two sides of a version file, `.github/scripts/ci-release.js`'s CHANGELOG at a commit, `home/committed.js`'s `file` for a tracked folder.
+  - `localConfig(root, args)` is a local git config value in `root` (`git config --local <args>`), its trailing newlines dropped, or `''` when git has none.
+    - Its callers: the heal's git hooks step (`standards/githooks.js`, `core.hooksPath` and the saved `workkit.hooksPath`) and the command's git hooks line (`workkit/setup.js`).
   - `commitIdentity()` is the `-c` pairs a kit commit runs under, so a machine with no git identity still commits: `user.name` is `GIT_AUTHOR_NAME`, else `workkit`, and `user.email` is `GIT_AUTHOR_EMAIL`, else `workkit@localhost`.
     - It is that fallback's one home; its callers: the publish commit (`publish.js`) and home's commit and push (`home/install.js`).
   - `GIT_MAX_BUFFER` is the most output one git read keeps, 64 MiB, ample for a repo's whole path list; `gitIn` and `ship/cut.js`'s `git log` read it.
@@ -847,6 +829,7 @@
     - Its callers: `sayAs`; `.github/scripts/ci-release.js` and `identity/rest.js`, which pass on gh's stderr; `.github/scripts/release-push.js`'s usage line; `lib/voice.js`'s lines; `standards/labels.js`'s public key error.
     - And the usage lines of `home.js` and `publish/build.js`, a failed step's tail (`publish.js`), the heal's lines (`home/install.js`) and the questions (`lib/flows.js`).
   - `writeOut(text)` is its stdout twin, the same whole write to fd 1; `lib/voice.js` prints a reporting line through it, and `home.js` a verb's value.
+  - `drained(stream)` settles once everything written to the stream so far is handed on, so a line written straight to the fd next lands after it; its callers: the command's exit (`workkit.js`, stdout and then stderr), the red proof's last lines (`proof/red.js`) and the command log's secret marks (`lib/command-log.js`).
   - `sayAs(prefix)` is a writer of one `<prefix>: <text>` line on stderr, through `writeErr`.
     - A caller is a kit Node command, or a `lib/` file one requires, that prints its own `<prefix>:` lines on stderr.
   - `endOf(res)` is how a `spawnSync` child ended: `exited <code>`, `did not finish (<signal>)` or `could not be run, <error code>`.
@@ -876,54 +859,67 @@
     - That is one `{ file, key, line }` per layer or value the merge set aside.
   - `homeSlug(workflowHome)` is the `site.repo` a machine folder's merged settings name, null unless it is an `owner/name` string.
     - Its callers: `identity/token.js`, `public/lib.js`, `ship/hooks.js`, `publish/site-repos.js`, `home/options.js`, `tower/api/lib/repos.js` and `summaries.js`, `jobs/morning/brief/cc-news.js`, and the jobs' (`jobs/brief-dispatch.js`, `jobs/claude-nightly.js`, and `cloud-machine.js`, `brief-publish.js` and `marker.js` under `jobs/morning/`).
+  - `siteOption(key, user)` is one `site.<key>` of the machine's merged settings as text: a string raw, any other value as JSON, `''` for null or none.
+    - Its callers: the site options of `home/options.js` and the command's site step (`workkit/site.js`).
 - `lib/write.js`:
   - `writeWhole(file, text, { mode })` writes through a temp file beside `file` and a rename, so a reader never sees it half-written.
     - A `mode` creates the temp file new at it, never wider even for a moment: the sign-in and the token cache write theirs at 0600.
     - Before the rename the temp file is set to exactly that `mode`, so the umask cannot narrow it, a failed set leaves the file as it was, and no caller sets it again.
-  - `editJson(file, change, { create })` is a JSON file changed whole, `wk_json_edit`'s rule (`lib/state.sh`).
+  - `editJson(file, change, { create })` is a JSON file changed whole, the kit's one safe JSON edit.
     - The value is read through every link to its target and handed to `change`.
     - What `change` returns is written as two-space JSON and one newline, through `writeWhole` beside the target, the target's mode kept, so a link stays a link.
     - It answers true when written. A failure warns the shell's `settings:` line, leaves the file as it was and no temp file, and answers false.
-    - With `create: true` a missing file starts as `{}`, and a failed edit takes it away again (`wk_json_edit_or_create`).
-    - Its callers: the heal's state step (`standards/state.js`), for the opt-in, the decline, the roster and the version key's removal; the home slug's write (`home/options.js`), the `file:` specs' repoint (`home/repo.js`) and the Discussions cache (`lib/discussions.js`).
+    - With `create: true` a missing file starts as `{}`, and a failed edit takes it away again.
+    - Its callers: the heal's state step (`standards/state.js`), for the opt-in, the decline, the roster and the version key's removal; the home slug's write (`home/options.js`), the `file:` specs' repoint (`home/repo.js`), the Discussions cache (`lib/discussions.js`), and the command's allow rules and site answers (`workkit/allow.js`, `workkit/site.js`).
   - `readJsonText(file)` is a JSON file's value as jq reads it: `{ value }`, null for a blank file, undefined when it cannot be read or does not parse.
     - `editJson` reads the old value through it, and the publish's preflight (`publish.js`) refuses a settings file it answers undefined for.
 - `lib/voice.js`:
-  - The Node half of `lib/voice.sh` ([Output](#output)), requiring only `lib/say.js`; the tower's logger builds its lines from it.
-  - `colorOn(stream)` is `wk_color_on`'s rule leg for leg: `WORKKIT_COLOR=0`, `NO_COLOR` or a dumb `TERM` is no, `WORKKIT_COLOR=1` stands in for a terminal, else the stream's `isTTY`.
+  - The kit's one voice ([Output](#output)), requiring only `lib/say.js`; the command, the heal, the jobs and the tower's logger build their lines from it.
+  - `colorOn(stream)` is the one color gate: `WORKKIT_COLOR=0`, `NO_COLOR` or a dumb `TERM` is no, `WORKKIT_COLOR=1` stands in for a terminal, else the stream's `isTTY`.
     - `lib/attach.js` and `tower/api/lib/log.js` require it.
-  - `ok`, `skip`, `info`, `warn` and `error(message)` print one line each, in the glyph, colors, `task:` split and indent of `wk_ok`, `wk_skip`, `wk_info`, `wk_warn` and `wk_error`.
-    - A reporting line goes to stdout, or to stderr under `WK_LOG_STDERR=1`; a warning and an error always to stderr. `skip` and `info` are silent under `QUIET=1`.
-  - `plain(text)` is `wk_plain` with the color escapes taken off too (the shell strips those in a step of its own): each line with its colors, its indent and its glyph taken off, so a relay re-says it under its own (the morning's runner step).
+  - `ok`, `skip`, `info`, `warn` and `error(message)` print one line each, in the glyph, colors, `task:` split and indent of its level.
+    - A reporting line goes to stdout, or to stderr under `WK_LOG_STDERR=1`; a warning and an error always to stderr. `skip` and `info` are silent under quiet.
+  - `title(message)` and `section(message)` print a command's heading and a section's (an empty line first), in bold and bold cyan, and set the two-space indent for this process alone; `done(message)` is the closing line, `✨ <message>` in bold green. All three are silent under quiet.
+    - `indent()` is the indent a line opens with: the one `title` or `section` set in this process, else `WK_LOG_INDENT`, else none. No program the process starts inherits the set one.
+  - `plain(text)` is each line with its colors, its indent and its glyph taken off, so a relay re-says it under its own (the morning's runner step, the command's engine lines).
   - `ESCAPE` is the one pattern of a color escape, which `plain` takes off and `tower/start.js` strips before it judges a line. It is global, so it goes to `.replace`, never `.test`.
-  - `warnLines(topic, text)` is `wk_warn_lines`: each non-blank line warned, prefixed `<topic>: ` unless it opens with that already.
-  - `wait(message)` prints `<indent>⏳ <message>...` once on stderr, nothing under `QUIET=1`; the caller then runs its command. No frame, no cursor code.
-  - `setQuiet(on)` is a script's own `QUIET=1` shell variable: quiet for this process alone, read beside `QUIET=1` in the environment, and never in the environment of a program the process starts.
-    - Its caller: the publish's `--quiet` (`publish.js`), so the heal it starts prints what it prints for any caller.
+  - `warnLines(topic, text)`: each non-blank line warned, prefixed `<topic>: ` unless it opens with that already.
+  - `wait(message)` prints `<indent>⏳ <message>...` once on stderr, nothing under quiet; the caller then runs its command. No frame, no cursor code.
+  - `setQuiet(on)` is quiet for this process alone, read beside `QUIET=1` in the environment, and never in the environment of a program the process starts; `quiet()` is whether either holds.
+    - Its callers: the publish's `--quiet` (`publish.js`), so the heal it starts prints what it prints for any caller, and `update --auto`.
   - `PALETTE`, `paint` and `said` are the escapes and a level's line before its indent, which the tower's logger prints through `console`.
-  - Every variable is read at the call, never at load. `test/hooks/twins.test.js` holds the gate and the lines to `voice.sh`'s.
+  - Every variable is read at the call, never at load.
 - `lib/spin.js`:
-  - `spin(message, run, { line })` is `wk_spin`'s Node home ([Output](#output)): it calls `run()` and answers what it answers, a promise as a promise of the same value, and what it throws goes on.
-  - `spinFd()` is `wk_spin_fd`, `framesOn(fd)` the rule for frames, and `startFrames(fd, message, deadline)` the drawer `poll` in `lib/flows.js` counts down through.
-  - The frames, the clear and the one line are `voice.sh`'s; `test/hooks/twins.test.js` holds them to it.
+  - `spin(message, run, { line })` is the moving wait line ([Output](#output)): it calls `run()` and answers what it answers, a promise as a promise of the same value, and what it throws goes on.
+  - `openDevice(device)` opens the terminal device a logged command names (`WK_COMMAND_TERMINAL`) for append, null for none or for a device that does not open.
+  - `spinFd()` is the descriptor the frames draw on: `openDevice`'s on `WK_COMMAND_TERMINAL`, else 2. No other descriptor is read.
+  - `framesOn(fd)` is the rule for frames: `WORKKIT_SPIN=1` always, `WORKKIT_SPIN=0` never, otherwise on a device `spinFd` opened, and on stderr only when it is a terminal.
+  - `startFrames(fd, message, deadline)` is the drawer; `startSpinner(message, deadline)` opens, checks and starts it, and answers a stop that also closes an opened device, or null where no frames draw; a device it opened is closed too when the frames do not draw or cannot start. `poll` in `lib/flows.js` counts down through it.
 - `lib/flows.js`:
-  - `interactive(io)`, `askYes(prompt, fallback, io)`, `enterToOpen(url, label, what, io)`, `openUrl(url, io)` and `poll(message, seconds, check, io)`: `interactive` of `workkit.sh`, and `wk_ask_yes`, `wk_enter_to_open`, `wk_open_url` and `wk_poll` of `lib/flows.sh`.
-    - The same words, keys, defaults and streams; a shell 0 is `true` and a 1 `false`, each question awaited.
+  - `interactive(io)`, `askYes(prompt, fallback, io)`, `readLine(io)`, `enterToOpen(url, label, what, io)`, `opener({ platform, env })`, `openUrl(url, io)` and `poll(message, seconds, check, io)`: the questions a step asks at a terminal.
+    - `interactive` is whether stdin is a terminal; `askYes` answers `true` or `false`, each question awaited.
+    - `readLine` is one line read after whatever an earlier question left unread on the same stdin, trimmed; a last line with no newline is still the answer, and a closed stdin with nothing left is `''`.
+    - `opener` is this machine's browser opener, `open` on macOS and `xdg-open` elsewhere, when it is on PATH, else null; `openUrl` and the token handover open through it.
   - `io` is `{ stdin, stderr }`, the process's own by default, so a case hands in a terminal of its own (`test/lib/io-streams.js`).
-  - `poll`'s `check` may be async; its countdown draws through `lib/spin.js`, under the rule the frames follow.
-  - Its callers: home's setup question (`home/wizard.js`) and the categories' walkthrough (`home/services.js`).
+  - `poll`'s `check` may be async; its countdown draws through `startSpinner` (`lib/spin.js`), under the rule the frames follow.
+  - Its callers: home's setup question (`home/wizard.js`), the categories' walkthrough (`home/services.js`), and the command's steps (`workkit/kit.js`, `install.js`, `site.js`, `secrets.js`, `token.js` and `identity.js`).
 - `lib/platform.js`:
-  - `nativePath(path, { platform })`, `inPluginCache(kitDir)` and `cloneOutranks(kitDir, linkedDir)`: the Node twins of `wk_native_path`, `wk_in_plugin_cache` and `wk_clone_outranks` (`lib/platform.sh`).
+  - `nativePath(path, { platform })`, `inPluginCache(kitDir)` and `cloneOutranks(kitDir, linkedDir)`: the Node twins of `wk_native_path` (`lib/platform.sh`), and the plugin cache rule and the rule that a clone outranks it.
+    - `inPluginCache` is whether a kit is the workkit plugin's copy in Claude's plugin cache: its manifest names `workkit`, and its physical path lies under the physical `<claude home>/plugins/cache/`.
+    - `cloneOutranks` is that, and the folder a machine-wide link names a workkit clone (`isKitCheckout`), so a cached kit leaves the link as current. The engine's address, the git hooks step, the command's links, `doctor` and the job installer read them; the setup pester keeps its own read over the hooks module's io (`hooks/mods/standards.js`).
   - `nativePath` is the path unchanged off Windows. `platform` is the system it spells for, read once at load by default.
     - On Windows a path that starts with a drive letter, `:` and a separator, or with two separators, only has each `\` made `/`, with no program started, so a task's PATH without Git Bash still answers.
     - Any other path goes through `cygpath -m`; a failed `cygpath` throws, since an empty roster key is worse than none.
   - `claudeHome()` is the claude home's one Node reader, read at the call: `WORKFLOW_CLAUDE_HOME`, else `<HOME>/.claude` with `HOME` as the shell reads it, else `os.homedir()`.
     - `inPluginCache` and the heal's run object (`standards.js`) both call it.
   - `physicalDir(dir)` is a folder's physical path, or null when it is not one: the read `inPluginCache` makes of both folders, and the installer's of the home and the engine link (`jobs/install.js`).
+  - `physicalPath(p)` is a path with its folder resolved through every link and its file name kept as written, null when the folder does not resolve.
+    - So the kit's file reached through a linked folder is the kit's, and a link to the file itself, set in another folder, is not.
+    - Its callers: the compare of npm's script shell setup and doctor make (`workkit/npm-shell.js`), and doctor's `gh` and `git` shim checks (`workkit/doctor-machine.js`).
 - `lib/link.js`:
   - Requiring nothing beyond Node.
-  - `link(target, address)` is `wk_link`: a link made beside the address, then renamed onto it, so no other session sees a gap; true when the address now resolves to the target. It removes nothing, but on Windows, which renames nothing onto a folder link, a link there naming something else: it goes, then the rename is tried again.
-  - `mvLink(from, to)` is `wk_mv_link`: a rename that replaces the name at `to`, never landing inside a folder a link there names.
+  - `link(target, address)` is the atomic link maker: a link made beside the address, then renamed onto it, so no other session sees a gap; true when the address now resolves to the target. It removes nothing, but on Windows, which renames nothing onto a folder link, a link there naming something else: it goes, then the rename is tried again.
+  - `mvLink(from, to)` is a rename that replaces the name at `to`, never landing inside a folder a link there names.
   - `isLink(path)` is whether a path is a symlink, a dangling one included; `physical(path)` is its spelling through every link, or null.
 - `lib/participation.js`:
   - `githooksKit(root, folder)` (the kit root, or null), `githooksSpelled(folder)` and `githooksKitlike(root, folder)`: rule for rule the `wk_githooks_*` of `lib/participation.sh`, which the heal's git hooks step asks.
@@ -940,7 +936,8 @@
   - Each `gh` call goes through `spin` with its message and `{ line: false }`, and the cache is written through `editJson` under the state mutex.
   - Its callers: home's Discussions step (`home/services.js`), the summaries (`jobs/claude-nightly.js`), the brief's post (`jobs/morning/brief-publish.js`), and the `gh` check of the marker and the cloud brief (`jobs/morning/`).
 - `lib/day.js`:
-  - `today(now)` is the local calendar's date of `now` (this moment by default) as `date '+%Y-%m-%d'` prints it: the release heading (`ship/release.js`), the publish commit (`publish.js`), the jobs' log stamp (`jobs/lib/notes.js`), and the summaries' and the brief's titled dates (`jobs/claude-nightly.js`, `jobs/morning/brief-publish.js`).
+  - `today(now)` is the local calendar's date of `now` (this moment by default) as `date '+%Y-%m-%d'` prints it: the release heading (`ship/release.js`), the publish commit (`publish.js`), the jobs' log stamp (`jobs/lib/notes.js`), the tower's usage days (`tower/api/lib/telemetry/read.js`), and the summaries' and the brief's titled dates (`jobs/claude-nightly.js`, `jobs/morning/brief-publish.js`).
+  - Its two-digit field is `pad` of `hooks/mods/log.js`, the one home of it; the jobs' log stamp (`jobs/lib/notes.js`) takes its time half from there too.
 - `lib/interrupt.js`:
   - `holdSignals()` holds `END_SIGNALS` (`lib/detach.js`: HUP, INT and TERM) for the process and answers `{ run, interrupted, signalled, end }`.
     - `run(cmd, args, options)` starts a program in the background and answers as `spawnSync` answers; a signal caught meanwhile is handed on to it, and the run rejects with `Interrupted`.
@@ -963,41 +960,58 @@
   - `withScratch(run, prefix)` makes a folder under the temp folder (`prefix`, `workkit.` by default, before mkdtemp's tail), calls `run(scratch)` and hands back what it handed back.
     - The folder goes whatever `run` did, a throw included; an async `run`'s once its promise settles.
     - No folder made: null, and `run` is never called; each caller says its own line for that.
-  - Its callers: home's seed, runner, doctor and heal (`home/`, prefix `workkit-home.`), the index copy (`lib/tree-hash.js`), the publish (`publish.js`), the morning (`jobs/morning.js`), the summaries (`jobs/claude-nightly.js`) and the installer (`jobs/install.js`, and its Windows half `jobs/lib/task-scheduler.js`).
-- `lib/command-log.sh`, sourced by `workkit.sh` alone:
-  - `wk_command_log_name <args...>` is the name a call logs under, or nothing: `setup`, `update`, `doctor`, `publish`, `ship <step>` for each `SHIP_VERBS` step but `watch`, and `proof red`.
-  - `wk_command_log_path <name>` is its file.
-    - A machine command's is `~/.workkit/logs/<name>.log` (`wk_user_dir`).
-    - A repo command's is `wk_log_path` of the repo holding the folder the call was made in, its space a dash (`ship-plan.log`, `proof-red.log`); outside a repo it is none.
-  - `wk_command_log <file> <name> <command...>` runs the command with `WK_COMMAND_LOGGED=1`, its stdin the call's own.
-    - Its stdout and its stderr each pass through `tee -i` to the call's own, byte for byte as they come, and are appended to a raw file in the system temp folder.
-    - Where the call's stdout is a terminal it sets `WORKKIT_COLOR=1`, unless it is set already, so the color shows as it does without the log.
+  - Its callers:
+    - home's seed, runner, doctor and heal (`home/`, prefix `workkit-home.`), the index copy (`lib/tree-hash.js`), the publish (`publish.js`);
+    - the morning (`jobs/morning.js`), the summaries (`jobs/claude-nightly.js`), the installer (`jobs/install.js`, and its Windows half `jobs/lib/task-scheduler.js`);
+    - the command log (`lib/command-log.js`) and the command's schedule step (`workkit/schedule.js`).
+- `lib/command-log.js`, the command's alone (`main.js` hands it a logged call):
+  - `logName(argv)` is the name a call logs under, or null: `setup`, `update`, `doctor`, `publish`, `ship <verb>` for each ship verb of `COMMANDS` but `watch`, and `proof red`.
+  - `logPath(kit, name, cwd)` is its file.
+    - A machine command's is `<user folder>/logs/<name>.log`, `~/.workkit/logs/` (`userDirOf` in `hooks/mods/log.js`).
+    - A repo command's is `logPathOf` (`lib/run-paths.js`) of the repo holding the folder the call was made in, its space a dash (`ship-plan.log`, `proof-red.log`); outside a repo it is null, and the command runs unlogged.
+  - `runLogged(kit, name, argv, dispatch)` runs the command again as a child of the running Node, `workkit.js` with the same arguments, its stdin the call's own, and answers its code. `dispatch` is `main.js`'s own route, the unlogged run in the same process.
+    - Its stdout and its stderr are pipes. Each chunk reaches the call's own stdout and stderr as it comes, byte for byte, and is appended to a raw file in a scratch folder (`withScratch`). A reader of the call's own that went away stops the passing on, never the log.
+    - The child's variables: `WK_COMMAND_LOGGED` is the raw file's path; `WORKKIT_COLOR=1` where the call's stdout is a terminal, unless it is set already, so the color shows as it does without the log.
+    - `WK_COMMAND_TERMINAL` is the terminal device's name where the call's stderr is a terminal: `/dev/tty` on a Mac and on Linux, `CONOUT$` on Windows (`terminalDevice(platform)`).
+    - `WK_COMMAND_MARKS=1` says the logger reads a secret step's marks (below). The logger sets or removes these two itself, so neither is ever taken from the caller's own variables.
     - It sets no `FORCE_COLOR`, so a Node or Go tool the command runs (`npm` under `ship publish`, `gh`) sees a pipe and prints without its own color.
-    - The command gets the call's own stdout on descriptor 7, its own stderr on 8 and the raw file on 9, for the two readers below.
-    - Ctrl-C ends the command, while this shell and the tees stay to write the log; the code is then 130.
-    - At the end `wk_command_log_plain` writes the raw file as a terminal leaves it: each line's text after its last carriage return, its color and link codes removed, a line of blanks empty.
-    - The line `workkit <name>: exit <code>` follows, and the file, made beside the log as `<log less .log>.<pid>.log`, is moved onto it. So the next run replaces the last, and two runs at once never mix.
-    - A log it cannot write is one stderr line, and the command still runs with its own code.
-    - A HUP or TERM to it takes effect once the command ends: the log is still written and the raw copy removed, and it then exits 129 or 143.
-    - Every background job the kit starts closes 7, 8 and 9 where it starts it (`wk_spin`'s and `wk_poll`'s frames, `bounded_read`'s read and its watchdog in `workkit/secrets.sh`), so no job left running holds the call's own stdout open.
-  - `wk_command_log_run <script> <args...>` is the dispatch's one call: a call that logs runs again as `<script> <args...>` under `wk_command_log`, and exits with its code.
-    - A call made with `WK_COMMAND_LOGGED` set never reaches it, so a step of a logged run writes no file of its own.
-    - A bad log folder exits 1 on `wk_log_dir`'s line, the command not run.
-  - Two step forms run a step on the call's own stdout and stderr (7 and 8), out of the log, which gets the one line `workkit: <what> ran on the terminal and is not in this log` in its place (on 9).
-    - With no command log holding those descriptors each just runs the step; `workkit.sh` defines those forms itself when the file is missing.
-    - `wk_secret_step <what> <command...>` is a step that shows a secret, out of the log wherever a log holds the call's streams, at a terminal or not, so no token or sign-in code reaches a file:
-      - the token mint, `claude setup-token` under its PTY runner (`workkit/secrets.sh`);
-      - the bot identity's sign-in, `identity/login.js` (`workkit/identity.sh`).
-    - `wk_terminal_step <what> <command...>` is a program handed the terminal, which may ask there: out of the log only where the call's own stdout or stderr is a terminal, and logged whole anywhere else (an agent's call, CI, a pipe):
-      - `ship publish`, whose `npm publish` may ask for a one-time password, and its afterPublish hooks;
-      - `ship deploy`, its deploy script and afterDeploy hooks;
-      - `ship cut`, for its afterRelease hooks.
-      - Those three start their programs from Node with inherited stdio, so the whole step runs on the terminal: at a terminal their log holds the note line and the closing line, away from one the whole run.
+    - While the child runs, INT is held off: a Ctrl-C at the terminal ends the child, and the log is written; the code is then 130. HUP and TERM are passed on to the child, the log is written when it ends, and the logger exits 129 or 143 (`childEnd`, `lib/child-end.js`).
+    - At the end `plainLog(raw)` is the raw file as a terminal leaves it: each line's text after its last carriage return, its color and title codes removed, a line of blanks empty, every line closed by a newline.
+    - The line `workkit <name>: exit <code>` follows, and the file is written beside the log first, then moved onto it (`writeWhole`). So the next run replaces the last, and two runs at once never mix.
+    - A log folder that cannot be made, or a raw file that cannot be written, is the one line `workkit: could not write <file>, so <name> runs without its log`, and the command runs unlogged in the same process, with its own code.
+    - A log that cannot be moved into place is `workkit: could not write <file>`; the code is still the child's.
+    - A bad `logs.dir` exits 1 on its line, the command not run.
+  - A call made with `WK_COMMAND_LOGGED` set is never logged again (`main.js`), so a step of a logged run writes no file of its own, and a `workkit` call under a logged command is in the outer log.
+  - The terminal steps (`ship cut`, `ship publish`, `ship deploy`) start a program handed the terminal, which may ask there: `npm publish`'s one-time password, the deploy script, the afterRelease, afterPublish and afterDeploy hooks.
+    - Where the call's own stdout or stderr is a terminal, the logger starts that child with the terminal itself, no pipes, and its log holds the one line `workkit: <name> ran on the terminal and is not in this log` and the closing line.
+    - Anywhere else (an agent's call, CI, a pipe) the run is logged whole.
+  - `secretStep(kit, what, start)` is a step that shows a secret, kept out of the log wherever a log holds the call's streams, at a terminal or not, so no token or sign-in code reaches a file:
+    - the token mint, `claude setup-token` under its pty (`workkit/secrets.js`);
+    - the bot identity's sign-in, `identity/login.js` (`workkit/identity.js`).
+    - Unlogged it runs as any step. Under a logged command its program runs on the terminal device as its stdout and stderr, and the log gets the one line `workkit: <what> ran on the terminal and is not in this log` in its place.
+    - With no device (an agent's call, a cloud session) it runs on the call's own stdout and stderr. The command marks where the step begins and ends in each of its two streams; the logger passes those bytes on, keeps them out of the log, and removes the marks, a mark split across two chunks included. The log gets the same one line.
+    - So `workkit setup --login` on a pipe still shows its one-time code, and `setup.log` holds no part of it.
+    - Only with `WK_COMMAND_LOGGED` set and nothing reading the marks (`WK_COMMAND_MARKS` unset) is it skipped: `<what>: skipped; this command's output is not on a terminal`, its program not started.
     - The kit starts no `gh auth login`; it only names it.
     - The bot token client, `identity/token.js` in the `gh` shim, keeps the shim's streams: under a logged command its stderr is the log's pipe, so it offers no sign-in, and its line names `workkit setup --login`.
-  - `wk_spin` and `wk_poll` draw their frames on the call's own stderr, 8 under a command log, else 2 (`wk_spin_fd` in `lib/voice.sh`, through `_wk_terminal_held` here when this file is loaded), so a spinner shows at the terminal and no frame enters the log.
-    - Their Node halves pick the same way (`spinFd` in `lib/spin.js`): 8 when `WK_COMMAND_LOGGED` is set and 7, 8 and 9 are open.
-      - On Windows Git Bash hands a native node only 0, 1 and 2, so there a Node spinner under a command log draws on 2, the log's pipe, so no frames unless `WORKKIT_SPIN=1`.
+  - A spinner and the poll's countdown under a logged command draw on the terminal device `WK_COMMAND_TERMINAL` names (`spinFd` in `lib/spin.js`), so a spinner shows at the terminal and no frame enters the log.
+    - With the variable unset, or a device that does not open, they draw on stderr, and only when stderr is a terminal, as an unlogged command does.
+    - In Git Bash's own window a native Node sees no terminal at all, so no frames draw there; in cmd, PowerShell and Windows Terminal the device is `CONOUT$`.
+- `lib/child-end.js`:
+  - `childEnd(child, { reraise })` waits on a child as a shell waits on its foreground command, and answers `{ code, signal }`: its code (a signal's as 128 + its number), and the HUP or TERM this process caught.
+    - While it waits, INT is held off (the terminal gave it to the child too), and HUP and TERM are passed on to the child.
+    - A child that died by INT ends this process as by that INT, as bash does: its own INT handlers run, and with none it dies by the signal. `reraise: false`, the command log's own wait, answers that death as 130 instead, so the log is still written.
+  - Its callers: `nodeRun` (`workkit/kit.js`), the command log, `workkit test`'s npm and the token mint's pty.
+- `lib/bounded.js`:
+  - `bounded(command, args, { bound, stdio, ...options })` runs one program to its end, stdin closed and both streams read by default, and answers `{ status, output, stdout, stderr, timedOut }`, `output` in the order the bytes came.
+    - Past `bound` milliseconds its whole tree is ended (`endTreeOf`, `lib/tree.js`) and it answers 124, as `timeout` exits; a hang is a failure with no code of its own.
+    - A failed start answers 127 (`startFailed`) with `<command>: <message>` in `output` and `stderr`.
+    - A `bound` that is not a finite number above 0 throws a `TypeError` before anything starts.
+  - `secondsOf(value, fallback)` is the rule a bound's variable is read by: a positive number of seconds, else the default, so a bound set wrongly (0, negative, junk, empty) is the default's.
+    - Its readers: `WORKKIT_GH_TIMEOUT` (`kitOf` in `workkit/kit.js`, and the morning's marker read in `jobs/morning/marker.js`), `WORKKIT_JOB_TIMEOUT` (`jobTimeout` in `jobs/lib/machine.js`) and `WORKKIT_HOME_POLL_INTERVAL` (the categories poll in `home/services.js`, where 0 would check back to back).
+  - `nonNegativeOf(value, fallback)` is the rule a wait's variable is read by: a finite number of 0 or more, else the default, so unset, blank or junk is the default's and 0 stays 0.
+    - Its readers: `WORKKIT_PAGES_WAIT` (`kitOf` in `workkit/kit.js`), `WK_LAUNCH_WAIT` and `WK_END_WAIT` (`lib/run-lock.js`), `WORKKIT_CUT_RELEASE_TIMEOUT` and `WORKKIT_CUT_RELEASE_POLL` (`releaseWait` in `ship/cut.js`), and `WORKKIT_CI_WATCH_WAIT` (`ship/watch.js`, whose `WORKKIT_CI_WATCH_TRIES` is a whole number of 1 or more, else 6).
+  - Its callers: the cloud brief's secrets listing (`workkit/secrets.js`), the bot identity's install lookup (`workkit/identity.js`), the token handover's reads (`workkit/token.js`), and the jobs' children through `bounded` of `jobs/lib/machine.js`, which adds the jobs' default bound.
 - `public/`:
   - Each script calls `gh` by name, so the shim (and in the cloud `identity/rest.js`) answers it.
   - `intake.js`: each open public issue with no `status:` label becomes a private `status:inbox`, `type:idea` issue.
@@ -1031,7 +1045,7 @@
   - `homeUserDir(home)` is `.workkit` under the home, with `WORKFLOW_HOME` never read.
     - The tower's roster and the site's slug list read it so.
     - That is why the cloud morning pins `WORKFLOW_HOME` to that folder.
-  - `towerDir(dir)` is the tower clone, `tower/` in the machine folder (`userDir()` by default), `wk_tower_dir`'s rule; the heal's state step and the tower's repo list read it.
+  - `towerDir(dir)` is the tower clone, `tower/` in the machine folder (`userDir()` by default), its one spelling; the heal's state step, the tower's repo list and the capture command read it.
   - `WORKKIT_DIR` is the folder's name, `.workkit`, in a home and in every repo alike.
   - It requires nothing beyond Node.
 - `identity/app.js`:
@@ -1170,15 +1184,8 @@
   - `release view` reads the tag's release or the latest. A 404 is gh's `release not found`.
   - `release create` is refused before any call, exit 1, since the proxy refuses every release write.
     - The line: `gh: a cloud session cannot create a release (the proxy refuses release writes); CI's release job makes it when the release commit reaches the default branch`.
-- `home.sh`:
-  - Sourced, never executed: `WK_HOME_PAGES_BRANCH` (`gh-pages`) and eleven one-line functions, the names the kit's shell calls.
-    - `wk_home_setup`, `wk_home_doctor`, `wk_home_runner_doctor`, `wk_home_slug`, `wk_site_host`, `wk_home_set_slug`, `wk_home_state`, `wk_home_ready`, `wk_home_catch_up`, `wk_home_seed_runner`, `wk_home_commit_push`.
-    - `WK_HOME_PAGES_BRANCH` and `PAGES_BRANCH` in `home/options.js` are twins by design, since later shell still reads the shell name: each comment names the other, and a case in `test/hooks/twins.test.js` holds them equal.
-  - Each hands its verb, every argument with it, to one private helper, `_wk_home_run`, which runs that verb of `home.js` through `run_at_floor` (`lib/platform.sh`) in a subshell, since `run_at_floor` ends in `exec`.
-    - The helper hands over the caller's voice too, `QUIET`, `WK_LOG_INDENT` and `WK_LOG_STDERR`, since a shell caller keeps them in shell variables.
-  - It holds no rule.
 - `home.js`:
-  - `node home.js <verb> [argument]`, one verb per function of `home.sh`, each with its code:
+  - `node home.js <verb> [argument]`, each verb with its code:
     - `setup [force]`: 0, or 1 for a forced run that stopped; `doctor` and `runner-doctor`: the count of lines that need attention;
     - `slug`, `host`: the value on stdout, an empty line for none, 0; `set-slug <slug>`: 0, or 1 for a failed write;
     - `state`: one word, `unset`, `absent`, `clone` or `other`; `ready`: 0 only for `clone`;
@@ -1189,7 +1196,7 @@
     - `slug()` for the repo (`homeSlug` of `lib/settings.js`);
     - `siteHost()` for the custom domain, with its scheme and any trailing slash off;
     - `siteSidebar()` for the sidebar groups `publish/build.js` merges.
-  - The publish reads `siteHost()` for the CNAME and the path prefix, and `setup` reads it (`wk_site_host`) for the published site's URL.
+  - The publish reads `siteHost()` for the CNAME and the path prefix, and `setup`'s token handover reads it through `node home.js host` (`homeValue` in `workkit/secrets.js`) for the published site's URL.
 - `home/`:
   - CJS, each required by `home.js`, by its neighbours or by the publish, and none run by itself.
   - `options.js`: the constants (`PAGES_BRANCH`, the seed's source `towerApp()`, the kit `kitDir()`, the machine's `settingsFile()`, which `publish.js` reads too), the site options and the clone's state.
@@ -1210,7 +1217,7 @@
     - The sync hands back `{ code, manifests }` and the category check the missing names, so each second answer comes back with its call.
 - `publish.sh`:
   - The starter: it finds a node at the kit's floor through `run_at_floor` (`lib/platform.sh`) and hands `publish.js` every argument.
-  - The `workkit` command and the suites start it by path; the morning job starts `publish.js` itself, under its own node.
+  - The suites and the publish's failure line name it by path; the `workkit` command and the morning job start `publish.js` itself, each under its own Node.
 - `publish.js`:
   - `node publish.js [--quiet]`: 0, or 1 for a failed source push, install, mint or build.
   - `--quiet` is `setQuiet` of `lib/voice.js`, for this process alone; a `QUIET=1` already in the environment keeps the run quiet too.
@@ -1321,7 +1328,7 @@
     - With `CI` set, a green run writes nothing and exits 0, also when its tree changed during it or could not be hashed, and prints only the `CI` line (`docs/project-state.md` § The proof): `script-shell: the suite passed, but CI is set, so no record was written; run npm test again without CI`.
     - A red run prints no `CI` line.
   - Its stdout and stderr go to the suite log, truncated per run, which the foreground tails to stdout.
-    - The log is `suite.log`, placed as the `lib/suite.sh` entry's `wk_log_path` places it.
+    - The log is `suite.log`, placed as `logPathOf` places it (the `lib/run-paths.js` entry).
     - The body's last line is always `script-shell: exit <code>` (`bodyEnd` in `lib/body.js`); a HUP, INT or TERM ends it at its next step, with 129, 130 or 143 and no record.
     - The suite writes to that file, never to a terminal. So a colour or reporter choice that looks for a terminal sees none, and the file is plain; the tail paints it for a terminal (`lib/attach.js`).
   - npm's exit code is the script's, with one exception.
@@ -1352,22 +1359,23 @@
 - `prove.js`:
   - The ship runs it instead of the root `npm test` when the folder holds work the commit leaves out.
     - That is when, after staging, `git diff --quiet` fails or `git ls-files --others --exclude-standard` prints a file.
-  - `workkit.sh` starts it through `run_at_floor` (`lib/platform.sh`); with no node at the floor it prints `prove: no node at or above <floor> is installed`, exit 1.
+  - The command starts it as its child, with the Node it runs on; a Node below the floor gets the command's floor line, exit 1 (§ The one command).
   - Any argument prints `prove: takes no arguments (usage: workkit prove)`, exit 2.
   - With `CI` set it stops before the copy, since its only product is the record and a run with `CI` set writes none (`docs/project-state.md` § The proof).
     - It prints `prove: CI is set, so no record would be written; run workkit prove again without CI` on stderr, exit 1, and runs no suite.
   - Run at the repo root with no arguments, it adds a detached worktree of HEAD outside the repo, at `copy` in a run folder of its own (`proofDir` in `lib/proof-dir.js`, `~/.cache/workkit/proof/<id>`).
     - The add goes through `worktreeAdd` in `lib/tree-copy.js`, the shared add that tries three times against a racing one.
-  - It checks the whole index's tree out into it.
+  - It checks the whole index's tree out into it (`checkOut` in `lib/tree-copy.js`).
     - That is `write-tree` on a scratch copy of the index (`copyIndex` in `lib/tree-hash.js`).
     - So the real index is never written, nor blocked by a held `index.lock`.
     - The record and the before/after compare use the same copy's id less `.workkit/`, through `writeTree`.
-  - It fills the copy from the live folder with only the paths an ignore pattern matches (`fillCopy` in `lib/tree-copy.js`).
+  - It fills the copy from the live folder with only the paths an ignore pattern matches (`fillIgnored` in `lib/tree-copy.js`).
     - That is the fill red-proof uses, its relink of each package's `node_modules` included on every platform.
     - So an untracked or unstaged file stays out of the copy.
   - A copy whose tree is not the index's runs nothing.
   - The suite runs there as `npm test --script-shell=<sh>`, the `sh` `onPath` finds.
     - So the copy writes no record of its own.
+    - Its `WORKFLOW_CLAUDE_HOME` is an empty folder in the run folder (`proofClaudeHome`), beside the copy, so a start in the copy never points the machine's engine address at it; the rest of the env is the caller's.
   - On green, with the copy's tree unchanged, the index's tree is recorded for the real repo (`writeSuiteRecord` in `lib/records.js`).
   - The working folder and the index are never changed.
   - The copy is removed on every exit (`worktreeRemove`, the shared removal beside the add), and its run folder with it.
@@ -1385,7 +1393,7 @@
 - `supervise.js`:
   - `workkit supervise -- <command> [args...]` runs any command the way the root `npm test` runs: detached, read by the supervisor, its output tailed to the call.
     - A lane or a build started in the background goes through it (`../docs/agents.md` § Watching a run).
-  - `workkit.sh` starts it through `run_at_floor` (`lib/platform.sh`); with no node at the floor it prints `supervise: no node at or above <floor> is installed`, exit 1.
+  - The command starts it as its child, with the Node it runs on; a Node below the floor gets the command's floor line, exit 1 (§ The one command).
   - A call with no `--` or no command prints `usage: workkit supervise -- <command> [args...]`, exit 2.
   - Outside a git repo it prints `supervise: not inside a git repository`, exit 1.
   - A command that is supervised itself (an `npm test`, `workkit test`, `workkit prove`, another `workkit supervise`) still runs under it.
@@ -1398,15 +1406,15 @@
     - The command is a program, started as `runHere` (`lib/attach.js`) starts one: a file with no `#!` line is started again by `sh -c`, found as a shell finds it and run as a script; one that cannot start is one line naming it and a shell's code, `detach: <cmd>: command not found` and 127, or `detach: <cmd>: cannot be run (<reason>)` and 126 for a file that is not executable or a folder.
     - A shell builtin is no program, so `workkit supervise -- exit 3` is `command not found`, 127.
   - It has its own log and lock (`runPaths(root, 'run')` in `lib/run-paths.js`), beside the root run's.
-    - The log is `run.log`, placed as the `lib/suite.sh` entry's `wk_log_path` places it.
+    - The log is `run.log`, placed as `logPathOf` places it (the `lib/run-paths.js` entry).
     - So one supervised run goes at a time per repo, beside the suite's own.
     - A second prints `supervise: a supervised run is already running (pid <N>); its output is in <log>`, exit 1.
   - The call exits with the command's own code, 124 after a frozen end, or 125 on a look with the run going on (`docs/tests.md` § The checks).
   - An INT ends the whole run, a child in its own session included, and exits 130 (`lib/runs.js`); a kill of the calling shell leaves it running to its end.
-  - Its entry in `WORKKIT_COMMANDS` is `none`, so the kit keeps no rule for it: it runs any command, so Claude Code checks the call the way it checks any command.
+  - Its entry in `COMMANDS` (`workkit/command-list.js`) is `none`, so the kit keeps no rule for it: it runs any command, so Claude Code checks the call the way it checks any command.
 - `watch.js`:
   - `workkit watch [--end] [suite|run|<pid>]` attaches the call again to the repo's live run.
-    - `workkit.sh` starts it through `run_at_floor` (`lib/platform.sh`); with no node at the floor it prints `watch: no node at or above <floor> is installed`, exit 1.
+    - The command starts it as its child, with the Node it runs on; a Node below the floor gets the command's floor line, exit 1 (§ The one command).
     - Any other argument prints `usage: workkit watch [--end] [suite|run|<pid>]`, exit 2.
     - Outside a git repo it prints `watch: not inside a git repository`, exit 1.
   - With no name it follows the suite's run when that run is live, else the supervised one, else the one live narrowed run, each run's log and lock `runPaths`' (`lib/run-paths.js`).
@@ -1437,7 +1445,7 @@
     - Once 30 seconds have passed since the request, a supervisor that never answered (no `ending` file) or whose end failed (its `ending` file gone again) prints `watch: the run did not end; its supervisor is pid <N>`, exit 1. One that is ending its run is waited for while it lives.
     - A supervisor gone that left no answer (`askEnd`'s 2) prints `watch: the run's supervisor (pid <N>) is gone and left no answer`, exit 1.
     - On a narrowed run it clears the slot only when the call that started it, the slot's `script-shell.js` Node process, is gone; a call still attached to the run clears its own slot and exits 143.
-  - The kit's allow rule `Bash(workkit watch:*)` (its `allow` entry in `WORKKIT_COMMANDS`, made a rule in `ALLOW_RULES`, `workkit/allow.sh`) covers the verb, so it runs as its own Bash call: the rule matches the bare call alone.
+  - The kit's allow rule `Bash(workkit watch:*)` (its `allow` entry in `COMMANDS`, made a rule in `ALLOW_RULES`, `workkit/allow.js`) covers the verb, so it runs as its own Bash call: the rule matches the bare call alone.
 - `githooks/`:
   - The heal (`standards/githooks.js`) sets them as `~/.claude/workkit/githooks`, through the engine link.
     - Where the link is missing, it sets this folder itself.
@@ -1548,11 +1556,20 @@
     - `safety:release-taken` (`hooks/mods/release-taken.js`) imports `skipReason`, the rule for which packages publish.
   - Its lines and refusals speak as `publish-plan:`.
 - `ship/publish.js`:
+  - It publishes what HEAD holds, never work the commit left out.
+    - A folder equal to HEAD (no tracked file changed, staged or not, and no untracked file git does not ignore), or a root in no git repository, publishes in place.
+    - A folder that differs makes one detached worktree of HEAD in a new run folder (`proofDir` in `lib/proof-dir.js`), checked out and filled with the repo's gitignored files as `prove.js` fills its copy (`checkOut` and `fillIgnored` in `lib/tree-copy.js`).
+      - Those files (a build output, `node_modules`) come from the folder, so a build output no publish script rebuilds is the folder's, not HEAD's.
+      - The filled copy's tree must still be HEAD's (`treeId` against `indexTreeId` of the copy, `lib/tree-hash.js`); a file HEAD's ignore rules do not ignore, filled by the folder's, refuses it.
+    - It prints `publish-plan: the folder differs from HEAD (<N> paths), so this publishes from a copy of <sha7>.` on stderr (`1 path` for one), then runs the plan, the npm check and every publish there; a `--dir` member maps to its own path inside the copy.
+    - The copy and its run folder are removed on every return, a failed publish included; a worktree git still lists after the removal prints `publish-plan: git still lists the removed worktree <copy> (run git -C <root> worktree prune).`
+    - A copy it cannot make or fill exits 1 with `publish-plan: could not make a copy of <sha7> to publish from (<why>); nothing was published.`, never falling back to the folder.
   - It prints the plan `plan.js` prints, then publishes it in order from the root.
   - It asks npm first whether each version is already out: a `skipped` line, and the run goes on.
   - It stops at the first failed publish, naming what was and was not published.
   - A run that published at least one package and exits 0 then runs the afterPublish hooks (`ship/hooks.js`) of the repo `--dir` sits in.
     - They are read from its git top level, so a run from a member folder reads the root's `.workkit/settings.json`.
+    - They run at the real repo root, a publish from a copy included.
     - One failing prints `publish-plan: <N> published; an afterPublish hook failed.` and exits 1.
   - A run that publishes nothing, or fails, runs none.
   - It never runs `prepare`.
@@ -1572,7 +1589,7 @@
   - Before any wait, a version with no `chore(release): <x.y.z>` commit and no release yet stops the cut, exit 1, no hook run.
     - The line is `ship-cut: v<x.y.z> has no release commit; nothing for CI to release`.
     - One released before it had a release commit still runs its hooks.
-  - The wait asks every `WORKKIT_CUT_RELEASE_POLL` seconds (10), for `WORKKIT_CUT_RELEASE_TIMEOUT` seconds in all (600, the `<n>` of its failure line).
+  - The wait asks every `WORKKIT_CUT_RELEASE_POLL` seconds (10), for `WORKKIT_CUT_RELEASE_TIMEOUT` seconds in all (600, the `<n>` of its failure line); a value that is not a finite number of 0 or more counts as unset (`nonNegativeOf` in `lib/bounded.js`).
     - Every version of the cut shares that one budget.
   - It first waits for every earlier version with a release commit but no release.
     - It walks down from the newest earlier one to the first released. None released waits for nothing.
@@ -1640,7 +1657,7 @@
       - a `hooks` in any layer that is no object;
       - a `hooks.<event>` of the wrong shape: not an array, an entry with no non-empty string `command`, or a `local` that is not `true` or `false`.
 - `ship/watch.js`:
-  - It requires the kit's ES modules, so `workflow/workkit/ship.sh` starts it as `supervise` and `watch` start, through `run_at_floor` (`lib/platform.sh`); with no node at the floor it prints `ship watch: no node at or above <floor> is installed`, exit 1, before its usage is read.
+  - The command starts it as its child, as `supervise` and `watch` start; a Node below the floor gets the command's floor line, exit 1, before its usage is read.
   - It expands a sha shorter than 40 characters to the full commit id, since `gh run list --commit` matches only that.
     - It uses `git rev-parse --verify --quiet <sha>^{commit}` from the repo root.
     - A full sha is used as given.
@@ -1671,7 +1688,7 @@
   - The watch runs detached through `run` (`lib/runs.js`) in process, as this file again in its `--watch-body <sha>` mode under the same node.
     - So a kill of the invoking shell leaves it going to its answer.
     - Its output, stdout and stderr alike, goes to the CI log, truncated per call.
-    - The log is `runPaths(root, 'ci')`'s (`lib/run-paths.js`): `ci.log`, placed as the `lib/suite.sh` entry's `wk_log_path` places it.
+    - The log is `runPaths(root, 'ci')`'s (`lib/run-paths.js`): `ci.log`, placed as `logPathOf` places it.
     - A bad `logs.dir` is `logDirOf`'s line and exit 4, no answer, nothing watched.
     - The output reaches the terminal on stdout through the tail, every line above included.
     - Its first line is `ci-watch: watching <sha>`.
@@ -1708,26 +1725,28 @@
   - A folder outside a repo, or a working diff git cannot list, exits 2 with one `review-covers:` line (`docs/hooks.md` § `safety:commit-gate`).
   - It and `review/mark.js` key the marker in Node (`markerPath` in `hooks/mods/markers.js`), so neither needs `shasum` or `sha1sum`.
 - `proof/red.js`:
-  - `workkit.sh` starts it through `run_at_floor` (`lib/platform.sh`); with no node at the floor it prints `red-proof: no node at or above <floor> is installed`, exit 2, since its 1 means green.
+  - The command starts it as its child, with the Node it runs on; a Node below the floor gets the command's floor line, exit 2, since its 1 means green (§ The one command).
   - It runs the command against the named paths as the claim's snapshot holds them.
     - That is in a worktree copy (`copyPlace` in `proof/place.js`), or, with `--live` as the first word, swapped in the live tree (`livePlace`).
     - Either mode's run folder is `proofDir`'s (`lib/proof-dir.js`), under `~/.cache/workkit/proof`, removed on every exit but one: a `--live` run that cannot restore the live tree keeps it.
     - Each place answers the folder the command runs in and a `restore()` that leaves the live tree and the worktree list as they were.
+    - In the copy mode the command's `WORKFLOW_CLAUDE_HOME` is an empty folder in the run folder (`proofClaudeHome`), as `prove.js` hands its suite; a `--live` command keeps the caller's.
+    - In the copy mode its `npm_config_script_shell` is also the `sh` on PATH (`onPath`), so an npm there runs its script with plain sh, needs no wrapper behind that Claude home and writes no record, as in `workkit prove`; with no `sh` on PATH, and in `--live`, it is the caller's.
   - The command's stdout and stderr stream live, each on its own stream, and are kept for the reading.
   - Red exits 0, green 1, and any other stop 2 with a `red-proof:` line. A `--live` run a HUP, INT or TERM ends exits 129, 130 or 143 once its command has ended, the live tree restored.
   - The copy, the copy mode's end on a HUP, INT or TERM, the stop on a reader of stdout or stderr that closes, the load check, the summary check and the limits are `docs/agents.md` § Crew sizing; the names they run through are below.
-  - The load check reads a missing module in its three spellings before it compares it with the named paths, a workspace link's through `physical` (which a named path is read through too) and a bare specifier's through `modulePath`.
+  - The load check reads a missing module in its four spellings before it compares it with the named paths, a workspace link's through `physical` (which a named path is read through too), a bare specifier's through `modulePath`, and a scratch link's under the temp folder through `scratchNamed`, which reads it as a named path only when the copy lacks that path.
   - The failures it judges are `loadFailures({ out, err })` in `proof/reading.js`: each `{ spec, from }` of a `Cannot find module` or `Cannot find package` line.
   - It hands the summary file (`docs/tests.md` § The kit's runner) to the command, and `summaryOf({ out, err, file })` in `proof/reading.js` sums its lines.
 
 ## The one command
 
-- `workkit.sh` is the front door.
-- From zero on a new machine, the whole recipe is a clone and one line:
+- `workkit.js` is the front door, a Node program; its entry, its floor check and its route are the `workkit.js` entry above.
+- From zero on a new machine, the whole recipe is a clone and one line, run with a Node at the kit's floor (22.22) first on PATH:
 
 ```sh
 git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
-./workflow/workkit.sh setup
+node workflow/workkit.js setup
 ```
 
 - `setup` installs the plugin from this kit when the `claude` CLI is present and does not have it.
@@ -1743,7 +1762,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - On Windows it first builds `script-shell.exe` from `script-shell.cs` into `~/.workkit`, with the compiler every Windows ships.
   - It then points npm at that, in git's spelling.
   - A machine without the compiler gets one skip line, and nothing is set.
-- It adds each of the kit's allow rules and ask rules missing from `~/.claude/settings.json`, made from `WORKKIT_COMMANDS` (the `workkit/command-list.sh` entry).
+- It adds each of the kit's allow rules and ask rules missing from `~/.claude/settings.json`, made from `COMMANDS` (the `workkit/command-list.js` entry).
   - Every other key is untouched, and a file already holding them all is never written.
 - It installs the 9am schedule through `jobs/install.js`: a launchd agent on a Mac, a Task Scheduler task on Windows, and one skip line on any other system.
 - It creates the home repo, and clones the tower project into `~/.workkit/tower`.
@@ -1752,9 +1771,12 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 - It says where the tower is started.
 - It hands this machine's `gh` login token to the dashboard it just published.
 - It offers to enable the repo the shell is standing in.
-- It symlinks itself to `~/.local/bin/workkit`, and the `gh` shim to `~/.local/bin/gh` beside it.
-  - Where that directory is not on the PATH it prints the one `export` line to add.
-  - It never edits a shell rc.
+- It symlinks itself (`workkit.js`) to `~/.local/bin/workkit`, and the `gh` shim to `~/.local/bin/gh` beside it.
+  - A link there that names anything else, an old `workkit.sh` included, is repointed; a real file there is left, with a warning to move it aside.
+  - On Windows it also writes `~/.local/bin/workkit.cmd` from the `workkit.cmd` template, so cmd and PowerShell find the command; the file ends in CRLF and is rewritten only when its text differs.
+  - `{{ENGINE}}` is the engine's address in its Windows form (`<claude home>\workkit`), so a plugin update that repoints the address needs no rewrite.
+  - Where that directory is not on the PATH it prints the one `export` line to add; on Windows the line names the folder in its Windows form, to add in Windows' own settings.
+  - It never edits a shell rc or a person's PATH.
 - Every step checks before acting, so a second `setup` reports nothing to do.
 - `setup` and `doctor` say all of that in titled sections, one blank line apart, in the order the steps run:
   - **This machine** (plugin, gh, the three links, the kit's allow and ask rules, the schedule);
@@ -1765,53 +1787,53 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - **This repo**.
 - Each title is a bold line opening with its emoji.
 - `update --auto` prints neither the titles nor the blank lines.
-  - A session-start injection stays terse, and `QUIET` is what silences them.
+  - A session-start injection stays terse, and the run's own quiet (`setQuiet`, `lib/voice.js`) is what silences them.
 - The line shape, the levels, the color rule and the spinner are all [Output](#output) below.
 
 | Command | What it does |
 |---|---|
 | `workkit help` | the map (also what a bare `workkit` prints) |
-| `workkit setup` | the wizard above, the only path that installs a schedule for the first time; its This repo section, in an enabled repo, sets git's commit hooks when they are not set (`standards.sh --git-hooks`), then says `git hooks: installed (<path>)`, or warns `git hooks: not installed; run workkit setup` when they still are not |
+| `workkit setup` | the wizard above, the only path that installs a schedule for the first time; its This repo section, in an enabled repo, sets git's commit hooks when they are not set (`standards.js --git-hooks`), then says `git hooks: installed (<path>)`, or warns `git hooks: not installed; run workkit setup` when they still are not |
 | `workkit setup --token` | the wizard's Claude-token step alone, forced: mint a `CLAUDE_CODE_OAUTH_TOKEN` and push it to the home repo however young the one there is: the flag IS the yes, so there is no age check and no question. Nothing else of setup runs. A token that went bad while young (a lapsed subscription) is what the age check cannot see |
 | `workkit setup --login` | the wizard's sign-in step alone, forced: `identity/login.js` signs in to GitHub through the device flow, the browser opened to the device page, so the agent's bookkeeping posts as `workkit-agent[bot]`, replacing any sign-in already here. It runs the sign-in with or without a terminal. Nothing else of setup runs ([The bot identity](#the-bot-identity)) |
 | `workkit setup --bot` | the wizard's App install step alone, forced; nothing else of setup runs ([The bot identity](#the-bot-identity)) |
 | `workkit setup --home` | the wizard's home repo step alone, forced; nothing else of setup runs ([The home repo's lifecycle](#the-home-repos-lifecycle)) |
 | `workkit setup --cloud` | the wizard for a cloud session (claude.ai/code, `CLAUDE_CODE_REMOTE=true`) |
-| `workkit update` | re-runs the machine-side installs: the engine address, the two `~/.local/bin` symlinks (`workkit` and the `gh` shim), npm's `script-shell`, the kit's allow and ask rules in `~/.claude/settings.json`, and the schedule |
+| `workkit update` | re-runs the machine-side installs: the engine address, the two `~/.local/bin` symlinks (`workkit` and the `gh` shim) and on Windows `workkit.cmd`, npm's `script-shell`, the kit's allow and ask rules in `~/.claude/settings.json`, and the schedule |
 | `workkit update --auto` | the quiet variant the standards hook runs; prints only what it changed |
 | `workkit doctor` | reports drift, with the fix command for anything out of its reach |
 | `workkit publish` | builds the tower project and pushes the site to the home repo's `gh-pages` branch; the daily job runs the same script after the brief |
 | `workkit brief` | today's brief, asked for now: the same `gh workflow run brief.yml` dispatch the 9am schedule makes, through the same one function (`jobs/brief-dispatch.js`) and the same secret guards. A human is standing here, so a refusal names its reason and exits 1 rather than being logged and carried past, and a dispatch that lands prints where to watch the run |
-| `workkit brief --local` | the rehearsal instead: `jobs/morning.sh --now`, the full local morning with the brief composed and sent from this machine and never posted to the home repo. The other steps still run where they can: the summaries can post their Discussion, and the site publish fires when it is switched on |
-| `workkit enable [repo]` · `workkit decline [repo]` | `standards.sh --enable` / `--decline` under the one name |
-| `workkit heal [repo]` | `standards.sh` with no flag under the one name: the repo's heal, on the shell's own repo or the one named, run NOW: the session hook makes the same pass once a day, and this is how a repo gets it without waiting |
+| `workkit brief --local` | the rehearsal instead: `jobs/morning.js --now`, the full local morning with the brief composed and sent from this machine and never posted to the home repo. The other steps still run where they can: the summaries can post their Discussion, and the site publish fires when it is switched on |
+| `workkit enable [repo]` · `workkit decline [repo]` | `standards.js --enable` / `--decline` under the one name |
+| `workkit heal [repo]` | `standards.js` with no flag under the one name: the repo's heal, on the shell's own repo or the one named, run NOW: the session hook makes the same pass once a day, and this is how a repo gets it without waiting |
 | `workkit tower` | runs the tower here: the JSON API (8693) and the dashboard (4300) together; replaces any previous instance on those ports, and one interrupt ends both |
-| `workkit state [repo]` | `standards.sh --state` under the one name: the repo's participation, one word on stdout (`enabled`, `disabled`, `declined`, `undecided`, `home`, `unreadable` or `nogit`) |
-| `workkit note <text...>` | `wk.sh note`, unchanged |
+| `workkit state [repo]` | `standards.js --state` under the one name: the repo's participation, one word on stdout (`enabled`, `disabled`, `declined`, `undecided`, `home`, `unreadable` or `nogit`) |
+| `workkit note <text...>` | `note.js`, the capture command ([The capture CLI](#the-capture-cli)) |
 | `workkit log [-n N] [--follow]` | the hooks log (`docs/hooks.md` § The hooks log): the last 40 lines, `-n <N>` that many, `--follow` keeps printing new ones |
 | `workkit test [paths] [--filter=<text>]` | hands its arguments to this repo's `npm test`, run at the repo root, so the one recorder, npm's script shell, sees the run |
 | `workkit tools` | prints every command this repo's suites name through `needs()`, one per line, sorted and unique, for a setup to install |
 | `workkit convert [paths...]` | rewrites this repo's suites in the old shape in place onto Node's test functions, one `converted` or `left` line per file (`docs/tests.md` § The kit's runner) |
-| `workkit prove` | `prove.js`, under a node at the kit's floor (`lib/platform.sh`): the root suite on exactly the staged tree, in a copy outside the repo, recorded on green (refused with `CI` set), so a commit of it passes the gate while other work stays in the folder unstaged |
-| `workkit supervise -- <command> [args...]` | `supervise.js`, under a node at the kit's floor (`lib/platform.sh`): the command run detached under the supervisor, as the root suite runs, its output tailed to the call and kept in the run log; it exits with the command's code, or the code of a check's verdict (`docs/tests.md` § The checks) |
-| `workkit watch [--end] [suite\|run\|<pid>]` | `watch.js`, under a node at the kit's floor (`lib/platform.sh`): the call attached again to the live run, the suite's before the supervised one before the one narrowed run, or the one named (a narrowed run by its pid); `--end` asks the supervisor to end it, and with several runs live and no name it refuses, exit 2 |
+| `workkit prove` | `prove.js`, under a node at the kit's floor: the root suite on exactly the staged tree, in a copy outside the repo, recorded on green (refused with `CI` set), so a commit of it passes the gate while other work stays in the folder unstaged |
+| `workkit supervise -- <command> [args...]` | `supervise.js`, under a node at the kit's floor: the command run detached under the supervisor, as the root suite runs, its output tailed to the call and kept in the run log; it exits with the command's code, or the code of a check's verdict (`docs/tests.md` § The checks) |
+| `workkit watch [--end] [suite\|run\|<pid>]` | `watch.js`, under a node at the kit's floor: the call attached again to the live run, the suite's before the supervised one before the one narrowed run, or the one named (a narrowed run by its pid); `--end` asks the supervisor to end it, and with several runs live and no name it refuses, exit 2 |
 | `workkit public intake` · `mirror <N>... \| --all` · `close <version> <N>...` | the public pairing, run from the private repo: `public/intake.js`, `public/mirror.js`, `public/close.js` (the `public/` row above); the triage drain runs the intake, `workflow:public-mirror` and the daily heal the mirror, the ship's close step the close |
 | `workkit ship items` · `release <x.y.z> [--keep N,M]` · `watch <sha>` · `cut <x.y.z>` · `plan` · `publish` · `deploy` | the ship's steps, run by `workkit:ship`: `ship/items.js`, `ship/release.js`, `ship/watch.js`, `ship/cut.js`, `ship/plan.js`, `ship/publish.js`, `ship/deploy.js` (their rows above) |
-| `workkit review covers` · `mark [full]` | the review tier and the review marker: `review/covers.js`, `review/mark.js`, under a node at the kit's floor (`lib/platform.sh`) |
-| `workkit triage mark` | the triage marker: `triage/mark.js`, under a node at the kit's floor (`lib/platform.sh`) |
-| `workkit checkpoint safe` | the checkpoint marker: `checkpoint/mark.js`, under a node at the kit's floor (`lib/platform.sh`) |
-| `workkit proof red [--live] <path>... -- <command>...` | the verifier's red run: `proof/red.js`, under a node at the kit's floor (`lib/platform.sh`) |
+| `workkit review covers` · `mark [full]` | the review tier and the review marker: `review/covers.js`, `review/mark.js`, under a node at the kit's floor |
+| `workkit triage mark` | the triage marker: `triage/mark.js`, under a node at the kit's floor |
+| `workkit checkpoint safe` | the checkpoint marker: `checkpoint/mark.js`, under a node at the kit's floor |
+| `workkit proof red [--live] <path>... -- <command>...` | the verifier's red run: `proof/red.js`, under a node at the kit's floor |
 | `workkit changelog lint <file> [flags]` | the CHANGELOG entry check: `changelog/lint.js` |
 
-- **The commands that do work write a log**, one whole run per file, replaced by the next run (`lib/command-log.sh`):
+- **The commands that do work write a log**, one whole run per file, replaced by the next run (`lib/command-log.js`):
   - `setup` (every form), `update`, `doctor` and `publish` to `~/.workkit/logs/<command>.log`, since they may run outside any repo;
-  - `ship items`, `release`, `cut`, `plan`, `publish` and `deploy` to `ship-<step>.log`, and `proof red` to `proof-red.log`, each placed as the `lib/suite.sh` entry's `wk_log_path` places a log (`logs.dir`, [The two settings files](#the-two-settings-files));
+  - `ship items`, `release`, `cut`, `plan`, `publish` and `deploy` to `ship-<step>.log`, and `proof red` to `proof-red.log`, each placed as `logPathOf` places a log (`lib/run-paths.js`, `logs.dir`, [The two settings files](#the-two-settings-files)); outside a repo they write none;
   - `ship watch` keeps its `ci.log`, and `test`, `prove` and `supervise` their own logs; every other command writes none.
   - A file holds stdout and stderr as plain text, no color code and no spinner frame, and ends `workkit <command>: exit <code>`.
-  - The call shows what it shows without the log: the same color and spinner, the same questions answered from its stdin, its own exit code. The one exception is a `gh` call with no sign-in, which offers none under a logged command (the `lib/command-log.sh` entry).
+  - The call shows what it shows without the log: the same color and spinner, the same questions answered from its stdin, its own exit code. The one exception is a `gh` call with no sign-in, which offers none under a logged command (the `lib/command-log.js` entry).
   - A command run as a step of a logged one in the same call (`setup`'s and `update`'s publish) writes no file of its own; its lines are in the outer log.
-  - A step that shows a secret or signs in (the token mint, the GitHub sign-in) runs on the terminal alone, and the log holds one line saying so in its place (`wk_secret_step`).
-  - At a terminal `ship publish`, `ship deploy` and `ship cut` keep the terminal for npm, the deploy script and the ship hooks, and their log holds that line and the closing line; away from one they are logged whole (`wk_terminal_step`).
+  - A step that shows a secret or signs in (the token mint, the GitHub sign-in) runs on the terminal device, or on the call's own streams between marks the logger keeps out of the log, and the log holds one line saying so in its place (`secretStep`).
+  - At a terminal `ship publish`, `ship deploy` and `ship cut` keep the terminal for npm, the deploy script and the ship hooks, and their log holds that line and the closing line; away from one they are logged whole.
   - A log is moved into place when its run ends, so a call cut off before then has no log of that run to read.
 
 - `workkit setup --bot`:
@@ -1843,6 +1865,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 - `workkit doctor`:
   - It reports on:
     - plugin, gh, the three links (the engine's address, the `workkit` command, the `gh` shim), npm's `script-shell`;
+    - whether `~/.local/bin` is on PATH, and on Windows `workkit.cmd`: ``command: <file> is missing or differs; run `workkit update` `` when it is not the template's text;
     - the `git` shim: present and executable in the kit, and in a session the `git` the PATH finds first;
     - each of the kit's allow rules and ask rules missing from `~/.claude/settings.json`, and each retired one still in it;
     - schedule vintage, the roster count;
@@ -1853,7 +1876,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
     - this repo's state and, in an enabled repo, its git commit hooks.
   - The hooks line is `git hooks: installed (<path>)`, or the warning `git hooks: not installed; run workkit setup`.
   - Every warning counts toward the closing tally, gh's included.
-  - In a cloud session (`wk_is_cloud`) some checks are each one not-applicable line, counted by nothing.
+  - In a cloud session (`isCloud`, `lib/cloud.js`) some checks are each one not-applicable line, counted by nothing.
     - Those are the schedule, the home clone, its runner, the cloud brief's secrets and the sign-in.
     - The rest stay real checks.
 - `workkit test [paths] [--filter=<text>]`:
@@ -1863,28 +1886,28 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 - `workkit tools`:
   - A `needs()` argument that is not a string literal is `✖ tools: <file>:<line>: needs() takes string literals only`, exit 1.
   - An argument to the verb exits 2.
-  - It runs the kit's own `packages/core/bin/workkit.js` with `node` at the repo root, never the repo's installed package.
+  - It runs the kit's own `packages/core/bin/workkit.js` with the command's Node at the repo root, never the repo's installed package.
     - So it answers before `npm install`.
-  - No `workkit-core` beside the engine, or no `node` on PATH, is one error line and exit 1 (`docs/tests.md` § The kit's runner).
+  - No `workkit-core` beside the engine is one error line and exit 1 (`docs/tests.md` § The kit's runner).
 - `workkit convert [paths...]`:
-  - It runs the kit's own `packages/core/bin/workkit.js` with `node` at the repo root through `run_core_bin convert`, the helper `workkit tools` runs through too, its paths read from there.
+  - It runs the kit's own `packages/core/bin/workkit.js` with the command's Node at the repo root, through the one helper `workkit tools` runs through too (`runCoreBin` in `workkit/commands.js`), its paths read from there.
   - A path naming no suite is `No suite matches <arg>`, exit 1, before any file is touched.
-  - No `workkit-core` beside the engine, or no `node` on PATH, is one error line and exit 1.
+  - No `workkit-core` beside the engine is one error line and exit 1.
 - **Upkeep is automatic.** Claude Code has no plugin-install hook, so the trigger is the one this kit owns.
   - The `workflow:standards` SessionStart hook's once-per-day run calls `workkit update --auto`.
-  - It is resolved beside the engine, never through the PATH or the symlink, which are exactly what may not exist yet.
+  - It starts `node <engine>/workkit.js update --auto`, resolved beside the engine, never through the PATH or the symlink, which are exactly what may not exist yet.
   - A moved kit needs nothing, since the schedule reaches its job through the engine's address.
   - A job template that changed is corrected the next morning, instead of waiting for someone to remember the installer.
   - Two boundaries keep that safe:
     - **It only ever UPDATES a schedule a human already installed**: the installer's `--check` saying `not installed` is the one reading of the marker, the installed plist on a Mac and the kept copy of the task file on Windows. A machine with no schedule never gets one at session start.
-    - **It creates no convention it did not find.** `~/.local/bin` is linked when the directory already exists; making it is a human's `setup`, or in the cloud `setup --cloud`'s or `standards.sh --command-link`'s. The same restraint the engine's address shows toward `~/.claude`.
+    - **It creates no convention it did not find.** `~/.local/bin` is linked when the directory already exists; making it is a human's `setup`, or in the cloud `setup --cloud`'s or `standards.js --command-link`'s. The same restraint the engine's address shows toward `~/.claude`.
 - **Setup is pestered for, never performed.** The same hook checks one thing above every gate it has: `~/.local/bin/workkit`, the command `setup` installs.
-  - While that is missing (absent, dangling, or not executable), EVERY session is told to run `bash <engine>/workkit.sh setup` itself before other work.
+  - While that is missing (absent, dangling, or not executable), EVERY session is told to run `node <engine>/workkit.js setup` itself before other work, or `node <engine>/workkit.js setup --cloud` in a cloud session.
     - That holds in a participating repo or no repo at all.
     - The session hands the user only what it prints.
   - There is no daily cache, because a machine without setup has no schedule, no home repo, and no command.
   - The pester stops the moment the link exists, whoever made it.
-  - `standards.sh --command-link` makes the command link alone, for a bootstrap that runs no setup at all.
+  - `standards.js --command-link` makes the command link alone, for a bootstrap that runs no setup at all.
   - A cloud bootstrap that does run setup calls `workkit setup --cloud`, which makes the link itself.
   - It never runs anything itself.
 - The drift question is answered by `jobs/install.js --check`, which renders and compares without asking a scheduler anything.
@@ -1898,27 +1921,26 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
   - a GLYPH says what kind of line it is;
   - the `task:` the line belongs to is bold;
   - the steps sit indented under the title or the section that opened them.
-- `workflow/lib/voice.sh` (sourced through `lib.sh`) is the shell home, and `workflow/lib/voice.js` the Node one, which the tower's logger (`tower/api/lib/log.js`) builds its lines from.
-  - Its `colorOn(stream)` is the Node color gate, which `workflow/lib/attach.js` requires for a run's terminal view.
-  - The two print the same shape.
+- `workflow/lib/voice.js` is its one home, which the command, the heal, the jobs and the tower's logger (`tower/api/lib/log.js`) build their lines from.
+  - Its `colorOn(stream)` is the one color gate, which `workflow/lib/attach.js` requires for a run's terminal view.
+  - The wait line is `lib/spin.js`'s, and the questions are `lib/flows.js`'s.
 
-| Call | Opens with | Color on a terminal | Stream | `QUIET=1` |
+| Call | Opens with | Color on a terminal | Stream | Quiet |
 |---|---|---|---|---|
-| `wk_title "<emoji> workkit setup in <dir>"` | the caller's emoji | bold | stdout | silent |
-| `wk_section "<emoji> This machine"` | a blank line, then the caller's emoji | bold cyan | stdout | silent |
-| `wk_ok "task: message"` | `✓` | glyph bold green, `task:` bold, message plain | stdout | speaks |
-| `wk_skip "task: message"` | `·` | the whole line dim | stdout | silent |
-| `wk_info "task: message"` | `›` | glyph cyan, `task:` bold, message plain | stdout | silent |
-| `wk_warn "task: message"` | `⚠` | glyph and message yellow, `task:` bold yellow | stderr | speaks |
-| `wk_warn_lines task "task: message"` | `⚠` on each non-blank line, each prefixed `task:` | as `wk_warn` | stderr | speaks |
-| `wk_error "task: message"` | `✖` | glyph and message red, `task:` bold red | stderr | speaks |
-| `wk_done "message"` | `✨` | bold green | stdout | silent |
-| `wk_spin "message" <cmd...>` | a braille frame, or `⏳` off a terminal | frame cyan, message plain, `(Ns)` dim | stderr | the static form is silent |
-| `spin(message, run, { line })` (`lib/spin.js`) | as `wk_spin`; with `{ line: false }` no `⏳` line | as `wk_spin` | stderr | the static form is silent |
-| `wk_enter_to_open "<url>" "<label>" "<prompt>"` | the prompt, then `URL:` and a green `?` Enter gate | URL cyan, the no-browser line dim | stderr | speaks |
-| `wk_open_url "<url>"` | nothing when an opener runs; else the no-browser line | dim | stderr | speaks |
-| `wk_ask_yes "<prompt>" <y\|n>` | the prompt, then `[Y/n]` or `[y/N]` by the default | plain | stderr | speaks |
-| `wk_poll "message" <seconds> <check...>` | the dim `(enter)=check now, (s)=skip` hint, then a braille frame counting down, or `⏳` off a terminal | frame cyan, message plain, `(Ns)` dim | stderr | speaks |
+| `title('<emoji> workkit setup in <dir>')` | the caller's emoji | bold | stdout | silent |
+| `section('<emoji> This machine')` | a blank line, then the caller's emoji | bold cyan | stdout | silent |
+| `ok('task: message')` | `✓` | glyph bold green, `task:` bold, message plain | stdout | speaks |
+| `skip('task: message')` | `·` | the whole line dim | stdout | silent |
+| `info('task: message')` | `›` | glyph cyan, `task:` bold, message plain | stdout | silent |
+| `warn('task: message')` | `⚠` | glyph and message yellow, `task:` bold yellow | stderr | speaks |
+| `warnLines('task', 'task: message')` | `⚠` on each non-blank line, each prefixed `task:` | as `warn` | stderr | speaks |
+| `error('task: message')` | `✖` | glyph and message red, `task:` bold red | stderr | speaks |
+| `done('message')` | `✨` | bold green | stdout | silent |
+| `spin(message, run, { line })` (`lib/spin.js`) | a braille frame, or `⏳` off a terminal; with `{ line: false }` no `⏳` line | frame cyan, message plain, `(Ns)` dim | stderr, or the logged command's terminal device | the static form is silent |
+| `enterToOpen(url, label, what)` (`lib/flows.js`) | the prompt, then `URL:` and a green `?` Enter gate | URL cyan, the no-browser line dim | stderr | speaks |
+| `openUrl(url)` | nothing when an opener runs; else the no-browser line | dim | stderr | speaks |
+| `askYes(prompt, 'y' \| 'n')` | the prompt, then `[Y/n]` or `[y/N]` by the default | plain | stderr | speaks |
+| `poll(message, seconds, check)` | the dim `(enter)=check now, (s)=skip` hint, then a braille frame counting down, or `⏳` off a terminal | frame cyan, message plain, `(Ns)` dim | stderr, or the logged command's terminal device | speaks |
 
 - The `task:` is the first word of a message that reads `<word>: <rest>` (`engine:`, `command:`, `schedule:`, `gh:`, `site:`).
   - The renderer splits it off and paints it.
@@ -1927,43 +1949,36 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 - A title, a section and the closing line carry an EMOJI the caller picks for what that part of the command does.
   - One per section name, the same one wherever that section appears.
 - A command opens with its title, groups its steps under sections, and closes on the answer to "is there anything for me here?".
-  - `wk_done` when there is not, and a `wk_warn` naming the count when there is.
-- `wk_title` and `wk_section` set the two-space indent every level line under them carries.
-  - A script that prints neither (`standards.js`, `wk.sh`, the jobs) sets `WK_LOG_INDENT` itself, or stays flush left, as it always did.
-- Color is a terminal's affordance and nothing else's. `lib/voice.sh`'s `wk_color_on` is the one gate.
+  - `done` when there is not, and a `warn` naming the count when there is.
+- `title` and `section` set the two-space indent every level line under them carries, for their own process alone.
+  - A program that prints neither (`standards.js`, `note.js`, the jobs) sets `WK_LOG_INDENT` itself, takes its caller's, or stays flush left.
+- Color is a terminal's affordance and nothing else's. `colorOn` in `lib/voice.js` is the one gate.
   - It says no to a pipe, to `NO_COLOR`, and to a `dumb` TERM.
   - So a log file, a captured hook payload and a piped run get the same glyphs and the same words with no codes, byte for byte.
   - `WORKKIT_COLOR=1`/`0` overrides the tty question either way, which is how the suites read the styled shape back.
-  - The Node half applies the same rule to `process.stdout.isTTY`.
 - Two variables bend the rest, and nothing else does.
-  - `QUIET=1` in the caller silences the lines that only report, which is what `update --auto` and the session-start heal lean on.
-  - Under `QUIET=1` an action, a warning and a stop still speak.
-  - `WK_LOG_STDERR=1` puts every level on stderr, for a caller whose stdout is a MACHINE answer (`standards.sh --state`).
-- A line relayed from another part of the kit goes through `wk_plain` first, which takes the indent and the glyph off.
+  - `QUIET=1` in the caller, or `setQuiet(true)` in the process, silences the lines that only report, which is what `update --auto` and the session-start heal lean on.
+  - Under quiet an action, a warning and a stop still speak.
+  - `WK_LOG_STDERR=1` puts every level on stderr, for a caller whose stdout is a MACHINE answer (`standards.js --state`).
+- A line relayed from another part of the kit goes through `plain` first, which takes the colors, the indent and the glyph off.
   - So the relay re-says it under its own glyph, rather than letting a line wear two.
-- **A spinner on every awaited call.** `wk_spin "<message>" <command...>` wraps each awaited call:
+- **A spinner on every awaited call.** `spin(message, run, { line })` in `lib/spin.js` wraps each awaited call and hands back what `run` answers:
   - each `gh` call, each `git clone` / `fetch` / `pull` / `push`;
   - the publish build, the Pages poll and the launchctl and `schtasks` waits.
-  - On a terminal it animates omega's braille frames on stderr, with the elapsed seconds beside them, and erases the line when the call returns.
-  - Anywhere else (a pipe, a log file, a scheduler, the suites) it prints `⏳ <message>...` once on stderr.
-  - The wrapped command runs in the foreground, so its stdout and its exit status pass through untouched.
-    - So `x="$(wk_spin 'reading the roster' gh api ...)"` captures the answer alone.
-  - `WORKKIT_SPIN=0` forces the static form.
-  - The Node half is `spin(message, run, { line })` in `lib/spin.js`, `wk_spin`'s Node home: it calls `run` and hands back what it answers.
-    - A worker thread draws the frames, so they move while the caller's thread waits in a sync call; the line is cleared before the answer reaches the caller.
-    - It draws on 8 under a held command log, else 2, as `wk_spin_fd` picks.
-    - It draws frames with `WORKKIT_SPIN=1` always, with `WORKKIT_SPIN=0` never, and otherwise only on a terminal. `WORKKIT_SPIN=1` is the Node half's alone, so a suite sees the frames with no terminal.
-    - With no frames it prints `wait(message)`'s one line (`lib/voice.js`), nothing under `QUIET=1`.
-    - `{ line: false }` prints no `⏳` line when no frames draw, for a call whose shell form sent its stderr away; the frames still draw.
-  - Every slow call of home, publish and the build goes through it, and so does the heal's read of the default branch (`standards/labels.js`). The poll's countdown (`poll` in `lib/flows.js`) draws through the same frames.
+  - On a terminal it animates omega's braille frames, with the elapsed seconds beside them, and erases the line when the call returns.
+  - A worker thread draws the frames, so they move while the caller's thread waits in a sync call; the line is cleared before the answer reaches the caller.
+  - It draws frames with `WORKKIT_SPIN=1` always, with `WORKKIT_SPIN=0` never, and otherwise only on a terminal: a suite sees the frames with no terminal through `WORKKIT_SPIN=1`.
+  - Anywhere else (a pipe, a log file, a scheduler, the suites) it prints `wait(message)`'s one line, `⏳ <message>...`, once on stderr, nothing under quiet.
+  - `{ line: false }` prints no `⏳` line when no frames draw, for a call whose stderr is sent away; the frames still draw.
+  - Every slow call of home, publish, the build and the command goes through it, and so does the heal's read of the default branch (`standards/labels.js`). The poll's countdown (`poll` in `lib/flows.js`) draws through the same frames.
   - `wait(message)` alone prints only the static line, once, at a terminal too; its caller then runs the command.
   - The publish's `--quiet` is `setQuiet` of `lib/voice.js`: quiet for the publish's own process, never in the environment of a program it starts.
-  - Under a command log the frames go to the call's own stderr, which the log holds aside (`wk_spin_fd`, through `lib/command-log.sh`), and the terminal question is asked of it; `wk_poll`'s countdown does the same.
+  - Under a command log the frames go to the terminal device the logger names (`WK_COMMAND_TERMINAL`), never into the log, and the poll's countdown does the same (the `lib/command-log.js` entry).
 - Two things are deliberately not log lines:
   - a PROMPT (it carries no newline, because the answer is typed on it);
-  - a script's stdout that is DATA (`standards.sh --state`, the slug and the reason `jobs/brief-dispatch.js` hands `jobs/brief-dispatch.sh`, a JSON payload).
+  - a program's stdout that is DATA (`standards.js --state`, the slug and the reason `jobs/brief-dispatch.js` hands `workkit brief`, a JSON payload).
 - `jobs/install.js --check` is neither: its drift lines ARE glyph lines.
-  - The caller reading them (`workkit update`) strips each one with `wk_plain`, and re-says it under its own.
+  - The caller reading them (`workkit update`) strips each one with `plain`, and re-says it under its own.
 - Three things print plain glyphless lines by design:
   - The kit's own hooks, whose output is context for an agent rather than a terminal.
   - The engine's Node CLIs (`changelog/lint.js`, `changelog-links.js`, `release.js`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, `site-repos.js`), whose lines are read by CI, by a hook bounce or by the ship.
@@ -1971,7 +1986,7 @@ git clone https://github.com/ITW-Creative-Works/workkit.git && cd workkit
 
 ## The capture CLI
 
-- `wk.sh` gets a thought out of a head and into a capture file with no session, no agent, and no network:
+- `workkit note`, whose program is `note.js`, gets a thought out of a head and into a capture file with no session, no agent, and no network:
 
 ```sh
 workkit note fix the tower poller
@@ -1981,18 +1996,18 @@ workkit note fix the tower poller
 - The bullet lands in the capture file of the repo the shell is standing in.
   - A walk UP from the current directory decides it, to the first ancestor that passes both tests:
     - it is a git repo root (a `.git` directory or file);
-    - its `.workkit/settings.json` says the repo participates.
+    - its `.workkit/settings.json` says the repo participates (`settingsOptedIn` in `hooks/mods/gate.js`), and its `.workkit` is not the machine folder.
 - Standing outside one, there is no capture file to write to.
   - The note is filed as a `status:inbox` issue on the home repo instead.
   - Where there is no clone yet (or no way to reach GitHub), it hands the note back on stderr and exits 1.
   - It does so rather than buffering a thought no triage run reads.
 - A missing capture file is created from `templates/capture.md`, so a hand-made file reads exactly like a seeded one.
 - Existing content is only ever appended to.
-- No arguments, an unknown subcommand, or an empty note prints usage on stderr and exits 1.
+- No words, or a note of blanks alone, prints `usage: workkit note <text...>` and one line of what it does on stderr, and exits 1.
+- A note with bytes that are not UTF-8 keeps U+FFFD in its capture line and issue body; the issue's title drops them.
 - Triage drains the capture files into issues.
   - The captures made outside a project are issues already, and triage's HQ pass drains those from any repo.
-- Putting it on the PATH or behind an alias is the user's own shell config (dotfiles).
-  - The heal maintains the address below, and nothing beyond it.
+- It is reached through the one command, `workkit note`, which `workkit setup` links onto `~/.local/bin`.
 
 ## The CHANGELOG entry format
 
@@ -2021,7 +2036,7 @@ workkit note fix the tower poller
 ## Every heal runs
 
 - Nothing in a repo records which heals it has had.
-  - Every heal is idempotent, so `standards.sh` runs all of them on each daily heal.
+  - Every heal is idempotent, so `standards.js` runs all of them on each daily heal.
   - A heal with nothing to do writes nothing.
 - A `version` key an older kit left in `.workkit/settings.json` is removed by the heal (`removeVersionStamp`, `standards/state.js`), the file otherwise untouched.
   - A failed edit warns, leaves the file as it was, and flags the run.
@@ -2080,9 +2095,9 @@ workkit note fix the tower poller
     - It is read over the global key of that name.
   - An optional `"tests": { "check": <minutes> }` is the time between a supervised run's checks (`docs/tests.md` § The checks).
     - It is read over the global key of that name, and absent from both it reads as the kit default, 5.
-  - An optional `"logs": { "dir": "<folder>" }` names the folder this repo's logs go to, a path from the repo root, so a repo can keep them in its own `logs/` (`wk_log_dir`, the `lib/suite.sh` row).
+  - An optional `"logs": { "dir": "<folder>" }` names the folder this repo's logs go to, a path from the repo root, so a repo can keep them in its own `logs/` (`logDirOf` in `hooks/mods/commit-gate.js`).
     - It is read over the global key of that name, and absent from both, or empty, it reads as the kit default, `.workkit`.
-    - Where a log is written, and the line a bad value stops the command with, are the `lib/suite.sh` entry's.
+    - Where a log is written, and the line a bad value stops the command with, are the `lib/run-paths.js` entry's.
   - An optional `"hooks": { "<event>": [{ "command": "<shell command>", "local": true }] }` declares the ship hooks for `afterRelease`, `afterPublish` and `afterDeploy`.
     - `workkit ship cut`, `publish` and `deploy` run them from the repo root once their step succeeds.
     - They run only where this file says `"enabled": true`.
@@ -2146,7 +2161,7 @@ workkit note fix the tower poller
     - A file that cannot be read as JSON is excepted.
   - The registration takes the same `~/.workkit/.state.lock` mutex a decline does.
     - So does every other writer of the machine's files, the home slug and the cached GitHub node ids among them.
-    - `wk_take_state_lock` in `lib/state.sh` is its shell home; the heal takes it through `takeLock` (`lib/lock.js`), the two excluding each other on one folder.
+    - Each takes it through `takeLock` (`lib/lock.js`) at `stateLockPath`.
     - So sessions opening at once in several repos all land on the roster.
   - A `"declined"` entry is a decision and is never pruned.
   - The list is an INDEX, not the answer: the committed per-repo file stays the SSOT of membership.
@@ -2163,7 +2178,7 @@ workkit note fix the tower poller
 - `~/.workkit` is a plain folder, and the ONE git repo in it is `~/.workkit/tower`.
   - It is the home repo's clone, and the tower dashboard as a real project.
 - `workkit setup` is the only thing that makes it.
-- `home.js`, through the steps it requires from `home/`, is where each step lives; `home.sh` hands each verb to it:
+- `home.js`, through the steps it requires from `home/`, is where each step lives; the command starts each verb of it as a program (`homeRun` in `workkit/kit.js`):
 
 1. **The login**: `gh api user`. Without one, setup prints `gh auth login` and moves on; nothing is guessed.
 2. **The repo**: one confirm line, then `gh repo create <login>/workkit --private`.
@@ -2191,11 +2206,11 @@ workkit note fix the tower poller
    - The rest lands under `brief/` with its checkout-relative subpaths intact.
      - Those are `brief/jobs/`, `brief/workflow/`, `brief/tower/api/lib/`, and `brief/tower/app/targets/web/src/assets/js/libs/tower/`.
      - The last is the shared sweep module `board.js` requires by relative path.
-     - And `brief/hooks/`: the temp folder rule `repos.js` requires from `hooks/mods/markers.js`, with the `hooks/package.json` that loads it as a module.
+     - And `brief/hooks/`: the `hooks/mods/` files the runner requires (`markers.js`, `gate.js`, `settings.js`, `log.js`, `text.js`), with the `hooks/package.json` that loads them as modules.
      - So every relative address inside those scripts resolves in the clone exactly as it does here.
    - The list is `workflow/home/runner-files.js`, a plain list of `[source, destination]` pairs.
      - It is the starter `morning.sh` and the one file it sources (`workflow/lib/platform.sh`), the require closure of `morning.js` and of the `brief-payload.js` it starts, and the files those read (`defaults/settings.json`, `workflow/labels.json`, `hooks/package.json`).
-     - Among them: the morning's steps under `jobs/morning/`, `jobs/lib/`, `brief-dispatch.js`, the `hooks/mods/` files they require and the `workflow/lib/` pieces.
+     - Among them: the morning's steps under `jobs/morning/`, `jobs/lib/`, `brief-dispatch.js`, the `hooks/mods/` files they require and the `workflow/lib/` pieces, `lib/bounded.js` among them (the jobs' children run under it, through `jobs/lib/machine.js`).
    - It is copied by CONTENT: a file already identical is not rewritten, so a second setup writes nothing.
      - A checkout that moved on is healed and pushed as its own `chore(home): refresh the cloud brief runner` commit.
    - Like the seed, it copies from the checkout's COMMITTED tree (HEAD, exported into a scratch folder) when a git repo tracks the kit.
@@ -2235,7 +2250,7 @@ workkit note fix the tower poller
      - GitHub has no `createDiscussionCategory` mutation.
    - At a terminal, setup names the missing ones and opens the page that makes them on Enter.
      - Then it polls every five seconds until they are there, Enter checking now and `s` or a closed stdin skipping.
-     - This is omega's walkthrough shape, `enterToOpen` and `poll` in `lib/flows.js`, the Node home of `wk_enter_to_open` and `wk_poll` in `lib/flows.sh`.
+     - This is omega's walkthrough shape, `enterToOpen` and `poll` in `lib/flows.js`.
    - A piped run, or a skip, prints the pointer at the page.
      - The summaries and the brief publish in the repo's default category until it exists.
 8. **Pages**: `POST repos/<slug>/pages` for branch `gh-pages`, path `/`.
@@ -2247,13 +2262,13 @@ workkit note fix the tower poller
     - The answer is written to `site.publish` under the same state mutex every writer of that file takes.
     - It is asked ONCE: `true` and `false` are both answers and are never asked again.
       - Only the unanswered null (or no key at all) has a question left.
-    - No home repo, no terminal, no jq, no settings file, or a settings file that does not parse: a named skip.
-      - It is a warn for the unparseable file.
+    - No home repo, no terminal, no settings file, a kit with no `home.js`, or a settings file that does not parse: a named skip.
+      - It is a warn for the unparseable file, and an info line naming the hand edit without a terminal.
       - Either way it leaves the switch unanswered and the file untouched, so a later interactive setup asks.
 11. **The domain, on the fresh yes only**, and only while `site.url` is null: custom domain for the site? Enter for none.
     - Empty leaves `site.url` null, which is the plain github.io address and no CNAME.
     - Anything typed is written to `site.url` under the same mutex, taken at its word.
-      - `siteHost` in `home/options.js` is the one reader of the option, which the shell reaches as `wk_site_host`.
+      - `siteHost` in `home/options.js` is the one reader of the option, which the command reaches as `node home.js host`.
       - It takes a scheme and a trailing slash off, for the CNAME and for the token handover alike.
     - It rides the fresh yes because that is the one moment nothing is serving yet.
     - A machine that answered on an earlier run changes its domain by hand edit.
@@ -2302,11 +2317,11 @@ workkit note fix the tower poller
     - The ramification of handing a CLI login to a browser is stated where the token itself is documented: `tower/README.md`.
 
 14. **The clone's own heal**: `heal` in `home/install.js`, the home repo brought to the same standard every participating repo is brought to, by the same code.
-    - `standards.sh --home` runs `ensureIssueForms` and `syncLabels` (`standards/`) against the clone and nothing else.
+    - `standards.js --home` runs `ensureIssueForms` and `syncLabels` (`standards/`) against the clone and nothing else.
       - So the home repo has the labels every queue reads and the forms that apply them.
       - Without them, a capture filed from a phone lands unlabelled and invisible.
     - It is scoped to those two because the clone is engine territory: no `.workkit/`, no opt-in, no local files.
-    - The heal runs the committed kit's `standards.sh`, from its own HEAD export of the same commit the runner reads.
+    - The heal starts the committed kit's `standards.js` with the running Node, from its own HEAD export of the same commit the runner reads, and starts no `bash`.
       - For a copy no repo tracks, it runs from the folder itself.
       - So the templates and labels it installs are HEAD's, and an uncommitted template edit never reaches the clone.
     - The mode REFUSES any directory that is not the clone, so it can never write into a repo that never said yes.
@@ -2358,8 +2373,9 @@ workkit note fix the tower poller
 
 - **`CLAUDE_CODE_OAUTH_TOKEN`**, the rest of its row:
   - A yes mints it and pipes it straight into `gh secret set`.
-  - Without a terminal, or without a PTY tool (`expect` or `script`) for the mint to run under, the two commands are printed instead.
+  - Without a terminal, or without a PTY tool (`expect` or `script`) for the mint to run under, Windows included, the two commands are printed instead.
     - The mint is a browser approval and cannot be automated.
+  - Under a logged command the mint is a secret step: its screen is on the terminal device, or on the call's own streams between marks the logger keeps out of the log (the `lib/command-log.js` entry).
   - `workkit setup --token` forces that same mint at any age, for the token that went bad while it was young.
 - **A token value moves through a pipe, through the mint's own capture file, and through the handover page of step 13, and nowhere else.**
   - The mint runs under a PTY: `claude setup-token` draws its ENTIRE screen on stdout.
@@ -2367,25 +2383,27 @@ workkit note fix the tower poller
     - So capturing that stdout left the human staring at a blank line, with no way to answer.
     - And in the CLI's raw keyboard mode, there was no way to quit.
   - Under the PTY runner the whole screen reaches the terminal.
-  - The copy the token is read out of lands in a capture file: `mktemp` in `TMPDIR`, `chmod 600` before the mint writes a byte.
-    - It is removed the moment it has been read, and by a trap as well, so an interrupted mint leaves nothing behind.
+  - The copy the token is read out of lands in a capture file in `TMPDIR` (the system temp folder when unset), made new and mode 600 before the mint writes a byte.
+    - It is removed the moment it has been read, and on the process's exit, INT and TERM as well, so an interrupted mint leaves nothing behind.
   - From the extraction on, the value is held in one local on the way to `gh secret set`'s stdin.
     - It is never passed as an argument, echoed, or logged.
-  - At a real terminal with `expect` present, `workflow/workkit/mint-pty.exp` is the runner.
+  - The pty is `runUnderPty` (`workkit/pty.js`): Node has no pty without a native dependency, so the system's `expect`, else `script`, gives one.
+  - At a real terminal (the command's own stdin) with `expect` present, `workflow/workkit/mint-pty.exp` is the runner.
     - The CLI's raw mode discards the ^C byte itself, so the binding catches it one layer out.
-    - Ctrl-C ends the mint like it ends any command, and every other keystroke still reaches the paste prompt.
+    - Ctrl-C ends the mint like it ends any command, with 130, and every other keystroke still reaches the paste prompt.
   - Otherwise `script` runs it, with both syntaxes spoken, told apart at runtime by whether `--version` answers:
     - BSD/macOS `script -q -e <file> <cmd>`;
     - GNU/util-linux `script -q -e -c "<cmd>" <file>`.
     - `-e` is what returns the child's own status.
     - There Ctrl-C is forwarded to a CLI that ignores it, which is what the expect path exists to fix.
 - Reading comes first and decides everything.
-  - These are a NAMED SKIP, never a missing value: no `gh`, no `jq`, an incomplete checkout, no home repo yet.
+  - These are a NAMED SKIP, never a missing value: no `gh`, a kit with no `home.js` beside the engine, no home repo yet.
   - So is a `gh secret list` that did not come back as a JSON array.
   - A repo that could not be read must never send someone to mint a token that is already there.
     - It must never be written to either.
-- The listing is bounded: `timeout`/`gtimeout` when the machine has one, a bash watchdog when it does not.
-  - The bound is `WORKKIT_GH_TIMEOUT` seconds, default 10.
+  - A secret's age is read in Node off the listing's `updatedAt` (`secretAgeDays`), and a timestamp that does not read is an age it cannot judge, never a stale one.
+- The listing is bounded: `bounded` (`lib/bounded.js`) ends the whole tree of a read past its bound and answers 124.
+  - The bound is `WORKKIT_GH_TIMEOUT` seconds, default 10; a value that is not a positive number reads as the default (`secondsOf`).
   - The reason: the daily `update --auto` runs them at session start.
     - A captive portal answers the handshake and never the request.
   - A bound that fires reads as an unreadable listing.
@@ -2499,16 +2517,16 @@ workkit note fix the tower poller
   - `workkit setup`'s Identity section says `identity: signed in as @<login>`.
   - Not signed in at a keyboard, it asks `Sign in to GitHub now, so the agent's issue bookkeeping posts as workkit-agent[bot]? [Y/n]`.
     - On Enter or a yes it runs `identity/login.js --open <opener>`, and reads the status again.
-      - The opener is the one `wk_opener` finds; with none, the printed page suffices.
+      - The opener is the one `opener` (`lib/flows.js`) finds; with none, the printed page suffices.
     - A no, or no keyboard, warns `identity: not signed in; run workkit setup --login`.
   - `workkit setup --login` runs the same step forced.
     - It asks nothing and signs in even when signed in, with or without a terminal.
     - The device page is opened when an opener exists.
   - A cloud session signs nothing in, since the bot does not act there.
     - `workkit setup --cloud`'s Identity section, doctor's machine line and `update` each print `identity: not applicable in a cloud session; the session's GitHub proxy signs every call as the account`.
-    - That line is `cloud_na signin`, a skip line `update --auto` drops, counted by nothing.
+    - That line is `cloudNa(kit, 'signin')` (`workkit/setup.js`), a skip line `update --auto` drops, counted by nothing.
     - Doctor's This repo section has no identity line.
-  - Both questions are `wk_ask_yes` with yes the default.
+  - Both questions are `askYes` (`lib/flows.js`) with yes the default.
     - Enter, `y`, `Y`, `yes` or `YES` is a yes; a closed stdin or Ctrl-D a no.
   - Setup's This repo section, after the opt-in, runs the install step when signed in and the repo's opt-in state is `enabled`.
     - The state is the committed `.workkit/settings.json`, read as the opt-in offer reads it.
@@ -2524,8 +2542,8 @@ workkit note fix the tower poller
     - The owner is suggested and the repo list is not.
       - The App installs once per owner, and one repo pre-selected would send the owner's other repos back to the page.
   - A refusal whose tail is not an `https://` page (the id unreadable) is warned as the client said it, and nothing opens or polls.
-  - At a keyboard it asks `Install workkit-agent[bot] on <owner> now? [Y/n]`, and opens that page through `wk_open_url`.
-    - Then it waits on the kit's poll: `wk_poll`, the service asked again every 15 seconds through `token.js --probe`, which prints no page.
+  - At a keyboard it asks `Install workkit-agent[bot] on <owner> now? [Y/n]`, and opens that page through `openUrl`.
+    - Then it waits on the kit's poll: `poll`, the service asked again every 15 seconds through `token.js --probe`, which prints no page.
     - Enter checks now and `s` skips.
     - Installed is the ok line.
     - A no, no keyboard, a skip, or a closed stdin is `identity: workkit-agent[bot] is not installed on <repo>; install it on <owner> at <page>`.
@@ -2538,7 +2556,7 @@ workkit note fix the tower poller
     - It exits 1 unless the App ends installed.
   - The App is installed once per account or org by an owner's click on GitHub, never by the kit.
     - Another org's repo gets the page from the refusal itself.
-  - A machine without node or jq gets a named skip.
+  - A kit with no client beside the engine (`identity/token.js`) gets a named skip.
   - `workkit doctor` says, under This machine, `identity: signed in as @<login>` or `identity: not signed in; run workkit setup --login`.
   - Under This repo, doctor asks the service through `token.js --installation`.
     - It asks when signed in and the cwd's origin is enabled on this machine's roster.
@@ -2546,7 +2564,7 @@ workkit note fix the tower poller
     - The answer is `identity: workkit-agent[bot] installed on <repo>`.
     - Or it is `identity: workkit-agent[bot] is not installed on <repo>`, followed by the client's refusal.
       - The refusal is the pre-selected install page, then `or run: workkit setup --bot` as a warning line of its own.
-    - The check is bounded at 45 seconds (`IDENTITY_LOOKUP_TIMEOUT` in `workkit/identity.sh`).
+    - The check is bounded at 45 seconds (`LOOKUP_TIMEOUT_S` in `workkit/identity.js`, through `bounded`).
       - That is room for the client's two GitHub reads and its ask.
   - `workkit update` and `update --auto` print the machine line too, the ok line dropped under `--auto`.
     - So a machine set up before the identity shipped hears at session start that it must sign in.
@@ -2704,7 +2722,7 @@ workkit note fix the tower poller
 
 ## Participation: the tri-state
 
-| Repo state | `standards.sh` does |
+| Repo state | The heal (`standards.js`) does |
 |---|---|
 | committed `enabled: true` | heal |
 | committed `enabled: false` | nothing, silently |
@@ -2719,10 +2737,10 @@ workkit note fix the tower poller
 workkit enable [repo]                                  # write the committed opt-in, then heal
 workkit decline [repo]                                 # record it in the USER file; never offered again
 workkit state [repo]                                   # enabled | disabled | declined | undecided | home | unreadable | nogit
-bash ~/.claude/workkit/standards.sh --announce [repo]  # the offer line, for a hook to relay
-bash ~/.claude/workkit/standards.sh --engine-link       # maintain the engine's address, nothing else
-bash ~/.claude/workkit/standards.sh --command-link      # make ~/.local/bin/workkit, nothing else; no repo, no prompt
-bash ~/.claude/workkit/standards.sh --git-hooks <repo>  # set git's hooks alone, in the caller's voice; no participation check
+node ~/.claude/workkit/standards.js --announce [repo]  # the offer line, for a hook to relay
+node ~/.claude/workkit/standards.js --engine-link       # maintain the engine's address, nothing else
+node ~/.claude/workkit/standards.js --command-link      # make ~/.local/bin/workkit, nothing else; no repo, no prompt
+node ~/.claude/workkit/standards.js --git-hooks <repo>  # set git's hooks alone, in the caller's voice; no participation check
 ```
 
 - `--decline` writes only the `repos` key: every other key in the user file, and its value, survives untouched.
@@ -2759,7 +2777,7 @@ bash ~/.claude/workkit/standards.sh --git-hooks <repo>  # set git's hooks alone,
 - Run it by hand against any repo:
 
 ```sh
-bash ~/.claude/workkit/standards.sh [repo-root]
+node ~/.claude/workkit/standards.js [repo-root]
 ```
 
 - Only the label step, the claim sweep, and the label report need `gh` and a reachable remote.

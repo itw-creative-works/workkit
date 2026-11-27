@@ -14,6 +14,6 @@ describe('workflow:standards: the setup pester', () => {
     const ctx = say({ participation: 'enabled', isSetUp: false, engine, isInCache: true });
     const line = ctx.split('\n').find((l) => l.startsWith('SETUP:')) || '';
     expect(line.includes('plugin cache'), `the nudge names the plugin cache, got: ${line}`).toBeTruthy();
-    expect(line.includes('workkit.sh setup'), `and still hands over the command, got: ${line}`).toBeTruthy();
+    expect(line.includes(`\`node ${engine}/workkit.js setup\``), `and still hands over the command, got: ${line}`).toBeTruthy();
   });
 });

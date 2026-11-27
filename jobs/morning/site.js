@@ -9,7 +9,8 @@
 const path = require('path');
 const { isFile } = require('../../workflow/lib/lock');
 const { bounded } = require('../lib/machine');
-const { block, captured } = require('../lib/notes');
+const { block } = require('../lib/notes');
+const { chomp } = require('../../hooks/mods/text.js');
 
 const PUBLISH = path.join(__dirname, '..', '..', 'workflow', 'publish.js');
 
@@ -26,7 +27,7 @@ const publishSite = async (run) => {
   }
   if (!isFile(PUBLISH)) return;
   const { status, output } = await bounded(process.execPath, [PUBLISH, '--quiet']);
-  const said = captured(output);
+  const said = chomp(output);
   if (status !== 0) block(run.logFile, run.stamp, `[publish exit ${status}; the brief was already sent]\n${said}\n`);
   else if (said) block(run.logFile, run.stamp, `${said}\n`);
 };

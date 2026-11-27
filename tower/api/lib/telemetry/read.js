@@ -5,6 +5,7 @@
 const fs = require('fs');
 const { StringDecoder } = require('string_decoder');
 
+const { today } = require('../../../../workflow/lib/day');
 const { zeroTokens, num, costOf } = require('./pricing');
 
 // Bytes per read. Large enough that a gigabyte transcript is a few hundred
@@ -36,8 +37,7 @@ const prune = (keep) => {
 const dayKey = (when) => {
   const date = when instanceof Date ? when : new Date(when);
   if (Number.isNaN(date.getTime())) return null;
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return today(date);
 };
 
 /** A fresh read state for a file: also what a rewritten file resets to. */

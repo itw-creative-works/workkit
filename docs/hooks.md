@@ -21,7 +21,7 @@
   - The nine guards' runs in the `gh` shim, the `git` shim and git's hooks leave none, since they run outside the module.
 - The log lives in the workkit folder (`~/.workkit`).
   - `WORKFLOW_HOME` moves it.
-  - `wk_hooks_log` in `workflow/lib/platform.sh` is the one spelling of the path.
+  - `hooksLogOf(env)` in `hooks/mods/log.js` is the path's one home, `hooks.log` in `userDirOf`'s folder: the module's writer (`logFires` in `hooks/register.js`) and `workkit log` (`workflow/workkit/log.js`), its one reader, both ask it.
 - It has one writer: the hooks module writes every fire of a dispatch through `logFires` in `hooks/register.js`.
   - That is one read and one whole-file write with `$.fs` per dispatch.
   - The line and the cap are `hooks/mods/log.js`'s.
@@ -164,6 +164,8 @@
     - Those are `journalDir`, `journalPath`, `journalSizes`, `journalFor`, `journalMarkText`, `journalMarks`, `journalsGrown`, `journalTail`, `journalLines`, `onIssue`.
     - It holds a call's start beside its mark (`callStartPath`, `callStartText`, `callStartOf`) and the triage marker's age limit `TRIAGE_MAX_AGE_S`.
     - It holds the session's PATH with the `git` shim's folder first (`sessionPath`).
+  - `text.js`: the small text rules, `chomp` (the text without its trailing newlines, as a shell's `$(...)` takes a program's output).
+    - The engine's Node files and the jobs `require()` it too.
 - Four hook files are shared homes as well:
   - `test-reminder.js`: the code and test path shapes, `CODE_EXT`, the regex escape `escaped`;
   - `changelog-guard.js`: `isChangelog`, `linterPath`;
@@ -197,7 +199,7 @@
   - `docs.bullets` and `docs.paths` (`docs:board-guard`, through `bulletsOn` and `shapePaths`);
   - `tests.budget` (the commit gate);
   - `tests.check` (`workflow/lib/detach.js`, the minutes between the supervisor's checks of a run, default 5);
-  - `logs.dir` (the commit gate's `logDirOf`, and `wk_log_dir` in `workflow/lib/suite.sh` through `wk_setting`), the folder a repo's logs go to, default `.workkit`: [`project-state.md`](project-state.md) § The model, its logs bullet;
+  - `logs.dir` (the commit gate's `logDirOf`, which `workflow/lib/run-paths.js` places every repo log through), the folder a repo's logs go to, default `.workkit`: [`project-state.md`](project-state.md) § The model, its logs bullet;
   - `commit.attribution` (`safety:commit-attribution`, through `attributionOff`);
   - `public` (`workflow:public-mirror`, `workflow/public/lib.js`);
   - `proof.rootOnly` (`safety:proof-guard`);
@@ -390,28 +392,22 @@
     - the opt-in read (`wk_opted_in`, `settingsOptedIn` in `hooks/mods/gate.js`);
       - the shell twin reads the top-level key through node, asking `repoFlag` itself, and only `"enabled": true` reads opted in on both;
     - the machine folder (`wk_user_dir`, `userDir` in `hooks/mods/log.js` and `workflow/user-dir.js`);
-    - the tower folder (`wk_tower_dir` in `workflow/lib/platform.sh`, `towerDir` in `workflow/user-dir.js`), one folder for every `WORKFLOW_HOME` and `HOME`;
+    - one setting (`wk_setting` in `workflow/lib/participation.sh`, `loadSettings` in `hooks/mods/settings.js`), the same value for every key over every pair of layers;
     - the marker path (`wk_marker_path` in `workflow/lib/platform.sh`, `markerPath` in `hooks/mods/markers.js`);
     - the session rule (`wk_session_judges` in `workflow/lib/participation.sh`, `sessionJudges` in `hooks/mods/gate.js`);
-    - the plain mutex (`wk_take_lock` in `workflow/lib/platform.sh`, `takeLock` in `workflow/lib/lock.js`), which exclude each other on one folder;
     - the markers' sweep (`wk_sweep_markers`, `sweepMarkers` in `workflow/lib/lock.js`), which remove the same files from one marker tree;
-    - the color gate (`wk_color_on` in `workflow/lib/voice.sh`, `colorOn` in `workflow/lib/voice.js`), which answer alike for one environment and one stdout;
-    - the voice lines (`wk_ok`, `wk_skip`, `wk_info`, `wk_warn` and `wk_warn_lines`, their Node halves in `workflow/lib/voice.js`), plain, colored, quiet and indented;
-    - the native path and the clone rank (`wk_native_path` and `wk_clone_outranks` in `workflow/lib/platform.sh`, `nativePath` and `cloneOutranks` in `workflow/lib/platform.js`);
-    - the atomic link (`wk_link` in `workflow/lib/flows.sh` and `wk_mv_link` in `workflow/lib/platform.sh`, `link` and `mvLink` in `workflow/lib/link.js`), which leave the same address, answer alike and leave no temp file, never moving into a folder an address points at;
-    - the safe JSON edit (`wk_json_edit` in `workflow/lib/state.sh`, `editJson` in `workflow/lib/write.js`), which leave the same bytes and mode for a change, a change that fails and a file that is no JSON, answer alike and leave no temp file;
+    - the native path (`wk_native_path` in `workflow/lib/platform.sh`, `nativePath` in `workflow/lib/platform.js`);
     - the repo slug and the kit checkout (`wk_repo_slug` and `wk_is_kit_checkout` in `workflow/lib/slug.sh`, `repoSlug` and `isKitCheckout` in `workflow/lib/repo.js`);
     - the kit's hooks folder (`wk_githooks_kit`, `wk_githooks_kitlike` and `wk_githooks_spelled` in `workflow/lib/participation.sh`, their Node halves in `workflow/lib/participation.js`);
-    - the test-script read (`wk_has_test_script` in `workflow/lib/suite.sh`, `hasTestScript` in `hooks/mods/suite.js`);
     - the slug rule (`wk_slug_from_remote`, `slugFromRemote` in `workflow/slug.js` and in `hooks/mods/slug.js`);
     - git's global options that take a value (`VALUE_FLAGS` in `workflow/gitshim/git`, `GIT_VALUE_FLAGS` in `hooks/mods/tree-guard.js`);
-    - the two shims' shared shell helpers, `norm_dir`, `real_path` and `in_list`, and their PATH walk to the real tool (`real_git` against `real_gh`), `workflow/gitshim/git` against `workflow/identity/gh`;
-    - the yes or no question (`wk_ask_yes` in `workflow/lib/flows.sh`, `askYes` in `workflow/lib/flows.js`), which ask in the same words and take every answer alike under either default, a closed stdin no;
-    - the opener choice (`wk_open_url` in `workflow/lib/flows.sh`, `openUrl` in `workflow/lib/flows.js`), which pick the same opener and, with none, print the same pointer;
-    - the spinner (`wk_spin_draw` and `wk_spin` in `workflow/lib/voice.sh`, `spin` in `workflow/lib/spin.js`), which draw the same frames, and with the frames off print the same one line;
-    - the poll's countdown (`wk_poll_draw` in `workflow/lib/flows.sh`, `poll` in `workflow/lib/flows.js`), the same frames in the same order;
-    - the Pages branch (`WK_HOME_PAGES_BRANCH` in `workflow/home.sh`, `PAGES_BRANCH` in `workflow/home/options.js`), one branch;
-    - and the hooks log line (`logLine` in `hooks/mods/log.js`).
+    - and the two shims' shared shell helpers, `norm_dir`, `real_path` and `in_list`, and their PATH walk to the real tool (`real_git` against `real_gh`), `workflow/gitshim/git` against `workflow/identity/gh`.
+  - The same suite holds the rules whose shell half is gone as cases of the Node function alone, with hard-coded answers:
+    - the suite log's path the commit gate names, and the test-script read (`hasTestScript` in `hooks/mods/suite.js`);
+    - the color gate and the voice lines (`colorOn`, `ok`, `skip`, `info`, `warn` and `warnLines` in `workflow/lib/voice.js`);
+    - the plain mutex (`takeLock` in `workflow/lib/lock.js`), the tower folder (`towerDir` in `workflow/user-dir.js`) and the hooks log (`hooksLogOf` and `logLine` in `hooks/mods/log.js`);
+    - the clone rank (`cloneOutranks` and `inPluginCache` in `workflow/lib/platform.js`), the atomic link (`link` and `mvLink` in `workflow/lib/link.js`) and the safe JSON edit (`editJson` in `workflow/lib/write.js`);
+    - and the terminal questions and the spinner (`askYes` and `openUrl` in `workflow/lib/flows.js`, the spin's and the poll's frames in `workflow/lib/spin.js`).
   - The prompt shape (`hooks/mods/frame.js`) and the manager config and model tier (`hooks/mods/manager.js`) have no shell side.
 - **State.**
   - Per-session state lives in `$.store` under `workkit:<session_id>:` (`test-reminder`, `checkpoint`, `feature`, `reload-guard`, `turn-journal`).
@@ -436,7 +432,8 @@
 ### `workflow:standards`: SessionStart
 
 - Runs the engine's heal in a participating repo, once per repo per day.
-  - The call is `bash workflow/standards.sh <root>` under `QUIET=1`, through `$.process.run`.
+  - The call is `node workflow/standards.js <root>` under `QUIET=1`, through `$.process.run`; the hook starts no `bash`.
+    - The participation read before it is `node workflow/standards.js --state <root>`, and an undecided repo's offer `--announce <root>`.
   - It runs under that call's ten-minute ceiling, past the heal's worst case.
   - What the heal writes: `workflow/README.md`. The standard it heals to: the spec § Enforcement.
 - The heal includes the one check that is the hook layer's own (`workflow/standards/hooks.js`):
@@ -448,20 +445,20 @@
   - Their indent and glyph are stripped before the report goes into the session's context (`engineLines` in `hooks/mods/standards.js`).
   - A heal that exits non-zero is reported as unfinished and retries next session. Only a clean one writes the day's marker.
   - An undecided repo hears one offer and is never written to.
-- The same daily run calls `workkit update --auto`, the machine-side upkeep, under the same ceiling.
+- The same daily run calls `workkit update --auto`, the machine-side upkeep, under the same ceiling: `node <engine>/workkit.js update --auto`, once, when that file exists.
   - It updates a schedule a human already installed, and installs no schedule fresh.
-  - It links the `workkit` command and the `gh` shim into an existing `~/.local/bin`.
+  - It links the `workkit` command and the `gh` shim into an existing `~/.local/bin`, a link that still names the kit's old `workkit.sh` repointed to `workkit.js`.
   - Off the cloud it warns about a cloud secret that is missing or stale. A cloud session gets one not-applicable line for that step instead.
   - Off the cloud, it says `identity: not signed in` when the machine has no sign-in.
 - Above every gate sits the setup pester.
-  - A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to run `workkit.sh setup` itself.
-  - Where `CLAUDE_CODE_REMOTE` is `true`, the command it names is `workkit.sh setup --cloud`.
+  - A machine with no `~/.local/bin/workkit` is told, every session and in any directory, to run `node <engine>/workkit.js setup` itself.
+  - Where `CLAUDE_CODE_REMOTE` is `true`, the command it names is `node <engine>/workkit.js setup --cloud`.
   - It is told to hand the user only what setup prints for them. The pester is a prompt, never an install.
   - It stops the moment the link exists, whoever made it.
-  - `standards.sh --command-link` makes the command link alone, for a bootstrap that runs no setup at all.
+  - `standards.js --command-link` makes the command link alone, for a bootstrap that runs no setup at all.
   - A cloud bootstrap that does run setup calls `workkit setup --cloud`, which makes the link itself.
   - Outside a repo the pester is all it says.
-- A missing `standards.sh` or unreadable `labels.json` is a broken install, said once, only for a repo whose settings said yes.
+- A missing `standards.js` (`workflow engine not found at <engine>/standards.js`) or unreadable `labels.json` is a broken install, said once, only for a repo whose settings said yes.
 
 ### `docs:state-check`: SessionStart
 
@@ -912,12 +909,12 @@
     - That is an untracked file or an unstaged edit the commit leaves out.
     - The bounce names that gap and its two fixes: `git add -A`, or `workkit prove` (spec § The proof).
   - Any other case bounces, naming `npm test` at the repo root as the fix and the log that run writes its output to.
-    - The log is the root run's `suite.log` in the repo's log folder where git ignores it, else the `claude-suite.log` marker path, its place found by `runPaths`' rule (`workflow/lib/run-paths.js`) with `logs.dir` read through `loadSettings` and walked by `logDirOf`, the twin of `wk_log_dir` (`workflow/README.md`, the `lib/suite.sh` entry).
+    - The log is the root run's `suite.log` in the repo's log folder where git ignores it, else the `claude-suite.log` marker path, its place found by `runPaths`' rule (`workflow/lib/run-paths.js`) with `logs.dir` read through `loadSettings` and walked by `logDirOf` (`workflow/README.md`, the `lib/run-paths.js` entry).
     - A `logs.dir` that is absolute or leaves the repo bounces with that reader's line naming the key instead.
     - npm's `script-shell` is read with `npm config get script-shell`.
     - It is compared by physical path with the `workflow/script-shell.sh` beside the module.
     - When it is not the kit's wrapper, the bounce says so and names `workkit setup` first. With no npm to ask, that clause is left out.
-    - On Windows (a plugin root on a drive letter), npm's shell is the built `script-shell.exe` setup builds into `~/.workkit` (`wk_script_shell_exe`).
+    - On Windows (a plugin root on a drive letter), npm's shell is the built `script-shell.exe` setup builds into `~/.workkit` (`scriptShellExeOf` in `hooks/mods/log.js`, the path's one spelling, which setup builds to as well).
     - That exe hands the call to the same wrapper under Git Bash.
     - So the comparison there is by physical path with that file (the `scriptShellExe` fact, `<user dir>/script-shell.exe`).
     - A deleted file is not the kit's wrapper either.

@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { defaultBranch } = require('../lib/git');
 const { sayAs } = require('../lib/say');
+const { chomp } = require('../../hooks/mods/text.js');
 
 // The linter copies an earlier heal vendored: the current name and the older .js one.
 const LINTER_COPIES = ['.github/changelog-lint.cjs', '.github/changelog-lint.js'];
@@ -78,7 +79,7 @@ const checksRewrite = (template, root) => {
   }
   const branch = defaultBranch(root);
   if (!branch) return { status: 2 };
-  return { status: 0, text: `${text.replace(/\n+$/, '').split('__DEFAULT_BRANCH__').join(branch)}\n` };
+  return { status: 0, text: `${chomp(text).split('__DEFAULT_BRANCH__').join(branch)}\n` };
 };
 
 // The program's three modes; each returns its exit code.

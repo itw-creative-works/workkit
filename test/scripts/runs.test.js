@@ -3,7 +3,7 @@
 // that is over, a live holder, a launch under way, a removal under way), two takers on one lock, a
 // launch that fails, a signal before the pid, an end that fails, a run under a supervisor already,
 // a painted and a plain view whose reader goes away, and the supervisor's parent. Then attach.js's
-// attach to a run that ended without its code, and run-lock.js's end request, its wait setting,
+// attach to a run that ended without its code, and run-lock.js's end request,
 // drop, end, liveness read and the record it leaves beside the lock.
 
 const fs = require('fs');
@@ -377,28 +377,6 @@ describe('run-lock.js askEnd', () => {
       expect(alive(holder.pid), 'the pid itself still lives').toBe(true);
     } finally {
       await Promise.all([holder.end('SIGKILL'), dropper.end('SIGKILL')]);
-    }
-  });
-});
-
-describe('run-lock.js secondsOf', () => {
-  test('unset, empty, a word, a negative and an infinite number give the fallback; 0 gives 0; 2.5 gives 2.5', () => {
-    const { secondsOf } = require(RUN_LOCK);
-    const saved = process.env.WK_END_WAIT;
-    try {
-      delete process.env.WK_END_WAIT;
-      expect(secondsOf('WK_END_WAIT', 30), 'unset').toBe(30);
-      for (const value of ['', 'abc', '-1', 'Infinity']) {
-        process.env.WK_END_WAIT = value;
-        expect(secondsOf('WK_END_WAIT', 30), JSON.stringify(value)).toBe(30);
-      }
-      process.env.WK_END_WAIT = '0';
-      expect(secondsOf('WK_END_WAIT', 30), '"0"').toBe(0);
-      process.env.WK_END_WAIT = '2.5';
-      expect(secondsOf('WK_END_WAIT', 30), '"2.5"').toBe(2.5);
-    } finally {
-      if (saved === undefined) delete process.env.WK_END_WAIT;
-      else process.env.WK_END_WAIT = saved;
     }
   });
 });

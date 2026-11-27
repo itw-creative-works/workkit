@@ -10,7 +10,7 @@ const {
 } = require('../lib/harness');
 const {
   IS_WINDOWS, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash, spawnSync,
-  skipWithoutModes,
+  skipWithoutModes, skipWithoutCaughtSignal,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
 const { mkRepo, mkOriginRepo } = require('../lib/git-repo');
@@ -611,10 +611,9 @@ describe('workflow:snapshot: a failed take', () => {
     stubTool(bin, 'cp', ['#!/bin/bash', `: > "${shellPath(started)}"`, 'while :; do sleep 1; done']);
     return { started, envPath: joinPath(bin, w.env.PATH) };
   };
-  const SIGNAL_SKIP = IS_WINDOWS && 'Node ends a Windows process outright, with no signal a handler can catch';
 
   for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) {
-    test(`a take ended by ${signal} while it copies leaves no temporary sibling and exits ${code}`, { skip: SIGNAL_SKIP }, async (t) => {
+    test(`a take ended by ${signal} while it copies leaves no temporary sibling and exits ${code}`, { skip: skipWithoutCaughtSignal() }, async (t) => {
       const w = mkWorld();
       const copy = stalledCopy(w);
       // The take leads its own group and the signal goes to the whole group, the way a cut ends a call.

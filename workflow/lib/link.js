@@ -2,8 +2,7 @@
  * workflow/lib/link.js: a machine address made a link, for the kit's Node
  * scripts: renamed onto the address, never removed first, so no other session
  * sees a gap; on Windows alone a folder link naming something else is removed
- * first. The Node half of `wk_link` (lib/flows.sh) and `wk_mv_link`
- * (lib/platform.sh).
+ * first.
  * Usage: const { link, mvLink, isLink, physical } = require('../lib/link');
  */
 
@@ -11,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Renames `from` onto `to` without following a link at `to` (`wk_mv_link`):
+ * Renames `from` onto `to` without following a link at `to`:
  * a rename replaces the name itself, never lands inside the folder it points at.
  * @param {string} from
  * @param {string} to
@@ -64,7 +63,7 @@ const replaceOnWindows = (tmp, target, address) => {
 
 /**
  * Makes `address` a link to `target` and answers whether it now resolves to
- * it (`wk_link`): a link made beside it, then renamed onto it. It removes
+ * it: a link made beside it, then renamed onto it. It removes
  * nothing but, on Windows, a link there naming something else: what sits
  * there is the caller's to judge.
  * @param {string} target

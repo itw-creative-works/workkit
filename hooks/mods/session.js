@@ -7,6 +7,7 @@
 import { userDirOf } from './log.js';
 import { MAX_CONTENT_LINES, contentLineCount } from './session-guard.js';
 import { homeSlugOf, isPlain, parseJson, rootSettings } from './settings.js';
+import { chomp } from './text.js';
 
 // How old the newest brief may be, in whole UTC calendar days, before it is
 // judged stopped: one day is the ordinary morning. FRESH_DAYS in
@@ -61,7 +62,7 @@ export function briefLine(brief, repoSlug, now) {
 // The state block: the file, the light-bar note past the bar, then one closing
 // line per reader under a rule, the owner's last.
 const stateBlock = (state, path, lines) => {
-  let block = `SESSION STATE: ${path} (your task queue across compactions; keep it current):\n${state.replace(/\n+$/, '')}`;
+  let block = `SESSION STATE: ${path} (your task queue across compactions; keep it current):\n${chomp(state)}`;
   if (lines > MAX_CONTENT_LINES) {
     block += `\nNOTE: session.md is ${lines} content lines (bar ${MAX_CONTENT_LINES}). It is a queue, not a journal. Promote anything durable to its issue and prune the rest.`;
   }

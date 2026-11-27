@@ -8,7 +8,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
 const { samePath } = require('../../lib/platform');
-const { cleanup, mkRemote, mkWorld, inHome, inNode } = require('./helpers');
+const { cleanup, mkRemote, mkWorld, inHome, runHomeSteps } = require('./helpers');
 
 const CLONE_AND_SEED = [['repo', 'clone', ['owner/workkit']], ['seed', 'seed']];
 
@@ -16,7 +16,7 @@ describe('workflow/home: the seed', () => {
   test('the tower app becomes the project, minus everything a checkout accretes', () => {
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    const { code, out } = inNode(world, CLONE_AND_SEED);
+    const { code, out } = runHomeSteps(world, CLONE_AND_SEED);
     expect(code, `exit 0: ${out}`).toBe(0);
 
     expect(fs.existsSync(path.join(world.tower, 'targets', 'web', 'src', 'index.html')), 'the app travels').toBeTruthy();
@@ -40,7 +40,7 @@ describe('workflow/home: the seed', () => {
     // acceptance the omega brand monorepo already makes for itself.
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    inNode(world, CLONE_AND_SEED);
+    runHomeSteps(world, CLONE_AND_SEED);
 
     // The spec holds the folder in the machine's own spelling, so the two are compared as paths.
     const manager = world.pkg().devDependencies['@omega.js/manager'];
@@ -51,14 +51,14 @@ describe('workflow/home: the seed', () => {
   });
 
   test('a dot-named folder under targets/ is no target: its file: spec is left as it is', () => {
-    // The shell's `targets/*/package.json` never matched a dot-named folder,
-    // and the publish's install check skips one too; the seed agrees.
+    // A `targets/*/package.json` glob matches no dot-named folder, and the
+    // publish's install check skips one too; the seed agrees.
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     const draft = path.join(world.towerApp, 'targets', '.draft');
     fs.mkdirSync(draft, { recursive: true });
     fs.writeFileSync(path.join(draft, 'package.json'), `${JSON.stringify({ name: 'draft', dependencies: { '@omega.js/web': 'file:../../../../../omega/packages/web' } })}\n`);
-    const { code, out } = inNode(world, CLONE_AND_SEED);
+    const { code, out } = runHomeSteps(world, CLONE_AND_SEED);
     expect(code, `exit 0: ${out}`).toBe(0);
 
     expect(world.pkg(path.join('targets', '.draft', 'package.json')).dependencies['@omega.js/web'], 'the spec is the one the app holds').toBe('file:../../../../../omega/packages/web');
@@ -68,7 +68,7 @@ describe('workflow/home: the seed', () => {
   test('a registry spec passes the seed untouched, and the description gains no Local era note', () => {
     const world = mkWorld({ registryPin: '0.54.1' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    const { code, out } = inNode(world, CLONE_AND_SEED);
+    const { code, out } = runHomeSteps(world, CLONE_AND_SEED);
     expect(code, `exit 0: ${out}`).toBe(0);
 
     expect(world.pkg().devDependencies['@omega.js/manager'], 'the root manifest keeps its npm version').toBe('0.54.1');
@@ -82,7 +82,7 @@ describe('workflow/home: the seed', () => {
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
     cleanup(path.join(world.framework, 'manager'));
 
-    const { out } = inNode(world, CLONE_AND_SEED);
+    const { out } = runHomeSteps(world, CLONE_AND_SEED);
     expect(/@omega\.js\/manager still points at/.test(out), `it names the spec it could not resolve, got: ${out}`).toBeTruthy();
     expect(/file:\.\.\//.test(world.pkg().devDependencies['@omega.js/manager']), 'and the spec is untouched').toBeTruthy();
     cleanup(world.root);
@@ -94,7 +94,7 @@ describe('workflow/home: the seed', () => {
     // by path, so there is no opt-in to seed and no inbox to keep out.
     const world = mkWorld();
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    inNode(world, CLONE_AND_SEED);
+    runHomeSteps(world, CLONE_AND_SEED);
 
     expect(!fs.existsSync(path.join(world.tower, 'config', 'workkit.json')), 'no site options inside the project').toBeTruthy();
     expect(!fs.existsSync(path.join(world.tower, '.workkit')), 'and no .workkit/ folder at all').toBeTruthy();
@@ -113,13 +113,14 @@ describe('workflow/home: the seed', () => {
     const world = mkWorld();
     const remote = mkRemote(world.root);
     world.env.WORKKIT_HOME_REMOTE = remote;
-    inNode(world, CLONE_AND_SEED);
-    inHome(world, 'wk_home_set_slug owner/workkit\nwk_home_commit_push "chore(home): seed the tower project"');
+    runHomeSteps(world, CLONE_AND_SEED);
+    inHome(world, ['set-slug', 'owner/workkit']);
+    inHome(world, ['commit-push', 'chore(home): seed the tower project']);
 
     fs.mkdirSync(path.join(world.tower, '.workkit'), { recursive: true });
     fs.writeFileSync(path.join(world.tower, '.workkit', 'scratch.md'), '- a stray note\n');
     fs.writeFileSync(path.join(world.tower, 'README.md'), '# the tower, edited\n');
-    inHome(world, 'wk_home_commit_push "chore(home): publish the site"');
+    inHome(world, ['commit-push', 'chore(home): publish the site']);
 
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
@@ -133,11 +134,11 @@ describe('workflow/home: the seed', () => {
 describe('workflow/home: the sync', () => {
   // Publish reads both answers in its own process: the code says whether to
   // commit and build, the manifest flag whether the build installs first.
-  const sync = (world) => inNode(world, [['seed', 'sync']]).answers[0];
+  const sync = (world) => runHomeSteps(world, [['seed', 'sync']]).answers[0];
   const homed = () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    const { code, out } = inNode(world, CLONE_AND_SEED);
+    const { code, out } = runHomeSteps(world, CLONE_AND_SEED);
     expect(code, `the clone was seeded: ${out}`).toBe(0);
     return world;
   };
@@ -159,14 +160,14 @@ describe('workflow/home: the sync', () => {
     fs.writeFileSync(path.join(world.towerApp, 'targets', 'web', 'src', 'index.html'), '<html>moved on</html>\n');
     fs.rmSync(path.join(world.tower, 'targets', 'web', 'src'), { recursive: true });
     fs.writeFileSync(path.join(world.tower, 'targets', 'web', 'src'), 'in the way\n');
-    const failed = inNode(world, [['seed', 'sync']]);
+    const failed = runHomeSteps(world, [['seed', 'sync']]);
     expect(failed.answers[0].code, `a write that failed is part written, never current: ${failed.out}`).toBe(3);
     cleanup(world.root);
   });
 
   test('nothing cloned is 1, nothing to sync from', () => {
     const world = mkWorld({ settings: { version: 1, site: { repo: 'owner/workkit', publish: false, url: null } } });
-    const { answers, out } = inNode(world, [['seed', 'sync']]);
+    const { answers, out } = runHomeSteps(world, [['seed', 'sync']]);
     expect(answers[0].code, `the sync had no clone to write into: ${out}`).toBe(1);
     expect(!fs.existsSync(world.tower), 'and made none').toBeTruthy();
     cleanup(world.root);

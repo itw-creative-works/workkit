@@ -1,6 +1,7 @@
 // workflow/lib/say.js: the one-line stderr writer the kit's Node commands share,
-// its stdout twin, and how a child process ended or why it failed, phrased for such a line.
-// Usage: const { sayAs, writeErr, writeOut, endOf, errLine, lastErrLine } = require('../lib/say');
+// its stdout twin, how a child process ended or why it failed, phrased for such a line,
+// and the wait until a stream has handed on what was written to it.
+// Usage: const { sayAs, writeErr, writeOut, endOf, errLine, lastErrLine, drained } = require('../lib/say');
 
 const fs = require('fs');
 const { pause } = require('./pause');
@@ -76,6 +77,17 @@ const errLine = (res, fallback = endOf(res)) => (res.stderr || '').trim().split(
  */
 const lastErrLine = (res) => (res.stderr || '').trim().split('\n').pop().trim();
 
+/**
+ * Settles once everything written to `stream` so far has been handed on: an
+ * empty write's callback comes after every write before it, pending or not,
+ * so a line written straight to the fd next lands after them.
+ * @param {import('stream').Writable} stream
+ * @returns {Promise<void>} settles on a failed stream too
+ */
+const drained = (stream) => new Promise((resolve) => {
+  stream.write('', () => resolve());
+});
+
 module.exports = {
-  sayAs, writeErr, writeOut, endOf, errLine, lastErrLine,
+  sayAs, writeErr, writeOut, endOf, errLine, lastErrLine, drained,
 };

@@ -13,7 +13,8 @@ const { writeErr, writeOut } = require('../../workflow/lib/say');
 const { spin } = require('../../workflow/lib/spin');
 const { dispatchBrief } = require('../brief-dispatch');
 const { notify } = require('../lib/machine');
-const { block, captured } = require('../lib/notes');
+const { block } = require('../lib/notes');
+const { chomp } = require('../../hooks/mods/text.js');
 
 const PAYLOAD = path.join(__dirname, 'brief', 'brief-payload.js');
 
@@ -39,7 +40,7 @@ const read = (cmd, args) => spawnSync(cmd, args, {
  */
 const compose = () => {
   const res = read(process.execPath, [PAYLOAD]);
-  return { status: codeOf(res), message: captured(res.stdout ?? ''), err: captured(res.stderr ?? '') };
+  return { status: codeOf(res), message: chomp(res.stdout), err: chomp(res.stderr) };
 };
 
 /**
@@ -52,8 +53,8 @@ const send = (message) => {
   const res = spin('asking Claude for the brief', () => read('claude', ['-p', message, ...SEND_RAILS]), { line: false });
   const status = codeOf(res);
   // A child that never started (startFailed with no code of its own) said its reason in the error.
-  const err = status === startFailed && res.status === null ? res.error.message : (res.stderr ?? '');
-  return { status, response: captured(res.stdout ?? ''), err: captured(err) };
+  const err = status === startFailed && res.status === null ? res.error.message : res.stderr;
+  return { status, response: chomp(res.stdout), err: chomp(err) };
 };
 
 /**

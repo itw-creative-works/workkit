@@ -1,16 +1,16 @@
-// Tests for workflow/lib/platform.sh: the engine's platform seam, the one home of
-// the spellings macOS, Windows (Git Bash) and Linux disagree about. The engine and
-// the hook layer both source it, so it has its own suite; the Windows branch is
+// Tests for workflow/lib/platform.sh: the shell's platform seam, the one home of
+// the spellings macOS, Windows (Git Bash) and Linux disagree about. The hooks, the
+// shims and the starters source it, so it has its own suite; the Windows branch is
 // driven by an inherited OSTYPE plus a `cygpath` on PATH.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { describe, test, expect, mkTmp, until, start, SPAWN_DEADLINE } = require('../lib/harness');
+const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NO_RC, shellPath, cygpathStub, lenientMkdir,
-  stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, skipWithoutFileLink, spawnBash,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, shellPath, cygpathStub,
+  stubTool, stubNode, pathWith, systemPathWith, linkTool, which, joinPath, WINDOWS_CSC, samePath, spawnBash,
 } = require('../lib/platform');
 
 const PLATFORM = shellPath(path.join(__dirname, '..', '..', 'workflow', 'lib', 'platform.sh'));
@@ -155,92 +155,6 @@ describe('platform.sh: wk_node', () => {
     const { code, out } = inPlatform('wk_node', w.env);
     expect(code, 'none qualifies').toBe(1);
     expect(out, `no path printed, got: ${JSON.stringify(out)}`).toBe('');
-  });
-});
-
-describe("platform.sh: npm's script shell", () => {
-  test("wk_npm_script_shell: npm's value without the carriage return a Windows npm ends it with", () => {
-    const dir = mkTmp('wf-platform-');
-    stubTool(dir, 'npm', ['#!/bin/bash', 'printf "C:/h/.workkit/script-shell.exe\\r\\n"']);
-    const { code, out } = inPlatform('v=$(wk_npm_script_shell); printf "[%s]" "$v"', { PATH: systemPathWith(dir) });
-    expect(code, 'npm answered').toBe(0);
-    expect(out, `the value alone, got: ${JSON.stringify(out)}`).toBe('[C:/h/.workkit/script-shell.exe]');
-    cleanup(dir);
-  });
-
-  test("wk_npm_script_shell: npm's own failure comes back", () => {
-    const dir = mkTmp('wf-platform-');
-    stubTool(dir, 'npm', ['#!/bin/bash', 'exit 3']);
-    const { code } = inPlatform('wk_npm_script_shell', { PATH: systemPathWith(dir) });
-    expect(code, "npm's exit status, never tr's").toBe(3);
-    cleanup(dir);
-  });
-
-  test('wk_script_shell_exe: the executable in the machine folder, WORKFLOW_HOME first', () => {
-    expect(inPlatform('wk_script_shell_exe', { WORKFLOW_HOME: '/w/kit', HOME: '/h' }).out, 'the named machine folder').toBe('/w/kit/script-shell.exe\n');
-    expect(inPlatform('wk_script_shell_exe', { HOME: '/h' }).out, 'else the home one').toBe('/h/.workkit/script-shell.exe\n');
-  });
-
-  test('wk_physical_path: a file named through a linked folder reads as the physical folder plus its name', () => {
-    const dir = mkTmp('wf-platform-');
-    const real = path.join(dir, 'real');
-    fs.mkdirSync(real);
-    fs.writeFileSync(path.join(real, 'shell.sh'), '');
-    // A junction on Windows, a symlink elsewhere (where the type is ignored).
-    const linked = path.join(dir, 'linked');
-    fs.symlinkSync(real, linked, 'junction');
-    const { code, out } = inPlatform(`wk_physical_path ${JSON.stringify(`${shellPath(linked)}/shell.sh`)}`);
-    expect(code, 'the folder was entered').toBe(0);
-    expect(out, `the real folder, no trailing newline, got: ${JSON.stringify(out)}`).toBe(`${shellPath(fs.realpathSync(real))}/shell.sh`);
-    cleanup(dir);
-  });
-
-  test("wk_physical_path: a link to a file keeps the link's own folder and name", { skip: skipWithoutFileLink() }, () => {
-    const dir = mkTmp('wf-platform-');
-    const away = path.join(dir, 'away');
-    const here = path.join(dir, 'here');
-    fs.mkdirSync(away);
-    fs.mkdirSync(here);
-    fs.writeFileSync(path.join(away, 'target.sh'), '');
-    fs.symlinkSync(path.join(away, 'target.sh'), path.join(here, 'link.sh'), 'file');
-    const { code, out } = inPlatform(`wk_physical_path ${JSON.stringify(`${shellPath(here)}/link.sh`)}`);
-    expect(code, 'the folder was entered').toBe(0);
-    expect(out, `the link's folder and name, never the target's, got: ${JSON.stringify(out)}`).toBe(`${shellPath(fs.realpathSync(here))}/link.sh`);
-    cleanup(dir);
-  });
-
-  test('wk_physical_path: a folder that does not exist returns non-zero and prints nothing', () => {
-    const dir = mkTmp('wf-platform-');
-    const { code, out, err } = inPlatform(`wk_physical_path ${JSON.stringify(`${shellPath(dir)}/missing/shell.sh`)}`);
-    expect(code !== 0, `non-zero, got: ${code}`).toBeTruthy();
-    expect(out, `nothing on stdout, got: ${JSON.stringify(out)}`).toBe('');
-    expect(err, `nothing on stderr, got: ${JSON.stringify(err)}`).toBe('');
-    cleanup(dir);
-  });
-});
-
-describe('platform.sh: wk_take_lock and wk_drop_lock', () => {
-  test('a mkdir that answers 0 for a folder already there: a second caller gets the lock only after the holder drops it', async () => {
-    const dir = mkTmp('wf-platform-lock-');
-    const bin = path.join(dir, 'bin');
-    fs.mkdirSync(bin);
-    lenientMkdir(bin);
-    const env = { PATH: systemPathWith(bin), L: shellPath(path.join(dir, 'state', 'lock')) };
-    const waiting = path.join(dir, 'waiting');
-    const took = path.join(dir, 'took');
-    const holder = inPlatform('wk_take_lock "$L"', env);
-    expect(holder.code, `the holder took the lock, stderr: ${holder.err}`).toBe(0);
-    const second = start(BASH, [...NO_RC, '-c', `. ${JSON.stringify(PLATFORM)}\n: > "$1"\nwk_take_lock "$L" && : > "$2"`,
-      'wk', shellPath(waiting), shellPath(took)], { env });
-    try {
-      expect(await until(() => fs.existsSync(waiting)), `the second caller never started, stderr: ${second.stderr()}`).toBeTruthy();
-      expect(!(await until(() => fs.existsSync(took), 500)), 'the second caller took a lock the holder still holds').toBeTruthy();
-      const dropped = inPlatform('wk_drop_lock "$L"', env);
-      expect(dropped.code, `the holder dropped it, stderr: ${dropped.err}`).toBe(0);
-      expect(await until(() => fs.existsSync(took)), `the second caller never took the dropped lock, stderr: ${second.stderr()}`).toBeTruthy();
-    } finally {
-      await second.end('SIGKILL');
-    }
   });
 });
 

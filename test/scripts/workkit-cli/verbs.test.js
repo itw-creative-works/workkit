@@ -1,7 +1,7 @@
-// Tests for workflow/workkit.sh's script verbs: `workkit <verb> <sub>` runs
-// workflow/<verb>/<sub>.sh or .js with the arguments it was given, and its
-// output and exit code are the script's; a verb's unknown or missing
-// subcommand is one line naming the subcommands, exit 1. What each script
+// Tests for workflow/workkit/verbs.js, the script verbs' routing table:
+// `workkit <verb> <sub>` runs workflow/<verb>/<sub>.js with the arguments it was
+// given, and its output and exit code are the script's; a verb's unknown or
+// missing subcommand is one line naming the subcommands, exit 1. What each script
 // does is its own suite's; `review mark` and `triage mark` run through the
 // skills' own lines (test/hooks/commit-gate/marker.test.js,
 // test/hooks/capture-guard/user-level.test.js).
@@ -12,9 +12,7 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp,
 } = require('../../lib/harness');
-const {
-  NODE_DIR, skipWithoutNodeStub, joinPath, shellPath, stubNode,
-} = require('../../lib/platform');
+const { NODE_DIR, joinPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
 const {
@@ -87,22 +85,7 @@ describe('workkit ship', () => {
     cleanup(world.root);
   });
 
-  test('ship watch with no node at or above the floor: one line naming 22.22 on stderr, nothing on stdout, exit 1, gh never asked', () => {
-    const world = mkWorld();
-    const old = stubNode(path.join(world.root, 'old-node'), '20.15.1');
-    // The world's home is a scratch one, so no node a machine's nvm keeps is found instead.
-    const env = { PATH: joinPath(path.dirname(old), world.env.PATH), WORKKIT_NODE: shellPath(old) };
-    const { code, out, err } = runCli(world, ['ship', 'watch', 'main'], { env });
-    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
-    expect(out, 'nothing on stdout').toBe('');
-    expect(err, 'the one floor line').toBe('ship watch: no node at or above 22.22 is installed\n');
-    expect(world.ghCalls().length, `gh never asked, got: ${fmtCalls(world.ghCalls())}`).toBe(0);
-    cleanup(world.root);
-  });
-
-  // The publish cases put a fake `npm` ahead of node's own; written before the
-  // stub launcher, they still skip on Windows.
-  test('ship plan prints the plan in order and publishes nothing', { skip: skipWithoutNodeStub() }, () => {
+  test('ship plan prints the plan in order and publishes nothing', () => {
     const world = mkWorld();
     const dir = chain();
     const npm = makeNpmStub();
@@ -117,7 +100,7 @@ describe('workkit ship', () => {
 
   // What the publish does is publish-plan.test.js's; here, that its exit code
   // and its lines are the command's.
-  test('ship publish hands its run to the script: its published line and its exit 1', { skip: skipWithoutNodeStub() }, () => {
+  test('ship publish hands its run to the script: its published line and its exit 1', () => {
     const world = mkWorld();
     const dir = chain();
     const npm = makeNpmStub({ failPublish: '@s/b' });
@@ -183,67 +166,6 @@ describe('workkit proof', () => {
   });
 });
 
-// A repo whose test script passes, and a node older than the floor first on PATH:
-// the world's home is a scratch one, so no node a machine's nvm keeps is found instead.
-const belowFloor = (world) => {
-  const g = mkGitRepo('wk-floor-', { 'package.json': '{ "name": "scratch", "scripts": { "test": "true" } }\n' });
-  const old = stubNode(path.join(world.root, 'old-node'), '20.15.1');
-  return { g, env: { PATH: joinPath(path.dirname(old), world.env.PATH), WORKKIT_NODE: shellPath(old) } };
-};
-
-describe('workkit prove and proof red: the node floor', () => {
-  test('prove with no node at or above the floor: one line naming 22.22 on stderr, nothing on stdout, exit 1', () => {
-    const world = mkWorld();
-    const { g, env } = belowFloor(world);
-    const { code, out, err } = runCli(world, ['prove'], { cwd: g.repo, env });
-    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
-    expect(out, 'nothing on stdout').toBe('');
-    expect(err, 'the one floor line').toBe('prove: no node at or above 22.22 is installed\n');
-    cleanup(g.dir);
-    cleanup(world.root);
-  });
-
-  test('proof red with no node at or above the floor: one line naming 22.22 on stderr, nothing on stdout, exit 2, never 1 (green)', () => {
-    const world = mkWorld();
-    const { g, env } = belowFloor(world);
-    const { code, out, err } = runCli(world, ['proof', 'red', 'src/x.js', '--', 'true'], { cwd: g.repo, env });
-    expect(code, `exit 2, got: ${out}${err}`).toBe(2);
-    expect(out, 'nothing on stdout').toBe('');
-    expect(err, 'the one floor line').toBe('red-proof: no node at or above 22.22 is installed\n');
-    cleanup(g.dir);
-    cleanup(world.root);
-  });
-});
-
-describe('workkit review, triage, checkpoint and ship items: the node floor', () => {
-  // [the command's words, its prefix, its code with no node at the floor].
-  const FLOOR = [
-    [['review', 'covers'], 'review-covers', 2],
-    [['review', 'mark'], 'review-marker', 1],
-    [['triage', 'mark'], 'triage-marker', 1],
-    [['checkpoint', 'safe'], 'checkpoint-marker', 1],
-    [['ship', 'items'], 'ship-items', 1],
-  ];
-
-  for (const [args, prefix, exit] of FLOOR) {
-    test(`${args.join(' ')} with no node at or above the floor: one ${prefix} line naming 22.22 on stderr, nothing on stdout, exit ${exit}, no marker written, gh never asked`, () => {
-      const world = mkWorld();
-      const { g, env } = belowFloor(world);
-      // A session to mark, so the checkpoint's refusal is the floor's and never the missing session's.
-      const { code, out, err } = runCli(world, args, { cwd: g.repo, env: { ...env, CLAUDE_CODE_SESSION_ID: 'floor1' } });
-      expect(code, `exit ${exit}, got: ${out}${err}`).toBe(exit);
-      expect(out, 'nothing on stdout').toBe('');
-      expect(err, 'the one floor line').toBe(`${prefix}: no node at or above 22.22 is installed\n`);
-      const written = ['claude-review-marker', 'claude-review-full-marker', 'claude-triage-marker', 'claude-checkpoint-marker']
-        .filter((kind) => fs.existsSync(path.join(world.workflowHome, 'markers', kind)));
-      expect(written.join(', '), 'no marker written').toBe('');
-      expect(world.ghCalls().length, `gh never asked, got: ${fmtCalls(world.ghCalls())}`).toBe(0);
-      cleanup(g.dir);
-      cleanup(world.root);
-    });
-  }
-});
-
 describe('workkit changelog', () => {
   test('changelog lint hands the file and its flags to the linter', () => {
     const world = mkWorld();
@@ -266,7 +188,7 @@ describe('workkit state', () => {
   test('state names a repo\'s participation, the current folder by default', () => {
     const world = mkWorld();
     const repo = mkRepo({ optIn: true });
-    const named = runCli(world, ['state', shellPath(repo)], { env: withNode(world) });
+    const named = runCli(world, ['state', repo], { env: withNode(world) });
     expect(named.code, `exit 0, got: ${named.said}`).toBe(0);
     expect(named.out, 'an opted-in repo').toBe('enabled\n');
     const here = runCli(world, ['state'], { cwd: mkTmp('workkit-cli-'), env: withNode(world) });

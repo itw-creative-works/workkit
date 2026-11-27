@@ -12,7 +12,7 @@ const { nativePath } = require('../../workflow/lib/platform');
 const { spawnSync } = require('../../workflow/lib/run');
 const { plain, said } = require('../../workflow/lib/voice');
 const { towerDir } = require('../../workflow/user-dir');
-const { captured } = require('../lib/notes');
+const { chomp } = require('../../hooks/mods/text.js');
 
 const HOME_JS = path.join(__dirname, '..', '..', 'workflow', 'home.js');
 
@@ -21,7 +21,7 @@ const WARNED = /^ *(⚠|✖) /m;
 /**
  * The reconcile's verbs, each a home.js in its own process with the caller's
  * voice, both its streams into one record in the order they came, as the
- * hand-offs of home.sh run them.
+ * command's hand-off (homeRun in workflow/workkit/kit.js) runs them.
  * @param {string} record the file the reconcile's lines are kept in
  * @returns {{verb: function, line: function}}
  */
@@ -52,7 +52,7 @@ const reconcilerOf = (record) => {
 const reconcile = ({ verb, line }) => {
   const home = nativePath(towerDir());
   if (verb(['ready']).status !== 0) {
-    const state = captured(verb(['state'], { answer: true }).stdout ?? '');
+    const state = chomp(verb(['state'], { answer: true }).stdout);
     if (state === 'unset') line('skip', 'runner: no home repo; `workkit setup` creates one; nothing to reconcile');
     else if (state === 'absent') line('skip', `runner: nothing is cloned at ${home} yet; the cloud brief runner was not reconciled; \`workkit setup\` clones it`);
     else if (state === 'other') line('warn', `runner: ${home} is not the home repo's clone; nothing is reconciled in somebody else's folder`);
@@ -82,8 +82,8 @@ const reconcileRunner = async (run) => {
   }
   const record = path.join(run.scratch, 'runner');
   reconcile(reconcilerOf(record));
-  const text = captured(fs.existsSync(record) ? fs.readFileSync(record, 'utf8') : '');
-  const relayed = captured(plain(text));
+  const text = chomp(fs.existsSync(record) ? fs.readFileSync(record, 'utf8') : '');
+  const relayed = chomp(plain(text));
   if (!relayed) return;
   if (WARNED.test(text)) run.notes.noteWarn(relayed);
   else run.notes.note(relayed);

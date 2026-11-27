@@ -2,8 +2,9 @@
  * workflow/lib/run-paths.js: where a detached run logs and locks, CJS: the
  * suite's, the supervised run's, the CI watch's and a narrowed run's slot, keyed
  * by the root as `git rev-parse --show-toplevel` prints it; the slots a repo
- * holds, and a slot cleared. The log's place is wk_log_path's rule in lib/suite.sh.
+ * holds, and a slot cleared.
  * Usage: const { runPaths, testSlots, clearSlot } = require('./run-paths');
+ *        const { logPathOf } = require('./run-paths');   (a log of any name, the command log's)
  */
 
 const fs = require('fs');
@@ -31,7 +32,7 @@ class LogsDirError extends Error {
 }
 
 /**
- * wk_log_path's rule (logPlaceOf): <name> in the log folder only when git
+ * Where a log goes (logPlaceOf): <name> in the log folder only when git
  * ignores it there, else the marker path `claude-<name>`, so a log never
  * changes the tree hash. An <id> ends the name in both places.
  */
@@ -95,5 +96,5 @@ const removeSlot = ({ log, lock }) => {
 const clearSlot = async (root, pid) => removeSlot(await runPaths(root, 'test', pid));
 
 module.exports = {
-  runPaths, lockPathOf, testSlots, clearSlot, removeSlot, LogsDirError,
+  runPaths, lockPathOf, testSlots, clearSlot, removeSlot, LogsDirError, logPathOf,
 };

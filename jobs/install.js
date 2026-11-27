@@ -8,7 +8,7 @@
  * task (lib/task-scheduler.js). A scheduler is machine-global, so it is asked
  * only when HOME is this account's real home (jobs/README.md § The pieces).
  * Usage: node jobs/install.js [--check]
- * Called by: workflow/workkit/schedule.sh (`workkit setup`, `update`, `doctor`).
+ * Called by: workflow/workkit/schedule.js (`workkit setup`, `update`, `doctor`).
  */
 
 const fs = require('fs');
@@ -28,6 +28,7 @@ const { holds, skippedLine } = require('./lib/schedule');
 const {
   renderTask, installTask, checkTask, copyPath,
 } = require('./lib/task-scheduler');
+const { chomp } = require('../hooks/mods/text.js');
 
 const USAGE = 'usage: install.js [--check]\n';
 
@@ -143,7 +144,7 @@ const confirmLoaded = (label, target, uid) => {
     ok(`${label} → loaded (plist unchanged)`);
     return 0;
   }
-  const loaded = loadedPath(printed.stdout.replace(/\n+$/, ''));
+  const loaded = loadedPath(chomp(printed.stdout));
   if (loaded === target) {
     ok(`${label} → already installed and loaded`);
     return 0;
@@ -282,7 +283,7 @@ const main = (args, { platform = PLATFORM } = {}) => {
     writeErr(USAGE);
     return 1;
   }
-  // The engine's voice, as lib.sh sets it: `workkit update` relays these lines
+  // The engine's voice with no indent: `workkit update` relays these lines
   // under its own glyph, stripping this one, so a line never wears two.
   process.env.WK_LOG_INDENT = '';
   if (platform !== 'darwin' && platform !== 'win32') {

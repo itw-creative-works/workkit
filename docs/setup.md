@@ -16,7 +16,8 @@ claude plugin install workkit@workkit
 - That brings the hooks, agents and skills.
 - The `workkit` command, the schedule and the home repo come from setup.
 - Until setup has run, every session asks you to run it and names the command.
-  - The command is `bash <the engine in the plugin cache>/workkit.sh setup`, its path spelled out for your machine.
+  - The command is `node <the engine in the plugin cache>/workkit.js setup`, its path spelled out for your machine.
+- `workkit` is a Node program. It runs on the first `node` on your PATH, which must be 22.22 or newer; an older one gets one line saying so, `workkit: this Node is <version>; the kit needs 22.22 or newer`, and the command stops.
 - Setup runs from the plugin cache as it does from a clone.
   - The engine's address (`~/.claude/workkit`) takes the cached copy, and the 9am job runs through that address.
   - So a plugin update that repoints it keeps the schedule current with no reinstall.
@@ -26,7 +27,7 @@ claude plugin install workkit@workkit
 ```sh
 git clone https://github.com/ITW-Creative-Works/workkit.git
 cd workkit
-./workflow/workkit.sh setup
+node workflow/workkit.js setup
 ```
 
 - A checkout you already have registers the same way as GitHub does:
@@ -41,7 +42,7 @@ claude plugin install workkit@workkit
 
 ## What setup does
 
-- `./workflow/workkit.sh setup` runs from the plugin cache or from a clone of this repo (see [Install](#install)).
+- `node workflow/workkit.js setup` runs from the plugin cache or from a clone of this repo (see [Install](#install)).
   - It goes through these steps in order, under six titles.
   - Each step checks before it acts, so a second run only fixes what is missing.
 - You rarely run it yourself.
@@ -68,7 +69,8 @@ claude plugin install workkit@workkit
   2. **GitHub.** Checks that `gh` is installed and signed in.
   3. **The engine's address.** Points `~/.claude/workkit` at the `workflow/` folder of the copy setup runs from (see [The engine's address](#the-engines-address)).
   4. **The `workkit` command.** Links it into `~/.local/bin`, and the `gh` shim beside it (see [The bot identity](#the-bot-identity)).
-     - When that folder is not on your PATH, setup prints the `export` line to add; it never edits a shell rc file.
+     - On Windows it also writes `~/.local/bin/workkit.cmd`, so `workkit` starts from cmd and PowerShell as well as from Git Bash.
+     - When that folder is not on your PATH, setup prints the `export` line to add (on Windows, the folder to add in Windows' own settings); it never edits a shell rc file or your PATH.
   5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper.
      - From then on a root `npm test` records the tree it proved ([`project-state.md`](project-state.md) § The proof); a `test` event needs a node at 22.22 or later, and stops with one line, exit 1, without one ([`workflow/README.md`](../workflow/README.md), the `lib/platform.sh` entry).
      - It lints any new CHANGELOG entry before the suite starts.
@@ -78,8 +80,8 @@ claude plugin install workkit@workkit
      - The setting is made only when the wrapper exists behind the engine's address.
      - With that link missing, setup prints a named skip and `script-shell` stays unset.
      - On Windows, setup first builds the kit's script shell with the compiler every Windows ships.
-  6. **The allow and ask rules.** Adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.sh`) to `permissions.allow` in `~/.claude/settings.json`, and its ask rules (`ASK_RULES`) to `permissions.ask`, in one write.
-     - Both are built from one list, `WORKKIT_COMMANDS` in `workflow/workkit/command-list.sh`: each kit command as `<command>=<permission>`, the permission `allow`, `ask` or `none`.
+  6. **The allow and ask rules.** Adds the kit's allow rules (`ALLOW_RULES` in `workflow/workkit/allow.js`) to `permissions.allow` in `~/.claude/settings.json`, and its ask rules (`ASK_RULES`) to `permissions.ask`, in one write.
+     - Both are built from one list, `COMMANDS` in `workflow/workkit/command-list.js`: each kit command as `{ command, permission }`, the permission `allow`, `ask` or `none`.
      - An `allow` command's rule is `Bash(workkit <command>:*)` at `permissions.allow`, so the command runs with no prompt and auto mode never blocks it; the ship's verbs are listed one by one, so no allow rule matches a deploy. `Bash(npm publish:*)` follows them, the publish a ship runs.
      - An `ask` command's rule is the same shape at `permissions.ask`. `Bash(workkit ship deploy:*)` is the one there: Claude Code weighs an ask rule before an allow rule, in auto mode too, so it asks at every `workkit ship deploy`, inside a ship as well, and that call needs a person to answer that prompt.
      - A `none` command gets no rule, so Claude Code checks it as it checks any command: `test`, `proof red`, `tower`, `prove` and `supervise` each run other code.
@@ -117,7 +119,7 @@ claude plugin install workkit@workkit
       - A no, or no keyboard, prints a warning naming `workkit setup --login`.
       - `workkit setup --login` runs this step alone with or without a terminal, and asks nothing.
       - It signs you in again even when you already are.
-      - A machine without Node or jq gets a named skip (see [The bot identity](#the-bot-identity)).
+      - A kit with no identity client beside the engine gets a named skip (see [The bot identity](#the-bot-identity)).
 - **Dashboard site**
 
   13. **Publishing.** Asks once whether to publish your own copy of the dashboard to GitHub Pages.
@@ -145,7 +147,7 @@ claude plugin install workkit@workkit
     - Nothing signs in.
   - Every other step prints one not-applicable line: the plugin, the schedule, the tower, the home repo, the cloud brief's secrets, the sign-in, publishing, joining, the App's install.
   - It asks nothing and opens nothing.
-  - `standards.sh --command-link` makes the command link alone, for a bootstrap that runs no setup at all.
+  - `node <engine>/standards.js --command-link` makes the command link alone, for a bootstrap that runs no setup at all.
   - A cloud bootstrap that does run setup calls `workkit setup --cloud`, which makes the link itself.
   - In the cloud, `workkit doctor` likewise shows the schedule, the home repo, its runner, the secrets and the sign-in as not applicable.
     - It counts none of them.
@@ -193,7 +195,7 @@ claude plugin install workkit@workkit
 
 ## The engine's address
 
-- The engine is the plain shell and Node code in `workflow/`.
+- The engine is the Node code in `workflow/`, with the few shell files the git hooks, the shims and the starters still need.
 - Its stable address is `~/.claude/workkit`, a link to the engine's `workflow/` folder, in a clone or in the plugin cache.
 
 - The daily heal installs the link itself the first time a session runs it in a repo that has workkit turned on. It does so only from a real engine (a clone of workkit or the plugin's cached copy), so a test copy never takes the machine's address, and a clone keeps it over the cache.
@@ -238,7 +240,7 @@ claude plugin install workkit@workkit
   - `.repos.json` is the engine's list of repos on this machine, plus the ones you declined.
   - `.cache.json` is throwaway state, and `jobs/` is the daily job's state.
   - `scheduled/` holds, on Windows, the copy of the task file the installer registered, its "installed" mark ([`jobs/README.md`](../jobs/README.md#install)).
-  - `logs/` holds the last run of `workkit setup`, `update`, `doctor` and `publish`, one plain file each (`setup.log` and so on), ending `workkit <command>: exit <code>`; the terminal shows the same run in color. The token mint and the GitHub sign-in show on the terminal only, never in a log.
+  - `logs/` holds the last run of `workkit setup`, `update`, `doctor` and `publish`, one plain file each (`setup.log` and so on), ending `workkit <command>: exit <code>`; the terminal shows the same run in color. The token mint and the GitHub sign-in show on the terminal, or on an agent's call's own output, never in a log.
   - `morning.d/` is yours too: every executable `*.sh` in it is the 9am job's sixth step, run in name order ([`jobs/README.md`](../jobs/README.md#the-morning-on-this-machine)).
 - The full rules for this global layer: [`project-state.md`](project-state.md) § The global layer.
 
@@ -271,7 +273,7 @@ claude plugin install workkit@workkit
 - Every other setting has its default in the kit's `defaults/settings.json`.
   - Your `~/.workkit/settings.json` overrides a default for every repo on the machine.
   - A repo's own `.workkit/settings.json` overrides both, key by key ([`project-state.md`](project-state.md) § The model).
-- The commands underneath are `workflow/standards.sh --enable` and `--decline`.
+- The commands underneath are `workflow/standards.js --enable` and `--decline`.
 
 ## Layout
 

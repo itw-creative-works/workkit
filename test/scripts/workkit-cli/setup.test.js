@@ -1,4 +1,4 @@
-// Tests for workflow/workkit.sh: `setup`, its site question, its site publish,
+// Tests for workflow/workkit.js: `setup`, its site question, its site publish,
 // and the schedule on each system.
 // The shared prologue is ./helpers.js.
 
@@ -8,14 +8,14 @@ const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which, joinPath, cygpathStub, spawnSync,
+  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which, joinPath, stubToolJs, spawnSync,
 } = require('../../lib/platform');
 const {
-  isCall, fmtCalls, recordArgv, readArgv,
+  isCall, fmtCalls, recordArgvJs, readArgv,
 } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, LABEL, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, seedSettings, inCli, AT_TERMINAL,
-  writeStub, mkSetupKit, mkPartialKit, SYSTEMS, nameSystem, mkScheduleKit,
+  WORKFLOW_DIR, LABEL, cleanup, mkWorld, withNpm, runCli, ACTED, mkRepo, seedSettings, inNode,
+  mkSetupKit, mkPartialKit, mkScheduleKit, windowsForm,
 } = require('./helpers');
 
 // The world's env with a scratch npmrc and this suite's node on PATH after the
@@ -83,15 +83,17 @@ describe('workkit setup', () => {
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
-  // `setup` at the terminal seam from an undecided repo, the answers on stdin.
+  // `setup` at a terminal from an undecided repo, the answers on stdin.
   // The world has no home repo and no login, so its node answers the repo's state
   // and the one question before the repo's is the sign-in's, declined so no device
   // flow starts; the answer given goes to the repo's.
   const repoQuestion = (input) => {
     const world = mkWorld();
-    const { kit, script } = mkSetupKit();
+    const { kit } = mkSetupKit();
     const repo = mkRepo();
-    const res = inCli(world, `${AT_TERMINAL}\ncd ${JSON.stringify(shellPath(repo))}\ncmd_setup`, { entry: script, input: `n\n${input}`, env: withNode(world) });
+    const res = inNode(world, {
+      engine: path.join(kit, 'workflow'), file: 'workkit/setup.js', fn: 'setup', kit: { interactive: true }, cwd: repo, input: `n\n${input}`, env: withNode(world),
+    });
     return { ...res, repo, done: () => { cleanup(world.root); cleanup(kit); cleanup(repo); } };
   };
 
@@ -112,22 +114,6 @@ describe('workkit setup', () => {
     done();
   });
 
-  test('the repo question on a kit without lib.sh prints the skip line and asks nothing', () => {
-    // The prompt is lib.sh's, so a kit without it (HOME_LIBS at 0) can only take
-    // the no branch after a command-not-found; the guard names the library instead.
-    const world = mkWorld();
-    const { kit, script } = mkSetupKit();
-    fs.rmSync(path.join(kit, 'workflow', 'lib.sh'));
-    const repo = mkRepo();
-    const { said } = inCli(world, `${AT_TERMINAL}\ncd ${JSON.stringify(shellPath(repo))}\noffer_repo`, { entry: script, input: 'y\n' });
-    const line = `repo: the home-repo library is missing beside ${gitPath(path.join(kit, 'workflow'))}; the kit is incomplete`;
-    expect(said.split('\n').includes(line), `the skip line is the home wizard's, got: ${said}`).toBeTruthy();
-    expect(!said.includes('to the issue workflow?'), `nothing is asked, got: ${said}`).toBeTruthy();
-    expect(!/command not found/.test(said), `and nothing is called that is not there, got: ${said}`).toBeTruthy();
-    expect(!fs.existsSync(path.join(repo, W)), 'the repo is not written to').toBeTruthy();
-    cleanup(world.root); cleanup(kit); cleanup(repo);
-  });
-
   test('a second setup reports nothing to do', () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     const { kit, script } = mkSetupKit();
@@ -137,8 +123,8 @@ describe('workkit setup', () => {
     runCli(world, ['setup'], { cwd: repo, script, env });
     const { code, said } = runCli(world, ['setup'], { cwd: repo, script, env });
     expect(code, 'exit 0').toBe(0);
-    // `setup` has no quiet variant, so the verbs are the signal here: QUIET is
-    // 0 and an action and a skip are the same shape of line.
+    // `setup` has no quiet variant, so the verbs are the signal here: quiet is
+    // off and an action and a skip are the same shape of line.
     expect(!ACTED.test(said), `an already-set-up machine acts on nothing, got: ${said}`).toBeTruthy();
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
@@ -147,7 +133,7 @@ describe('workkit setup', () => {
     // The gh shim says who you are, so the home step reaches its question and,
     // with no terminal to put it to, hands over the command that answers it.
     // What this proves is the offer: the wizard reaches the home steps and
-    // creates nothing without a terminal (workflow/home.sh's suite has the rest).
+    // creates nothing without a terminal (workflow/home.js's suites have the rest).
     const world = mkWorld({ login: 'owner' });
     const { kit, script } = mkSetupKit();
     const { code, said: out } = runCli(world, ['setup'], { script });
@@ -171,12 +157,13 @@ describe('workkit setup', () => {
     cleanup(world.root); cleanup(kit);
   });
 
-  test('setup --home on a kit without its home library warns and is exit 1', () => {
+  test('setup --home on a kit without home.js names it and is exit 1', () => {
     const world = mkWorld();
     const { kit, script } = mkPartialKit();
     const { code, said: out } = runCli(world, ['setup', '--home'], { script });
     expect(code, `exit 1, got: ${out}`).toBe(1);
-    expect(/home-repo library is missing/.test(out), `it names the missing library, got: ${out}`).toBeTruthy();
+    const line = `  ⚠ home: home.js is missing at ${gitPath(path.join(kit, 'workflow', 'home.js'))}; the kit is incomplete`;
+    expect(out.split('\n').includes(line), `it names the missing program, got: ${out}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);
   });
 });
@@ -234,13 +221,18 @@ describe('workkit setup: the site question', () => {
     cleanup(world.root); cleanup(kit);
   });
 
+  // One step of the site question, called in a node of its own.
+  const siteStep = (world, fn, { args = [], terminal = false, input = '' } = {}) => inNode(world, {
+    file: 'workkit/site.js', fn, args, kit: terminal ? { interactive: true } : {}, input,
+  });
+
   test('the answer is recorded in the site options, and nothing else is', () => {
     // The write path the prompt calls, exercised directly: a terminal is the
     // one thing a test harness has no way to hand it.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: 'tower.example.com' });
 
-    const yes = inCli(world, 'set_site_publish true');
+    const yes = siteStep(world, 'setSitePublish', { args: ['true'] });
     expect(yes.code, `exit 0, got: ${yes.err}`).toBe(0);
     let site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
     expect(site.publish, 'the yes is on disk').toBe(true);
@@ -248,7 +240,7 @@ describe('workkit setup: the site question', () => {
     expect(site.url, 'and the custom domain').toBe('tower.example.com');
     expect(/site: publishing is on/.test(yes.out), `and it says what it did, got: ${yes.out}`).toBeTruthy();
 
-    const no = inCli(world, 'set_site_publish false');
+    const no = siteStep(world, 'setSitePublish', { args: ['false'] });
     site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
     expect(site.publish, 'a no is an answer too: false, not a missing key').toBe(false);
     expect(/site: publishing stays off/.test(no.out), `and it says so, got: ${no.out}`).toBeTruthy();
@@ -257,12 +249,12 @@ describe('workkit setup: the site question', () => {
 
   test('the write takes the state mutex, and gives it back', () => {
     // The same whole-file read-modify-write every other writer of this file
-    // does, so it takes the one lock they all take (wk_take_state_lock, workflow/lib/state.sh).
+    // does, so it takes the one lock they all take (stateLockPath, workflow/lib/lock.js).
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const lock = path.join(world.workflowHome, '.state.lock');
     fs.mkdirSync(lock, { recursive: true });
-    const held = inCli(world, 'set_site_publish true');
+    const held = siteStep(world, 'setSitePublish', { args: ['true'] });
     // Held by someone else: the write still happens (the engine never stops a
     // run on a lock), and the holder's lock is not removed by this one.
     expect(held.code, 'exit 0').toBe(0);
@@ -270,20 +262,20 @@ describe('workkit setup: the site question', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8')).site.publish, 'and the answer landed').toBe(true);
 
     fs.rmdirSync(lock);
-    inCli(world, 'set_site_publish false');
+    siteStep(world, 'setSitePublish', { args: ['false'] });
     expect(!fs.existsSync(lock), 'a run that took the lock drops it again').toBeTruthy();
     cleanup(world.root);
   });
 
   test('a fresh yes is asked for the custom domain, and what is typed is written', () => {
     // The terminal check is the one thing a piped test cannot satisfy, so the
-    // question step is called with `interactive` answering yes and the answers
+    // question step is called with the kit at a terminal and the answers
     // arriving on stdin: everything else is the real function.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     const lock = path.join(world.workflowHome, '.state.lock');
 
-    const { code, out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\ntower.example.com\n' });
+    const { code, out } = siteStep(world, 'offerSitePublish', { terminal: true, input: 'y\ntower.example.com\n' });
     expect(code, `exit 0, got: ${out}`).toBe(0);
     expect(/Custom domain for the site\? \[enter for none\]/.test(out), `the follow-up is put, got: ${out}`).toBeTruthy();
     const site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
@@ -301,7 +293,7 @@ describe('workkit setup: the site question', () => {
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
     fs.appendFileSync(file, '{\n');
     const before = fs.readFileSync(file, 'utf8');
-    const { said } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\ntower.example.com\n' });
+    const { said } = siteStep(world, 'offerSitePublish', { terminal: true, input: 'y\ntower.example.com\n' });
     expect(!/Publish the dashboard|Custom domain/.test(said), `no question is put, got: ${said}`).toBeTruthy();
     expect(said.split('\n').some((l) => l.includes('settings.json') && l.includes('does not parse')), `a warning names the file, got: ${said}`).toBeTruthy();
     expect(fs.readFileSync(file, 'utf8'), 'the file is untouched').toBe(before);
@@ -309,11 +301,11 @@ describe('workkit setup: the site question', () => {
   });
 
   test('an empty domain answer leaves the plain github.io address', () => {
-    // Nothing written means `site.url` stays null, and publish.sh writes no
+    // Nothing written means `site.url` stays null, and the publish writes no
     // CNAME: enter is an answer.
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
-    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'y\n\n' });
+    const { out } = siteStep(world, 'offerSitePublish', { terminal: true, input: 'y\n\n' });
     const site = JSON.parse(fs.readFileSync(file, 'utf8')).site;
     expect(/Custom domain for the site\? \[enter for none\]/.test(out), `the follow-up was put, got: ${out}`).toBeTruthy();
     expect(site.publish, 'the yes is still recorded').toBe(true);
@@ -325,7 +317,9 @@ describe('workkit setup: the site question', () => {
   test('a no is never asked about a domain', () => {
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
-    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'n\ntyped.example.com\n' });
+    const { code, out } = siteStep(world, 'offerSitePublish', { terminal: true, input: 'n\ntyped.example.com\n' });
+    expect(code, `exit 0, got: ${out}`).toBe(0);
+    expect(/site: publishing stays off/.test(out), `the no is answered, got: ${out}`).toBeTruthy();
     expect(!/Custom domain/.test(out), `no follow-up on the no leg, got: ${out}`).toBeTruthy();
     expect(JSON.parse(fs.readFileSync(file, 'utf8')).site.url, 'and nothing was read into the file').toBe(null);
     cleanup(world.root);
@@ -335,7 +329,7 @@ describe('workkit setup: the site question', () => {
     for (const [label, input] of [['an empty answer', '\n'], ['a closed stdin', '']]) {
       const world = mkWorld();
       const file = seedSettings(world, { repo: 'owner/workkit', publish: null, url: null });
-      const { code, said } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input });
+      const { code, said } = siteStep(world, 'offerSitePublish', { terminal: true, input });
       expect(code, `${label}: exit 0, got: ${said}`).toBe(0);
       expect(JSON.parse(fs.readFileSync(file, 'utf8')).site.publish, `${label} is a no on disk: false, not null`).toBe(false);
       cleanup(world.root);
@@ -348,7 +342,9 @@ describe('workkit setup: the site question', () => {
     const world = mkWorld();
     const file = seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });
     const before = fs.readFileSync(file, 'utf8');
-    const { out } = inCli(world, `${AT_TERMINAL}\noffer_site_publish`, { input: 'sneaky.example.com\n' });
+    const { code, out } = siteStep(world, 'offerSitePublish', { terminal: true, input: 'sneaky.example.com\n' });
+    expect(code, `exit 0, got: ${out}`).toBe(0);
+    expect(/site: publishing is on; edit `site\.publish`/.test(out), `the answer is read back, got: ${out}`).toBeTruthy();
     expect(!/Custom domain/.test(out), `no question, got: ${out}`).toBeTruthy();
     expect(fs.readFileSync(file, 'utf8'), 'and the owner’s file is exactly as it was').toBe(before);
     cleanup(world.root);
@@ -365,16 +361,18 @@ describe('workkit setup: the site publish', () => {
     seedSettings(world, { repo: 'owner/workkit', publish: true, url: null });
     const { code, out } = runCli(world, ['setup'], { script });
     expect(code, 'exit 0').toBe(0);
-    expect(/publish: nothing is cloned at/.test(out), `publish.sh ran and named its own skip, got: ${out}`).toBeTruthy();
+    expect(/publish: nothing is cloned at/.test(out), `publish.js ran and named its own skip, got: ${out}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);
   });
 
   test('an off or unanswered switch adds no publish at all', () => {
-    for (const publish of [false, null]) {
+    for (const [publish, siteLine] of [[false, 'site: publishing is off'], [null, 'site: nobody has been asked']]) {
       const world = mkWorld();
       const { kit, script } = mkSetupKit();
       seedSettings(world, { repo: 'owner/workkit', publish, url: null });
-      const { out } = runCli(world, ['setup'], { script });
+      const { code, out } = runCli(world, ['setup'], { script });
+      expect(code, `${publish}: exit 0, got: ${out}`).toBe(0);
+      expect(out.includes(siteLine), `${publish}: the site step speaks, got: ${out}`).toBeTruthy();
       expect(!/^.*publish: /m.test(out), `${publish} publishes nothing, got: ${out}`).toBeTruthy();
       cleanup(world.root); cleanup(kit);
     }
@@ -382,38 +380,69 @@ describe('workkit setup: the site publish', () => {
 });
 
 // The road a Mac and a Windows machine share, read from the installer's
-// `--check` alone: the system is named through `uname`, the installer a stand-in.
+// `--check` alone: the system handed to the schedule step, the installer a stand-in.
 describe('workkit setup: the schedule on each system', () => {
-  for (const [system, name] of [['a Mac', SYSTEMS.mac], ['Windows', SYSTEMS.windows]]) {
+  const installCron = (world, sched, platform) => inNode(world, {
+    engine: path.join(sched.kit, 'workflow'), file: 'workkit/schedule.js', fn: 'installCron', kit: { platform },
+  });
+
+  for (const [system, platform] of [['a Mac', 'darwin'], ['Windows', 'win32']]) {
     test(`${system}: a job not installed or out of date is installed, a current one is left`, () => {
       const world = mkWorld();
-      nameSystem(world, name);
       const sched = mkScheduleKit(`${LABEL} → not installed`);
-      const fresh = runCli(world, ['setup'], { script: sched.script });
-      expect(fresh.code, 'exit 0').toBe(0);
+      const fresh = installCron(world, sched, platform);
+      expect(fresh.code, `exit 0, got: ${fresh.said}`).toBe(0);
       expect(sched.installs().length, `not installed: one install run: ${fmtCalls(sched.runs())}`).toBe(1);
       expect(fresh.said.includes(`schedule: ${LABEL} → installed (9:00 AM daily)`), `and its line, got: ${fresh.said}`).toBeTruthy();
 
       sched.check(`${LABEL} → out of date for this kit`);
-      runCli(world, ['setup'], { script: sched.script });
+      installCron(world, sched, platform);
       expect(sched.installs().length, `out of date: a second install run: ${fmtCalls(sched.runs())}`).toBe(2);
 
       sched.check('');
-      const current = runCli(world, ['setup'], { script: sched.script });
+      const current = installCron(world, sched, platform);
       expect(sched.installs().length, `current: no install run: ${fmtCalls(sched.runs())}`).toBe(2);
       expect(current.said.includes(`schedule: ${LABEL} is installed and current`), `it says so, got: ${current.said}`).toBeTruthy();
       cleanup(world.root); cleanup(sched.kit);
     });
   }
 
+  for (const [system, platform] of [['a Mac', 'darwin'], ['Windows', 'win32']]) {
+    test(`${system}: setup itself runs the schedule step, installing a job not installed`, () => {
+      const world = mkWorld();
+      const sched = mkScheduleKit(`${LABEL} → not installed`);
+      const res = inNode(world, {
+        engine: path.join(sched.kit, 'workflow'), file: 'workkit/setup.js', fn: 'setup', kit: { platform },
+      });
+      expect(res.code, `exit 0, got: ${res.said}`).toBe(0);
+      expect(sched.installs().length, `one install run: ${fmtCalls(sched.runs())}`).toBe(1);
+      const line = '  ✓ schedule: com.workkit.claude-daily → installed (9:00 AM daily)';
+      expect(res.said.split('\n').includes(line), `setup's schedule line, got: ${res.said}`).toBeTruthy();
+      cleanup(world.root); cleanup(sched.kit);
+    });
+  }
+
   test('any other system: the skip line, and the installer never runs', () => {
     const world = mkWorld();
-    nameSystem(world, SYSTEMS.linux);
     const sched = mkScheduleKit(`${LABEL} → not installed`);
-    const { code, said } = runCli(world, ['setup'], { script: sched.script });
-    expect(code, 'exit 0').toBe(0);
+    const { code, said } = installCron(world, sched, 'linux');
+    expect(code, `exit 0, got: ${said}`).toBe(0);
     expect(said.includes('schedule: the 9am job runs on macOS and Windows; it is not available here'), `the skip line, got: ${said}`).toBeTruthy();
     expect(sched.runs(), `no installer run at all: ${fmtCalls(sched.runs())}`).toEqual([]);
+    cleanup(world.root); cleanup(sched.kit);
+  });
+
+  test('no temp folder for the installer\'s output: one warning, exit 0, and the install never runs', () => {
+    const world = mkWorld();
+    const sched = mkScheduleKit(`${LABEL} → not installed`);
+    const gone = path.join(world.root, 'no-tmp');
+    const { code, said } = inNode(world, {
+      engine: path.join(sched.kit, 'workflow'), file: 'workkit/schedule.js', fn: 'installCron', kit: { platform: 'darwin' }, env: { TMPDIR: gone, TMP: gone, TEMP: gone },
+    });
+    expect(code, `exit 0, got: ${said}`).toBe(0);
+    const installer = gitPath(path.join(sched.kit, 'jobs', 'install.js'));
+    expect(said.trim(), 'the one warning').toBe(`⚠ schedule: no temp folder for the installer's output, so the install did not run; run \`node ${installer}\` by hand`);
+    expect(sched.installs(), `no install run: ${fmtCalls(sched.runs())}`).toEqual([]);
     cleanup(world.root); cleanup(sched.kit);
   });
 });
@@ -586,51 +615,86 @@ describe('workkit setup: npm script-shell', () => {
     cleanup(world.root); cleanup(kit);
   });
 
-  // The Windows branch driven from any machine: OSTYPE is what the kit reads a
-  // platform by, a stub cygpath answers in git's spelling (the real one on
-  // Windows), and SYSTEMROOT holds a stub compiler that writes its -out: file.
+  // The step called in a node of its own off Windows, a stand-in npm first on
+  // PATH running `source` for `npm config get script-shell`.
+  const withStubNpm = (world, source) => {
+    const dir = path.join(world.root, 'npm-bin');
+    fs.mkdirSync(dir, { recursive: true });
+    stubToolJs(dir, 'npm', source);
+    return inNode(world, {
+      file: 'workkit/npm-shell.js', fn: 'scriptShell', kit: { platform: 'linux' }, env: { PATH: joinPath(dir, world.env.PATH) },
+    });
+  };
+
+  test("an npm whose value ends in a carriage return and a newline: the value alone, read as the kit's", () => {
+    const world = mkWorld();
+    const want = `${world.claudeHome}/workkit/script-shell.sh`;
+    const { code, said } = withStubNpm(world, `process.stdout.write(${JSON.stringify(`${want}\r\n`)});`);
+    expect(code, `exit 0, got: ${said}`).toBe(0);
+    expect(said.includes('npm: script-shell is current'), `the value is the wanted one, got: ${JSON.stringify(said)}`).toBeTruthy();
+    expect(!said.includes('set by someone else'), `never someone else's, got: ${JSON.stringify(said)}`).toBeTruthy();
+    cleanup(world.root);
+  });
+
+  test('an npm whose read fails: its warning, and nothing set or read as current', () => {
+    const world = mkWorld();
+    const { code, err, said } = withStubNpm(world, 'process.exit(1);');
+    expect(code, `exit 0, got: ${said}`).toBe(0);
+    expect(err.includes('npm: `npm config get script-shell` failed; run it to see why'), `the warning, got: ${said}`).toBeTruthy();
+    expect(!said.includes('script-shell is current') && !said.includes('script-shell set to') && !said.includes('engine link'),
+      `nothing else about script-shell, got: ${said}`).toBeTruthy();
+    cleanup(world.root);
+  });
+
+  // The Windows branch driven from any machine: the system is handed to the
+  // step, and SYSTEMROOT holds a stand-in compiler that writes its -out: file,
+  // read in either slash.
   const winWorld = (world, { compiler = true } = {}) => {
     const { npmrc, env } = withNpm(world);
     // The engine address the built executable hands every call through.
     fs.mkdirSync(world.claudeHome, { recursive: true });
     fs.symlinkSync(WORKFLOW_DIR, world.engineLink, 'junction');
-    const cyg = path.join(world.root, 'cygpath-bin');
-    fs.mkdirSync(cyg, { recursive: true });
-    cygpathStub(cyg);
     const systemRoot = path.join(world.root, 'windows');
     const cscDir = path.join(systemRoot, 'Microsoft.NET', 'Framework64', 'v4.0.30319');
     fs.mkdirSync(cscDir, { recursive: true });
     const cscLog = path.join(world.root, 'csc-argv.log');
     if (compiler) {
-      writeStub(path.join(cscDir, 'csc.exe'), [
-        recordArgv(cscLog),
-        'for a in "$@"; do case "$a" in -out:*) o="${a#-out:}"; : > "${o#C:}" ;; esac; done',
-      ]);
+      stubToolJs(cscDir, 'csc.exe', [
+        recordArgvJs(JSON.stringify(cscLog), 'process.argv.slice(2)'),
+        'for (const a of process.argv.slice(2)) {',
+        "  if (a.startsWith('-out:')) require('fs').writeFileSync(a.slice(5).replace(/\\\\/g, '/').replace(/^[A-Za-z]:/, ''), '');",
+        '}',
+      ].join('\n'));
     }
     return {
       npmrc,
       cscCalls: () => readArgv(cscLog),
-      env: { ...env, PATH: joinPath(cyg, env.PATH), SYSTEMROOT: shellPath(systemRoot) },
+      env: { ...env, SYSTEMROOT: systemRoot },
     };
   };
-  const skipStubCompiler = () => (IS_WINDOWS && 'a stub cygpath and compiler cannot stand in for the real ones on Windows')
+  const skipStubCompiler = () => (IS_WINDOWS && 'a stand-in compiler cannot be csc.exe on Windows, which starts only a real program by that name')
     || (!HAS_NPM && 'no npm beside this node');
+  // The npm script-shell step, called in a node of its own as a Windows machine runs it.
+  const scriptShell = (world, env, { args = [], quiet = false } = {}) => inNode(world, {
+    file: 'workkit/npm-shell.js', fn: 'scriptShell', args, kit: { platform: 'win32' }, quiet, env,
+  });
 
   test("Windows: builds the script shell with the machine's compiler and points npm at it in git's spelling; a second run is current", { skip: skipStubCompiler() }, () => {
     const world = mkWorld();
     const { npmrc, cscCalls, env } = winWorld(world);
     const exe = path.join(world.workflowHome, 'script-shell.exe');
-    const first = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
+    const first = scriptShell(world, env);
     expect(first.code, `exit 0, got: ${first.said}`).toBe(0);
     expect(fs.existsSync(exe), `the executable is built in the machine's own folder, got: ${first.said}`).toBeTruthy();
     const calls = cscCalls();
     expect(calls.length, `the compiler ran once: ${fmtCalls(calls)}`).toBe(1);
     expect(calls[0].includes('-target:exe'), `as a console program: ${fmtCalls(calls)}`).toBeTruthy();
-    expect(calls[0].includes(`-out:C:${exe}`), `into the executable: ${fmtCalls(calls)}`).toBeTruthy();
-    expect(calls[0][calls[0].length - 1].endsWith('script-shell.cs'), `from the kit's source: ${fmtCalls(calls)}`).toBeTruthy();
-    expect(npmrcShell(npmrc), "npm names the executable in git's spelling").toBe(`C:${exe}`);
+    expect(calls[0].includes(`-out:${windowsForm(exe)}`), `into the executable, in its Windows form: ${fmtCalls(calls)}`).toBeTruthy();
+    expect(calls[0][calls[0].length - 1], `from the kit's source, in its Windows form: ${fmtCalls(calls)}`)
+      .toBe(windowsForm(path.join(fs.realpathSync(WORKFLOW_DIR), 'script-shell.cs')));
+    expect(npmrcShell(npmrc), "npm names the executable in git's spelling").toBe(gitPath(exe));
     expect(first.said.includes('npm: built'), `it says what it built, got: ${first.said}`).toBeTruthy();
-    const second = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
+    const second = scriptShell(world, env);
     expect(second.said.includes('npm: script-shell is current'), `a second run is current, got: ${second.said}`).toBeTruthy();
     expect(cscCalls().length, 'and compiles nothing').toBe(1);
     cleanup(world.root);
@@ -639,7 +703,7 @@ describe('workkit setup: npm script-shell', () => {
   test('Windows: --auto builds nothing and sets nothing', { skip: skipStubCompiler() }, () => {
     const world = mkWorld();
     const { npmrc, cscCalls, env } = winWorld(world);
-    const { code, said } = inCli(world, 'OSTYPE=msys\nQUIET=1\nscript_shell', { env });
+    const { code, said } = scriptShell(world, env, { quiet: true });
     expect(code, `exit 0, got: ${said}`).toBe(0);
     expect(cscCalls().length, `the compiler never ran: ${fmtCalls(cscCalls())}`).toBe(0);
     expect(!fs.existsSync(path.join(world.workflowHome, 'script-shell.exe')), 'no executable was built').toBeTruthy();
@@ -652,12 +716,12 @@ describe('workkit setup: npm script-shell', () => {
     const world = mkWorld();
     const { env } = winWorld(world);
     const exe = path.join(world.workflowHome, 'script-shell.exe');
-    const built = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
+    const built = scriptShell(world, env);
     expect(fs.existsSync(exe), `the human path built it, got: ${built.said}`).toBeTruthy();
     const stale = fs.statSync(path.join(WORKFLOW_DIR, 'script-shell.cs')).mtimeMs / 1000 - 3600;
     fs.utimesSync(exe, stale, stale);
-    const { out, err } = inCli(world, 'OSTYPE=msys\nrc=0\nscript_shell doctor || rc=$?\necho "rc=$rc"', { env });
-    expect(out.includes('rc=1'), `doctor asks for attention, got: ${out}`).toBeTruthy();
+    const { code, err } = scriptShell(world, env, { args: ['doctor'] });
+    expect(code, `doctor asks for attention, got: ${err}`).toBe(1);
     expect(err.includes('is missing or older than script-shell.cs; run `workkit update`'), `naming the fix, got: ${err}`).toBeTruthy();
     cleanup(world.root);
   });
@@ -665,8 +729,8 @@ describe('workkit setup: npm script-shell', () => {
   test('Windows: no compiler is a named skip, and nothing is set', () => {
     const world = mkWorld();
     const { npmrc, env } = winWorld(world, { compiler: false });
-    const { code, said } = inCli(world, 'OSTYPE=msys\nscript_shell', { env });
-    expect(code, 'exit 0').toBe(0);
+    const { code, said } = scriptShell(world, env);
+    expect(code, `exit 0, got: ${said}`).toBe(0);
     expect(/npm: no C# compiler at .*csc\.exe, so the Windows script shell cannot be built and script-shell stays unset/.test(said),
       `the skip names the compiler, got: ${said}`).toBeTruthy();
     expect(npmrcShell(npmrc), 'and no npmrc was written').toBe(undefined);
@@ -676,8 +740,8 @@ describe('workkit setup: npm script-shell', () => {
   test('Windows: doctor warns when the executable is missing', () => {
     const world = mkWorld();
     const { env } = winWorld(world, { compiler: false });
-    const { out, err } = inCli(world, 'OSTYPE=msys\nrc=0\nscript_shell doctor || rc=$?\necho "rc=$rc"', { env });
-    expect(out.includes('rc=1'), `doctor asks for attention, got: ${out}`).toBeTruthy();
+    const { code, err } = scriptShell(world, env, { args: ['doctor'] });
+    expect(code, `doctor asks for attention, got: ${err}`).toBe(1);
     expect(err.includes('is missing or older than script-shell.cs; run `workkit update`'), `naming the fix, got: ${err}`).toBeTruthy();
     cleanup(world.root);
   });

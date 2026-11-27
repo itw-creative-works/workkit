@@ -24,6 +24,7 @@ const { spin } = require('../workflow/lib/spin');
 const { userDir } = require('../workflow/user-dir');
 const { enterMachine, machineHome, projectsRoot } = require('./lib/machine');
 const { fileNotes, logStamp } = require('./lib/notes');
+const { chomp } = require('../hooks/mods/text.js');
 
 const PAYLOAD = path.join(__dirname, 'claude-nightly', 'nightly-payload.js');
 
@@ -135,7 +136,7 @@ const send = async (run, cadence, payload) => {
   const summary = path.join(run.work, `${cadence}-summary.md`);
   const err = path.join(run.work, `${cadence}-stderr.log`);
   const args = [
-    '-p', payload.replace(/\n+$/, ''),
+    '-p', chomp(payload),
     '--model', 'sonnet',
     '--safe-mode',
     '--no-session-persistence',
@@ -146,7 +147,7 @@ const send = async (run, cadence, payload) => {
   const status = await spin(`asking Claude for the ${cadence} summary`, () => runInto(run, 'claude', args, { out: summary, err }));
   const said = fs.readFileSync(err);
   if (said.length > 0) {
-    run.notes.noteWarn(`summaries: the ${cadence} send wrote to stderr:${`\n${lastLines(said, STDERR_LINES)}`.replace(/\n+$/, '')}`);
+    run.notes.noteWarn(`summaries: the ${cadence} send wrote to stderr:${chomp(`\n${lastLines(said, STDERR_LINES)}`)}`);
   }
   if (status !== 0 || fs.statSync(summary).size === 0) {
     run.notes.noteWarn(`summaries: the ${cadence} summary was not written (exit ${status}); skipped`);

@@ -16,7 +16,8 @@ const { homeSlug } = require('../../workflow/lib/settings');
 const { spin } = require('../../workflow/lib/spin');
 const { writeWhole } = require('../../workflow/lib/write');
 const { userDir } = require('../../workflow/user-dir');
-const { bounded, secondsOf } = require('../lib/machine');
+const { secondsOf } = require('../../workflow/lib/bounded');
+const { bounded } = require('../lib/machine');
 
 // The board is shared (the daily summaries publish beside the briefs), and the
 // gap this exists to notice is measured in days.

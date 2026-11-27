@@ -6,15 +6,15 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  WORKKIT_DIR: W, mkTmp, seeded, SPAWN_DEADLINE,
+  WORKKIT_DIR: W, mkTmp, seeded, run: runProgram,
 } = require('../../lib/harness');
 const {
-  spawnBash, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, gitPath, homeEnv, joinPath,
+  NODE_DIR, SYSTEM_PATH, gitPath, homeEnv, joinPath,
 } = require('../../lib/platform');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const { mkGhWorld } = require('../../lib/gh-world');
 
-const CLI = path.join(__dirname, '..', '..', '..', 'workflow', 'workkit.sh');
+const CLI = path.join(__dirname, '..', '..', '..', 'workflow', 'workkit.js');
 const PRIVATE = 'acme/private';
 const PUBLIC = 'acme/public';
 
@@ -62,16 +62,15 @@ const mkPublicWorld = ({ paired = true, issues = {}, fail = [] } = {}) => {
   fs.writeFileSync(path.join(home, '.workkit', '.repos.json'),
     `${JSON.stringify({ version: 1, repos: { [gitPath(repo)]: 'enabled' } })}\n`);
   const gh = mkGhWorld({ [PUBLIC]: issues.public || [], [PRIVATE]: issues.private || [] }, { fail });
+  // Native paths: the command is a node, which reads a shell's /d/a/x as D:\d\a\x.
   const env = homeEnv(home, {
     PATH: joinPath(gh.binDir, SYSTEM_PATH, NODE_DIR),
-    TMPDIR: shellPath(path.join(dir, 'tmp')),
-    WORKFLOW_HOME: shellPath(path.join(home, '.workkit')),
-    WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
+    TMPDIR: path.join(dir, 'tmp'),
+    WORKFLOW_HOME: path.join(home, '.workkit'),
+    WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
   });
   const run = (args) => {
-    const res = spawnBash([...NO_RC, shellPath(CLI), 'public', ...args], {
-      cwd: repo, env, input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
+    const res = runProgram(process.execPath, [CLI, 'public', ...args], { cwd: repo, env, input: '' });
     return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
   };
   return {

@@ -24,9 +24,9 @@ describe('workflow/home: the version stamp', () => {
     fs.writeFileSync(dest, '# the newer machine’s runner\n');
     fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
 
-    const { out, err } = seeded(world);
+    const { code, out, err } = seeded(world);
     const said = out + err;
-    expect(/rc=1/.test(said), `the caller is told nothing was written: ${said}`).toBeTruthy();
+    expect(code, `the caller is told nothing was written: ${said}`).toBe(1);
     expect(said.includes('carries workkit 99.0.0'), `it names what the clone carries: ${said}`).toBeTruthy();
     expect(said.includes(`this kit is ${kitVersion()}`), `and what this kit is: ${said}`).toBeTruthy();
     expect(/not downgrading/.test(said), `and what it refused to do: ${said}`).toBeTruthy();
@@ -43,8 +43,8 @@ describe('workflow/home: the version stamp', () => {
     const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
     fs.writeFileSync(dest, '# last month’s runner\n');
 
-    const { out, err } = seeded(world);
-    expect(/rc=0/.test(out + err), `it wrote: ${out}${err}`).toBeTruthy();
+    const { code, out, err } = seeded(world);
+    expect(code, `it wrote: ${out}${err}`).toBe(0);
     expect(fs.readFileSync(dest, 'utf8'), 'the drift is healed from the kit’s committed copy').toBe(kitCommitted(world, 'jobs/morning.sh'));
     expect(stampOf(world), 'and the clone now says which kit wrote it').toBe(kitVersion());
     cleanup(world.root);
@@ -60,8 +60,8 @@ describe('workflow/home: the version stamp', () => {
 
     fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
     fs.writeFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), '# drifted\n');
-    const { out, err } = seeded(world);
-    expect(/rc=0/.test(out + err), `the seed still runs: ${out}${err}`).toBeTruthy();
+    const { code, out, err } = seeded(world);
+    expect(code, `the seed still runs: ${out}${err}`).toBe(0);
     cleanup(world.root);
   });
 
@@ -100,8 +100,8 @@ describe('workflow/home: the version stamp', () => {
     writeVersion(kit, '1.2.3');
     commitKit(kit, 'chore(release): 1.2.3');
     writeVersion(kit, '9.9.9');
-    const { out, err } = seeded(world);
-    expect(/rc=0/.test(out + err), `the seed ran: ${out}${err}`).toBeTruthy();
+    const { code, out, err } = seeded(world);
+    expect(code, `the seed ran: ${out}${err}`).toBe(0);
     expect(stampOf(world), 'the clone is stamped with the committed version').toBe('1.2.3');
     cleanup(world.root);
   });
@@ -117,9 +117,9 @@ describe('workflow/home: the version stamp', () => {
     commitKit(kit, 'chore(release): 1.2.3');
     writeVersion(kit, '9.9.9');
 
-    const { out, err } = seeded(world);
+    const { code, out, err } = seeded(world);
     const said = out + err;
-    expect(/rc=1/.test(said), `the caller is told nothing was written: ${said}`).toBeTruthy();
+    expect(code, `the caller is told nothing was written: ${said}`).toBe(1);
     expect(said.includes('carries workkit 1.2.4'), `it names what the clone carries: ${said}`).toBeTruthy();
     expect(said.includes('this kit is 1.2.3'), `and the committed version this kit is: ${said}`).toBeTruthy();
     expect(/not downgrading/.test(said), `and what it refused to do: ${said}`).toBeTruthy();
@@ -142,7 +142,7 @@ describe('workflow/home: the version stamp', () => {
 
     const refused = seeded(world);
     const said = refused.out + refused.err;
-    expect(/rc=1/.test(said), `the caller is told nothing was written: ${said}`).toBeTruthy();
+    expect(refused.code, `the caller is told nothing was written: ${said}`).toBe(1);
     expect(said.includes('the clone carries workkit 1.2.3 and this kit is 1.2.3-rc.1; not downgrading'),
       `in today's words: ${said}`).toBeTruthy();
     expect(fs.readFileSync(dest, 'utf8'), 'the release’s runner stands').toBe('# the release’s runner\n');
@@ -152,7 +152,7 @@ describe('workflow/home: the version stamp', () => {
     commitKit(kit, 'chore(release): 1.2.3');
     fs.writeFileSync(path.join(world.tower, STAMP), '1.2.3-rc.1\n');
     const wrote = seeded(world);
-    expect(/rc=0/.test(wrote.out + wrote.err), `the release writes over its candidate: ${wrote.out}${wrote.err}`).toBeTruthy();
+    expect(wrote.code, `the release writes over its candidate: ${wrote.out}${wrote.err}`).toBe(0);
     expect(stampOf(world), 'and stamps the clone with itself').toBe('1.2.3');
     cleanup(world.root);
   });
@@ -161,8 +161,8 @@ describe('workflow/home: the version stamp', () => {
     const world = mkWorld();
     world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
     writeVersion(world.env.WORKKIT_KIT_DIR, '4.5.6');
-    const { out, err } = seeded(world);
-    expect(/rc=0/.test(out + err), `the seed ran: ${out}${err}`).toBeTruthy();
+    const { code, out, err } = seeded(world);
+    expect(code, `the seed ran: ${out}${err}`).toBe(0);
     expect(stampOf(world), 'the folder’s manifest is the version').toBe('4.5.6');
     cleanup(world.root);
   });

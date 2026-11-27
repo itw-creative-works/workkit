@@ -383,16 +383,6 @@ const crlfJq = (dir) => {
 };
 
 /**
- * A `mkdir` on PATH that answers 0 for a folder already there, as a `mkdir`
- * racing another for one folder may, so a lock built on it is tested against
- * two callers that each read "I made it". It runs the system's own with `-p`.
- * @param {string} dir - the PATH directory, which must exist
- * @returns {string} the stub that was written
- */
-const lenientMkdir = (dir) => stubTool(dir, 'mkdir',
-  ['#!/bin/bash', `exec "${shellPath(which('mkdir', SYSTEM_PATH))}" -p "$@"`]);
-
-/**
  * A `cygpath` on PATH answering the mixed form Git Bash answers with, so a suite
  * drives the engine's Windows branch (`OSTYPE=msys`) from a Mac: `/c/Users/x`
  * becomes `C:/Users/x`, any other path gets `C:` prefixed. `-u` strips a leading
@@ -506,6 +496,15 @@ const homeEnv = (home, env = {}) => ({
   GITHUB_TOKEN: '',
   NODE_DISABLE_COMPILE_CACHE: '1',
 });
+
+/**
+ * homeEnv's env for a node a case starts, which reads HOME as a native path:
+ * the same keys, HOME native in place of the shell's spelling.
+ * @param {string} home - the scratch home, by absolute path
+ * @param {object} [env] - the rest of the child's env; the home keys win over it
+ * @returns {object} the env to spawn with
+ */
+const nodeHomeEnv = (home, env = {}) => ({ ...homeEnv(home, env), HOME: home });
 
 /**
  * The env pair that hands a shell this suite's own node as the kit's node
@@ -708,7 +707,7 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubToolJs, stubNode, crlfJq,
-  lenientMkdir, cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeEnv, basePathWithout,
+  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.

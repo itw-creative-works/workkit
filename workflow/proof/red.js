@@ -9,17 +9,18 @@
 // HUP, INT or TERM ends the command, then the place, then the proof by the signal.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { spawn } = require('../lib/run');
+const { spawn, onPath } = require('../lib/run');
 const { repoRoot, gitIn } = require('../lib/git');
 const {
   signalCode, exitOf, startFailed, notRunnable, END_SIGNALS,
 } = require('../lib/detach');
-const { proofBase, proofDir } = require('../lib/proof-dir');
+const { proofBase, proofDir, proofClaudeHome } = require('../lib/proof-dir');
 const { workingPaths } = require('../lib/snapshot');
 const { present } = require('../lib/read');
 const { isDir } = require('../lib/lock');
-const { sayAs } = require('../lib/say');
+const { sayAs, drained } = require('../lib/say');
 const { copyPlace, livePlace, isNamed } = require('./place');
 const { summaryOf, loadFailures } = require('./reading');
 const { snapshotPath } = require('../../hooks/mods/snapshot.js');
@@ -161,32 +162,44 @@ const modulePath = (spec, from) => {
   }
 };
 
+/** A path less its last segment's extension, or null when that segment has none. */
+const extless = (p) => (path.posix.basename(p).includes('.') ? p.slice(0, p.lastIndexOf('.')) : null);
+
+/**
+ * Whether a module path runs through a scratch folder of the temp dir (a test's
+ * link to the place, removed before it ended) and ends as a named path the place
+ * `top` lacks: its last segment that path's last one, or that less its extension.
+ * A named path the place holds is never why a module is missing.
+ */
+const scratchNamed = (top, named, at) => {
+  const tmp = physical(os.tmpdir());
+  const scratch = tmp === null ? null : `${forward(tmp)}/`;
+  if (scratch === null || !at.startsWith(scratch)) return false;
+  const file = path.posix.basename(at);
+  return named.some((n) => {
+    if (present(path.join(top, n))) return false;
+    const base = path.posix.basename(n);
+    return file === base || file === extless(base);
+  });
+};
+
 /**
  * The load check's judge: a module that failed to load in this run's place
  * (its requiring file or its path holding the place's marker) stops the proof,
  * unless it resolves to a named path the place lacks by design (the path, the
- * path less its extension, or a file in a named folder).
+ * path less its extension, or a file in a named folder), or reads as one
+ * through a scratch link (scratchNamed); `top` is the place's root.
  */
-const loadStops = (marker, named, { spec, from }) => {
+const loadStops = (marker, top, named, { spec, from }) => {
   const p = modulePath(spec, from);
   const at = p === null ? null : forward(p);
   if (!forward(from).includes(marker) && !(at && at.includes(marker))) return false;
-  if (!at || !at.includes(marker)) return true;
+  if (!at) return true;
+  if (!at.includes(marker)) return !scratchNamed(top, named, at);
   const rel = at.slice(at.indexOf(marker) + marker.length);
   if (isNamed(named, rel)) return false;
-  return !named.some((n) => path.posix.basename(n).includes('.') && n.slice(0, n.lastIndexOf('.')) === rel);
+  return !named.some((n) => extless(n) === rel);
 };
-
-/**
- * Settles once everything written to `stream` so far has been handed on: an
- * empty write's callback comes after every write before it, pending or not,
- * so a line written straight to the fd next lands after them.
- * @param {import('stream').Writable} stream
- * @returns {Promise<void>} settles on a failed stream too
- */
-const drained = (stream) => new Promise((resolve) => {
-  stream.write('', () => resolve());
-});
 
 /**
  * The proof's end asked for while it runs, the first ask kept: `{ code }` or
@@ -254,7 +267,19 @@ const judge = async (job, place, { cmd, paths }) => {
   }
   // The kit's runner adds one line of counts per run to this file.
   const file = `${job.tmp}/summary`;
-  const ran = await runCommand(job, cmd, place.dir, { ...process.env, WORKKIT_TEST_SUMMARY: spelled(file) });
+  const env = { ...process.env, WORKKIT_TEST_SUMMARY: spelled(file) };
+  if (!job.live) {
+    // The copy's command gets its own empty Claude home (why: proofClaudeHome).
+    const claudeHome = proofClaudeHome(job.tmp);
+    if (claudeHome === null) fail(`could not make a Claude home in ${spelled(job.tmp)}`);
+    env.WORKFLOW_CLAUDE_HOME = claudeHome;
+    // An npm in the copy runs its script with plain sh, as in `workkit prove`, so it
+    // needs no wrapper behind that Claude home and writes no record of its own. No sh
+    // on PATH leaves the caller's value: the command may not be npm at all.
+    const sh = onPath('sh');
+    if (sh !== null) env.npm_config_script_shell = sh;
+  }
+  const ran = await runCommand(job, cmd, place.dir, env);
   if (job.end !== null) return 2;
   let summary;
   try {
@@ -268,10 +293,12 @@ const judge = async (job, place, { cmd, paths }) => {
     return 1;
   }
   if (ran.rc === notRunnable || ran.rc === startFailed) fail(`command not runnable: ${cmd[0]}`);
-  // The copy's own folder, unique to this run (its parent and its run id), so
-  // another run's copy never matches; in the live mode the repo root.
+  // The place's root, and its marker: the copy's own folder, unique to this run
+  // (its parent and its run id), so another run's copy never matches; in the
+  // live mode the repo root.
+  const top = job.live ? job.root : `${job.tmp}/copy`;
   const marker = job.live ? `${forward(job.root)}/` : `/${path.basename(path.dirname(job.tmp))}/${path.basename(job.tmp)}/copy/`;
-  const stopped = loadFailures(ran).find((failure) => loadStops(marker, job.named, failure));
+  const stopped = loadFailures(ran).find((failure) => loadStops(marker, top, job.named, failure));
   if (stopped) fail(`not runnable: a module failed to load: ${stopped.spec}`);
   if (summary?.failed === 0) fail('not runnable: no test failed; the command stopped another way');
   verdict('red');
@@ -390,5 +417,3 @@ if (require.main === module) {
     // Set the code, never process.exit(): the verdict follows the command's output.
     .then((code) => { process.exitCode = code; });
 }
-
-module.exports = { drained };

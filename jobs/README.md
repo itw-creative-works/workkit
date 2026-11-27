@@ -85,7 +85,6 @@ node jobs/install.js
 | `morning/` | the files only `morning.js` uses: the steps (`summaries.js`, `runner.js`, `brief.js`, `cloud-machine.js` for the brief on a runner, `site.js`, `marker.js`, `morning-d.js`), `brief-publish.js` and the `brief/` folder, below. The cloud runner list seeds them beside it |
 | `lib/` | what both jobs share: `notes.js`, the log's stamped blocks and the three note levels; `machine.js`, the transcripts root (`projectsRoot`, which the summaries gate, the nightly's grant and its payload's index all read) under the home a job reads (`machineHome`: `HOME`, else `USERPROFILE`, else the account's), the PATH folders, the quiet Claude, the bound on a child and the notifier |
 | `brief-dispatch.js` | the one function that hands the day to the cloud (`gh workflow run brief.yml` on the home repo), with every guard and every named refusal: `dispatchBrief()`. Two callers (the scheduled morning here, in its own process, and `workkit brief`) and each decides what a refusal is worth |
-| `brief-dispatch.sh` | sourced by `workkit brief`, after `workflow/lib.sh`: `dispatch_brief` runs `brief-dispatch.js` under a node at the kit's floor and fills `DISPATCH_SLUG`, then `DISPATCH_LINE` or `DISPATCH_REASON` |
 | `morning/brief-publish.js` | required on the cloud path: `publishBrief()`, which posts today's digest as a Discussion, check-before-post and category fallback included, and answers its line and its code |
 | `morning/brief/brief-payload.js` | the morning payload, on stdout: the digest instruction, then the brief as JSON, then the upstream news. Pure gather: no Claude, no notification |
 | `morning/brief/cc-news.js` | every upstream Claude Code CHANGELOG entry since the last brief, organized by topic, read back off the latest published brief |
@@ -112,6 +111,7 @@ node jobs/install.js
 - **`lib/machine.js`**, the PATH folders a job puts in front of PATH, so its programs are found whatever PATH the scheduler hands it:
   - on a Mac, `~/.local/bin`, `~/.nvm/default-bin`, `/opt/homebrew/bin` and `/usr/local/bin`;
   - on Windows, `~/.local/bin`, `~/.nvm/default-bin` and the running Node's own folder, under the PATH key the environment already spells (`Path`), else `PATH`.
+  - Its `bounded` is `bounded` of `workflow/lib/bounded.js` with the jobs' default bound, `jobTimeout()` (`WORKKIT_JOB_TIMEOUT`), where the caller gives none.
 
 ## Where the output goes
 
@@ -232,7 +232,7 @@ node jobs/install.js
   - The scheduled brief is `gh workflow run brief.yml` on the **home repo**, the slug in `~/.workkit/settings.json`.
   - Only the scheduled brief does this; a `<message>` run and `--now` never do.
   - The reason: the home repo is where setup seeded the workflow and wrote the secrets.
-- The dispatch itself lives in `brief-dispatch.js`: the morning calls it in its own process, and `workkit brief` runs it through `brief-dispatch.sh`.
+- The dispatch itself lives in `brief-dispatch.js`: the morning calls it in its own process, and `workkit brief` starts it as a program of its own Node and reads the slug and the line or the reason off its stdout.
   - `workkit brief` is the same function on demand.
   - The only difference is that a refusal there is loud, because somebody asked for it just now.
 - **The secrets are checked before the day is handed over:** one `gh secret list` on that same repo has to name BOTH `CLAUDE_CODE_OAUTH_TOKEN` and `WORKKIT_GITHUB_TOKEN`.

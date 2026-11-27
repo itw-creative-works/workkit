@@ -5,10 +5,10 @@
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { cleanup, mkWorld, inNode, setup } = require('./helpers');
+const { cleanup, mkWorld, runHomeSteps, setup } = require('./helpers');
 
 describe('workflow/home: the wizard, Pages', () => {
-  const pages = (world) => inNode(world, [['services', 'pages', ['owner/workkit']]]);
+  const pages = (world) => runHomeSteps(world, [['services', 'pages', ['owner/workkit']]]);
 
   test('Pages is asked for the gh-pages branch at its root, and a refusal warns with the fix', () => {
     const world = mkWorld({ login: 'owner' });

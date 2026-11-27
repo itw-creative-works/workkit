@@ -7,15 +7,15 @@ const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  cleanup, mkRemote, mkWorld, inHome, inNode,
+  cleanup, mkRemote, mkWorld, inHome, runHomeSteps,
 } = require('./helpers');
 
 describe('workflow/home: the wizard, forced', () => {
   // `force` is `workkit setup --home`: the yes already given, so nothing asks
-  // and no terminal is needed. Through home.sh, whose hand-off has no terminal.
+  // and no terminal is needed. Through home.js, whose hand-off has no terminal.
   const forced = (world) => {
     if (!world.env.WORKKIT_HOME_REMOTE) world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    return inHome(world, 'wk_home_setup force');
+    return inHome(world, ['setup', 'force']);
   };
 
   test('forced without a terminal, it creates and records, asking nothing', () => {
@@ -34,7 +34,7 @@ describe('workflow/home: the wizard, forced', () => {
     // A no is typed, so a question that slipped through would stop the run.
     const world = mkWorld({ login: 'owner' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
-    const { code, out } = inNode(world, [['wizard', 'setup', ['force']]], { input: 'n\n', terminal: true });
+    const { code, out } = runHomeSteps(world, [['wizard', 'setup', ['force']]], { input: 'n\n', terminal: true });
     expect(code, `exit 0: ${out}`).toBe(0);
     expect(!/\[y\/N\]|Create the private home repo/.test(out), `no question is put, got: ${out}`).toBeTruthy();
     expect(!/left as it is/.test(out), `and nothing reads the typed no, got: ${out}`).toBeTruthy();
@@ -67,7 +67,7 @@ describe('workflow/home: the wizard, forced', () => {
     const hard = forced(world);
     expect(hard.code, `forced: exit 1, got: ${hard.out}`).toBe(1);
     expect(/gh auth login/.test(hard.out), `forced: it prints the fix, got: ${hard.out}`).toBeTruthy();
-    const soft = inHome(world, 'wk_home_setup');
+    const soft = inHome(world, ['setup']);
     expect(soft.code, `unforced: exit 0, got: ${soft.out}`).toBe(0);
     expect(/gh auth login/.test(soft.out), `unforced: the same fix, got: ${soft.out}`).toBeTruthy();
     cleanup(world.root);

@@ -25,7 +25,7 @@ const homeUserDir = (home) => path.join(home || os.homedir(), WORKKIT_DIR);
 const userDir = (home) => process.env.WORKFLOW_HOME || homeUserDir(home);
 
 /**
- * The tower clone, the one git repo in the machine folder (`wk_tower_dir`).
+ * The tower clone, the one git repo in the machine folder.
  * @param {string} [dir] the machine folder, userDir() by default
  * @returns {string}
  */

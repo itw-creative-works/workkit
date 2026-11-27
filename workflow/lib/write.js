@@ -1,7 +1,7 @@
 /**
  * workflow/lib/write.js: the write of a file a reader must never see
  * half-written, for the kit's Node scripts, the sign-in file included, and the
- * JSON file changed whole on it (`wk_json_edit` in lib/state.sh).
+ * JSON file changed whole on it.
  * Usage: const { writeWhole, editJson, readJsonText } = require('../lib/write');
  */
 
@@ -74,10 +74,10 @@ const jsonText = (change, value) => {
 const targetOf = (file) => physical(file) ?? file;
 
 /**
- * A JSON file changed whole (`wk_json_edit`): the value at `file`, read through
+ * A JSON file changed whole: the value at `file`, read through
  * its links, handed to `change`, and what that returns written as two-space JSON
  * and one newline, through `writeWhole` beside the target, the target's mode
- * kept. A failure warns the shell's line, leaves the file as it was and no temp file.
+ * kept. A failure warns one line, leaves the file as it was and no temp file.
  * @param {string} file
  * @param {(value: *) => *} change the new value from the old
  * @param {object} [opts]

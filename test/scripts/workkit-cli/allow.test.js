@@ -1,4 +1,4 @@
-// Tests for workflow/workkit.sh: the kit's allow and ask rules in the global
+// Tests for workflow/workkit.js: the kit's allow and ask rules in the global
 // ~/.claude/settings.json, kept by the machine steps every setup and update
 // runs, and named by doctor when one is missing.
 // The shared prologue is ./helpers.js.
@@ -10,7 +10,7 @@ const {
 } = require('../../lib/harness');
 const { IS_WINDOWS, skipWithoutFileLink } = require('../../lib/platform');
 const {
-  COMMAND_TABLE, cleanup, mkWorld, runCli, mkSetupKit, mkPartialKit,
+  COMMAND_TABLE, cleanup, mkWorld, runCli, mkSetupKit,
 } = require('./helpers');
 
 // The kit's rules, from the issue's table: one allow rule per `allow` command,
@@ -178,20 +178,6 @@ describe('workkit: the allow and ask rules in the global settings', () => {
     expect(!auto.said.includes('settings.json'), `and says nothing of it every morning, got: ${auto.said}`).toBeTruthy();
     expect(fs.readFileSync(settingsFile(world), 'utf8'), 'nor writes it').toBe(broken);
     cleanup(world.root);
-  });
-
-  test('a kit without its JSON helpers warns that it is incomplete, and update still finishes', () => {
-    const world = mkWorld();
-    seedJson(world, { model: 'opus' });
-    const { kit, script } = mkPartialKit();
-    for (const args of [['update'], ['doctor']]) {
-      const { code, out, err } = runCli(world, args, { script });
-      expect(code, `${args[0]} finishes, got: ${out}${err}`).toBe(0);
-      const line = err.split('\n').find((l) => l.startsWith('allow:'));
-      expect(line && line.includes('incomplete'), `${args[0]} warns that the kit is incomplete, got: ${err}`).toBeTruthy();
-      expect(!out.includes('allow:'), `and never as a skip line, got: ${out}`).toBeTruthy();
-    }
-    cleanup(world.root); cleanup(kit);
   });
 });
 

@@ -54,7 +54,7 @@ describe('workkit setup --cloud', () => {
         expect(fs.lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink(), `${name} is a link in ~/.local/bin, got: ${said}`).toBeTruthy();
         return fs.realpathSync(link);
       };
-      expect(target('workkit'), 'the workkit command resolves to the kit\'s').toBe(fs.realpathSync(path.join(kit, 'workflow', 'workkit.sh')));
+      expect(target('workkit'), 'the workkit command resolves to the kit\'s').toBe(fs.realpathSync(path.join(kit, 'workflow', 'workkit.js')));
       expect(target('gh'), 'the gh shim resolves to the kit\'s').toBe(fs.realpathSync(path.join(kit, 'workflow', 'identity', 'gh')));
     });
   });

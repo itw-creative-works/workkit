@@ -107,8 +107,7 @@ export function pkgProved(record, tree, pkg) {
 }
 
 /**
- * Whether a parsed package.json declares scripts.test as a non-empty string
- * (wk_has_test_script).
+ * Whether a parsed package.json declares scripts.test as a non-empty string.
  * @param {*} pkg the parsed file
  * @returns {boolean}
  */

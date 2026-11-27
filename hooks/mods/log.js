@@ -1,6 +1,7 @@
 /**
- * hooks/mods/log.js: the hooks log line and its cap (docs/hooks.md § The
- * hooks log), and the machine folder it lives in.
+ * hooks/mods/log.js: the hooks log's path, its line and its cap (docs/hooks.md
+ * § The hooks log), the machine folder it lives in, and the kit's other addresses
+ * under the home: its cache folder, the Windows script shell and the roster file.
  */
 
 const LOG_MAX_LINES = 10000;
@@ -53,6 +54,34 @@ export function userDirOf(env) {
  */
 export function cacheDirOf(env) {
   return `${homeOf(env)}/.cache/workkit`;
+}
+
+/**
+ * The Windows script shell setup builds into the machine folder, its one
+ * home: `<user dir>/script-shell.exe`.
+ * @param {object} env the variables the module read
+ * @returns {string}
+ */
+export function scriptShellExeOf(env) {
+  return `${userDirOf(env)}/script-shell.exe`;
+}
+
+/**
+ * The roster file of the machine folder <dir>, its one spelling: `<dir>/.repos.json`.
+ * @param {string} dir the machine folder
+ * @returns {string}
+ */
+export function rosterFile(dir) {
+  return `${dir}/.repos.json`;
+}
+
+/**
+ * The hooks log for the variables the module read, its one spelling: `<user dir>/hooks.log`.
+ * @param {object} env the variables the module read
+ * @returns {string}
+ */
+export function hooksLogOf(env) {
+  return `${userDirOf(env)}/hooks.log`;
 }
 
 /**

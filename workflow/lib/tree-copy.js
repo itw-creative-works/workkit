@@ -2,10 +2,11 @@
  * workflow/lib/tree-copy.js: the Node home of a tree copy, CJS: a folder copied
  * less `.git`, every package's node_modules and the kit's own paths; the fill
  * that then makes each package's node_modules a real folder of links to the live
- * repo's; and the detached worktree a copy is made in, added and removed. The
- * snapshot (lib/snapshot.js), `workkit prove` and `workkit proof red` share it,
- * and npm's script shell its path under the physical root (relIn).
- * Usage: const { copyTree, fillCopy, copyEntry, heldModules, worktreeAdd, worktreeRemove, relIn } = require('./tree-copy');
+ * repo's; and the detached worktree a copy is made in, added, checked out,
+ * filled with the live repo's gitignored files, and removed. The snapshot
+ * (lib/snapshot.js), `workkit prove`, `workkit proof red` and `workkit ship
+ * publish` share it, and npm's script shell its path under the physical root (relIn).
+ * Usage: const { copyTree, fillCopy, copyEntry, heldModules, checkOut, fillIgnored, worktreeAdd, worktreeRemove, relIn } = require('./tree-copy');
  */
 
 const fs = require('fs');
@@ -242,6 +243,47 @@ const fillCopy = (src, root, dest, only = []) => {
   }
 };
 
+/** git in `root` with its stderr this process's own; its status and stdout as text. */
+const gitLoud = (root, args) => gitIn(root, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+
+/**
+ * The gitignored paths of `root`, read without refreshing its index.
+ * @param {string} root
+ * @returns {string[]} root-relative as git spells them
+ * @throws {Error} git could not list them
+ */
+const ignoredOf = (root) => {
+  const status = gitLoud(root, ['--no-optional-locks', 'status', '--porcelain', '-z', '--ignored=matching', '--no-renames']);
+  if (status.status !== 0) throw new Error(`could not list the gitignored files of ${root}`);
+  return status.stdout.split('\0').filter((entry) => entry.startsWith('!! ')).map((entry) => entry.slice(3));
+};
+
+/**
+ * The tree `tree` checked out into the worktree `copy` an add left empty.
+ * @param {string} copy
+ * @param {string} tree a tree or commit git names
+ * @returns {boolean} false when either step failed, git's words on stderr
+ */
+const checkOut = (copy, tree) => gitLoud(copy, ['read-tree', tree]).status === 0 && gitLoud(copy, ['checkout-index', '-a']).status === 0;
+
+/**
+ * The copy `dest` of the live repo `root` filled with only the paths an ignore
+ * pattern matches there (fillCopy): an untracked or unstaged file is held work
+ * the copy leaves out. None at all would copy the whole folder, so none fills nothing.
+ * @param {string} root
+ * @param {string} dest
+ * @throws {Error} its line; a failed fill's own words are its `cause`
+ */
+const fillIgnored = (root, dest) => {
+  const ignored = ignoredOf(root);
+  if (ignored.length === 0) return;
+  try {
+    fillCopy(root, root, dest, ignored);
+  } catch (err) {
+    throw new Error(`could not fill the copy's gitignored files from ${root}`, { cause: err });
+  }
+};
+
 /**
  * A detached worktree of `root`'s HEAD at `dest`, nothing checked out, tried
  * ADD_TRIES times a second apart.
@@ -277,5 +319,5 @@ const worktreeRemove = (root, dest) => {
 };
 
 module.exports = {
-  copyTree, fillCopy, copyEntry, heldModules, worktreeAdd, worktreeRemove, relIn,
+  copyTree, fillCopy, copyEntry, heldModules, checkOut, fillIgnored, worktreeAdd, worktreeRemove, relIn,
 };

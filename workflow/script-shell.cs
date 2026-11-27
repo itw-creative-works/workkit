@@ -15,7 +15,7 @@ class ScriptShell {
       Console.Error.WriteLine("script-shell: no bash.exe on PATH outside the Windows folder and none beside git.exe, so npm's script shell cannot start Git Bash");
       return 127;
     }
-    // The engine's order (workflow/workkit.sh's CLAUDE_HOME), then USERPROFILE for a start without HOME.
+    // The engine's order (claudeHome in workflow/lib/platform.js), then USERPROFILE for a start without HOME.
     string claudeHome = Environment.GetEnvironmentVariable("WORKFLOW_CLAUDE_HOME");
     if (string.IsNullOrEmpty(claudeHome)) {
       string home = Environment.GetEnvironmentVariable("HOME");

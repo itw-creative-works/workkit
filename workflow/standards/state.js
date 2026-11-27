@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { repoFlag } = require('../../hooks/mods/gate.js');
 const { isPlain, repoSettingsFile } = require('../../hooks/mods/settings.js');
+const { rosterFile } = require('../../hooks/mods/log.js');
 const { physical } = require('../lib/link');
 const { dropLock, isDir, isFile, stateLockPath, takeLock } = require('../lib/lock');
 const { nativePath } = require('../lib/platform');
@@ -37,7 +38,7 @@ const KEPT = new Set(['true', 'unreadable']);
 
 // The machine's files, in the user's workflow folder.
 const userSettings = (run) => `${run.userDir}/settings.json`;
-const userRepos = (run) => `${run.userDir}/.repos.json`;
+const userRepos = (run) => rosterFile(run.userDir);
 
 /** A settings file's `enabled` answer (repoFlag); a file that cannot be read is `unreadable`. */
 const flagOf = (file) => repoFlag(readOrNull(file));

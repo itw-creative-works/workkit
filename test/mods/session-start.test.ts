@@ -10,7 +10,14 @@ import {
 const start = ($: any, cwd: string, extra: any = {}) => $.classic.SessionStart({ source: 'startup', session_id: SID, cwd, ...extra })
 const HEAL = { exitCode: 0, stdout: '', stderr: '  ✓ issue forms: installed\n  ✓ gitignore: added .workkit/*\n' }
 // A heal is the engine run with no mode flag (--state and --announce only read).
-const heals = (w: any) => w.runs('standards.sh').filter((c: any) => !c.argv.some((a: string) => a.startsWith('--')))
+const heals = (w: any) => w.runs('standards.js').filter((c: any) => !c.argv.some((a: string) => a.startsWith('--')))
+// The engine the world is built with: the plugin these suites run, two folders above this one, then workflow.
+const ENGINE = `${import.meta.dir.replace(/[\\/]test[\\/]mods$/, '')}/workflow`
+// Every start of a program named bash, by name or by path.
+const bashStarts = (w: any) => w.calls.filter((c: any) => c.argv[0].split('/').pop() === 'bash')
+// The setup line the pester hands over: `node <engine>/workkit.js setup`, the cloud's with `--cloud`.
+const SETUP_RUN = /`node [^`]+\/workflow\/workkit\.js setup`/
+const CLOUD_RUN = /`node [^`]+\/workflow\/workkit\.js setup --cloud`/
 const today = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -23,7 +30,7 @@ describe('classic.SessionStart: the Contract case', () => {
     const r = await start($, PLAIN)
     expect(r.additionalContext).toHaveLength(1)
     expect(r.additionalContext[0]).toContain('SETUP:')
-    expect(r.additionalContext[0]).toContain('workkit.sh setup')
+    expect(r.additionalContext[0]).toMatch(SETUP_RUN)
     expect(w.sessionKeys(SID).length).toBeGreaterThan(0)
     expect(w.ghCalls()).toHaveLength(0)
   })
@@ -146,16 +153,41 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
   test('no WORKFLOW_DIR: resolves the engine beside the hook and heals', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL } })
     await start($, REPO)
-    const script = heals(w)[0].argv.find((a: string) => a.endsWith('standards.sh'))
-    expect(script.endsWith('/workflow/standards.sh')).toBe(true)
+    const script = heals(w)[0].argv.find((a: string) => a.endsWith('standards.js'))
+    expect(script.endsWith('/workflow/standards.js')).toBe(true)
     expect(script.startsWith('/w/')).toBe(false)
+  })
+
+  test('the state and the heal are each node on <engine>/standards.js', async ($, on) => {
+    const w = mkWorld(on, { standards: { heal: HEAL } })
+    await start($, REPO)
+    expect(w.runs('standards.js').map((c: any) => c.argv)).toEqual([
+      ['node', `${ENGINE}/standards.js`, '--state', REPO],
+      ['node', `${ENGINE}/standards.js`, REPO],
+    ])
+  })
+
+  test('the offer is node on standards.js --announce, and the session starts no bash', async ($, on) => {
+    const w = mkWorld(on, { setup: false, repos: { [REPO]: null }, standards: { state: 'undecided' } })
+    expect(contextOf(await start($, REPO))).toContain('not in the issue workflow')
+    const announce = w.runs('standards.js').filter((c: any) => c.argv.includes('--announce'))
+    expect(announce).toHaveLength(1)
+    expect(announce[0].argv[0]).toBe('node')
+    expect(announce[0].argv.slice(2)).toEqual(['--announce', REPO])
+    expect(bashStarts(w)).toEqual([])
+  })
+
+  test('an enabled repo\'s state, heal and update start no bash', async ($, on) => {
+    const w = mkWorld(on, { standards: { heal: HEAL } })
+    expect(contextOf(await start($, REPO))).toContain('issue forms')
+    expect(bashStarts(w)).toEqual([])
   })
 
   test('a missing engine: says where it looked, exit 0', async ($, on) => {
     const w = mkWorld(on, { standards: { heal: HEAL } })
-    w.touchKit('workflow/standards.sh', null)
+    w.touchKit('workflow/standards.js', null)
     const ctx = contextOf(await start($, REPO))
-    expect(ctx).toMatch(/\/workflow\/standards\.sh/)
+    expect(ctx).toMatch(/\/workflow\/standards\.js/)
     expect(ctx).toContain('plugin')
     expect(heals(w)).toHaveLength(0)
   })
@@ -171,8 +203,8 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
 
   for (const [name, settings, rel] of [
     ['a missing manifest stays silent on a repo that never opted in', null, 'workflow/labels.json'],
-    ['a missing engine stays silent on a repo that never opted in', null, 'workflow/standards.sh'],
-    ['a missing engine stays silent on a deliberately disabled repo', OPTED_OUT, 'workflow/standards.sh'],
+    ['a missing engine stays silent on a repo that never opted in', null, 'workflow/standards.js'],
+    ['a missing engine stays silent on a deliberately disabled repo', OPTED_OUT, 'workflow/standards.js'],
   ] as const) {
     test(`${name}`, async ($, on) => {
       const w = mkWorld(on, { repos: { [REPO]: settings }, standards: { state: settings ? 'disabled' : 'undecided' } })
@@ -234,30 +266,30 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     const w = mkWorld(on, { setup: false, standards: { heal: HEAL } })
     const first = contextOf(await start($, REPO))
     expect(first).toContain('SETUP:')
-    expect(first).toContain('workkit.sh setup')
+    expect(first).toMatch(SETUP_RUN)
     expect(first).toContain('issue forms')
     const second = contextOf(await start($, REPO, { session_id: 'sess-2' }))
-    expect(second).toContain('workkit.sh setup')
+    expect(second).toMatch(SETUP_RUN)
     expect(second).not.toContain('issue forms')
     expect(heals(w)).toHaveLength(1)
   })
 
   test('setup is a machine question: the pester reaches a non-git cwd too', async ($, on) => {
     mkWorld(on, { setup: false, standards: { state: 'nogit' } })
-    expect(contextOf(await start($, PLAIN))).toContain('workkit.sh setup')
+    expect(contextOf(await start($, PLAIN))).toMatch(SETUP_RUN)
   })
 
   test('a declined repo still hears the setup pester and nothing else', async ($, on) => {
     mkWorld(on, { setup: false, repos: { [REPO]: null }, standards: { state: 'declined' } })
     const ctx = contextOf(await start($, REPO))
-    expect(ctx).toContain('workkit.sh setup')
+    expect(ctx).toMatch(SETUP_RUN)
     expect(ctx).not.toContain('not in the issue workflow')
   })
 
   test('an engine anywhere else: the pester never mentions the plugin cache', async ($, on) => {
     mkWorld(on, { setup: false })
     const line = contextOf(await start($, REPO)).split('\n').find((l: string) => l.startsWith('SETUP:')) || ''
-    expect(line).toContain('workkit.sh setup')
+    expect(line).toMatch(SETUP_RUN)
     expect(line).toMatch(/setup` yourself/)
     expect(line).not.toMatch(/tell the user/i)
     expect(line).not.toContain('plugin cache')
@@ -266,17 +298,14 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
   test('a cloud session (CLAUDE_CODE_REMOTE=true): the pester names setup --cloud, never the wizard', async ($, on) => {
     mkWorld(on, { setup: false, env: { CLAUDE_CODE_REMOTE: 'true' } })
     const line = contextOf(await start($, REPO)).split('\n').find((l: string) => l.startsWith('SETUP:')) || ''
-    expect(line).toContain('workkit.sh setup --cloud')
-    expect(line).not.toMatch(/workkit\.sh setup`/)
+    expect(line).toMatch(CLOUD_RUN)
+    expect(line).not.toMatch(/workkit\.js setup`/)
   })
 
   test('a machine with no schedule installed never gets one: the daily run calls workkit update --auto', async ($, on) => {
     const w = mkWorld(on)
     await start($, REPO)
-    const update = w.runs('workkit.sh')
-    expect(update).toHaveLength(1)
-    expect(update[0].argv).toContain('update')
-    expect(update[0].argv).toContain('--auto')
+    expect(w.runs('workkit.js').map((c: any) => c.argv)).toEqual([['node', `${ENGINE}/workkit.js`, 'update', '--auto']])
   })
 
   test('a machine with no sign-in hears it at session start', async ($, on) => {

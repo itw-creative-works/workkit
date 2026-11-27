@@ -21,12 +21,13 @@ const { writeWhole } = require('../../workflow/lib/write');
 const { WORKKIT_DIR } = require('../../workflow/user-dir');
 const { publishBrief } = require('./brief-publish');
 const { compose, send } = require('./brief');
-const { captured } = require('../lib/notes');
+const { chomp } = require('../../hooks/mods/text.js');
+const { rosterFile } = require('../../hooks/mods/log.js');
 
 /** A gh read's stdout as a capture holds it, its stderr sent away; '' when it said nothing. */
 const ghRead = (message, args) => {
   const res = spin(message, () => spawnSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }), { line: false });
-  return captured(res.stdout ?? '');
+  return chomp(res.stdout);
 };
 
 /** The slugs a `data/repos.json` text lists, the strings of its `repos`. */
@@ -88,7 +89,7 @@ const checkoutsOf = (dir, slugs) => {
 const cloudMachine = (run) => {
   const { note } = run.notes;
   const settings = path.join(run.wkDir, 'settings.json');
-  const roster = path.join(run.wkDir, '.repos.json');
+  const roster = rosterFile(run.wkDir);
   if (!isFile(settings)) {
     const repo = process.env.GITHUB_REPOSITORY;
     if (!repo) {

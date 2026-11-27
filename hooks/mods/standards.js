@@ -9,6 +9,7 @@ import { rootOptedIn } from './gate.js';
 import { homeOf, pad } from './log.js';
 import { parseJson } from './settings.js';
 import { LONG_RUN_MS } from './suite.js';
+import { chomp } from './text.js';
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 
@@ -37,9 +38,9 @@ const outputOf = (result) => `${result.stdout ?? ''}${result.stderr ?? ''}`;
 const setupLine = (state) => {
   const where = state.isInCache ? ' (the engine in the plugin cache)' : '';
   if (state.isCloud) {
-    return `SETUP: workkit is not set up in this cloud session (${state.cliLink} is missing). The workkit command is absent until it is. Run \`bash ${state.engine}/workkit.sh setup --cloud\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
+    return `SETUP: workkit is not set up in this cloud session (${state.cliLink} is missing). The workkit command is absent until it is. Run \`node ${state.engine}/workkit.js setup --cloud\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
   }
-  return `SETUP: workkit is not set up on this machine (${state.cliLink} is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Run \`bash ${state.engine}/workkit.sh setup\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
+  return `SETUP: workkit is not set up on this machine (${state.cliLink} is missing). The daily brief, the home repo, and the workkit command are all absent until it is. Run \`node ${state.engine}/workkit.js setup\` yourself${where} before other work, and hand the user only what it prints for them to do.`;
 };
 
 // The heal's report: a failure is worth a session's attention even when it
@@ -49,7 +50,7 @@ const healReport = (root, heal, update) => {
   if (heal) {
     const actions = engineLines(outputOf(heal));
     if (heal.exitCode !== 0) {
-      const tail = outputOf(heal).replace(ANSI, '').replace(/\n+$/, '').split('\n').slice(-3).join('\n');
+      const tail = chomp(outputOf(heal).replace(ANSI, '')).split('\n').slice(-3).join('\n');
       msg = `workflow standards did not finish in ${root} (exit ${heal.exitCode}). It will retry next session:\n${actions || tail}`;
     } else if (actions) {
       msg = `workflow standards healed ${root}:\n${actions}`;
@@ -113,7 +114,7 @@ export async function standardsGather(io, env, e) {
   state.root = await io.top(e.cwd);
   const { root } = state;
   if (!root) return standardsContext(state, null, null);
-  const standards = `${engine}/standards.sh`;
+  const standards = `${engine}/standards.js`;
   const manifest = `${engine}/labels.json`;
   // A broken install speaks once, only for a repo that said yes.
   let broken = null;
@@ -124,19 +125,19 @@ export async function standardsGather(io, env, e) {
     return standardsContext(state, null, null);
   }
   // The engine owns the participation states; its answer is stdout's last line.
-  const asked = await io.run(['bash', standards, '--state', root]);
+  const asked = await io.run(['node', standards, '--state', root]);
   const participation = asked.exitCode === 0 ? asked.stdout.trimEnd().split('\n').pop() : 'nogit';
   if (participation === 'undecided') {
-    state.offer = (await io.run(['bash', standards, '--announce', root])).stdout.trimEnd();
+    state.offer = (await io.run(['node', standards, '--announce', root])).stdout.trimEnd();
   }
   if (participation !== 'enabled') return standardsContext(state, null, null);
   const marker = `${env.WORKFLOW_STANDARDS_CACHE || `${homeOf(env)}/.claude/logs/workflow-standards`}/${await io.sha1(root)}`;
   const today = localDay(await io.now());
   if ((await io.read(marker)) === today) return standardsContext(state, null, null);
   // Only a clean heal caches the day, so a partial one retries next session.
-  const heal = await io.run(['bash', standards, root], { env: { QUIET: '1' }, timeoutMs: LONG_RUN_MS });
+  const heal = await io.run(['node', standards, root], { env: { QUIET: '1' }, timeoutMs: LONG_RUN_MS });
   if (heal.exitCode === 0) await io.write(marker, today);
-  const cli = `${engine}/workkit.sh`;
-  const update = (await io.exists(cli)) ? await io.run(['bash', cli, 'update', '--auto'], { timeoutMs: LONG_RUN_MS }) : null;
+  const cli = `${engine}/workkit.js`;
+  const update = (await io.exists(cli)) ? await io.run(['node', cli, 'update', '--auto'], { timeoutMs: LONG_RUN_MS }) : null;
   return standardsContext(state, heal, update);
 }

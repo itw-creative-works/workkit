@@ -6,9 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
-const { cleanup, git, mkRemote, mkWorld, inNode } = require('./helpers');
+const { cleanup, git, mkRemote, mkWorld, runHomeSteps } = require('./helpers');
 
-const clone = (world) => inNode(world, [['repo', 'clone', ['owner/workkit']]]);
+const clone = (world) => runHomeSteps(world, [['repo', 'clone', ['owner/workkit']]]);
 
 describe('workflow/home: the clone', () => {
   test('an absent path is cloned, and ~/.workkit is never made a git repo', () => {

@@ -282,6 +282,31 @@ describe('ship watch: finding the run', () => {
     expect(watchCalls(w).length, 'nothing watched').toBe(0);
     cleanup(w.dir);
   });
+
+  test('a retry count that is no whole number of 1 or more is the default six tries', () => {
+    for (const tries of ['abc', '0', '2.5']) {
+      const w = makeWorld({ empty: 99 });
+      runWatch(w, [SHA], { env: { WORKKIT_CI_WATCH_TRIES: tries } });
+      expect(listCalls(w).length, `${JSON.stringify(tries)}: six tries reach the stub`).toBe(6);
+      cleanup(w.dir);
+    }
+  });
+
+  test('a wait that is no number of 0 or more is the default ten seconds: no second ask comes at once', async (t) => {
+    const w = makeWorld({ empty: 99 });
+    const watch = start(process.execPath, [SCRIPT, SHA], { cwd: w.repo, env: watchEnv(w, { WORKKIT_CI_WATCH_WAIT: 'abc' }) });
+    const pidFile = path.join(ciLockPath(path.join(w.home, '.workkit'), w.repo), 'pid');
+    t.after(async () => {
+      // The body runs detached, its supervisor's pid in the lock: its group ends before the world goes.
+      await watch.end('SIGKILL');
+      const supervisor = pidIn(pidFile);
+      if (supervisor > 0) endTree(supervisor, 'SIGKILL');
+      expect(await until(() => !alive(supervisor)), `the watch's body (pid ${supervisor}) outlived the case`).toBeTruthy();
+      cleanup(w.dir);
+    });
+    expect(await until(() => listCalls(w).length >= 1 && pidIn(pidFile) > 0), `the first ask reached the stub, the body's pid in the lock: ${watch.output()}`).toBeTruthy();
+    expect(await until(() => listCalls(w).length >= 2, 500), `the second ask waits out the default: ${fmtCalls(listCalls(w))}`).toBe(false);
+  });
 });
 
 describe('ship watch: a short sha', () => {

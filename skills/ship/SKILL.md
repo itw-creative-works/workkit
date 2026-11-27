@@ -34,7 +34,7 @@ user-invocable: true
 ## The kit's verbs run bare
 
 - Every `workkit` verb runs as its own Bash call from the repo root (`cd` there in a call of its own first).
-  - Its rule comes from the kit's one list, `WORKKIT_COMMANDS` (`workflow/workkit/command-list.sh`), and `workkit setup` keeps it in the global settings: an allow rule for each verb a ship runs but two. `workkit ship deploy` has an ask rule, so it prompts (Step 6); `workkit prove` has none, and this skill's `allowed-tools` grants it.
+  - Its rule comes from the kit's one list, `COMMANDS` (`workflow/workkit/command-list.js`), and `workkit setup` keeps it in the global settings: an allow rule for each verb a ship runs but two. `workkit ship deploy` has an ask rule, so it prompts (Step 6); `workkit prove` has none, and this skill's `allowed-tools` grants it.
   - The settings rules carry the ship's verbs, so this skill grants none of them: no grant here can stand above the deploy's ask rule, and the verbs are not copied by hand.
   - It runs as the bare command: no `cd <path> &&`, no pipe, no redirect, no trailing `; echo`, no variable prefix, no command substitution in an argument, since its rule matches the bare form only.
 - A refused verb is first checked for its shape: one run in a compound, behind a prefix or with a redirect is retried bare. Only a refused BARE call is reported, with the allow line `workkit doctor` names; the command is never handed to the owner to run.
@@ -281,16 +281,22 @@ user-invocable: true
   3. This ship's newest code-carrying commit passed `safety:commit-gate`, whose record proves the suite green. A no-code commit (docs, a version-only bump) needs no record, so the proof is the newest code-carrying commit. One made with hooks disabled does not count. This check is the skill's; failing it stops the publish, the check named.
   4. The tree's version is not yet on npm for the package. The run asks per package, and a version already out is a skip, never a failure: a version landed in an earlier session, or left after a crash mid-publish, is the normal rerun.
 - Then ONE command publishes the plan: `workkit ship publish`, prepare its own call before it. Per package, in plan order, it asks npm, skips a version already out, and runs `npm publish --workspace=<name>` (plain `npm publish` without `workspaces`; `--access public` when scoped). The first failure stops it, package named, non-zero; a rerun resumes. All out: one line.
+- It publishes what HEAD holds. A folder that differs from HEAD (a changed tracked file, staged or not, or an untracked file git does not ignore) publishes from a copy of HEAD, its gitignored files filled in, removed after.
+  - It says so first: `publish-plan: the folder differs from HEAD (<N> paths), so this publishes from a copy of <sha7>.`
+  - `workkit ship plan` reads the folder, so there the plan `workkit ship publish` prints from the copy is the one that counts.
+  - The copy's gitignored files (a build output, `node_modules`) come from the folder, so a build output no publish script rebuilds is the folder's, not HEAD's.
+  - A copy it cannot make exits 1 with `publish-plan: could not make a copy of <sha7> to publish from (<why>); nothing was published.`: report it and STOP, never publish the folder by hand.
 - A run that published at least one package then runs the repo's afterPublish hooks (`hooks.afterPublish`, the same rule as Step 4's), so it gets the same long timeout; report its `ship-hooks:` lines. A failed hook exits 1 with `publish-plan: <N> published; an afterPublish hook failed.`, and what published stands. A run that publishes nothing runs none.
 - The agent runs it; it never hands the command back to the owner. Never a shell loop or a compound with prepare: when `workkit ship publish` is unavailable, ONE plain `npm publish --workspace=<name> [--access public]` per Bash call, in plan order, each after `npm view <name>@<version> version` shows the version not yet out.
-- `workkit setup` keeps the kit's allow and ask rules (`ALLOW_RULES` and `ASK_RULES` in `workflow/workkit/allow.sh`) in the global `~/.claude/settings.json`, and `workkit doctor` names a missing one. A refused call follows § The kit's verbs run bare. A refused plan or failed check: print which and STOP.
+  - That fallback runs only when `git status --porcelain` prints nothing; otherwise stop and report, never publish the folder by hand.
+- `workkit setup` keeps the kit's allow and ask rules (`ALLOW_RULES` and `ASK_RULES` in `workflow/workkit/allow.js`) in the global `~/.claude/settings.json`, and `workkit doctor` names a missing one. A refused call follows § The kit's verbs run bare. A refused plan or failed check: print which and STOP.
 
 ## Step 6: Deploy (if applicable)
 
 - Runs LAST, after commit, push, publish and release, so what deploys is exactly what was committed. A root `package.json` with neither `scripts.deploy` nor `scripts.release`: skip silently, no question.
 - **MANDATORY: ask before deploying**, since deploy sends code to PRODUCTION. Ask "Deploy to production?" and wait for an explicit "yes", unless `deploy` is literally in the `/workkit:ship deploy` args. Earlier conversation, context, or "ship it" never count. The command itself asks nothing; Claude Code's ask rule prompts at the call as well.
 - After the yes, run `workkit ship deploy` from the repo root, with a long timeout.
-  - Claude Code then asks at every `workkit ship deploy`, inside a ship too, since the kit's ask rule `Bash(workkit ship deploy:*)` (its `ask` entry in `WORKKIT_COMMANDS`, made a rule in `ASK_RULES`, `workflow/workkit/allow.sh`) beats any allow rule; `deploy` in the args skips this step's question, never that prompt.
+  - Claude Code then asks at every `workkit ship deploy`, inside a ship too, since the kit's ask rule `Bash(workkit ship deploy:*)` (its `ask` entry in `COMMANDS`, made a rule in `ASK_RULES`, `workflow/workkit/allow.js`) beats any allow rule; `deploy` in the args skips this step's question, never that prompt.
   - With no one to answer that prompt, or with the prompt declined, the deploy does not run: say plainly that it did not run and tell the owner, never work around it.
   - `workkit ship deploy` runs `npm run deploy` when `scripts.deploy` exists, else `npm run release`, then the repo's afterDeploy hooks (`hooks.afterDeploy`, Step 4's rule).
   - Report its `ship-deploy:` and `ship-hooks:` lines.
@@ -299,13 +305,13 @@ user-invocable: true
 
 ## Step 7: Republish the dashboard, and re-run setup, if the ship touched them
 
-- Diff touched `tower/app/`, `workflow/publish.sh`, `workflow/publish.js`, `workflow/home.sh` or `workflow/home.js`, or a `workflow/<name>/` folder one of them requires or runs: run `workkit publish` once the work commit's CI is green.
+- Diff touched `tower/app/`, `workflow/publish.sh`, `workflow/publish.js` or `workflow/home.js`, or a `workflow/<name>/` folder one of them requires or runs: run `workkit publish` once the work commit's CI is green.
   - Only a publish carries the change to the dashboard built from the home clone. On red, what would publish is the failure. The daily 9am publish is the backstop, so a skip costs a day.
 - Report one line: published, or the named skip it printed (`site.publish` off, no home clone, no build tooling, already current). A FAILED publish is loud, like red CI. Say what it said and that the site is on the previous build.
-- Diff touched `workflow/workkit.sh`, `workflow/home.sh` or `home.js`, `workflow/publish.sh` or `publish.js`, `workflow/standards.sh` or `standards.js`, a `workflow/<name>/` folder one of them sources or requires, `jobs/` or `hooks/`: run `workkit setup` on the same green, the work commit's.
+- Diff touched `workflow/workkit.js` or `workkit.cmd`, `workflow/home.js`, `workflow/publish.sh` or `publish.js`, `workflow/standards.sh` or `standards.js`, a `workflow/<name>/` folder one of them sources or requires, `jobs/` or `hooks/`: run `workkit setup` on the same green, the work commit's.
   - Setup installs those files here; until it reruns, the machine has the shipped kit but not its install. It is idempotent: a re-run skips finished steps.
 - Give it a long timeout: the token handover waits up to three minutes on GitHub Pages, plus the dashboard build. Report every `skip` and `warn` line, one each. Also each `info` line asking for a terminal (repo opt-in, publish question, secrets prompt, home-repo confirm). A human step then becomes one owner action. A FAILED setup is loud.
-- Setup publishes the dashboard last. So when both clauses fire (a diff touching `workflow/publish.sh`, `publish.js`, `home.sh` or `home.js` or a folder one of them requires, or `tower/app/` beside `hooks/`), it is ONE run. The setup run REPLACES the separate `workkit publish`; the reply says the republish rode it. Neither clause: skip silently.
+- Setup publishes the dashboard last. So when both clauses fire (a diff touching `workflow/publish.sh`, `publish.js` or `home.js` or a folder one of them requires, or `tower/app/` beside `hooks/`), it is ONE run. The setup run REPLACES the separate `workkit publish`; the reply says the republish rode it. Neither clause: skip silently.
 
 ## The owner's word is the invocation, and it authorizes that ship alone
 

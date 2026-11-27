@@ -13,11 +13,13 @@ const { run } = require('./lib/runs');
 const { bodyEnd } = require('./lib/body');
 const { exitOf, startFailed } = require('./lib/detach');
 const { runPaths, LogsDirError } = require('./lib/run-paths');
-const { proofBase, proofDir } = require('./lib/proof-dir');
+const { proofBase, proofDir, proofClaudeHome } = require('./lib/proof-dir');
 const {
   copyIndex, writeTree, treeId, indexTreeId,
 } = require('./lib/tree-hash');
-const { fillCopy, worktreeAdd, worktreeRemove } = require('./lib/tree-copy');
+const {
+  checkOut, fillIgnored, worktreeAdd, worktreeRemove,
+} = require('./lib/tree-copy');
 const { writeSuiteRecord } = require('./lib/records');
 const { suiteHold } = require('./lib/hold');
 const { sayAs } = require('./lib/say');
@@ -48,19 +50,14 @@ const git = (root, args, { env = process.env, quiet = false } = {}) => gitIn(roo
   env, encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'inherit'],
 });
 
-/** `npm test` in `dir` with npm's script shell `sh`, its output on this process's own; its code. */
-const npmTest = (dir, sh) => new Promise((resolve) => {
-  const child = spawn('npm', ['test', `--script-shell=${sh}`], { cwd: dir, stdio: 'inherit', windowsHide: true });
+/** `npm test` in `dir` with npm's script shell `sh` under `env`, its output on this process's own; its code. */
+const npmTest = (dir, sh, env) => new Promise((resolve) => {
+  const child = spawn('npm', ['test', `--script-shell=${sh}`], {
+    cwd: dir, env, stdio: 'inherit', windowsHide: true,
+  });
   child.on('error', () => resolve(startFailed));
   child.on('close', (code, signal) => resolve(exitOf(code, signal)));
 });
-
-/** The gitignored paths of `root`, read without refreshing its index. */
-const ignoredOf = (root) => {
-  const status = git(root, ['--no-optional-locks', 'status', '--porcelain', '-z', '--ignored=matching', '--no-renames']);
-  if (status.status !== 0) fail(`could not list the gitignored files of ${root}`);
-  return status.stdout.split('\0').filter((entry) => entry.startsWith('!! ')).map((entry) => entry.slice(3));
-};
 
 /**
  * The detached run: copy, fill, run, record. Its last line is always
@@ -102,20 +99,12 @@ const body = async (root) => {
     fail(`could not add a worktree at ${copy}: ${err.message}`);
   }
   state.copy = copy;
-  if (git(copy, ['read-tree', staged.stdout.trim()]).status !== 0 || git(copy, ['checkout-index', '-a']).status !== 0) {
-    fail(`could not check the index's tree ${staged.stdout.trim()} out into the copy`);
-  }
-  // Only the paths an ignore pattern matches come from the live folder: an
-  // untracked or unstaged file is the held work the copy leaves out. None at
-  // all would fill the copy with the whole folder, so none skips the fill.
-  const ignored = ignoredOf(root);
-  if (ignored.length > 0) {
-    try {
-      fillCopy(root, root, copy, ignored);
-    } catch (err) {
-      console.error(err.message);
-      fail(`could not fill the copy's gitignored files from ${root}`);
-    }
+  if (!checkOut(copy, staged.stdout.trim())) fail(`could not check the index's tree ${staged.stdout.trim()} out into the copy`);
+  try {
+    fillIgnored(root, copy);
+  } catch (err) {
+    if (err.cause) console.error(err.cause.message);
+    fail(err.message);
   }
   halted();
   const before = treeId(copy);
@@ -127,9 +116,12 @@ const body = async (root) => {
   // copy writes no record of its own.
   const sh = onPath('sh');
   if (sh === null) fail('no sh on PATH for npm to run the suite with');
+  // The suite's own empty Claude home, beside the copy (why: proofClaudeHome).
+  const claudeHome = proofClaudeHome(state.tmp);
+  if (claudeHome === null) fail(`could not make a Claude home in ${state.tmp}`);
   halted();
   const started = Date.now();
-  const rc = await npmTest(copy, sh);
+  const rc = await npmTest(copy, sh, { ...process.env, WORKFLOW_CLAUDE_HOME: claudeHome });
   const ms = Date.now() - started;
   // One turn of the loop, so a signal that came before the suite's end is seen
   // before its code is read, as bash runs a trap once its command ends.

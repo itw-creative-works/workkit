@@ -1,8 +1,8 @@
 // workflow/lib/settings.js: the settings loader (hooks/mods/settings.js) bound
 // to the disk, for the kit's Node scripts: the kit's defaults, the machine's
 // file, then the repo's, merged, read with fs; what that merge set aside; and
-// the home slug read through it.
-// Usage: const { settingsAt, faultsAt, homeSlug } = require('../lib/settings');
+// the home slug and the site options read through it.
+// Usage: const { settingsAt, faultsAt, homeSlug, siteOption } = require('../lib/settings');
 
 const path = require('path');
 const { homeSlugOf, loadSettings, settingsFaults } = require('../../hooks/mods/settings.js');
@@ -38,4 +38,20 @@ const faultsAt = (root, user = path.join(userDir(), 'settings.json')) => setting
  */
 const homeSlug = (workflowHome) => homeSlugOf(settingsAt(null, path.join(workflowHome, 'settings.json')));
 
-module.exports = { settingsAt, faultsAt, homeSlug };
+/**
+ * A site option of the machine's merged view as the shell's setting read
+ * prints it: a string as it is, any other value as JSON, '' for none.
+ * @param {string} key the option under `site`
+ * @param {string} [user] the machine's settings file, settingsAt's default by default
+ * @returns {string}
+ * @throws {Error} when the kit's defaults are missing or do not parse
+ */
+const siteOption = (key, user) => {
+  const value = settingsAt(null, user).site?.[key];
+  if (value === null || value === undefined) return '';
+  return typeof value === 'string' ? value : JSON.stringify(value);
+};
+
+module.exports = {
+  settingsAt, faultsAt, homeSlug, siteOption,
+};

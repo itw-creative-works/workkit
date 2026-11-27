@@ -1,7 +1,7 @@
 // Tests for `workkit tools`: workkit-core's bin reads every suite the runner would
 // run from the current folder and prints each needs() tool once, sorted; the global
 // command runs that bin with node at the repo root, before any npm install. The shared
-// prologue of the workflow/workkit.sh suites is ./helpers.js.
+// prologue of the workflow/workkit.js suites is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -9,8 +9,10 @@ const { stripVTControlCharacters } = require('util');
 const {
   describe, test, expect, mkTmp, run,
 } = require('../../lib/harness');
-const { NODE_DIR, joinPath, basePathWithout } = require('../../lib/platform');
-const { cleanup, mkWorld, runCli } = require('./helpers');
+const { NODE_DIR, joinPath, gitPath } = require('../../lib/platform');
+const {
+  cleanup, mkWorld, runCli, mkPartialKit,
+} = require('./helpers');
 
 const CORE_BIN = path.join(__dirname, '..', '..', '..', 'packages', 'core', 'bin', 'workkit.js');
 
@@ -208,15 +210,15 @@ describe('workkit tools: the global command', () => {
     cleanup(world.root); cleanup(repo);
   });
 
-  test('no node on PATH: one error line, exit 1', () => {
+  test('a kit with no core package program: the line naming it, exit 1', () => {
     const world = mkWorld({ claude: false });
     const repo = mkSuites({ 'test/a.test.js': SUITE("needs('hugo')") }, { git: true });
-    const noNode = basePathWithout(world.root, 'node');
-    const { code, said } = runCli(world, ['tools'], { cwd: repo, env: { PATH: joinPath(world.bin, noNode) } });
-    expect(code, `exit 1, got: ${said}`).toBe(1);
-    const printed = stripVTControlCharacters(said).split(/\r?\n/).filter((line) => line.trim());
-    expect(printed.length, `one line, got: ${said}`).toBe(1);
-    expect(/\bnode\b/.test(printed[0]), `the line names node, got: ${said}`).toBeTruthy();
-    cleanup(world.root); cleanup(repo);
+    const { kit, script } = mkPartialKit();
+    const { code, out, err } = runCli(world, ['tools'], { cwd: repo, script });
+    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
+    const line = `✖ tools: no workkit-core beside this engine (${gitPath(path.join(kit, 'packages', 'core', 'bin', 'workkit.js'))}), and this command needs the whole kit`;
+    expect(err.split(/\r?\n/).includes(line), `the line naming the program, got: ${err}`).toBeTruthy();
+    expect(out, 'and no tool list').toBe('');
+    cleanup(world.root); cleanup(repo); cleanup(kit);
   });
 });

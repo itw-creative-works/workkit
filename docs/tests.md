@@ -64,6 +64,10 @@
 - A path in a world's env is spelled for the program it is handed to: `shellPath` for a bash, native for a node a case starts itself.
   - Only Git Bash turns `/d/a/x` back into `D:/a/x`, for a program it starts; a node handed it straight reads `D:\d\a\x`.
   - A world both read keeps it native and hands its bash the shell's spelling (`bashEnv` in `test/scripts/home/helpers.js`).
+  - The `workkit` command is a node, so its suites' world is native: `runCli` in `test/scripts/workkit-cli/helpers.js` starts `workflow/workkit.js` with the running Node, and `inNode` and `startInNode` call one of the command's functions in a node of its own, its `kit` built from the overrides a case hands in.
+    - Beside them: `npmrcEnv(world)`, a scratch user npmrc so an npm on the system PATH reads and writes no other; `machineLinks(world, call)`, the machine steps through `inNode` under it; `windowsForm(p)`, a path as `workkit.cmd` and the Windows PATH line spell it; `lines(text)`, each line trimmed.
+    - `test/scripts/workkit-cmd.test.js` holds the `workkit.cmd` cases: `renderCmd`, the copy the machine steps write, and the doctor's lines for it and for the PATH, each Windows half reached through the system argument.
+  - The home suites start `workflow/home.js` with the running Node too: `inHome(world, [verb, ...args])` in `test/scripts/home/helpers.js` runs one verb from the world's root, the caller's voice at its defaults, and answers `{ code, out, err }`; its `seeded(world)` clones the home and seeds the runner, its code the seed's.
   - A run: line meant for Linux runs under `MSYS2_ARG_CONV_EXCL=*`, so Git Bash rewrites no argument that looks like a path (`/workkit/`).
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
 - A suite or a case that cannot run here states a `skip` value, its reason, and the run lists every skip after the totals.
@@ -79,8 +83,9 @@
       - `runJob(dir, script, { lock, root })` is the job the script shell hands `run`: `node -e <script>`, its log in `<dir>`, its lock there unless `lock` names one, `root` null unless given.
       - `runUnder(job, { env, before, launch })` runs it to its end in a node of its own and answers `{ res, answers }`: the harness run's result (its status the `rc`, its output the run's) and what `run` resolved, null when the call ended first. `before` is source run once `runs.js` is loaded, `launch` a launch seam's source.
       - `startRun(job, { env, before, launch, detached })` is `runUnder` started without waiting: the harness start handle, its pid the call's, plus `answers()`, null until `run` resolved.
-    - A spin of `workflow/lib/spin.js` driven in a node of its own: `driveSpin(mode, { env, frames, commandLog })` in `test/lib/spin-call.js` spins around a real child that holds until the case releases it, so a case sees the frames while the call runs.
+    - A spin of `workflow/lib/spin.js` driven in a node of its own: `driveSpin(mode, { env, frames, terminal })` in `test/lib/spin-call.js` spins around a real child that holds until the case releases it, so a case sees the frames while the call runs; `terminal` is a file a logged command's terminal device stands in for (`WK_COMMAND_TERMINAL` names it), the frames watched there.
       - `drivePoll(key, { env, frames, counts })` drives the poll of `workflow/lib/flows.js` the same way, the key typed once its countdown drew; `framesIn`, `secondsOf` and `spinArgs` read and start them.
+    - A line of `workflow/lib/voice.js` spoken in a node of its own: `speak(lines, vars)` in `test/lib/speak.js` runs the lines after `const v = require(voice.js)` under a scratch home, color off unless `vars` say otherwise, and asserts the node ended clean; `voice-titles`, `lib-log`, `twins` and the heal's `healing` suite share it.
     - The streams a terminal question of `workflow/lib/flows.js` is handed in place of the process's own: `ioOf(input, { tty, open })` in `test/lib/io-streams.js`, a stdin holding the input and a stderr that keeps what it was told (`said()`).
   - A skip value is `false` or the reason text, never another falsy value: `false` and `undefined` run the case, and `true` or a reason skips it.
     - For `''`, `0` or `null`, Node runs a case's body anyway and labels it skipped, and on a `describe` it cancels the children, which fails the run.

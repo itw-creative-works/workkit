@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * workflow/standards.js: bring a repo to the issue-workflow standard,
- * idempotently, started by standards.sh under a node at the kit's floor. The
- * steps live in standards/, each handed one run object; what each does:
- * workflow/README.md, the standards.sh row, § Every heal runs and § The hook
- * layer self-check. Every mode: README § Participation: the tri-state.
- * Usage: node standards.js [--state|--announce|--enable|--decline|--engine-link|--home|--git-hooks] [repo_dir]
+ * idempotently, started by node or by standards.sh under a node at the kit's
+ * floor. The steps live in standards/, each handed one run object; what each
+ * does: workflow/README.md, the standards.sh row, § Every heal runs and § The
+ * hook layer self-check. Every mode: README § Participation: the tri-state.
+ * Usage: node standards.js [--state|--announce|--enable|--decline|--engine-link|--command-link|--home|--git-hooks] [repo_dir]
  */
 
 const fs = require('fs');
@@ -15,11 +15,12 @@ const { repoRoot } = require('./lib/git');
 const { nativePath, claudeHome } = require('./lib/platform');
 const { info, skip, warn } = require('./lib/voice');
 
-// A step file is loaded only when the mode in hand calls it: --state runs on
-// every session start, and a kit that is a workflow/ folder alone must still
-// answer the modes that need nothing beside it.
+// A step file is loaded only when the mode in hand calls it, as --state runs on
+// every session start. A kit that is a workflow/ folder alone answers
+// --engine-link, --git-hooks and a folder that is no repo; --command-link and
+// each mode that reads the participation load hooks/mods/ beside it.
 
-const MODES = new Set(['--state', '--announce', '--enable', '--decline', '--engine-link', '--home', '--git-hooks']);
+const MODES = new Set(['--state', '--announce', '--enable', '--decline', '--engine-link', '--command-link', '--home', '--git-hooks']);
 
 /**
  * The run every step is handed. WORKFLOW_CLAUDE_HOME and WORKFLOW_HOOKS_DIR are
@@ -173,6 +174,15 @@ const main = async (argv) => {
   if (mode === 'heal' && argv[0]?.startsWith('--')) {
     warn(`standards: unknown option ${argv[0]}`);
     return 1;
+  }
+
+  // The command's link needs no repo: the command's own step, never quiet, so
+  // an explicit call makes a missing ~/.local/bin; HOME is the tests' seam.
+  if (mode === 'command-link') {
+    const { kitOf } = require('./workkit/kit');
+    const { linkCommand } = require('./workkit/links');
+    process.env.QUIET = '0';
+    return linkCommand(kitOf());
   }
 
   const run = newRun();

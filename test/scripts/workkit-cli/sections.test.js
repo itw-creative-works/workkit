@@ -1,10 +1,22 @@
-// Tests for workflow/workkit.sh: how a run is organized: titled
-// sections, and color only at a terminal that wants it.
+// Tests for workflow/workkit.js: how a run is organized: titled sections,
+// color only at a terminal that wants it, and the indent a title or a section
+// gives every line after it, a wait line's and a question's included.
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
-const { describe, test, expect } = require('../../lib/harness');
-const { cleanup, mkWorld, runCli, mkKit, SLUG, mkHomeWorld } = require('./helpers');
+const path = require('path');
+const {
+  describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
+} = require('../../lib/harness');
+const { SYSTEM_PATH, nodeHomeEnv, jsPath } = require('../../lib/platform');
+const { framesIn } = require('../../lib/spin-call');
+const { mkOriginRepo } = require('../../lib/git-repo');
+const {
+  INSTALL_FIX, repoRoute, writeLogin, useTokenService, startServer, startService,
+} = require('../../lib/identity');
+const {
+  WORKFLOW_DIR, cleanup, mkWorld, runCli, mkKit, SLUG, mkHomeWorld, mkRepo, mkSetupKit, rosterRepo, signInEnv, inNode,
+} = require('./helpers');
 
 describe('workkit: how a run is organized (issue #90)', () => {
   // The escape byte every color code starts with. Nothing this command prints
@@ -92,5 +104,88 @@ describe('workkit: how a run is organized (issue #90)', () => {
       expect(!out.includes('workkit update in'), `and no title line, got: ${out}`).toBeTruthy();
       cleanup(world.root);
     }
+  });
+});
+
+describe('workkit: a wait line or a question under a title carries its indent', () => {
+  test('the doctor\'s token-service wait under This repo is its own line at the section\'s indent', async () => {
+    // A signed-in machine in an opted-in repo on the roster: the doctor asks the
+    // token service about acme/rostered, behind the one wait line a pipe gets.
+    const world = mkWorld();
+    const { kit, script } = mkKit('owner/kit');
+    const repo = mkRepo({ optIn: true });
+    rosterRepo(world, repo, 'acme/rostered', { script, env: signInEnv(world, { node: false }) });
+    writeLogin(world.home, { token: 'ghu_doctoruser', login: 'octocat' });
+    const service = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
+    try {
+      useTokenService(world.home, `${service.url}/token`);
+      const { err, said } = runCli(world, ['doctor'], { script, cwd: repo, env: signInEnv(world) });
+      expect(err.split('\n').includes('  ⏳ asking the token service whether workkit-agent[bot] is installed on acme/rostered...'),
+        `the wait line at the section's two spaces, got: ${said}`).toBe(true);
+    } finally {
+      await service.close();
+      cleanup(world.root); cleanup(kit); cleanup(repo);
+    }
+  });
+
+  test('setup --bot at a keyboard: after its title, the install poll\'s keys and its wait line sit at the title\'s indent', async () => {
+    // acme lacks the App throughout: y answers the install question, s skips the poll.
+    const world = mkWorld();
+    const { kit, script } = mkSetupKit();
+    const repo = mkRepo({ optIn: true });
+    const server = await startServer([
+      { method: 'POST', url: '/token', answers: [{ status: 412, body: JSON.stringify({ error: 'not installed', fix: INSTALL_FIX }) }] },
+      repoRoute('acme/rostered', 'acme/rostered', 4242),
+    ], world.root);
+    try {
+      mkOriginRepo(repo, 'https://github.com/acme/rostered.git');
+      writeLogin(world.home, { token: 'ghu_setupuser', login: 'octocat' });
+      useTokenService(world.home, `${server.url}/token`);
+      const res = inNode(world, {
+        engine: path.dirname(script),
+        file: 'workkit/setup.js',
+        fn: 'setup',
+        args: ['--bot'],
+        kit: { interactive: true },
+        cwd: repo,
+        input: 'y\ns',
+        env: signInEnv(world, { extra: { GITHUB_API_URL: server.url } }),
+      });
+      const lines = res.err.split('\n');
+      expect(lines.includes('  (enter)=check now, (s)=skip'), `the poll's keys at the title's two spaces, got: ${res.said}`).toBe(true);
+      expect(lines.includes('  ⏳ waiting for workkit-agent[bot] to be installed on acme...'), `and its wait line, got: ${res.said}`).toBe(true);
+    } finally {
+      await server.close();
+      cleanup(world.root); cleanup(kit); cleanup(repo);
+    }
+  });
+
+  test('a wait line\'s moving frames, forced on under a title, are drawn at the title\'s indent', async () => {
+    // A caller titles its run, then spins around a child held until the case saw a frame.
+    const dir = mkTmp('wk-title-frames-');
+    const release = path.join(dir, 'release');
+    const caller = path.join(dir, 'caller.js');
+    const message = 'reading the roster';
+    fs.writeFileSync(caller, [
+      `const { title } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'voice.js'))});`,
+      `const { spin } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'spin.js'))});`,
+      `const { spawnSync } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'run.js'))});`,
+      'const hold = [',
+      '  "const fs = require(\'fs\');",',
+      '  "const giveUp = setTimeout(() => process.exit(3), Number(process.argv[2]));",',
+      '  "const held = setInterval(() => { if (fs.existsSync(process.argv[1])) { clearInterval(held); clearTimeout(giveUp); } }, 20);",',
+      "].join('\\n');",
+      "title('🧪 a titled run');",
+      `spin(${JSON.stringify(message)}, () => spawnSync(process.execPath, ['-e', hold, ${jsPath(release)}, '${SPAWN_DEADLINE}'], { stdio: 'ignore' }));`,
+    ].join('\n'));
+    const call = start(process.execPath, [caller], { env: nodeHomeEnv(dir, { PATH: SYSTEM_PATH, WORKKIT_SPIN: '1' }) });
+    try {
+      expect(await until(() => framesIn(call.stderr(), message).length > 0), `a frame was drawn, got: ${JSON.stringify(call.stderr())}`).toBe(true);
+    } finally {
+      fs.writeFileSync(release, '');
+      await call.done;
+    }
+    const frames = framesIn(call.stderr(), message);
+    expect(frames.length > 0 && frames.every((f) => /^ {2}\S/.test(f)), `every frame opens at the title's two spaces, got: ${JSON.stringify(frames)}`).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ const {
 } = require('../lib/discussions');
 const { interactive, enterToOpen, poll } = require('../lib/flows');
 const { spawnSync, onPath } = require('../lib/run');
+const { secondsOf } = require('../lib/bounded');
 const {
   ok, skip, info, warn,
 } = require('../lib/voice');
@@ -73,8 +74,8 @@ const discussions = async (slug, io) => {
       return found !== null && found.length === 0;
     };
     // WORKKIT_HOME_POLL_INTERVAL is the suite's seam: a case waits one interval
-    // it chose, never the five seconds an owner gets.
-    if (await poll('Waiting for the categories', Number(process.env.WORKKIT_HOME_POLL_INTERVAL || 5), check, io)) {
+    // it chose, never the five seconds an owner gets. Above 0, so no check runs back to back.
+    if (await poll('Waiting for the categories', secondsOf(process.env.WORKKIT_HOME_POLL_INTERVAL, 5), check, io)) {
       ok('home: the Daily, Weekly, Monthly and Brief categories are there');
       return 0;
     }

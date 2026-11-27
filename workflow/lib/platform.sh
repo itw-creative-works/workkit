@@ -23,36 +23,6 @@ wk_jq() {
   return "${PIPESTATUS[0]}"
 }
 
-# wk_in_plugin_cache <kit dir>: whether the kit is the workkit plugin's copy in
-# Claude's plugin cache: its manifest names workkit and its physical path lies
-# under the PHYSICAL <claude home>/plugins/cache/, since ~/.claude may be a
-# symlink. WORKFLOW_CLAUDE_HOME is the tests' seam, as everywhere it is read.
-wk_in_plugin_cache() {
-  local kit home manifest
-  kit="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
-  manifest="$kit/.claude-plugin/plugin.json"
-  [[ -f "$manifest" ]] && command -v jq >/dev/null 2>&1 || return 1
-  [[ "$(wk_jq -r '.name // empty' "$manifest" 2>/dev/null)" == 'workkit' ]] || return 1
-  home="$(cd "${WORKFLOW_CLAUDE_HOME:-${HOME:-}/.claude}" 2>/dev/null && pwd -P)" || return 1
-  [[ -n "$home" && "$kit" == "$home/plugins/cache/"* ]]
-}
-
-# wk_clone_outranks <kit dir> <linked dir>: a clone outranks the plugin cache,
-# so a machine-wide link a cached kit finds naming a workkit clone is current.
-# The clone test is wk_is_kit_checkout in lib/slug.sh, sourced beside this.
-wk_clone_outranks() {
-  wk_in_plugin_cache "$1" && wk_is_kit_checkout "${2:-}"
-}
-
-# wk_mv_link: rename onto an address that may be a symlink without following
-# it, or the source lands inside the directory it points at. GNU spells it -T
-# and BSD -h, so `mv` itself is asked which it is.
-wk_mv_link() {
-  local flag=-T
-  mv --version 2>/dev/null | grep -qi 'GNU coreutils' || flag=-h
-  mv -f "$flag" "$1" "$2"
-}
-
 # wk_native_path <path>: the native spelling (`D:/a/x`, never `/d/a/x`), git's
 # own, the path unchanged off Windows. On Windows a path already spelled for it
 # (a drive letter, `:` and a separator, or two separators) has each `\` made `/`;
@@ -77,20 +47,8 @@ wk_user_dir() {
   printf '%s\n' "${WORKFLOW_HOME:-${HOME:-}/.workkit}"
 }
 
-# wk_script_shell_exe: npm's script shell on Windows, the executable setup
-# builds into the machine's own folder. Setup writes it; the commit gate reads it.
-wk_script_shell_exe() {
-  printf '%s\n' "$(wk_user_dir)/script-shell.exe"
-}
-
-# wk_hooks_log: sets WK_HOOKS_LOG, the log the hooks module writes a line to per
-# hook fire, in wk_user_dir's folder.
-wk_hooks_log() {
-  WK_HOOKS_LOG="$(wk_user_dir)/hooks.log"
-}
-
 # wk_is_cloud: a claude.ai/code cloud session, which Claude Code marks with
-# CLAUDE_CODE_REMOTE=true. Setup's --cloud and doctor read it.
+# CLAUDE_CODE_REMOTE=true. The gh shim (identity/gh) reads it.
 wk_is_cloud() {
   [[ "${CLAUDE_CODE_REMOTE:-}" == 'true' ]]
 }
@@ -156,54 +114,6 @@ run_at_floor() {
   exec "$node" "$file" "$@"
 }
 
-# wk_npm_script_shell: npm's script-shell value. npm on Windows ends it with a
-# CRLF a command substitution keeps half of; npm's own exit status comes back.
-wk_npm_script_shell() {
-  npm config get script-shell 2>/dev/null | tr -d '\r'
-  return "${PIPESTATUS[0]}"
-}
-
-# wk_physical_path <path>: <path> with its folder resolved through every link
-# and its file name kept as written, so a link to the file itself stays its own
-# path. The one compare of npm's script shell, for setup, doctor and the gate.
-wk_physical_path() {
-  local dir
-  dir="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || return 1
-  printf '%s/%s' "$dir" "$(basename "$1")"
-}
-
-# wk_claim_dir <dir>: 0 only for the one caller that creates <dir>/claim
-# create-only (noclobber), since a `mkdir` may answer 0 to two racing callers.
-# Its Node twin is claimDir in lib/lock.js, which also holds the run lock's form.
-wk_claim_dir() {
-  mkdir "$1" 2>/dev/null || return 1
-  ( set -C; : > "$1/claim" ) 2>/dev/null
-}
-
-# wk_take_lock <dir>: a mutex taken by wk_claim_dir of <dir>, its parent made first.
-# Returns 0 holding it, 1 after a 5s wait. Callers proceed either way, and only
-# a caller that took it drops it (wk_drop_lock), or a third writer races the holder.
-# Its Node twin, takeLock in lib/lock.js, excludes it on the same folder.
-wk_take_lock() {
-  local waited=0
-  mkdir -p "$(dirname "$1")" 2>/dev/null || return 1
-  while [ "$waited" -lt 50 ]; do
-    if wk_claim_dir "$1"; then return 0; fi
-    sleep 0.1
-    # Never `(( waited++ ))`: its first pass evaluates to 0, a non-zero status
-    # that errexit ends the run on under bash 4.1 and later.
-    waited=$(( waited + 1 ))
-  done
-  return 1
-}
-
-# The claim goes first, then the folder, never both at once: a taker may claim
-# the folder between the two, and the rmdir then fails and leaves it holding.
-wk_drop_lock() {
-  rm -f "$1/claim" 2>/dev/null || true
-  rmdir "$1" 2>/dev/null || true
-}
-
 # wk_sha1: the hex sha1 of STDIN, through shasum or sha1sum, so every key is
 # made by one rule. No tool is a loud refusal, never an empty key; parameter
 # expansion strips the ` -` to spare a fork.
@@ -227,11 +137,6 @@ MARKER_KEEP_DAYS=7
 # folder, where no system temp cleaner reaches.
 wk_markers_dir() {
   printf '%s\n' "$(wk_user_dir)/markers"
-}
-
-# wk_tower_dir: the one git repo in the global layer, the clone of `<login>/workkit`.
-wk_tower_dir() {
-  printf '%s\n' "$(wk_user_dir)/tower"
 }
 
 # wk_keyed_path <folder> <anchor>: the path <folder> holds for <anchor>, keyed

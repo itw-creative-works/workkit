@@ -8,10 +8,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, run, pidIn, mkTmp, until, SPAWN_DEADLINE,
+  describe, test, expect, run, pidIn, mkTmp, until,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, SYSTEM_PATH, NO_RC, shellPath, joinPath, which, stubTool, spawnSystemBash, basePathWithout, nodeEnv,
+  NODE_DIR, SYSTEM_PATH, shellPath, joinPath, which, stubTool, basePathWithout, nodeEnv, skipWithoutCaughtSignal,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
@@ -34,7 +34,7 @@ const { workkitStart } = require('../lib/supervise-world');
 
 const cleanup = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
-const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.sh');
+const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.js');
 
 // The fixture's suite: every file under test/ required in turn, so an untracked
 // test file is part of the run the way a real suite's discovery makes it.
@@ -304,6 +304,33 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
       cleanup(w.dir);
     });
 
+    // A fixture test writing, to the file PROVE_SEEN names, the Claude home it was handed: as given, real, and its entries.
+    const CLAUDE_HOME_SEEN = [
+      "const fs = require('fs');",
+      "const home = process.env.WORKFLOW_CLAUDE_HOME || '';",
+      "const dir = home !== '' && fs.existsSync(home) && fs.statSync(home).isDirectory();",
+      'fs.writeFileSync(process.env.PROVE_SEEN, JSON.stringify({ home, real: dir ? fs.realpathSync(home) : null, entries: dir ? fs.readdirSync(home) : null }));',
+      '',
+    ].join('\n');
+
+    test('the suite runs with an empty WORKFLOW_CLAUDE_HOME of its own in the run folder, never the caller\'s, gone after', () => {
+      const w = mkWorld({ 'test/claude-home.test.js': CLAUDE_HOME_SEEN });
+      const seen = path.join(w.dir, 'seen.json');
+      const caller = path.join(w.dir, 'caller-claude');
+      fs.mkdirSync(caller);
+      stagePassing(w);
+      const res = prove(w, { PROVE_SEEN: seen, WORKFLOW_CLAUDE_HOME: caller });
+      expect(res.code, `green, got: ${res.said}`).toBe(0);
+      const report = JSON.parse(fs.readFileSync(seen, 'utf8'));
+      expect(report.entries, `an existing empty folder, got: ${JSON.stringify(report)}`).toEqual([]);
+      const parts = path.relative(cacheBase(fs.realpathSync(homeOf(w))), report.real).split(path.sep);
+      expect(parts.length === 3 && parts[0] === 'proof' && /^[^/\\]{6}$/.test(parts[1]) && parts[2] !== 'copy',
+        `a folder of its own in proof/<id>/, beside the copy, got: ${parts.join('/')}`).toBeTruthy();
+      expect(report.real === fs.realpathSync(caller), 'not the caller\'s').toBe(false);
+      expect(fs.existsSync(report.home), 'gone after the run').toBe(false);
+      cleanup(w.dir);
+    });
+
     test('a run folder under proof/ changed over a day ago is removed by the next run, one changed within the day is left', () => {
       const w = mkWorld();
       plantRun(homeOf(w), 'stale1', 2);
@@ -456,7 +483,7 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
     });
 
     test('a body ended by TERM: exit 143, prove: exit 143 last, the worktree and the run folder gone, no record', {
-      skip: IS_WINDOWS && 'Node ends a Windows process outright, with no signal a handler can catch',
+      skip: skipWithoutCaughtSignal(),
     }, async () => {
       const hang = "require('fs').writeFileSync(process.env.PROVE_PID, String(process.pid));\nsetInterval(() => {}, 1 << 30);\n";
       const w = mkWorld({ 'test/hang.test.js': hang });
@@ -490,15 +517,13 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
       const tree = indexTree(w);
       plantRecord(w.workflowHome, w.repo, tree);
       // A bash first on PATH that records each start, then hands it to the real one;
-      // the command itself starts under the system bash by its full path, so it is never one.
+      // the command itself is workflow/workkit.js under the running node.
       // The rest of PATH is node and the system tools, so no shim of the session's is a bash script reached by name.
       const bin = mkTmp('prove-bash-');
       const starts = path.join(bin, 'starts.log');
       stubTool(bin, 'bash', ['#!/bin/bash', recordArgv(starts), `exec "${shellPath(which('bash', SYSTEM_PATH))}" "$@"`]);
       const env = { ...wiredNpmEnv(w), CLAUDECODE: '1', PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH) };
-      const res = spawnSystemBash([...NO_RC, shellPath(CLI), 'prove'], {
-        cwd: w.repo, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
+      const res = run(process.execPath, [CLI, 'prove'], { cwd: w.repo, env });
       expect(res.status, `refused with exit 1, got: ${res.status} ${res.stdout}${res.stderr}`).toBe(1);
       expect(res.stderr.includes('suite-hold: this tree is already proved'), `the hold's line, got: ${res.stderr}`).toBe(true);
       expect(recorded(w), 'the record as it was').toBe(`${tree}\n`);

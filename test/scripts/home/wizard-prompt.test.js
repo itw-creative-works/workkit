@@ -10,12 +10,12 @@ const { cleanup, mkRemote, mkWorld, inHome, setup } = require('./helpers');
 
 describe('workflow/home: the wizard, the question', () => {
   test('without a terminal it names workkit setup --home, and asks nothing', () => {
-    // Through home.sh, as `workkit setup` asks it: the hand-off's stdin is a
+    // Through home.js, as `workkit setup` asks it: the hand-off's stdin is a
     // pipe, so the node it starts has no terminal to ask at.
     const world = mkWorld({ login: 'owner' });
     world.env.WORKKIT_HOME_REMOTE = mkRemote(world.root);
 
-    const { code, out } = inHome(world, 'wk_home_setup', { input: 'y\n' });
+    const { code, out } = inHome(world, ['setup'], { input: 'y\n' });
     expect(code, 'it finishes rather than waiting for an answer').toBe(0);
     expect(out.includes('`workkit setup --home`'), `and hands over the command that does it, got: ${out}`).toBeTruthy();
     expect(!/\[y\/N\]/.test(out), `no question is put, got: ${out}`).toBeTruthy();

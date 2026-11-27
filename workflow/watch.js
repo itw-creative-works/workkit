@@ -22,6 +22,7 @@ const {
 } = require('./lib/run-paths');
 const { sayAs } = require('./lib/say');
 const { shellDirOf } = require('../hooks/mods/markers.js');
+const { chomp } = require('../hooks/mods/text.js');
 
 const USAGE = 'usage: workkit watch [--end] [suite|run|<pid>]';
 
@@ -115,7 +116,7 @@ const dropSlot = async (root, slot) => {
  * its marker holds, the marker's path folded from any shell spelling first.
  */
 const refuseForeground = async (root, lock, name) => {
-  const enclosing = shellDirOf((readOrNull(path.join(lock, 'foreground')) ?? '').replace(/\n+$/, ''), process.env, process.platform);
+  const enclosing = shellDirOf(chomp(readOrNull(path.join(lock, 'foreground'))), process.env, process.platform);
   let how = 'end the run that started it';
   if (samePath(enclosing, await lockOf(root, 'run'))) how = 'workkit watch --end run ends it';
   else if (samePath(enclosing, await lockOf(root, 'suite'))) how = 'workkit watch --end suite ends it';

@@ -14,7 +14,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, SPAWN_DEADLINE } = require('./harness');
 const {
-  IS_WINDOWS, NODE_DIR, NO_RC, SYSTEM_PATH, WINDOWS_CSC, shellPath, gitPath, which, joinPath, homeEnv,
+  IS_WINDOWS, NODE_DIR, NO_RC, SYSTEM_PATH, WINDOWS_CSC, shellPath, jsPath, gitPath, which, joinPath, homeEnv,
   spawnBash,
 } = require('./platform');
 const { suiteMarkerPath, pkgRecord } = require('./suite-record');
@@ -33,9 +33,14 @@ const EXE = path.join(EXE_HOME, 'script-shell.exe');
 fs.mkdirSync(EXE_HOME, { recursive: true });
 const buildExe = () => {
   if (!fs.existsSync(WINDOWS_CSC)) return null;
-  const cli = path.join(WORKFLOW_DIR, 'workkit.sh');
-  const res = spawnBash([...NO_RC, '-c', `. "${shellPath(cli)}" help >/dev/null; script_shell_exe`], {
-    env: { ...process.env, WORKFLOW_HOME: shellPath(EXE_HOME) }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  // The command's own builder, scriptShellExe of workflow/workkit/npm-shell.js, in a node of its own.
+  const build = [
+    `const { kitOf } = require(${jsPath(path.join(WORKFLOW_DIR, 'workkit', 'kit.js'))});`,
+    `const { scriptShellExe } = require(${jsPath(path.join(WORKFLOW_DIR, 'workkit', 'npm-shell.js'))});`,
+    'scriptShellExe(kitOf({}));',
+  ].join('\n');
+  const res = spawnSync(process.execPath, ['-e', build], {
+    env: { ...process.env, WORKFLOW_HOME: EXE_HOME }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   // A compile error must never read as a machine without a compiler.
   if (!fs.existsSync(EXE)) throw new Error(`${WINDOWS_CSC} built no ${EXE}: ${res.stderr || res.error || ''}`);

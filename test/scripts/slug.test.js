@@ -1,6 +1,6 @@
 // Tests for workflow/lib/slug.sh, the engine's slug seam: `owner/repo` out of
-// whatever git hands back for a remote. Sourced directly, so a second parse in
-// lib.sh cannot pass here. Its Node twin, `slugFromRemote` in workflow/slug.js,
+// whatever git hands back for a remote. Sourced directly, so no other library's
+// parse can pass here. Its Node twin, `slugFromRemote` in workflow/slug.js,
 // is cased against the same forms in test/tower/repos.test.js.
 
 const fs = require('fs');

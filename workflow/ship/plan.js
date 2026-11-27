@@ -145,14 +145,13 @@ const plan = (root) => {
 };
 
 /**
- * The CLI's shared half: read `--dir`, make the plan, print its lines. Any
- * other argument is refused, so a flag meant for another command never runs
- * this one silently.
+ * The CLI's arguments, shared with publish.js: the root `--dir` names, else
+ * the current folder. Any other argument is refused, so a flag meant for
+ * another command never runs this one silently.
  * @param {string[]} argv - the arguments after the script
- * @returns {{code: number, root?: string, result?: object}} the exit code, and
- *   on 0 the root and the plan, for publish.js to publish
+ * @returns {{code: number}|{root: string}} the usage exit code, or the root
  */
-const report = (argv) => {
+const rootArg = (argv) => {
   let dir;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] !== '--dir') {
@@ -166,8 +165,16 @@ const report = (argv) => {
     }
     i += 1;
   }
+  return { root: path.resolve(dir || process.cwd()) };
+};
 
-  const root = path.resolve(dir || process.cwd());
+/**
+ * The CLI's other shared half: make the plan of `root` and print its lines.
+ * @param {string} root
+ * @returns {{code: number, result?: object}} the exit code, and on 0 the plan,
+ *   for publish.js to publish
+ */
+const report = (root) => {
   let result;
   try {
     result = plan(root);
@@ -179,15 +186,16 @@ const report = (argv) => {
   for (const note of result.notes) console.error(note);
   for (const p of result.publish) console.log(`publish ${p.name} ${p.version} ${p.scoped ? 'scoped' : 'unscoped'}`);
   for (const s of result.skip) console.log(`skip ${s.name} ${s.version} ${s.reason}`);
-  return { code: 0, root, result };
+  return { code: 0, result };
 };
 
 if (require.main === module) {
+  const arg = rootArg(process.argv.slice(2));
   // Set the code, never process.exit(): exiting discards console.log output
   // still buffered for a pipe.
-  process.exitCode = report(process.argv.slice(2)).code;
+  process.exitCode = arg.root === undefined ? arg.code : report(arg.root).code;
 }
 
 module.exports = {
-  plan, expandWorkspaces, depNamesOf, readJson, PlanError, report, npmEnd, skipReason,
+  plan, expandWorkspaces, depNamesOf, readJson, PlanError, rootArg, report, npmEnd, skipReason,
 };

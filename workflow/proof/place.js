@@ -15,6 +15,7 @@ const { sayAs } = require('../lib/say');
 const {
   fillCopy, copyEntry, heldModules, worktreeAdd, worktreeRemove,
 } = require('../lib/tree-copy');
+const { chomp } = require('../../hooks/mods/text.js');
 
 // A job is red.js's: root, snap, tmp, here, prefix, named, paths (NUL-separated),
 // fail(line) and spelled(path); the place sets its restore on it.
@@ -135,7 +136,7 @@ const copyPlace = (job) => {
   let head = '';
   let then = null;
   try {
-    head = fs.readFileSync(path.join(job.snap, 'head'), 'utf8').replace(/\n+$/, '');
+    head = chomp(fs.readFileSync(path.join(job.snap, 'head'), 'utf8'));
     if (fs.statSync(path.join(job.snap, 'paths')).isFile()) then = fs.readFileSync(path.join(job.snap, 'paths'));
   } catch {
     // Either missing is the line below.

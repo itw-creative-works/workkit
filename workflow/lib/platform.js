@@ -1,9 +1,9 @@
 /**
- * workflow/lib/platform.js: the platform reads of lib/platform.sh the kit's Node
- * scripts share: a path's native spelling, the claude home, a folder's physical
- * path, and whether the kit runs from Claude's plugin cache, where a workkit
- * clone outranks it.
- * Usage: const { nativePath, claudeHome, physicalDir, inPluginCache, cloneOutranks } = require('../lib/platform');
+ * workflow/lib/platform.js: the platform reads the kit's Node scripts share:
+ * a path's native spelling, the claude home, a folder's or a
+ * file's physical path, and whether the kit runs from Claude's plugin cache,
+ * where a workkit clone outranks it.
+ * Usage: const { nativePath, claudeHome, physicalDir, physicalPath, inPluginCache, cloneOutranks } = require('../lib/platform');
  */
 
 const os = require('os');
@@ -53,8 +53,19 @@ const physicalDir = (dir) => {
 };
 
 /**
+ * A path's folder resolved through every link, its own name kept as written,
+ * so a link to the file itself stays its own path.
+ * @param {string} p
+ * @returns {string|null} null when the folder does not resolve
+ */
+const physicalPath = (p) => {
+  const dir = physicalDir(path.dirname(p));
+  return dir === null ? null : `${dir}/${path.basename(p)}`;
+};
+
+/**
  * Whether the kit at `kitDir` is the workkit plugin's copy in Claude's plugin
- * cache (`wk_in_plugin_cache`): its manifest names workkit and its physical
+ * cache: its manifest names workkit and its physical
  * path lies under the physical `<claude home>/plugins/cache/` (`claudeHome`).
  * @param {string} kitDir
  * @returns {boolean}
@@ -67,7 +78,7 @@ const inPluginCache = (kitDir) => {
 };
 
 /**
- * Whether a clone outranks the cache (`wk_clone_outranks`): the kit is the
+ * Whether a clone outranks the cache: the kit is the
  * cached copy and the folder a machine-wide link names is a workkit clone.
  * @param {string} kitDir
  * @param {string} linkedDir
@@ -76,5 +87,5 @@ const inPluginCache = (kitDir) => {
 const cloneOutranks = (kitDir, linkedDir) => inPluginCache(kitDir) && isKitCheckout(linkedDir || '');
 
 module.exports = {
-  nativePath, claudeHome, physicalDir, inPluginCache, cloneOutranks,
+  nativePath, claudeHome, physicalDir, physicalPath, inPluginCache, cloneOutranks,
 };

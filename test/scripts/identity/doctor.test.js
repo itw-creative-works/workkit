@@ -1,6 +1,6 @@
-// Tests for `workkit doctor`'s identity lines: the sign-in under This machine
-// and the App's installation under This repo. Each run is a scratch kit in a
-// scratch repo whose origin is acme/rostered, the user's dir the scratch home's
+// Tests for the Node `workkit doctor`'s identity lines: the sign-in under This
+// machine and the App's installation under This repo. Each run is a scratch kit in
+// a scratch repo whose origin is acme/rostered, the user's dir the scratch home's
 // ~/.workkit, and the token service a real local stand-in. Then the doctor in a
 // cloud session and off it, on a scratch machine with no repo.
 // The shared prologue is ../workkit-cli/helpers.js.
@@ -12,9 +12,9 @@ const {
   IDENTITY_NA, INSTALL_FIX, BOT_HINT, repoRoute, writeLogin, useTokenService, startServer, startService, attentionCount,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
-const { NODE_DIR, joinPath, shellPath } = require('../../lib/platform');
+const { NODE_DIR, joinPath } = require('../../lib/platform');
 const {
-  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit, seedSettings, inCli,
+  cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit, seedSettings, inNode,
 } = require('../workkit-cli/helpers');
 
 /**
@@ -173,14 +173,19 @@ describe('workkit doctor: identity', () => {
     }
   });
 
-  test('This repo run first, with no machine line before it in the same shell, still asks the service and says installed', async () => {
+  test('This repo run first, with no machine line before it in the same run, still asks the service and says installed', async () => {
     const scene = mkScene();
     writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
     const service = await startService(200, { token: 'ghs_probe', expires_at: '2099-01-01T00:00:00Z' });
     try {
       useTokenService(scene.world.home, `${service.url}/token`);
-      const res = inCli(scene.world, `cd ${JSON.stringify(shellPath(scene.repo))}\nidentity_report repo`, {
-        entry: scene.script, env: signInEnv(scene.world),
+      const res = inNode(scene.world, {
+        file: 'workkit/identity.js',
+        fn: 'identityReport',
+        args: ['repo'],
+        engine: path.dirname(scene.script),
+        cwd: scene.repo,
+        env: signInEnv(scene.world),
       });
       expect(res.code, `the repo scope needs no attention, got: ${res.said}`).toBe(0);
       expect(/identity: workkit-agent\[bot\] installed on acme\/rostered$/m.test(res.out), `it says the App is installed, got: ${res.said}`).toBeTruthy();

@@ -1,23 +1,21 @@
 // Tests for jobs/brief-dispatch.js, the dispatch both callers make: dispatchBrief()
-// in this process, the program form once, and the shell hand-off jobs/brief-dispatch.sh
-// that `workkit brief` loads. Every world is a scratch HOME with a recording `gh`
+// in this process and the program form once; `workkit brief` is
+// test/scripts/workkit-cli/brief.test.js's. Every world is a scratch HOME with a recording `gh`
 // first on PATH, so a refusal is proved by a recorder that stayed silent.
 
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, mkTmp, run, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, run,
 } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  NO_RC, shellPath, homeEnv, nodeEnv, stubTool, basePathWithout, systemPathWith, joinPath, spawnBash,
+  homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
 } = require('../lib/platform');
 const { underEnv } = require('../lib/under-env');
 
 const JOBS = path.join(__dirname, '..', '..', 'jobs');
 const PROGRAM = path.join(JOBS, 'brief-dispatch.js');
-const LIB = path.join(JOBS, 'brief-dispatch.sh');
-const ENGINE_LIB = path.join(__dirname, '..', '..', 'workflow', 'lib.sh');
 const { dispatchBrief } = require(PROGRAM);
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -70,7 +68,7 @@ const mkWorld = ({
     over,
     ghCalls: () => readArgv(ghLog),
     dispatched: () => readArgv(ghLog).filter((c) => c[0] === 'workflow' && c[1] === 'run'),
-    env: { ...process.env, ...nodeEnv, ...over },
+    env: { ...process.env, ...over },
   };
 };
 
@@ -144,48 +142,5 @@ describe('jobs/brief-dispatch: the program', () => {
     expect(noSlug, 'no home repo, so an empty first line').toBe('');
     expect(/no home repo is configured/.test(reason), `then the reason: ${refused.stdout}`).toBeTruthy();
     cleanup(none.root);
-  });
-});
-
-describe('jobs/brief-dispatch.sh: the hand-off `workkit brief` loads', () => {
-  // The engine's library first, as the shell of `workkit brief` has it; its own output is not the hand-off's.
-  const loaded = `. ${JSON.stringify(shellPath(ENGINE_LIB))} >/dev/null 2>&1 || exit 9
-. ${JSON.stringify(shellPath(LIB))}`;
-
-  /** Load the hand-off, call dispatch_brief, and print its status and the four names, one per line. */
-  const handOff = (world) => {
-    const script = `${loaded}
-dispatch_brief; rc=$?
-printf '%s\\n' "$rc" "$DISPATCH_SLUG" "$DISPATCH_LINE" "$DISPATCH_REASON" "$BRIEF_WORKFLOW"`;
-    const res = spawnBash([...NO_RC, '-c', script], { encoding: 'utf8', env: world.env, timeout: SPAWN_DEADLINE });
-    const [rc, slug, line, reason, workflow] = (res.stdout || '').split('\n');
-    return {
-      rc, slug, line, reason, workflow, stderr: res.stderr || '',
-    };
-  };
-
-  test('loading it after the engine\'s library prints nothing', () => {
-    const res = spawnBash([...NO_RC, '-c', loaded], { encoding: 'utf8', env: { ...process.env, ...nodeEnv }, timeout: SPAWN_DEADLINE });
-    expect(res.status, `loading it is free: ${res.stderr}`).toBe(0);
-    expect(res.stdout + res.stderr, 'and silent').toBe('');
-  });
-
-  test('dispatch_brief fills the slug and the line for a dispatch, the slug and the reason for a refusal', () => {
-    const landed = mkWorld();
-    const ok = handOff(landed);
-    expect(ok.rc, `a dispatch returns 0: ${ok.stderr}`).toBe('0');
-    expect(ok.slug, 'DISPATCH_SLUG').toBe('owner/private-home');
-    expect(/dispatched brief\.yml on owner\/private-home/.test(ok.line), `DISPATCH_LINE: ${ok.line}`).toBeTruthy();
-    expect(ok.workflow, 'BRIEF_WORKFLOW, the name the watch link is built from').toBe('brief.yml');
-    expect(landed.dispatched().length, `one workflow run: ${fmtCalls(landed.ghCalls())}`).toBe(1);
-    cleanup(landed.root);
-
-    const tokenless = mkWorld({ secrets: ['WORKKIT_GITHUB_TOKEN'] });
-    const no = handOff(tokenless);
-    expect(no.rc, `a refusal returns 1: ${no.stderr}`).toBe('1');
-    expect(no.slug, 'DISPATCH_SLUG, the repo that refused').toBe('owner/private-home');
-    expect(/does not carry CLAUDE_CODE_OAUTH_TOKEN/.test(no.reason), `DISPATCH_REASON: ${no.reason}`).toBeTruthy();
-    expect(tokenless.dispatched().length, 'and nothing was triggered').toBe(0);
-    cleanup(tokenless.root);
   });
 });

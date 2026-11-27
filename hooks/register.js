@@ -16,7 +16,7 @@ import { featureContext, featureMatch } from './mods/feature.js';
 import { isSystemPrompt } from './mods/frame.js';
 import { isExempt } from './mods/gate.js';
 import { BASH_GUARDS, FILE_GUARDS, GUARDS_FAILED, POST_BASH_GUARDS, READ_GUARDS, callRoots, callSince, folderOpted, journalSize, markCall, runChain } from './mods/guards.js';
-import { appendLog, homeOf, logLine, pad, userDirOf } from './mods/log.js';
+import { appendLog, homeOf, hooksLogOf, logLine, pad, userDirOf } from './mods/log.js';
 import { crewClass, isAdvise, managerConfig } from './mods/manager.js';
 import { absolutePath, journalFor, sessionPath, sha1Hex, shellEnvOf, windowsKit } from './mods/markers.js';
 import { profileContext } from './mods/profile.js';
@@ -233,7 +233,7 @@ async function logFires($, env, event, e, fires) {
     const folder = CARRIES_CWD.has(event) ? e.cwd ?? '' : sessionCwd($);
     const [sid, cwd, at] = await Promise.all([sessionId($, e), folder, now($)]);
     const iso = new Date(at).toISOString().replace(/\.\d{3}Z$/, 'Z');
-    const path = `${userDirOf(env)}/hooks.log`;
+    const path = hooksLogOf(env);
     const lines = fires.map(([hook, verdict]) => logLine(iso, hook, event, sid, cwd, verdict)).join('');
     await $.fs.write(path, appendLog((await readText($, path)) ?? '', lines));
   } catch {

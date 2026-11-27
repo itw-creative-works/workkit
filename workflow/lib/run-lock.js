@@ -13,9 +13,11 @@ const { setTimeout: sleep } = require('timers/promises');
 const { readOrNull } = require('./read');
 const { writeWhole } = require('./write');
 const { endTreeOf } = require('./tree');
+const { nonNegativeOf } = require('./bounded');
 const {
   claimDir, lockMark, retireJudged, lockTag, tagPid, pidAlive, isFile, isDir, DAY_MS,
 } = require('./lock');
+const { chomp } = require('../../hooks/mods/text.js');
 
 // The seconds a take waits for the pid of a lock whose taker still lives
 // (WK_LAUNCH_WAIT), and an end request for its answer (WK_END_WAIT).
@@ -50,19 +52,6 @@ const GROUP_POLL_MS = 100;
 // The days a narrowed run's slot outlives its done file.
 const SLOT_KEEP_DAYS = 1;
 
-/**
- * The seconds environment variable <name> holds: <fallback> when it is unset,
- * empty, or not a finite number of 0 or more.
- * @param {string} name
- * @param {number} fallback
- * @returns {number}
- */
-const secondsOf = (name, fallback) => {
-  const value = process.env[name];
-  const seconds = value === undefined || value.trim() === '' ? NaN : Number(value);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : fallback;
-};
-
 /** Wait while <holds()> does, up to <ms>, looking every TAKE_POLL_MS. */
 const waitWhile = async (holds, ms) => {
   const until = Date.now() + ms;
@@ -72,7 +61,7 @@ const waitWhile = async (holds, ms) => {
 /** The pid <lock>/pid holds, its line ends dropped; null with no file. */
 const lockPid = (lock) => {
   const text = readOrNull(path.join(lock, 'pid'));
-  return text === null ? null : text.replace(/\n+$/, '');
+  return text === null ? null : chomp(text);
 };
 
 /**
@@ -80,7 +69,7 @@ const lockPid = (lock) => {
  * @param {string} lock
  * @returns {string}
  */
-const doneCode = (lock) => (readOrNull(path.join(lock, 'done')) ?? '').replace(/\n+$/, '');
+const doneCode = (lock) => chomp(readOrNull(path.join(lock, 'done')));
 
 const hasDone = (lock) => isFile(path.join(lock, 'done'));
 
@@ -178,7 +167,7 @@ const runOver = async (lock) => {
   const taker = mark?.startsWith('id.') ? tagPid(mark.slice('id.'.length)) : null;
   const starting = () => fs.existsSync(lock) && !isFile(pidFile);
   if (taker !== null) {
-    await waitWhile(() => starting() && pidAlive(taker), secondsOf('WK_LAUNCH_WAIT', LAUNCH_WAIT_S) * 1000);
+    await waitWhile(() => starting() && pidAlive(taker), nonNegativeOf(process.env.WK_LAUNCH_WAIT, LAUNCH_WAIT_S) * 1000);
   } else {
     await waitWhile(starting, NO_TAKER_MS);
   }
@@ -248,7 +237,7 @@ const goneAnswer = (lock, pid) => (hasDone(lock) || lockPid(lock) !== String(pid
  *   and no done file is there
  */
 const askEnd = async (lock, pid) => {
-  const deadline = Date.now() + secondsOf('WK_END_WAIT', END_WAIT_S) * 1000;
+  const deadline = Date.now() + nonNegativeOf(process.env.WK_END_WAIT, END_WAIT_S) * 1000;
   if (lockPid(lock) !== String(pid)) return 0;
   if (!pidAlive(pid)) return goneAnswer(lock, pid);
   try {
@@ -348,5 +337,5 @@ const sweepSlots = async (base) => {
 
 module.exports = {
   takeRunLock, runLive, runHeld, writePid, leaveRecord, recordedCode, dropRunLock, askEnd, slotsAt, sweepSlots,
-  endRun, pidAlive, doneCode, secondsOf,
+  endRun, pidAlive, doneCode,
 };

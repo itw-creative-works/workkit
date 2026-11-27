@@ -55,7 +55,7 @@ const writePkgRecord = async (root, tree, pkg) => {
   sweepMarkers(home());
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const lock = `${file}.lock`;
-  // A lock not taken in time writes anyway, as wk_take_lock's callers do.
+  // A lock not taken in time writes anyway.
   const locked = await takeLock(lock);
   try {
     writeWhole(file, pkgRecordText(readOrNull(file), tree, pkg));

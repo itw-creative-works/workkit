@@ -1,4 +1,4 @@
-// Tests for workflow/workkit.sh's command logs: each command that does work writes
+// Tests for workflow/workkit.js's command logs: each command that does work writes
 // one whole run to a file, plain text ending on `workkit <command>: exit <code>`,
 // a machine command to ~/.workkit/logs/ and a repo command to the repo's log
 // folder, while the terminal, the code and an answer on stdin stay the command's
@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp, seeded, until, run, start, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, joinPath, homeEnv, stubTool, which, skipWithoutNodeStub, spawnSync,
+  NODE_DIR, SYSTEM_PATH, jsPath, joinPath, homeEnv, which, spawnSync,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { takeSnapshot } = require('../../lib/red-snapshot');
@@ -26,7 +26,7 @@ const {
 const mkMachine = (opts) => {
   const world = mkWorld(opts);
   const workflowHome = path.join(world.home, '.workkit');
-  return { ...world, workflowHome, env: { ...world.env, WORKFLOW_HOME: shellPath(workflowHome) } };
+  return { ...world, workflowHome, env: { ...world.env, WORKFLOW_HOME: workflowHome } };
 };
 
 const machineLog = (world, name) => path.join(world.home, '.workkit', 'logs', name);
@@ -35,15 +35,15 @@ const EXPECT = which('expect', SYSTEM_PATH);
 const NO_TERMINAL = !EXPECT && 'expect is not installed, so no command can be given a terminal here';
 
 /**
- * `workkit <args>` through the CLI at <script>, run at an `expect` terminal from
- * <cwd> under <env>: the repo question answered yes, any other yes/no question no.
- * Its exit code, and on stdout all the terminal showed.
+ * `workkit <args>` through the entry at <script>, started by this node at an
+ * `expect` terminal from <cwd> under <env>: the repo question answered yes, any
+ * other yes/no question no. Its exit code, and on stdout all the terminal showed.
  */
 const atTerminal = (world, script, args, cwd, env = world.env) => {
   const driver = path.join(mkTmp('command-logs-exp-'), 'drive.exp');
   fs.writeFileSync(driver, [
     `set timeout ${SPAWN_DEADLINE / 1000}`,
-    `spawn {${BASH}} ${NO_RC.join(' ')} {${shellPath(script)}} ${args.join(' ')}`,
+    `spawn {${process.execPath}} {${script}} ${args.join(' ')}`,
     'expect {',
     '  -re {to the issue workflow\\? \\[y/N\\] } { send "y\\r"; exp_continue }',
     '  -re {\\[[yYnN]/[yYnN]\\] $} { send "n\\r"; exp_continue }',
@@ -171,23 +171,24 @@ describe('workkit-cli: the repo commands log to the repo\'s log folder', () => {
     expect(linesOf(log).includes('red-proof: red'), `and the verdict, got: ${JSON.stringify(log)}`).toBeTruthy();
   });
 
-  test('two workkit ship plan runs at once in one repo: ship-plan.log is one run\'s whole output', { skip: skipWithoutNodeStub() }, async () => {
+  test('two workkit ship plan runs at once in one repo: ship-plan.log is one run\'s whole output', async () => {
     const w = mkRepoWorld({ 'package.json': PKG('widget', '1.0.0'), 'sub/package.json': PKG('gadget', '2.0.0') });
-    // A node ahead of the real one that holds each plan until the go file, so both runs are live together.
-    const bin = path.join(w.dir, 'bin');
+    // Loaded by every node of the runs, it holds the plan program alone until the
+    // go file, so both runs are live together.
     const held = path.join(w.dir, 'held');
-    fs.mkdirSync(bin);
+    const hold = path.join(w.dir, 'hold-plan.js');
     fs.mkdirSync(held);
-    stubTool(bin, 'node', [
-      '#!/bin/bash',
-      'if [[ " $* " == *plan.js* ]]; then',
-      `  : > "${shellPath(held)}/plan.$$"`,
-      `  until [[ -f "${shellPath(held)}/go" ]]; do sleep 0.05; done`,
-      'fi',
-      `exec "${shellPath(process.execPath)}" "$@"`,
-    ]);
-    const env = { ...w.env, PATH: joinPath(bin, w.repoEnv.PATH) };
-    const calls = [[], ['--dir', 'sub']].map((args) => start(BASH, [...NO_RC, shellPath(CLI), 'ship', 'plan', ...args], { cwd: w.repo, env, input: '' }));
+    fs.writeFileSync(hold, [
+      "const fs = require('fs');",
+      "const path = require('path');",
+      "if (path.basename(process.argv[1] || '') === 'plan.js') {",
+      `  fs.writeFileSync(path.join(${jsPath(held)}, \`plan.\${process.pid}\`), '');`,
+      '  const tick = new Int32Array(new SharedArrayBuffer(4));',
+      `  while (!fs.existsSync(path.join(${jsPath(held)}, 'go'))) Atomics.wait(tick, 0, 0, 50);`,
+      '}',
+    ].join('\n'));
+    const env = { ...w.env, ...w.repoEnv, NODE_OPTIONS: `--require ${JSON.stringify(hold.replace(/\\/g, '/'))}` };
+    const calls = [[], ['--dir', 'sub']].map((args) => start(process.execPath, [CLI, 'ship', 'plan', ...args], { cwd: w.repo, env, input: '' }));
     const holding = () => fs.readdirSync(held).filter((n) => n.startsWith('plan.')).length;
     try {
       expect(await until(() => holding() >= 1), `no plan started; said: ${calls.map((c) => c.output()).join(' | ')}`).toBeTruthy();
@@ -266,15 +267,39 @@ describe('workkit-cli: a secret step runs outside the log', () => {
     expect(log.includes(SECRET), `setup.log holds no part of the secret, got: ${JSON.stringify(log)}`).toBe(false);
   });
 
+  // The device sign-in's stand-in GitHub, and the device-code requests it got.
+  const signInServer = (world) => startServer(deviceFlowRoutes({ userCode: 'LOGX-0540', accessToken: 'ghu_fromlog', login: 'hubot' }), world.root);
+  const deviceAsks = (server) => server.requests().filter((r) => r.method === 'POST' && r.url === '/login/device/code');
+
   test('workkit setup --login: the device sign-in\'s one-time code shows in the call\'s output and is not in setup.log', async () => {
     const world = mkMachine();
     const { script } = mkSetupKit();
     const repo = mkRepo({ optIn: true });
-    const server = await startServer(deviceFlowRoutes({ userCode: 'LOGX-0540', accessToken: 'ghu_fromlog', login: 'hubot' }), world.root);
+    const server = await signInServer(world);
     try {
       const call = runCli(world, ['setup', '--login'], { cwd: repo, script, env: signInEnv(world, { extra: hostsOf(server) }) });
       expect(call.code, `the sign-in finishes, exit 0, got: ${call.said}`).toBe(0);
       expect(call.said.includes('LOGX-0540'), `the call shows the code, got: ${call.said}`).toBeTruthy();
+      expect(deviceAsks(server).length, `the device flow ran, got: ${JSON.stringify(server.requests())}`).toBe(1);
+      expect(call.said.includes('\x1b]workkit:secret:'), `no mark byte reaches the call's output, got: ${JSON.stringify(call.said)}`).toBe(false);
+      const log = readOr(machineLog(world, 'setup.log'));
+      expect(log !== null, 'setup.log is written').toBeTruthy();
+      expect(log.includes('LOGX-0540'), `setup.log holds no part of the code, got: ${JSON.stringify(log)}`).toBe(false);
+      expect(linesOf(log).some((l) => /^workkit: .*sign-in.* not in this log$/.test(l)), `setup.log holds the note line, got: ${JSON.stringify(log)}`).toBeTruthy();
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('workkit setup --login at a terminal: the device sign-in\'s one-time code shows on the terminal and is not in setup.log', { skip: NO_TERMINAL }, async () => {
+    const world = mkMachine();
+    const { script } = mkSetupKit();
+    const repo = mkRepo({ optIn: true });
+    const server = await signInServer(world);
+    try {
+      const res = atTerminal(world, script, ['setup', '--login'], repo, { ...world.env, ...signInEnv(world, { extra: hostsOf(server) }) });
+      expect(res.status, `the sign-in finishes, exit 0, said: ${res.stdout}${res.stderr}`).toBe(0);
+      expect(res.stdout.includes('LOGX-0540'), `the terminal shows the code, said: ${res.stdout}`).toBeTruthy();
       const log = readOr(machineLog(world, 'setup.log'));
       expect(log !== null, 'setup.log is written').toBeTruthy();
       expect(log.includes('LOGX-0540'), `setup.log holds no part of the code, got: ${JSON.stringify(log)}`).toBe(false);
@@ -294,7 +319,8 @@ describe('workkit-cli: a terminal step runs outside the log only at a terminal',
   const deployWorld = () => {
     const w = mkRepoWorld(DEPLOYS);
     const npmrc = path.join(w.dir, 'npmrc');
-    fs.writeFileSync(npmrc, '');
+    // npm's own wait frame, drawn on a terminal under load, would land in front of the script's line.
+    fs.writeFileSync(npmrc, 'progress=false\n');
     return { ...w, deployEnv: { ...w.env, ...w.repoEnv, NPM_CONFIG_USERCONFIG: npmrc } };
   };
 

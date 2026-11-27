@@ -56,7 +56,7 @@ describe('standards.sh: the roster', () => {
   test('sessions opening at once in several repos all end registered', async () => {
     // The roster edit is a whole-file read-modify-write, so without the mutex the
     // last writer wins. Three heals race on one user settings file alongside
-    // `wk_home_set_slug`, its other writer, and the claude home below exists so
+    // home.js's `set-slug`, its other writer, and the claude home below exists so
     // the engine's machine-wide address is in the race too.
     const home = mkTmp('wf-std-');
     const stub = makeGhStub({ authed: false });
@@ -77,20 +77,12 @@ describe('standards.sh: the roster', () => {
       WORKFLOW_HOME: shellPath(home),
       WORKFLOW_CLAUDE_HOME: shellPath(claudeHome),
     };
-    // Sourced by their POSIX spelling, like every other path handed into a
-    // shell: a `C:\...` source gives `${BASH_SOURCE[0]%/*}` no `/` to cut, so
-    // lib.sh dies on the sibling it loads and the writer below is never
-    // defined at all.
-    const setSlug = [
-      'set -euo pipefail',
-      `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'lib.sh')))}`,
-      `. ${JSON.stringify(shellPath(path.join(WORKFLOW_DIR, 'home.sh')))}`,
-      'wk_home_set_slug owner/workkit',
-    ].join('\n');
+    // The slug writer is a node, so its machine folder is in the native spelling.
+    const slugEnv = { ...env, WORKFLOW_HOME: home, WORKFLOW_CLAUDE_HOME: claudeHome };
     const [codes, slugCode] = await Promise.all([
       Promise.all(repos.map((repo) => start(BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], { env }).done
         .then((exit) => exit.status))),
-      start(BASH, [...NO_RC, '-c', setSlug], { env }).done.then((exit) => exit.status),
+      start(process.execPath, [path.join(WORKFLOW_DIR, 'home.js'), 'set-slug', 'owner/workkit'], { env: slugEnv }).done.then((exit) => exit.status),
     ]);
     expect(codes.join(','), `every session finished, none of them ended on a step another one won: ${codes.join(',')}`).toBe('0,0,0');
     // Swept before it is asserted on, never after: a regression here writes a

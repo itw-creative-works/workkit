@@ -1,16 +1,18 @@
 // Tests for workflow/lib/say.js: sayAs writes its whole line, once, to a stderr
 // pipe that is full when it is called, and returns once a slow reader drains it;
-// lastErrLine reads the last thing a child said on stderr.
+// lastErrLine reads the last thing a child said on stderr; drained settles once a
+// stream has taken what it was written.
 
 const fs = require('fs');
 const path = require('path');
+const { Writable } = require('stream');
 const {
   describe, test, expect, start, until, mkTmp, needs,
 } = require('../lib/harness');
 const { IS_WINDOWS, BASH, NO_RC, spawnSync } = require('../lib/platform');
 
 const SAY = path.join(__dirname, '..', '..', 'workflow', 'lib', 'say.js');
-const { lastErrLine } = require(SAY);
+const { lastErrLine, drained } = require(SAY);
 
 // Past ASCII throughout and longer than a pipe takes in one write, so a retry
 // that goes on from the wrong byte cuts a character or repeats one.
@@ -84,5 +86,27 @@ describe('say.js: lastErrLine', () => {
     expect(lastErrLine(res), 'the last line that says something').toBe('ERROR: the value is incorrectly formatted.');
     expect(lastErrLine({ status: 1, stderr: ' \r\n\r\n' }), 'a stderr of blank lines').toBe('');
     expect(lastErrLine({ status: null, stderr: null }), 'a child that never started').toBe('');
+  });
+});
+
+describe('say.js: drained', () => {
+  test('one small chunk still being written: pending until the stream takes it, then settled', async () => {
+    // The first chunk is held until released; any later one is taken at once.
+    let release = null;
+    const stream = new Writable({
+      write: (chunk, encoding, done) => {
+        if (release) done();
+        else release = done;
+      },
+    });
+    expect(stream.write('x'), 'the chunk is under the high-water mark').toBe(true);
+    let settled = false;
+    const flushed = Promise.resolve(drained(stream)).then(() => { settled = true; });
+    for (let i = 0; i < 3; i += 1) await new Promise((resolve) => { setImmediate(resolve); });
+    expect(settled, 'pending while the chunk is held').toBe(false);
+    expect(typeof release, 'the stream holds the chunk').toBe('function');
+    release();
+    expect(await until(() => settled), 'settled once the stream has taken the chunk').toBeTruthy();
+    await flushed;
   });
 });

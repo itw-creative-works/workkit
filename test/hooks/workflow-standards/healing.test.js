@@ -6,12 +6,12 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  describe, test, after, expect, mkTmp,
+  describe, test, after, expect,
 } = require('../../lib/harness');
-const { NO_RC, shellPath, homeEnv, spawnBash } = require('../../lib/platform');
 const { runResult } = require('../../lib/mods-inputs');
+const { speak } = require('../../lib/speak');
 const {
-  WORKFLOW_DIR, BASE_PATH, cleanup, makeRepo, heal, say, dropPathWithoutGh,
+  BASE_PATH, cleanup, makeRepo, heal, say, dropPathWithoutGh,
 } = require('./helpers');
 
 describe('workflow:standards: healing a repo', () => {
@@ -46,11 +46,7 @@ describe('workflow:standards: healing a repo', () => {
   // A real logger line through the relay, so the shape it filters on can never
   // drift from the shape the engine prints.
   test('the relay\'s pattern matches a line the engine really prints', () => {
-    const lib = shellPath(path.join(WORKFLOW_DIR, 'lib.sh'));
-    const said = spawnBash([...NO_RC, '-c', `. ${JSON.stringify(lib)}; WK_LOG_INDENT='  '; WK_LOG_STDERR=1 wk_ok 'engine: linked a to b'`], {
-      encoding: 'utf8', env: homeEnv(mkTmp('wf-hook-'), { PATH: BASE_PATH, WORKKIT_COLOR: '0' }),
-    });
-    expect(said.status, `the logger ran, got: ${said.stderr}`).toBe(0);
+    const said = speak(["v.ok('engine: linked a to b');"], { PATH: BASE_PATH, WK_LOG_INDENT: '  ', WK_LOG_STDERR: '1' });
     const ctx = say({ participation: 'enabled' }, runResult({ stdout: said.stdout, stderr: said.stderr }));
     expect(ctx.split('\n').includes('engine: linked a to b'), `relayed whole, indent and glyph off, got: ${JSON.stringify(ctx)}`).toBeTruthy();
   });

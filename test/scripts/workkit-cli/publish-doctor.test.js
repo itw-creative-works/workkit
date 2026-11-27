@@ -1,14 +1,22 @@
-// Tests for workflow/workkit.sh: `publish`, `doctor` (the schedule on each
-// system among it), and the output contract the two speak with `update --auto`.
+// Tests for workflow/workkit.js: `publish`, `doctor` (the schedule on each
+// system among it, an incomplete kit, and on Windows the workkit.cmd and PATH
+// lines), and the output contract the two speak with `update --auto`.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
+const { gitPath } = require('../../lib/platform');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  LABEL, cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit, signIn, SYSTEMS, nameSystem, mkScheduleKit,
+  LABEL, cleanup, mkWorld, runCli, mkRepo, mkPartialKit, mkSetupKit, signIn, signInEnv, mkScheduleKit, inNode, windowsForm,
+  npmrcEnv, machineLinks, lines,
 } = require('./helpers');
+
+/** `doctor(kit)` of the kit at `script` (the real one by default), called in a node of its own as `platform` runs it. */
+const doctorOn = (world, platform, { script, env } = {}) => inNode(world, {
+  ...(script ? { engine: path.dirname(script) } : {}), file: 'workkit/doctor.js', fn: 'doctor', kit: { platform }, env,
+});
 
 describe('workkit publish', () => {
   test('publish delegates to the engine’s script, which skips an untouched machine', () => {
@@ -78,42 +86,16 @@ describe('workkit doctor', () => {
     cleanup(world.root);
   });
 
-  test('a checkout without the engine library names the gap, never a roster path', () => {
+  test('a checkout without home.js names it once under the home repo, as an incomplete kit, and doctor still finishes', () => {
+    // The home steps start home.js; a kit without it keeps the one guarded line.
     const world = mkWorld();
     const { kit, script } = mkPartialKit();
-    const { code, said } = runCli(world, ['doctor'], { script });
-    expect(code, 'doctor still finishes').toBe(0);
-    const line = said.split('\n').find((l) => l.includes('roster:'));
-    expect(line && line.includes('library is missing'), `the missing library is named, got: ${line}`).toBeTruthy();
-    expect(!line.includes('.repos.json'), `and no path it cannot know, got: ${line}`).toBeTruthy();
-    cleanup(world.root); cleanup(kit);
-  });
-
-  test('a checkout without the platform library still answers the cloud read', () => {
-    // doctor asks wk_is_cloud in several sections; a kit missing platform.sh
-    // gets the entry's own fallback, never a shell error in the report.
-    const world = mkWorld();
-    const { kit, script } = mkPartialKit();
-    const { code, said } = runCli(world, ['doctor'], { script });
+    const { code, err, said } = runCli(world, ['doctor'], { script });
     expect(code, `doctor still finishes, got: ${said}`).toBe(0);
-    expect(!said.includes('command not found'), `no function is missing, got: ${said}`).toBeTruthy();
-    cleanup(world.root); cleanup(kit);
-  });
-
-  test('a checkout without the platform library reads links that already exist', () => {
-    // An existing engine address and command link are each asked whether a
-    // clone outranks this kit, a question platform.sh alone answers.
-    const world = mkWorld();
-    const { kit, script } = mkPartialKit();
-    const elsewhere = path.join(world.root, 'elsewhere', 'workflow');
-    fs.mkdirSync(elsewhere, { recursive: true });
-    fs.mkdirSync(world.localBin, { recursive: true });
-    fs.mkdirSync(world.claudeHome, { recursive: true });
-    fs.symlinkSync(elsewhere, world.engineLink);
-    fs.symlinkSync(path.join(elsewhere, 'workkit.sh'), world.link);
-    const { code, said } = runCli(world, ['doctor'], { script });
-    expect(code, `doctor still finishes, got: ${said}`).toBe(0);
-    expect(!said.includes('command not found'), `no function is missing, got: ${said}`).toBeTruthy();
+    const home = err.split('\n').filter((l) => /^ +⚠ home: /.test(l));
+    expect(home.length, `one home warning, got: ${said}`).toBe(1);
+    expect(home[0].includes('home.js') && home[0].includes('the kit is incomplete'), `it names home.js and the incomplete kit, got: ${home[0]}`).toBeTruthy();
+    expect(/\d+ item\(s\) need attention/.test(said), `and it is counted, got: ${said}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);
   });
 
@@ -135,25 +117,24 @@ describe('workkit doctor', () => {
 });
 
 // The road a Mac and a Windows machine share, read from the installer's
-// `--check` alone: the system is named through `uname`, the installer a stand-in.
+// `--check` alone: the system handed to the doctor, the installer a stand-in.
 describe('workkit doctor: the schedule on each system', () => {
   const attention = (said) => Number((said.match(/(\d+) item\(s\) need attention/) || [])[1] || 0);
 
-  for (const [system, name] of [['a Mac', SYSTEMS.mac], ['Windows', SYSTEMS.windows]]) {
+  for (const [system, platform] of [['a Mac', 'darwin'], ['Windows', 'win32']]) {
     test(`${system}: a current job is reported, one not installed or out of date is one more thing to fix`, () => {
       const world = mkWorld();
-      nameSystem(world, name);
       const sched = mkScheduleKit('');
-      const current = runCli(world, ['doctor'], { script: sched.script }).said;
+      const current = doctorOn(world, platform, { script: sched.script }).said;
       expect(current.includes(`schedule: ${LABEL} is installed and current`), `current, got: ${current}`).toBeTruthy();
 
       sched.check(`${LABEL} → not installed`);
-      const missing = runCli(world, ['doctor'], { script: sched.script }).said;
+      const missing = doctorOn(world, platform, { script: sched.script }).said;
       expect(missing.includes('schedule: the 9am job is not installed; run `workkit setup`'), `not installed, got: ${missing}`).toBeTruthy();
       expect(attention(missing), `one more item than a current job: ${missing}`).toBe(attention(current) + 1);
 
       sched.check(`${LABEL} → out of date for this kit`);
-      const drifted = runCli(world, ['doctor'], { script: sched.script }).said;
+      const drifted = doctorOn(world, platform, { script: sched.script }).said;
       expect(drifted.includes(`schedule: ${LABEL} → out of date for this kit; run \`workkit update\``), `out of date, got: ${drifted}`).toBeTruthy();
       expect(attention(drifted), `one more item than a current job: ${drifted}`).toBe(attention(current) + 1);
       expect(sched.installs(), `the doctor installs nothing: ${fmtCalls(sched.runs())}`).toEqual([]);
@@ -163,13 +144,48 @@ describe('workkit doctor: the schedule on each system', () => {
 
   test('any other system: the skip line, and the installer never runs', () => {
     const world = mkWorld();
-    nameSystem(world, SYSTEMS.linux);
     const sched = mkScheduleKit(`${LABEL} → not installed`);
-    const { code, said } = runCli(world, ['doctor'], { script: sched.script });
-    expect(code, 'exit 0').toBe(0);
+    const { code, said } = doctorOn(world, 'linux', { script: sched.script });
+    expect(code, `exit 0, got: ${said}`).toBe(0);
     expect(said.split('\n').some((l) => / schedule: the 9am job runs on macOS and Windows$/.test(l)), `the skip line, got: ${said}`).toBeTruthy();
     expect(sched.runs(), `no installer run at all: ${fmtCalls(sched.runs())}`).toEqual([]);
     cleanup(world.root); cleanup(sched.kit);
+  });
+});
+
+describe('workkit doctor on each system: workkit.cmd and the PATH line', () => {
+  /**
+   * The doctor of the real kit as `platform` runs it, on a machine whose command
+   * link the machine steps of a Mac made (so no workkit.cmd), with ~/.local/bin
+   * off its PATH; every reporting line on stderr, so the lines read in their order.
+   */
+  const doctorLines = (platform) => {
+    const world = mkWorld();
+    const env = { ...signInEnv(world, { node: false }), ...npmrcEnv(world) };
+    machineLinks(world, { kit: { platform: 'darwin' }, env });
+    const res = doctorOn(world, platform, { env: { ...env, WK_LOG_STDERR: '1' } });
+    cleanup(world.root);
+    return { world, res, lines: lines(res.err) };
+  };
+
+  test('on Windows the workkit.cmd line and the PATH line come with the command link under This machine; on a Mac neither', () => {
+    const win = doctorLines('win32');
+    const at = (match) => win.lines.findIndex(match);
+    const machine = at((l) => l === '💻 This machine');
+    const home = at((l) => l === '🏠 Home repo');
+    const link = at((l) => l.startsWith(`✓ command: ${gitPath(win.world.link)} → `));
+    const shim = at((l) => /^\S+ gh shim: /.test(l));
+    const cmd = at((l) => l === `⚠ command: ${gitPath(path.join(win.world.localBin, 'workkit.cmd'))} is missing or differs; run \`workkit update\``);
+    const onPath = at((l) => l.startsWith('⚠ command:') && l.includes(windowsForm(win.world.localBin)) && l.includes('PATH'));
+    expect(machine >= 0 && home > machine && link > machine, `the sections and the command link's line, got: ${win.res.said}`).toBe(true);
+    expect(cmd > link && cmd < shim && shim < home, `the workkit.cmd line follows the command link, before the gh shim, got: ${win.res.said}`).toBe(true);
+    expect(onPath > link && onPath < shim, `the PATH line follows the command link, before the gh shim, got: ${win.res.said}`).toBe(true);
+
+    const mac = doctorLines('darwin');
+    expect(mac.lines.some((l) => l.includes('workkit.cmd')), `a Mac's doctor names no workkit.cmd, got: ${mac.res.said}`).toBe(false);
+    expect(mac.lines.some((l) => l.includes(windowsForm(mac.world.localBin))), `nor the folder in its Windows form, got: ${mac.res.said}`).toBe(false);
+    expect(mac.lines.includes(`⚠ command: ${gitPath(mac.world.localBin)} is not on your PATH; add \`export PATH="$HOME/.local/bin:$PATH"\` to your shell rc`),
+      `its PATH line is the shell rc line, got: ${mac.res.said}`).toBe(true);
   });
 });
 

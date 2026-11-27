@@ -10,7 +10,8 @@ const path = require('path');
 const { isDir } = require('../../workflow/lib/lock');
 const { onPath } = require('../../workflow/lib/run');
 const { bounded, projectsRoot } = require('../lib/machine');
-const { block, captured } = require('../lib/notes');
+const { block } = require('../lib/notes');
+const { chomp } = require('../../hooks/mods/text.js');
 
 const NIGHTLY = path.join(__dirname, '..', 'claude-nightly.js');
 
@@ -39,7 +40,7 @@ const summaries = async (run) => {
     return;
   }
   const { status, output } = await bounded(process.execPath, [NIGHTLY]);
-  if (status !== 0) block(run.logFile, run.stamp, `[summaries exit ${status}; the brief continues]\n${captured(output)}\n`);
+  if (status !== 0) block(run.logFile, run.stamp, `[summaries exit ${status}; the brief continues]\n${chomp(output)}\n`);
 };
 
 module.exports = { summaries };

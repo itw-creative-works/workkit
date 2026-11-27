@@ -5,14 +5,13 @@
  * Usage: const { today } = require('../lib/day');
  */
 
+const { pad } = require('../../hooks/mods/log.js');
+
 /**
  * The local date of <now>, as `date '+%Y-%m-%d'` prints it.
  * @param {Date} [now] today's moment by default
  * @returns {string}
  */
-const today = (now = new Date()) => {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-};
+const today = (now = new Date()) => `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
 module.exports = { today };

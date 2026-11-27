@@ -2,8 +2,8 @@
 /**
  * jobs/brief-dispatch.js: hands the day to the cloud, a `workflow_dispatch` of
  * brief.yml on the home repo. It prints nothing; each caller decides what a
- * refusal is worth. The morning calls it in its own process, `workkit brief`
- * through jobs/brief-dispatch.sh, which runs it as a program.
+ * refusal is worth. The morning calls it in its own process, and `workkit brief`
+ * (workflow/workkit/commands.js) runs it as a program.
  * Usage: const { dispatchBrief, BRIEF_WORKFLOW } = require('./brief-dispatch');
  *        node brief-dispatch.js   (line 1 the slug, line 2 the line or the reason; 0 dispatched, 1 refused)
  */
@@ -13,10 +13,10 @@ const { writeOut } = require('../workflow/lib/say');
 const { homeSlug } = require('../workflow/lib/settings');
 const { spin } = require('../workflow/lib/spin');
 const { userDir } = require('../workflow/user-dir');
+const { chomp } = require('../hooks/mods/text.js');
 
 // The workflow on the home repo that runs the morning on a runner; `workkit
-// setup` seeds it as .github/workflows/brief.yml. Its twin is BRIEF_WORKFLOW of
-// jobs/brief-dispatch.sh, which reads the name without starting Node.
+// setup` seeds it as .github/workflows/brief.yml.
 const BRIEF_WORKFLOW = 'brief.yml';
 
 // The two secrets a runner needs, each with what it costs a run without it.
@@ -53,7 +53,7 @@ const dispatchBrief = () => {
   // are different mornings: a repo this token cannot read, and one with none.
   const listing = gh(`reading the secrets on ${slug}`, ['secret', 'list', '--repo', slug]);
   if (listing.status !== 0) return refused(`the secrets on ${slug} could not be listed`, slug);
-  const secrets = listing.stdout.replace(/\n+$/, '');
+  const secrets = chomp(listing.stdout);
   if (!secrets) return refused(`${slug} carries no secrets; \`workkit setup\` wires both`, slug);
   const missing = SECRETS.find(([name]) => !carries(secrets, name));
   if (missing) return refused(`${slug} does not carry ${missing[0]}; ${missing[1]}`, slug);
@@ -69,7 +69,7 @@ const dispatchBrief = () => {
 };
 
 /**
- * The program, for jobs/brief-dispatch.sh: the slug on line 1, the line or the
+ * The program, for `workkit brief`: the slug on line 1, the line or the
  * reason on line 2.
  * @returns {Promise<number>} 0 dispatched, 1 refused
  */

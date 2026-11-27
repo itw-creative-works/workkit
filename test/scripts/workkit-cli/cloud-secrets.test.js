@@ -1,15 +1,17 @@
-// Tests for workflow/workkit.sh: the cloud brief secrets: `setup`'s
-// wizard, the mint under a pty and its capture file, the forced re-mint
-// (`setup --token`), and the automatic and report paths.
-// The shared prologue is ./helpers.js.
+// Tests for the Node `workkit` command's cloud brief secrets: `setup`'s wizard,
+// the mint under a pty and its capture file, the mint as a secret step under a
+// logged command, the forced re-mint (`setup --token`), and the automatic and
+// report paths. The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, alive, readPid } = require('../../lib/harness');
-const { recordArgv, readArgv, isCall, fmtCalls } = require('../../lib/argv-log');
-const { shellPath } = require('../../lib/platform');
 const {
-  cleanup, writeStub, mkWorld, skipWithoutPty, runCli, seedSettings, inCli, AT_TERMINAL, mkKit, SLUG,
+  recordArgv, recordArgvJs, readArgv, isCall, fmtCalls,
+} = require('../../lib/argv-log');
+const { shellPath, stubToolJs, jsPath } = require('../../lib/platform');
+const {
+  WORKFLOW_DIR, cleanup, writeStub, mkWorld, skipWithoutPty, runCli, seedSettings, inNode, mkKit, SLUG,
   HOME, mkHomeWorld,
 } = require('./helpers');
 
@@ -26,6 +28,19 @@ const LOGIN_TOKEN = 'gho_FAKEloginTOKENfakeLOGINtoken00';
 // The CLI's lines are the pass-through; workkit's all open with a glyph.
 const countOf = (text, needle) => text.split(needle).length - 1;
 const workkitLines = (text) => text.split('\n').filter((l) => /^ {0,2}[✓·›⚠✖⏳] /.test(l)).join('\n');
+
+// The kit's `interactive` answered yes, the answers on stdin: the terminal seam.
+const AT_KIT = { interactive: true };
+
+/** offerClaudeToken(kit, HOME, 'is not set') at the terminal seam, `input` its answers. */
+const offer = (world, { input = '', env } = {}) => inNode(world, {
+  file: 'workkit/secrets.js', fn: 'offerClaudeToken', args: [HOME, 'is not set'], kit: AT_KIT, input, env,
+});
+
+/** setup(kit, '--token') at the terminal seam. */
+const setupToken = (world) => inNode(world, {
+  file: 'workkit/setup.js', fn: 'setup', args: ['--token'], kit: AT_KIT,
+});
 
 describe('workkit setup: the cloud secrets', () => {
   test('a machine with no home repo is a named skip, and nothing is asked of GitHub', () => {
@@ -75,7 +90,7 @@ describe('workkit setup: the cloud secrets', () => {
 
   test('answered yes, the mint goes straight into the secret and workkit prints it nowhere', { skip: skipWithoutPty() }, () => {
     const world = mkWorld({ claudeToken: MINTED });
-    const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
+    const { out, err } = offer(world, { input: 'y\n' });
     const calls = world.ghCalls();
     expect(calls.some((c) => isCall(c, 'secret', 'set', 'CLAUDE_CODE_OAUTH_TOKEN', '--repo', HOME)), `the secret is written on the named repo: ${fmtCalls(calls)}`).toBeTruthy();
     expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and the value arrived on stdin: a pipe, not an argument').toBe(MINTED);
@@ -88,7 +103,7 @@ describe('workkit setup: the cloud secrets', () => {
 
   test('the default answer is no, and nothing is minted or written', { skip: skipWithoutPty() }, () => {
     const world = mkWorld({ claudeToken: MINTED });
-    const { out } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: '\n' });
+    const { out } = offer(world, { input: '\n' });
     expect(/left as it is/.test(out), `an empty answer is a no, got: ${out}`).toBeTruthy();
     expect(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), 'nothing was minted').toBeTruthy();
     expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and no secret was written').toBe(undefined);
@@ -98,7 +113,7 @@ describe('workkit setup: the cloud secrets', () => {
   test('a mint that printed no token warns instead of writing an empty secret', { skip: skipWithoutPty() }, () => {
     // An empty `gh secret set` would overwrite a working token with nothing.
     const world = mkWorld();
-    const { said } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
+    const { said } = offer(world, { input: 'y\n' });
     expect(/printed no token/.test(said), `it says what did not happen, got: ${said}`).toBeTruthy();
     expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and nothing was written').toBe(undefined);
     expect(world.tmpFiles().join(','), 'and the mint left no capture file behind').toBe('');
@@ -116,7 +131,7 @@ describe('workkit setup: the cloud secrets', () => {
       ['a value wrapped in color codes', `${ESC}[1;32m${MINTED}${ESC}[0m`],
     ]) {
       const world = mkWorld({ claudeToken: printed });
-      const { out, err } = inCli(world, `${AT_TERMINAL}\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
+      const { out, err } = offer(world, { input: 'y\n' });
       expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), `${shape} arrives as the value alone`).toBe(MINTED);
       expect(!workkitLines(out + err).includes(MINTED), `and no line workkit printed carries it, got: ${workkitLines(out + err)}`).toBeTruthy();
       cleanup(world.root);
@@ -127,12 +142,9 @@ describe('workkit setup: the cloud secrets', () => {
     // The prefixed shape is what the mint prints today, so it is read first,
     // asserted on the extraction itself, because a literal long enough to look
     // like the real thing has no business in a committed file.
-    const world = mkWorld();
-    const { out } = inCli(world, `printf '%s' "$(extract_token 'approve it in the browser
-sk-ant-EXAMPLE
-FAKEtrailingLINEthatIsLongEnough')"`);
-    expect(out, 'the prefixed match, not the trailing opaque line').toBe('sk-ant-EXAMPLE');
-    cleanup(world.root);
+    const { extractToken } = require(path.join(WORKFLOW_DIR, 'workkit', 'secrets.js'));
+    const screen = 'approve it in the browser\nsk-ant-EXAMPLE\nFAKEtrailingLINEthatIsLongEnough';
+    expect(extractToken(screen), 'the prefixed match, not the trailing opaque line').toBe('sk-ant-EXAMPLE');
   });
 
   test('a token past eleven months is offered as a refresh; a fresh one is silent', () => {
@@ -172,11 +184,14 @@ FAKEtrailingLINEthatIsLongEnough')"`);
     // against a stub that enforces that rule rather than against a comment: the
     // same push, twice, differing only in the secret's name.
     const world = mkHomeWorld({ authToken: LOGIN_TOKEN });
-    const refused = inCli(world, `SECRET_HOME=GITHUB_TOKEN\npush_home_token ${HOME}`);
+    const push = (kit) => inNode(world, {
+      file: 'workkit/secrets.js', fn: 'pushHomeToken', args: [HOME], kit,
+    });
+    const refused = push({ secrets: { home: 'GITHUB_TOKEN' } });
     expect(/GITHUB_TOKEN could not be written/.test(refused.said), `a leading GITHUB_ is refused: ${refused.said}`).toBeTruthy();
     expect(world.secretStdin('GITHUB_TOKEN'), 'and nothing was written under it').toBe(undefined);
 
-    const shipped = inCli(world, `push_home_token ${HOME}`);
+    const shipped = push({});
     expect(/WORKKIT_GITHUB_TOKEN is set on/.test(shipped.said), `a name that merely contains it lands: ${shipped.said}`).toBeTruthy();
     expect(world.secretStdin('WORKKIT_GITHUB_TOKEN'), 'with the value on stdin').toBe(LOGIN_TOKEN);
     cleanup(world.root);
@@ -205,7 +220,7 @@ describe('workkit: the mint runs under a pty, and its capture file (issue #174)'
     // screen (the stub's stdout and its stderr) are asserted, because under the
     // pty both are the same terminal.
     const world = mkMintWorld({ claudeToken: MINTED });
-    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    const { out } = setupToken(world);
     expect(out.includes('Paste the authorization code here:'), `the prompt the CLI draws on stdout arrives, got: ${out}`).toBeTruthy();
     expect(out.includes('Opening your browser to approve this token'), `and everything else it draws, got: ${out}`).toBeTruthy();
     expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'while the token is still caught and pushed on stdin').toBe(MINTED);
@@ -218,7 +233,7 @@ describe('workkit: the mint runs under a pty, and its capture file (issue #174)'
     // printing a token, its status crosses the pty wrapper, and the run says so
     // rather than writing an empty secret.
     const world = mkMintWorld({ mintExit: 3 });
-    const { said } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    const { said } = setupToken(world);
     expect(/did not finish \(exit 3\)/.test(said), `the child's own status is reported, got: ${said}`).toBeTruthy();
     expect(said.includes(`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${HOME}`), 'with the command that does it by hand').toBeTruthy();
     expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and nothing was written').toBe(undefined);
@@ -227,12 +242,12 @@ describe('workkit: the mint runs under a pty, and its capture file (issue #174)'
   });
 
   test('a machine with neither pty runner is a named skip with the two commands, and asks nothing', () => {
-    // PATH is narrowed to the world's own shims after the CLI is loaded: this
-    // machine has a `script` (and maybe `expect`), and the run that has
-    // neither cannot be staged any other way. The claude stub is in that same
-    // directory, so the check that fires is the one being tested.
+    // PATH is the world's own shims alone: this machine has a `script` (and
+    // maybe `expect`), and the run that has neither cannot be staged any other
+    // way. The claude stub is in that same directory, so the check that fires
+    // is the one being tested.
     const world = mkHomeWorld({ secrets: [], claudeToken: MINTED });
-    const { code, out } = inCli(world, `${AT_TERMINAL}\nPATH='${world.bin}'\noffer_claude_token ${HOME} 'is not set'`, { input: 'y\n' });
+    const { code, out } = offer(world, { input: 'y\n', env: { PATH: world.bin } });
     expect(code, 'exit 0: a machine that cannot mint is not a failed run').toBe(0);
     expect(/needs `expect` or `script`/.test(out), `it names both runners it is missing (#187), got: ${out}`).toBeTruthy();
     expect(out.includes('claude setup-token'), 'and hands over the mint').toBeTruthy();
@@ -271,7 +286,7 @@ describe('workkit: the mint runs under a pty, and its capture file (issue #174)'
 
     const world = mkMintWorld({ claudeToken: MINTED });
     const calls = gnuScript(world);
-    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    const { out } = setupToken(world);
     expect(calls().some((c) => c.includes('-c') && c.includes('claude setup-token')), `the command is passed the way GNU takes it: ${fmtCalls(calls())}`).toBeTruthy();
     expect(calls().some((c) => c.includes('-e')), `with the flag that returns the child's status: ${fmtCalls(calls())}`).toBeTruthy();
     expect(out.includes('Paste the authorization code here:'), `the screen still reaches the terminal, got: ${out}`).toBeTruthy();
@@ -281,10 +296,95 @@ describe('workkit: the mint runs under a pty, and its capture file (issue #174)'
 
     const failed = mkMintWorld({ mintExit: 3 });
     gnuScript(failed);
-    const failedOut = inCli(failed, `${AT_TERMINAL}\ncmd_setup --token`).said;
+    const failedOut = setupToken(failed).said;
     expect(/did not finish \(exit 3\)/.test(failedOut), `a mint that did not finish is seen through it, got: ${failedOut}`).toBeTruthy();
     expect(failed.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and nothing was written').toBe(undefined);
     cleanup(failed.root);
+  });
+
+  test('a BSD `script` is handed the capture file and the command word by word, and its -e carries the status back', () => {
+    // BSD's `script` refuses `--version` and takes the file, then the command's
+    // own words; the Mac's real one answers only on a Mac, so a stand-in shaped
+    // like it holds the form on every machine.
+    const bsdScript = (world) => {
+      const logFile = path.join(world.root, 'script-argv.log');
+      stubToolJs(world.bin, 'script', [
+        "const fs = require('fs');",
+        recordArgvJs(jsPath(logFile), 'process.argv.slice(2)'),
+        'const args = process.argv.slice(2);',
+        "if (args[0] === '--version') { process.stderr.write('script: illegal option -- -\\n'); process.exit(1); }",
+        'let status = false;',
+        "while (args[0] === '-q' || args[0] === '-e') { if (args.shift() === '-e') status = true; }",
+        'const [file, command, ...rest] = args;',
+        `const { spawnSync } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'run.js'))});`,
+        "const res = spawnSync(command, rest, { stdio: ['inherit', 'pipe', 'pipe'], encoding: 'utf8' });",
+        "const screen = `${res.stdout || ''}${res.stderr || ''}`;",
+        'fs.appendFileSync(file, screen);',
+        'process.stdout.write(screen);',
+        'process.exit(status ? (res.status === null ? 1 : res.status) : 0);',
+      ].join('\n'));
+      return () => readArgv(logFile);
+    };
+    const minted = (c) => c.length >= 5 && c.slice(-2).join(' ') === 'claude setup-token' && !c.includes('-c');
+
+    const world = mkHomeWorld({ secrets: [], claudeToken: MINTED });
+    const calls = bsdScript(world);
+    const { out } = offer(world, { input: 'y\n' });
+    expect(calls().some(minted), `the capture file, then claude and setup-token as two words: ${fmtCalls(calls())}`).toBeTruthy();
+    expect(calls().some((c) => minted(c) && c.includes('-e')), `with the flag that returns the child's status: ${fmtCalls(calls())}`).toBeTruthy();
+    expect(out.includes('Paste the authorization code here:'), `the screen still reaches the terminal, got: ${out}`).toBeTruthy();
+    expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and the token is caught and pushed on stdin').toBe(MINTED);
+    expect(world.tmpFiles().join(','), 'with no capture file left behind').toBe('');
+    cleanup(world.root);
+
+    const failed = mkHomeWorld({ secrets: [], mintExit: 3 });
+    bsdScript(failed);
+    const failedSaid = offer(failed, { input: 'y\n' }).said;
+    expect(/did not finish \(exit 3\)/.test(failedSaid), `a mint that did not finish is seen through it, got: ${failedSaid}`).toBeTruthy();
+    expect(failed.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and nothing was written').toBe(undefined);
+    cleanup(failed.root);
+  });
+});
+
+describe('workkit: the mint as a secret step under a logged command', () => {
+  const NOTE = 'workkit: the token mint (claude setup-token) ran on the terminal and is not in this log\n';
+  const SKIPPED = 'the token mint (claude setup-token): skipped; this command\'s output is not on a terminal';
+
+  /** A scratch raw log already holding one line of its command's own. */
+  const rawLog = (world) => {
+    const raw = path.join(world.root, 'raw.log');
+    fs.writeFileSync(raw, 'before\n');
+    return raw;
+  };
+
+  test('with a terminal device the mint draws its screen there, and the raw log gains the note line and no part of the token', { skip: skipWithoutPty() }, () => {
+    const world = mkWorld({ claudeToken: MINTED });
+    const raw = rawLog(world);
+    const device = path.join(world.root, 'tty');
+    fs.writeFileSync(device, '');
+    const { out, err } = offer(world, { input: 'y\n', env: { WK_COMMAND_LOGGED: raw, WK_COMMAND_TERMINAL: device } });
+    const shown = fs.readFileSync(device, 'utf8');
+    expect(shown.includes('Paste the authorization code here:'), `the mint's screen is on the device, got: ${JSON.stringify(shown)}`).toBeTruthy();
+    expect(!`${out}${err}`.includes('Paste the authorization code here:'), `and not on the call's own streams, got: ${out}${err}`).toBeTruthy();
+    expect(fs.readFileSync(raw, 'utf8'), 'the raw log: its own line, then the note, and no part of the token').toBe(`before\n${NOTE}`);
+    expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'while the token is still caught and pushed on stdin').toBe(MINTED);
+    expect(world.tmpFiles().join(','), 'with no capture file left behind').toBe('');
+    cleanup(world.root);
+  });
+
+  test('with WK_COMMAND_LOGGED set and no WK_COMMAND_MARKS, so nothing reads the marks, the mint is skipped with its line, and claude is never started', { skip: skipWithoutPty() }, () => {
+    const world = mkWorld({ claudeToken: MINTED });
+    const raw = rawLog(world);
+    const { code, out, err } = offer(world, { input: 'y\n', env: { WK_COMMAND_LOGGED: raw } });
+    expect(code, `a skipped mint is not a failed run, got: ${out}${err}`).toBe(0);
+    const outLines = out.split('\n').filter((l) => l.trim());
+    expect((outLines[outLines.length - 1] || '').endsWith(SKIPPED), `the skip line is the last thing said on stdout, got: ${out}`).toBeTruthy();
+    expect(!/did not finish|secrets:/.test(err), `and nothing follows it on stderr: no did-not-finish line, no secrets warning, got: ${err}`).toBeTruthy();
+    expect(!world.claudeCalls().some((c) => isCall(c, 'setup-token')), `claude was never started: ${fmtCalls(world.claudeCalls())}`).toBeTruthy();
+    expect(world.secretStdin('CLAUDE_CODE_OAUTH_TOKEN'), 'and no secret was written').toBe(undefined);
+    expect(fs.readFileSync(raw, 'utf8'), 'and the raw log is untouched').toBe('before\n');
+    expect(world.tmpFiles().join(','), 'with no capture file left behind').toBe('');
+    cleanup(world.root);
   });
 });
 
@@ -295,7 +395,7 @@ describe('workkit setup --token: the forced re-mint (issue #174)', () => {
     // hand a run, so `interactive` answers yes; the flag, the parsing and the
     // step are the real thing.
     const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claudeToken: MINTED });
-    const { out, err } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    const { out, err } = setupToken(world);
     const calls = world.ghCalls();
     expect(world.claudeCalls().some((c) => isCall(c, 'setup-token')), `the mint ran without being asked: ${fmtCalls(world.claudeCalls())}`).toBeTruthy();
     expect(calls.some((c) => isCall(c, 'secret', 'set', 'CLAUDE_CODE_OAUTH_TOKEN', '--repo', HOME)), `and the secret is written on the home repo: ${fmtCalls(calls)}`).toBeTruthy();
@@ -307,7 +407,7 @@ describe('workkit setup --token: the forced re-mint (issue #174)', () => {
 
   test('it runs the token step and nothing else of setup', () => {
     const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claudeToken: MINTED });
-    const { out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    const { out } = setupToken(world);
     expect(!world.claudeCalls().some((c) => isCall(c, 'plugin', 'install')), 'no plugin install').toBeTruthy();
     expect(!fs.existsSync(world.link), 'no symlink written').toBeTruthy();
     expect(!world.ghCalls().some((c) => isCall(c, 'secret', 'set', 'WORKKIT_GITHUB_TOKEN', '--repo', HOME)), 'and the other secret is left alone').toBeTruthy();
@@ -331,7 +431,7 @@ describe('workkit setup --token: the forced re-mint (issue #174)', () => {
 
   test('a machine with no claude CLI is a named skip, not a failure', () => {
     const world = mkHomeWorld({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }], claude: false });
-    const { code, out } = inCli(world, `${AT_TERMINAL}\ncmd_setup --token`);
+    const { code, out } = setupToken(world);
     expect(code, 'exit 0').toBe(0);
     expect(/needs the claude CLI/.test(out), `it names the skip, got: ${out}`).toBeTruthy();
     expect(!world.ghCalls().some((c) => isCall(c, 'secret', 'set')), `and writes nothing: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
@@ -385,6 +485,24 @@ describe('workkit: the cloud secrets in the automatic and the report paths', () 
     if (process.platform !== 'win32') expect(!alive(pid), `the read is bounded rather than waited out: the listing ${pid} was ended`).toBeTruthy();
     expect(!/secrets:/.test(out), `and the quiet path stays quiet about it, got: ${out}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);
+  });
+
+  test('a WORKKIT_GH_TIMEOUT that is no number above 0 is the default bound: the listing reads as with none set', () => {
+    const SAID = [
+      `  ⚠ secrets: CLAUDE_CODE_OAUTH_TOKEN is not set on ${HOME}; run \`workkit setup\``,
+      `  ⚠ secrets: WORKKIT_GITHUB_TOKEN is not set on ${HOME}; run \`workkit setup\``,
+    ];
+    for (const value of [undefined, '0', '-1', 'abc']) {
+      const world = mkHomeWorld({ secrets: [], authToken: LOGIN_TOKEN, claudeToken: MINTED, binOnPath: true });
+      if (value === undefined) delete world.env.WORKKIT_GH_TIMEOUT;
+      else world.env.WORKKIT_GH_TIMEOUT = value;
+      const { kit, script } = mkKit(SLUG);
+      const { code, said } = runCli(world, ['update', '--auto'], { script });
+      expect(code, `${value}: exit 0, got: ${said}`).toBe(0);
+      expect(said.split('\n').filter((l) => l.includes('secrets:')), `${value}: the two lines of an unset bound, got: ${said}`).toEqual(SAID);
+      expect(!/TypeError|^\s+at /m.test(said), `${value}: no TypeError and no stack, got: ${said}`).toBeTruthy();
+      cleanup(world.root); cleanup(kit);
+    }
   });
 
   test('update --auto says nothing about secrets that are set and fresh', () => {

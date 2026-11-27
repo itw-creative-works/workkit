@@ -1,15 +1,20 @@
-// The shared prologue of the workflow/workkit.sh suites beside this one, which
+// The shared prologue of the workflow/workkit.js suites beside this one, which
 // test the one command. Every world is a scratch HOME with `launchctl`,
 // `schtasks`, `claude` and `gh` recorders on PATH, so the suite reads what would
 // be installed and which commands would have run; WORKFLOW_HOME and
-// WORKFLOW_CLAUDE_HOME point at the same scratch tree.
+// WORKFLOW_CLAUDE_HOME point at the same scratch tree. The command is started as
+// workflow/workkit.js by the running node, and one step of it is called in a node
+// of its own (`inNode`).
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NO_RC, NODE_DIR, shellPath, which, homeEnv, nodeEnv, stubTool, stubToolJs, joinPath, spawnSync: runSync, spawnBash,
+  expect, start, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded,
+} = require('../../lib/harness');
+const {
+  SYSTEM_PATH, NODE_DIR, which, nodeHomeEnv, nodeEnv, stubTool, joinPath, gitPath, spawnSync: runSync,
 } = require('../../lib/platform');
 const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
 const { schtasksStub } = require('../../lib/schtasks-stub');
@@ -19,8 +24,9 @@ const { copySettingsKit } = require('../../lib/settings-kit');
 const { writeLogin } = require('../../lib/identity');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
-const CLI = path.join(WORKFLOW_DIR, 'workkit.sh');
-const JOBS_INSTALL = path.join(__dirname, '..', '..', '..', 'jobs', 'install.js');
+const KIT_ROOT = path.dirname(WORKFLOW_DIR);
+const CLI = path.join(WORKFLOW_DIR, 'workkit.js');
+const JOBS_INSTALL = path.join(KIT_ROOT, 'jobs', 'install.js');
 const LABEL = 'com.workkit.claude-daily';
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
@@ -192,9 +198,8 @@ const mkWorld = ({
     root,
     home,
     bin,
-    // The world's own paths stay native for everything this suite reads and
-    // writes; the environment below carries the same places in the spelling the
-    // shell under test sees.
+    // Every path here and in the env below is native: the command under test is
+    // a node, which reads each one as a native path on every system.
     workflowHome: path.join(root, 'workflow-home'),
     claudeHome: path.join(home, '.claude'),
     localBin,
@@ -221,22 +226,20 @@ const mkWorld = ({
     // removes both: the mint's capture file and the handover page, each of which
     // carries a token value, so anything at all left here is a leak.
     tmpFiles: () => fs.readdirSync(tmp),
-    env: homeEnv(home, {
+    env: nodeHomeEnv(home, {
       // Scratch too: the mint writes its capture file here, and a test that
       // asks whether one was left behind must be asking about this world's.
-      TMPDIR: shellPath(tmp),
-      // ~/.local/bin in HOME's own spelling: Git Bash converts a native entry
-      // through its mount table, so one under the /tmp mount would read as
-      // /tmp/... and never equal $HOME/.local/bin.
-      PATH: joinPath(...(binOnPath ? [shellPath(localBin)] : []), bin, SYSTEM_PATH),
-      WORKFLOW_HOME: shellPath(path.join(root, 'workflow-home')),
-      WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, '.claude')),
+      TMPDIR: tmp,
+      PATH: joinPath(...(binOnPath ? [localBin] : []), bin, SYSTEM_PATH),
+      WORKFLOW_HOME: path.join(root, 'workflow-home'),
+      WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
       // jobs/install.js refuses a scratch HOME, since a scheduler is machine-global;
       // launchctl and schtasks here are recorders, so this world is the rehearsal
       // the override exists for. The guard itself is pinned in test/jobs.
       WORKKIT_SCHEDULE_OK: '1',
-      // The kit's node for the heal, off PATH: node and npm stay absent there,
-      // which the npm and sign-in cases read.
+      // The kit's node, off PATH, for the shell files a case can still start (npm's
+      // script shell, the gh and git shims), which find it through wk_node: node and
+      // npm stay absent from PATH, which the npm and sign-in cases read.
       ...nodeEnv,
     }),
   };
@@ -253,16 +256,29 @@ const withNpm = (world) => {
 };
 
 // A mint needs a PTY tool the machine ships, `expect` or `script`; without one
-// the CLI refuses first (can_mint_claude_token), so those cases take this skip value.
+// the command refuses first (canMintClaudeToken), so those cases take this skip value.
 const HAS_PTY = Boolean(which('expect', SYSTEM_PATH) || which('script', SYSTEM_PATH));
 const skipWithoutPty = () => !HAS_PTY && 'this machine has neither expect nor script, so no mint can be given a terminal';
 
-// stdin is a pipe, never a terminal: a prompt that forgot to check hangs here
-// rather than in production. `script` runs another entry point (the world's
-// symlink, or a partial checkout's copy) to ask where a run thinks it stands.
-// Started through run.js, so a Windows child keeps the ComSpec npm's own script shell is.
+/** The three views of one run: stdout, stderr, and `said`, both in that order; a signal's death reads as 128 plus its number. */
+const viewsOf = (res) => ({
+  code: res.status !== null ? res.status : 128 + os.constants.signals[res.signal],
+  out: res.stdout || '',
+  err: res.stderr || '',
+  said: `${res.stdout || ''}${res.stderr || ''}`,
+});
+
+/**
+ * `workkit <args>` through the entry at `script` (the real workflow/workkit.js by
+ * default; the world's link, or a partial checkout's copy, to ask where a run
+ * thinks it stands), started by this node, stdin an empty pipe so a prompt that
+ * forgot to check its terminal fails here. `cwd` defaults to the world's root,
+ * `env` lies over the world's. A check about what the user was told reads
+ * `said`; a check about which stream reads `out` or `err`.
+ * @returns {{code: number, out: string, err: string, said: string}}
+ */
 const runCli = (world, args, { cwd, script, env } = {}) => {
-  const res = spawnBash([...NO_RC, shellPath(script || CLI), ...args], {
+  const res = runSync(process.execPath, [script || CLI, ...args], {
     cwd: cwd || world.root,
     env: { ...world.env, ...(env || {}) },
     input: '',
@@ -270,16 +286,88 @@ const runCli = (world, args, { cwd, script, env } = {}) => {
     timeout: SPAWN_DEADLINE,
   });
   expect(res.status !== null, `workkit ${args.join(' ')} finished (no timeout, no signal): ${res.error || ''}`).toBeTruthy();
-  // Three views of one run: stdout, stderr, and `said`, the whole transcript in
-  // terminal order. The level is the stream, so a check about what the user was
-  // told reads `said` and a check about which stream reads `out` or `err`.
-  return {
-    code: res.status,
-    out: res.stdout || '',
-    err: res.stderr || '',
-    said: `${res.stdout || ''}${res.stderr || ''}`,
-  };
+  return viewsOf(res);
 };
+
+// The node inNode starts: one step of the kit called with kitOf's kit, its number the exit code.
+const CALL = [
+  "const path = require('path');",
+  'const o = JSON.parse(process.argv[1]);',
+  "const flush = (code) => process.stdout.write('', () => process.stderr.write('', () => process.exit(code)));",
+  '(async () => {',
+  "  const { kitOf } = require(path.join(o.engine, 'workkit', 'kit.js'));",
+  "  const { setQuiet } = require(path.join(o.engine, 'lib', 'voice.js'));",
+  '  const step = require(path.join(o.engine, o.file))[o.fn];',
+  "  if (typeof step !== 'function') throw new Error(`inNode: ${o.file} has no function ${o.fn}`);",
+  '  const kit = kitOf(o.kit);',
+  '  setQuiet(o.quiet);',
+  '  const answer = await step(kit, ...o.args);',
+  "  if (answer !== undefined && answer !== null && typeof answer !== 'number') throw new Error(`inNode: ${o.fn} answered ${JSON.stringify(answer)}, not a number`);",
+  '  const code = answer ?? 0;',
+  '  if (!o.thenSignal) return flush(code);',
+  '  process.exitCode = code;',
+  '  process.kill(process.pid, o.thenSignal);',
+  '})().catch((err) => process.stderr.write(`${err.stack}\\n`, () => process.exit(70)));',
+].join('\n');
+
+/** The node's argv for one call: the engine, the step and what it is handed. */
+const callArgs = ({ engine = WORKFLOW_DIR, file, fn, args = [], kit = {}, quiet = false, thenSignal = null }) => (
+  ['-e', CALL, JSON.stringify({ engine, file, fn, args, kit, quiet, thenSignal })]
+);
+
+/**
+ * One step of the command, `fn` of workflow/<file>, called in a node of its own in
+ * the world: `kitOf(kit)` handed first, then `args` (each JSON), after
+ * `setQuiet(quiet)`; the node exits with the number the step answers (0 for
+ * none) and 70 with the stack when it throws. stdin is a file holding `input`,
+ * not a pipe: node's pipes are socketpairs on macOS and BSD `script` refuses a
+ * socket for stdin. `env` lies over the world's; `cwd` defaults to the world's
+ * root; `engine` is the workflow/ folder loaded, the real one by default.
+ * `thenSignal` has the node send itself that signal once the step answered.
+ * @returns {{code: number, out: string, err: string, said: string}}
+ */
+const inNode = (world, {
+  input = '', env = {}, cwd, ...call
+}) => {
+  const stdinFile = path.join(world.root, 'inNode-stdin');
+  fs.writeFileSync(stdinFile, input);
+  const fd = fs.openSync(stdinFile, 'r');
+  const res = runSync(process.execPath, callArgs(call), {
+    cwd: cwd || world.root,
+    env: { ...world.env, ...env },
+    stdio: [fd, 'pipe', 'pipe'],
+    encoding: 'utf8',
+    timeout: SPAWN_DEADLINE,
+  });
+  fs.closeSync(fd);
+  expect(!res.error, `the step's node finished (no timeout): ${res.error || ''}`).toBeTruthy();
+  return viewsOf(res);
+};
+
+/**
+ * inNode's call started without waiting, for a case that acts while the step
+ * runs (a signal, a held child): the harness `start` handle. `detached` puts the
+ * node at the head of its own process group.
+ */
+const startInNode = (world, {
+  input = '', env = {}, cwd, detached = false, ...call
+}) => start(process.execPath, callArgs(call), {
+  cwd: cwd || world.root, env: { ...world.env, ...env }, input, detached,
+});
+
+/** A scratch user npmrc, so an npm the system PATH holds reads and writes no other. */
+const npmrcEnv = (world) => ({ NPM_CONFIG_USERCONFIG: path.join(world.root, 'npmrc') });
+
+/** The machine steps setup and update run, called through inNode with npmrcEnv under `env`. */
+const machineLinks = (world, { env = {}, ...call } = {}) => inNode(world, {
+  file: 'workkit/links.js', fn: 'machineLinks', env: { ...npmrcEnv(world), ...env }, ...call,
+});
+
+/** A path as a workkit.cmd, the Windows PATH line and the compiler spell it: native, every `/` a `\`. */
+const windowsForm = (p) => gitPath(p).replace(/\//g, '\\');
+
+/** Each line of `text`, trimmed. */
+const lines = (text) => text.split('\n').map((l) => l.trim());
 
 // An acted line, by its words: where quiet cannot answer, the verbs the kit uses
 // when it changes something do. It proves a first run did something, and reads
@@ -299,7 +387,7 @@ const mkRepo = ({ optIn = false } = {}) => {
 
 /**
  * Give `repo` the origin github.com/`slug`, its HEAD on main as a clone's is, and
- * enable it on the roster through the CLI at `script`, with `env` naming the
+ * enable it on the roster through the entry at `script`, with `env` naming the
  * user's dir the roster lives in.
  */
 const rosterRepo = (world, repo, slug, { script, env } = {}) => {
@@ -317,7 +405,7 @@ const rosterRepo = (world, repo, slug, { script, env } = {}) => {
  * and `extra` on top.
  */
 const signInEnv = (world, { node = true, extra = {} } = {}) => ({
-  WORKFLOW_HOME: shellPath(path.join(world.home, '.workkit')),
+  WORKFLOW_HOME: path.join(world.home, '.workkit'),
   GITHUB_SERVER_URL: 'http://127.0.0.1:9',
   GITHUB_API_URL: 'http://127.0.0.1:9',
   ...(node ? { PATH: joinPath(world.env.PATH, NODE_DIR) } : {}),
@@ -344,56 +432,43 @@ const seedSettings = (world, site) => {
  */
 const signIn = (world) => writeLogin(world.home, { token: 'ghu_doctoruser', login: 'octocat' }, world.workflowHome);
 
-/**
- * One of the CLI's own functions, called directly, the way the home suites call
- * the engine's libraries: sourcing with `help` loads every function. Answers
- * arrive on stdin from a file, not spawnSync's `input`: node's pipes are
- * socketpairs on macOS and BSD `script` refuses a socket for stdin. `entry`
- * is another copy of the CLI to source, a cache-shaped kit's for one.
- */
-const inCli = (world, script, { input = '', env, entry = CLI } = {}) => {
-  const driver = `. ${JSON.stringify(entry)} help >/dev/null\n${script}`;
-  const stdinFile = path.join(world.root, 'inCli-stdin');
-  fs.writeFileSync(stdinFile, input);
-  const fd = fs.openSync(stdinFile, 'r');
-  const res = spawnBash([...NO_RC, '-c', driver], {
-    cwd: world.root,
-    // `env` for the values the CLI reads at source time, which a line prepended
-    // to the script would be too late for.
-    env: { ...world.env, ...(env || {}) },
-    stdio: [fd, 'pipe', 'pipe'],
-    encoding: 'utf8',
-    timeout: SPAWN_DEADLINE,
-  });
-  fs.closeSync(fd);
-  expect(res.status !== null, `the shell finished (no timeout): ${res.error || ''}`).toBeTruthy();
-  return {
-    code: res.status,
-    out: res.stdout || '',
-    err: res.stderr || '',
-    said: `${res.stdout || ''}${res.stderr || ''}`,
-  };
+// The workflow/ entries of the command and of every module it loads; the programs it starts stay out.
+const COMMAND_FILES = ['workkit.js', 'workkit.cmd', 'workkit', 'lib', 'user-dir.js', 'slug.js'];
+
+// The files outside hooks/ that hooks/ itself loads (test-bar.js's two imports), and the package.json that makes them ES modules.
+const HOOKS_REACH = ['packages/core/package.json', 'packages/core/test/lib/lexer.js', 'packages/core/test/lib/serial-name.js'];
+
+/** Copy HOOKS_REACH into the kit copy at `kit`. */
+const copyHooksReach = (kit) => {
+  for (const rel of HOOKS_REACH) {
+    fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
+    fs.copyFileSync(path.join(KIT_ROOT, rel), path.join(kit, rel));
+  }
 };
 
-// The one thing a piped test cannot hand a prompt is a terminal. Prepended to
-// an `inCli` script, this answers the CLI's own `interactive` check yes while
-// the answers arrive on stdin: the prompt, the read and the write are all the
-// real thing.
-const AT_TERMINAL = 'interactive() { return 0; }';
+/** The whole hooks/ folder and HOOKS_REACH, which the command's settings and roster reads load, into the kit copy at `kit`. */
+const copyHooks = (kit) => {
+  fs.cpSync(path.join(KIT_ROOT, 'hooks'), path.join(kit, 'hooks'), { recursive: true });
+  copyHooksReach(kit);
+};
 
 /**
- * A partial checkout: this CLI copied whole (the entry and the `workkit/`
- * pieces it sources; a symlink would resolve back to the real one) into a
- * `workflow/` holding nothing else of the kit, and no `jobs/install.js`.
- * Returns the entry point to run.
+ * A partial checkout: the command and every module it loads (COMMAND_FILES and
+ * hooks/), copied whole (a symlink would resolve back to the real one), with
+ * none of the programs it starts beside them (standards.js, home.js, publish.js,
+ * the identity client, the shims, jobs/, tower/). Returns the entry point to run.
+ * @returns {{kit: string, script: string}}
  */
 const mkPartialKit = () => {
   const kit = mkTmp('workkit-cli-');
   fs.mkdirSync(path.join(kit, 'workflow'), { recursive: true });
-  fs.copyFileSync(CLI, path.join(kit, 'workflow', 'workkit.sh'));
-  fs.cpSync(path.join(WORKFLOW_DIR, 'workkit'), path.join(kit, 'workflow', 'workkit'), { recursive: true });
+  for (const name of COMMAND_FILES) {
+    const from = path.join(WORKFLOW_DIR, name);
+    if (fs.existsSync(from)) fs.cpSync(from, path.join(kit, 'workflow', name), { recursive: true });
+  }
   copySettingsKit(kit);
-  return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
+  copyHooks(kit);
+  return { kit, script: path.join(kit, 'workflow', 'workkit.js') };
 };
 
 // One kit per origin slug and per `jobs/` or none, built once per process: the
@@ -401,20 +476,21 @@ const mkPartialKit = () => {
 const copyKit = seeded((seed, { slug, jobs }) => {
   fs.cpSync(WORKFLOW_DIR, path.join(seed, 'workflow'), { recursive: true });
   copySettingsKit(seed);
-  if (jobs) fs.cpSync(path.join(path.dirname(WORKFLOW_DIR), 'jobs'), path.join(seed, 'jobs'), { recursive: true });
+  copyHooks(seed);
+  if (jobs) fs.cpSync(path.join(KIT_ROOT, 'jobs'), path.join(seed, 'jobs'), { recursive: true });
   mkOriginRepo(seed, `https://github.com/${slug}.git`);
 });
 const mkKitCopy = (slug, jobs) => {
   const kit = mkTmp('workkit-cli-');
   copyKit(kit, { slug, jobs });
-  return { kit, script: path.join(kit, 'workflow', 'workkit.sh') };
+  return { kit, script: path.join(kit, 'workflow', 'workkit.js') };
 };
 
 /**
  * A checkout of the engine with an origin of its own, a different slug from the
  * machine's home repo, so a run that reached for the checkout's origin instead
- * of the home repo is visible. Only `workflow/` is copied, so the schedule step
- * is the named skip a partial checkout gets.
+ * of the home repo is visible. Only `workflow/` and `hooks/` are copied, so the
+ * schedule step is the named skip a partial checkout gets.
  */
 const mkKit = (slug) => mkKitCopy(slug, false);
 
@@ -424,12 +500,6 @@ const mkKit = (slug) => mkKitCopy(slug, false);
  * engine address accepts, plus the schedule installer. Returns `{ kit, script }`.
  */
 const mkSetupKit = () => mkKitCopy('checkout/workkit', true);
-
-// The `uname -s` answers the schedule steps branch on, one per road.
-const SYSTEMS = { mac: 'Darwin', windows: 'MINGW64_NT-10.0-19045', linux: 'Linux' };
-
-/** Name the system for the world's shell: a `uname` on its PATH answering `name`. */
-const nameSystem = (world, name) => stubToolJs(world.bin, 'uname', `process.stdout.write(${JSON.stringify(`${name}\n`)});`);
 
 /**
  * mkKit's kit under the workkit origin, with a stand-in installer: `lines` as `jobs/install.js`,
@@ -478,9 +548,10 @@ const mkCacheKit = (world, version = '0.0.0') => {
   const kit = path.join(world.claudeHome, 'plugins', 'cache', 'workkit', 'workkit', version);
   // hooks/ beside workflow/, as the plugin ships it: the engine's settings read loads hooks/mods/settings.js.
   const engine = mkPluginCopy(kit, { version, dirs: ['workflow', 'hooks'] });
+  copyHooksReach(kit);
   writeKitFile(path.join(kit, 'jobs', 'install.js'), ['process.exit(0);']);
   writeKitFile(path.join(kit, 'tower', 'start.js'), ['process.exit(0);']);
-  return { kit, script: path.join(engine, 'workkit.sh') };
+  return { kit, script: path.join(engine, 'workkit.js') };
 };
 
 // The checkout's own origin, and the machine's home repo. The cloud secrets
@@ -497,7 +568,8 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, COMMAND_TABLE, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, signInEnv, ACTED, mkRepo, rosterRepo,
-  installSchedule, seedSettings, signIn, inCli, AT_TERMINAL, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
-  SYSTEMS, nameSystem, mkInstallerKit, mkScheduleKit, SLUG, HOME, mkHomeWorld,
+  WORKFLOW_DIR, CLI, LABEL, COMMAND_TABLE, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, inNode, startInNode, npmrcEnv, machineLinks, windowsForm, lines,
+  signInEnv, ACTED, mkRepo, rosterRepo,
+  installSchedule, seedSettings, signIn, copyHooks, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
+  mkInstallerKit, mkScheduleKit, SLUG, HOME, mkHomeWorld,
 };

@@ -14,6 +14,8 @@ const { discoverRepos, readRoster } = require('../../tower/api/lib/repos');
 const { userDir, homeUserDir } = require('../user-dir');
 const { homeSlug } = require('../lib/settings');
 const { readJsonOrNull } = require('../lib/read');
+const { nativePath } = require('../lib/platform');
+const { rosterFile } = require('../../hooks/mods/log.js');
 
 /**
  * The key a machine's entry is filed under: its hostname's first label,
@@ -44,7 +46,7 @@ const composeSlugs = (opts = {}) => {
   // empty machine still writes `[]`.
   const { status } = readRoster(workflowHome);
   if (status === 'unreadable') {
-    throw new Error(`the roster at ${path.join(workflowHome, '.repos.json')} could not be read`);
+    throw new Error(`the roster at ${nativePath(rosterFile(workflowHome))} could not be read`);
   }
 
   const slugs = discoverRepos({ workflowHome, home, exec: opts.exec })

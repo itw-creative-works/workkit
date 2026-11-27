@@ -4,6 +4,8 @@
  * (docs/agents.md § Personal add-ons).
  */
 
+import { chomp } from './text.js';
+
 /**
  * Where a spawn's add-on lives, or null for a type that is not `workkit:<name>`.
  * @param {string} userDir the machine folder (userDir in ./log.js)
@@ -25,5 +27,5 @@ export function addonPath(userDir, agentType) {
  */
 export function addonContext(text, agentType, path) {
   if (typeof text !== 'string' || text.trim() === '') return null;
-  return `Personal add-on for ${agentType} (from ${path}):\n${text.replace(/\n+$/, '')}`;
+  return `Personal add-on for ${agentType} (from ${path}):\n${chomp(text)}`;
 }

@@ -68,11 +68,11 @@ describe('tower/app: github - the token this browser holds', () => {
     expect(landing.rewrites.length, 'and the address bar is rewritten exactly once').toBe(1);
     expect(landing.rewrites[0], 'to the path and the query alone - the fragment is gone, the selection survives').toBe('/settings?repo=a,b');
 
-    // Setup never sends one of these: `handover_token` refuses a token outside
-    // `[A-Za-z0-9_-]` rather than escaping it (workflow/workkit/token.sh). The
+    // Setup never sends one of these: `handoverToken` refuses a token outside
+    // `[A-Za-z0-9_-]` rather than escaping it (workflow/workkit/token.js). The
     // decode is the guard on this side of that contract.
     const encoded = mkLanding('#token=gho_a%2Fb');
-    expect(github.takeTokenFromHash(encoded), 'an encoded value is decoded on the way in: the shell refuses a token that would need escaping rather than sending one, so the decode is this side\'s own guard').toBe('gho_a/b');
+    expect(github.takeTokenFromHash(encoded), 'an encoded value is decoded on the way in: setup refuses a token that would need escaping rather than sending one, so the decode is this side\'s own guard').toBe('gho_a/b');
     expect(encoded.rewrites[0], 'and a page with no query is stripped to its path').toBe('/settings');
   });
 

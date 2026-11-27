@@ -2,7 +2,7 @@
 # discards the ^C byte, so `interact` binds it one layer out: the binding ends
 # the child and answers 130, and every other keystroke reaches the paste prompt.
 # The child's screen is appended to the caller's capture file; the command and
-# the capture arrive through the environment (workkit/secrets.sh owns both).
+# the capture arrive through the environment (workkit/pty.js sets both).
 log_file -a $env(WK_PTY_CAPTURE)
 spawn {*}[split $env(WK_PTY_CMD) " "]
 interact {

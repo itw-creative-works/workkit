@@ -14,6 +14,7 @@ const { isFile } = require('../lib/lock');
 const { warn } = require('../lib/voice');
 const { file } = require('./committed');
 const { kitDir } = require('./options');
+const { chomp } = require('../../hooks/mods/text.js');
 
 // The kit version the clone was last written from: one file at the root for
 // every writer, since they all seed from one checkout.
@@ -92,7 +93,7 @@ const downgrades = () => {
 };
 
 /** Lines as one text, trailing newlines dropped, as a shell capture reads them. */
-const captured = (lines) => lines.join('\n').replace(/\n+$/, '');
+const captured = (lines) => chomp(lines.join('\n'));
 
 /**
  * The stamp written by content beside the caller's write, so it rides the

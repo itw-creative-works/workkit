@@ -19,8 +19,8 @@ if (verb === 'test') {
 } else if (verb === 'convert') {
   convert(args);
 } else {
-  // The global command's error shape (wk_error): `✖ <verb>: <message>`.
+  // The global command's error shape (`error` of workflow/lib/voice.js): `✖ <verb>: <message>`.
   const named = verb === undefined ? 'workkit' : `workkit ${verb}`;
-  console.error(`✖ ${verb ?? 'workkit'}: workkit-core's bin runs only \`workkit test [paths] [--filter=<text>]\`, \`workkit tools\` and \`workkit convert [paths...]\`; \`${named}\` belongs to the global workkit command (the workkit plugin's workflow/workkit.sh)`);
+  console.error(`✖ ${verb ?? 'workkit'}: workkit-core's bin runs only \`workkit test [paths] [--filter=<text>]\`, \`workkit tools\` and \`workkit convert [paths...]\`; \`${named}\` belongs to the global workkit command (the workkit plugin's workflow/workkit.js)`);
   process.exitCode = 2;
 }

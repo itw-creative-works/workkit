@@ -44,7 +44,7 @@ claude plugin install workkit@workkit
 ```sh
 git clone https://github.com/ITW-Creative-Works/workkit.git
 cd workkit
-./workflow/workkit.sh setup
+node workflow/workkit.js setup
 ```
 
 - Every setup step, and how to turn workkit on in another repo: [docs/setup.md](docs/setup.md).
@@ -143,10 +143,11 @@ claude
 - git
 - the GitHub CLI (`gh`), signed in with `gh auth login`
 - jq
-- Node.js with npm, 22.22 or newer (the root `package.json` names the floor)
+- Node.js with npm, 22.22 or newer, first on your PATH (the root `package.json` names the floor); `workkit` runs on that `node`, and an older one gets one line saying so
 - the Claude Code CLI (`claude`)
 
-- It runs on macOS, on Linux, and on Windows under Git Bash.
+- It runs on macOS, on Linux, and on Windows.
+  - On Windows `workkit` starts from cmd, PowerShell and Git Bash; git's hooks, the shims and npm's script shell run through the bash Git for Windows ships.
   - The 9am schedule on your own machine runs on macOS (launchd) and on Windows (Task Scheduler).
   - Everywhere else the same brief runs in the cloud from your home repo.
 

@@ -151,10 +151,11 @@ flowchart TB
   - The line: `red-proof: not runnable: a module failed to load: <module>`.
   - A missing module that resolves to a source path is absent by design and stays red.
     - A source path here is the path, the path less its extension, or a file in a source folder.
-    - The module resolves in each of three spellings node reports it in:
+    - The module resolves in each of four spellings node reports it in:
       - its own path, relative to the requiring file or absolute;
       - its path through a workspace link, the nearest folder that exists resolved through links;
-      - a bare specifier with a subpath (`@scope/a/new`), against its package folder in the nearest `node_modules` at or above the requiring file.
+      - a bare specifier with a subpath (`@scope/a/new`), against its package folder in the nearest `node_modules` at or above the requiring file;
+      - a path under the system temp folder (a test's scratch link, removed before it ended), when its last segment is the last segment of a source path the copy lacks, or that less its extension.
     - A bare package name with no subpath, or a package not there, never resolves.
   - The same message about any other folder, a test merely printing it, is ignored.
 - A test summary decides where the run leaves one: the kit runner's summary file, else node's summary block.

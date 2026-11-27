@@ -60,7 +60,7 @@ const LIST_QUERY = `query($owner:String!,$name:String!,$catId:ID!,$limit:Int!){
       }
     }`;
 
-/** The disposable cache file in the machine folder (`WK_HOME_CACHE` of lib.sh). */
+/** The disposable cache file in the machine folder. */
 const cacheFile = () => `${userDir()}/.cache.json`;
 
 /**

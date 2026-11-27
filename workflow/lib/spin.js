@@ -1,6 +1,5 @@
 /**
- * workflow/lib/spin.js: the moving wait line, the Node home of `wk_spin`,
- * `wk_spin_draw` and `wk_spin_fd` (lib/voice.sh): a worker thread draws the
+ * workflow/lib/spin.js: the moving wait line: a worker thread draws the
  * frames while the caller's thread runs its call, so a sync call animates too,
  * and the line is cleared before the answer reaches the caller. The poll's
  * countdown (lib/flows.js) draws through the same frames.
@@ -11,14 +10,14 @@ const fs = require('fs');
 const tty = require('tty');
 const { Worker, isMainThread, workerData } = require('worker_threads');
 const {
-  PALETTE, colorOn, paint, wait,
+  PALETTE, colorOn, paint, wait, indent,
 } = require('./voice');
 
-// WK_SPIN_FRAMES of lib.sh, one each FRAME_MS, as wk_spin_draw sleeps 0.1.
+// The frames, one each FRAME_MS.
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const FRAME_MS = 100;
 
-// The clear wk_spin writes once the frames stop.
+// The clear spin writes once the frames stop.
 const CLEAR = `\r${' '.repeat(72)}\r`;
 
 // The two slots of the stop handshake: the caller's stop, the drawer's answer.
@@ -34,37 +33,51 @@ const DRAWER = 'workkitSpinDrawer';
 /** The clock in whole seconds, as `date +%s` reads it. */
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
-/** Whether descriptor <fd> is open. */
-const isOpen = (fd) => {
+// The descriptor the frames draw on when no terminal device is named.
+const STDERR = 2;
+
+/**
+ * A descriptor opened for append on the terminal device a logged command
+ * names; a device that does not open counts as none named.
+ * @param {string|undefined} device the device's name, WK_COMMAND_TERMINAL's value
+ * @returns {number|null} null for none
+ */
+const openDevice = (device) => {
+  if (!device) return null;
   try {
-    fs.fstatSync(fd);
-    return true;
+    return fs.openSync(device, 'a');
   } catch {
-    return false;
+    return null;
   }
 };
 
 /**
- * The descriptor the frames draw on (`wk_spin_fd`): 8 under a command log still
- * holding 7, 8 and 9 (`_wk_terminal_held`, lib/command-log.sh), else 2.
+ * The descriptor the frames draw on: openDevice's on WK_COMMAND_TERMINAL,
+ * else 2. Its caller closes an opened one, as startSpinner does.
  * @returns {number}
  */
-const spinFd = () => (process.env.WK_COMMAND_LOGGED && [7, 8, 9].every(isOpen) ? 8 : 2);
+const spinFd = () => openDevice(process.env.WK_COMMAND_TERMINAL) ?? STDERR;
+
+/** <fd> closed when spinFd opened it; stderr is left open. */
+const releaseFd = (fd) => {
+  if (fd !== STDERR) fs.closeSync(fd);
+};
 
 /**
  * Whether frames are drawn on <fd>: WORKKIT_SPIN=1 always, WORKKIT_SPIN=0
- * never, otherwise only on a terminal.
+ * never, otherwise on the device spinFd opened, the terminal the logger named,
+ * and on stderr only when it is a terminal.
  * @param {number} fd
  * @returns {boolean}
  */
 const framesOn = (fd) => {
   if (process.env.WORKKIT_SPIN === '1') return true;
   if (process.env.WORKKIT_SPIN === '0') return false;
-  return tty.isatty(fd);
+  return fd !== STDERR || tty.isatty(fd);
 };
 
 /**
- * One frame as wk_spin_draw prints it, or wk_poll_draw with a deadline: the
+ * One frame, a poll's countdown when there is a deadline: the
  * indent, the frame in cyan, the message, the seconds in dim.
  * @param {object} data the drawer's workerData
  * @param {number} i the frame's count
@@ -115,7 +128,7 @@ const draw = (data) => {
  * once the drawer has answered, so no frame lands after the clear.
  * @param {number} fd the descriptor spinFd picked
  * @param {string} message
- * @param {number} [deadline] a countdown's end in whole seconds (wk_poll_draw), else the elapsed seconds
+ * @param {number} [deadline] a countdown's end in whole seconds (a poll's), else the elapsed seconds
  * @returns {() => void} the stop
  */
 const startFrames = (fd, message, deadline) => {
@@ -130,7 +143,7 @@ const startFrames = (fd, message, deadline) => {
       message,
       deadline,
       start: nowSeconds(),
-      indent: process.env.WK_LOG_INDENT ?? '',
+      indent: indent(),
       on: colorOn(process.stdout),
     },
   });
@@ -154,7 +167,37 @@ const startFrames = (fd, message, deadline) => {
 };
 
 /**
- * `wk_spin`: run(), with the frames moving while it runs where framesOn says
+ * The frames on spinFd's descriptor where framesOn says so: their stop, which
+ * also closes a descriptor spinFd opened, or null where none draw (the
+ * descriptor closed already).
+ * @param {string} message
+ * @param {number} [deadline] as startFrames takes it
+ * @returns {(() => void)|null}
+ */
+const startSpinner = (message, deadline) => {
+  const fd = spinFd();
+  if (!framesOn(fd)) {
+    releaseFd(fd);
+    return null;
+  }
+  let stopFrames;
+  try {
+    stopFrames = startFrames(fd, message, deadline);
+  } catch (err) {
+    releaseFd(fd);
+    throw err;
+  }
+  let released = false;
+  return () => {
+    stopFrames();
+    if (released) return;
+    released = true;
+    releaseFd(fd);
+  };
+};
+
+/**
+ * run(), with the frames moving while it runs where framesOn says
  * so, else `wait(message)`'s one line first. What run answers comes back, a
  * promise as a promise of the same value; what it throws or rejects goes on.
  * The frames stop and the line is cleared before either reaches the caller.
@@ -162,16 +205,15 @@ const startFrames = (fd, message, deadline) => {
  * @param {string} message
  * @param {() => T} run the caller's call; it starts and reads its own program
  * @param {{line?: boolean}} [opts] line: false prints no one line, for a call
- *   whose shell form sent its stderr away; the frames still draw
+ *   whose wait stays silent off a terminal; the frames still draw
  * @returns {T}
  */
 const spin = (message, run, { line = true } = {}) => {
-  const fd = spinFd();
-  if (!framesOn(fd)) {
+  const stop = startSpinner(message);
+  if (stop === null) {
     if (line) wait(message);
     return run();
   }
-  const stop = startFrames(fd, message);
   let answer;
   try {
     answer = run();
@@ -187,5 +229,5 @@ const spin = (message, run, { line = true } = {}) => {
 if (!isMainThread && workerData?.[DRAWER]) draw(workerData);
 
 module.exports = {
-  spin, spinFd, framesOn, startFrames,
+  spin, spinFd, openDevice, framesOn, startFrames, startSpinner,
 };

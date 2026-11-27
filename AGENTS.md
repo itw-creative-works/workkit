@@ -26,7 +26,7 @@
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards.js + standards/, workkit.sh + workkit/, home.sh + home.js + home/, publish.sh + publish.js + publish/ (build.js, site-repos.js), lib.sh + lib/, morning-task.js (the 9am task's starter), changelog/, ship/, review/, triage/, checkpoint/, proof/, public/, gitshim/ (the `git` shim), templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.sh + standards.js + standards/, workkit.js + workkit.cmd + workkit/, note.js, home.js + home/, publish.sh + publish.js + publish/ (build.js, site-repos.js), lib/, morning-task.js (the 9am task's starter), changelog/, ship/, review/, triage/, checkpoint/, proof/, public/, gitshim/ (the `git` shim), templates)
 ├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
 ├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run` and its `workflow/lib/expand-workspaces.js` and `workflow/lib/proc-state.js` packed for the runner and its library, a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
@@ -39,7 +39,7 @@
 
 ## Install
 
-- From zero: clone, then `./workflow/workkit.sh setup`.
+- From zero: clone, then `node workflow/workkit.js setup`, with a Node at the kit's floor (22.22) first on PATH.
   - One pass, each step checked before it acts.
   - The steps in order, the plugin-only install, the home repo, opting a repo in and the layout: `docs/setup.md`.
   - Every mechanic: `workflow/README.md`.
@@ -83,13 +83,13 @@
 
 ## The engine (`workflow/`)
 
-- Agent-agnostic: shell + Node, which is why the hooks call it rather than contain it.
-- It calls the `claude` CLI in one place only: the setup commands in `workflow/workkit/`.
+- Agent-agnostic: Node, with the shell the git hooks, the shims and the starters need, which is why the hooks call it rather than contain it.
+- It calls the `claude` CLI in one place only: the command's machine steps in `workflow/workkit/`.
   - Those are the plugin's install and list, and `claude setup-token`.
   - The test library's `modCase` (`claude plugin test`) lives in `workkit-core`.
-- `workkit.sh` is the one command and the from-zero entry point:
+- `workkit.js` is the one command and the from-zero entry point, a Node program `~/.local/bin/workkit` links to (on Windows also `~/.local/bin/workkit.cmd`, for cmd and PowerShell):
   - `setup [--token | --login | --bot | --home | --cloud]` · `update [--auto]` · `doctor` · `publish` · `brief [--local]` · `log [-n N] [--follow]` · `tower` · `enable` · `decline` · `heal` · `note` · `state` · `test [paths] [--filter=<text>]` · `tools` · `convert [paths...]` · `prove` · `supervise -- <command>` · `watch [--end] [suite|run|<pid>]`;
-  - the verbs with subcommands, each running `workflow/<verb>/<sub>.sh` or `.js`: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `checkpoint safe` · `proof red` · `changelog lint`.
+  - the verbs with subcommands, each running `workflow/<verb>/<sub>.js` as the command's child: `public intake|mirror|close` · `ship items|release|watch|cut|plan|publish|deploy` · `review covers|mark` · `triage mark` · `checkpoint safe` · `proof red` · `changelog lint`.
 - Beside it live:
   - the label SSOT, the heal, the CHANGELOG linter in `changelog/`, the capture CLI;
   - the ship's steps in `ship/`: `items.js`, `release.js`, `watch.js`, `cut.js`, `plan.js`, `publish.js`, `deploy.js`, and `hooks.js`;
@@ -152,6 +152,7 @@
   - `homeEnv()` is the scratch home in every spelling a tool reads one by.
     - The spellings: HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off.
     - So no child of a test reads the developer's own home or reaches GitHub as them.
+    - `nodeHomeEnv()` is the same env for a node a case starts, HOME native in place of the shell's spelling.
   - `nodeEnv` is the one spelling of `{ WORKKIT_NODE: shellPath(process.execPath) }`, the pair that hands a shell the suite's own node; a case spreads it into its env.
   - A child a case starts goes through `workflow/lib/run.js` too.
     - `test/lib/platform.js` re-exports its `spawnSync`, `spawn` and `execFileSync`.
@@ -201,13 +202,13 @@
 
 ## Conventions
 
-- **Portable by default.** macOS, Windows (Git Bash) and Linux all run the kit.
+- **Portable by default.** macOS, Windows and Linux all run the kit; on Windows `workkit` starts from cmd, PowerShell and Git Bash, and git's hooks, the shims and npm's script shell run through Git for Windows' bash.
   - A spelling that differs branches once, in `workflow/lib/platform.sh` (`docs/hooks.md` § Platforms).
   - The hooks module resolves the kit through `$.plugin.root`; the engine's stable address is `~/.claude/workkit`.
   - Every program the shipped Node code starts goes through `workflow/lib/run.js`, the Node twin of `platform.sh`.
     - `test/scripts/run-home.test.js` fails any other shipped `child_process` import but the published workkit-core runner's `test/run.js`.
     - The rules: `workflow/README.md`, the `lib/run.js` row.
-  - A path a shell line prints for a person, and every roster key, goes through `wk_native_path` in `platform.sh`, so Windows output never mixes `/d/a` and `D:/a`.
+  - A path a line prints for a person, and every roster key, goes through `nativePath` in `workflow/lib/platform.js` (its shell twin `wk_native_path` in `platform.sh`), so Windows output never mixes `/d/a` and `D:/a`.
   - No shipped text (skills, agents, briefs, docs, the hook, workflow, jobs and tower READMEs) may carry a machine-specific absolute path or name the owner's own repo.
 - **Generic by construction.** No owner names and no personal paths anywhere in the kit; `~/.workkit` and `.workkit/` are the only filesystem anchors.
 - **One mechanism, branching by environment.** Never two parallel copies of the same job: one entry point, each step gated on what its environment can do.

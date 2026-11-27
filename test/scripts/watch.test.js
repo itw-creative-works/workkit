@@ -4,8 +4,7 @@
 // with no call attached still gives its code once; with no live run it says so;
 // `--end` ends the named run on request; a narrowed run's start clears this repo's
 // day-old leftover slots and those a gone remover left; the color gate paints what
-// it prints; with no node at the floor, watch and supervise say so. The world is
-// test/lib/supervise-world.js.
+// it prints. The world is test/lib/supervise-world.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +12,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath, stubNode, systemPathWith,
+  IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath,
 } = require('../lib/platform');
 const { runLib } = require('../lib/hook-lib');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
@@ -23,7 +22,7 @@ const {
   CHECK_MINUTES, skipOnWindows, pidOf, reap, silent, writesPid, ended, read, realOf, handLock, claimNaming, tagOf, deadPid,
 } = require('../lib/supervise');
 const {
-  LONG_CHECK, COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor, touches,
+  LONG_CHECK, COLOR_ON, mkWorld, runLog, suiteLog, workkitStart, workkit, linesToLast, waitsFor,
 } = require('../lib/supervise-world');
 
 const USAGE = 'usage: workkit watch [--end] [suite|run|<pid>]';
@@ -406,23 +405,6 @@ describe('workkit watch: no run to attach to', () => {
       expect(res.code, `exit 2 for [${args}], got: ${res.output}`).toBe(2);
       expect(linesToLast(res.output).includes(USAGE), `the usage line for [${args}], got: ${res.output}`).toBeTruthy();
     }
-  });
-});
-
-describe('workkit watch and workkit supervise: no node at the floor', () => {
-  test('each prints one line naming the floor 22.22 and exits 1; the supervised command never runs', async () => {
-    const w = mkWorld();
-    const ran = path.join(w.out, 'ran');
-    const old = stubNode(path.join(w.dir, 'old-node'), '20.15.1');
-    // The world's home is a scratch one, so no node a machine's nvm keeps is found instead.
-    const env = { ...w.env, PATH: systemPathWith(path.dirname(old)), WORKKIT_NODE: shellPath(old) };
-    for (const args of [['watch'], ['supervise', '--', 'node', '-e', touches(ran)]]) {
-      const res = await workkit(args, { cwd: w.repo, env });
-      expect(res.code, `workkit ${args[0]} exits 1, got: ${res.output}`).toBe(1);
-      const said = linesToLast(res.output);
-      expect(said.length === 1 && said[0].includes('22.22'), `workkit ${args[0]}: one line naming the floor, got: ${res.output}`).toBeTruthy();
-    }
-    expect(fs.existsSync(ran), 'the supervised command never ran').toBe(false);
   });
 });
 

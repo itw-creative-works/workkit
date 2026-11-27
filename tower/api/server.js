@@ -20,8 +20,8 @@ const { createFeeds } = require('./server/feeds');
 const { createWrites } = require('./server/writes');
 const { createLogger } = require('./lib/log');
 
-// One voice for everything this process prints: the same glyph lines the shell
-// half prints from workflow/lib.sh.
+// One voice for everything this process prints: the same glyph lines the
+// command prints from workflow/lib/voice.js.
 const log = createLogger();
 
 // TOWER on a phone keypad is 86937; 8693 is what fits a port.

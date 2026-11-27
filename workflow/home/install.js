@@ -1,7 +1,7 @@
 /**
  * workflow/home/install.js: the clone's dependencies, the catch-up and the
  * commit and push its writers use, and the clone's own heal, the committed
- * kit's `standards.sh --home` read through committed.js's export.
+ * kit's `standards.js --home` read through committed.js's export.
  * Usage: const { install, catchUp, commitPush, heal } = require('./install');
  */
 
@@ -13,7 +13,7 @@ const { executable } = require('../lib/participation');
 const { nativePath } = require('../lib/platform');
 const { spawnSync, onPath } = require('../lib/run');
 const { writeErr } = require('../lib/say');
-const { spin, spinFd } = require('../lib/spin');
+const { spin } = require('../lib/spin');
 const {
   ok, skip, info, warn,
 } = require('../lib/voice');
@@ -24,6 +24,7 @@ const {
 } = require('./options');
 const { withScratch } = require('../lib/scratch');
 const { source } = require('./committed');
+const { chomp } = require('../../hooks/mods/text.js');
 
 /** git in the clone, its output read as text and its stderr dropped. */
 const git = (args) => gitIn(towerDir(), args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -34,7 +35,7 @@ const gitQuiet = (args) => gitIn(towerDir(), args, { stdio: 'ignore' }).status =
 /** A git read as a shell capture holds it, '' when it failed. */
 const read = (args) => {
   const res = git(args);
-  return res.status === 0 ? res.stdout.replace(/\n+$/, '') : '';
+  return res.status === 0 ? chomp(res.stdout) : '';
 };
 
 /** git in the clone with its stdout on this process's and its stderr dropped, for a call spin wraps. */
@@ -123,25 +124,23 @@ const commitPush = async (subject) => {
 };
 
 /**
- * The heal run whole, its stdout and stderr in the one order they came, as
- * `2>&1` captures them; a command log's 7, 8 and 9 kept, so its spinner
- * draws on the terminal.
+ * The heal run whole by the running Node, its stdout and stderr in the one
+ * order they came, as `2>&1` captures them.
  * @returns {{rc: number, out: string}}
  */
 const runHeal = (heal, log) => {
   const fd = fs.openSync(log, 'w');
-  const logged = spinFd() === 8 ? ['ignore', 'ignore', 'ignore', 'ignore', 7, 8, 9] : [];
   let res;
   try {
-    res = spawnSync('bash', [heal, '--home', towerDir()], { stdio: ['ignore', fd, fd, ...logged], windowsHide: true });
+    res = spawnSync(process.execPath, [heal, '--home', towerDir()], { stdio: ['ignore', fd, fd], windowsHide: true });
   } finally {
     fs.closeSync(fd);
   }
-  return { rc: res.status ?? 1, out: fs.readFileSync(log, 'utf8').replace(/\n+$/, '') };
+  return { rc: res.status ?? 1, out: chomp(fs.readFileSync(log, 'utf8')) };
 };
 
 /**
- * The clone's own heal, the committed kit's `standards.sh --home`. Every
+ * The clone's own heal, the committed kit's `standards.js --home`. Every
  * failure is a named warning and 0.
  * @param {boolean} [quiet] print the heal's lines only when it failed or changed something
  * @returns {Promise<number>} 0
@@ -165,11 +164,11 @@ const heal = async (quiet = false) => {
       warn('home: the home repo\'s labels and issue templates were not healed');
       return false;
     }
-    if (!isFile(path.join(from, 'workflow', 'standards.sh'))) {
-      warn(`home: the heal is missing at ${nativePath(from)}/workflow/standards.sh; the home repo's labels and issue templates were not healed`);
+    if (!isFile(path.join(from, 'workflow', 'standards.js'))) {
+      warn(`home: the heal is missing at ${nativePath(from)}/workflow/standards.js; the home repo's labels and issue templates were not healed`);
       return false;
     }
-    return runHeal(path.join(from, 'workflow', 'standards.sh'), path.join(scratch, 'heal.log'));
+    return runHeal(path.join(from, 'workflow', 'standards.js'), path.join(scratch, 'heal.log'));
   }, 'workkit-home.');
   if (healed === null) {
     warn('home: could not make a scratch directory; the home repo\'s labels and issue templates were not healed');

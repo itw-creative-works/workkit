@@ -5,6 +5,8 @@
  * CHANGELOG path test and the linter's path.
  */
 
+import { chomp } from './text.js';
+
 /**
  * Whether a path names a CHANGELOG.md, at the root or below.
  * @param {string} path the path
@@ -35,5 +37,5 @@ export function linterPath(env, pluginRoot) {
  */
 export function changelogGuardVerdict(path, lintResult) {
   if (!isChangelog(path) || !lintResult || lintResult.exitCode === 0) return null;
-  return `changelog-guard: fix the entry before any other work.\n${String(lintResult.stderr ?? '').replace(/\n+$/, '')}`;
+  return `changelog-guard: fix the entry before any other work.\n${chomp(lintResult.stderr)}`;
 }

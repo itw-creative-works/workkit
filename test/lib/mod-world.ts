@@ -31,9 +31,9 @@ const KIT_DEFAULT: Record<string, string> = {
   'defaults/settings.json': JSON.stringify(DEFAULTS),
   'agents/worker.md': '# worker\n',
   'skills/ship/SKILL.md': '# ship\n',
-  'workflow/standards.sh': '#!/usr/bin/env bash\n',
+  'workflow/standards.js': '#!/usr/bin/env node\n',
   'workflow/labels.json': '{ "version": 1, "groups": {} }\n',
-  'workflow/workkit.sh': '#!/usr/bin/env bash\n',
+  'workflow/workkit.js': '#!/usr/bin/env node\n',
   'workflow/changelog/lint.js': '// linter\n',
   'docs/project-state.md': '# project state\n',
 }
@@ -141,7 +141,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
     files.set(`${root}/.git/HEAD`, 'ref: refs/heads/main\n')
     if (settings !== null) files.set(`${root}/.workkit/settings.json`, settings)
   }
-  if (opts.setup !== false) files.set(`${HOME}/.local/bin/workkit`, '#!/usr/bin/env bash\n')
+  if (opts.setup !== false) files.set(`${HOME}/.local/bin/workkit`, '#!/usr/bin/env node\n')
   const world: any = {
     env, files, mtimes, kit, kitMtimes, unreadable, repos, now,
     store: new Map<string, unknown>(Object.entries(opts.store || {})),
@@ -374,16 +374,17 @@ export const mkWorld = (on: any, opts: any = {}) => {
     }
     const script = argv.find((a) => /(standards|workkit|changelog\/lint)\.(sh|js)$/.test(a)) || ''
     if (script.endsWith('changelog/lint.js')) return ok(world.lint.stdout || '', world.lint.stderr || '', world.lint.exitCode)
-    if (script.endsWith('standards.sh')) {
+    if (script.endsWith('standards.js')) {
       if (argv.includes('--state')) return ok(`${world.standards.state}\n`)
       if (argv.includes('--announce')) {
         const root = argv[argv.length - 1]
-        return ok(`this repo is not in the issue workflow; say the word to enable it (bash ${script} --enable ${root}), or decline and it will not ask again (--decline).\n`)
+        // The offer names the shell starter, which stays in this stage.
+        return ok(`this repo is not in the issue workflow; say the word to enable it (bash ${script.replace(/\.js$/, '.sh')} --enable ${root}), or decline and it will not ask again (--decline).\n`)
       }
       const r = world.standards.heal
       return ok(r.stdout || '', r.stderr || '', r.exitCode ?? 0)
     }
-    if (script.endsWith('workkit.sh')) {
+    if (script.endsWith('workkit.js')) {
       const r = world.standards.update
       return ok(r.stdout || '', r.stderr || '', r.exitCode ?? 0)
     }

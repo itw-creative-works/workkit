@@ -1,7 +1,6 @@
 // The tower's voice: a glyph per outcome, the `task:` in bold, nothing else on
-// the line. Each line is workflow/lib/voice.js's, the Node half of the one
-// contract `workflow/lib/voice.sh` holds for the shell (workflow/README.md
-// § Output): its color gate, palette, levels and `task:` split.
+// the line. Each line is workflow/lib/voice.js's, the kit's one voice
+// (workflow/README.md § Output): its color gate, palette, levels and `task:` split.
 //
 // Usage:
 //   const log = createLogger();

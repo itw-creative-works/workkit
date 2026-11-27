@@ -1,18 +1,15 @@
 // Tests for workflow/lib/spin.js, the Node spinner: `spin(message, run)` around a real child program, in a node of
 // its own, since where the frames land and when the line clears is the wiring under test. The driver and the
-// held call are test/lib/spin-call.js; the shell twin of the frames and the one line is test/hooks/twins.test.js.
+// held call are test/lib/spin-call.js; the frames and the one line at each voice are test/hooks/twins.test.js's.
 
 const fs = require('fs');
+const path = require('path');
 const { describe, test, expect, mkTmp } = require('../lib/harness');
-const { IS_WINDOWS, SYSTEM_PATH, homeEnv } = require('../lib/platform');
+const { SYSTEM_PATH, homeEnv } = require('../lib/platform');
 const { PTY, atTerminal } = require('../lib/identity');
 const {
   driveSpin, spinArgs, framesIn, CLEAR, ANSWER, MESSAGE,
 } = require('../lib/spin-call');
-
-// The skips of the two command log cases: one only Windows can answer, one only it cannot.
-const NO_HELD_FDS = 'a native node on Windows inherits only 0, 1 and 2 from Git Bash, so no command log\'s 8 reaches it';
-const OWN_FDS = 'off Windows a node opens its own 7, 8 and 9, which read as a command log\'s';
 
 /** A scratch home's env with no spin, quiet or color setting carried in, <vars> beside it. */
 const worldEnv = (vars = {}) => homeEnv(mkTmp('spin-home-'), { PATH: SYSTEM_PATH, ...vars });
@@ -63,18 +60,36 @@ describe('spin: the frames forced', () => {
     expect(res.status, 'and it exits 0').toBe(0);
   });
 
-  test('under a command log holding 7, 8 and 9, the frames and the clear go to 8 and none reach 2', { skip: IS_WINDOWS && NO_HELD_FDS }, async () => {
-    const res = await driveSpin('call', { env: worldEnv({ WORKKIT_SPIN: '1' }), frames: 2, commandLog: true });
-    expect(res.held.endsWith(CLEAR), `8 ends on the clear, got: ${JSON.stringify(res.held)}`).toBe(true);
-    onlyFrames(res.held.slice(0, -CLEAR.length), 2, '8');
+});
+
+describe('spin: under a logged command, the terminal by name', () => {
+  /** A logged command's variables: the raw log's path, and the terminal device <terminal> names when given. */
+  const loggedEnv = (vars = {}) => worldEnv({ WK_COMMAND_LOGGED: path.join(mkTmp('spin-log-'), 'setup.log.raw'), ...vars });
+
+  test('WK_COMMAND_TERMINAL naming a file: the frames and the clear land in that file, and none reach stderr', async () => {
+    const terminal = path.join(mkTmp('spin-device-'), 'tty');
+    const res = await driveSpin('call', { env: loggedEnv({ WORKKIT_SPIN: '1' }), frames: 2, terminal });
+    expect(res.drawn.endsWith(CLEAR), `the device ends on the clear, got: ${JSON.stringify(res.drawn)}`).toBe(true);
+    onlyFrames(res.drawn.slice(0, -CLEAR.length), 2, 'the device');
     expect(res.stderr, 'stderr, the stream the log reads, holds the caller\'s line alone').toBe('after\n');
+    expect(res.stdout, 'stdout is the call\'s').toBe(ANSWER);
   });
 
-  test('on Windows, under a command log whose 7, 8 and 9 never reach the node, the frames and the clear stay on 2', { skip: !IS_WINDOWS && OWN_FDS }, async () => {
-    const res = await driveSpin('call', { env: worldEnv({ WORKKIT_SPIN: '1', WK_COMMAND_LOGGED: '1' }), frames: 2 });
+  test('WK_COMMAND_TERMINAL unset: the frames forced by WORKKIT_SPIN=1 and the clear go to stderr', async () => {
+    const res = await driveSpin('call', { env: loggedEnv({ WORKKIT_SPIN: '1' }), frames: 2 });
     const tail = `${CLEAR}after\n`;
     expect(res.stderr.endsWith(tail), `the clear, then the caller's line, got: ${JSON.stringify(res.stderr)}`).toBe(true);
     onlyFrames(res.stderr.slice(0, -tail.length), 2, 'stderr');
+  });
+
+  test('a WK_COMMAND_TERMINAL that does not open draws as if unset: forced frames on stderr, else the one line there', async () => {
+    const terminal = path.join(mkTmp('spin-device-'), 'no-such-folder', 'tty');
+    const forced = await driveSpin('call', { env: loggedEnv({ WORKKIT_SPIN: '1', WK_COMMAND_TERMINAL: terminal }), frames: 2 });
+    const tail = `${CLEAR}after\n`;
+    expect(forced.stderr.endsWith(tail), `forced: the clear, then the caller's line, got: ${JSON.stringify(forced.stderr)}`).toBe(true);
+    onlyFrames(forced.stderr.slice(0, -tail.length), 2, 'forced');
+    const plain = await driveSpin('call', { env: loggedEnv({ WK_COMMAND_TERMINAL: terminal }) });
+    expect(plain.stderr, 'unforced and no terminal: the one line, then the caller\'s').toBe(`⏳ ${MESSAGE}...\nafter\n`);
   });
 });
 
