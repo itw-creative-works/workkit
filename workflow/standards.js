@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { userDir } = require('./user-dir');
 const { repoRoot } = require('./lib/git');
-const { nativePath, claudeHome } = require('./lib/platform');
+const { nativePath, claudeHome, unreadPathStop } = require('./lib/platform');
 const { info, skip, warn } = require('./lib/voice');
 
 // A step file is loaded only when the mode in hand calls it, as --state runs on
@@ -232,5 +232,5 @@ const main = async (argv) => {
 
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
+  main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }

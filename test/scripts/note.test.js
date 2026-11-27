@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  NO_RC, shellPath, gitPath, homeEnv, nodeEnv, stubTool, basePathWithout,
+  IS_WINDOWS, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, nodeEnv, stubTool, basePathWithout,
   systemPathWith, joinPath, spawnBash, spawnSync, skipWithoutByteArgv,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
@@ -355,6 +355,23 @@ describe('note.js: usage', () => {
     expect(code, 'exit 1').toBe(1);
     expect(err.includes('usage: workkit note <text...>'), `usage on stderr, got: ${err}`).toBeTruthy();
     expect(!fs.existsSync(t.repoCapture), 'no capture file created').toBeTruthy();
+    cleanup(t.dir);
+  });
+});
+
+describe('note.js: a HOME no cygpath can read', () => {
+  // homeEnv already hands HOME in the shell's spelling. PATH is node's folder
+  // alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a HOME in the shell\'s spelling with no cygpath on PATH: the one line naming HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a home is never handed to cygpath',
+  }, () => {
+    const t = makeTree();
+    const home = shellPath(t.home);
+    const { code, out, err } = runScript(t.repo, ['a thought'], t, { PATH: NODE_DIR });
+    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one line').toBe(`workkit: cannot read HOME (${home}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(err), `no stack line, got: ${err}`).toBe(false);
     cleanup(t.dir);
   });
 });

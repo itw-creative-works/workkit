@@ -127,10 +127,13 @@ describe('markers: shellDirOf and tempDirOf, the folder Git Bash means by a path
     expect(markers().tempDirOf({ TMPDIR: 'E:/scratch', ...WIN }, 'win32'), 'forward slashes').toBe('E:/scratch');
   });
 
-  test('shellEnvOf: TMPDIR, WORKFLOW_HOME and HOME are the folders they name; an unset one stays unset', () => {
-    const got = markers().shellEnvOf({ TMPDIR: '/tmp/cg-x', WORKFLOW_HOME: '/c/Users/x/wk', HOME: '/c/Users/x', X: '1', ...WIN }, 'win32');
+  test('shellEnvOf: TMPDIR, WORKFLOW_HOME, WORKFLOW_CLAUDE_HOME and HOME are the folders they name; an unset one stays unset', () => {
+    const got = markers().shellEnvOf({
+      TMPDIR: '/tmp/cg-x', WORKFLOW_HOME: '/c/Users/x/wk', WORKFLOW_CLAUDE_HOME: '/tmp/ch', HOME: '/c/Users/x', X: '1', ...WIN,
+    }, 'win32');
     expect(got.TMPDIR, 'TMPDIR').toBe('D:/a/_temp/cg-x');
     expect(got.WORKFLOW_HOME, 'WORKFLOW_HOME').toBe('C:/Users/x/wk');
+    expect(got.WORKFLOW_CLAUDE_HOME, 'WORKFLOW_CLAUDE_HOME').toBe('D:/a/_temp/ch');
     expect(got.HOME, 'HOME').toBe('C:/Users/x');
     expect(got.X, 'the rest rides along').toBe('1');
     const unset = markers().shellEnvOf({ ...WIN }, 'win32');

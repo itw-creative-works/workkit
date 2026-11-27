@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, run, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv, nodeHomeEnv, samePath, spawnBash,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv, nodeHomeEnv, samePath, spawnBash,
 } = require('../../lib/platform');
 const { WORKFLOW_DIR, SCRIPT, cleanup } = require('./helpers');
 
@@ -41,17 +41,20 @@ const machineEnv = (machine, starter) => {
 
 // The mode as a cloud bootstrap runs it: from a folder that is no git repo,
 // with stdin closed, so any prompt or wizard step would have no one to answer.
-// `starter` is `node` (standards.js with the running node) or `bash` (standards.sh).
-const runCommandLink = (machine, starter = 'node') => {
+// `starter` is `node` (standards.js with the running node) or `bash` (standards.sh);
+// `over` is laid over the machine's env last.
+const runCommandLink = (machine, starter = 'node', over = {}) => {
   const cwd = mkTmp('wf-std-');
-  const env = machineEnv(machine, starter);
+  const env = { ...machineEnv(machine, starter), ...over };
   const res = starter === 'node'
     ? run(process.execPath, [ENGINE, '--command-link'], { cwd, env })
     : spawnBash([...NO_RC, shellPath(SCRIPT), '--command-link'], {
       cwd, env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
   cleanup(cwd);
-  return { code: res.status, output: `${res.stdout || ''}${res.stderr || ''}` };
+  const out = res.stdout || '';
+  const err = res.stderr || '';
+  return { code: res.status, out, err, output: `${out}${err}` };
 };
 
 /** Whether <link> resolves to the kit's workflow/workkit.js. */
@@ -100,6 +103,23 @@ describe('standards.js: --command-link', () => {
     expect(!fs.existsSync(path.join(machine.claude, 'workkit')),
       `no ~/.claude/workkit engine link appears, got: ${output}`).toBeTruthy();
     expect(fs.readdirSync(path.dirname(machine.link)).join(' '), 'and ~/.local/bin holds the command only').toBe('workkit');
+    cleanup(machine.root);
+  });
+});
+
+describe('standards.js --command-link: a HOME no cygpath can read', () => {
+  // The mode reads HOME through kitOf before any repo or git. PATH is node's
+  // folder alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a HOME in the shell\'s spelling with no cygpath on PATH: the one line naming HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a home is never handed to cygpath',
+  }, () => {
+    const machine = mkMachine();
+    const home = shellPath(machine.home);
+    const { code, out, err } = runCommandLink(machine, 'node', { HOME: home, PATH: NODE_DIR });
+    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one line').toBe(`workkit: cannot read HOME (${home}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(err), `no stack line, got: ${err}`).toBe(false);
     cleanup(machine.root);
   });
 });

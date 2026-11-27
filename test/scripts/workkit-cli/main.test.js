@@ -10,7 +10,7 @@ const {
   describe, test, expect, mkTmp, run,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, joinPath, jsPath, samePath, stubToolJs, skipWithoutFileLink, spawn,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, joinPath, jsPath, shellPath, samePath, stubToolJs, skipWithoutFileLink, spawn,
 } = require('../../lib/platform');
 const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const {
@@ -198,6 +198,21 @@ describe('workkit: a kit missing one of the command\'s own files', () => {
     const help = runCli(world, ['help'], { script });
     expect(help.code, `help exits 0, got: ${help.said}`).toBe(0);
     expect(help.out, 'and prints the help').toBe(HELP);
+  });
+});
+
+describe('workkit: a HOME no cygpath can read', () => {
+  // PATH is node's folder alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a HOME in the shell\'s spelling with no cygpath on PATH: the one line naming HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a home is never handed to cygpath',
+  }, () => {
+    const world = mkWorld();
+    const home = shellPath(world.home);
+    const { code, out, err } = runCli(world, ['help'], { env: { HOME: home, PATH: NODE_DIR } });
+    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one line').toBe(`workkit: cannot read HOME (${home}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(err), `no stack line, got: ${err}`).toBe(false);
   });
 });
 

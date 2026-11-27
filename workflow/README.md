@@ -291,6 +291,7 @@
   - A verb with subcommands follows one rule: `workkit <verb> <sub>` runs `<verb>/<sub>.js`, but `checkpoint safe`, which runs `checkpoint/mark.js` (`workkit/verbs.js`).
     - An unknown or missing subcommand exits 1 with one line naming the ones there are.
   - A kit missing one of the command's own files ends with `workkit: the kit is incomplete: <path> is missing` and 1. A program it starts that is missing gives the line of the step that guards it, naming the `.js` file (`site: publish.js is missing at <path>; the kit is incomplete`), else Node's own `Cannot find module` error and 1.
+    - A path it cannot read on Windows ends with `unreadPathStop`'s one line (the `lib/platform.js` row) and 1.
     - The programs of each `<verb> <sub>` and of `enable`, `decline`, `heal`, `state`, `prove`, `supervise`, `watch` and `note` are guarded in the routing table: `<verb>: <file>.js is missing at <path>; the kit is incomplete` (`<verb> <sub>:` for a subcommand) as an error, and 1.
   - A reader that closes early (`workkit log | head`) ends the command quietly with 141.
   - The command starts loud whatever its caller set (`QUIET=0`); `update --auto` quiets itself.
@@ -907,13 +908,14 @@
   - `poll`'s `check` may be async; its countdown draws through `startSpinner` (`lib/spin.js`), under the rule the frames follow.
   - Its callers: home's setup question (`home/wizard.js`), the categories' walkthrough (`home/services.js`), and the command's steps (`workkit/kit.js`, `install.js`, `site.js`, `secrets.js`, `token.js` and `identity.js`).
 - `lib/platform.js`:
-  - `nativePath(path, { platform })`, `inPluginCache(kitDir)` and `cloneOutranks(kitDir, linkedDir)`: the Node twins of `wk_native_path` (`lib/platform.sh`), and the plugin cache rule and the rule that a clone outranks it.
+  - `nativePath(path, { platform, variable })`, `inPluginCache(kitDir)` and `cloneOutranks(kitDir, linkedDir)`: the Node twins of `wk_native_path` (`lib/platform.sh`), and the plugin cache rule and the rule that a clone outranks it.
     - `inPluginCache` is whether a kit is the workkit plugin's copy in Claude's plugin cache: its manifest names `workkit`, and its physical path lies under the physical `<claude home>/plugins/cache/`.
     - `cloneOutranks` is that, and the folder a machine-wide link names a workkit clone (`isKitCheckout`), so a cached kit leaves the link as current. The engine's address, the git hooks step, the command's links, `doctor` and the job installer read them; the setup pester keeps its own read over the hooks module's io (`hooks/mods/standards.js`).
-  - `nativePath` is the path unchanged off Windows. `platform` is the system it spells for, read once at load by default.
+  - `nativePath` is the path unchanged off Windows. `platform` is the system it spells for, read once at load by default; `variable` is the variable the path was read from, which the stop line names.
     - On Windows a path that starts with a drive letter, `:` and a separator, or with two separators, only has each `\` made `/`, with no program started, so a task's PATH without Git Bash still answers.
     - Any other path goes through `cygpath -m`; a failed `cygpath` throws, since an empty roster key is worse than none.
-  - `claudeHome()` is the claude home's one Node reader, read at the call: `WORKFLOW_CLAUDE_HOME`, else `<HOME>/.claude` with `HOME` in its native spelling (`nativePath`), else `os.homedir()`.
+      - The error carries the code `WK_UNREAD_PATH`, and `unreadPathStop(err)` is the stop the command, `note.js` and `standards.js` make of it: one line on stderr naming the variable, its value and the fix (start from Git Bash, or set the variable to a drive path), then 1; a path read from no variable prints the path alone and only the Git Bash fix; any other error is thrown on.
+  - `claudeHome({ platform })` is the claude home's one Node reader, read at the call: `WORKFLOW_CLAUDE_HOME`, else `<HOME>/.claude`, else `os.homedir()`, each in its native spelling (`nativePath`); the command's kit reads `WORKFLOW_CLAUDE_HOME` the same way.
     - It reads no `hooks/` module, since `standards.js` runs from a copy of `workflow/` alone.
     - `inPluginCache` and the heal's run object (`standards.js`) both call it.
   - `physicalDir(dir)` is a folder's physical path, or null when it is not one: the read `inPluginCache` makes of both folders, and the installer's of the home and the engine link (`jobs/install.js`).

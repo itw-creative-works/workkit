@@ -69,9 +69,11 @@ const kitOf = (overrides = {}) => {
   const env = overrides.env ? { ...process.env, ...overrides.env } : process.env;
   const home = machineHome(env);
   const binDir = `${home}/.local/bin`;
-  const claudeHome = env.WORKFLOW_CLAUDE_HOME || `${home}/.claude`;
+  const claudeHome = env.WORKFLOW_CLAUDE_HOME
+    ? nativePath(env.WORKFLOW_CLAUDE_HOME, { variable: 'WORKFLOW_CLAUDE_HOME' })
+    : `${home}/.claude`;
   // The machine folder under that home; its files keep their one spelling in hooks/mods/log.js.
-  const machineDir = nativePath(userDir(env.WORKFLOW_HOME, home));
+  const machineDir = nativePath(userDir(env.WORKFLOW_HOME, home), { variable: 'WORKFLOW_HOME' });
   const inMachineDir = { WORKFLOW_HOME: machineDir };
   const base = {
     env,

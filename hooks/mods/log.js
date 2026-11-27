@@ -17,12 +17,22 @@ export function pad(n) {
 }
 
 /**
- * The home folder: HOME, else USERPROFILE (Windows), else nothing.
+ * The variable holding the home folder, the order's one home: HOME, else
+ * USERPROFILE (Windows), else none.
+ * @param {object} env the variables the module read
+ * @returns {string|undefined} 'HOME', 'USERPROFILE', or undefined when neither is set
+ */
+export function homeVariableOf(env) {
+  return ['HOME', 'USERPROFILE'].find((name) => env[name]);
+}
+
+/**
+ * The home folder: the value of homeVariableOf's variable, else nothing.
  * @param {object} env the variables the module read
  * @returns {string}
  */
 export function homeOf(env) {
-  return env.HOME || env.USERPROFILE || '';
+  return env[homeVariableOf(env)] ?? '';
 }
 
 /**

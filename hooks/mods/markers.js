@@ -96,14 +96,14 @@ export function sessionPath(current, shimDir, platform) {
 
 /**
  * The variables with every folder the shell spelled translated (shellDirOf):
- * TMPDIR, `/tmp` when unset, and WORKFLOW_HOME and HOME where set.
+ * TMPDIR, `/tmp` when unset, and WORKFLOW_HOME, WORKFLOW_CLAUDE_HOME and HOME where set.
  * @param {object} env the variables as read
  * @param {string} platform `win32` on Windows
  * @returns {object}
  */
 export function shellEnvOf(env, platform) {
   const out = { ...env, TMPDIR: tempDirOf(env, platform) };
-  for (const name of ['WORKFLOW_HOME', 'HOME']) {
+  for (const name of ['WORKFLOW_HOME', 'WORKFLOW_CLAUDE_HOME', 'HOME']) {
     if (env[name]) out[name] = shellDirOf(env[name], env, platform);
   }
   return out;

@@ -504,6 +504,13 @@ describe('twins: the machine folder, wk_user_dir against userDir in hooks/mods/l
     expect(userDirOf({ WORKFLOW_HOME: '', HOME: '/w/home' }), 'an empty WORKFLOW_HOME is none').toBe('/w/home/.workkit');
     expect(userDirOf({ USERPROFILE: 'C:/Users/w' }), 'no HOME: the Windows home').toBe('C:/Users/w/.workkit');
   });
+
+  test('log.js homeVariableOf names the home\'s variable: HOME over USERPROFILE, USERPROFILE alone, else none', () => {
+    const { homeVariableOf } = mods('log');
+    expect(homeVariableOf({ HOME: '/w/home', USERPROFILE: 'C:/Users/w' }), 'both set').toBe('HOME');
+    expect(homeVariableOf({ USERPROFILE: 'C:/Users/w' }), 'USERPROFILE alone').toBe('USERPROFILE');
+    expect(homeVariableOf({}), 'neither set').toBe(undefined);
+  });
 });
 
 describe('the CHANGELOG test, isChangelog in hooks/mods/changelog-guard.js', () => {
@@ -611,6 +618,34 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
     const said = await underEnv({ PATH: pathWith(bin) }, () => machineHome({ HOME: '/c/Users/x' }, { platform: 'win32' }));
     expect(readArgv(argvLog), 'cygpath ran once, on the HOME given').toEqual([['-m', '/c/Users/x']]);
     expect(said).toBe('C:/Users/x');
+  });
+
+  test('claudeHome reads a Git Bash WORKFLOW_CLAUDE_HOME through the same rule: the native folder, cygpath\'s answer', async () => {
+    const { claudeHome } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
+    const bin = mkTmp('twins-cygpath-');
+    const argvLog = path.join(bin, 'cygpath-argv.log');
+    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}\nprocess.stdout.write('C:/Users/x/.claude\\n');`);
+    const said = await underEnv({ PATH: pathWith(bin), WORKFLOW_CLAUDE_HOME: '/c/Users/x/.claude' }, () => claudeHome({ platform: 'win32' }));
+    expect(readArgv(argvLog), 'cygpath ran once, on the folder given').toEqual([['-m', '/c/Users/x/.claude']]);
+    expect(said).toBe('C:/Users/x/.claude');
+  });
+
+  test('the stop helper, unreadPathStop: a Git Bash HOME with no cygpath to read it is one line naming HOME and the fix, 1, no stack', () => {
+    const dir = mkTmp('twins-unread-');
+    const entry = path.join(dir, 'entry.js');
+    fs.writeFileSync(entry, [
+      `const { unreadPathStop } = require(${jsPath(path.join(KIT, 'workflow', 'lib', 'platform.js'))});`,
+      `const { machineHome } = require(${jsPath(path.join(KIT, 'workflow', 'lib', 'machine-home.js'))});`,
+      'try {',
+      "  machineHome({ HOME: '/c/Users/x' }, { platform: 'win32' });",
+      '} catch (err) {',
+      '  process.exitCode = unreadPathStop(err);',
+      '}',
+    ].join('\n'));
+    const res = run(process.execPath, [entry], { env: { ...process.env, PATH: EMPTY_PATH } });
+    expect(res.status, `exit 1, got: ${res.output}`).toBe(1);
+    expect(res.stderr, 'the one line').toBe('workkit: cannot read HOME (/c/Users/x): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n');
+    expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
   });
 });
 

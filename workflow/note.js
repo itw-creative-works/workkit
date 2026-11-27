@@ -13,7 +13,7 @@ const { kitOf, homeRun } = require('./workkit/kit');
 const { ok, warn, error } = require('./lib/voice');
 const { writeErr } = require('./lib/say');
 const { spin } = require('./lib/spin');
-const { nativePath, physicalDir } = require('./lib/platform');
+const { nativePath, physicalDir, unreadPathStop } = require('./lib/platform');
 const { isFile } = require('./lib/lock');
 const { readOrNull } = require('./lib/read');
 const { onPath, spawnSync } = require('./lib/run');
@@ -177,7 +177,11 @@ const note = (kit, ...words) => {
 
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  process.exitCode = note(kitOf(), ...process.argv.slice(2));
+  try {
+    process.exitCode = note(kitOf(), ...process.argv.slice(2));
+  } catch (err) {
+    process.exitCode = unreadPathStop(err);
+  }
 }
 
 module.exports = {

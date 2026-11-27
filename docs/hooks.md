@@ -424,7 +424,7 @@
   - `CLAUDE_CODE_REMOTE` (the cloud session flag the setup pester reads);
   - and `PATH`, which `classic.SessionStart` sets again through `$.env.set` with the `git` shim's folder first.
   - `claude plugin validate .` lists them, with the ten events and every `$` call.
-  - Each folder the shell spelled (`TMPDIR`, `/tmp` when unset, `WORKFLOW_HOME` and `HOME`) is read as the folder Git Bash means by it (`shellEnvOf` in `hooks/mods/markers.js`).
+  - Each folder the shell spelled (`TMPDIR`, `/tmp` when unset, `WORKFLOW_HOME`, `WORKFLOW_CLAUDE_HOME` and `HOME`) is read as the folder Git Bash means by it (`shellEnvOf` in `hooks/mods/markers.js`).
     - On Windows `/tmp/<rest>` is the Windows temp folder plus the rest: the first native `TMP` or `TEMP`, else `%LOCALAPPDATA%\Temp`.
     - On Windows `/c/<rest>` is `C:/<rest>`.
     - So the markers a script wrote and the machine folder's other files are where the module looks.

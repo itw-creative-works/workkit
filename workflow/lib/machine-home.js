@@ -7,7 +7,7 @@
 
 const os = require('os');
 const { nativePath } = require('./platform');
-const { homeOf } = require('../../hooks/mods/log.js');
+const { homeOf, homeVariableOf } = require('../../hooks/mods/log.js');
 
 /**
  * The home: HOME, else USERPROFILE, else the account's home folder, so a start
@@ -17,6 +17,8 @@ const { homeOf } = require('../../hooks/mods/log.js');
  * @param {{ platform?: string }} [context] - the platform the spelling is for, nativePath's seam
  * @returns {string}
  */
-const machineHome = (env = process.env, context = {}) => nativePath(homeOf(env) || os.homedir(), context);
+const machineHome = (env = process.env, context = {}) => nativePath(homeOf(env) || os.homedir(), {
+  ...context, variable: homeVariableOf(env),
+});
 
 module.exports = { machineHome };

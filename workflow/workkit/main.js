@@ -8,7 +8,7 @@
 
 const path = require('path');
 const { writeErr } = require('../lib/say');
-const { nativePath } = require('../lib/platform');
+const { nativePath, unreadPathStop } = require('../lib/platform');
 
 // The commands with a file of their own here, and the function each runs;
 // every other listed word is the routing table's (verbs.js).
@@ -112,7 +112,8 @@ const endOnClosedPipe = () => {
  * command to the command log, else route it here.
  * @param {string[]} argv the command's arguments
  * @returns {Promise<number>} the code the command ends with; 1 with one line
- *   for a kit missing one of the command's own files; 141 when its reader closed early
+ *   for a kit missing one of the command's own files or a path nativePath
+ *   could not read; 141 when its reader closed early
  */
 const main = async (argv) => {
   // The command starts loud whatever its caller set; update --auto quiets itself.
@@ -123,7 +124,7 @@ const main = async (argv) => {
   } catch (err) {
     if (err && err.code === 'EPIPE') return PIPE_CLOSED;
     const missing = missingOf(err);
-    if (missing === null) throw err;
+    if (missing === null) return unreadPathStop(err);
     writeErr(`workkit: the kit is incomplete: ${nativePath(missing)} is missing\n`);
     return 1;
   }

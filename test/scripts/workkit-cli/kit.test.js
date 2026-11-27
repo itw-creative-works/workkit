@@ -116,6 +116,18 @@ describe('kitOf: the fields of a fixed env', () => {
     expect(kit.engineLink, 'engineLink').toBe(`${native}/.claude/workkit`);
     expect(kit.userDir, 'userDir, the machine folder').toBe(`${native}/.workkit`);
   });
+
+  // The same `/tmp/...` spelling, handed as the Claude home this time.
+  test('a WORKFLOW_CLAUDE_HOME in the shell\'s spelling is the same folder: the Claude home and the engine link are its native ones', {
+    skip: !IS_WINDOWS && 'off Windows the shell spells a folder as Node reads it',
+  }, () => {
+    const home = mkTmp('wk-kit-home-');
+    const claude = mkTmp('wk-kit-claude-');
+    const native = claude.replace(/\\/g, '/');
+    const [kit] = kitsUnder({ HOME: home, WORKFLOW_CLAUDE_HOME: shellPath(claude), PATH: SYSTEM_PATH }, {});
+    expect(kit.claudeHome, 'claudeHome, the native folder in / separators').toBe(native);
+    expect(kit.engineLink, 'engineLink').toBe(`${native}/workkit`);
+  });
 });
 
 describe('nodeRun: Ctrl-C during a program', { skip: skipWithoutCaughtSignal() }, () => {
