@@ -8,7 +8,7 @@ const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which, joinPath, stubToolJs, spawnSync,
+  IS_WINDOWS, NODE_DIR, WINDOWS_CSC, shellPath, gitPath, which, joinPath, stubToolJs, spawnSync, nodeTempEnv,
 } = require('../../lib/platform');
 const {
   isCall, fmtCalls, recordArgvJs, readArgv,
@@ -437,7 +437,7 @@ describe('workkit setup: the schedule on each system', () => {
     const sched = mkScheduleKit(`${LABEL} → not installed`);
     const gone = path.join(world.root, 'no-tmp');
     const { code, said } = inNode(world, {
-      engine: path.join(sched.kit, 'workflow'), file: 'workkit/schedule.js', fn: 'installCron', kit: { platform: 'darwin' }, env: { TMPDIR: gone, TMP: gone, TEMP: gone },
+      engine: path.join(sched.kit, 'workflow'), file: 'workkit/schedule.js', fn: 'installCron', kit: { platform: 'darwin' }, env: nodeTempEnv(gone),
     });
     expect(code, `exit 0, got: ${said}`).toBe(0);
     const installer = gitPath(path.join(sched.kit, 'jobs', 'install.js'));

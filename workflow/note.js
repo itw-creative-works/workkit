@@ -18,7 +18,6 @@ const { isFile } = require('./lib/lock');
 const { readOrNull } = require('./lib/read');
 const { onPath, spawnSync } = require('./lib/run');
 const { towerDir, WORKKIT_DIR } = require('./user-dir');
-const { userDirOf } = require('../hooks/mods/log.js');
 const { settingsOptedIn } = require('../hooks/mods/gate.js');
 const { repoSettingsFile } = require('../hooks/mods/settings.js');
 const { CAPTURE_PATH } = require('../hooks/mods/changed.js');
@@ -50,7 +49,7 @@ const usage = () => {
 const participating = (kit, dir) => {
   if (!fs.existsSync(path.join(dir, '.git'))) return false;
   const stateDir = physicalDir(path.join(dir, WORKKIT_DIR));
-  if (stateDir !== null && stateDir === physicalDir(userDirOf(kit.env))) return false;
+  if (stateDir !== null && stateDir === physicalDir(kit.userDir)) return false;
   return settingsOptedIn(readOrNull(repoSettingsFile(dir)));
 };
 
@@ -169,7 +168,7 @@ const note = (kit, ...words) => {
   // home.js's ready, not a `.git`, so a foreign repo at that path is refused.
   if (homeRun(kit, ['ready'], { stdio: 'inherit' }).code === 0) return homeIssue(kit, text);
   if (chomp(homeRun(kit, ['state']).stdout) === 'other') {
-    error(`${nativePath(towerDir(userDirOf(kit.env)))} is not the home repo's clone; move it aside, then \`workkit setup\`; captures outside a project become issues on the home repo`);
+    error(`${nativePath(towerDir(kit.userDir))} is not the home repo's clone; move it aside, then \`workkit setup\`; captures outside a project become issues on the home repo`);
     return 1;
   }
   error('there is no home yet; `workkit setup` creates the home repo, and captures outside a project become issues on it');

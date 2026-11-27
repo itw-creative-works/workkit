@@ -9,7 +9,7 @@ const { describe, test, expect, alive, readPid } = require('../../lib/harness');
 const {
   recordArgv, recordArgvJs, readArgv, isCall, fmtCalls,
 } = require('../../lib/argv-log');
-const { shellPath, stubToolJs, jsPath } = require('../../lib/platform');
+const { gitPath, stubToolJs, jsPath } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, cleanup, writeStub, mkWorld, skipWithoutPty, runCli, seedSettings, inNode, mkKit, SLUG,
   HOME, mkHomeWorld,
@@ -470,7 +470,7 @@ describe('workkit: the cloud secrets in the automatic and the report paths', () 
     const world = mkHomeWorld({ binOnPath: true });
     const pidFile = path.join(world.root, 'gh.pid');
     writeStub(path.join(world.root, 'bin', 'gh'), [
-      `if [[ "$1" == 'secret' && "$2" == 'list' ]]; then echo $$ > '${shellPath(pidFile)}'; exec sleep 60; fi`,
+      `if [[ "$1" == 'secret' && "$2" == 'list' ]]; then echo $$ > '${gitPath(pidFile)}'; exec sleep 60; fi`,
       'exit 0',
     ]);
     // Five seconds: under a full parallel wave the stub's shell can take past

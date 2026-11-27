@@ -33,11 +33,7 @@ const mkPackages = (spec = {}) => {
  * publish's copy lands in that home's proof folder.
  */
 const mkPackagesRepo = (spec, extra = {}) => {
-  const w = mkRepo('pplan-', { ...packageFiles(spec), ...extra });
-  // Git for Windows' system config turns autocrlf on and the scratch home hides CI's global off,
-  // so a publish's copy reads back HEAD's \n on every platform.
-  w.git('config', 'core.autocrlf', 'false');
-  return w;
+  return mkRepo('pplan-', { ...packageFiles(spec), ...extra });
 };
 
 // The stand-in's program: `cfg` is its options as JSON, `log` the argv log.

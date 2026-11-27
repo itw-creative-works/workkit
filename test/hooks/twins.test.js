@@ -602,6 +602,16 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
     expect(readArgv(argvLog), 'cygpath ran once, asked for the mixed form').toEqual([['-m', '/c/Users/x']]);
     expect(said).toBe('D:/from/cygpath');
   });
+
+  test('machineHome reads a Git Bash HOME through the same rule: the native home, cygpath\'s answer', async () => {
+    const { machineHome } = require(path.join(KIT, 'workflow', 'lib', 'machine-home.js'));
+    const bin = mkTmp('twins-cygpath-');
+    const argvLog = path.join(bin, 'cygpath-argv.log');
+    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}\nprocess.stdout.write('C:/Users/x\\n');`);
+    const said = await underEnv({ PATH: pathWith(bin) }, () => machineHome({ HOME: '/c/Users/x' }, { platform: 'win32' }));
+    expect(readArgv(argvLog), 'cygpath ran once, on the HOME given').toEqual([['-m', '/c/Users/x']]);
+    expect(said).toBe('C:/Users/x');
+  });
 });
 
 /** A new folder at `dir`, a git repo with `origin` as its remote, or with none when `origin` is undefined. */

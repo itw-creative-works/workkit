@@ -5,15 +5,15 @@
 // recorded here is one.
 
 const fs = require('fs');
-const { shellPath } = require('./platform');
+const { gitPath } = require('./platform');
 
 const NUL = '\0';
 const RS = '\x1e';
 
 /**
- * Bash line that appends the current invocation's argv to `logFile`. The one
- * place the path is spelled for a shell; a shell-spelled path comes back
- * unchanged. The path must be shell-safe, which a mkdtemp path is.
+ * Bash line that appends the current invocation's argv to `logFile`, spelled in
+ * git's drive form (gitPath), which no Git Bash mount moves when a world moves
+ * TEMP. The path must be shell-safe, which a mkdtemp path is.
  *
  * One printf, so one O_APPEND write while the record fits bash's stdout buffer
  * (1024 bytes on macOS): racing stubs cannot interleave their fields. A call
@@ -22,7 +22,7 @@ const RS = '\x1e';
  * @param {string} logFile - absolute path to append to
  * @returns {string} bash source, one line
  */
-const recordArgv = (logFile) => `printf '%s\\0' "$@" $'\\036' >> "${shellPath(logFile)}"`;
+const recordArgv = (logFile) => `printf '%s\\0' "$@" $'\\036' >> "${gitPath(logFile)}"`;
 
 /**
  * The Node twin of `recordArgv`: one JavaScript statement that appends one

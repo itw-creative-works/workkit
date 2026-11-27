@@ -38,7 +38,7 @@ const seedRepo = seeded((seed, { check, files }) => {
   for (const [rel, body] of Object.entries(files)) write(path.join(repo, rel), body);
   const env = homeEnv(mkTmp('supervise-git-home-'), { PATH: process.env.PATH });
   for (const args of [['init', '-q'], ['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test'],
-    ['add', '-A'], ['commit', '-q', '-m', 'seed']]) {
+    ['config', 'core.autocrlf', 'false'], ['add', '-A'], ['commit', '-q', '-m', 'seed']]) {
     const res = run('git', args, { cwd: repo, env });
     if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
   }

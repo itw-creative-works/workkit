@@ -12,7 +12,7 @@ const {
   describe, test, expect, SPAWN_DEADLINE, alive, pidIn,
 } = require('../lib/harness');
 const {
-  BASH, jsPath, gitPath, joinPath, spawnSync, spawn, skipWithoutModes, skipWithoutCaughtSignal,
+  BASH, jsPath, gitPath, joinPath, spawnSync, spawn, skipWithoutModes, skipWithoutCaughtSignal, nodeTempEnv,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { skipWithoutNpm } = require('../lib/core-repo');
@@ -48,6 +48,11 @@ const TAP_BLOCK = ['# tests 1', '# suites 0', '# pass 1', '# fail 0', '# cancell
 // A test file's opening lines printing each of `texts` to stdout as it stands.
 const PRINTS = (texts) => texts.map((t) => `console.log(${JSON.stringify(t)});\n`).join('');
 
+// Every world is a node's (`forNode`): its runs read the home natively and its
+// tmp/ as their temp folder under every name, so the TMPDIR checks read the
+// folder a run wrote to on every platform; no path a run hands bash rides /tmp.
+const FOR_NODE = { forNode: true };
+
 /**
  * A scratch world: a repo holding `src/x.js` (exports 1), `src/y.js` (exports
  * 10), `src/w.js` (exports 100), `src/helper.js`, a `.gitignore` for
@@ -61,7 +66,7 @@ const mkWorld = () => mkRepo('red-proof-', {
   'src/helper.js': 'module.exports = 0;\n',
   '.gitignore': 'node_modules/\n',
   'tests/x.test.js': TEST_OF(1),
-});
+}, undefined, FOR_NODE);
 
 // Prints where `@scope/a` resolved and the root of the tree this file sits in,
 // then asserts the package's value.
@@ -97,7 +102,7 @@ const mkWorkspaces = () => {
     'packages/a/index.js': 'module.exports = 1;\n',
     'packages/a/dep.test.js': "console.log('dep', require('dep'), require.resolve('dep'));\n",
     'tests/a.test.js': WS_TEST_OF(1),
-  });
+  }, undefined, FOR_NODE);
   linkPackages(w, 'a');
   w.write('packages/a/node_modules/dep/index.js', 'module.exports = 7;\n');
   return w;
@@ -114,7 +119,7 @@ const mkExports = () => {
     '.gitignore': 'node_modules/\n',
     'packages/a/package.json': `${JSON.stringify({ name: '@scope/a', exports: { '.': './index.js', './*': './src/*.js' } })}\n`,
     'packages/a/index.js': 'module.exports = 1;\n',
-  });
+  }, undefined, FOR_NODE);
   linkPackages(w, 'a');
   return w;
 };
@@ -168,7 +173,7 @@ const mkBuilt = () => {
     'packages/b/package.json': `${JSON.stringify({ name: '@scope/b', main: 'dist/index.js' })}\n`,
     'packages/b/src/index.js': BUILT('src'),
     'tests/ab.test.js': BUILT_TEST_OF(1),
-  });
+  }, undefined, FOR_NODE);
   linkPackages(w, 'a', 'b');
   w.write('packages/b/dist/index.js', BUILT('old'));
   return w;
@@ -325,7 +330,7 @@ describe('proof red: the snapshot', () => {
       'package.json': `${JSON.stringify({ name: 'single', private: true })}\n`,
       '.gitignore': '.env\n',
       'src/x.js': 'module.exports = 1;\n',
-    });
+    }, undefined, FOR_NODE);
     w.write('.env', 'KEY="root-env"\n');
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
@@ -677,7 +682,7 @@ describe('proof red: workspaces', () => {
         '',
       ].join('\n'),
       'packages/cli/lib.js': 'module.exports = 1;\n',
-    });
+    }, undefined, FOR_NODE);
     linkPackages(w, 'cli');
     fs.mkdirSync(path.join(w.repo, 'node_modules', '.bin'));
     fs.symlinkSync(path.join('..', '@scope', 'cli', 'bin.js'), path.join(w.repo, 'node_modules', '.bin', 'cli'));
@@ -936,8 +941,7 @@ describe('proof red: a module that fails to load', () => {
     cleanup(w.dir);
   });
 
-  // The second temp folder holds the home, so the run folder sits under it, as
-  // on Windows, whose node reads TEMP and never the world's TMPDIR.
+  // The second temp folder holds the home, so the run folder sits under it.
   for (const [label, tmpOf] of [['', (w) => w.tmp], [', the run folder under the temp folder', (w) => w.dir]]) {
     test(`a file beside the repo the copy cannot reach, its name a named path's${label}: exit 2 naming the module, never red`, () => {
       const w = mkWorld();
@@ -946,7 +950,7 @@ describe('proof red: a module that fails to load', () => {
       fs.writeFileSync(path.join(w.dir, 'lib', 'new.js'), 'module.exports = 3;\n');
       w.write('src/new.js', 'module.exports = 3;\n');
       w.write('tests/beside.test.js', "if (require(require('path').join(__dirname, '..', '..', 'lib', 'new.js')) !== 3) throw new Error('not 3');\n");
-      const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/beside.test.js'], w.repo, { ...w.env, TMPDIR: tmpOf(w) });
+      const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/beside.test.js'], w.repo, nodeTempEnv(tmpOf(w), w.env));
       expect(code, `exit 2: ${out}${err}`).toBe(2);
       expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
       const last = lines(err).pop() || '';
@@ -1171,7 +1175,7 @@ describe('proof red: the kit runner\'s summary file', () => {
       'tests/root.test.js': "const test = require('node:test');\ntest('shared root', () => {});\ntest('other root', () => {});\n",
       'packages/m/package.json': `${JSON.stringify({ name: 'm', private: true, scripts: { test: 'workkit test' } })}\n`,
       'packages/m/test/m.test.js': memberTestOf(1),
-    });
+    }, undefined, FOR_NODE);
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('packages/m/test/m.test.js', memberTestOf(2));

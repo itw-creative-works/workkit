@@ -7,12 +7,12 @@
  */
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawn, keyOf } = require('../../workflow/lib/run');
 const { bounded: runBounded, secondsOf } = require('../../workflow/lib/bounded');
 const { nativePath } = require('../../workflow/lib/platform');
-const { homeOf } = require('../../hooks/mods/log.js');
+// A job's home is the command's reading of it, handed on to the jobs.
+const { machineHome } = require('../../workflow/lib/machine-home');
 
 // Read once at load, as lib/run.js reads it: enterMachine's `platform` is the seam.
 const PLATFORM = process.platform;
@@ -22,14 +22,6 @@ const DEFAULT_TIMEOUT_S = 900;
 
 // The longest a notification's message runs, in characters.
 const NOTE_CHARS = 180;
-
-/**
- * A job's home, its one home rule: HOME, else USERPROFILE, else the account's
- * home folder, so a job started with neither variable still has one.
- * @param {object} [env]
- * @returns {string}
- */
-const machineHome = (env = process.env) => homeOf(env) || os.homedir();
 
 /** Claude Code's session transcripts root under <home>. */
 const projectsRoot = (home) => path.join(home, '.claude', 'projects');
@@ -44,7 +36,7 @@ const projectsRoot = (home) => path.join(home, '.claude', 'projects');
  * @param {{ platform?: string, node?: string }} [context] - the platform the PATH is for, and the running node
  */
 const enterMachine = (env = process.env, { platform = PLATFORM, node = process.execPath } = {}) => {
-  const home = machineHome(env);
+  const home = machineHome(env, { platform });
   if (platform === 'win32') {
     const key = keyOf(env, 'PATH') ?? 'PATH';
     const front = [path.win32.join(home, '.local', 'bin'), path.win32.join(home, '.nvm', 'default-bin'), path.win32.dirname(node)];

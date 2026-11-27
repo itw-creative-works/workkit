@@ -11,7 +11,7 @@ const {
 const { nativePath } = require('../lib/platform');
 const { isFile } = require('../lib/lock');
 const { readOrNull } = require('../lib/read');
-const { rosterFile, userDirOf } = require('../../hooks/mods/log.js');
+const { rosterFile } = require('../../hooks/mods/log.js');
 const { isPlain } = require('../../hooks/mods/settings.js');
 
 /**
@@ -42,7 +42,7 @@ const rosterCount = (text) => {
  * @returns {number} 0
  */
 const reportGlobals = (kit) => {
-  const file = rosterFile(userDirOf(kit.env));
+  const file = rosterFile(kit.userDir);
   const named = nativePath(file);
   if (!isFile(file)) {
     info(`roster: ${named} does not exist yet; the first heal writes it`);

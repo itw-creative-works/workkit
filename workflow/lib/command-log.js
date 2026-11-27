@@ -19,7 +19,6 @@ const { writeWhole } = require('./write');
 const { signalCode } = require('./detach');
 const { childEnd } = require('./child-end');
 const { commandVerbs } = require('../workkit/command-list');
-const { userDirOf } = require('../../hooks/mods/log.js');
 
 // The commands that may run outside any repo, so they log to the machine folder.
 const MACHINE_COMMANDS = ['setup', 'update', 'doctor', 'publish'];
@@ -66,7 +65,7 @@ const logName = ([verb, sub]) => {
  * @throws {LogsDirError} a repo whose `logs.dir` is outside it
  */
 const logPath = async (kit, name, cwd = process.cwd()) => {
-  if (MACHINE_COMMANDS.includes(name)) return `${userDirOf(kit.env)}/logs/${name}.log`;
+  if (MACHINE_COMMANDS.includes(name)) return `${kit.userDir}/logs/${name}.log`;
   const root = repoRoot(cwd);
   // Loaded only here: a repo's log path reads the hooks' marker and settings modules.
   return root === null ? null : require('./run-paths').logPathOf(root, `${name.replace(/ /g, '-')}.log`);

@@ -186,7 +186,8 @@ const git = (dir, home, ...args) => {
 /** Write `files` (root-relative path to content) into the world's repo and commit them. */
 const commitFiles = (world, files) => {
   for (const [rel, body] of Object.entries(files)) fs.writeFileSync(path.join(world.repo, rel), body);
-  for (const args of [['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test'], ['add', '-A'], ['commit', '-q', '-m', 'init']]) {
+  for (const args of [['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test'], ['config', 'core.autocrlf', 'false'],
+    ['add', '-A'], ['commit', '-q', '-m', 'init']]) {
     git(world.repo, world.home, ...args);
   }
 };

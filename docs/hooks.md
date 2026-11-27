@@ -21,7 +21,7 @@
   - The nine guards' runs in the `gh` shim, the `git` shim and git's hooks leave none, since they run outside the module.
 - The log lives in the workkit folder (`~/.workkit`).
   - `WORKFLOW_HOME` moves it.
-  - `hooksLogOf(env)` in `hooks/mods/log.js` is the path's one home, `hooks.log` in `userDirOf`'s folder: the module's writer (`logFires` in `hooks/register.js`) and `workkit log` (`workflow/workkit/log.js`), its one reader, both ask it.
+  - `hooksLogOf(env)` in `hooks/mods/log.js` is the path's one home, `hooks.log` in `userDirOf`'s folder: the module's writer (`logFires` in `hooks/register.js`) asks it, and `workkit log` (`workflow/workkit/log.js`), its one reader, reads `kit.hooksLog`, which `kitOf` builds through it over the native machine folder.
 - It has one writer: the hooks module writes every fire of a dispatch through `logFires` in `hooks/register.js`.
   - That is one read and one whole-file write with `$.fs` per dispatch.
   - The line and the cap are `hooks/mods/log.js`'s.

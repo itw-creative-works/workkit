@@ -17,7 +17,6 @@ const { editJson } = require('../lib/write');
 const { readJsonOrNull } = require('../lib/read');
 const { isFile, takeLock, dropLock, stateLockPath } = require('../lib/lock');
 const { siteOption } = require('../lib/settings');
-const { userDirOf } = require('../../hooks/mods/log.js');
 const { isPlain } = require('../../hooks/mods/settings.js');
 const { chomp } = require('../../hooks/mods/text.js');
 
@@ -26,7 +25,7 @@ const { chomp } = require('../../hooks/mods/text.js');
  * @param {object} kit
  * @returns {string}
  */
-const settingsOf = (kit) => `${userDirOf(kit.env)}/settings.json`;
+const settingsOf = (kit) => `${kit.userDir}/settings.json`;
 
 /** siteOption of the machine's file, or null after the line naming broken kit defaults. */
 const siteText = (kit, key) => {
@@ -54,7 +53,7 @@ const homeSlug = (kit) => {
  * @returns {Promise<number>} 0 written, 1 after editJson's warning
  */
 const writeSiteOption = async (kit, key, value) => {
-  const lock = stateLockPath(userDirOf(kit.env));
+  const lock = stateLockPath(kit.userDir);
   const locked = await takeLock(lock);
   const written = editJson(settingsOf(kit), (old) => {
     if (old !== null && !isPlain(old)) throw new Error('site: the settings are not an object');

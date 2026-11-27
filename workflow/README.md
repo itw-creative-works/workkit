@@ -60,6 +60,7 @@
 | `lib/spin.js` | The moving wait line: a worker thread draws the frames while the caller's call runs, on the terminal device a logged command names or on stderr, CJS, requiring only `lib/voice.js` |
 | `lib/flows.js` | The questions asked at a terminal: whether stdin is one, the yes or no question, a line read, the Enter gate, the opener and the poll, CJS, requiring `lib/run.js`, `lib/say.js`, `lib/spin.js` and `lib/voice.js` |
 | `lib/platform.js` | The platform reads the kit's Node scripts share: a path's native spelling, a folder's physical path, and whether the kit runs from Claude's plugin cache, where a clone outranks it, CJS |
+| `lib/machine-home.js` | The home the command's kit and the jobs read (`machineHome`): `HOME`, else `USERPROFILE`, else `os.homedir()`, in its native spelling, CJS, requiring `lib/platform.js` and `hooks/mods/log.js` |
 | `lib/link.js` | A machine address made a link, renamed onto it, and the link reads, CJS, requiring nothing beyond Node |
 | `lib/participation.js` | What the kit means by its own git hooks folder, the Node half of the `wk_githooks_*` rules in `lib/participation.sh`, and whether a file is executable, CJS |
 | `lib/repo.js` | What a repo is: its origin slug, whether it is a clone of the kit, whether its `package.json` takes the kit's test runner, CJS |
@@ -298,6 +299,8 @@
   - `floor.js`: `floorOf()` (the floor off the root `package.json`, `[22, 22]`), `floorLine(version, floor)` and `floorCode(argv)`, in syntax an older Node still reads.
   - `main.js`: `main(argv)`, the guard, the command log and the route; `dispatch(kit, argv)`, the route alone, which the command log runs in its own process for a call it writes no log for (a repo command outside a repo, a log that cannot be made).
   - `kit.js`: `kitOf(overrides)`, the one context every step takes: the variables, the system (`platform`), the home, the engine and the kit's root, the kit's own files, the machine addresses, `interactive`, the secrets' names and bounds, and `run`, the answers one run carries between steps.
+    - The home is `machineHome(env)` of `lib/machine-home.js`, the jobs' reading too.
+    - The machine folder is `userDir`: `WORKFLOW_HOME`, else `<home>/.workkit` (`userDir` of `hooks/mods/log.js`), native. Its `shellExe` (`script-shell.exe`) and `hooksLog` (`hooks.log`) keep that module's spellings, and the roster, the site settings, the state lock, the command logs and `workkit note` read the folder there.
     - `nodeRun(kit, file, args, options)` starts a Node program of the kit with the running Node on this terminal and answers its code; `nodeRead` does the same with its two streams read.
     - `homeEnv(kit)` and `homeRun(kit, args, options)` start a verb of `home.js` in the caller's voice: its stream, its indent and its quiet.
     - `missingLine(step, file)` is the line a step prints for a program of the kit that is not there: `<step>: <file name> is missing at <path>; the kit is incomplete`. `homeMissing(kit, step)` is that line for `home.js`.
@@ -910,7 +913,8 @@
   - `nativePath` is the path unchanged off Windows. `platform` is the system it spells for, read once at load by default.
     - On Windows a path that starts with a drive letter, `:` and a separator, or with two separators, only has each `\` made `/`, with no program started, so a task's PATH without Git Bash still answers.
     - Any other path goes through `cygpath -m`; a failed `cygpath` throws, since an empty roster key is worse than none.
-  - `claudeHome()` is the claude home's one Node reader, read at the call: `WORKFLOW_CLAUDE_HOME`, else `<HOME>/.claude` with `HOME` as the shell reads it, else `os.homedir()`.
+  - `claudeHome()` is the claude home's one Node reader, read at the call: `WORKFLOW_CLAUDE_HOME`, else `<HOME>/.claude` with `HOME` in its native spelling (`nativePath`), else `os.homedir()`.
+    - It reads no `hooks/` module, since `standards.js` runs from a copy of `workflow/` alone.
     - `inPluginCache` and the heal's run object (`standards.js`) both call it.
   - `physicalDir(dir)` is a folder's physical path, or null when it is not one: the read `inPluginCache` makes of both folders, and the installer's of the home and the engine link (`jobs/install.js`).
   - `physicalPath(p)` is a path with its folder resolved through every link and its file name kept as written, null when the folder does not resolve.
@@ -967,7 +971,7 @@
 - `lib/command-log.js`, the command's alone (`main.js` hands it a logged call):
   - `logName(argv)` is the name a call logs under, or null: `setup`, `update`, `doctor`, `publish`, `ship <verb>` for each ship verb of `COMMANDS` but `watch`, and `proof red`.
   - `logPath(kit, name, cwd)` is its file.
-    - A machine command's is `<user folder>/logs/<name>.log`, `~/.workkit/logs/` (`userDirOf` in `hooks/mods/log.js`).
+    - A machine command's is `<user folder>/logs/<name>.log`, `~/.workkit/logs/` (`kit.userDir`, the machine folder `kitOf` reads).
     - A repo command's is `logPathOf` (`lib/run-paths.js`) of the repo holding the folder the call was made in, its space a dash (`ship-plan.log`, `proof-red.log`); outside a repo it is null, and the command runs unlogged.
   - `runLogged(kit, name, argv, dispatch)` runs the command again as a child of the running Node, `workkit.js` with the same arguments, its stdin the call's own, and answers its code. `dispatch` is `main.js`'s own route, the unlogged run in the same process.
     - Its stdout and its stderr are pipes. Each chunk reaches the call's own stdout and stderr as it comes, byte for byte, and is appended to a raw file in a scratch folder (`withScratch`). A reader of the call's own that went away stops the passing on, never the log.

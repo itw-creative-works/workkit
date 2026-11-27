@@ -51,6 +51,7 @@ module.exports = [
   ['workflow/lib/interrupt.js', 'brief/workflow/lib/interrupt.js'],
   ['workflow/lib/link.js', 'brief/workflow/lib/link.js'],
   ['workflow/lib/lock.js', 'brief/workflow/lib/lock.js'],
+  ['workflow/lib/machine-home.js', 'brief/workflow/lib/machine-home.js'],
   ['workflow/lib/pause.js', 'brief/workflow/lib/pause.js'],
   ['workflow/lib/platform.js', 'brief/workflow/lib/platform.js'],
   ['workflow/lib/proc-state.js', 'brief/workflow/lib/proc-state.js'],

@@ -14,7 +14,7 @@ const {
   expect, start, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, which, nodeHomeEnv, nodeEnv, stubTool, joinPath, gitPath, spawnSync: runSync,
+  SYSTEM_PATH, NODE_DIR, which, nodeHomeEnv, nodeTempEnv, nodeEnv, stubTool, joinPath, gitPath, spawnSync: runSync,
 } = require('../../lib/platform');
 const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
 const { schtasksStub } = require('../../lib/schtasks-stub');
@@ -226,10 +226,10 @@ const mkWorld = ({
     // removes both: the mint's capture file and the handover page, each of which
     // carries a token value, so anything at all left here is a leak.
     tmpFiles: () => fs.readdirSync(tmp),
-    env: nodeHomeEnv(home, {
-      // Scratch too: the mint writes its capture file here, and a test that
-      // asks whether one was left behind must be asking about this world's.
-      TMPDIR: tmp,
+    // Scratch too, under every name Node reads it by: the mint writes its capture
+    // file here, and a test that asks whether one was left behind must be asking
+    // about this world's. No path a stub is handed rides Git Bash's /tmp mount.
+    env: nodeHomeEnv(home, nodeTempEnv(tmp, {
       PATH: joinPath(...(binOnPath ? [localBin] : []), bin, SYSTEM_PATH),
       WORKFLOW_HOME: path.join(root, 'workflow-home'),
       WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
@@ -241,7 +241,7 @@ const mkWorld = ({
       // script shell, the gh and git shims), which find it through wk_node: node and
       // npm stay absent from PATH, which the npm and sign-in cases read.
       ...nodeEnv,
-    }),
+    })),
   };
 };
 

@@ -514,6 +514,20 @@ const homeEnv = (home, env = {}) => ({
 const nodeHomeEnv = (home, env = {}) => ({ ...homeEnv(home, env), HOME: home });
 
 /**
+ * The env for a node a case starts whose temp folder is `dir`: TMPDIR, which
+ * Node reads on macOS and Linux, and TEMP and TMP, which it reads on Windows,
+ * each native. Never for a world whose Git Bash or shellDirOf reads a `/tmp/...`
+ * path: Git Bash mounts `/tmp` on TMP or TEMP, so the move would move those too.
+ * A world using it has a native HOME (nodeHomeEnv) and spells bash paths by gitPath.
+ * @param {string} dir - the temp folder, by absolute path
+ * @param {object} [env] - the rest of the child's env; the temp keys win over it
+ * @returns {object} the env to spawn with
+ */
+const nodeTempEnv = (dir, env = {}) => ({
+  ...env, TMPDIR: dir, TEMP: dir, TMP: dir,
+});
+
+/**
  * The env pair that hands a shell this suite's own node as the kit's node
  * (`wk_node` tries `WORKKIT_NODE` first), so no PATH a case narrowed hides it.
  * A case spreads it into the env it spawns with.
@@ -714,7 +728,7 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubToolJs, stubNode, crlfJq,
-  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeEnv, basePathWithout,
+  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeTempEnv, nodeEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutByteArgv, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.

@@ -7,6 +7,10 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Fixed
+
+- (no issue) - On Windows the `workkit` command reads a `HOME` in the shell's spelling (`/c/Users/name`) as the folder its lines print, so its links and its machine folder (`~/.workkit`) land in the real home. It built them under the drive root.
+
 ## [0.105.1] - 2026-11-26
 
 ### Fixed

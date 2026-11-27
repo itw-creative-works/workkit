@@ -64,7 +64,7 @@ node jobs/install.js
     - A task removed by hand is registered again from the same file: `registered again (task file unchanged)`.
 - **The guard.** A scheduler is machine-global, so a run whose home is not the account's real home talks to neither one.
   - On Windows it says `would register it (skipped: ...)` and writes no copy; `WORKKIT_SCHEDULE_OK=1` forces the calls on either system.
-  - The home is `HOME`, else `USERPROFILE`, else the account's home folder (`machineHome` of `lib/machine.js`), so a run with neither variable holds.
+  - The home is `machineHome` of `workflow/lib/machine-home.js`, which `lib/machine.js` hands on and the command's `kitOf` reads too.
 - **This script is also driven for you.** `workkit setup` runs it for the first install.
   - `workkit update` (which the standards hook calls once a day as `update --auto`) re-runs it when the job template changed.
   - So a changed template no longer waits for anyone to remember.
@@ -83,7 +83,7 @@ node jobs/install.js
 | `morning.sh` | the starter the launchd agent and the runner start by path, before any Node is chosen: on a machine it puts the folders launchd lacks on PATH, then hands every argument to `morning.js` under a node at the kit's floor. A kit missing `morning.js` or the engine's `platform.sh` is one `morning: the engine is missing at <dir>; the kit is incomplete` line and exit 1 |
 | `morning.js` | the one entry point, in both environments: the summaries, the runner reconcile, the brief (dispatched from here, composed and published on a runner), the site publish, the marker, and the owner's `morning.d` scripts, each gated by what the environment can do, one file each. Locally it appends to `~/Library/Logs/claude-daily.log`; on a runner the Actions log is the log |
 | `morning/` | the files only `morning.js` uses: the steps (`summaries.js`, `runner.js`, `brief.js`, `cloud-machine.js` for the brief on a runner, `site.js`, `marker.js`, `morning-d.js`), `brief-publish.js` and the `brief/` folder, below. The cloud runner list seeds them beside it |
-| `lib/` | what both jobs share: `notes.js`, the log's stamped blocks and the three note levels; `machine.js`, the transcripts root (`projectsRoot`, which the summaries gate, the nightly's grant and its payload's index all read) under the home a job reads (`machineHome`: `HOME`, else `USERPROFILE`, else the account's), the PATH folders, the quiet Claude, the bound on a child and the notifier |
+| `lib/` | what both jobs share: `notes.js`, the log's stamped blocks and the three note levels; `machine.js`, the transcripts root (`projectsRoot`, which the summaries gate, the nightly's grant and its payload's index all read) under the home a job reads (`machineHome`), the PATH folders, the quiet Claude, the bound on a child and the notifier |
 | `brief-dispatch.js` | the one function that hands the day to the cloud (`gh workflow run brief.yml` on the home repo), with every guard and every named refusal: `dispatchBrief()`. Two callers (the scheduled morning here, in its own process, and `workkit brief`) and each decides what a refusal is worth |
 | `morning/brief-publish.js` | required on the cloud path: `publishBrief()`, which posts today's digest as a Discussion, check-before-post and category fallback included, and answers its line and its code |
 | `morning/brief/brief-payload.js` | the morning payload, on stdout: the digest instruction, then the brief as JSON, then the upstream news. Pure gather: no Claude, no notification |

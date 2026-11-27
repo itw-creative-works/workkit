@@ -41,10 +41,11 @@ const nativePath = (p, { platform = PLATFORM } = {}) => {
 
 /**
  * The claude home, read at the call: WORKFLOW_CLAUDE_HOME (the tests' seam),
- * else `<HOME>/.claude` with HOME as the shell reads it, else `os.homedir()`.
+ * else `<HOME>/.claude` with HOME in its native spelling (nativePath), else
+ * `os.homedir()`. It reads no hooks/ module: standards.js runs from workflow/ alone.
  * @returns {string}
  */
-const claudeHome = () => process.env.WORKFLOW_CLAUDE_HOME || `${process.env.HOME || os.homedir()}/.claude`;
+const claudeHome = () => process.env.WORKFLOW_CLAUDE_HOME || `${nativePath(process.env.HOME || os.homedir())}/.claude`;
 
 /** The physical path of a folder, or null when it is not one. */
 const physicalDir = (dir) => {

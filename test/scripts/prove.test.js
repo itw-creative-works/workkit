@@ -47,7 +47,8 @@ const TEST_OF = (value) => `require('assert').strictEqual(require('../app'), ${v
 
 /**
  * A committed repo whose root `test` script runs `run.js` over `test/`: `app.js`
- * exports 1 and `test/app.test.js` asserts 1; node_modules is ignored.
+ * exports 1 and `test/app.test.js` asserts 1; node_modules is ignored. A node's
+ * world (`forNode`), so the TMPDIR checks read the folder a run wrote to everywhere.
  */
 const mkWorld = (extra = {}) => mkRepo('prove-', {
   'package.json': `${JSON.stringify({ name: 'fixture', version: '1.0.0', scripts: { test: 'node run.js' } })}\n`,
@@ -56,7 +57,7 @@ const mkWorld = (extra = {}) => mkRepo('prove-', {
   'app.js': 'module.exports = 1;\n',
   'test/app.test.js': TEST_OF(1),
   ...extra,
-});
+}, undefined, { forNode: true });
 
 // Passing work staged: app.js at 2, its test asserting 2.
 const stagePassing = (w) => {
@@ -183,7 +184,7 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
       const review = reviewMarkerPath(w.workflowHome, w.repo);
       fs.mkdirSync(path.dirname(review), { recursive: true });
       fs.writeFileSync(review, '');
-      const out = await gateOn(w.repo, { ...wiredNpmEnv(w), TMPDIR: shellPath(w.tmp) });
+      const out = await gateOn(w.repo, wiredNpmEnv(w));
       expect(out.deny, 'the commit of the staged tree passes the gate').toBe(null);
       expect(out.context.includes('suite proved'), `check 5 stands down on the record, got: ${out.context}`).toBeTruthy();
       cleanup(w.dir);
@@ -198,7 +199,7 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
       fs.writeFileSync(review, '');
       w.write('.workkit/settings.json', OPT_IN_SHAPES.current);
       w.git('add', '.workkit/settings.json');
-      const out = await gateOn(w.repo, { ...wiredNpmEnv(w), TMPDIR: shellPath(w.tmp) });
+      const out = await gateOn(w.repo, wiredNpmEnv(w));
       expect(out.deny, 'the commit passes the gate').toBe(null);
       expect(out.context.includes('suite proved'), `check 5 stands down on the record, got: ${out.context}`).toBeTruthy();
       cleanup(w.dir);

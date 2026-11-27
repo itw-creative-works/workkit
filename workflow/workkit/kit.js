@@ -17,7 +17,8 @@ const { childEnd } = require('../lib/child-end');
 const { interactive } = require('../lib/flows');
 const { indent, quiet } = require('../lib/voice');
 const { nativePath } = require('../lib/platform');
-const { homeOf } = require('../../hooks/mods/log.js');
+const { machineHome } = require('../lib/machine-home');
+const { userDir, scriptShellExeOf, hooksLogOf } = require('../../hooks/mods/log.js');
 const { isPlain } = require('../../hooks/mods/settings.js');
 
 // The real engine, links resolved, so a start through a linked folder finds the real kit.
@@ -61,13 +62,17 @@ const filesOf = (engine, root) => ({
  * overridden ones, so `{ env: { HOME } }` moves every home address with it.
  * @param {object} [overrides] fields deep-merged over the defaults (a test's seam)
  * @returns {object} env, platform, home, engine, root, files, the names and
- *   addresses, interactive, secrets, pagesWait and run
+ *   addresses (the machine folder `userDir` and its `shellExe` and `hooksLog`
+ *   among them), interactive, secrets, pagesWait and run
  */
 const kitOf = (overrides = {}) => {
   const env = overrides.env ? { ...process.env, ...overrides.env } : process.env;
-  const home = homeOf(env);
+  const home = machineHome(env);
   const binDir = `${home}/.local/bin`;
   const claudeHome = env.WORKFLOW_CLAUDE_HOME || `${home}/.claude`;
+  // The machine folder under that home; its files keep their one spelling in hooks/mods/log.js.
+  const machineDir = nativePath(userDir(env.WORKFLOW_HOME, home));
+  const inMachineDir = { WORKFLOW_HOME: machineDir };
   const base = {
     env,
     platform: process.platform,
@@ -83,6 +88,9 @@ const kitOf = (overrides = {}) => {
     ghShimLink: `${binDir}/gh`,
     claudeHome,
     engineLink: `${claudeHome}/workkit`,
+    userDir: machineDir,
+    shellExe: scriptShellExeOf(inMachineDir),
+    hooksLog: hooksLogOf(inMachineDir),
     interactive: interactive(),
     // The OAuth token lives about a year, so ~11 months is when a refresh is worth offering.
     secrets: {

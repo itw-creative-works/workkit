@@ -7,7 +7,7 @@ const fs = require('fs');
 const {
   describe, test, expect, WORKKIT_DIR: W,
 } = require('../../lib/harness');
-const { shellPath, gitPath } = require('../../lib/platform');
+const { gitPath } = require('../../lib/platform');
 const { recordArgvJs, readArgv, fmtCalls } = require('../../lib/argv-log');
 const {
   cleanup, mkWorld, runCli, mkRepo, seedSettings, mkPartialKit,
@@ -100,8 +100,8 @@ describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
     // exits at once can kill its sibling before it runs. Waiting ends the run
     // once both halves have demonstrably run, which is what this case claims.
     const half = (mine, theirs) => [
-      `echo x > '${shellPath(mine)}'`,
-      `while [ ! -e '${shellPath(theirs)}' ]; do sleep 0.2; done`,
+      `echo x > '${gitPath(mine)}'`,
+      `while [ ! -e '${gitPath(theirs)}' ]; do sleep 0.2; done`,
     ].join('; ');
     const { code } = runCli(world, ['tower'], {
       // Ports emptied so a test run never reclaims this machine's real tower.

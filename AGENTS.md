@@ -153,6 +153,9 @@
     - The spellings: HOME, USERPROFILE, `GH_CONFIG_DIR`, no ambient token, Node's compile cache off.
     - So no child of a test reads the developer's own home or reaches GitHub as them.
     - `nodeHomeEnv()` is the same env for a node a case starts, HOME native in place of the shell's spelling.
+    - `nodeTempEnv(dir, env)` is a node's temp folder in every name Node reads one by: TMPDIR, and TEMP and TMP for Windows.
+      - Never for a world whose Git Bash is handed a `/tmp/...` path: Git Bash mounts `/tmp` on TMP or TEMP.
+      - So a world using it has a native HOME and spells a bash path by `gitPath`, as `recordArgv` does; `mkRepo(..., { forNode: true })` builds one.
   - `nodeEnv` is the one spelling of `{ WORKKIT_NODE: shellPath(process.execPath) }`, the pair that hands a shell the suite's own node; a case spreads it into its env.
   - A child a case starts goes through `workflow/lib/run.js` too.
     - `test/lib/platform.js` re-exports its `spawnSync`, `spawn` and `execFileSync`.

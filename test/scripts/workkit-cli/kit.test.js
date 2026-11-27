@@ -10,7 +10,7 @@ const {
   describe, test, expect, mkTmp, run, start, until,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, nodeHomeEnv, jsPath, samePath, skipWithoutCaughtSignal,
+  IS_WINDOWS, SYSTEM_PATH, nodeHomeEnv, jsPath, samePath, shellPath, skipWithoutCaughtSignal,
 } = require('../../lib/platform');
 const { kitUnder } = require('../../lib/kit-under');
 const { WORKFLOW_DIR } = require('./helpers');
@@ -37,7 +37,19 @@ describe('kitOf: the fields of a fixed env', () => {
     same(kit.ghShimLink, `${home}/.local/bin/gh`, 'ghShimLink');
     same(kit.claudeHome, `${home}/.claude`, 'claudeHome');
     same(kit.engineLink, `${home}/.claude/workkit`, 'engineLink');
+    same(kit.userDir, `${home}/.workkit`, 'userDir, the machine folder');
+    same(kit.shellExe, `${home}/.workkit/script-shell.exe`, 'shellExe');
+    same(kit.hooksLog, `${home}/.workkit/hooks.log`, 'hooksLog');
     expect(kit.interactive, 'stdin is no terminal here').toBe(false);
+  });
+
+  test('WORKFLOW_HOME is the machine folder, and the files in it follow', () => {
+    const home = mkTmp('wk-kit-home-');
+    const machine = mkTmp('wk-kit-machine-');
+    const [kit] = kitsUnder({ HOME: home, PATH: SYSTEM_PATH, WORKFLOW_HOME: machine }, {});
+    same(kit.userDir, machine, 'userDir');
+    same(kit.shellExe, `${machine}/script-shell.exe`, 'shellExe');
+    same(kit.hooksLog, `${machine}/hooks.log`, 'hooksLog');
   });
 
   test('WORKFLOW_CLAUDE_HOME is the Claude home, and the engine link sits in it', () => {
@@ -89,6 +101,20 @@ describe('kitOf: the fields of a fixed env', () => {
     expect(kit.files.entry, 'the entry given').toBe('/x/program.js');
     same(kit.files.installer, path.join(REAL_ROOT, 'jobs', 'install.js'), 'the installer kept');
     expect(kit.interactive, 'the terminal answer given').toBe(true);
+  });
+
+  // The scratch home is under TEMP, so its shell spelling is `/tmp/...`, which Node
+  // would read from the drive root; the home is read as the lines print it instead.
+  test('a HOME in the shell\'s spelling is the same home: the addresses under it are its native ones', {
+    skip: !IS_WINDOWS && 'off Windows the shell spells a home as Node reads it',
+  }, () => {
+    const home = mkTmp('wk-kit-home-');
+    const native = home.replace(/\\/g, '/');
+    const [kit] = kitsUnder({ HOME: shellPath(home), USERPROFILE: home, PATH: SYSTEM_PATH }, {});
+    expect(kit.home, 'home, the native folder in / separators').toBe(native);
+    expect(kit.binLink, 'binLink').toBe(`${native}/.local/bin/workkit`);
+    expect(kit.engineLink, 'engineLink').toBe(`${native}/.claude/workkit`);
+    expect(kit.userDir, 'userDir, the machine folder').toBe(`${native}/.workkit`);
   });
 });
 

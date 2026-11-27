@@ -14,7 +14,7 @@ const {
   describe, test, expect, suiteName, POOL, mkTmp, SPAWN_DEADLINE, until, alive, pidIn, start, endTree,
 } = require('./lib/harness');
 const {
-  joinPath, homeEnv, IS_WINDOWS,
+  joinPath, homeEnv, nodeTempEnv, IS_WINDOWS,
 } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
 const {
@@ -765,7 +765,7 @@ describe('run.js: the summary file', () => {
   test('with the variable unset, a run writes no file in its folder, its home or its TMPDIR', () => {
     const { root, home } = mkFixture({ 'alpha.test.js': SUITE("test('alpha case', () => {});") });
     const tmp = mkTmp('runner-tmpdir-');
-    const env = homeEnv(home, aloneEnv({ TMPDIR: tmp, TMP: tmp, TEMP: tmp }));
+    const env = homeEnv(home, aloneEnv(nodeTempEnv(tmp)));
     const before = [root, home, tmp].map((dir) => JSON.stringify(treeOf(dir)));
     const res = spawnSync('node', [RUNNER], { cwd: root, encoding: 'utf8', env, timeout: SPAWN_DEADLINE });
     const output = (res.stdout || '') + (res.stderr || '');

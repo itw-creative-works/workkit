@@ -14,7 +14,6 @@ const {
 } = require('../lib/voice');
 const { nativePath, physicalPath } = require('../lib/platform');
 const { isFile } = require('../lib/lock');
-const { scriptShellExeOf } = require('../../hooks/mods/log.js');
 const { chomp } = require('../../hooks/mods/text.js');
 
 // The values npm prints for a script-shell nobody set.
@@ -42,7 +41,7 @@ const mtimeOf = (file) => {
  * @returns {boolean}
  */
 const scriptShellExeCurrent = (kit) => {
-  const exe = scriptShellExeOf(kit.env);
+  const exe = kit.shellExe;
   if (!isFile(exe)) return false;
   const source = mtimeOf(path.join(kit.engine, 'script-shell.cs'));
   return source === null || source <= mtimeOf(exe);
@@ -58,7 +57,7 @@ const scriptShellExeCurrent = (kit) => {
 const scriptShellExe = (kit) => {
   const root = kit.env.SYSTEMROOT || kit.env.SystemRoot || 'C:/Windows';
   const csc = `${root}/Microsoft.NET/Framework64/v4.0.30319/csc.exe`;
-  const out = scriptShellExeOf(kit.env);
+  const out = kit.shellExe;
   if (scriptShellExeCurrent(kit)) return 0;
   if (!isFile(csc)) {
     skip(`npm: no C# compiler at ${nativePath(csc)}, so the Windows script shell cannot be built and script-shell stays unset`);
@@ -122,14 +121,9 @@ const scriptShell = (kit, mode) => {
   const doctor = mode === 'doctor';
   let want = `${kit.engineLink}/script-shell.sh`;
   if (kit.platform === 'win32') {
-    const exe = scriptShellExeOf(kit.env);
-    try {
-      want = nativePath(exe);
-    } catch {
-      return 0;
-    }
+    want = kit.shellExe;
     if (doctor && !scriptShellExeCurrent(kit)) {
-      warn(`npm: ${nativePath(exe)} is missing or older than script-shell.cs; run \`workkit update\``);
+      warn(`npm: ${nativePath(want)} is missing or older than script-shell.cs; run \`workkit update\``);
       return 1;
     }
     if (!doctor && !quiet() && scriptShellExe(kit) !== 0) return 0;

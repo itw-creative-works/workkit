@@ -6,7 +6,7 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp, run,
 } = require('../lib/harness');
-const { jsPath } = require('../lib/platform');
+const { jsPath, nodeTempEnv } = require('../lib/platform');
 const { caught } = require('../lib/caught');
 const { withScratch } = require('../../workflow/lib/scratch');
 
@@ -65,9 +65,7 @@ describe('scratch.js: withScratch', () => {
     const missing = path.join(mkTmp('lib-scratch-'), 'not-there');
     const script = `const a = require(${jsPath(SCRATCH)}).withScratch(() => 'called'); process.stdout.write(JSON.stringify(a));`;
     const res = run(process.execPath, ['-e', script], {
-      env: {
-        ...process.env, TMPDIR: missing, TEMP: missing, TMP: missing,
-      },
+      env: nodeTempEnv(missing, process.env),
     });
     expect(res.status, `the call answered, stderr: ${res.stderr}`).toBe(0);
     expect(JSON.parse(res.stdout), 'null, never what the run would have handed back').toBe(null);

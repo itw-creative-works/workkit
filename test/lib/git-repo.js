@@ -10,7 +10,9 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { shellPath, homeEnv, stubTool, which } = require('./platform');
+const {
+  shellPath, homeEnv, nodeHomeEnv, nodeTempEnv, stubTool, which,
+} = require('./platform');
 const { mkTmp, WORKKIT_DIR } = require('./harness');
 const { recordArgv, readArgv } = require('./argv-log');
 const { OPT_IN_SHAPES } = require('./mod-fixtures.mjs');
@@ -30,21 +32,22 @@ const DISPATCH_REFUSAL = 'could not create workflow dispatch event: HTTP 403: Re
  * @param {string} prefix - the scratch folder's name prefix
  * @param {object} files - root-relative path to content, all committed
  * @param {Date} [when] - the mtime every seeded file carries
- * @param {object} [opts]
- * @param {boolean} [opts.optIn=true] - false seeds no `.workkit/settings.json`
+ * @param {{optIn?: boolean, forNode?: boolean}} [opts] - `optIn` false seeds no
+ *   `.workkit/settings.json`; `forNode` makes `env` a node's, the home native and
+ *   `tmp` its temp folder under every name (nodeTempEnv), for a case reading back what a run left there
  * @returns {{dir: string, repo: string, tmp: string, workflowHome: string, env: object, git: Function, write: Function}}
- *   `workflowHome` is the home's `.workkit`, where the markers live;
- *   `git(...args)` runs in the repo and throws on a non-zero exit;
- *   `write(rel, body, when)` writes a file, dated `when` when given
+ *   `workflowHome` is the home's `.workkit`, where the markers live; `git(...args)` runs in
+ *   the repo under the shell's env and throws on a non-zero exit; `write(rel, body, when)` writes a file
  */
-const mkRepo = (prefix, files, when, { optIn = true } = {}) => {
+const mkRepo = (prefix, files, when, { optIn = true, forNode = false } = {}) => {
   const dir = mkTmp(prefix);
   const repo = path.join(dir, 'repo');
   const home = path.join(dir, 'home');
   const tmp = path.join(dir, 'tmp');
   for (const d of [repo, home, tmp]) fs.mkdirSync(d, { recursive: true });
   const workflowHome = path.join(home, '.workkit');
-  const env = homeEnv(home, { PATH: process.env.PATH, TMPDIR: tmp, WORKFLOW_HOME: workflowHome });
+  const vars = { PATH: process.env.PATH, TMPDIR: tmp, WORKFLOW_HOME: workflowHome };
+  const env = homeEnv(home, vars);
   const git = (...args) => {
     const res = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
     if (res.status !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
@@ -59,12 +62,17 @@ const mkRepo = (prefix, files, when, { optIn = true } = {}) => {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'Test');
+  // Git for Windows' system config turns autocrlf on and the scratch home hides CI's global off,
+  // so a file git writes back holds HEAD's bytes on every platform.
+  git('config', 'core.autocrlf', 'false');
   const seeded = optIn ? { [OPT_IN_FILE]: OPT_IN_SHAPES.current, ...files } : files;
   for (const [rel, body] of Object.entries(seeded)) write(rel, body, when);
   git('add', '-A');
   git('commit', '-q', '-m', 'init');
   git('remote', 'add', 'origin', FIXTURE_ORIGIN);
-  return { dir, repo, tmp, workflowHome, env, git, write };
+  return {
+    dir, repo, tmp, workflowHome, env: forNode ? nodeTempEnv(tmp, nodeHomeEnv(home, vars)) : env, git, write,
+  };
 };
 
 /**

@@ -64,6 +64,7 @@
 - A path in a world's env is spelled for the program it is handed to: `shellPath` for a bash, native for a node a case starts itself.
   - Only Git Bash turns `/d/a/x` back into `D:/a/x`, for a program it starts; a node handed it straight reads `D:\d\a\x`.
   - A world both read keeps it native and hands its bash the shell's spelling (`bashEnv` in `test/scripts/home/helpers.js`).
+  - A world whose temp folder moved (`nodeTempEnv`, `mkRepo`'s `forNode`) spells a path written into bash text with `gitPath`, since Git Bash's `/tmp` moved with it (`AGENTS.md` § Tests).
   - The `workkit` command is a node, so its suites' world is native: `runCli` in `test/scripts/workkit-cli/helpers.js` starts `workflow/workkit.js` with the running Node, and `inNode` and `startInNode` call one of the command's functions in a node of its own, its `kit` built from the overrides a case hands in.
     - Beside them: `npmrcEnv(world)`, a scratch user npmrc so an npm on the system PATH reads and writes no other; `machineLinks(world, call)`, the machine steps through `inNode` under it; `windowsForm(p)`, a path as `workkit.cmd` and the Windows PATH line spell it; `lines(text)`, each line trimmed.
     - `test/scripts/workkit-cmd.test.js` holds the `workkit.cmd` cases: `renderCmd`, the copy the machine steps write, and the doctor's lines for it and for the PATH, each Windows half reached through the system argument.

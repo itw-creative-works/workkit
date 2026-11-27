@@ -12,7 +12,6 @@ const { nativePath } = require('../lib/platform');
 const { isFile } = require('../lib/lock');
 const { sizeOf, bytesOf, lastLines } = require('../lib/attach');
 const { INT_CODE } = require('../lib/detach');
-const { hooksLogOf } = require('../../hooks/mods/log.js');
 
 // The lines printed when -n does not say.
 const DEFAULT_LINES = 40;
@@ -72,7 +71,7 @@ const log = (kit, ...args) => {
     }
   }
 
-  const file = hooksLogOf(kit.env);
+  const file = kit.hooksLog;
   if (!isFile(file)) {
     skip(`log: no hooks log at ${nativePath(file)} yet; the first hook fire writes it`);
     return 0;
