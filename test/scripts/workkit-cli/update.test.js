@@ -14,7 +14,7 @@ const {
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, CLI, LABEL, cleanup, mkWorld, withNpm, runCli, signInEnv, ACTED, mkRepo, installSchedule,
-  mkPartialKit, mkSetupKit, signIn, mkInstallerKit, mkScheduleKit, inNode, copyHooks,
+  mkPartialKit, mkSetupKit, signIn, mkInstallerKit, mkScheduleKit, inNode, copyHooks, windowsForm,
 } = require('./helpers');
 const { writeLogin } = require('../../lib/identity');
 
@@ -113,10 +113,14 @@ describe('workkit update: the three links', () => {
     cleanup(world.root); cleanup(kit); cleanup(repo);
   });
 
-  test('a PATH without ~/.local/bin gets the export line, and no rc file is touched', () => {
+  test('a PATH without ~/.local/bin gets the line to add, and no rc file is touched', () => {
     const world = mkWorld();
     const { out } = runCli(world, ['update']);
-    expect(out.includes('export PATH='), `it prints the line to add, got: ${out}`).toBeTruthy();
+    // Windows keeps the user PATH in its own settings, so its line names those.
+    const wanted = IS_WINDOWS
+      ? `${windowsForm(world.localBin)} is not on your PATH; add it to your user PATH in Windows' settings`
+      : 'export PATH=';
+    expect(out.includes(wanted), `it prints the line to add, got: ${out}`).toBeTruthy();
     expect(!fs.existsSync(path.join(world.home, '.zshrc')), 'and writes nobody’s shell rc').toBeTruthy();
     cleanup(world.root);
   });

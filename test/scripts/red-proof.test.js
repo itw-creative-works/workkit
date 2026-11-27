@@ -936,22 +936,26 @@ describe('proof red: a module that fails to load', () => {
     cleanup(w.dir);
   });
 
-  test('a file beside the repo the copy cannot reach, its name a named path\'s: exit 2 naming the module, never red', () => {
-    const w = mkWorld();
-    takeSnapshot(w);
-    fs.mkdirSync(path.join(w.dir, 'lib'));
-    fs.writeFileSync(path.join(w.dir, 'lib', 'new.js'), 'module.exports = 3;\n');
-    w.write('src/new.js', 'module.exports = 3;\n');
-    w.write('tests/beside.test.js', "if (require(require('path').join(__dirname, '..', '..', 'lib', 'new.js')) !== 3) throw new Error('not 3');\n");
-    const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/beside.test.js']);
-    expect(code, `exit 2: ${out}${err}`).toBe(2);
-    expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
-    const last = lines(err).pop() || '';
-    expect(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(path.join('lib', 'new.js')),
-      `the last stderr line names the module: ${err}`).toBeTruthy();
-    assertNoWorktree(w);
-    cleanup(w.dir);
-  });
+  // The second temp folder holds the home, so the run folder sits under it, as
+  // on Windows, whose node reads TEMP and never the world's TMPDIR.
+  for (const [label, tmpOf] of [['', (w) => w.tmp], [', the run folder under the temp folder', (w) => w.dir]]) {
+    test(`a file beside the repo the copy cannot reach, its name a named path's${label}: exit 2 naming the module, never red`, () => {
+      const w = mkWorld();
+      takeSnapshot(w);
+      fs.mkdirSync(path.join(w.dir, 'lib'));
+      fs.writeFileSync(path.join(w.dir, 'lib', 'new.js'), 'module.exports = 3;\n');
+      w.write('src/new.js', 'module.exports = 3;\n');
+      w.write('tests/beside.test.js', "if (require(require('path').join(__dirname, '..', '..', 'lib', 'new.js')) !== 3) throw new Error('not 3');\n");
+      const { code, out, err } = runScript(w, ['src/new.js', '--', 'node', 'tests/beside.test.js'], w.repo, { ...w.env, TMPDIR: tmpOf(w) });
+      expect(code, `exit 2: ${out}${err}`).toBe(2);
+      expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
+      const last = lines(err).pop() || '';
+      expect(last.startsWith('red-proof: not runnable: a module failed to load: ') && last.endsWith(path.join('lib', 'new.js')),
+        `the last stderr line names the module: ${err}`).toBeTruthy();
+      assertNoWorktree(w);
+      cleanup(w.dir);
+    });
+  }
 
   // The same two loads of a file no named path covers, and the module each names.
   for (const [label, world, module] of [

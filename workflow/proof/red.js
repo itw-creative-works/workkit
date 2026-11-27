@@ -169,12 +169,15 @@ const extless = (p) => (path.posix.basename(p).includes('.') ? p.slice(0, p.last
  * Whether a module path runs through a scratch folder of the temp dir (a test's
  * link to the place, removed before it ended) and ends as a named path the place
  * `top` lacks: its last segment that path's last one, or that less its extension.
- * A named path the place holds is never why a module is missing.
+ * A named path the place holds is never why a module is missing, and the run
+ * folder `run` is no scratch folder, though the temp dir may hold it.
  */
-const scratchNamed = (top, named, at) => {
+const scratchNamed = (run, top, named, at) => {
   const tmp = physical(os.tmpdir());
   const scratch = tmp === null ? null : `${forward(tmp)}/`;
   if (scratch === null || !at.startsWith(scratch)) return false;
+  const own = physical(run);
+  if (own !== null && at.startsWith(`${forward(own)}/`)) return false;
   const file = path.posix.basename(at);
   return named.some((n) => {
     if (present(path.join(top, n))) return false;
@@ -188,14 +191,14 @@ const scratchNamed = (top, named, at) => {
  * (its requiring file or its path holding the place's marker) stops the proof,
  * unless it resolves to a named path the place lacks by design (the path, the
  * path less its extension, or a file in a named folder), or reads as one
- * through a scratch link (scratchNamed); `top` is the place's root.
+ * through a scratch link (scratchNamed); `top` is the place's root, `run` the run folder.
  */
-const loadStops = (marker, top, named, { spec, from }) => {
+const loadStops = (marker, run, top, named, { spec, from }) => {
   const p = modulePath(spec, from);
   const at = p === null ? null : forward(p);
   if (!forward(from).includes(marker) && !(at && at.includes(marker))) return false;
   if (!at) return true;
-  if (!at.includes(marker)) return !scratchNamed(top, named, at);
+  if (!at.includes(marker)) return !scratchNamed(run, top, named, at);
   const rel = at.slice(at.indexOf(marker) + marker.length);
   if (isNamed(named, rel)) return false;
   return !named.some((n) => extless(n) === rel);
@@ -298,7 +301,7 @@ const judge = async (job, place, { cmd, paths }) => {
   // live mode the repo root.
   const top = job.live ? job.root : `${job.tmp}/copy`;
   const marker = job.live ? `${forward(job.root)}/` : `/${path.basename(path.dirname(job.tmp))}/${path.basename(job.tmp)}/copy/`;
-  const stopped = loadFailures(ran).find((failure) => loadStops(marker, top, job.named, failure));
+  const stopped = loadFailures(ran).find((failure) => loadStops(marker, job.tmp, top, job.named, failure));
   if (stopped) fail(`not runnable: a module failed to load: ${stopped.spec}`);
   if (summary?.failed === 0) fail('not runnable: no test failed; the command stopped another way');
   verdict('red');

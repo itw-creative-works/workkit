@@ -29,7 +29,7 @@ describe('workkit setup', () => {
     const { code, out } = runCli(world, ['setup'], { script });
     expect(code, `exit 0: stderr: ${out}`).toBe(0);
     const calls = world.claudeCalls();
-    expect(calls.some((c) => isCall(c, 'plugin', 'marketplace', 'add', shellPath(kit))), `the marketplace is the checkout setup ran from: ${fmtCalls(calls)}`).toBeTruthy();
+    expect(calls.some((c) => isCall(c, 'plugin', 'marketplace', 'add', kit)), `the marketplace is the checkout setup ran from: ${fmtCalls(calls)}`).toBeTruthy();
     expect(calls.some((c) => isCall(c, 'plugin', 'install', 'workkit@workkit')), `and the plugin is installed: ${fmtCalls(calls)}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);
   });

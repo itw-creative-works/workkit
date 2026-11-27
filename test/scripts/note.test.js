@@ -8,7 +8,7 @@ const fs = require('fs');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
   NO_RC, shellPath, gitPath, homeEnv, nodeEnv, stubTool, basePathWithout,
-  systemPathWith, joinPath, spawnBash, spawnSync,
+  systemPathWith, joinPath, spawnBash, spawnSync, skipWithoutByteArgv,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
@@ -202,7 +202,7 @@ describe('note.js: which capture file a note lands in', () => {
     cleanup(t.dir);
   });
 
-  test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', async () => {
+  test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', { skip: skipWithoutByteArgv() }, async () => {
     // Nothing is truncated here: the note arrives ending in a severed multibyte
     // sequence, which must be dropped once, never doubled and never left invalid.
     const t = makeTree();

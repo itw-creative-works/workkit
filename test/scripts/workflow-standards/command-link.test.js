@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, run, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv, samePath, spawnBash,
+  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv, nodeHomeEnv, samePath, spawnBash,
 } = require('../../lib/platform');
 const { WORKFLOW_DIR, SCRIPT, cleanup } = require('./helpers');
 
@@ -27,23 +27,28 @@ const mkMachine = ({ localBin = true } = {}) => {
   return { root, home, claude, link: path.join(home, '.local', 'bin', 'workkit') };
 };
 
-// The machine's env, each path spelled by <spell> for the program it is handed to.
-const machineEnv = (machine, spell) => homeEnv(machine.home, {
-  ...process.env,
-  PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-  WORKFLOW_HOME: spell(path.join(machine.root, 'workflow-home')),
-  WORKFLOW_CLAUDE_HOME: spell(machine.claude),
-});
+// The machine's env, each path spelled for the program it is handed to: the
+// shell's spelling for a bash, native for a node, which reads HOME as given.
+const machineEnv = (machine, starter) => {
+  const spell = starter === 'bash' ? shellPath : (p) => p;
+  return (starter === 'bash' ? homeEnv : nodeHomeEnv)(machine.home, {
+    ...process.env,
+    PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+    WORKFLOW_HOME: spell(path.join(machine.root, 'workflow-home')),
+    WORKFLOW_CLAUDE_HOME: spell(machine.claude),
+  });
+};
 
 // The mode as a cloud bootstrap runs it: from a folder that is no git repo,
 // with stdin closed, so any prompt or wizard step would have no one to answer.
 // `starter` is `node` (standards.js with the running node) or `bash` (standards.sh).
 const runCommandLink = (machine, starter = 'node') => {
   const cwd = mkTmp('wf-std-');
+  const env = machineEnv(machine, starter);
   const res = starter === 'node'
-    ? run(process.execPath, [ENGINE, '--command-link'], { cwd, env: machineEnv(machine, (p) => p) })
+    ? run(process.execPath, [ENGINE, '--command-link'], { cwd, env })
     : spawnBash([...NO_RC, shellPath(SCRIPT), '--command-link'], {
-      cwd, env: machineEnv(machine, shellPath), stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      cwd, env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: SPAWN_DEADLINE,
     });
   cleanup(cwd);
   return { code: res.status, output: `${res.stdout || ''}${res.stderr || ''}` };

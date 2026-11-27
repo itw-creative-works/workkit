@@ -114,8 +114,10 @@ describe('workkit setup: the token handover', () => {
     // `/usr/bin/open` is on every mac, so the machine without an opener is a
     // Linux one, sent looking for an `xdg-open` this world lacks. A Linux runner
     // keeps a real one on the base PATH, so the PATH is the world's own alone.
+    // On Windows the stub has its launcher beside it, which goes too.
     const world = mkPagesWorld(PUBLISHED);
     fs.rmSync(path.join(world.bin, 'xdg-open'));
+    fs.rmSync(path.join(world.bin, 'xdg-open.exe'), { force: true });
     const { code, out } = inNode(world, {
       ...HANDOVER_CALL, kit: { interactive: true, platform: 'linux' }, env: { PATH: world.bin },
     });

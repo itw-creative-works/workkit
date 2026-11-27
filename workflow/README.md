@@ -1735,7 +1735,7 @@
   - The command's stdout and stderr stream live, each on its own stream, and are kept for the reading.
   - Red exits 0, green 1, and any other stop 2 with a `red-proof:` line. A `--live` run a HUP, INT or TERM ends exits 129, 130 or 143 once its command has ended, the live tree restored.
   - The copy, the copy mode's end on a HUP, INT or TERM, the stop on a reader of stdout or stderr that closes, the load check, the summary check and the limits are `docs/agents.md` § Crew sizing; the names they run through are below.
-  - The load check reads a missing module in its four spellings before it compares it with the named paths, a workspace link's through `physical` (which a named path is read through too), a bare specifier's through `modulePath`, and a scratch link's under the temp folder through `scratchNamed`, which reads it as a named path only when the copy lacks that path.
+  - The load check reads a missing module in its four spellings before it compares it with the named paths, a workspace link's through `physical` (which a named path is read through too), a bare specifier's through `modulePath`, and a scratch link's under the temp folder, outside the run folder, through `scratchNamed`, which reads it as a named path only when the copy lacks that path.
   - The failures it judges are `loadFailures({ out, err })` in `proof/reading.js`: each `{ spec, from }` of a `Cannot find module` or `Cannot find package` line.
   - It hands the summary file (`docs/tests.md` § The kit's runner) to the command, and `summaryOf({ out, err, file })` in `proof/reading.js` sums its lines.
 

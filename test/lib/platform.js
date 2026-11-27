@@ -316,6 +316,13 @@ const skipWithoutModes = (what) => (IS_WINDOWS || process.getuid() === 0)
 const skipWithoutCaughtSignal = () => IS_WINDOWS && 'Windows ends a process with no signal it can catch';
 
 /**
+ * The skip value of a case that hands a program an argument of bytes that are
+ * not text, invalid UTF-8 say.
+ * @returns {false|string} false, or on Windows the reason
+ */
+const skipWithoutByteArgv = () => IS_WINDOWS && 'a Windows command line is UTF-16 text, so an argument cannot carry bytes that are not text';
+
+/**
  * The skip value of a case about the Homebrew folders a job puts on its PATH.
  * @returns {false|string} false, or on Windows the reason
  */
@@ -708,7 +715,7 @@ module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubToolJs, stubNode, crlfJq,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeEnv, basePathWithout,
-  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
+  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutByteArgv, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.
   spawnSync: run.spawnSync,
