@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.105.1] - 2026-11-26
+
 ### Fixed
 
 - (no issue) - `workkit proof red` stops with exit 2, naming the module, when a test loads a file the copy cannot reach and the proof's run folder sits under the temp folder, as it does on a Windows runner. It called that run red.
