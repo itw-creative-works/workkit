@@ -7,6 +7,8 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.105.3] - 2026-11-27
+
 ### Fixed
 
 - (no issue) - On Windows the `workkit` command stops with one plain line, naming the folder and the fix, when `cygpath` cannot run for a `HOME` in the shell's spelling. It printed a stack trace. A `WORKFLOW_CLAUDE_HOME` in that spelling is now read as a Windows path too.
