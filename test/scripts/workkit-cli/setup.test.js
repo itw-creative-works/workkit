@@ -628,7 +628,8 @@ describe('workkit setup: npm script-shell', () => {
 
   test("an npm whose value ends in a carriage return and a newline: the value alone, read as the kit's", () => {
     const world = mkWorld();
-    const want = `${world.claudeHome}/workkit/script-shell.sh`;
+    // The value as the kit sets it: its engine link in the native spelling.
+    const want = `${gitPath(world.engineLink)}/script-shell.sh`;
     const { code, said } = withStubNpm(world, `process.stdout.write(${JSON.stringify(`${want}\r\n`)});`);
     expect(code, `exit 0, got: ${said}`).toBe(0);
     expect(said.includes('npm: script-shell is current'), `the value is the wanted one, got: ${JSON.stringify(said)}`).toBeTruthy();
