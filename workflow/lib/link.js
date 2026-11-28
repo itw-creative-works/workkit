@@ -2,8 +2,9 @@
  * workflow/lib/link.js: a machine address made a link, for the kit's Node
  * scripts: renamed onto the address, never removed first, so no other session
  * sees a gap; on Windows alone a folder link naming something else is removed
- * first.
- * Usage: const { link, mvLink, isLink, physical } = require('../lib/link');
+ * first. Beside it the reads through links: a path's physical spelling, and
+ * the folder a call runs in as its shell spells it (`cwdOf`).
+ * Usage: const { link, mvLink, isLink, physical, cwdOf } = require('../lib/link');
  */
 
 const fs = require('fs');
@@ -111,6 +112,22 @@ const physical = (p) => {
   }
 };
 
+/**
+ * The folder the call runs in as its shell spells it: PWD while it names this
+ * process's folder, as bash keeps it, else the physical one.
+ * @param {object} env
+ * @returns {string}
+ */
+const cwdOf = (env) => {
+  const here = process.cwd();
+  try {
+    if (env.PWD && fs.realpathSync(env.PWD) === fs.realpathSync(here)) return env.PWD;
+  } catch {
+    // A PWD that is gone names no folder: the physical one stands.
+  }
+  return here;
+};
+
 module.exports = {
-  link, mvLink, isLink, physical,
+  link, mvLink, isLink, physical, cwdOf,
 };

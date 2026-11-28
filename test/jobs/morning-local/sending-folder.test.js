@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it: the folder it runs from,
+// Tests for jobs/morning.js as this machine runs it: the folder it runs from,
 // the PATH a send runs on, and the scratch folder a TERM mid-send leaves behind.
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
@@ -9,25 +9,50 @@ const {
 } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  IS_WINDOWS, BASH, NO_RC, shellPath, spawnBash, stubToolJs, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
+  joinPath, spawnSync, stubToolJs, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
 } = require('../../lib/platform');
 const {
   SCRIPT, INSTRUCTION, cleanup, mkWorld, runJob, skipOnUsrLocalBin, withBarePath,
 } = require('./helpers');
 
+const INSTALL = path.join(__dirname, '..', '..', '..', 'jobs', 'install.js');
+
+/**
+ * The launchd file jobs/install.js renders for the world's home, read back as
+ * JSON. No launchd is asked: the home is scratch, so the installer's guard
+ * skips every launchctl call, and a stand-in that does nothing is first on PATH.
+ */
+const renderedAgent = (world) => {
+  const bin = path.join(world.root, 'bin');
+  stubToolJs(bin, 'launchctl', 'process.exitCode = 0;');
+  const entry = path.join(world.root, 'install-darwin.js');
+  fs.writeFileSync(entry, `process.exitCode = require(${JSON.stringify(INSTALL)}).main([], { platform: 'darwin' });\n`);
+  const env = { ...world.env };
+  delete env.WORKKIT_SCHEDULE_OK;
+  const res = spawnSync(process.execPath, [entry], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
+  expect(res.status, `the installer rendered the agent: ${res.stdout}${res.stderr}`).toBe(0);
+  const file = path.join(world.home, 'Library', 'LaunchAgents', 'com.workkit.claude-daily.plist');
+  const json = spawnSync('plutil', ['-convert', 'json', '-o', '-', file], { encoding: 'utf8' });
+  expect(json.status, `plutil read ${file}: ${json.stderr}`).toBe(0);
+  return JSON.parse(json.stdout);
+};
+
 describe('jobs/morning (local)', () => {
   describe('jobs/morning (local): the folder it runs from', () => {
-    // launchd runs the job as `<home>/.claude/workkit/../jobs/morning.sh`. A
-    // logical cd reads that `..` lexically, so a stray ~/.claude/jobs would
-    // become the job's folder; it must resolve its real one through the link.
-    test('run through the engine address, a stray ~/.claude/jobs is not its folder', {
-      skip: IS_WINDOWS && 'Windows reads a `..` after a link before it follows the link; its task names workflow/morning-task.js',
+    // launchd runs the job exactly as its file names it: `/usr/bin/env node`
+    // on the file's own PATH, and the kit the engine link resolved to at install.
+    // So the rendered file, run as it is, must start the morning whole.
+    test('started as the launchd file starts it, the job runs from the kit\'s jobs folder', {
+      skip: process.platform !== 'darwin' && 'the launchd file is a Mac\'s; the Windows task names workflow/morning-task.js',
     }, () => {
       const world = mkWorld();
+      // The engine link the installer reads the kit from, at this checkout.
       fs.symlinkSync(path.join(path.dirname(SCRIPT), '..', 'workflow'), path.join(world.home, '.claude', 'workkit'));
-      fs.mkdirSync(path.join(world.home, '.claude', 'jobs'));
-      const viaLink = `${shellPath(world.home)}/.claude/workkit/../jobs/morning.sh`;
-      const res = spawnBash([...NO_RC, viaLink, '--now'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
+      const agent = renderedAgent(world);
+      const [program, ...args] = agent.ProgramArguments;
+      // launchd's PATH is the file's own; the fake tools stay ahead of it.
+      const env = { ...world.env, PATH: joinPath(path.join(world.root, 'bin'), agent.EnvironmentVariables.PATH) };
+      const res = spawnSync(program, [...args, '--now'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       const calls = world.calls();
       expect(calls.length, `the brief was composed and sent: ${fmtCalls(calls)}`).toBe(1);
@@ -61,7 +86,7 @@ describe('jobs/morning (local)', () => {
       ].join('\n'));
       t.after(() => { const pid = pidIn(sendPid); if (pid > 0 && alive(pid)) process.kill(pid, 'SIGKILL'); });
 
-      const job = start(BASH, [...NO_RC, shellPath(SCRIPT), 'hello'], { env: world.env });
+      const job = start(process.execPath, [SCRIPT, 'hello'], { env: world.env });
       t.after(() => job.end('SIGKILL'));
       expect(await until(() => pidIn(sendPid) > 0), `the send started: ${job.output()}`).toBeTruthy();
       const scratches = () => fs.readdirSync(temp).filter((name) => name.startsWith('morning-'));

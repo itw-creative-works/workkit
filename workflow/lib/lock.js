@@ -3,8 +3,7 @@
  * create-only claim, a run lock's mark (`id.<tag>`, `gone.<tag>`, `id.orphan`),
  * its retire and its adopt, the judged retire every remover shares, the plain
  * mutex and the state mutex's path, the marker write and the 7-day sweep of
- * the marker folders. The sweep has a shell twin in lib/platform.sh
- * (`wk_sweep_markers`), which the gh shim uses.
+ * the marker folders.
  * Usage: const { takeLock, dropLock, stateLockPath } = require('./lock');
  */
 
@@ -16,7 +15,7 @@ const { spawnSync } = require('./run');
 const { readOrNull } = require('./read');
 const { ended } = require('./proc-state');
 
-// The days a marker outlives its last write: MARKER_KEEP_DAYS in platform.sh.
+// The days a marker outlives its last write.
 const MARKER_KEEP_DAYS = 7;
 
 // The mutex's wait: 50 tries 100ms apart.

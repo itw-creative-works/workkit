@@ -11,7 +11,7 @@ const { spawnSync } = require('child_process');
 const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
-const { IS_WINDOWS } = require('../../lib/platform');
+const { IS_WINDOWS, NODE_DIR, shellPath } = require('../../lib/platform');
 const { caught } = require('../../lib/caught');
 const { linesOf } = require('../../lib/run-lists');
 const {
@@ -690,5 +690,21 @@ describe('identity/token: the command form', () => {
         }
       }
     }
+  });
+
+  // --status reads the machine folder for the login file before any settings or network.
+  // PATH is node's folder alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a WORKFLOW_HOME in the shell\'s spelling with no cygpath on PATH: the one line naming WORKFLOW_HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a machine folder is never handed to cygpath',
+  }, () => {
+    const home = mkTmp('wk-identity-kit-home-');
+    const folder = shellPath(path.join(home, '.workkit'));
+    const res = spawnSync(process.execPath, [MODULE, '--status'], {
+      env: { ...scratchEnv(home, { PATH: NODE_DIR }), WORKFLOW_HOME: folder }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    expect(res.status, `exit 1, got: ${res.stdout}${res.stderr}`).toBe(1);
+    expect(res.stdout, 'nothing on stdout').toBe('');
+    expect(res.stderr, 'the one line').toBe(`workkit: cannot read WORKFLOW_HOME (${folder}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set WORKFLOW_HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
   });
 });

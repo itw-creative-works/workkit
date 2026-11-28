@@ -21,7 +21,7 @@ export async function rosterOf(env, read) {
 
 /**
  * The rostered folder whose origin is `slug`, any letter case, enabled
- * entries only (wk_roster_path).
+ * entries only.
  * @param {string} slug the repo, owner/name
  * @param {object|null} roster the parsed roster (rosterOf)
  * @param {function} slugOf async, a folder's origin slug
@@ -48,7 +48,7 @@ export function ghRepoIsHere(repo, here) {
 
 /**
  * The origin slug of the git working tree at `dir`, '' when it has none (the
- * engine's rule: wk_repo_slug).
+ * engine's rule: repoSlug in workflow/lib/repo.js).
  * @param {string} dir the folder
  * @param {function} run runs `(argv, { cwd })`, resolving `{ exitCode, stdout }`
  * @returns {Promise<string>}

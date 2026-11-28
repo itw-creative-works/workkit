@@ -1,9 +1,9 @@
 /**
- * workflow/workkit/floor.js: the Node floor the command checks before any other
+ * workflow/lib/floor.js: the Node floor the command checks before any other
  * piece loads: the floor read off the kit's root package.json, the line a Node
  * below it gets, and the code the command then ends with. Written in syntax an
  * older Node still reads, so the line prints there.
- * Usage: const { floorOf, floorLine, floorCode } = require('./floor');
+ * Usage: const { floorOf, floorLine, floorCode } = require('./lib/floor');
  */
 
 const fs = require('fs');

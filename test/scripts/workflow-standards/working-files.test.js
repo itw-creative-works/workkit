@@ -1,4 +1,4 @@
-// Tests for standards.sh: the local working files it seeds.
+// Tests for standards.js: the local working files it seeds.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -8,7 +8,7 @@ const {
 } = require('../../lib/harness');
 const { cleanup, makeRepo, readFile, runScript } = require('./helpers');
 
-describe('standards.sh: local working files', () => {
+describe('standards.js: local working files', () => {
   test('creates .workkit/capture.md with the capture header', () => {
     const repo = makeRepo();
     runScript(repo);

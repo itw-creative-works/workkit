@@ -7,20 +7,16 @@
 # Functions only, called on the last line: bash reads a script as it runs, but
 # parses a function whole.
 
-load_libs() {
+load_body() {
   # Two steps: Git Bash collapses `..` in a Windows-spelled path before it reads
   # the engine link, so the kit is found from the folder the link resolves to.
   KIT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && cd -P ../.. && pwd -P)"
-  # shellcheck source=../lib/platform.sh
-  . "$KIT_DIR/workflow/lib/platform.sh"
-  # shellcheck source=../lib/participation.sh
-  . "$KIT_DIR/workflow/lib/participation.sh"
   # shellcheck source=./hook.sh
   . "$KIT_DIR/workflow/githooks/hook.sh"
 }
 
 main() {
-  load_libs
+  load_body
   wk_githook_run "${BASH_SOURCE[0]##*/}" "$@"
 }
 

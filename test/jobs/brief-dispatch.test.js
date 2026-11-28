@@ -10,7 +10,7 @@ const {
 } = require('../lib/harness');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  homeEnv, stubTool, basePathWithout, systemPathWith, joinPath,
+  IS_WINDOWS, NODE_DIR, homeEnv, shellPath, stubTool, basePathWithout, systemPathWith, joinPath,
 } = require('../lib/platform');
 const { underEnv } = require('../lib/under-env');
 
@@ -142,5 +142,28 @@ describe('jobs/brief-dispatch: the program', () => {
     expect(noSlug, 'no home repo, so an empty first line').toBe('');
     expect(/no home repo is configured/.test(reason), `then the reason: ${refused.stdout}`).toBeTruthy();
     cleanup(none.root);
+  });
+
+  // Once gh is found the program reads the machine folder before gh runs. PATH is a node
+  // gh's folder and node's alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a WORKFLOW_HOME in the shell\'s spelling with no cygpath on PATH: the one line naming WORKFLOW_HOME and the fix, exit 1, no stack, no gh', {
+    skip: !IS_WINDOWS && 'off Windows a machine folder is never handed to cygpath',
+  }, () => {
+    const world = mkWorld();
+    const folder = shellPath(world.over.WORKFLOW_HOME);
+    const bin = path.join(world.root, 'node-bin');
+    const ran = path.join(world.root, 'gh-ran');
+    fs.mkdirSync(bin);
+    // `env node`, so run.js names node its runner whatever node's own path holds, with no bash on PATH.
+    fs.writeFileSync(path.join(bin, 'gh'), `#!/usr/bin/env node\nrequire('fs').writeFileSync(${JSON.stringify(ran)}, '');\n`, { mode: 0o755 });
+    const res = run(process.execPath, [PROGRAM], {
+      env: { ...world.env, WORKFLOW_HOME: folder, PATH: joinPath(bin, NODE_DIR) },
+    });
+    expect(res.status, `exit 1, got: ${res.stdout}${res.stderr}`).toBe(1);
+    expect(res.stdout, 'nothing on stdout').toBe('');
+    expect(res.stderr, 'the one line').toBe(`workkit: cannot read WORKFLOW_HOME (${folder}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set WORKFLOW_HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
+    expect(fs.existsSync(ran), 'and gh never ran').toBe(false);
+    cleanup(world.root);
   });
 });

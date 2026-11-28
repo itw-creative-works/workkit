@@ -56,7 +56,7 @@
     - the commit's in git's own `pre-commit` and `commit-msg` hooks, on the staged tree and the message;
     - the `gh` write's in the `gh` shim, on the expanded argv;
     - the shared-tree guard's in the `git` shim, on git's real arguments.
-    - All three sit behind one gate, a Claude session in a repo that is a yes (`wk_session_judges`: `workflow/README.md`, the `lib/participation.sh` row).
+    - All three sit behind one gate, a Claude session in a repo that is a yes (`sessionJudges`: [`hooks.md`](hooks.md) § Where every hook stands down).
   - Every Bash call's changed files are checked on disk after it runs.
   - No guard reads a command's text. The one match left is whether a Bash command names `.workkit/capture.md`, handed to `safety:capture-guard` as a yes or no.
   - How a hook in the hooks module finds the repo it acts on: [`hooks.md`](hooks.md) § Where every hook stands down.
@@ -87,7 +87,7 @@
     - the ship hooks run nothing from a repo file that is no JSON object, or from a `hooks` set aside in any layer.
   - `enabled` alone is the repo file's (the table above).
   - The kit's defaults missing or not parsing is an error naming the file, never a silent fallback.
-  - The readers: `loadSettings` in `hooks/mods/settings.js` for Node, `wk_setting` in `workflow/lib/participation.sh` for the shell.
+  - The reader: `loadSettings` in `hooks/mods/settings.js`, the one loader for the hooks module and the engine's Node alike.
 
 - **Other systems may add their own key.** These keys belong to this spec:
   - the top-level key above (`enabled`);

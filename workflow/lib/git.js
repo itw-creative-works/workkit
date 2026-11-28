@@ -22,12 +22,14 @@ const gitIn = (root, args, options = {}) => spawnSync('git', ['-C', root, ...arg
 
 /**
  * The git top level of `cwd`, or null outside a repo or for a folder that is
- * not there (git does not start in it).
+ * not there (git does not start in it). `globals` are git's options that lead a
+ * call (`-C <dir>`, `--git-dir <dir>`), read as that call would read them.
  * @param {string} cwd
+ * @param {string[]} [globals] git's leading global options
  * @returns {string|null}
  */
-const repoRoot = (cwd) => {
-  const res = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+const repoRoot = (cwd, globals = []) => {
+  const res = spawnSync('git', [...globals, 'rev-parse', '--show-toplevel'], {
     cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
   });
   return res.status === 0 ? res.stdout.trim() : null;

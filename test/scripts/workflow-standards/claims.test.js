@@ -1,4 +1,4 @@
-// Tests for standards.sh: the two claim sweeps, the stale-claim sweep and the
+// Tests for standards.js: the two claim sweeps, the stale-claim sweep and the
 // claimed-spec flip.
 // The shared prologue is ./helpers.js.
 
@@ -20,7 +20,7 @@ const claimStub = (carried, extra = {}) => makeGhStub({
 const issueEdits = (stub) => ghCalls(stub).filter((c) => isCall(c, 'issue', 'edit'));
 const hasPair = (call, flag, value) => call.some((a, i) => a === flag && call[i + 1] === value);
 
-describe('standards.sh: the stale-claim sweep', () => {
+describe('standards.js: the stale-claim sweep', () => {
   test('agent:claimed is a label the manifest creates', () => {
     expect(desiredLabels().some((l) => l.name === CLAIM), 'the sweep queries a label the heal makes').toBeTruthy();
     expect(MANIFEST.groups.agent.exclusive, 'the claim marker is not exclusive with agent:ok').toBe(false);
@@ -158,7 +158,7 @@ describe('standards.sh: the stale-claim sweep', () => {
   });
 });
 
-describe('standards.sh: the claimed-spec flip', () => {
+describe('standards.js: the claimed-spec flip', () => {
   // status:specced is the authorization to start and agent:claimed is the
   // claim, so an issue carrying both has started, and the flip is what lets the
   // readers carry no claimed-specced tolerance. An assignee is a person, never a

@@ -2,8 +2,9 @@
  * jobs/lib/task-scheduler.js: the Windows half of jobs/install.js, the 9am job
  * as a Task Scheduler task: the task file rendered and encoded for `schtasks`,
  * its registration, and the `--check` against the copy kept of the registered
- * file. The copy is the "installed" mark, as the plist is on a Mac.
- * Usage: const { renderTask, installTask, checkTask, copyPath } = require('./lib/task-scheduler');
+ * file. The copy is the "installed" mark, as the plist is on a Mac. Its XML
+ * escape is the plist's too.
+ * Usage: const { escaped, renderTask, installTask, checkTask, copyPath } = require('./lib/task-scheduler');
  */
 
 const fs = require('fs');
@@ -112,5 +113,5 @@ const checkTask = ({ label, text, copy }) => {
 };
 
 module.exports = {
-  TASK_FOLDER, taskName, renderTask, encodeTask, copyPath, installTask, checkTask,
+  TASK_FOLDER, taskName, escaped, renderTask, encodeTask, copyPath, installTask, checkTask,
 };

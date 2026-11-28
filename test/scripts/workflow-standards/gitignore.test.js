@@ -1,4 +1,4 @@
-// Tests for standards.sh writing .gitignore: the .workkit/ pattern and the
+// Tests for standards.js writing .gitignore: the .workkit/ pattern and the
 // basics.
 // The shared prologue is ./helpers.js.
 
@@ -13,7 +13,7 @@ const {
   readFile, runScript,
 } = require('./helpers');
 
-describe('standards.sh: .workkit/ in .gitignore', () => {
+describe('standards.js: .workkit/ in .gitignore', () => {
   test('git honors the pattern: settings.json tracked, the rest ignored', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
@@ -87,7 +87,7 @@ describe('standards.sh: .workkit/ in .gitignore', () => {
   });
 });
 
-describe('standards.sh: the .gitignore basics', () => {
+describe('standards.js: the .gitignore basics', () => {
   // The two entries every repo needs, in the order the heal names them.
   const BASICS = ['.DS_Store', '.env'];
   const countLine = (text, entry) =>

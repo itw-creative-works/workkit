@@ -11,7 +11,7 @@ const {
   describe, test, expect, run, pidIn, mkTmp, until,
 } = require('../lib/harness');
 const {
-  NODE_DIR, SYSTEM_PATH, shellPath, joinPath, which, stubTool, basePathWithout, nodeEnv, skipWithoutCaughtSignal,
+  NODE_DIR, SYSTEM_PATH, shellPath, joinPath, which, stubTool, basePathWithout, skipWithoutCaughtSignal,
 } = require('../lib/platform');
 const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
@@ -398,7 +398,7 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
         .toBe(`prove: ${topOf(bare)} declares no test script, so there is no suite to prove`);
       assertNothingRun(bare, 'no test script');
 
-      const noNpm = prove(w, { PATH: basePathWithout(w.dir, 'npm'), ...nodeEnv });
+      const noNpm = prove(w, { PATH: basePathWithout(w.dir, 'npm') });
       expect(noNpm.code, `no npm: exit 1, got: ${noNpm.said}`).toBe(1);
       expect(lastOf(noNpm.err), 'no npm').toBe('prove: npm is not on PATH');
       assertNothingRun(w, 'no npm');

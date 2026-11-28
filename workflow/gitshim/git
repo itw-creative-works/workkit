@@ -2,8 +2,10 @@
 # workflow/gitshim/git: the git shim, first on PATH in a Claude session alone
 # (the hooks module's SessionStart puts its folder there). Every call but one of
 # checkout, switch, restore, stash, clean or reset runs the real git at once; one
-# of those, in a repo where wk_session_judges holds, is ruled on first by
-# safety:tree-guard (judge.js tree-guard) over git's real arguments.
+# of those, in a Claude session, in a repo holding .workkit/settings.json, is
+# handed to judge.js tree-guard under the first node on PATH, which decides
+# whether the session is judged and rules over git's real arguments. No library
+# is loaded.
 
 set -uo pipefail
 
@@ -34,7 +36,7 @@ norm_dir "$OWN_DIR"
 OWN_DIR="$NORM"
 
 # The real git: the first git on PATH after the shim's own folder, skipping every
-# folder already met at or before it, as the gh shim's real_gh finds gh.
+# folder already met at or before it, the walk realGh in identity/shim.js makes for gh.
 real_git() {
   local i own=-1 met=$'\n' dirs=()
   IFS=: read -r -a dirs <<<"${PATH:-}"
@@ -102,7 +104,7 @@ fi
 # unjudged (1); a fifth hop still landing on an alias is 2, too deep to judge.
 expand_alias() {
   local word="$VERB" hop j value
-  local rest=("${ARGS[@]:VERB_AT+1}") tail=()
+  local rest=("${ARGS[@]:VERB_AT+1}") after=()
   for ((hop = 0; hop < 5; hop++)); do
     value="$("$GIT" ${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} config --get "alias.$word" 2>/dev/null)" || return 1
     WORDS=()
@@ -114,8 +116,8 @@ expand_alias() {
     done
     [[ $j -lt ${#WORDS[@]} ]] || return 1
     word="${WORDS[j]}"
-    tail=("${WORDS[@]:j+1}")
-    rest=(${tail[@]+"${tail[@]}"} ${rest[@]+"${rest[@]}"})
+    after=("${WORDS[@]:j+1}")
+    rest=(${after[@]+"${after[@]}"} ${rest[@]+"${rest[@]}"})
     if in_list "$word" "${JUDGED[@]}"; then
       CALL=(${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} "$word" ${rest[@]+"${rest[@]}"})
       return 0
@@ -135,13 +137,18 @@ if [[ -n "$VERB" ]] && ! in_list "$VERB" "${JUDGED[@]}" && ! in_list "$VERB" "${
   expand_alias
   case $? in
     0) NAMES_JUDGED=1 ;;
-    2) NAMES_JUDGED=1; TOO_DEEP=1 ;;
+    2) NAMES_JUDGED=1; TOO_DEEP=1; CALL=(${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} "${ARGS[@]:VERB_AT}") ;;
     *) OPTS=() ;;
   esac
 fi
 [[ "$NAMES_JUDGED" -eq 1 ]] || exec "$GIT" "$@"
 
+# The cheap filter: outside a Claude session, under HOOK_DISABLE=1, or in a repo
+# with no settings file, nothing is judged; the judge applies the session rule
+# to the rest.
+[[ "${CLAUDECODE:-}" == 1 && "${HOOK_DISABLE:-}" != 1 ]] || exec "$GIT" "$@"
 ROOT="$("$GIT" ${GLOBALS[@]+"${GLOBALS[@]}"} ${OPTS[@]+"${OPTS[@]}"} rev-parse --show-toplevel 2>/dev/null)" || exec "$GIT" "$@"
+[[ -e "$ROOT/.workkit/settings.json" ]] || exec "$GIT" "$@"
 
 # real_path <path>: <path> with every link in its chain walked; macOS has no
 # `readlink -f`, so each hop is read and joined by hand.
@@ -159,25 +166,18 @@ real_path() {
 
 SHIM="$(real_path "${BASH_SOURCE[0]}")"
 KIT_DIR="$(cd "${SHIM%/*}/../.." && pwd -P)"
-# shellcheck source=../lib/platform.sh
-. "$KIT_DIR/workflow/lib/platform.sh"
-# shellcheck source=../lib/participation.sh
-. "$KIT_DIR/workflow/lib/participation.sh"
 
-wk_session_judges "$ROOT" || exec "$GIT" "$@"
-
-# A chain the shim cannot follow to its verb fails closed.
-if [[ "$TOO_DEEP" -eq 1 ]]; then
-  printf 'tree-guard: BLOCKED this command: the git alias %s is a chain deeper than five hops, so the verb it runs cannot be judged.\nRun the git command itself, spelled out, instead of the alias.\n' "$VERB" >&2
+if ! command -v node >/dev/null 2>&1; then
+  printf 'git: the workkit check cannot run: no node on PATH\n' >&2
   exit 1
 fi
 
-if ! NODE="$(wk_node)"; then
-  printf 'git: the workkit tree-guard did not run (no node %s or newer found)\n' "$WK_NODE_FLOOR" >&2
-  exec "$GIT" "$@"
-fi
+# A chain the shim cannot follow to its verb is named to the judge, which
+# refuses it where the session is judged.
+DEEP=()
+[[ "$TOO_DEEP" -eq 0 ]] || DEEP=(--too-deep "$VERB")
 
 # Exit 0 runs git, a stand-aside line already on stderr; any other code is a
 # refusal whose text the judge already put there, and git does not run.
-"$NODE" "$KIT_DIR/workflow/githooks/judge.js" tree-guard -- ${CALL[@]+"${CALL[@]}"} || exit $?
+node "$KIT_DIR/workflow/githooks/judge.js" tree-guard ${DEEP[@]+"${DEEP[@]}"} -- ${CALL[@]+"${CALL[@]}"} || exit $?
 exec "$GIT" "$@"

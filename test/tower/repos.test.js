@@ -11,7 +11,7 @@ const { asWindows, gitPath: rosterKey } = require('../lib/platform');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const { discoverRepos, gitPath, readRoster, tempRoot } = require(path.join(__dirname, '..', '..', 'tower', 'api', 'lib', 'repos.js'));
-// The slug rule is the engine's (workflow/slug.js, cased in test/scripts/slug.test.js);
+// The slug rule is the engine's (workflow/slug.js, cased below and in test/hooks/twins.test.js);
 // repos.js requires it from there, so the cases below ask it where it lives.
 const { slugFromRemote } = require(path.join(__dirname, '..', '..', 'workflow', 'slug.js'));
 
@@ -192,7 +192,7 @@ describe('tower/repos: which repos are in', () => {
     git(tower, 'init', '-q', '-b', 'main');
     git(tower, 'remote', 'add', 'origin', 'https://github.com/owner/workkit.git');
     // The key is written the way the engine writes one, through the same fold
-    // (`wk_native_path`): git's spelling, which is the joined path on this machine
+    // (`nativePath`): git's spelling, which is the joined path on this machine
     // and the slashed one on Windows. A `path.join` key would be a file no real
     // machine holds, and the lookup would miss.
     fs.writeFileSync(

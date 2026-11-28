@@ -364,7 +364,7 @@ describe('changelog: the CLI and --added-only', () => {
   });
 
   test('every violation survives being piped to a consumer', () => {
-    // standards.sh derives a count from this output, and `process.exit()` drops
+    // The heal derives a count from this output, and `process.exit()` drops
     // buffered stderr on a pipe. The truncation is timing-dependent, so this
     // pins the contract rather than the race.
     const dir = mkTmp('cl-');

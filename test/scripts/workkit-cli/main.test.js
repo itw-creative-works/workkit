@@ -10,11 +10,12 @@ const {
   describe, test, expect, mkTmp, run,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, joinPath, jsPath, shellPath, samePath, stubToolJs, skipWithoutFileLink, spawn,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, joinPath, shellPath, samePath, skipWithoutFileLink, spawn,
 } = require('../../lib/platform');
 const { recordArgvJs, readArgv } = require('../../lib/argv-log');
+const { recordingNode } = require('../../lib/node-fakes');
 const {
-  WORKFLOW_DIR, CLI, SLUG, mkWorld, runCli, mkKit,
+  CLI, SLUG, mkWorld, runCli, mkKit,
 } = require('./helpers');
 
 // The help, byte for byte.
@@ -281,15 +282,10 @@ describe('workkit.js started by its own path', () => {
   test('it runs as a program, under the first node on PATH', { skip: NOT_HERE }, () => {
     const bin = mkTmp('wk-main-bin-');
     const log = path.join(bin, 'node-argv.log');
-    stubToolJs(bin, 'node', [
-      `require('fs').appendFileSync(${jsPath(log)}, \`\${JSON.stringify(process.argv.slice(2))}\\n\`);`,
-      `const res = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'run.js'))}).spawnSync(process.execPath, process.argv.slice(2), { stdio: 'inherit' });`,
-      'process.exit(res.status === null ? 1 : res.status);',
-    ].join('\n'));
+    recordingNode(bin, { log });
     const res = run(CLI, ['help'], { env: { HOME: mkTmp('wk-main-home-'), PATH: joinPath(bin, SYSTEM_PATH) } });
     expect(res.status, `exit 0, got: ${res.output}`).toBe(0);
     expect(res.stdout, 'the help').toBe(HELP);
-    const starts = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
-    expect(starts, 'the node first on PATH ran the entry, once').toEqual([[CLI, 'help']]);
+    expect(readArgv(log), 'the node first on PATH ran the entry, once').toEqual([[CLI, 'help']]);
   });
 });

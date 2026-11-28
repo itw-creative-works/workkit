@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, run } = require('../../lib/harness');
 const {
-  BASH, NO_RC, gitPath, joinPath, nodeEnv,
+  BASH, NO_RC, NODE_DIR, gitPath, joinPath,
 } = require('../../lib/platform');
 const { mods } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo } = require('../../lib/git-repo');
@@ -34,10 +34,10 @@ const skillLine = (skill, words) => {
   return line;
 };
 
-// <line> run for real in <cwd>, the kit's `workkit` first on PATH and this
-// suite's node as the kit's.
+// <line> run for real in <cwd>, the kit's `workkit` first on PATH, then this
+// suite's node.
 const runLine = (world, line, cwd = world.repo) => run(BASH, [...NO_RC, '-c', line], {
-  cwd, env: { ...world.env, ...nodeEnv, PATH: joinPath(workkitBin(), world.env.PATH) },
+  cwd, env: { ...world.env, PATH: joinPath(workkitBin(), NODE_DIR, world.env.PATH) },
 });
 
 describe('commit-gate: scope', () => {

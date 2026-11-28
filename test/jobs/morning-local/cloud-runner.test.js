@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it: the cloud brief runner,
+// Tests for jobs/morning.js as this machine runs it: the cloud brief runner,
 // reconciled on the home clone before the dispatch.
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 

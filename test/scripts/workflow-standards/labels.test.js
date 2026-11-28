@@ -1,19 +1,19 @@
-// Tests for standards.sh: the label heal and the open-issue label report.
+// Tests for standards.js: the label heal and the open-issue label report.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const {
-  describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, start, until,
 } = require('../../lib/harness');
 const {
-  gitPath, joinPath, skipWithoutNodeStub, shellPath, spawnBash, stubTool, BASH, NO_RC, SYSTEM_PATH, NODE_DIR,
+  gitPath, joinPath, skipWithoutNodeStub, shellPath, stubTool, SYSTEM_PATH, NODE_DIR,
 } = require('../../lib/platform');
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
 const { PTY, atTerminal } = require('../../lib/identity');
 const { framesIn, CLEAR } = require('../../lib/spin-call');
 const {
-  SCRIPT, WORKFLOW_DIR, copyKitSiblings, desiredLabels, cleanup, makeRepo, makeGhStub, ghCalls, runScript,
+  SCRIPT, WORKFLOW_DIR, copyKitSiblings, desiredLabels, cleanup, makeRepo, makeGhStub, ghCalls, seededEnv, heal, runScript,
 } = require('./helpers');
 
 // The repo a gh call names by flag, '' for the cwd's own.
@@ -24,7 +24,7 @@ const target = (c) => {
   return inline ? inline.slice('--repo='.length) : '';
 };
 
-describe('standards.sh: labels', () => {
+describe('standards.js: labels', () => {
   test('creates every manifest label with its description and color', () => {
     const repo = makeRepo();
     const stub = makeGhStub({ labels: [] });
@@ -79,16 +79,12 @@ describe('standards.sh: labels', () => {
     fs.writeFileSync(path.join(engine, 'labels.json'), '{ "groups": ');
     const repo = makeRepo();
     const stub = makeGhStub({ labels: desiredLabels() });
-    const res = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
-      env: {
-        ...process.env,
-        PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
-        WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'claude-home')),
-      },
-      encoding: 'utf8',
-      timeout: SPAWN_DEADLINE,
-    });
+    const res = heal([repo], {
+      ...process.env,
+      PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'workflow-home'),
+      WORKFLOW_CLAUDE_HOME: path.join(mkTmp('wf-std-'), 'claude-home'),
+    }, { engine: path.join(engine, 'standards.js') });
     const file = gitPath(path.join(fs.realpathSync(kit), 'workflow', 'labels.json'));
     const want = `  ⚠ labels: labels.json at ${file} cannot be read as JSON; reinstall the workflow core`;
     expect((res.stderr || '').split('\n').includes(want), `the warning on stderr, got: ${res.stderr}`).toBe(true);
@@ -205,7 +201,7 @@ describe('standards.sh: labels', () => {
   });
 });
 
-describe('standards.sh: the wait line of a gh call', () => {
+describe('standards.js: the wait line of a gh call', () => {
   // The branch protection step's read of the default branch: the one gh call whose
   // wait line the heal shows, since every other call's output is captured.
   const WAIT = '⏳ reading the default branch...';
@@ -213,14 +209,14 @@ describe('standards.sh: the wait line of a gh call', () => {
   const healEnv = (stub, extra = {}) => {
     const env = { ...process.env };
     for (const key of ['QUIET', 'WORKKIT_SPIN', 'WORKKIT_COLOR']) delete env[key];
-    return {
+    return seededEnv({
       ...env,
       PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
-      WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'claude-home')),
+      WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'workflow-home'),
+      WORKFLOW_CLAUDE_HOME: path.join(mkTmp('wf-std-'), 'claude-home'),
       NO_COLOR: '1',
       ...extra,
-    };
+    });
   };
 
   test('off a terminal: the default branch\'s wait line is the one wait line on stderr, and no cursor code', () => {
@@ -233,7 +229,7 @@ describe('standards.sh: the wait line of a gh call', () => {
   test('at a terminal: the read of the default branch spins, so no wait line, and its line is cleared', { skip: !PTY && 'no `script` here to give the heal a terminal' }, () => {
     const repo = makeRepo();
     const stub = makeGhStub({ labels: desiredLabels() });
-    const tty = atTerminal(['bash', shellPath(SCRIPT), shellPath(repo)], { env: healEnv(stub), cwd: repo, dir: mkTmp('wf-std-') });
+    const tty = atTerminal([process.execPath, SCRIPT, repo], { env: healEnv(stub), cwd: repo, dir: mkTmp('wf-std-') });
     const waits = tty.terminal.split(/\r?\n/).filter((l) => l.trimStart().startsWith('⏳'));
     expect(waits, `no wait line at a terminal, got: ${JSON.stringify(tty.terminal)}`).toEqual([]);
     expect(tty.terminal.includes(CLEAR), `the spinner's line cleared, got: ${JSON.stringify(tty.terminal)}`).toBe(true);
@@ -255,7 +251,7 @@ describe('standards.sh: the wait line of a gh call', () => {
       'esac',
       `exec "${shellPath(path.join(stub.binDir, 'gh'))}" "$@"`,
     ]);
-    const heal = start(BASH, [...NO_RC, shellPath(SCRIPT), shellPath(makeRepo())], {
+    const heal = start(process.execPath, [SCRIPT, makeRepo()], {
       env: healEnv({ binDir: joinPath(bin, stub.binDir) }, { WORKKIT_SPIN: '1' }),
     });
     const seen = await until(() => framesIn(heal.stderr(), 'reading the default branch').length > 0);
@@ -279,7 +275,7 @@ describe('standards.sh: the wait line of a gh call', () => {
   });
 });
 
-describe('standards.sh: open-issue label report', () => {
+describe('standards.js: open-issue label report', () => {
   test('issues missing a status label or doubling an exclusive group are named', () => {
     const repo = makeRepo();
     const stub = makeGhStub({

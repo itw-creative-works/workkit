@@ -14,7 +14,7 @@ const { file } = require('../home/committed');
 const { towerApp, siteSidebar } = require('../home/options');
 const { physical } = require('../lib/link');
 const { isDir } = require('../lib/lock');
-const { nativePath } = require('../lib/platform');
+const { nativePath, unreadPathStop } = require('../lib/platform');
 const { spawnSync } = require('../lib/run');
 const { writeErr } = require('../lib/say');
 const { warn } = require('../lib/voice');
@@ -216,6 +216,11 @@ if (require.main === module) {
   // still buffered for a pipe; a code the hold's end set (Windows) stays.
   const { holdSignals } = require('../lib/interrupt');
   const hold = holdSignals();
-  const code = main(process.argv.slice(2));
+  let code;
+  try {
+    code = main(process.argv.slice(2));
+  } catch (err) {
+    code = unreadPathStop(err);
+  }
   hold.end().then(() => { process.exitCode ??= code; });
 }

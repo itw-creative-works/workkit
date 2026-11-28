@@ -8,6 +8,7 @@
  *        node brief-dispatch.js   (line 1 the slug, line 2 the line or the reason; 0 dispatched, 1 refused)
  */
 
+const { unreadPathStop } = require('../workflow/lib/platform');
 const { onPath, spawnSync } = require('../workflow/lib/run');
 const { writeOut } = require('../workflow/lib/say');
 const { homeSlug } = require('../workflow/lib/settings');
@@ -83,7 +84,7 @@ const main = async () => {
 
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  main().then((code) => { process.exitCode = code; });
+  main().then((code) => { process.exitCode = code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }
 
 module.exports = { main, dispatchBrief, BRIEF_WORKFLOW };

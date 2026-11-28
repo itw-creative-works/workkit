@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it: the cloud brief marker
+// Tests for jobs/morning.js as this machine runs it: the cloud brief marker
 // and the manual trigger.
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 

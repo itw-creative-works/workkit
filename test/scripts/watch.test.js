@@ -14,7 +14,7 @@ const {
 const {
   IS_WINDOWS, BASH, NO_RC, jsPath, shellPath, cygpathStub, joinPath,
 } = require('../lib/platform');
-const { runLib } = require('../lib/hook-lib');
+const { nativePath } = require('../../workflow/lib/platform');
 const { skipWithoutWrapper, wiredNpmEnv } = require('../lib/script-shell');
 const { suiteLockPath } = require('../lib/suite-record');
 const { runPathsUnder } = require('../lib/run-paths');
@@ -593,7 +593,7 @@ describe('workkit watch --end', () => {
       cygpathStub(cyg);
       const env = { ...w.env, OSTYPE: 'msys', PATH: joinPath(cyg, w.env.PATH) };
       const enclosingShell = lockPaths(w, env)[enclosing];
-      const spelled = [runLib(`wk_native_path "${enclosingShell}"`, env).stdout, shellPath(enclosingShell)]
+      const spelled = [nativePath(enclosingShell), shellPath(enclosingShell)]
         .find((other) => other && other !== enclosingShell);
       expect(spelled, `a second spelling of ${enclosingShell}`).toBeTruthy();
       const lock = lockFolders(w)[typed];

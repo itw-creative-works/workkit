@@ -214,7 +214,7 @@ workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://l
 - **Where a published copy comes from.**
   - This app is also the SEED of the home repo: `workkit setup` copies it into `~/.workkit/tower`.
     - There it becomes a project in its own right.
-  - `workflow/publish.sh` starts `workflow/publish.js`, which builds THAT clone and pushes the output to the home repo's `gh-pages` branch.
+  - `workflow/publish.js` builds THAT clone and pushes the output to the home repo's `gh-pages` branch.
     - It builds through `workflow/publish/build.js`, the one home of the install, the mint and the build.
     - GitHub Pages serves that branch from the branch root.
     - It runs as the daily job after the morning brief, or as `workkit publish` on demand.

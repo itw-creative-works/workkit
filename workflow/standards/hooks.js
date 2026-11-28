@@ -11,10 +11,9 @@ const { skip, warn } = require('../lib/voice');
 const { flag } = require('./flag');
 const { chomp } = require('../../hooks/mods/text.js');
 
-// The hooks module and the guards in the shims fail open without these, so
-// this list makes a missing one visible. A `|` joins one tool's spellings
-// across platforms; any one satisfies it.
-const HOOK_TOOLS = ['jq', 'git', 'node', 'shasum|sha1sum'];
+// The tools the guards run on. Without node a checked commit and a guarded git
+// verb stop on one line and gh does not start, so a missing one is named first.
+const HOOK_TOOLS = ['git', 'node'];
 
 // The import node runs; the module's path rides argv, so node builds the file URL.
 const LOAD = 'const { pathToFileURL } = await import("node:url"); await import(pathToFileURL(process.argv[1]).href);';
@@ -51,12 +50,11 @@ const checkHookModule = (run) => {
 const checkHookLayer = (run) => {
   if (!isFile(`${run.hooksDir}/hooks.json`)) return;
   const missing = HOOK_TOOLS
-    .map((entry) => entry.split('|'))
-    .filter((spellings) => !spellings.some((name) => onPath(name) !== null))
-    .map((spellings) => ` ${spellings.join(' or ')}`)
+    .filter((name) => onPath(name) === null)
+    .map((name) => ` ${name}`)
     .join('');
   if (missing !== '') {
-    warn(`hooks: the hook layer needs${missing}; without them the hooks stand aside and their checks silently do not run`);
+    warn(`hooks: the hook layer needs${missing} on PATH; without node a checked commit and a guarded git verb stop on one line, and gh does not start`);
   }
   if (checkHookModule(run)) skip('hooks: the hooks module loads');
 };

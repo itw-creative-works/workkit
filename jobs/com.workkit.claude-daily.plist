@@ -6,9 +6,15 @@
 	<string>com.workkit.claude-daily</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/bin/bash</string>
-		<string>{{HOME}}/.claude/workkit/../jobs/morning.sh</string>
+		<string>/usr/bin/env</string>
+		<string>node</string>
+		<string>{{KIT}}/jobs/morning.js</string>
 	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>{{PATH}}</string>
+	</dict>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

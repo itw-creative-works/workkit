@@ -1,4 +1,4 @@
-// Tests for workflow/lib/git.js: `repoRoot(cwd)`, `headSha(cwd)` and `gitIn(root, args, options)`, the git
+// Tests for workflow/lib/git.js: `repoRoot(cwd, globals)`, `headSha(cwd)` and `gitIn(root, args, options)`, the git
 // reads the kit's JavaScript scripts share. Every case asks a real git about a
 // real folder in scratch; the expected answer is read from the folder itself
 // (its real path, its branch's ref file), never git's answer read back.
@@ -26,6 +26,13 @@ describe('lib/git.js: repoRoot', () => {
 
   test('a folder that does not exist answers null', () => {
     expect(repoRoot(path.join(mkTmp('lib-git-gone-'), 'missing')), 'a missing path is in no repo').toBe(null);
+  });
+
+  test('from a folder outside any repo, git\'s leading -C <repo> answers that repo\'s top level; with no options, null as before', () => {
+    const repo = mkOriginRepo(mkTmp('lib-git-c-repo-'), FIXTURE_ORIGIN);
+    const outside = mkTmp('lib-git-c-plain-');
+    expect(repoRoot(outside, ['-C', repo]), 'the repo -C names').toBe(gitPath(fs.realpathSync.native(repo)));
+    expect(repoRoot(outside), 'the folder itself is in no repo').toBe(null);
   });
 });
 

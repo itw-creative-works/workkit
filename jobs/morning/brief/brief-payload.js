@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 
+const { unreadPathStop } = require('../../../workflow/lib/platform');
 const { discoverRepos } = require('../../../tower/api/lib/repos');
 const { fetchBoard } = require('../../../tower/api/lib/board');
 const { repoHealth } = require('../../../tower/api/lib/health');
@@ -188,8 +189,12 @@ const writeBriefMarks = (news, payload) => {
 module.exports = { composeBrief, render, writeBriefMarks, INSTRUCTION };
 
 if (require.main === module) {
-  const news = collectCcNews();
-  const payload = composeBrief();
-  process.stdout.write(render(payload, news));
-  writeBriefMarks(news, payload);
+  try {
+    const news = collectCcNews();
+    const payload = composeBrief();
+    process.stdout.write(render(payload, news));
+    writeBriefMarks(news, payload);
+  } catch (err) {
+    process.exitCode = unreadPathStop(err);
+  }
 }

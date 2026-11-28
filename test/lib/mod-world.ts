@@ -159,7 +159,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
     origins: Object.fromEntries(Object.keys(repos).map((root) => [root, `https://github.com/acme/${root.split('/').pop()}.git`])),
     lint: opts.lint ?? { exitCode: 0, stdout: '', stderr: '' },
     git: { staged: [], changed: [], added: [], deleted: [], headTime: Math.floor(now / 1000) - 60, blobs: {}, indexTree: opts.treeId ?? 'a'.repeat(40), ...(opts.git || {}) },
-    standards: { state: 'enabled', heal: { exitCode: 0, stdout: '', stderr: '' }, update: { exitCode: 0, stdout: '', stderr: '' }, ...(opts.standards || {}) },
+    standards: { state: 'enabled', inCache: { exitCode: 0, stdout: 'no\n', stderr: '' }, heal: { exitCode: 0, stdout: '', stderr: '' }, update: { exitCode: 0, stdout: '', stderr: '' }, ...(opts.standards || {}) },
   }
 
   for (const [root, url] of Object.entries(opts.origins || {})) world.origins[norm(root, '/')] = url
@@ -376,6 +376,10 @@ export const mkWorld = (on: any, opts: any = {}) => {
     if (script.endsWith('changelog/lint.js')) return ok(world.lint.stdout || '', world.lint.stderr || '', world.lint.exitCode)
     if (script.endsWith('standards.js')) {
       if (argv.includes('--state')) return ok(`${world.standards.state}\n`)
+      if (argv.includes('--in-cache')) {
+        const r = world.standards.inCache
+        return ok(r.stdout || '', r.stderr || '', r.exitCode ?? 0)
+      }
       if (argv.includes('--announce')) {
         const root = argv[argv.length - 1]
         // The offer names the shell starter, which stays in this stage.

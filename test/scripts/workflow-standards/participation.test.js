@@ -1,4 +1,4 @@
-// Tests for standards.sh: participation, the four states and where each lives.
+// Tests for standards.js: participation, the four states and where each lives.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -11,11 +11,11 @@ const {
   IS_WINDOWS, gitPath, samePath, skipWithoutModes,
 } = require('../../lib/platform');
 const {
-  cleanup, rosterOf, makeRepo, runScript,
+  SCRIPT, cleanup, rosterOf, makeRepo, runScript,
 } = require('./helpers');
 const { settingsAt } = require('../../../workflow/lib/settings');
 
-describe('standards.sh: participation', () => {
+describe('standards.js: participation', () => {
   // Four states, two files. A yes (or a deliberate project-level no) is the
   // repo's committed settings.json; never-asked and declined are personal and
   // live in the user file, so a teammate never reads one developer's hesitation
@@ -85,7 +85,9 @@ describe('standards.sh: participation', () => {
     expect(code, 'exit 0').toBe(0);
     expect(stateOf(repo), 'state').toBe('undecided');
     expect(stdout.includes('not in the issue workflow'), `offers, got: ${stdout}`).toBeTruthy();
-    expect(stdout.includes('--enable'), 'and says how to opt in').toBeTruthy();
+    // The command a person pastes starts the Node file itself, with the repo's root.
+    const enable = `node ${gitPath(SCRIPT)} --enable ${gitPath(fs.realpathSync(repo))}`;
+    expect(stdout.includes(enable), `and says how to opt in, as ${enable}, got: ${stdout}`).toBeTruthy();
     expect(stdout.includes('--decline'), 'and how to be left alone').toBeTruthy();
     assertUntouched(repo);
     cleanup(repo);

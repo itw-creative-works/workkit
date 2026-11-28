@@ -1,19 +1,16 @@
-// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the machine it
+// Tests for jobs/morning.js as a GitHub Actions runner runs it: the machine it
 // makes (the settings file, the roster, the budget rails, the unreadable repos).
 // The shared prologue (world factory, job runner) is ./helpers.js.
 
-const fs = require('fs');
 const path = require('path');
-const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  IS_WINDOWS, NO_RC, shellPath, samePath, skipWithoutNodeStub, spawnBash,
+  IS_WINDOWS, samePath, skipWithoutNodeStub,
 } = require('../../lib/platform');
 const {
-  SCRIPT, INSTRUCTION, HOME_SLUG, cleanup, mkWorld, runJob,
+  INSTRUCTION, HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');
-
-const KIT_DIR = path.join(__dirname, '..', '..', '..');
 
 describe('jobs/morning (cloud): the machine it makes', () => {
   test('an absent settings file is written from the repo the run belongs to', () => {
@@ -36,27 +33,6 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
     expect(world.settings().site.repo, 'a configured runner is not rewritten').toBe('configured/home');
     expect(world.roster().some((r) => r.slug === 'configured/home'), 'and that is the repo swept').toBeTruthy();
-    cleanup(world.root);
-  });
-
-  test('a runner seeded without the morning refuses at once, naming the engine', () => {
-    // The seeded starter and the engine library it sources are there, and the
-    // program they start is not: a red run with one line beats a half run. The
-    // machine's half, a kit missing the library, is ../morning-local/cloud-brief.test.js.
-    const world = mkWorld();
-    const seeded = path.join(world.root, 'brief');
-    fs.cpSync(path.dirname(SCRIPT), path.join(seeded, 'jobs'), { recursive: true });
-    fs.rmSync(path.join(seeded, 'jobs', 'morning.js'), { force: true });
-    const lib = path.join(seeded, 'workflow', 'lib');
-    fs.mkdirSync(lib, { recursive: true });
-    fs.copyFileSync(path.join(KIT_DIR, 'workflow', 'lib', 'platform.sh'), path.join(lib, 'platform.sh'));
-    const res = spawnBash([...NO_RC, shellPath(path.join(seeded, 'jobs', 'morning.sh'))], {
-      encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env,
-    });
-    expect(res.status, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`).toBe(1);
-    expect(res.stderr, 'one line, naming the engine folder').toMatch(/^morning: the engine is missing at \S*workflow; the kit is incomplete\n$/);
-    expect(res.stdout, 'and nothing else is said').toBe('');
-    expect(world.calls().length, 'nothing was sent').toBe(0);
     cleanup(world.root);
   });
 

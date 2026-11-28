@@ -7,7 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const { gitPath, homeEnv } = require('../lib/platform');
+const {
+  IS_WINDOWS, NODE_DIR, gitPath, homeEnv, shellPath,
+} = require('../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'claude-nightly', 'nightly-payload.js');
 const {
@@ -244,6 +246,25 @@ describe('jobs/nightly-payload: what is printed', () => {
     const parsed = JSON.parse(res.stdout.slice(INSTRUCTION.length));
     expect(Array.isArray(parsed.transcripts), 'and carries the index').toBeTruthy();
     expect(Array.isArray(parsed.commits), 'and the commits').toBeTruthy();
+  });
+
+  // The index reads HOME before any transcript or repo. PATH is node's folder
+  // alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a HOME in the shell\'s spelling with no cygpath on PATH: the one line naming HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a home is never handed to cygpath',
+  }, () => {
+    const dir = mkTmp('nightly-payload-');
+    const home = shellPath(dir);
+    const res = spawnSync(process.execPath, [SCRIPT], {
+      encoding: 'utf8',
+      timeout: SPAWN_DEADLINE,
+      env: homeEnv(dir, { ...process.env, PATH: NODE_DIR, WORKKIT_CLAUDE_PROJECTS: path.join(dir, 'projects') }),
+    });
+    cleanup(dir);
+    expect(res.status, `exit 1, got: ${res.stdout}${res.stderr}`).toBe(1);
+    expect(res.stdout, 'nothing on stdout').toBe('');
+    expect(res.stderr, 'the one line').toBe(`workkit: cannot read HOME (${home}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: the owner's switches (the roster on the
+// Tests for workflow/publish.js: the owner's switches (the roster on the
 // home repo's default branch, the custom domain and the path prefix,
 // `site.publish` and the teardown it drives). The shared prologue is ./helpers.js.
 

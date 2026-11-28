@@ -127,7 +127,7 @@ const shellQuoted = (text) => {
  * @param {{root: string, kit: string}} run
  * @returns {string}
  */
-const offerLine = (run) => `this repo is not in the issue workflow; say the word to enable it (bash ${shellQuoted(nativePath(`${run.kit}/workflow`))}/standards.sh --enable ${shellQuoted(run.root)}), or decline and it will not ask again (--decline).`;
+const offerLine = (run) => `this repo is not in the issue workflow; say the word to enable it (node ${shellQuoted(nativePath(`${run.kit}/workflow`))}/standards.js --enable ${shellQuoted(run.root)}), or decline and it will not ask again (--decline).`;
 
 /**
  * Nothing in a repo records which heals it has had: a `version` key an older

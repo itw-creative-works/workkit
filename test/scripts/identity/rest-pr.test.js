@@ -11,12 +11,12 @@ const {
   describe, test, expect, mkTmp, start, until,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, skipWithoutNodeStub, shellPath,
+  BASH, skipWithoutNodeStub,
 } = require('../../lib/platform');
 const { makeGhStub, ghRequests } = require('../../lib/gh-stub');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
-  git, cloudEnv, cloudWorld, assertSame, assertOk, printedJson, writes, routes,
+  git, cloudEnv, cloudWorld, shimArgv, assertSame, assertOk, printedJson, writes, routes,
 } = require('../../lib/identity');
 
 const CREATED = '2026-10-20T08:00:00Z';
@@ -303,7 +303,7 @@ describe('identity/gh in a cloud session: pr checks', () => {
     const stub = makeGhStub({ api: checksApi([runsPage([checkRun('build', 'in_progress')])]) });
     const runsRoute = `repos/acme/rostered/commits/${HEAD_SHA}/check-runs`;
     const runReads = () => ghRequests(stub).filter((r) => r.path === runsRoute).length;
-    const child = start(BASH, [...NO_RC, shellPath(world.shim), 'pr', 'checks', '12', '--watch', '--interval', '1'],
+    const child = start(BASH, shimArgv(world.shim, ['pr', 'checks', '12', '--watch', '--interval', '1']),
       { cwd: world.repo, env: cloudEnv(world, stub) });
     try {
       expect(await until(() => runReads() >= 1), `the first read happens, stderr: ${child.stderr()}`).toBeTruthy();

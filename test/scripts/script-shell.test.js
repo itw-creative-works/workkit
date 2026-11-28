@@ -1,19 +1,22 @@
 // Tests for workflow/script-shell.sh, npm's script shell: a green root `npm test`
 // records the tree it proved, every other green test run records its package,
-// a test event with no node at the floor stops on one line, an install-time script in an opted-in repo is followed by the git hooks'
-// re-point, and every other script passes straight through.
+// a test event runs script-shell.js under npm's own node and, under a node below
+// the floor, runs unrecorded, an install-time script in an opted-in repo is
+// followed by the git hooks' re-point, and every other script passes straight through.
 // The detached run and the checks before it are script-shell-detached.test.js;
 // the world both run npm in is test/lib/script-shell.js.
 
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect,
+  describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, shellPath, which, joinPath, stubTool, stubNode, NODE_DIR, SYSTEM_PATH,
+  IS_WINDOWS, NO_RC, shellPath, which, joinPath, stubTool, spawnBash, NODE_DIR, SYSTEM_PATH,
 } = require('../lib/platform');
-const { reviewMarkerPath, suiteLogPath, treeHash } = require('../lib/suite-record');
+const { reviewMarkerPath, suiteLogPath, suiteMarkerPath, treeHash } = require('../lib/suite-record');
+const { recordingNode } = require('../lib/node-fakes');
+const { readArgv } = require('../lib/argv-log');
 const {
   scratchNpmrc, cleanup, git, skipWithoutWrapper, mkRepo, mkWorld, npm, recorded, packaged, assertRecord,
 } = require('../lib/script-shell');
@@ -52,6 +55,42 @@ const npmOnOwnNode = (world) => {
   const cli = IS_WINDOWS ? path.join(NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js') : fs.realpathSync(which('npm', NODE_DIR));
   stubTool(bin, 'npm', ['#!/bin/bash', `exec "${shellPath(process.execPath)}" "${shellPath(cli)}" "$@"`]);
   return bin;
+};
+
+/** The stand-in `node` recordingNode writes in <dir>, recording each start to <log>, reading as v<older> when given. */
+const nodeAt = (dir, log, older) => path.join(recordingNode(dir, { log, older }), 'node');
+/** The starts in <log> that ran workflow/script-shell.js. */
+const shellStarts = (log) => readArgv(log).filter((argv) => argv.some((a) => path.basename(a) === 'script-shell.js'));
+
+// The test script of the replay cases: it writes its env to $WK_DUMP, prints a
+// token npm's echo never holds, and exits $WK_CODE (0 unless set); arguments
+// npm appends land on the last node, which ignores them.
+const DUMP_JS = "require('fs').writeFileSync(process.env.WK_DUMP, JSON.stringify(process.env));\n";
+const DUMPING = 'node dump.js && echo ran-$((1+1)) && node -e "process.exit(Number(process.env.WK_CODE || 0))"';
+
+/**
+ * The env and the command line npm hands its script shell for `npm <args>`
+ * (`npm test` by default) in <repo>, read by a run under plain sh, so a case can
+ * make that same call to the wrapper with one key changed (npm sets
+ * npm_node_execpath itself).
+ */
+const npmCall = (world, repo, extra, args = ['test']) => {
+  const dump = path.join(world.root, `npm-env-${path.basename(repo)}.json`);
+  const res = npm(world, repo, args, 'sh', { ...extra, WK_DUMP: dump });
+  expect(res.code, `the plain run read npm's env, got: ${res.out} ${res.err}`).toBe(0);
+  return JSON.parse(fs.readFileSync(dump, 'utf8'));
+};
+
+/**
+ * The wrapper started as npm starts it for <call>, in <repo>, <over> laid on its
+ * env; <args> is what npm appends to the script for `npm test -- <args>`.
+ */
+const asNpm = (repo, call, over = {}, args = '') => {
+  const res = spawnBash([...NO_RC, shellPath(path.join(ROOT, 'workflow', 'script-shell.sh')), '-c', `${call.npm_lifecycle_script}${args}`], {
+    cwd: repo, env: { ...call, ...over }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  });
+  expect(res.status !== null, `the wrapper finished: ${res.error || ''}`).toBeTruthy();
+  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
 // A line in the kit's voice, at any indent: a level glyph and a space. Kept as printed.
@@ -150,29 +189,81 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       cleanup(world.root); cleanup(repo);
     });
 
-    test('a test event on a machine with no node at the floor, bare, narrowed or supervised: the one no-node line, exit 1, the suite never ran, no record', () => {
+  });
+
+  describe('script-shell: the node a test event runs under', () => {
+    test('script-shell.js runs under the node npm_node_execpath names, and under the node on PATH once that is unset; each run records the tree', () => {
       const world = mkWorld();
-      // The suite prints `ran-2`, a token npm's echo of the script line never holds.
-      const repo = mkRepo({ scripts: { test: 'echo ran-$((1+1))' } });
-      // The only node the run's PATH holds is a 20.
-      const bin = npmOnOwnNode(world);
-      const old = path.join(world.root, 'old-node');
-      stubNode(old, '20.15.1');
+      const repo = mkRepo({ scripts: { test: DUMPING } }, { 'dump.js': DUMP_JS });
+      const tree = treeHash(repo);
+      const onPath = path.join(world.root, 'path-node.log');
+      const named = path.join(world.root, 'named-node.log');
+      const PATH = joinPath(npmOnOwnNode(world), recordingNode(path.join(world.root, 'path-node'), { log: onPath }), SYSTEM_PATH);
+      const call = npmCall(world, repo, { PATH });
+      const npmNode = nodeAt(path.join(world.root, 'named-node'), named);
+      fs.rmSync(onPath, { force: true });
+
+      const byName = asNpm(repo, call, { npm_node_execpath: npmNode });
+      expect(byName.code, `exit 0, got: ${byName.out} ${byName.err}`).toBe(0);
+      expect(shellStarts(named).length, `script-shell.js ran under the named node, its starts: ${JSON.stringify(readArgv(named))}`).toBe(1);
+      expect(shellStarts(onPath), 'and never under the node on PATH').toEqual([]);
+      assertRecord(recorded(world, repo), tree, 'the run under the named node records the tree');
+
+      fs.rmSync(suiteMarkerPath(world.workflowHome, repo));
+      fs.rmSync(named, { force: true });
+      const byPath = asNpm(repo, call, { npm_node_execpath: undefined });
+      expect(byPath.code, `exit 0, got: ${byPath.out} ${byPath.err}`).toBe(0);
+      expect(shellStarts(onPath).length, `script-shell.js ran under the node on PATH, its starts: ${JSON.stringify(readArgv(onPath))}`).toBe(1);
+      expect(shellStarts(named), 'and never under the one no longer named').toEqual([]);
+      assertRecord(recorded(world, repo), tree, 'the run under the node on PATH records the tree');
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('under a node below the floor, bare, narrowed or supervised: the script runs, its code comes back, no record, and the unrecorded line only in a repo with .workkit/settings.json', () => {
+      const world = mkWorld();
+      const older = nodeAt(path.join(world.root, 'older-node'), path.join(world.root, 'older.log'), '20.15.1');
+      const LINE = 'npm test: this Node is v20.15.1; the kit needs 22.22 or newer, so this run is not recorded';
       const shapes = [
-        ['a bare root run', ['test'], {}],
-        ['a narrowed run', ['test', '--', 'only/one.test.js'], {}],
-        ['a supervised root run', ['test'], { WORKKIT_SUPERVISED: '1' }],
+        ['a bare root run', '', {}],
+        ['a narrowed run', ' only/one.test.js', {}],
+        ['a supervised root run', '', { WORKKIT_SUPERVISED: '1' }],
       ];
-      for (const [label, args, env] of shapes) {
-        const res = npm(world, repo, args, world.wrapper, { PATH: joinPath(bin, old, SYSTEM_PATH), ...env });
-        const said = `${res.out}\n${res.err}`;
-        expect(res.code, `${label}: exit 1, got: ${res.code} ${said}`).toBe(1);
-        expect(res.err.split(/\r?\n/).filter((line) => line === 'script-shell: no node at or above 22.22 is installed').length,
-          `${label}: the no-node line once on stderr, got: ${res.err}`).toBe(1);
-        expect(said.includes('ran-2'), `${label}: the suite never ran, got: ${said}`).toBe(false);
+      for (const [kind, settings] of [['an opted-in repo', OPT_IN], ['a repo with no settings', null]]) {
+        const repo = mkRepo({ scripts: { test: DUMPING } },
+          { 'dump.js': DUMP_JS, ...(settings ? { '.workkit/settings.json': settings } : {}) });
+        const call = npmCall(world, repo, {});
+        for (const [shape, args, env] of shapes) {
+          const label = `${kind}, ${shape}`;
+          for (const code of ['0', '3']) {
+            const res = asNpm(repo, call, { npm_node_execpath: older, WK_CODE: code, ...env }, args);
+            const said = linesOfBoth(res);
+            expect(res.code, `${label}, exit ${code}: the script's own code, got: ${res.out} ${res.err}`).toBe(Number(code));
+            expect(said.filter((line) => line === 'ran-2').length, `${label}, exit ${code}: the script ran once, got: ${res.out} ${res.err}`).toBe(1);
+            expect(said.filter((line) => line === LINE).length, `${label}, exit ${code}: the unrecorded line ${settings ? 'once' : 'never'}, got: ${res.out} ${res.err}`)
+              .toBe(settings ? 1 : 0);
+          }
+        }
+        expect(recorded(world, repo), `${kind}: no record was written`).toBe(undefined);
+        expect(packaged(world, repo), `${kind}: and no package record`).toBe(undefined);
+        cleanup(repo);
       }
-      expect(recorded(world, repo), 'no record was written').toBe(undefined);
-      expect(packaged(world, repo), 'and no package record').toBe(undefined);
+      cleanup(world.root);
+    });
+
+    test('an install-time script under a node below the floor, in an opted-in repo: it runs once, its code comes back, the floor line once, and the hooks are not put back', () => {
+      const world = mkWorld();
+      const older = nodeAt(path.join(world.root, 'older-node'), path.join(world.root, 'older.log'), '20.15.1');
+      const FLOOR = 'workkit: this Node is v20.15.1; the kit needs 22.22 or newer';
+      const prepare = `node dump.js && echo ran-$((1+1)) && ${HUSKY} && node -e "process.exit(Number(process.env.WK_CODE || 0))"`;
+      const repo = mkRepo({ scripts: { prepare } }, { 'dump.js': DUMP_JS, '.workkit/settings.json': OPT_IN });
+      const call = npmCall(world, repo, {}, ['run', 'prepare']);
+      git(repo, 'config', '--local', '--unset', 'core.hooksPath');
+      const res = asNpm(repo, call, { npm_node_execpath: older, WK_CODE: '3' });
+      const said = linesOfBoth(res);
+      expect(res.code, `the script's own code, got: ${res.out} ${res.err}`).toBe(3);
+      expect(said.filter((line) => line === 'ran-2').length, `the script ran once, got: ${res.out} ${res.err}`).toBe(1);
+      expect(said.filter((line) => line === FLOOR).length, `the floor line once, got: ${res.out} ${res.err}`).toBe(1);
+      expect(hooksPathOf(repo), 'core.hooksPath is the script\'s, never put back').toBe('.husky/_');
       cleanup(world.root); cleanup(repo);
     });
   });
@@ -478,6 +569,22 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       cleanup(world.root); cleanup(repo);
     });
 
+    test('another script, through a kit with no workflow/lib/*.sh: the same output and code as plain sh, and no node started', () => {
+      const world = mkWorld();
+      const kit = mkWrapperCopy(world);
+      const lib = path.join(world.root, 'kit', 'workflow', 'lib');
+      for (const name of fs.readdirSync(lib).filter((n) => n.endsWith('.sh'))) fs.rmSync(path.join(lib, name));
+      const starts = path.join(world.root, 'node-starts.log');
+      const PATH = joinPath(npmOnOwnNode(world), recordingNode(path.join(world.root, 'stand-in'), { log: starts }), SYSTEM_PATH);
+      const repo = mkRepo({ scripts: { build: 'echo built && exit 4', test: 'exit 0' } });
+      const wrapped = npm(world, repo, ['run', 'build'], kit.shell, { ...kit.env, PATH });
+      const plain = npm(world, repo, ['run', 'build'], 'sh', { PATH });
+      expect(wrapped.code, `the script's code comes back, got: ${wrapped.code} ${wrapped.err}`).toBe(4);
+      expect(wrapped.out, 'the wrapper adds nothing to stdout').toBe(plain.out);
+      expect(readArgv(starts), 'no node was started').toEqual([]);
+      cleanup(world.root); cleanup(repo);
+    });
+
     test('a narrowed root run and another script: no suite log', () => {
       const world = mkWorld();
       const repo = mkRepo({ scripts: { build: 'echo built', test: 'echo ran' } });
@@ -503,22 +610,38 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       cleanup(world.root); cleanup(repo);
     });
 
-    test('an opted-in repo whose hooks are already ours: the install starts no node and prints nothing of ours', () => {
+    test('an opted-in repo whose hooks are already ours: the install prints nothing of ours and the hooks stay ours', () => {
       const world = mkWorld();
       const mark = path.join(world.root, 'prepared');
       const repo = repoWith({ prepare: 'echo prepared > "$WK_MARK"' });
       git(repo, 'config', 'core.hooksPath', KIT_HOOKS);
-      // A stand-in node ahead of every other records each start, then hands over to the real one.
-      const standIn = path.join(world.root, 'stand-in');
-      const starts = path.join(world.root, 'node-starts');
-      fs.mkdirSync(standIn);
-      stubTool(standIn, 'node', ['#!/bin/bash', `echo "$*" >> "${shellPath(starts)}"`, `exec "${shellPath(process.execPath)}" "$@"`]);
-      const res = install(world, repo, { PATH: joinPath(npmOnOwnNode(world), standIn, SYSTEM_PATH), WK_MARK: shellPath(mark) });
+      const res = install(world, repo, { WK_MARK: shellPath(mark) });
       expect(res.code, `npm install exits 0, got: ${res.out}${res.err}`).toBe(0);
       expect(fs.readFileSync(mark, 'utf8'), 'the prepare script ran').toBe('prepared\n');
-      expect(fs.existsSync(starts) ? fs.readFileSync(starts, 'utf8') : '', 'no node was started').toBe('');
       expect(kitLines(`${res.out}\n${res.err}`), `no line of ours, got: ${res.out} ${res.err}`).toEqual([]);
       expect(hooksPathOf(repo), 'core.hooksPath left as it was').toBe(KIT_HOOKS);
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('a repo with no .workkit/settings.json: the install runs its prepare and starts no node', () => {
+      const world = mkWorld();
+      const mark = path.join(world.root, 'prepared');
+      const repo = repoWith({ prepare: 'echo prepared > "$WK_MARK"' }, null);
+      const starts = path.join(world.root, 'node-starts.log');
+      const PATH = joinPath(npmOnOwnNode(world), recordingNode(path.join(world.root, 'stand-in'), { log: starts }), SYSTEM_PATH);
+      const res = install(world, repo, { PATH, WK_MARK: shellPath(mark) });
+      expect(res.code, `npm install exits 0, got: ${res.out}${res.err}`).toBe(0);
+      expect(fs.readFileSync(mark, 'utf8'), 'the prepare script ran').toBe('prepared\n');
+      expect(readArgv(starts), 'no node was started').toEqual([]);
+      cleanup(world.root); cleanup(repo);
+    });
+
+    test('npm run prepare that takes core.hooksPath and exits 3, in an opted-in repo: exit 3, and the hooks are ours again', () => {
+      const world = mkWorld();
+      const repo = repoWith({ prepare: `${HUSKY} && exit 3` });
+      const res = npm(world, repo, ['run', 'prepare'], world.wrapper, { CLAUDECODE: undefined });
+      expect(res.code, `the script's own code comes back, got: ${res.code} ${res.out} ${res.err}`).toBe(3);
+      expect(isOurs(hooksPathOf(repo)), `core.hooksPath is the kit's githooks, got: ${hooksPathOf(repo)}`).toBeTruthy();
       cleanup(world.root); cleanup(repo);
     });
 

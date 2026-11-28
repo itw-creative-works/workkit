@@ -1,18 +1,17 @@
 /**
  * workflow/home/runner-files.js: the cloud brief's runner, as kit-relative
  * `[source, destination]` pairs (README § The home repo's lifecycle, step 5):
- * the starter morning.sh and the one file it sources, the require closure of
- * morning.js and of brief-payload.js, which it starts, and the files those
- * read. A new require means a new pair here. The seed and the doctor read the
+ * the require closure of morning.js and of brief-payload.js, which it starts,
+ * and the files those read. A new require means a new pair here; a pair
+ * dropped is a file the seed removes. The seed and the doctor read the
  * committed copy.
  * Usage: const pairs = require('./runner-files');
  */
 
 module.exports = [
   ['workflow/templates/github-workflows/brief.yml', '.github/workflows/brief.yml'],
-  ['jobs/morning.sh', 'brief/jobs/morning.sh'],
-  ['workflow/lib/platform.sh', 'brief/workflow/lib/platform.sh'],
   ['jobs/morning.js', 'brief/jobs/morning.js'],
+  ['workflow/lib/floor.js', 'brief/workflow/lib/floor.js'],
   ['jobs/lib/notes.js', 'brief/jobs/lib/notes.js'],
   ['jobs/lib/machine.js', 'brief/jobs/lib/machine.js'],
   ['jobs/brief-dispatch.js', 'brief/jobs/brief-dispatch.js'],

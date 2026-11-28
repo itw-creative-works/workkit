@@ -12,7 +12,9 @@ const {
   IDENTITY_NA, INSTALL_FIX, BOT_HINT, repoRoute, writeLogin, useTokenService, startServer, startService, attentionCount,
 } = require('../../lib/identity');
 const { mkOriginRepo } = require('../../lib/git-repo');
-const { NODE_DIR, joinPath } = require('../../lib/platform');
+const {
+  NODE_DIR, IS_WINDOWS, joinPath, shellPath, nodeTempEnv,
+} = require('../../lib/platform');
 const {
   cleanup, mkWorld, runCli, signInEnv, mkRepo, rosterRepo, mkKit, seedSettings, inNode,
 } = require('../workkit-cli/helpers');
@@ -153,6 +155,32 @@ describe('workkit doctor: identity', () => {
       expect(attentionCount(warn.said) - attentionCount(ok.said), 'not installed is one attention item').toBe(1);
     } finally {
       await installed.close();
+      await missing.close();
+      cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
+    }
+  });
+
+  // The roster was written under the native spelling; only the doctor's run is
+  // handed the shell's. Git Bash mounts /tmp on the temp folder, so that run keeps
+  // this suite's own (each variable nodeTempEnv moves, unset where the suite's is),
+  // the one shellPath computed the spelling against.
+  test('This repo, with WORKFLOW_HOME in the shell\'s spelling: a rostered repo the App is not installed on still gets its not installed line', {
+    skip: !IS_WINDOWS && 'off Windows a shell spelling and a native one are the same string',
+  }, async () => {
+    const scene = mkScene();
+    writeLogin(scene.world.home, { token: 'ghu_doctoruser', login: 'octocat' });
+    const missing = await startServer([
+      { method: 'POST', url: '/token', status: 412, body: JSON.stringify({ error: 'not installed', fix: INSTALL_FIX }) },
+      repoRoute('acme/rostered', 'acme/rostered', 4242),
+    ], scene.world.root);
+    try {
+      useTokenService(scene.world.home, `${missing.url}/token`);
+      const suiteTemp = Object.fromEntries(Object.keys(nodeTempEnv('')).map((key) => [key, process.env[key]]));
+      const warn = doctor(scene, {
+        ...suiteTemp, GITHUB_API_URL: missing.url, WORKFLOW_HOME: shellPath(path.join(scene.world.home, '.workkit')),
+      });
+      expect(repoLines(warn.said).some((l) => l.includes('not installed')), `it says the App is not installed on acme/rostered, got: ${warn.said}`).toBeTruthy();
+    } finally {
       await missing.close();
       cleanup(scene.world.root); cleanup(scene.kit); cleanup(scene.repo);
     }

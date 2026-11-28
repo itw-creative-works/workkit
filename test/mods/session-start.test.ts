@@ -286,13 +286,42 @@ describe('classic.SessionStart: workflow:standards (workflow-standards suites)',
     expect(ctx).not.toContain('not in the issue workflow')
   })
 
+  // The engine answers whether it is the plugin cache's copy: `standards.js --in-cache`.
+  const IN_CACHE = ['node', `${ENGINE}/standards.js`, '--in-cache']
+  const inCacheAsks = (w: any) => w.runs('standards.js').filter((c: any) => c.argv.includes('--in-cache')).map((c: any) => c.argv)
+  const setupLineOf = async ($: any) => contextOf(await start($, REPO)).split('\n').find((l: string) => l.startsWith('SETUP:')) || ''
+
+  test('an engine the engine itself calls the plugin cache\'s copy: the pester says so', async ($, on) => {
+    const w = mkWorld(on, { setup: false, standards: { inCache: { exitCode: 0, stdout: 'yes\n' } } })
+    const line = await setupLineOf($)
+    expect(line).toMatch(SETUP_RUN)
+    expect(line).toContain('yourself (the engine in the plugin cache) before other work')
+    expect(inCacheAsks(w)).toEqual([IN_CACHE])
+  })
+
   test('an engine anywhere else: the pester never mentions the plugin cache', async ($, on) => {
-    mkWorld(on, { setup: false })
-    const line = contextOf(await start($, REPO)).split('\n').find((l: string) => l.startsWith('SETUP:')) || ''
+    const w = mkWorld(on, { setup: false, standards: { inCache: { exitCode: 0, stdout: 'no\n' } } })
+    const line = await setupLineOf($)
     expect(line).toMatch(SETUP_RUN)
     expect(line).toMatch(/setup` yourself/)
     expect(line).not.toMatch(/tell the user/i)
     expect(line).not.toContain('plugin cache')
+    expect(inCacheAsks(w)).toEqual([IN_CACHE])
+  })
+
+  test('an --in-cache run that fails is no answer: the pester never mentions the plugin cache', async ($, on) => {
+    // A yes beside the failed exit, so only the exit code keeps the cache out of the line.
+    const w = mkWorld(on, { setup: false, standards: { inCache: { exitCode: 1, stdout: 'yes\n', stderr: 'workkit: cannot read HOME\n' } } })
+    const line = await setupLineOf($)
+    expect(line).toMatch(SETUP_RUN)
+    expect(line).not.toContain('plugin cache')
+    expect(inCacheAsks(w)).toEqual([IN_CACHE])
+  })
+
+  test('a set-up machine never asks the engine about the plugin cache', async ($, on) => {
+    const w = mkWorld(on, { standards: { inCache: { exitCode: 0, stdout: 'yes\n' } } })
+    await start($, REPO)
+    expect(inCacheAsks(w)).toEqual([])
   })
 
   test('a cloud session (CLAUDE_CODE_REMOTE=true): the pester names setup --cloud, never the wizard', async ($, on) => {

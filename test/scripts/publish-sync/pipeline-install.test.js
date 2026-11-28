@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: the install after a manifest change (once per
+// Tests for workflow/publish.js: the install after a manifest change (once per
 // moved manifest, never for a page, retried after a failure that aborts the
 // build), end to end with an `npm` shim and a stub `omega`. The shared prologue is ./helpers.js.
 

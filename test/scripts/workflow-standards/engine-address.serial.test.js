@@ -1,5 +1,5 @@
 // Runs alone: it checks for and removes the kit's live workflow/workflow link.
-// Tests for standards.sh: the engine's address (the ~/.claude/workkit link).
+// Tests for standards.js: the engine's address (the ~/.claude/workkit link).
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -9,15 +9,23 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE, start,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, joinPath, spawnBash, execFileSync,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, gitPath, joinPath, execFileSync,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, runScript, claudeHomeWith, copyKitSiblings,
+  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, seededEnv, heal, runScript, claudeHomeWith, copyKitSiblings,
 } = require('./helpers');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo } = require('../../lib/git-repo');
 
-describe("standards.sh: the engine's address", () => {
+// The heal's env with this suite's node on PATH, a scratch machine folder and <claude> as the claude home.
+const healEnv = (claude) => ({
+  ...process.env,
+  PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+  WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'wh'),
+  WORKFLOW_CLAUDE_HOME: claude,
+});
+
+describe("standards.js: the engine's address", () => {
   // ~/.claude/workkit → the engine. The step runs on a real heal from a
   // canonical checkout: this suite's SCRIPT is that checkout, and every claude
   // home below is a temp directory, so the machine's own address is untouched.
@@ -62,16 +70,11 @@ describe("standards.sh: the engine's address", () => {
   test('sessions writing the address at once never leave it missing', async () => {
     const { claude } = claudeHomeWith();
     const address = path.join(claude, 'workkit');
-    const env = {
-      ...process.env,
-      PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'workflow-home')),
-      WORKFLOW_CLAUDE_HOME: shellPath(claude),
-    };
+    const env = seededEnv(healEnv(claude));
     for (let round = 1; round <= 20; round++) {
       fs.rmSync(address, { recursive: true, force: true });
       // eslint-disable-next-line no-await-in-loop
-      await Promise.all([0, 1, 2].map(() => start(BASH, [...NO_RC, shellPath(SCRIPT), '--engine-link'], { env }).done));
+      await Promise.all([0, 1, 2].map(() => start(process.execPath, [SCRIPT, '--engine-link'], { env }).done));
       const made = fs.lstatSync(address, { throwIfNoEntry: false });
       expect(!!made && made.isSymbolicLink(), `round ${round}: the address is a symlink, not gone`).toBeTruthy();
       expect(fs.realpathSync(address), `round ${round}: and it resolves to this engine`).toBe(fs.realpathSync(ENGINE));
@@ -183,16 +186,7 @@ describe("standards.sh: the engine's address", () => {
     fs.mkdirSync(copy, { recursive: true });
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
     copyKitSiblings(copyRoot);
-    const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
-      env: {
-        ...process.env,
-        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
-        WORKFLOW_CLAUDE_HOME: shellPath(claude),
-      },
-      encoding: 'utf8',
-      timeout: SPAWN_DEADLINE,
-    });
+    const res = heal([repo], healEnv(claude), { engine: path.join(copy, 'standards.js') });
     expect(res.status, `the heal itself still runs: ${res.stderr}`).toBe(0);
     expect(!fs.existsSync(path.join(claude, 'workkit')), 'a copy is not the machine engine and takes no address').toBeTruthy();
     expect(!(res.stdout + res.stderr).includes('engine:'), `and says nothing: it is a skip, not a fault, got: ${res.stderr}`).toBeTruthy();
@@ -209,16 +203,7 @@ describe("standards.sh: the engine's address", () => {
     spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
     copyKitSiblings(copyRoot);
     mkOriginRepo(copyRoot, 'https://github.com/someone/not-the-kit.git');
-    const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
-      env: {
-        ...process.env,
-        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
-        WORKFLOW_CLAUDE_HOME: shellPath(claude),
-      },
-      encoding: 'utf8',
-      timeout: SPAWN_DEADLINE,
-    });
+    const res = heal([repo], healEnv(claude), { engine: path.join(copy, 'standards.js') });
     expect(res.status, `the heal itself still runs: ${res.stderr}`).toBe(0);
     expect(!fs.existsSync(path.join(claude, 'workkit')), 'the origin is what makes a checkout the machine engine').toBeTruthy();
     cleanup(repo); cleanup(claude); cleanup(copyRoot);
@@ -234,16 +219,7 @@ describe("standards.sh: the engine's address", () => {
     copyKitSiblings(copyRoot);
     mkOriginRepo(copyRoot, 'git@github.com:ITW-Creative-Works/workkit.git');
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first
-    const res = spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), shellPath(repo)], {
-      env: {
-        ...process.env,
-        PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
-        WORKFLOW_CLAUDE_HOME: shellPath(claude),
-      },
-      encoding: 'utf8',
-      timeout: SPAWN_DEADLINE,
-    });
+    const res = heal([repo], healEnv(claude), { engine: path.join(copy, 'standards.js') });
     expect(res.status, `the heal runs: ${res.stderr}`).toBe(0);
     expect(fs.realpathSync(path.join(claude, 'workkit')), 'a second real checkout is still a real checkout: the address follows the one that ran').toBe(fs.realpathSync(copy));
     cleanup(repo); cleanup(claude); cleanup(copyRoot);
@@ -252,16 +228,7 @@ describe("standards.sh: the engine's address", () => {
   // A plugin install is a copy with no git under it: Claude's plugin cache,
   // `<claude home>/plugins/cache/<marketplace>/<plugin>/<version>/`, whose
   // manifest names the kit. That place, not an origin, makes it the engine.
-  const engineLinkFrom = (copy, claude) => spawnBash([...NO_RC, shellPath(path.join(copy, 'standards.sh')), '--engine-link'], {
-    env: {
-      ...process.env,
-      PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')),
-      WORKFLOW_CLAUDE_HOME: shellPath(claude),
-    },
-    encoding: 'utf8',
-    timeout: SPAWN_DEADLINE,
-  });
+  const engineLinkFrom = (copy, claude) => heal(['--engine-link'], healEnv(claude), { engine: path.join(copy, 'standards.js') });
 
   test('a copy in the plugin cache takes the address', () => {
     const { claude } = claudeHomeWith();
@@ -317,19 +284,34 @@ describe("standards.sh: the engine's address", () => {
     cleanup(claude);
   });
 
+  // The session-start hook asks the engine itself, with no repo: yes or no on stdout.
+  const inCacheFrom = (workflowDir, claude) => heal(['--in-cache'], {
+    ...process.env,
+    WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'wh'),
+    WORKFLOW_CLAUDE_HOME: claude,
+  }, { engine: path.join(workflowDir, 'standards.js'), cwd: mkTmp('wf-std-') });
+
+  test('--in-cache: a copy in the plugin cache answers yes, this checkout no', () => {
+    const { claude } = claudeHomeWith();
+    const copy = mkPluginCopy(path.join(claude, 'plugins', 'cache', 'workkit', 'workkit', '0.0.0'));
+    const cached = inCacheFrom(copy, claude);
+    expect(cached.status, `the cached copy answers: ${cached.stderr}`).toBe(0);
+    expect(cached.stdout, 'the cached copy is the cache').toBe('yes\n');
+    const here = inCacheFrom(ENGINE, claude);
+    expect(here.status, `this checkout answers: ${here.stderr}`).toBe(0);
+    expect(here.stdout, 'this checkout is not').toBe('no\n');
+    cleanup(claude);
+  });
+
   test('a copy that is the workflow/ folder alone sets a repo\'s git hooks: --git-hooks exits 0, core.hooksPath its githooks', () => {
     const repo = makeRepo();
     const copy = mkPluginCopy(path.join(mkTmp('wf-std-'), 'workkit', 'workkit', '0.0.0'));
     const scratch = mkTmp('wf-std-');
-    const res = spawnSync(process.execPath, [path.join(copy, 'standards.js'), '--git-hooks', repo], {
-      env: {
-        ...process.env,
-        WORKFLOW_HOME: path.join(scratch, 'wh'),
-        WORKFLOW_CLAUDE_HOME: path.join(scratch, 'claude'),
-      },
-      encoding: 'utf8',
-      timeout: SPAWN_DEADLINE,
-    });
+    const res = heal(['--git-hooks', repo], {
+      ...process.env,
+      WORKFLOW_HOME: path.join(scratch, 'wh'),
+      WORKFLOW_CLAUDE_HOME: path.join(scratch, 'claude'),
+    }, { engine: path.join(copy, 'standards.js') });
     expect(res.status, `the step runs: ${res.stderr}`).toBe(0);
     const hooksPath = spawnSync('git', ['config', '--local', '--get', 'core.hooksPath'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
     expect(hooksPath, 'core.hooksPath is the copy\'s own githooks').toBe(gitPath(path.join(fs.realpathSync(copy), 'githooks')));

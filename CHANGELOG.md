@@ -7,6 +7,19 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#579](../../issues/579) - The kit's shell is thin: the `gh` shim is a Node program, and git's hooks, the `git` shim and npm's script shell start one Node check. No kit file searches for a Node; each program checks for 22.22 itself. `jq` is no longer needed. `WORKKIT_NODE` is unread.
+- [#579](../../issues/579) - With no `node` on PATH the `gh` shim does not start. In a Claude session a `node` below 22.22 stops `gh` but `gh auth`, and it or none stops commits and guarded `git` verbs in a repo holding `.workkit/settings.json`, where `npm test` on it runs unrecorded in any session.
+
+### Fixed
+
+- (no issue) - On Windows every kit program reads a `WORKFLOW_HOME` in the shell's spelling (`/c/Users/name/.workkit`) as that folder. Outside the `workkit` command, the heal and the others read it as a folder on the current drive.
+- (no issue) - On Windows the jobs, the publish step, the identity programs, the heal, `note`, npm's script shell and the home and public steps stop with one plain line naming the folder and the fix when `cygpath` cannot read `WORKFLOW_HOME` or `HOME`, where the first three printed a stack trace.
+- (no issue) - On Windows `workkit doctor` reads the roster in the machine folder the command resolved. With `WORKFLOW_HOME` or `HOME` in the shell's spelling it read a folder on the current drive, found no roster, and said nothing about the bot's installation in a rostered repo.
+- (no issue) - On Windows the commands and the hooks spell a drive folder with a trailing slash as one string. `workkit doctor` warns when `WORKFLOW_HOME`, `WORKFLOW_CLAUDE_HOME` or `HOME` is a path only Git Bash can read (`/home/name`), since the hooks cannot read it.
+- (no issue) - The session-start hook asks the kit's own program whether the kit runs from Claude's plugin cache (`standards.js --in-cache`). It held its own copy of that rule, which read a Windows folder in the wrong spelling.
+
 ## [0.105.3] - 2026-11-27
 
 ### Fixed

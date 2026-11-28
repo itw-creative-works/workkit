@@ -1,10 +1,10 @@
 /**
- * hooks/mods/markers.js: the files the hooks name by content, the Node twin of
- * the engine's wk_marker_path: the review, full-panel,
+ * hooks/mods/markers.js: the files the hooks name by content: the review, full-panel,
  * triage, checkpoint, suite and package markers, the gh shim's journals, a call's mark of them
  * and the read of what it changed, the per-session marker, a file's age, and
  * the folder Git Bash means by a path the shell spelled, which the module's
- * variables and the guard facts go through, and the session's PATH with the
+ * variables and the guard facts go through, the home variables that rule
+ * cannot read, and the session's PATH with the
  * git shim's folder first. Writers and readers name each
  * file through the one derivation, so the two sides never drift apart.
  */
@@ -13,7 +13,7 @@ import { userDirOf } from './log.js';
 
 /**
  * The SHA-1 of a text, as lowercase hex: the one digest every marker and cache
- * name goes through, wk_sha1's in the shell.
+ * name goes through.
  * @param {string} text the text
  * @returns {Promise<string>}
  */
@@ -94,27 +94,43 @@ export function sessionPath(current, shimDir, platform) {
   return current.split(sep)[0] === dir ? current : `${dir}${sep}${current}`;
 }
 
+// The home variables the shell may spell, each read as the folder Git Bash means by it.
+const HOME_VARS = ['WORKFLOW_HOME', 'WORKFLOW_CLAUDE_HOME', 'HOME'];
+
 /**
  * The variables with every folder the shell spelled translated (shellDirOf):
- * TMPDIR, `/tmp` when unset, and WORKFLOW_HOME, WORKFLOW_CLAUDE_HOME and HOME where set.
+ * TMPDIR, `/tmp` when unset, and each HOME_VARS name where set.
  * @param {object} env the variables as read
  * @param {string} platform `win32` on Windows
  * @returns {object}
  */
 export function shellEnvOf(env, platform) {
   const out = { ...env, TMPDIR: tempDirOf(env, platform) };
-  for (const name of ['WORKFLOW_HOME', 'WORKFLOW_CLAUDE_HOME', 'HOME']) {
+  for (const name of HOME_VARS) {
     if (env[name]) out[name] = shellDirOf(env[name], env, platform);
   }
   return out;
 }
 
-// The folder every marker lives under, wk_markers_dir's rule.
+/**
+ * The HOME_VARS names set to a path shellDirOf cannot read by its spelling: on
+ * Windows, one whose answer still starts with one `/` (two is a UNC path), such
+ * as a home under Git Bash's own root or `/cygdrive/c/x`. None off Windows.
+ * @param {object} env the variables as read
+ * @param {string} platform `win32` on Windows
+ * @returns {string[]} the names, in HOME_VARS order
+ */
+export function shellOnlyHomes(env, platform) {
+  if (platform !== 'win32') return [];
+  return HOME_VARS.filter((name) => env[name] && /^\/(?!\/)/.test(shellDirOf(env[name], env, platform)));
+}
+
+// The folder every marker lives under.
 export const markersDir = (home) => `${home}/markers`;
 
 /**
  * The marker file `<home>/markers/<dir>` holds for `anchor`, keyed by its
- * SHA-1: wk_marker_path's rule.
+ * SHA-1: the one marker path every writer and reader names.
  * @param {string} dir the marker folder's name (`claude-review-marker`)
  * @param {string} anchor what the marker is for, a repo root as a rule
  * @param {string} home the machine folder (userDirOf in hooks/mods/log.js)
@@ -173,7 +189,8 @@ const JOURNAL_DIR = 'claude-gh-journal';
 export const journalDir = (home) => `${markersDir(home)}/${JOURNAL_DIR}`;
 
 /**
- * The gh journal of a repo root, as the shim writes it (wk_marker_path).
+ * The gh journal of a repo root, the file the gh shim appends to
+ * (workflow/identity/call.js).
  * @param {string} root the repo root, or the folder outside a repo
  * @param {string} home the machine folder (userDirOf in hooks/mods/log.js)
  * @returns {Promise<string>}

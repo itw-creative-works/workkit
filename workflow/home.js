@@ -6,6 +6,7 @@
  * Usage: node home.js <verb> [argument]
  */
 
+const { unreadPathStop } = require('./lib/platform');
 const { writeErr, writeOut } = require('./lib/say');
 const {
   slug, siteHost, setSlug, homeState, homeReady,
@@ -57,7 +58,7 @@ const main = async ([verb = '', ...rest]) => {
 
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
+  main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }
 
 module.exports = { main };

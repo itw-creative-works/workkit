@@ -106,7 +106,7 @@
 
 ## The working precedent
 
-- The daily brief is the existence proof: the identical `morning.sh` runs headless on a GitHub Actions runner.
+- The daily brief is the existence proof: the identical `morning.js` runs headless on a GitHub Actions runner.
   - It has exactly two repo secrets and a synthetic `~/.workkit` built from what the home repo publishes.
   - It has no other machine state.
 - Anything provisioned for a cloud session should hold itself to the same bar: tokens plus git, nothing copied off a machine.

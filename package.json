@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "brief": "bash jobs/morning.sh --now",
+    "brief": "node jobs/morning.js --now",
     "nightly": "node jobs/claude-nightly.js --now",
     "start": "npm run tower",
     "test": "workkit test",

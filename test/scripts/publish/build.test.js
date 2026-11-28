@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, run, start, until,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, joinPath, samePath, skipWithoutCaughtSignal,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, joinPath, samePath, skipWithoutCaughtSignal,
 } = require('../../lib/platform');
 const {
   REPO_ROOT, writeStub, readJson5, binDirWithout,
@@ -249,6 +249,22 @@ describe('workflow/publish/build.js: build', () => {
 });
 
 describe('workflow/publish/build.js: site.sidebar', () => {
+  // The build reads site.sidebar from the machine folder before the sidebar or npm.
+  // PATH is node's folder alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a WORKFLOW_HOME in the shell\'s spelling with no cygpath on PATH: the one line naming WORKFLOW_HOME and the fix, exit 1, no stack, no build', {
+    skip: !IS_WINDOWS && 'off Windows a machine folder is never handed to cygpath',
+  }, () => {
+    const world = mkProject({ site: { repo: 'owner/workkit', sidebar: [ADS] } });
+    const folder = shellPath(world.env.WORKFLOW_HOME);
+    const { code, out, err } = build({ ...world, env: { ...world.env, WORKFLOW_HOME: folder, PATH: NODE_DIR } }, ['build', world.project, '/x/']);
+    expect(code, `exit 1, got: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one line').toBe(`workkit: cannot read WORKFLOW_HOME (${folder}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set WORKFLOW_HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(err), `no stack line, got: ${err}`).toBe(false);
+    expect(world.npms(), 'and no build ran').toEqual([]);
+    assertAppSidebar(world, 'and the clone\'s sidebar is the app\'s, untouched');
+  });
+
   test('one group of two links is appended after the last built-in group, each link whole', () => {
     const world = mkProject({ site: { repo: 'owner/workkit', sidebar: [ADS] } });
     const { code, out, err } = build(world, ['build', world.project, '/x/']);

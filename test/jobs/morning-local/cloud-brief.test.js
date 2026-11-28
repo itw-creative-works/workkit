@@ -1,13 +1,11 @@
-// Tests for jobs/morning.sh as this machine runs it: the brief is the cloud
+// Tests for jobs/morning.js as this machine runs it: the brief is the cloud
 // one, so the morning here is the dispatch and nothing else.
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
 const fs = require('fs');
-const path = require('path');
-const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { NO_RC, shellPath, spawnBash } = require('../../lib/platform');
-const { SCRIPT, cleanup, mkWorld, runJob, settle } = require('./helpers');
+const { cleanup, mkWorld, runJob, settle } = require('./helpers');
 
 describe('jobs/morning (local): the brief is the cloud’s', () => {
   // Everything below is about the day going over, or not going over, which is
@@ -54,23 +52,6 @@ describe('jobs/morning (local): the brief is the cloud’s', () => {
     expect(/did not land/.test(world.log()), `and names the reason: ${world.log()}`).toBeTruthy();
     expect(/no brief this morning/.test(res.stderr), `it reaches the plist log too: ${res.stderr}`).toBeTruthy();
     expect(!(await settle(world)), 'and nothing was announced: there is no digest to announce').toBeTruthy();
-    cleanup(world.root);
-  });
-
-  test('a kit missing its engine stops at once: one line naming the engine, exit 1', () => {
-    // The starter alone, with no workflow/lib/platform.sh beside it: the kit is
-    // incomplete, and no step runs on half of it. The runner's half, a kit
-    // missing jobs/morning.js, is ../morning-cloud/machine.test.js.
-    const world = mkWorld({ home: 'owner/private-home', dispatch: true });
-    const stray = path.join(world.root, 'stray', 'jobs');
-    fs.mkdirSync(stray, { recursive: true });
-    fs.copyFileSync(SCRIPT, path.join(stray, 'morning.sh'));
-    const res = spawnBash([...NO_RC, shellPath(path.join(stray, 'morning.sh'))], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env: world.env });
-    expect(res.status, `the run refuses, stdout: ${res.stdout} stderr: ${res.stderr}`).toBe(1);
-    expect(res.stderr, 'one line, naming the engine folder').toMatch(/^morning: the engine is missing at \S*workflow; the kit is incomplete\n$/);
-    expect(res.stdout, 'and nothing else is said').toBe('');
-    expect(world.log(), 'no step ran to log anything').toBe('');
-    expect(world.dispatched().length, 'nothing was triggered').toBe(0);
     cleanup(world.root);
   });
 

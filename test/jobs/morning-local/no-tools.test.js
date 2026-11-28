@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it, on a machine with none of
+// Tests for jobs/morning.js as this machine runs it, on a machine with none of
 // the programs the shell morning leaned on: no jq, awk, sed, base64 or timeout,
 // and a whole morning still runs every step. Stand-ins are `claude`, `gh` and
 // the notifier alone; git and node are real.

@@ -14,14 +14,21 @@ export const GIT_VALUE_FLAGS = new Set(['-C', '-c', '--git-dir', '--work-tree', 
 const isShortCluster = (word) => word.length > 1 && word[0] === '-' && word[1] !== '-';
 const forces = (word) => isShortCluster(word) && word.includes('f');
 
+/**
+ * git's global options before the subcommand, each value flag with its value.
+ * @param {string[]} argv git's arguments
+ * @returns {string[]}
+ */
+export function gitGlobals(argv) {
+  let i = 0;
+  while (i < argv.length && argv[i][0] === '-') i += GIT_VALUE_FLAGS.has(argv[i]) ? 2 : 1;
+  return argv.slice(0, i);
+}
+
 // The subcommand past git's global options, and the arguments after it.
 function gitSubcommand(argv) {
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (GIT_VALUE_FLAGS.has(a)) i += 1;
-    else if (a[0] !== '-') return { sub: a, rest: argv.slice(i + 1) };
-  }
-  return { sub: '', rest: [] };
+  const at = gitGlobals(argv).length;
+  return at < argv.length ? { sub: argv[at], rest: argv.slice(at + 1) } : { sub: '', rest: [] };
 }
 
 // A word naming a PATH rather than a ref: a path shape, a glob, or a path there.

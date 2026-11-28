@@ -24,11 +24,15 @@ const WINDOWS_SPELLED = /^(?:[A-Za-z]:[\\/]|[\\/]{2})/;
 // The code nativePath's error carries, so a command tells it from any other error.
 const UNREAD_PATH = 'WK_UNREAD_PATH';
 
+// A trailing slash trimmed, a drive root (`C:/`) kept whole: the twin of shellDirOf's
+// trim (hooks/mods/markers.js), held to it by test/hooks/twins.test.js.
+const trimSlash = (p) => p.replace(/([^:/])\/+$/, '$1');
+
 /**
- * The native spelling of a path (`wk_native_path`): `D:/a/x`, never `/d/a/x`,
- * the letter case kept. On Windows a path WINDOWS_SPELLED matches only has each
- * `\` made `/`, with no program started; any other goes through `cygpath -m`.
- * Unchanged elsewhere.
+ * The native spelling of a path: `D:/a/x`, never `/d/a/x`, the letter case kept.
+ * On Windows a path WINDOWS_SPELLED matches starts no program, any other goes through
+ * `cygpath -m`, and either answer has `/` for `\` and its trailing slash trimmed
+ * (trimSlash), as the hooks spell it. Unchanged elsewhere.
  * @param {string} p
  * @param {{ platform?: string, variable?: string }} [context] - the platform the
  *   spelling is for, and the variable the path was read from, named by unreadPathStop
@@ -38,14 +42,14 @@ const UNREAD_PATH = 'WK_UNREAD_PATH';
  */
 const nativePath = (p, { platform = PLATFORM, variable } = {}) => {
   if (platform !== 'win32') return p;
-  if (WINDOWS_SPELLED.test(p)) return p.replace(/\\/g, '/');
+  if (WINDOWS_SPELLED.test(p)) return trimSlash(p.replace(/\\/g, '/'));
   const res = spawnSync('cygpath', ['-m', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   if (res.status !== 0) {
     throw Object.assign(new Error(`nativePath: cygpath -m ${p} ${endOf(res)}`), {
       code: UNREAD_PATH, path: p, variable, reason: res.error ? res.error.code || res.error.message : errLine(res),
     });
   }
-  return res.stdout.replace(/[\r\n]+$/, '');
+  return trimSlash(res.stdout.replace(/[\r\n]+$/, ''));
 };
 
 /**
@@ -64,15 +68,18 @@ const unreadPathStop = (err) => {
 };
 
 /**
- * The claude home, read at the call: WORKFLOW_CLAUDE_HOME (the tests' seam),
- * else `<HOME>/.claude` with HOME, else `os.homedir()`, each in its native
- * spelling (nativePath). It reads no hooks/ module: standards.js runs from workflow/ alone.
- * @param {{ platform?: string }} [context] - the platform the spelling is for, nativePath's seam
+ * The claude home the workflow/ programs share, read at the call: WORKFLOW_CLAUDE_HOME
+ * (the tests' seam), else `<home>/.claude`. A `home` given is taken as is; else HOME,
+ * else `os.homedir()`. Each variable or homedir read is in its native spelling (nativePath).
+ * The home is read only when WORKFLOW_CLAUDE_HOME is unset. It reads no hooks/ module:
+ * standards.js runs from workflow/ alone, and hooks/mods/standards.js asks it (`--in-cache`).
+ * @param {{ env?: object, home?: string, platform?: string }} [context] - the
+ *   variables read, the home already read, and the platform the spelling is for, nativePath's seam
  * @returns {string}
  */
-const claudeHome = (context = {}) => (process.env.WORKFLOW_CLAUDE_HOME
-  ? nativePath(process.env.WORKFLOW_CLAUDE_HOME, { ...context, variable: 'WORKFLOW_CLAUDE_HOME' })
-  : `${nativePath(process.env.HOME || os.homedir(), { ...context, variable: 'HOME' })}/.claude`);
+const claudeHome = ({ env = process.env, home, platform } = {}) => (env.WORKFLOW_CLAUDE_HOME
+  ? nativePath(env.WORKFLOW_CLAUDE_HOME, { platform, variable: 'WORKFLOW_CLAUDE_HOME' })
+  : `${home || nativePath(env.HOME || os.homedir(), { platform, variable: 'HOME' })}/.claude`);
 
 /** The physical path of a folder, or null when it is not one. */
 const physicalDir = (dir) => {

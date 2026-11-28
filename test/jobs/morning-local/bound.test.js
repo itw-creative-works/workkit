@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it: the job's bound on a child
+// Tests for jobs/morning.js as this machine runs it: the job's bound on a child
 // that never answers, held with no `timeout` program on the machine. A `gh`
 // that never answers one call stands in for the network that does not either.
 // The bound on a morning.d script is ./morning-d.test.js.

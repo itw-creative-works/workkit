@@ -1,8 +1,8 @@
 /**
  * hooks/mods/gate.js: the repo flag's one rule, a settings file's top-level
  * `enabled` as the heal reads it; the opt-in rule the module's gate applies on
- * it, the engine's wk_opted_in; and the session rule built on that, the
- * engine's wk_session_judges.
+ * it; and the session rule built on that, which the gh shim, the git judge and
+ * the full-suite hold ask too.
  */
 
 import { isPlain, repoSettingsFile } from './settings.js';
@@ -37,7 +37,7 @@ export function repoFlag(text) {
  * Whether a repo's settings text opts it in: its top-level `enabled` is true
  * (repoFlag); anything else is off, and a nested `enabled` is never read. Only
  * the repo's own file says, never the machine's. The module's one opt-in
- * reader, the engine's wk_opted_in.
+ * reader.
  * @param {string|null|undefined} text the settings file's text, null when absent
  * @returns {boolean}
  */
@@ -48,7 +48,7 @@ export function settingsOptedIn(text) {
 /**
  * Whether a Claude session's checks rule in a repo: CLAUDECODE is `1`,
  * HOOK_DISABLE is not `1`, and the repo's settings text opts it in
- * (settingsOptedIn). The engine's wk_session_judges.
+ * (settingsOptedIn). The one session rule, for the shims and git's hooks too.
  * @param {object} env the variables the caller read
  * @param {string|null|undefined} settingsText the repo's settings file's text, null when absent
  * @returns {boolean}

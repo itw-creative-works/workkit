@@ -12,14 +12,22 @@ const {
   describe, test, expect, run, mkTmp, WORKKIT_DIR,
 } = require('../lib/harness');
 const {
-  SH, shellPath, gitPath, joinPath, systemPathWith, stubNode,
+  SH, NODE_DIR, shellPath, gitPath, joinPath, systemPathWith, which,
 } = require('../lib/platform');
+const { readArgv } = require('../lib/argv-log');
+const { recordingNode } = require('../lib/node-fakes');
 const { mkRepo, commitGh } = require('../lib/git-repo');
 const { plantRecord, reviewMarkerPath, kitIndexTree } = require('../lib/suite-record');
 const { PREFIX, T, CHANGELOG } = require('../hooks/commit-gate/helpers');
 const { linkedClaudeHome, makeGhStub, runScript } = require('./workflow-standards/helpers');
 
-const HOOKS = path.join(__dirname, '..', '..', 'workflow', 'githooks');
+const KIT = path.join(__dirname, '..', '..');
+const HOOKS = path.join(KIT, 'workflow', 'githooks');
+
+// The version a recordingNode reads as below the floor.
+const OLD_VERSION = '20.15.1';
+const FLOOR_LINE = `workkit: this Node is v${OLD_VERSION}; the kit needs 22.22 or newer`;
+const NO_NODE = (name) => `${name}: the workkit check cannot run: no node on PATH`;
 
 const pkg = (version) => `${JSON.stringify({ name: 'fixture', version, scripts: { test: 'exit 0' } }, null, 2)}\n`;
 
@@ -37,14 +45,15 @@ const NEW_FILES = T.newFiles('lib/y.js');
 
 /**
  * A scratch repo with the kit's hooks installed and `gh` answering `issues` and
- * `tags` from `ghDir`, its env a Claude session's unless `claude` is false, and
- * `files` committed over the seed.
+ * `tags` from `ghDir`, its env a Claude session's unless `claude` is false,
+ * `files` committed over the seed, opted in unless `optIn` is false, and the
+ * hooks those of `hooks` when given.
  */
-const mkWorld = ({ claude = true, issues, tags, files = {} } = {}) => {
-  const w = mkRepo('githooks-', { ...SEED, ...files });
+const mkWorld = ({ claude = true, issues, tags, files = {}, optIn = true, hooks = HOOKS } = {}) => {
+  const w = mkRepo('githooks-', { ...SEED, ...files }, undefined, { optIn });
   // origin/HEAD as a clone has it, the default branch the heal's caller step reads.
   w.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
-  w.git('config', 'core.hooksPath', HOOKS);
+  w.git('config', 'core.hooksPath', hooks);
   const gh = commitGh({ issues, tags });
   const env = { ...w.env, PATH: joinPath(gh.binDir, w.env.PATH), ...(claude ? { CLAUDECODE: '1' } : {}) };
   return { ...w, env, ghDir: gh.binDir };
@@ -110,6 +119,37 @@ const hookAt = (file, lines) => {
 
 // What a hook that appends to `file` wrote there, '' when it never ran.
 const wrote = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+
+// The system tools and `dirs`, a PATH that must hold no node at all.
+const noNodePath = (...dirs) => {
+  const p = systemPathWith(...dirs);
+  expect(which('node', p), `no node on ${p}`).toBe(null);
+  return p;
+};
+
+// A copy of the kit holding no workflow/lib/*.sh file: what git's hooks need, with nothing of the
+// repo's own state, its dependencies, the tower or the tests.
+const kitWithoutShellLibs = () => {
+  const copy = path.join(mkTmp('githooks-kit-'), 'workkit');
+  const skip = new Set(['.git', '.github', '.workkit', '.claude', 'node_modules', 'tower', 'test', 'docs', '_attic', 'fight-samples']);
+  fs.cpSync(KIT, copy, {
+    recursive: true,
+    filter: (src) => {
+      const rel = path.relative(KIT, src);
+      if (rel === '') return true;
+      const parts = rel.split(path.sep);
+      if (skip.has(parts[0]) || parts.includes('node_modules')) return false;
+      return !(parts.length === 3 && parts[0] === 'workflow' && parts[1] === 'lib' && rel.endsWith('.sh'));
+    },
+  });
+  return copy;
+};
+
+// A docs edit staged, a commit every check lets land.
+const stageReadme = (w) => {
+  w.write('README.md', '# fixture, noted\n');
+  w.git('add', 'README.md');
+};
 
 describe('githooks: pre-commit judges the staged tree', () => {
   test('a new code file with no test bounces on check 1; with its test, a fresh review and a proved tree it lands', () => {
@@ -194,10 +234,6 @@ describe('githooks: commit-msg judges the real message', () => {
     const at = (label) => ({
       497: { state: 'OPEN', url: 'https://github.com/owner/repo/issues/497', labels: [{ name: label }], comments: [] },
     });
-    const stageReadme = (w) => {
-      w.write('README.md', '# fixture, noted\n');
-      w.git('add', 'README.md');
-    };
     const building = mkWorld({ issues: at('status:building') });
     stageReadme(building);
     bounced(commit(building, ['-m', 'fix: x\n\n#497 is the ruling\n# a comment']), `${PREFIX}${T.unpassed('#497 is at status:building')}`, 'the #497 line kept');
@@ -307,23 +343,80 @@ describe('githooks: who is judged', () => {
     landed(commit(disabled, ['-m', BAD_MSG], { env: { HOOK_DISABLE: '1' } }), 'HOOK_DISABLE=1');
   });
 
-  test('with only a node older than 22.22 on PATH and none under nvm, case 1\'s bad commit lands, the hook saying it did not run', () => {
-    const w = mkWorld();
-    const old = path.join(w.dir, 'old-node');
-    stubNode(old, '20.15.1');
-    stageUntested(w);
-    const res = commit(w, ['-m', BAD_MSG], { env: { PATH: systemPathWith(w.ghDir, old) } });
-    landed(res, 'a node 20 alone');
-    expect(res.err.includes('did not run (no node 22.22 or newer found)'), `stderr names the stand-down, got: ${res.err}`).toBeTruthy();
+  test('in an opted-in repo, a commit every check passes stops in a Claude session with no node on PATH, or under a node below 22.22, naming why', () => {
+    const none = mkWorld();
+    stageReadme(none);
+    const bare = commit(none, ['-m', 'docs: note'], { env: { PATH: noNodePath(none.ghDir) } });
+    bounced(bare, NO_NODE('pre-commit'), 'no node on PATH');
+
+    const old = mkWorld();
+    stageReadme(old);
+    const below = commit(old, ['-m', 'docs: note'], { env: { PATH: joinPath(recordingNode(path.join(old.dir, 'old-node'), { older: OLD_VERSION }), old.env.PATH) } });
+    bounced(below, FLOOR_LINE, 'a node below the floor');
   });
 
-  test('the hook\'s node found but none on PATH: the CHANGELOG check runs under the hook\'s node and judges', () => {
+  test('outside a Claude session, with no node on PATH or under a node below 22.22, the same commit lands', () => {
+    const none = mkWorld({ claude: false });
+    stageReadme(none);
+    landed(commit(none, ['-m', 'docs: note'], { env: { PATH: noNodePath(none.ghDir) } }), 'no node on PATH');
+
+    const old = mkWorld({ claude: false });
+    stageReadme(old);
+    landed(commit(old, ['-m', 'docs: note'], { env: { PATH: joinPath(recordingNode(path.join(old.dir, 'old-node'), { older: OLD_VERSION }), old.env.PATH) } }),
+      'a node below the floor');
+  });
+
+  test('HOOK_DISABLE=1 in a Claude session in an opted-in repo: with no node on PATH, or under a node below 22.22, the commit lands with no line and no node started', () => {
+    const none = mkWorld();
+    stageReadme(none);
+    const bare = commit(none, ['-m', 'docs: note'], { env: { HOOK_DISABLE: '1', PATH: noNodePath(none.ghDir) } });
+    landed(bare, 'no node on PATH');
+    expect(!bare.err.includes(NO_NODE('pre-commit')), `no line about node, got: ${bare.err}`).toBeTruthy();
+
+    const old = mkWorld();
+    const log = path.join(old.dir, 'node.argv');
+    stageReadme(old);
+    const below = commit(old, ['-m', 'docs: note'],
+      { env: { HOOK_DISABLE: '1', PATH: joinPath(recordingNode(path.join(old.dir, 'old-node'), { log, older: OLD_VERSION }), old.env.PATH) } });
+    landed(below, 'a node below the floor');
+    expect(!below.err.includes(FLOOR_LINE), `no floor line, got: ${below.err}`).toBeTruthy();
+    expect(readArgv(log).length, `no node started, got: ${JSON.stringify(readArgv(log))}`).toBe(0);
+  });
+
+  test('a Claude session in a repo whose .workkit/settings.json says "enabled": false, or holds no enabled key: case 1\'s bad commit lands with no line of ours', () => {
+    for (const [shape, settings] of [['enabled false', '{\n  "enabled": false\n}\n'], ['no enabled key', '{\n  "commit": { "attribution": false }\n}\n']]) {
+      const w = mkWorld({ files: { [`${WORKKIT_DIR}/settings.json`]: settings } });
+      stageUntested(w);
+      const res = commit(w, ['-m', BAD_MSG]);
+      landed(res, shape);
+      expect(!res.err.includes(PREFIX) && !res.err.includes('workkit'), `${shape}: no line of ours, got: ${res.err}`).toBeTruthy();
+    }
+  });
+
+  test('a Claude session in a repo with no .workkit/settings.json and no node on PATH: the commit lands', () => {
+    const w = mkWorld({ optIn: false });
+    stageReadme(w);
+    landed(commit(w, ['-m', 'docs: note'], { env: { PATH: noNodePath(w.ghDir) } }), 'not opted in');
+  });
+
+  test('the suite\'s node the one node on a PATH of system tools: the CHANGELOG check runs under it and judges', () => {
     const w = mkWorld();
     w.write('CHANGELOG.md', CHANGELOG('- An essay entry with no issue link.'));
     w.git('add', 'CHANGELOG.md');
-    const res = commit(w, ['-m', 'docs: changelog'], { env: { WORKKIT_NODE: process.execPath, PATH: systemPathWith(w.ghDir) } });
-    bounced(res, 'does not match the format', 'the linter ran with no node on PATH');
+    const res = commit(w, ['-m', 'docs: changelog'], { env: { PATH: systemPathWith(w.ghDir, NODE_DIR) } });
+    bounced(res, 'does not match the format', 'the linter ran under the one node on PATH');
     expect(!res.err.includes('check 3 stood down'), `never a stand-down, got: ${res.err}`).toBeTruthy();
+  });
+
+  test('a judged commit starts node once in each of pre-commit and commit-msg, and once in no other hook; outside a Claude session none', () => {
+    for (const [who, claude, wanted] of [['a Claude session', true, ['pre-commit', 'commit-msg']], ['the owner\'s terminal', false, []]]) {
+      const w = mkWorld({ claude });
+      const log = path.join(w.dir, 'node.argv');
+      stageReadme(w);
+      landed(commit(w, ['-m', 'docs: note'], { env: { PATH: joinPath(recordingNode(path.join(w.dir, 'counting-node'), { log }), w.env.PATH) } }), who);
+      const starts = readArgv(log);
+      expect(starts.map((argv) => argv[1]), `${who}: one judge per judged hook, got: ${JSON.stringify(starts)}`).toEqual(wanted);
+    }
   });
 
   test('--no-verify skips the hooks: case 1\'s bad commit lands', () => {
@@ -344,6 +437,33 @@ describe('githooks: the repo\'s own hooks run after ours', () => {
     stageTested(w);
     landed(commit(w, ['-m', BAD_MSG]), 'ours passes');
     expect(fs.readFileSync(ran, 'utf8'), 'their hook ran once, after ours').toBe('ran\n');
+  });
+
+  test('a copy of the kit with no workflow/lib/*.sh file: its hooks judge, then chain to the repo\'s own', () => {
+    const w = mkWorld({ hooks: path.join(kitWithoutShellLibs(), 'workflow', 'githooks') });
+    const ran = path.join(w.tmp, 'theirs-ran');
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    stageUntested(w);
+    bounced(commit(w, ['-m', BAD_MSG]), NEW_FILES, 'the copy judges');
+    expect(wrote(ran), 'their hook never ran behind the bounce').toBe('');
+    stageTested(w);
+    landed(commit(w, ['-m', BAD_MSG]), 'the copy passes');
+    expect(wrote(ran), 'their hook ran once, after ours').toBe('ran\n');
+  });
+
+  test('workkit.hooksPath naming another kit\'s hooks folder: the chain passes over it to .git/hooks', () => {
+    const w = mkWorld();
+    const other = path.join(w.dir, 'other', 'workflow', 'githooks');
+    const otherRan = path.join(w.tmp, 'other-kit-ran');
+    const ran = path.join(w.tmp, 'theirs-ran');
+    for (const hook of ['pre-commit', 'commit-msg']) hookAt(path.join(other, hook), [`echo ${hook} >> "${shellPath(otherRan)}"`]);
+    fs.writeFileSync(path.join(other, 'judge.js'), '');
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    w.git('config', '--local', 'workkit.hooksPath', other);
+    stageTested(w);
+    landed(commit(w, ['-m', BAD_MSG]), 'ours passes');
+    expect(wrote(otherRan), 'the other kit\'s hooks never ran').toBe('');
+    expect(wrote(ran), '.git/hooks/pre-commit ran once in its place').toBe('ran\n');
   });
 
   test('the folder workkit.hooksPath saved holds a pre-commit that refuses: the commit ends 1 after ours passed', () => {

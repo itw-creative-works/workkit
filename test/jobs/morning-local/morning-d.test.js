@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it: the morning.d folder, the
+// Tests for jobs/morning.js as this machine runs it: the morning.d folder, the
 // user's own scripts run as the job's sixth step, each under its own log header.
 // The shared prologue (world factory, job runner) is ./helpers.js; a runner's
 // skip of the folder is ../morning-cloud/morning-d.test.js.

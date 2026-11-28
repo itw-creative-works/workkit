@@ -12,7 +12,7 @@ const {
   recordArgv, recordArgvJs, readArgv, fmtCalls,
 } = require('../lib/argv-log');
 const {
-  SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, stubToolJs, joinPath, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, homeEnv, shellPath, stubTool, stubToolJs, joinPath, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
 } = require('../lib/platform');
 const { skipOnUsrLocalBin } = require('../lib/job-path');
 
@@ -433,6 +433,24 @@ describe('jobs/claude-nightly', () => {
       const res = runJob(world);
       expect(res.status, `the append cannot fail the step: ${res.stderr}`).toBe(0);
       expect(/no home repo configured/.test(world.log()), `the log says which reason: ${world.log()}`).toBeTruthy();
+      cleanup(world.root);
+    });
+  });
+
+  describe('jobs/claude-nightly: a HOME no cygpath can read', () => {
+    // The step reads HOME for its PATH before its log, its scratch folder or a send.
+    // PATH is node's folder alone: Git's usr/bin, where cygpath lives, is left off.
+    test('a HOME in the shell\'s spelling with no cygpath on PATH: the one line naming HOME and the fix, exit 1, no stack', {
+      skip: !IS_WINDOWS && 'off Windows a home is never handed to cygpath',
+    }, () => {
+      const world = mkWorld();
+      const home = shellPath(world.home);
+      const res = run(process.execPath, [SCRIPT], { env: { ...world.env, HOME: home, PATH: NODE_DIR } });
+      expect(res.status, `exit 1, got: ${res.stdout}${res.stderr}`).toBe(1);
+      expect(res.stdout, 'nothing on stdout').toBe('');
+      expect(res.stderr, 'the one line').toBe(`workkit: cannot read HOME (${home}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n`);
+      expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
+      expect(world.log(), 'and no log line').toBe('');
       cleanup(world.root);
     });
   });

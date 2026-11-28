@@ -365,7 +365,7 @@ describe('commit-gate: the tree ids, through the real gate', () => {
     const w = mkGitRepo('cg-no-node-', { 'package.json': pkg('1.0.0'), 'app.js': 'const x = 1;\n' });
     w.write('app.js', 'const x = 2;\n');
     w.git('add', 'app.js');
-    // The machine as a program with no node on its PATH sees it: git and the system tools, a scratch HOME, no WORKKIT_NODE.
+    // The machine as a program with no node on its PATH sees it: git and the system tools, a scratch HOME.
     const env = { ...w.env, PATH: basePathWithout(mkTmp('cg-no-node-path-'), 'node') };
     const io = ioIn(env);
     const calls = [];

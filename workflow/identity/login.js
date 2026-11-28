@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { CLIENT_ID } = require('./app');
 const { userDir } = require('../user-dir');
+const { unreadPathStop } = require('../lib/platform');
 const { readJsonOrNull } = require('../lib/read');
 const { writeWhole } = require('../lib/write');
 
@@ -250,8 +251,13 @@ if (require.main === module) {
   main(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
   }, (err) => {
-    process.stderr.write(`${err.message}\n`);
-    process.exitCode = 1;
+    // A path nativePath could not read is its one stop line; any other error is this line.
+    try {
+      process.exitCode = unreadPathStop(err);
+    } catch {
+      process.stderr.write(`${err.message}\n`);
+      process.exitCode = 1;
+    }
   });
 }
 

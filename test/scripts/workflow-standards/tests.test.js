@@ -1,4 +1,4 @@
-// Tests for standards.sh: a participating repo passes the test runner check when
+// Tests for standards.js: a participating repo passes the test runner check when
 // its devDependencies name workkit-core, whatever script wraps `workkit test`,
 // read off package.json alone; any other repo gets one warning naming both
 // changes, never a bounce. The suite folder's name changes nothing the heal prints.
@@ -42,7 +42,7 @@ const HANDOFF = [
   '',
 ].join('\n');
 
-describe('standards.sh: the test runner', () => {
+describe('standards.js: the test runner', () => {
   // A wrapper is a script of the repo's own that runs `workkit test` inside it.
   for (const [shape, script, files] of [
     ['a test script of workkit test', 'workkit test', {}],
@@ -76,7 +76,7 @@ describe('standards.sh: the test runner', () => {
   }
 });
 
-describe('standards.sh: the suite folder', () => {
+describe('standards.js: the suite folder', () => {
   // The suite folder alone differs between the two repos, so any line about its name shows as a difference.
   test('suites under tests/: the heal prints what it prints for the same suites under test/, exit 0', () => {
     const stub = makeGhStub();

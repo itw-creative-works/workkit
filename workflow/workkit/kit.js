@@ -16,7 +16,7 @@ const { secondsOf, nonNegativeOf } = require('../lib/bounded');
 const { childEnd } = require('../lib/child-end');
 const { interactive } = require('../lib/flows');
 const { indent, quiet } = require('../lib/voice');
-const { nativePath } = require('../lib/platform');
+const { nativePath, claudeHome } = require('../lib/platform');
 const { machineHome } = require('../lib/machine-home');
 const { userDir, scriptShellExeOf, hooksLogOf } = require('../../hooks/mods/log.js');
 const { isPlain } = require('../../hooks/mods/settings.js');
@@ -69,9 +69,7 @@ const kitOf = (overrides = {}) => {
   const env = overrides.env ? { ...process.env, ...overrides.env } : process.env;
   const home = machineHome(env);
   const binDir = `${home}/.local/bin`;
-  const claudeHome = env.WORKFLOW_CLAUDE_HOME
-    ? nativePath(env.WORKFLOW_CLAUDE_HOME, { variable: 'WORKFLOW_CLAUDE_HOME' })
-    : `${home}/.claude`;
+  const claude = claudeHome({ env, home });
   // The machine folder under that home; its files keep their one spelling in hooks/mods/log.js.
   const machineDir = nativePath(userDir(env.WORKFLOW_HOME, home), { variable: 'WORKFLOW_HOME' });
   const inMachineDir = { WORKFLOW_HOME: machineDir };
@@ -88,8 +86,8 @@ const kitOf = (overrides = {}) => {
     binLink: `${binDir}/workkit`,
     cmdLink: `${binDir}/workkit.cmd`,
     ghShimLink: `${binDir}/gh`,
-    claudeHome,
-    engineLink: `${claudeHome}/workkit`,
+    claudeHome: claude,
+    engineLink: `${claude}/workkit`,
     userDir: machineDir,
     shellExe: scriptShellExeOf(inMachineDir),
     hooksLog: hooksLogOf(inMachineDir),

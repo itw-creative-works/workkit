@@ -1,11 +1,11 @@
-// Tests for standards.sh: a full heal on a machine with no jq, perl, awk or sed,
+// Tests for standards.js: a full heal on a machine with no jq, perl, awk or sed,
 // none of which the heal needs. The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp } = require('../../lib/harness');
 const {
-  toolStem, which, joinPath, nodeEnv, gitPath,
+  toolStem, which, joinPath, gitPath,
 } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const { withSteps, OLD_CHECKS } = require('../../lib/checks-template');
@@ -34,7 +34,7 @@ const CLAIM = 'agent:claimed';
 const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
 const CALLER_USES = 'itw-creative-works/workkit/.github/workflows/ci.yml@main';
 
-describe('standards.sh: a heal with no jq, perl, awk or sed', () => {
+describe('standards.js: a heal with no jq, perl, awk or sed', () => {
   test('every step runs: the roster, the labels, the stale claim, the caller and the local files', () => {
     const repo = makeRepo();
     const home = mkTmp('wf-std-');
@@ -51,7 +51,7 @@ describe('standards.sh: a heal with no jq, perl, awk or sed', () => {
 
     const { code, output } = runScript(repo, {
       workflowHome: home,
-      env: { PATH: joinPath(stub.binDir, mirror), ...nodeEnv },
+      env: { PATH: joinPath(stub.binDir, mirror) },
     });
     // The customised copy's own step is named for a person to move, which flags the run.
     expect(code, `exit 1, got: ${output}`).toBe(1);

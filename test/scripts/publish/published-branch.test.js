@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: the published branch (the built dashboard
+// Tests for workflow/publish.js: the published branch (the built dashboard
 // on gh-pages and never on main, updated, regenerated and pruned as the
 // build changes). The shared prologue is ./helpers.js.
 
@@ -9,9 +9,9 @@ const {
   describe, test, expect, start, until,
 } = require('../../lib/harness');
 const {
-  gitPath, shellPath, BASH, NO_RC, skipWithoutCaughtSignal,
+  gitPath, skipWithoutCaughtSignal,
 } = require('../../lib/platform');
-const { cleanup, git, mkWorld, publish, fromPages, onMain } = require('./helpers');
+const { cleanup, git, mkWorld, publishArgv, publish, fromPages, onMain } = require('./helpers');
 
 describe('workflow/publish: the published branch', () => {
   test('the built dashboard is pushed to gh-pages, at its root', () => {
@@ -124,7 +124,7 @@ describe('workflow/publish: the published branch', () => {
     t.after(() => { if (fs.existsSync(world.root)) fs.writeFileSync(go, ''); });
     const worktrees = () => spawnSync('git', ['-C', world.tower, 'worktree', 'list'], { encoding: 'utf8' }).stdout.trim().split('\n');
 
-    const call = start(BASH, [...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh'))], { env: world.env });
+    const call = start(process.execPath, publishArgv(world), { env: world.env });
     expect(await until(() => fs.existsSync(held)), `the push was reached: ${call.output()}`).toBeTruthy();
     expect(worktrees().length, `the temp worktree is registered while the push runs: ${worktrees().join(' | ')}`).toBe(2);
 

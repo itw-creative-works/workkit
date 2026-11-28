@@ -1,18 +1,18 @@
-// Tests for standards.sh: it fails loudly, never silently.
+// Tests for standards.js: it fails loudly, never silently.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { describe, test, expect, mkTmp } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, which, linkTool, joinPath, nodeEnv, spawnBash, spawnSystemBash,
+  SYSTEM_PATH, NODE_DIR, gitPath, which, linkTool, joinPath,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, makeRepo, makeGhStub, runScript, copyKitSiblings,
+  WORKFLOW_DIR, cleanup, rosterOf, makeRepo, makeGhStub, heal, runScript, copyKitSiblings,
 } = require('./helpers');
 
-describe('standards.sh: it fails loudly, never silently', () => {
+describe('standards.js: it fails loudly, never silently', () => {
   test('a missing template warns, keeps healing, and exits non-zero', () => {
     const kit = mkTmp('wf-std-');
     const engine = path.join(kit, 'workflow');
@@ -22,13 +22,10 @@ describe('standards.sh: it fails loudly, never silently', () => {
     fs.rmSync(path.join(engine, 'templates', 'session.md'));
     const repo = makeRepo();
     const stub = makeGhStub();
-    const res = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], {
-      env: {
-        ...process.env, PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
-        WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
-      },
-      encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
+    const res = heal([repo], {
+      ...process.env, PATH: joinPath(stub.binDir, SYSTEM_PATH, NODE_DIR),
+      WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp('wf-std-'), 'ch'),
+    }, { engine: path.join(engine, 'standards.js') });
     const out = (res.stdout || '') + (res.stderr || '');
     expect(out.includes('template missing'), `names the missing template, got: ${out}`).toBeTruthy();
     expect(res.status, 'a partial heal exits non-zero so the caller can tell').toBe(1);
@@ -48,18 +45,19 @@ describe('standards.sh: it fails loudly, never silently', () => {
     const repo = makeRepo();
     const env = {
       ...process.env, PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(path.join(mkTmp('wf-std-'), 'wh')), WORKFLOW_CLAUDE_HOME: shellPath(path.join(mkTmp('wf-std-'), 'ch')),
+      WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'wh'), WORKFLOW_CLAUDE_HOME: path.join(mkTmp('wf-std-'), 'ch'),
     };
-    const state = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--state', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const copy = { engine: path.join(engine, 'standards.js') };
+    const state = heal(['--state', repo], env, copy);
     expect(state.status, '--state answers without the manifest').toBe(0);
     expect((state.stdout || '').trim(), 'and answers correctly').toBe('enabled');
-    const announce = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), '--announce', shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
+    const announce = heal(['--announce', repo], env, copy);
     expect(announce.status, '--announce answers without the manifest').toBe(0);
     expect((announce.stdout || '').includes('--enable'), 'and still offers').toBeTruthy();
-    const heal = spawnBash([...NO_RC, shellPath(path.join(engine, 'standards.sh')), shellPath(repo)], { env, encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    const out = (heal.stdout || '') + (heal.stderr || '');
+    const healed = heal([repo], env, copy);
+    const out = (healed.stdout || '') + (healed.stderr || '');
     expect(out.includes('labels.json missing'), `the heal names the broken install, got: ${out}`).toBeTruthy();
-    expect(heal.status, 'and exits non-zero so the caller retries').toBe(1);
+    expect(healed.status, 'and exits non-zero so the caller retries').toBe(1);
     expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the local heals still ran').toBeTruthy();
     cleanup(repo); cleanup(kit);
   });
@@ -142,7 +140,7 @@ describe('standards.sh: it fails loudly, never silently', () => {
   test('no jq: a committed enabled:false is still a no, and a file with no enabled key no yes', () => {
     // A committed answer, read on a machine with no jq.
     const binDir = mkTmp('wf-std-');
-    // cygpath is the engine's path spelling on Windows (wk_native_path), as much a
+    // cygpath is the engine's path spelling on Windows (nativePath), as much a
     // need there as git; `which` answers nothing for it on macOS and Linux.
     for (const tool of ['git', 'grep', 'tail', 'head', 'cp', 'mkdir', 'tr', 'cat', 'dirname', 'basename', 'cygpath']) {
       const real = which(tool);
@@ -150,9 +148,7 @@ describe('standards.sh: it fails loudly, never silently', () => {
     }
     for (const [settings, want] of [['{ "version": 1, "enabled": false }\n', 'disabled'], ['{ "version": 1 }\n', 'undecided']]) {
       const repo = makeRepo({ settings });
-      const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), '--state', shellPath(repo)], {
-        env: { PATH: binDir, WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')), ...nodeEnv }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
+      const res = heal(['--state', repo], { PATH: joinPath(binDir, NODE_DIR), WORKFLOW_HOME: path.join(binDir, 'wh') });
       expect((res.stdout || '').trim(), `${settings.trim()} on a jq-less machine, stderr: ${res.stderr}`).toBe(want);
       cleanup(repo);
     }

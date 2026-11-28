@@ -2,15 +2,15 @@
 // one, in two layers, neither touching the real ~/.workkit: the sync as the
 // library function it is (home/seed.js, in a node of its own), against fixture
 // directories and a clone of a local bare "GitHub"; and the wiring (sync,
-// install, mint, abort) end to end through publish.sh with an `npm` shim and a
+// install, mint, abort) end to end through publish.js with an `npm` shim and a
 // stub `omega`. No omega, no network.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { expect, mkTmp, seeded, run, SPAWN_DEADLINE } = require('../../lib/harness');
+const { expect, mkTmp, seeded, run } = require('../../lib/harness');
 const {
-  spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, jsPath, homeEnv, stubTool, joinPath,
+  SYSTEM_PATH, NODE_DIR, shellPath, jsPath, homeEnv, nodeHomeEnv, stubTool, joinPath,
 } = require('../../lib/platform');
 const { copyEngine, mkTowerRemote } = require('../publish/helpers');
 
@@ -307,9 +307,10 @@ const mkPublishWorld = ({
     npms: () => (fs.existsSync(npmLog)
       ? fs.readFileSync(npmLog, 'utf8').trim().split('\n').filter(Boolean)
       : []),
-    env: homeEnv(homeDir, {
+    // Native, as the publish's node reads it.
+    env: nodeHomeEnv(homeDir, {
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
-      WORKFLOW_HOME: shellPath(workflowHome),
+      WORKFLOW_HOME: workflowHome,
       WORKKIT_HOME_REMOTE: bare,
     }),
   };
@@ -319,10 +320,10 @@ const mkPublishWorld = ({
 // from wherever it woke up, and a shim that keys anything off the cwd must key
 // it off a scratch directory rather than this checkout.
 const publish = (world, args = []) => {
-  const res = spawnBash([...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
-    cwd: world.root, env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  const res = run(process.execPath, [path.join(world.kit, 'workflow', 'publish.js'), ...args], {
+    cwd: world.root, env: world.env,
   });
-  expect(res.status !== null, `publish finished (no timeout): ${res.error || ''}`).toBeTruthy();
+  expect(res.status !== null, `publish finished (no timeout): ${res.output}`).toBeTruthy();
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 

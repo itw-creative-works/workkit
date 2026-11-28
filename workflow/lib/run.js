@@ -1,6 +1,6 @@
 /**
- * workflow/lib/run.js: the one Node home for finding and starting a program, the Node twin
- * of lib/platform.sh. Off Windows every call is child_process's own. On Windows
+ * workflow/lib/run.js: the one Node home for finding and starting a program.
+ * Off Windows every call is child_process's own. On Windows
  * the program is found the way Git Bash finds it, every argument goes quoted and
  * verbatim, and a given env keeps what Windows needs to start a child.
  * Usage: const { spawnSync } = require('../lib/run');
@@ -269,5 +269,5 @@ const spawn = (cmd, args, options) => {
 };
 
 module.exports = {
-  spawnSync, spawn, execFileSync, launchOf, windowsQuoted, onPath, keyOf,
+  spawnSync, spawn, execFileSync, launchOf, windowsQuoted, onPath, keyOf, pathDirs,
 };

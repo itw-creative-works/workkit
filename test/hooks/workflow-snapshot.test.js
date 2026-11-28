@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, NO_RC, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash, spawnSync,
+  IS_WINDOWS, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash, spawnSync,
   skipWithoutModes, skipWithoutCaughtSignal,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
@@ -18,7 +18,7 @@ const {
   snapshotBase, snapshotKey, snapshotDir, treeOf,
 } = require('../lib/red-snapshot');
 const { homeOf } = require('../lib/workflow-home');
-const { scratchKit, journalFileText } = require('../lib/identity');
+const { scratchKit, shimArgv, journalFileText } = require('../lib/identity');
 const { mods, ghEntry } = require('../lib/mods-inputs');
 
 const KIT = path.join(__dirname, '..', '..');
@@ -102,7 +102,7 @@ const viaShim = (w, args, { fails = false } = {}) => {
   const env = homeEnv(w.home, { PATH: systemPathWith(shimDir(), bin, NODE_DIR), CLAUDECODE: '1' });
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
-  const res = spawnBash([...NO_RC, shellPath(path.join(shimDir(), 'gh')), ...args], {
+  const res = spawnBash(shimArgv(path.join(shimDir(), 'gh'), args), {
     cwd: w.here, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   expect(res.status, `the shim's exit is the real gh's (stderr: ${res.stderr})`).toBe(fails ? 1 : 0);

@@ -18,7 +18,7 @@ const { execFileSync } = require('../lib/run');
 // two files would disagree about which entries still need filling.
 const { COMMIT_RE, ISSUE_LINK_RE, META_RE, parseEntries } = require('./lint');
 
-// What a repo is called comes from ../slug.js, the twin of lib/slug.sh, for the
+// What a repo is called comes from ../slug.js, the kit's one slug rule, for the
 // same reason.
 const { slugFromRemote } = require('../slug');
 const { repoRoot } = require('../lib/git');

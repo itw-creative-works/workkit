@@ -7,7 +7,9 @@ const path = require('path');
 const {
   describe, test, expect,
 } = require('../../lib/harness');
-const { gitPath, joinPath, stubTool } = require('../../lib/platform');
+const {
+  NODE_DIR, gitPath, joinPath, stubTool,
+} = require('../../lib/platform');
 const {
   WORKFLOW_DIR, cleanup, mkWorld, runCli, mkRepo, mkKit, mkSetupKit,
 } = require('../workkit-cli/helpers');
@@ -70,12 +72,14 @@ describe('identity/gh link: doctor', () => {
     const world = mkWorld({ pluginInstalled: true, binOnPath: true });
     fs.mkdirSync(world.claudeHome, { recursive: true });
     runCli(world, ['update']);
-    const linked = runCli(world, ['doctor']);
+    // The shim is a Node program, so doctor's gh check through it needs a node on PATH.
+    const withNode = { env: { PATH: joinPath(world.env.PATH, NODE_DIR) } };
+    const linked = runCli(world, ['doctor'], withNode);
     const okLine = linked.out.split('\n').find((l) => /^ *✓ /.test(l) && l.includes(gitPath(ghLink(world))));
     expect(okLine, `an ok line names the link, got: ${linked.out}`).toBeTruthy();
 
     fs.unlinkSync(ghLink(world));
-    const missing = runCli(world, ['doctor']);
+    const missing = runCli(world, ['doctor'], withNode);
     const added = doctorWarnings(missing).filter((l) => !doctorWarnings(linked).includes(l));
     expect(added.length, `one new warning, got: ${added.join(' | ')}`).toBe(1);
     expect(/\bgh\b/.test(added[0]), `and it is about the gh link, got: ${added[0]}`).toBeTruthy();
@@ -102,8 +106,9 @@ describe('identity/gh link: doctor', () => {
     fs.mkdirSync(otherBin);
     stubTool(otherBin, 'gh', ['#!/usr/bin/env bash', 'exit 0']);
 
-    const shimFirst = runCli(world, ['doctor']);
-    const otherFirst = runCli(world, ['doctor'], { env: { PATH: joinPath(otherBin, world.env.PATH) } });
+    // The shim is a Node program, so doctor's gh check through it needs a node on PATH.
+    const shimFirst = runCli(world, ['doctor'], { env: { PATH: joinPath(world.env.PATH, NODE_DIR) } });
+    const otherFirst = runCli(world, ['doctor'], { env: { PATH: joinPath(otherBin, world.env.PATH, NODE_DIR) } });
     const added = doctorWarnings(otherFirst).filter((l) => !doctorWarnings(shimFirst).includes(l));
     expect(added.length, `one new warning, got: ${added.join(' | ')}`).toBe(1);
     expect(/\bgh\b/.test(added[0]), `and it is about which gh comes first, got: ${added[0]}`).toBeTruthy();

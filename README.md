@@ -142,12 +142,13 @@ claude
 
 - git
 - the GitHub CLI (`gh`), signed in with `gh auth login`
-- jq
-- Node.js with npm, 22.22 or newer, first on your PATH (the root `package.json` names the floor); `workkit` runs on that `node`, and an older one gets one line saying so
+- Node.js with npm, 22.22 or newer, first on your PATH (the root `package.json` names the floor); `workkit`, the `gh` shim and the commit checks run on that `node`, and an older one gets one line saying so
 - the Claude Code CLI (`claude`)
 
+- The kit's own test suite (`npm test` in this repo) also needs `jq` on your PATH, since its `gh` stub answers `--jq` with it.
+
 - It runs on macOS, on Linux, and on Windows.
-  - On Windows `workkit` starts from cmd, PowerShell and Git Bash; git's hooks, the shims and npm's script shell run through the bash Git for Windows ships.
+  - On Windows `workkit` starts from cmd, PowerShell and Git Bash; git's hooks, the `git` shim and npm's script shell run through the bash Git for Windows ships.
   - The 9am schedule on your own machine runs on macOS (launchd) and on Windows (Task Scheduler).
   - Everywhere else the same brief runs in the cloud from your home repo.
 

@@ -16,17 +16,19 @@ const os = require('os');
 const path = require('path');
 const { codeOf } = require('../workflow/lib/detach');
 const { isFile } = require('../workflow/lib/lock');
-const { nativePath, cloneOutranks, physicalDir } = require('../workflow/lib/platform');
+const {
+  nativePath, cloneOutranks, physicalDir, unreadPathStop,
+} = require('../workflow/lib/platform');
 const { spawnSync } = require('../workflow/lib/run');
 const { writeErr, writeOut } = require('../workflow/lib/say');
 const { withScratch } = require('../workflow/lib/scratch');
 const { spin } = require('../workflow/lib/spin');
 const { ok, warn, error } = require('../workflow/lib/voice');
 const { userDir } = require('../workflow/user-dir');
-const { machineHome } = require('./lib/machine');
+const { machineHome, jobPath } = require('./lib/machine');
 const { holds, skippedLine } = require('./lib/schedule');
 const {
-  renderTask, installTask, checkTask, copyPath,
+  escaped, renderTask, installTask, checkTask, copyPath,
 } = require('./lib/task-scheduler');
 const { chomp } = require('../hooks/mods/text.js');
 
@@ -80,21 +82,25 @@ const skipLaunchd = (label, what) => {
 };
 
 /**
- * The plist and the task reach the job through ~/.claude/workkit, so a link that is missing
- * or names another kit runs no job or that kit's; a workkit clone outranking this
- * cached copy is the one other answer that holds. Both modes say it.
+ * The Windows task reaches the job through ~/.claude/workkit, and a Mac's job reads
+ * its kit from it at install, so a link that is missing or names another kit runs
+ * no task, this kit, or that kit's job; a workkit clone outranking this cached
+ * copy is the one other answer that holds. Both modes say it.
  * @param {string} home
  * @param {string} label
+ * @param {boolean} mac whether the line speaks of a Mac's job, else the Windows task
  */
-const checkEngineLink = (home, label) => {
+const checkEngineLink = (home, label, mac) => {
   const link = path.join(home, '.claude', 'workkit');
   const linked = physicalDir(link) ?? '';
   if (linked === path.join(WORKKIT_DIR, 'workflow')) return;
   if (cloneOutranks(WORKKIT_DIR, linked)) return;
+  const how = mac ? 'reads its kit from' : 'runs through';
   if (!linked) {
-    warn(`${label} → the job runs through ${nativePath(link)}, which does not resolve, so it cannot reach this kit; run \`workkit update\``);
+    const then = mac ? `so it runs this kit at ${nativePath(WORKKIT_DIR)}` : 'so it cannot reach this kit';
+    warn(`${label} → the job ${how} ${nativePath(link)}, which does not resolve, ${then}; run \`workkit update\``);
   } else {
-    warn(`${label} → the job runs through ${nativePath(link)}, which resolves to ${nativePath(linked)}, not this kit's ${nativePath(WORKKIT_DIR)}/workflow; run \`workkit update\``);
+    warn(`${label} → the job ${how} ${nativePath(link)}, which resolves to ${nativePath(linked)}, not this kit's ${nativePath(WORKKIT_DIR)}/workflow; run \`workkit update\``);
   }
 };
 
@@ -170,14 +176,18 @@ const installAgent = (run, label, when) => {
     error(`template missing: ${nativePath(template)}`);
     return 1;
   }
-  // The job runs through the engine link, never a baked kit path, so a moved
-  // kit or a plugin update that repoints the link needs no reinstall.
-  const rendered = fs.readFileSync(template, 'utf8').split('{{HOME}}').join(run.home);
+  // The kit is the one the engine link names now, else this one; the Node is
+  // this run's. A moved kit or a new Node reads as out of date, and the next
+  // `workkit update` writes the file again.
+  const linked = physicalDir(path.join(run.home, '.claude', 'workkit'));
+  const kit = linked === null ? WORKKIT_DIR : path.dirname(linked);
+  const values = { HOME: run.home, KIT: kit, PATH: jobPath(run.home, path.dirname(process.execPath)) };
+  const rendered = fs.readFileSync(template, 'utf8').replace(/\{\{(HOME|KIT|PATH)\}\}/g, (_, key) => escaped(values[key]));
   if (!lints(rendered)) {
     error(`${label} → rendered plist fails plutil -lint`);
     return 1;
   }
-  checkEngineLink(run.home, label);
+  checkEngineLink(run.home, label, true);
 
   const installed = isFile(target);
   if (run.mode === 'check') {
@@ -250,7 +260,7 @@ const installTaskFile = (run, label, when) => {
     home: path.win32.normalize(run.home),
     user: os.userInfo().username,
   });
-  checkEngineLink(run.home, label);
+  checkEngineLink(run.home, label, false);
   const copy = copyPath(label, userDir(run.home));
   if (run.mode === 'check') {
     const { line } = checkTask({ label, text, copy });
@@ -299,7 +309,11 @@ const main = (args, { platform = PLATFORM } = {}) => {
 
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  process.exitCode = main(process.argv.slice(2));
+  try {
+    process.exitCode = main(process.argv.slice(2));
+  } catch (err) {
+    process.exitCode = unreadPathStop(err);
+  }
 }
 
 module.exports = { main };

@@ -10,20 +10,26 @@ const {
   describe, test, expect, mkTmp, seeded, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  NO_RC, NODE_DIR, shellPath, spawnBash, spawnSync, systemPathWith, homeEnv, stubTool,
+  NO_RC, NODE_DIR, shellPath, spawnBash, spawnSync, systemPathWith, homeEnv, which,
 } = require('../lib/platform');
-const { recordArgv, readArgv } = require('../lib/argv-log');
+const { readArgv } = require('../lib/argv-log');
+const { recordingNode } = require('../lib/node-fakes');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const KIT = path.join(__dirname, '..', '..');
 const SHIM_DIR = path.join(KIT, 'workflow', 'gitshim');
+
+// The version a recordingNode reads as below the floor.
+const OLD_VERSION = '20.15.1';
+const FLOOR_LINE = `workkit: this Node is v${OLD_VERSION}; the kit needs 22.22 or newer`;
+const NO_NODE = 'git: the workkit check cannot run: no node on PATH';
 
 const APP = 'const x = 1;\n';
 const EDITED = 'const x = 2;\n';
 
 // A repo on main with src/app.js and notes.md committed and a second branch, opted in unless the shape
 // says not, beside an empty home and TMPDIR; git runs here with the real PATH, never through the shim.
-const seed = seeded((dir, { optIn }) => {
+const seed = seeded((dir, { optIn, settings }) => {
   const repo = path.join(dir, 'repo');
   for (const d of [path.join(repo, 'src'), path.join(dir, 'home'), path.join(dir, 'tmp'), path.join(dir, 'elsewhere')]) {
     fs.mkdirSync(d, { recursive: true });
@@ -32,7 +38,7 @@ const seed = seeded((dir, { optIn }) => {
   fs.writeFileSync(path.join(repo, 'notes.md'), '# notes\n');
   if (optIn) {
     fs.mkdirSync(path.join(repo, '.workkit'));
-    fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), OPT_IN_SHAPES.current);
+    fs.writeFileSync(path.join(repo, '.workkit', 'settings.json'), settings || OPT_IN_SHAPES.current);
   }
   const env = homeEnv(path.join(dir, 'home'), { PATH: process.env.PATH });
   // Git for Windows' system config turns autocrlf on, and the scratch home hides CI's global off,
@@ -46,11 +52,12 @@ const seed = seeded((dir, { optIn }) => {
 
 /**
  * A fresh copy of the world. `git(...args)` runs the real git in the repo, past the shim, and
- * throws on a non-zero exit. `edit()` leaves src/app.js changed and unstaged.
+ * throws on a non-zero exit. `edit()` leaves src/app.js changed and unstaged. `settings` is the
+ * text of the repo's .workkit/settings.json in place of the opt-in.
  */
-const mkWorld = ({ optIn = true } = {}) => {
+const mkWorld = ({ optIn = true, settings = null } = {}) => {
   const dir = mkTmp('wk-gitshim-');
-  seed(dir, { optIn });
+  seed(dir, { optIn, settings });
   const repo = path.join(dir, 'repo');
   const home = path.join(dir, 'home');
   const git = (...args) => {
@@ -96,21 +103,84 @@ const ran = (res, label) => {
   expect(!res.stderr.includes(BLOCKED), `${label}: no block, got: ${res.stderr}`).toBeTruthy();
 };
 
+// sh's options for a PATH of the shim and the system tools alone, which must hold no node.
+const noNode = () => {
+  expect(which('node', systemPathWith(SHIM_DIR)), 'no node among the system tools').toBe(null);
+  return { node: false };
+};
+
+const branch = (world) => world.git('rev-parse', '--abbrev-ref', 'HEAD').trim();
+
+// a1 for a2, a2 for a3, ... the last hop for status: `hops` aliases in all.
+const chain = (world, hops) => {
+  for (let i = 1; i <= hops; i++) world.git('config', `alias.a${i}`, i === hops ? 'status' : `a${i + 1}`);
+};
+
 describe('gitshim: the hot path', () => {
-  test('git status through the shim answers with the real git\'s output and exit code, and no judge runs', async () => {
+  test('git status through the shim answers with the real git\'s output and exit code, and starts no node', async () => {
     const world = mkWorld();
     world.edit();
     // A node ahead of the real one that records each start, so a judge that ran would be seen.
-    const stubs = path.join(world.dir, 'stubs');
-    fs.mkdirSync(stubs);
     const log = path.join(world.dir, 'node.argv');
-    stubTool(stubs, 'node', ['#!/bin/bash', recordArgv(log), 'exit 1']);
+    const stubs = recordingNode(path.join(world.dir, 'stubs'), { log });
     const status = sh(world, 'git status --porcelain', { before: [stubs], node: false });
     expect(status.code, `exit 0, stderr: ${status.stderr}`).toBe(0);
     expect(status.stdout.replace(/\r/g, ''), 'the real git\'s porcelain line').toBe(' M src/app.js\n');
     const missing = sh(world, 'git rev-parse --verify --quiet refs/heads/nosuch', { before: [stubs], node: false });
     expect(missing.code, 'git\'s own non-zero exit comes back').toBe(1);
     expect(readArgv(log).length, `no node started, got: ${JSON.stringify(readArgv(log))}`).toBe(0);
+  });
+
+  test('a guarded verb starts node once in a Claude session, and none outside one', async () => {
+    const world = mkWorld();
+    const log = path.join(world.dir, 'node.argv');
+    const stubs = recordingNode(path.join(world.dir, 'stubs'), { log });
+    ran(sh(world, 'git checkout feature', { before: [stubs], node: false }), 'in a session');
+    expect(readArgv(log).length, `one node started, got: ${JSON.stringify(readArgv(log))}`).toBe(1);
+    ran(sh(world, 'git checkout main', { before: [stubs], node: false, claude: false }), 'outside a session');
+    expect(readArgv(log).length, `no node started outside, got: ${JSON.stringify(readArgv(log))}`).toBe(1);
+    expect(branch(world), 'both checkouts ran').toBe('main');
+  });
+});
+
+describe('gitshim: when the check cannot run', () => {
+  test('a guarded verb in an opted-in repo inside a Claude session, no node on PATH: the no-node line and 1, git not run', async () => {
+    const world = mkWorld();
+    const res = sh(world, 'git checkout feature', noNode());
+    expect(res.code, `exit 1, stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr.includes(NO_NODE), `the no-node line, got: ${res.stderr}`).toBeTruthy();
+    expect(branch(world), 'the checkout never ran').toBe('main');
+  });
+
+  test('a guarded verb in a repo with no .workkit/settings.json inside a Claude session, no node on PATH: git runs', async () => {
+    const world = mkWorld({ optIn: false });
+    ran(sh(world, 'git checkout feature', noNode()), 'not opted in');
+    expect(branch(world), 'the checkout ran').toBe('feature');
+  });
+
+  test('HOOK_DISABLE=1 in an opted-in repo inside a Claude session: with no node on PATH, or under a node below 22.22, a guarded verb runs git with no line and no node started', async () => {
+    const none = mkWorld();
+    const bare = sh(none, 'git checkout feature', { ...noNode(), env: { HOOK_DISABLE: '1' } });
+    ran(bare, 'no node on PATH');
+    expect(!bare.stderr.includes(NO_NODE), `no line about node, got: ${bare.stderr}`).toBeTruthy();
+    expect(branch(none), 'no node: the checkout ran').toBe('feature');
+
+    const old = mkWorld();
+    const log = path.join(old.dir, 'node.argv');
+    const below = sh(old, 'git checkout feature',
+      { before: [recordingNode(path.join(old.dir, 'old-node'), { log, older: OLD_VERSION })], node: false, env: { HOOK_DISABLE: '1' } });
+    ran(below, 'a node below the floor');
+    expect(!below.stderr.includes(FLOOR_LINE), `no floor line, got: ${below.stderr}`).toBeTruthy();
+    expect(readArgv(log).length, `no node started, got: ${JSON.stringify(readArgv(log))}`).toBe(0);
+    expect(branch(old), 'a node below the floor: the checkout ran').toBe('feature');
+  });
+
+  test('a guarded verb in an opted-in repo inside a Claude session, under a node below 22.22: the floor line and 1, git not run', async () => {
+    const world = mkWorld();
+    const res = sh(world, 'git checkout feature', { before: [recordingNode(path.join(world.dir, 'old-node'), { older: OLD_VERSION })], node: false });
+    expect(res.code, `exit 1, stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr.includes(FLOOR_LINE), `the floor line, got: ${res.stderr}`).toBeTruthy();
+    expect(branch(world), 'the checkout never ran').toBe('main');
   });
 });
 
@@ -183,11 +253,6 @@ describe('gitshim: a discard in an opted-in repo inside a Claude session', () =>
     expect(world.app(), 'the edit is still there').toBe(EDITED);
   });
 
-  // a1 for a2, a2 for a3, ... the last hop for status: `hops` aliases in all.
-  const chain = (world, hops) => {
-    for (let i = 1; i <= hops; i++) world.git('config', `alias.a${i}`, i === hops ? 'status' : `a${i + 1}`);
-  };
-
   test('an alias chain six hops deep fails closed: exit 1, no git output, and the depth named', async () => {
     const world = mkWorld();
     world.edit();
@@ -241,5 +306,21 @@ describe('gitshim: where the shim stands aside', () => {
     outside.edit();
     ran(sh(outside, 'git reset --hard', { claude: false }), 'no CLAUDECODE');
     expect(outside.app(), 'no CLAUDECODE: git ran').toBe(APP);
+  });
+
+  test('a repo whose .workkit/settings.json says "enabled": false, in a Claude session: git reset --hard runs, and a six-hop alias runs with no refusal', async () => {
+    const off = () => mkWorld({ settings: '{\n  "enabled": false\n}\n' });
+    const discard = off();
+    discard.edit();
+    ran(sh(discard, 'git reset --hard'), 'reset --hard');
+    expect(discard.app(), 'the discard happened').toBe(APP);
+
+    const deep = off();
+    deep.edit();
+    chain(deep, 6);
+    const res = sh(deep, 'git a1');
+    ran(res, 'six hops');
+    expect(!res.stderr.includes('deeper than five hops'), `no too-deep refusal, got: ${res.stderr}`).toBeTruthy();
+    expect(res.stdout.includes('src/app.js'), `git status ran, got: ${res.stdout}`).toBeTruthy();
   });
 });

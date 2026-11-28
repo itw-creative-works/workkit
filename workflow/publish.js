@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 /**
  * workflow/publish.js: build the tower project in the home clone and publish
- * it to gh-pages, started by publish.sh under a node at the kit's floor. Every
- * reason not to publish is a named skip with exit 0; the mechanism is
- * workflow/README.md § Publishing the dashboard.
+ * it to gh-pages, started by node; a Node below the kit's floor gets one line
+ * and stops. Every reason not to publish is a named skip with exit 0; the
+ * mechanism is workflow/README.md § Publishing the dashboard.
  * Usage: node publish.js [--quiet]
  * Called by: `workkit publish`, `workkit update` (a human's run), and
  *            jobs/morning/site.js after the brief has been sent.
  */
+
+// The floor first, ahead of every other require, in syntax an older Node reads.
+if (require.main === module) {
+  const floor = require('./lib/floor');
+  const below = floor.floorLine(process.version, floor.floorOf());
+  if (below) {
+    require('fs').writeSync(2, `${below}\n`);
+    process.exit(1);
+  }
+}
 
 const fs = require('fs');
 const os = require('os');
@@ -16,7 +26,7 @@ const { lastLines } = require('./lib/attach');
 const { gitIn, commitIdentity } = require('./lib/git');
 const { holdSignals, Interrupted } = require('./lib/interrupt');
 const { isDir, isFile } = require('./lib/lock');
-const { nativePath } = require('./lib/platform');
+const { nativePath, unreadPathStop } = require('./lib/platform');
 const { executable } = require('./lib/participation');
 const { onPath } = require('./lib/run');
 const { writeErr } = require('./lib/say');
@@ -547,5 +557,5 @@ const main = async (args) => {
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered
   // for a pipe. A code the hold's end set for a signal (Windows) stays.
-  main(process.argv.slice(2)).then((code) => { process.exitCode ??= code; });
+  main(process.argv.slice(2)).then((code) => { process.exitCode ??= code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }

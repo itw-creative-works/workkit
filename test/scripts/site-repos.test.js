@@ -6,7 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp } = require('../lib/harness');
-const { gitPath } = require('../lib/platform');
+const {
+  IS_WINDOWS, NODE_DIR, gitPath, shellPath,
+} = require('../lib/platform');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 
 const { composeSlugs, writeSlugs, machineKey } = require(path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js'));
@@ -117,6 +119,26 @@ describe('workflow/site-repos: an empty machine and a roster that will not read'
     const res = spawnSync(process.execPath, [script, outfile, workflowHome], { encoding: 'utf8' });
     expect(res.status !== 0, `non-zero, got ${res.status}`).toBeTruthy();
     expect(/could not be read/.test(res.stderr), `it says why, got: ${res.stderr}`).toBeTruthy();
+    expect(fs.existsSync(outfile), 'and nothing was written where the list goes').toBe(false);
+    cleanup(tmp);
+  });
+
+  // With no folder argument the CLI reads WORKFLOW_HOME before the roster or the list.
+  // PATH is node's folder alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a WORKFLOW_HOME in the shell\'s spelling with no cygpath on PATH: the one line naming WORKFLOW_HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a machine folder is never handed to cygpath',
+  }, () => {
+    const tmp = mkTmp('workkit-site-repos-');
+    const outfile = path.join(tmp, 'data', 'repos.json');
+    const folder = shellPath(mkWorkflowHome(tmp));
+    const script = path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js');
+    const res = spawnSync(process.execPath, [script, outfile], {
+      encoding: 'utf8', env: { ...process.env, PATH: NODE_DIR, WORKFLOW_HOME: folder },
+    });
+    expect(res.status, `exit 1, got: ${res.stdout}${res.stderr}`).toBe(1);
+    expect(res.stdout, 'nothing on stdout').toBe('');
+    expect(res.stderr, 'the one line').toBe(`workkit: cannot read WORKFLOW_HOME (${folder}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set WORKFLOW_HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
     expect(fs.existsSync(outfile), 'and nothing was written where the list goes').toBe(false);
     cleanup(tmp);
   });

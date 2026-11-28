@@ -1,5 +1,5 @@
-// The shared prologue of the jobs/morning.sh cloud suites beside this one: the
-// script run for real as an Actions runner runs it, against a scratch HOME and a
+// The shared prologue of the jobs/morning.js cloud suites beside this one: the
+// program run for real as an Actions runner runs it, against a scratch HOME and a
 // PATH farm (a recording `claude`, a recording notifier, and a `gh` answering the
 // contents API and the Discussions GraphQL). `git` and `node` are real, so the
 // roster it writes is read back by the tower's own composer. The machine leg is
@@ -11,10 +11,10 @@ const { pathToFileURL } = require('url');
 const { mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const {
-  NO_RC, shellPath, homeEnv, stubTool, pathWith, spawnBash,
+  homeEnv, stubTool, pathWith, spawnSync,
 } = require('../../lib/platform');
 
-const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
+const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.js');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
 const { discoverRepos } = require(path.join(__dirname, '..', '..', '..', 'tower', 'api', 'lib', 'repos'));
 
@@ -188,9 +188,8 @@ const mkWorld = ({
   };
 };
 
-// The run as the workflow starts it: `script`, the kit's starter unless a case
-// names the copy a home repo carries.
-const runJob = (world, args = [], script = SCRIPT) => spawnBash([...NO_RC, shellPath(script), ...args], {
+// The run as the workflow starts it, the kit's own morning under this suite's node.
+const runJob = (world, args = []) => spawnSync(process.execPath, [SCRIPT, ...args], {
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,
   env: world.env,

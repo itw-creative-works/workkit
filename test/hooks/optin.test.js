@@ -1,5 +1,5 @@
 // Tests for the opt-in gate's logic: folderOpted(io, dir) in hooks/mods/guards.js, whether the repo holding a
-// call's real folder opted in, and rosterOf in hooks/mods/optin.js, the one roster read. The folder is the call's
+// call's real folder opted in, and rosterOf and rosterPath in hooks/mods/optin.js, the one roster read and its lookup. The folder is the call's
 // own ($.session.cwd() before a Bash call, the event's cwd after it), never one read off the command's text: the
 // wiring cases, the hooks-log and HOOK_DISABLE ones included, are test/mods/guards-tree-guard.test.ts.
 
@@ -53,5 +53,32 @@ describe('optin.js: rosterOf, the one roster read', () => {
     expect(JSON.stringify(await rosterOf({ HOME: '/w/home' }, read)), 'the roster under HOME').toBe(JSON.stringify(roster));
     expect(await rosterOf({ HOME: '/w/home', WORKFLOW_HOME: '/w/moved' }, read), 'WORKFLOW_HOME moves it, and a broken file is null').toBe(null);
     expect(await rosterOf({ HOME: '/w/empty' }, read), 'no roster is null').toBe(null);
+  });
+});
+
+describe('optin.js: rosterPath, the rostered folder of a slug', () => {
+  // One enabled and one declined folder, each with its origin's slug.
+  const ROSTER = { version: 1, repos: { '/w/mine': 'enabled', '/w/theirs': 'declined' } };
+  const ORIGINS = { '/w/mine': 'Owner/Mine', '/w/theirs': 'owner/theirs' };
+  const slugOf = async (dir) => ORIGINS[dir] ?? '';
+
+  test('an enabled entry whose origin is the slug answers its folder, in any letter case', async () => {
+    const { rosterPath } = mods('optin');
+    expect(await rosterPath('Owner/Mine', ROSTER, slugOf), 'as the origin spells it').toBe('/w/mine');
+    expect(await rosterPath('owner/MINE', ROSTER, slugOf), 'another letter case').toBe('/w/mine');
+  });
+
+  test('a declined entry, a slug no entry carries and no roster at all answer null', async () => {
+    const { rosterPath } = mods('optin');
+    expect(await rosterPath('owner/theirs', ROSTER, slugOf), 'a declined repo has not opted in').toBe(null);
+    expect(await rosterPath('owner/absent', ROSTER, slugOf), 'not on the roster').toBe(null);
+    expect(await rosterPath('Owner/Mine', null, slugOf), 'no roster').toBe(null);
+  });
+
+  test('with several folders answering the slug, the first enabled one in the roster wins, a declined one before it passed over', async () => {
+    const { rosterPath } = mods('optin');
+    // Each folder names acme/public, as the bot's public-repo read answers for a pairing.
+    const roster = { version: 1, repos: { '/w/declined': 'declined', '/w/one': 'enabled', '/w/two': 'enabled' } };
+    expect(await rosterPath('Acme/Public', roster, async () => 'acme/public'), 'the first enabled folder').toBe('/w/one');
   });
 });

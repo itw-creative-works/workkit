@@ -1,4 +1,4 @@
-// Tests for standards.sh: branch protection.
+// Tests for standards.js: branch protection.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -26,7 +26,7 @@ const kitRepo = () => {
   return repo;
 };
 
-describe('standards.sh: branch protection', () => {
+describe('standards.js: branch protection', () => {
   test('asks GitHub to require the caller\'s checks / test check when none is set', () => {
     const repo = makeRepo();
     const stub = makeGhStub({ repoRead: true, protection: 'absent' });
@@ -77,7 +77,7 @@ describe('standards.sh: branch protection', () => {
   });
 });
 
-describe('standards.sh: a protection still requiring the copy\'s `test` check', () => {
+describe('standards.js: a protection still requiring the copy\'s `test` check', () => {
   const patchOf = (stub) => {
     const file = path.join(stub.dir, 'patch-body.json');
     return fs.existsSync(file) ? JSON.parse(readFile(file)) : null;
@@ -146,7 +146,7 @@ describe('standards.sh: a protection still requiring the copy\'s `test` check', 
   });
 });
 
-describe('standards.sh: protection in the kit\'s own repo', () => {
+describe('standards.js: protection in the kit\'s own repo', () => {
   test('the kit asks for `test`, the job its own checks.yml defines', () => {
     const repo = kitRepo();
     const stub = makeGhStub({ repoRead: true, protection: 'absent' });

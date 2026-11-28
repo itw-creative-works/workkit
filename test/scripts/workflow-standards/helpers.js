@@ -1,21 +1,22 @@
 // The shared prologue of the standards heal suites beside this one, which test
-// workflow/labels.json and workflow/standards.sh. Every `gh` call reaches a PATH
+// workflow/labels.json and workflow/standards.js. Every `gh` call reaches a PATH
 // shim that records its arguments and answers from a fixture, so nothing here
 // touches the network or a real repository.
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
-const { WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { WORKKIT_DIR: W, mkTmp, run } = require('../../lib/harness');
 const {
-  spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, stubTool, basePathWithout,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, shellPath, gitPath, stubTool, basePathWithout,
   joinPath,
 } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
-const SCRIPT = path.join(WORKFLOW_DIR, 'standards.sh');
+const SCRIPT = path.join(WORKFLOW_DIR, 'standards.js');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(WORKFLOW_DIR, 'labels.json'), 'utf8'));
 
 // The two .gitignore lines the engine writes, built from the harness constant
@@ -186,6 +187,46 @@ const ghCalls = (stub) => readArgv(stub.logFile);
 // assumed, since where a tool lives varies by machine.
 const binDirWithout = (excluded) => basePathWithout(mkTmp('wf-std-'), excluded);
 
+// This machine's own folders, which no heal a case starts may reach.
+const MACHINE_FOLDERS = ['.workkit', '.claude'].map((name) => path.join(os.homedir(), name));
+const within = (folder, own) => {
+  const rel = path.relative(own, path.resolve(folder));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+
+/**
+ * <env> for a kit program a case starts: the workflow home and the claude home
+ * are scratch folders (the claude home left unmade) unless <env> names its own.
+ * Throws when either resolves to this machine's own ~/.workkit or ~/.claude,
+ * named, or reached through HOME (USERPROFILE on Windows) or its absence.
+ * @param {object} env - the case's env, every path native
+ * @returns {object} the env to start the program with
+ */
+const seededEnv = (env) => {
+  const scratch = mkTmp('wf-std-');
+  const seeded = {
+    WORKFLOW_HOME: path.join(scratch, 'workflow-home'),
+    WORKFLOW_CLAUDE_HOME: path.join(scratch, 'claude-home'),
+    ...env,
+  };
+  const home = (IS_WINDOWS ? seeded.USERPROFILE : seeded.HOME) || os.homedir();
+  for (const folder of [seeded.WORKFLOW_HOME || path.join(home, '.workkit'), seeded.WORKFLOW_CLAUDE_HOME || path.join(home, '.claude')]) {
+    const own = MACHINE_FOLDERS.find((machine) => within(folder, machine));
+    if (own) throw new Error(`a kit program this case starts would reach this machine's own ${own} (as ${folder}); give the case a folder of its own`);
+  }
+  return seeded;
+};
+
+/**
+ * The heal as a person or a hook starts it: `node <engine> <args>`, under this
+ * suite's node, so no PATH a case narrows hides it, its env seeded (seededEnv).
+ * Every path in `env` is native, as a node reads it. `engine` is a copy's
+ * standards.js, this checkout's by default.
+ * @returns {{status: ?number, stdout: string, stderr: string, output: string}}
+ */
+const heal = (args, env, { engine = SCRIPT, cwd, preload } = {}) => run(process.execPath,
+  [...(preload ? ['-r', preload] : []), engine, ...args], { env: seededEnv(env), cwd });
+
 // `pathPrefix: null` runs with no gh on PATH (the offline machine). WORKFLOW_HOME
 // and the claude home are always throwaway directories.
 const runScript = (repoDir, {
@@ -195,23 +236,18 @@ const runScript = (repoDir, {
   // CHANGELOGs with it), so the default PATH carries it; a test proving a
   // missing tool builds its own PATH with binDirWithout().
   const basePath = joinPath(SYSTEM_PATH, NODE_DIR);
-  const res = spawnBash([...NO_RC, shellPath(SCRIPT), ...args, shellPath(repoDir)], {
-    env: {
-      ...process.env,
-      PATH: pathPrefix ? joinPath(pathPrefix, basePath) : basePath,
-      // Unset means the real hook layer beside the engine, which is what most
-      // of this suite runs against; the self-check tests point at a fixture.
-      ...(hooksDir ? { WORKFLOW_HOOKS_DIR: shellPath(hooksDir) } : {}),
-      WORKFLOW_HOME: shellPath(workflowHome || path.join(mkTmp('wf-std-'), 'workflow-home')),
-      // Same rule as WORKFLOW_HOME for the engine's address symlink: the step
-      // that maintains ~/.claude/workkit must never reach the real ~/.claude.
-      WORKFLOW_CLAUDE_HOME: shellPath(claudeHome || path.join(mkTmp('wf-std-'), 'claude-home')),
-      // Last, so a case driving another platform's branch (OSTYPE) wins over
-      // the environment this suite inherited.
-      ...env,
-    },
-    encoding: 'utf8',
-    timeout: SPAWN_DEADLINE,
+  const res = heal([...args, repoDir], {
+    ...process.env,
+    PATH: pathPrefix ? joinPath(pathPrefix, basePath) : basePath,
+    // Unset means the real hook layer beside the engine, which is what most
+    // of this suite runs against; the self-check tests point at a fixture.
+    ...(hooksDir ? { WORKFLOW_HOOKS_DIR: hooksDir } : {}),
+    WORKFLOW_HOME: workflowHome || path.join(mkTmp('wf-std-'), 'workflow-home'),
+    // Same rule as WORKFLOW_HOME for the engine's address symlink: the step
+    // that maintains ~/.claude/workkit must never reach the real ~/.claude.
+    WORKFLOW_CLAUDE_HOME: claudeHome || path.join(mkTmp('wf-std-'), 'claude-home'),
+    // Last, so a case's own keys win over the environment this suite inherited.
+    ...env,
   });
   // The engine keeps stdout for machine-readable answers (--state, --announce)
   // and sends every diagnostic to stderr. `output` is what a human sees in a
@@ -251,5 +287,5 @@ const copyKitSiblings = (root) => {
 module.exports = {
   copyKitSiblings, WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
   desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
-  binDirWithout, runScript, claudeHomeWith, linkedClaudeHome,
+  binDirWithout, seededEnv, heal, runScript, claudeHomeWith, linkedClaudeHome,
 };

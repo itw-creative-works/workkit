@@ -5,14 +5,14 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, run,
 } = require('../../lib/harness');
 const {
-  NO_RC, SYSTEM_PATH, shellPath, which, spawnBash, stubToolJs, joinPath, samePath,
+  SYSTEM_PATH, which, stubToolJs, joinPath, samePath,
 } = require('../../lib/platform');
 const { recordArgvJs, readArgv, fmtCalls } = require('../../lib/argv-log');
 const {
-  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, runHomeSteps, mkKitCopy, kitCommitted,
+  WORKFLOW_DIR, cleanup, git, mkRemote, mkWorld, runHomeSteps, mkKitCopy, kitCommitted,
 } = require('./helpers');
 
 describe('workflow/home: the clone’s own heal', () => {
@@ -155,9 +155,7 @@ describe('workflow/home: the clone’s own heal', () => {
     const other = path.join(world.root, 'other');
     fs.mkdirSync(other, { recursive: true });
     spawnSync('git', ['init', '-q', other], { encoding: 'utf8' });
-    const res = spawnBash([...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), '--home', shellPath(other)], {
-      env: bashEnv(world), encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
+    const res = run(process.execPath, [path.join(WORKFLOW_DIR, 'standards.js'), '--home', other], { env: world.env });
     expect(res.status, 'it refuses').toBe(1);
     expect(/not the tower clone/.test(res.stderr || ''), `and says why, got: ${res.stderr}`).toBeTruthy();
     expect(!fs.existsSync(path.join(other, '.github')), 'nothing was written into it').toBeTruthy();

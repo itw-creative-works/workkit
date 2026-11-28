@@ -38,12 +38,8 @@ const repo = () => {
   return world;
 };
 
-// The suite's own session (HOME as it runs, node first on PATH, WORKKIT_NODE dropped) over a scratch workflow home.
-const ownSession = (workflowHome) => {
-  const env = { ...process.env, WORKFLOW_HOME: shellPath(workflowHome), PATH: joinPath(NODE_DIR, process.env.PATH) };
-  delete env.WORKKIT_NODE;
-  return env;
-};
+// The suite's own session (HOME as it runs, node first on PATH) over a scratch workflow home.
+const ownSession = (workflowHome) => ({ ...process.env, WORKFLOW_HOME: shellPath(workflowHome), PATH: joinPath(NODE_DIR, process.env.PATH) });
 
 describe('proof-guard: a package\'s record line read against its own id, through the real facts', () => {
   test('in the suite\'s own session, a line on packages/a\'s own id passes the qa flip; the same line on the whole tree\'s id blocks, naming packages/a', async () => {

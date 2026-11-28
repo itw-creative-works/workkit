@@ -13,21 +13,90 @@ const {
 // The installer starts through run.js as every case's child does; the plist
 // tools below stay raw.
 const {
-  homeEnv, nodeHomeEnv, stubTool, stubToolJs, pathWith, gitPath, spawnSync: spawnThroughRun,
+  IS_WINDOWS, NODE_DIR, homeEnv, nodeHomeEnv, shellPath, stubTool, stubToolJs, pathWith, gitPath, spawnSync: spawnThroughRun,
 } = require('../lib/platform');
 const { schtasksStub } = require('../lib/schtasks-stub');
 const { mkPluginCopy } = require('../lib/plugin-copy');
 const { mkOriginRepo } = require('../lib/git-repo');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'jobs', 'install.js');
-const TEMPLATE = path.join(__dirname, '..', '..', 'jobs', 'com.workkit.claude-daily.plist');
 const REPO = path.join(__dirname, '..', '..');
 
 // The one agent this checkout installs: the 9am job, which runs the summaries
 // step and then the brief. The label is the schedule's name and outlives the
 // script it points at, the one morning entry point.
-const AGENT = { label: 'com.workkit.claude-daily', runner: 'morning.sh', hour: '9' };
+const AGENT = { label: 'com.workkit.claude-daily', hour: '9' };
 const LABEL = AGENT.label;
+
+// The PATH launchd hands a job when its file names none.
+const LAUNCHD_PATH = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
+
+/**
+ * The daily agent's whole text for a home, the folder of the Node that ran the
+ * install and the kit it starts, written out: launchd reads the file as written.
+ */
+const dailyAgent = ({ home, nodeDir, kit }) => [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+  '<plist version="1.0">',
+  '<dict>',
+  '\t<key>Label</key>',
+  '\t<string>com.workkit.claude-daily</string>',
+  '\t<key>ProgramArguments</key>',
+  '\t<array>',
+  '\t\t<string>/usr/bin/env</string>',
+  '\t\t<string>node</string>',
+  `\t\t<string>${kit}/jobs/morning.js</string>`,
+  '\t</array>',
+  '\t<key>EnvironmentVariables</key>',
+  '\t<dict>',
+  '\t\t<key>PATH</key>',
+  `\t\t<string>${nodeDir}:${home}/.local/bin:${home}/.nvm/default-bin:/opt/homebrew/bin:/usr/local/bin:${LAUNCHD_PATH.join(':')}</string>`,
+  '\t</dict>',
+  '\t<key>StartCalendarInterval</key>',
+  '\t<dict>',
+  '\t\t<key>Hour</key>',
+  '\t\t<integer>9</integer>',
+  '\t\t<key>Minute</key>',
+  '\t\t<integer>0</integer>',
+  '\t</dict>',
+  '\t<key>StandardOutPath</key>',
+  `\t<string>${home}/Library/Logs/com.workkit.claude-daily.log</string>`,
+  '\t<key>StandardErrorPath</key>',
+  `\t<string>${home}/Library/Logs/com.workkit.claude-daily.log</string>`,
+  '</dict>',
+  '</plist>',
+  '',
+].join('\n');
+
+// The agent a kit that still had its shell starter installed.
+const shellAgent = (home) => [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+  '<plist version="1.0">',
+  '<dict>',
+  '\t<key>Label</key>',
+  '\t<string>com.workkit.claude-daily</string>',
+  '\t<key>ProgramArguments</key>',
+  '\t<array>',
+  '\t\t<string>/bin/bash</string>',
+  `\t\t<string>${home}/.claude/workkit/../jobs/morning.sh</string>`,
+  '\t</array>',
+  '\t<key>StartCalendarInterval</key>',
+  '\t<dict>',
+  '\t\t<key>Hour</key>',
+  '\t\t<integer>9</integer>',
+  '\t\t<key>Minute</key>',
+  '\t\t<integer>0</integer>',
+  '\t</dict>',
+  '\t<key>StandardOutPath</key>',
+  `\t<string>${home}/Library/Logs/com.workkit.claude-daily.log</string>`,
+  '\t<key>StandardErrorPath</key>',
+  `\t<string>${home}/Library/Logs/com.workkit.claude-daily.log</string>`,
+  '</dict>',
+  '</plist>',
+  '',
+].join('\n');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
@@ -40,14 +109,14 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * HOME is never the account's home, so the guard would skip every launchctl
  * call: `scheduleOk` sets the override it reads, so a launchd case rehearses
  * against the recorder. `engineLink` is the ~/.claude/workkit address the plist
- * runs the job through, at this checkout's engine.
+ * reads its kit from, at this checkout's engine. `homeName` is the home folder's name.
  */
 const mkWorld = ({
-  loaded = false, loadedPath = null, scheduleOk = true, engineLink = true,
+  loaded = false, loadedPath = null, scheduleOk = true, engineLink = true, homeName = 'home',
 } = {}) => {
   const root = mkTmp('workkit-install-');
   const bin = path.join(root, 'bin');
-  const home = path.join(root, 'home');
+  const home = path.join(root, homeName);
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(home, { recursive: true });
   if (engineLink) {
@@ -108,31 +177,46 @@ const strayKit = () => {
 
 describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and plutil are macOS' }, () => {
   describe('jobs/install: rendering', () => {
-    // The job is reached through the engine address, which `workkit update`
-    // repoints; a plugin cache path changes with every version, so a plist that
-    // baked one in would run a removed copy after the next update.
-    test('the daily agent is rendered through the engine address, for this home', () => {
+    // The job starts under the first node on the file's own PATH, the folder of
+    // the Node that ran the install first, and names the kit the engine link
+    // resolves to at install time: `workkit update` re-renders it after a move.
+    test('the daily agent for a home and a Node folder, the engine link at this kit, is its whole text', () => {
       const world = mkWorld();
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
-
-      const plist = fs.readFileSync(world.plist(LABEL), 'utf8');
-      expect(!plist.includes('{{'), `no placeholder survives: ${plist}`).toBeTruthy();
-      const program = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :ProgramArguments:1', world.plist(LABEL)], { encoding: 'utf8' }).stdout.trim();
-      expect(program, `${AGENT.runner} is reached through the engine address`).toBe(`${world.home}/.claude/workkit/../jobs/${AGENT.runner}`);
-      expect(!plist.includes(fs.realpathSync(REPO)), `and no absolute kit path is baked in: ${plist}`).toBeTruthy();
-      expect(plist.includes(`${world.home}/Library/Logs/${LABEL}.log`), 'and the log is under this home').toBeTruthy();
+      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
+        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
       cleanup(world.root);
     });
 
-    // launchd reads the file as written, so every byte is the template's but
-    // the home: the fixture is the committed template with HOME put in.
-    test('the rendered plist is the template with this home put in, byte for byte', () => {
-      const world = mkWorld();
+    test('with no engine link in the home, the agent starts the kit that ran the install', () => {
+      const world = mkWorld({ engineLink: false });
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
-      const fixture = fs.readFileSync(TEMPLATE, 'utf8').split('{{HOME}}').join(world.env.HOME);
-      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist').toBe(fixture);
+      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
+        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
+      cleanup(world.root);
+    });
+
+    test('an engine link at another kit: the agent starts that kit', () => {
+      const world = mkWorld({ engineLink: false });
+      const other = strayKit();
+      fs.mkdirSync(path.join(world.home, '.claude'), { recursive: true });
+      fs.symlinkSync(other, path.join(world.home, '.claude', 'workkit'));
+      const res = install(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
+        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(path.dirname(other)) }));
+      cleanup(world.root); cleanup(path.dirname(other));
+    });
+
+    // launchd parses the file as XML, so a home holding `&` is written escaped.
+    test('a home whose path holds & renders it as &amp; in every line that names it', () => {
+      const world = mkWorld({ homeName: 'a&b' });
+      const res = install(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
+        .toBe(dailyAgent({ home: `${world.root}/a&amp;b`, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
       cleanup(world.root);
     });
 
@@ -285,6 +369,24 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       expect(loads.length, `one bootout, one bootstrap: ${fmtCalls(loads)}`).toBe(2);
       expect(isCall(loads[0], 'bootout', `gui/${process.getuid()}/${LABEL}`), `the running agent is booted out first: ${fmtCalls(loads)}`).toBeTruthy();
       expect(isCall(loads[1], 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL)), `then the new copy loads: ${fmtCalls(loads)}`).toBeTruthy();
+      cleanup(world.root);
+    });
+
+    // The edge between the kit's update and `workkit update`: the installed file
+    // starts morning.sh, a file this kit does not hold.
+    test('an installed agent that starts morning.sh is rewritten and reloaded', () => {
+      const world = mkWorld({ loaded: true });
+      fs.mkdirSync(path.dirname(world.installed), { recursive: true });
+      fs.writeFileSync(world.installed, shellAgent(world.env.HOME));
+
+      const res = install(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      expect(fs.readFileSync(world.installed, 'utf8'), 'the file is the agent this kit renders')
+        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
+      const loads = bootCalls(world.calls());
+      expect(loads.length, `one bootout, one bootstrap: ${fmtCalls(loads)}`).toBe(2);
+      expect(isCall(loads[0], 'bootout', `gui/${process.getuid()}/${LABEL}`), `the running agent goes first: ${fmtCalls(loads)}`).toBeTruthy();
+      expect(isCall(loads[1], 'bootstrap', `gui/${process.getuid()}`, world.plist(LABEL)), `then the new file loads: ${fmtCalls(loads)}`).toBeTruthy();
       cleanup(world.root);
     });
 
@@ -468,6 +570,38 @@ describe('jobs/install on another system, reached through the system argument', 
     expect(res.status, `exit 1, stdout: ${res.stdout}`).toBe(1);
     expect(res.stderr, 'the refusal, whole').toBe('✖ install: the 9am job runs on macOS and Windows; linux has no scheduler it knows\n');
     expect(fmtCalls(world.stub.calls()), 'not one schtasks call').toBe('');
+    expect(fs.existsSync(world.copy), 'and no copy').toBe(false);
+    cleanup(world.root);
+  });
+});
+
+// The launchd file's PATH and the one a job builds for its children, asked in this process.
+describe('jobs/lib/machine: jobPath', { skip: IS_WINDOWS && 'a launchd PATH is a Mac\'s, spelled with /' }, () => {
+  test('the Node folder, then the folders enterMachine puts in front, in its order, then launchd\'s own', () => {
+    const { jobPath, enterMachine } = require('../../jobs/lib/machine');
+    const env = { HOME: '/Users/ada', PATH: LAUNCHD_PATH.join(':') };
+    enterMachine(env, { platform: 'darwin' });
+    const entered = env.PATH.split(':');
+    const front = entered.slice(0, entered.length - LAUNCHD_PATH.length);
+    expect(front.length > 0, `enterMachine put folders in front: ${env.PATH}`).toBeTruthy();
+    expect(jobPath('/Users/ada', '/opt/node/bin').split(':'), 'the launchd file\'s PATH')
+      .toEqual(['/opt/node/bin', ...front, ...LAUNCHD_PATH]);
+  });
+});
+
+describe('jobs/install: a HOME no cygpath can read', () => {
+  // The installer itself reads HOME before it renders a task or asks schtasks.
+  // PATH is node's folder alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a HOME in the shell\'s spelling with no cygpath on PATH: the one line naming HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a home is never handed to cygpath',
+  }, () => {
+    const world = mkTaskWorld();
+    const home = shellPath(world.home);
+    const res = runInstaller(SCRIPT, [], { ...world.env, HOME: home, PATH: NODE_DIR });
+    expect(res.status, `exit 1, got: ${res.stdout}${res.stderr}`).toBe(1);
+    expect(res.stdout, 'nothing on stdout').toBe('');
+    expect(res.stderr, 'the one line').toBe(`workkit: cannot read HOME (${home}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
     expect(fs.existsSync(world.copy), 'and no copy').toBe(false);
     cleanup(world.root);
   });

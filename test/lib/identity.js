@@ -1,8 +1,9 @@
 // The shared fixtures of the identity suites: the user's sign-in as the login
 // store holds and writes it, the token service's address in the settings, a local
 // HTTP stand-in for GitHub or the token service, a scratch kit and its scrubbed env,
-// doctor's attention count, the response and failure helpers, a keyboard run, the
-// gh journal the shim appends to, and the REST suites' cloud-shim world and reads.
+// the shim started by its path, doctor's attention count, the response and failure
+// helpers, a keyboard run, the gh journal the shim appends to, and the REST suites'
+// cloud-shim world and reads.
 
 const fs = require('fs');
 const path = require('path');
@@ -168,14 +169,22 @@ const startService = (status, body) => startServer(
 );
 
 /**
- * A scratch kit holding a copy of this checkout's `workflow/` and `hooks/`, the
- * shim's gate loading the guards from the second; returns the kit folder.
+ * A scratch kit holding a copy of this checkout's `workflow/`, `hooks/`, `defaults/`
+ * and root `package.json`, the shim's gate loading the guards from `hooks/` and its
+ * floor check reading `engines.node`; returns the kit folder.
  */
 const scratchKit = () => {
   const kit = mkTmp('wk-identity-kit-');
   for (const dir of ['workflow', 'hooks', 'defaults']) fs.cpSync(path.join(KIT, dir), path.join(kit, dir), { recursive: true });
+  fs.copyFileSync(path.join(KIT, 'package.json'), path.join(kit, 'package.json'));
   return kit;
 };
+
+/**
+ * The test bash's argv starting the shim at `shim` by its own path with `args`,
+ * as a session's shell runs a program, so its `#!` line picks what runs it.
+ */
+const shimArgv = (shim, args) => [...NO_RC, '-c', '"$0" "$@"', shellPath(shim), ...args];
 
 /** Run git in `dir` as a scratch identity under `home`; a failure throws with its stderr. */
 const git = (dir, home, ...args) => {
@@ -242,7 +251,7 @@ const cloudWorld = ({ branch = null } = {}) => {
     if (files) commitFiles(world, files);
     if (prep) prep(world);
     const stub = makeGhStub({ api });
-    const res = spawnBash([...NO_RC, shellPath(world.shim), ...args],
+    const res = spawnBash(shimArgv(world.shim, args),
       { cwd: world.repo, env: cloudEnv(world, stub, env), encoding: 'utf8', timeout: SPAWN_DEADLINE });
     return {
       code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', calls: ghCalls(stub), requests: ghRequests(stub),
@@ -357,6 +366,6 @@ const atTerminal = (argv, { env, cwd, dir }) => {
 
 module.exports = {
   IDENTITY_NA, DEVICE_CODE, INSTALL_FIX, PRESELECTED, BOT_HINT, UNREADABLE, deviceFlowRoutes, repoRoute, userRoute, writeLogin, readWrittenLogin, useTokenService, collector, json,
-  startServer, startService, scratchKit, scratchEnv, hostsOf, attentionCount, doctorWarnings, PTY, atTerminal, journalFile, journalFileText, journalLines,
+  startServer, startService, scratchKit, shimArgv, scratchEnv, hostsOf, attentionCount, doctorWarnings, PTY, atTerminal, journalFile, journalFileText, journalLines,
   git, cloudEnv, cloudWorld, assertSame, assertOk, printedJson, writes, routes,
 };

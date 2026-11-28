@@ -14,7 +14,7 @@ const { discoverRepos, readRoster } = require('../../tower/api/lib/repos');
 const { userDir, homeUserDir } = require('../user-dir');
 const { homeSlug } = require('../lib/settings');
 const { readJsonOrNull } = require('../lib/read');
-const { nativePath } = require('../lib/platform');
+const { nativePath, unreadPathStop } = require('../lib/platform');
 const { rosterFile } = require('../../hooks/mods/log.js');
 
 /**
@@ -107,7 +107,12 @@ if (require.main === module) {
   try {
     writeSlugs(outfile, { workflowHome: process.argv[3] || userDir() });
   } catch (err) {
-    process.stderr.write(`site-repos: ${err.message}; nothing was written\n`);
-    process.exit(1);
+    // A path nativePath could not read is its one stop line; any other error is this line.
+    try {
+      process.exitCode = unreadPathStop(err);
+    } catch {
+      process.stderr.write(`site-repos: ${err.message}; nothing was written\n`);
+      process.exit(1);
+    }
   }
 }

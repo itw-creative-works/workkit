@@ -19,7 +19,7 @@ describe('workflow/home: the version stamp', () => {
   test('a clone stamped NEWER is left exactly as it is, and the skip names the fix', () => {
     const world = mkWorld();
     seeded(world);
-    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.js');
     // Drift an ordinary run would heal, so what stops this one is the stamp.
     fs.writeFileSync(dest, '# the newer machine’s runner\n');
     fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
@@ -40,12 +40,12 @@ describe('workflow/home: the version stamp', () => {
     const world = mkWorld();
     seeded(world);
     fs.writeFileSync(path.join(world.tower, STAMP), '0.0.1\n');
-    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.js');
     fs.writeFileSync(dest, '# last month’s runner\n');
 
     const { code, out, err } = seeded(world);
     expect(code, `it wrote: ${out}${err}`).toBe(0);
-    expect(fs.readFileSync(dest, 'utf8'), 'the drift is healed from the kit’s committed copy').toBe(kitCommitted(world, 'jobs/morning.sh'));
+    expect(fs.readFileSync(dest, 'utf8'), 'the drift is healed from the kit’s committed copy').toBe(kitCommitted(world, 'jobs/morning.js'));
     expect(stampOf(world), 'and the clone now says which kit wrote it').toBe(kitVersion());
     cleanup(world.root);
   });
@@ -59,7 +59,7 @@ describe('workflow/home: the version stamp', () => {
     expect(stampOf(world), 'nothing to stamp with, so nothing is stamped').toBe(null);
 
     fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
-    fs.writeFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), '# drifted\n');
+    fs.writeFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.js'), '# drifted\n');
     const { code, out, err } = seeded(world);
     expect(code, `the seed still runs: ${out}${err}`).toBe(0);
     cleanup(world.root);
@@ -74,14 +74,14 @@ describe('workflow/home: the version stamp', () => {
     // The other machine's push: a newer kit's stamp, committed the way its own
     // seed would have committed it.
     fs.writeFileSync(path.join(world.tower, STAMP), '99.0.0\n');
-    fs.writeFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), '# the newer machine’s runner\n');
+    fs.writeFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.js'), '# the newer machine’s runner\n');
     git(world.tower, 'add', '-A');
     git(world.tower, '-c', 'user.name=other', '-c', 'user.email=other@localhost', 'commit', '-q', '-m', 'chore(home): the other machine');
 
     const { out, err } = setup(world);
     expect(/not downgrading/.test(out + err), `the second setup refuses: ${out}${err}`).toBeTruthy();
     expect(spawnSync('git', ['-C', world.tower, 'log', '-1', '--pretty=%s'], { encoding: 'utf8' }).stdout.trim(), 'and wrote no commit of its own over it').toBe('chore(home): the other machine');
-    expect(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.sh'), 'utf8'), 'the newer runner is still what the clone carries').toBe('# the newer machine’s runner\n');
+    expect(fs.readFileSync(path.join(world.tower, 'brief', 'jobs', 'morning.js'), 'utf8'), 'the newer runner is still what the clone carries').toBe('# the newer machine’s runner\n');
     cleanup(world.root);
   });
 
@@ -109,7 +109,7 @@ describe('workflow/home: the version stamp', () => {
   test('a git-backed kit: the downgrade check reads the committed version, not the folder’s', () => {
     const world = mkWorld();
     seeded(world);
-    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.js');
     fs.writeFileSync(dest, '# the newer machine’s runner\n');
     fs.writeFileSync(path.join(world.tower, STAMP), '1.2.4\n');
     const kit = world.env.WORKKIT_KIT_DIR;
@@ -134,7 +134,7 @@ describe('workflow/home: the version stamp', () => {
     const world = mkWorld();
     seeded(world);
     const kit = world.env.WORKKIT_KIT_DIR;
-    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    const dest = path.join(world.tower, 'brief', 'jobs', 'morning.js');
     writeVersion(kit, '1.2.3-rc.1');
     commitKit(kit, 'chore(release): 1.2.3-rc.1');
     fs.writeFileSync(dest, '# the release’s runner\n');

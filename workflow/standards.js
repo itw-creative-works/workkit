@@ -1,26 +1,40 @@
 #!/usr/bin/env node
 /**
  * workflow/standards.js: bring a repo to the issue-workflow standard,
- * idempotently, started by node or by standards.sh under a node at the kit's
- * floor. The steps live in standards/, each handed one run object; what each
- * does: workflow/README.md, the standards.sh row, § Every heal runs and § The
- * hook layer self-check. Every mode: README § Participation: the tri-state.
- * Usage: node standards.js [--state|--announce|--enable|--decline|--engine-link|--command-link|--home|--git-hooks] [repo_dir]
+ * idempotently, started by node; a Node below the kit's floor gets one line and
+ * stops. The steps live in standards/, each handed one run object; what each
+ * does: workflow/README.md, the heal (`standards.js`), § Every heal runs and
+ * § The hook layer self-check. Every mode: README § Participation: the tri-state.
+ * Usage: node standards.js [--state|--announce|--enable|--decline|--engine-link|--command-link|--in-cache|--home|--git-hooks] [repo_dir]
  */
+
+// The floor first, ahead of every other require, in syntax an older Node reads.
+if (require.main === module) {
+  const floor = require('./lib/floor');
+  const below = floor.floorLine(process.version, floor.floorOf());
+  if (below) {
+    require('fs').writeSync(2, `${below}\n`);
+    process.exit(1);
+  }
+}
 
 const fs = require('fs');
 const path = require('path');
 const { userDir } = require('./user-dir');
 const { repoRoot } = require('./lib/git');
-const { nativePath, claudeHome, unreadPathStop } = require('./lib/platform');
+const { cwdOf } = require('./lib/link');
+const { nativePath, claudeHome, unreadPathStop, inPluginCache } = require('./lib/platform');
 const { info, skip, warn } = require('./lib/voice');
 
 // A step file is loaded only when the mode in hand calls it, as --state runs on
 // every session start. A kit that is a workflow/ folder alone answers
-// --engine-link, --git-hooks and a folder that is no repo; --command-link and
-// each mode that reads the participation load hooks/mods/ beside it.
+// --engine-link, --in-cache, --git-hooks and a folder that is no repo;
+// --command-link and each mode that reads the participation load hooks/mods/ beside it.
 
-const MODES = new Set(['--state', '--announce', '--enable', '--decline', '--engine-link', '--command-link', '--home', '--git-hooks']);
+const MODES = new Set(['--state', '--announce', '--enable', '--decline', '--engine-link', '--command-link', '--in-cache', '--home', '--git-hooks']);
+
+/** The kit root, physical: the folder above this workflow/. */
+const kitDir = () => fs.realpathSync(path.join(__dirname, '..'));
 
 /**
  * The run every step is handed. WORKFLOW_CLAUDE_HOME and WORKFLOW_HOOKS_DIR are
@@ -28,7 +42,7 @@ const MODES = new Set(['--state', '--announce', '--enable', '--decline', '--engi
  * @returns {object}
  */
 const newRun = () => {
-  const kit = fs.realpathSync(path.join(__dirname, '..'));
+  const kit = kitDir();
   return {
     root: null,
     rosterKey: null,
@@ -157,16 +171,16 @@ const consented = (run) => {
 };
 
 /**
- * The heal's modes, as standards.sh hands them over.
+ * The heal's modes, as node hands them over.
  * @param {string[]} argv
  * @returns {Promise<number>} the exit code
  */
 const main = async (argv) => {
   const mode = MODES.has(argv[0]) ? argv[0].slice(2) : 'heal';
   const args = mode === 'heal' ? argv : argv.slice(1);
-  // Diagnostics go to stderr: stdout is the machine answer of --state and
-  // --announce. The heal prints no title, so it sets its own indent; --git-hooks
-  // prints in its caller's voice, as that caller set it.
+  // Diagnostics go to stderr: stdout is the machine answer of --state,
+  // --announce and --in-cache. The heal prints no title, so it sets its own
+  // indent; --git-hooks prints in its caller's voice, as that caller set it.
   if (mode !== 'git-hooks') {
     process.env.WK_LOG_STDERR = '1';
     process.env.WK_LOG_INDENT = '  ';
@@ -185,6 +199,12 @@ const main = async (argv) => {
     return linkCommand(kitOf());
   }
 
+  // Whether this kit is the plugin cache's copy, for the session-start hook: no repo, no run.
+  if (mode === 'in-cache') {
+    process.stdout.write(`${inPluginCache(kitDir()) ? 'yes' : 'no'}\n`);
+    return 0;
+  }
+
   const run = newRun();
   // The engine's address needs no repo, so it answers before one is resolved.
   if (mode === 'engine-link') {
@@ -193,7 +213,7 @@ const main = async (argv) => {
     return 0;
   }
 
-  const repoDir = args[0] || process.env.PWD || process.cwd();
+  const repoDir = args[0] || cwdOf(process.env);
   const root = repoRoot(repoDir);
   if (root === null) {
     if (mode === 'state') process.stdout.write('nogit\n');
@@ -234,3 +254,5 @@ if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }
+
+module.exports = { newRun };

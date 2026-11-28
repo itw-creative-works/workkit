@@ -7,9 +7,9 @@
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const { WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
+const { WORKKIT_DIR: W, mkTmp, run } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, homeEnv, basePathWithout, joinPath, spawnBash,
+  SYSTEM_PATH, NODE_DIR, nodeHomeEnv, basePathWithout, joinPath,
 } = require('../../lib/platform');
 const { mods, textOf, runResult, standardsState } = require('../../lib/mods-inputs');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
@@ -45,16 +45,14 @@ const dropPathWithoutGh = () => {
 /** The engine's heal of `repo` under QUIET=1, as the process.run result the module receives. */
 const heal = (repo) => {
   const home = mkTmp('wf-hook-');
-  const res = spawnBash([...NO_RC, shellPath(path.join(WORKFLOW_DIR, 'standards.sh')), shellPath(repo)], {
+  const res = run(process.execPath, [path.join(WORKFLOW_DIR, 'standards.js'), repo], {
     cwd: repo,
-    env: homeEnv(home, {
+    env: nodeHomeEnv(home, {
       PATH: joinPath(pathWithoutGh(), NODE_DIR),
       QUIET: '1',
-      WORKFLOW_HOME: shellPath(path.join(home, '.workkit')),
-      WORKFLOW_CLAUDE_HOME: shellPath(path.join(home, 'claude-home')),
+      WORKFLOW_HOME: path.join(home, '.workkit'),
+      WORKFLOW_CLAUDE_HOME: path.join(home, 'claude-home'),
     }),
-    encoding: 'utf8',
-    timeout: SPAWN_DEADLINE,
   });
   cleanup(home);
   return runResult({ exitCode: res.status, stdout: res.stdout || '', stderr: res.stderr || '' });

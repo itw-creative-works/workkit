@@ -1,5 +1,5 @@
 // Runs alone: it checks for and removes the kit's live workflow/workflow link.
-// Tests for standards.sh: the roster of enabled and declined repos.
+// Tests for standards.js: the roster of enabled and declined repos.
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
@@ -9,13 +9,13 @@ const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp, start,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, BASH, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, joinPath,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, gitPath, joinPath,
 } = require('../../lib/platform');
 const {
-  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, runScript,
+  WORKFLOW_DIR, SCRIPT, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, seededEnv, runScript,
 } = require('./helpers');
 
-describe('standards.sh: the roster', () => {
+describe('standards.js: the roster', () => {
   // The machine-local index the tower reads instead of walking a disk. It is
   // maintained on contact (a heal registers the repo it is standing in and
   // prunes what has gone away) and it is silent, so every assertion here is
@@ -71,18 +71,17 @@ describe('standards.sh: the roster', () => {
       path.join(home, 'settings.json'),
       `${JSON.stringify({ version: 1, site: { repo: null, publish: false, url: null } }, null, 2)}\n`,
     );
-    const env = {
+    // Every writer is a node, handed each folder in its native spelling.
+    const env = seededEnv({
       ...process.env,
       PATH: basePath,
-      WORKFLOW_HOME: shellPath(home),
-      WORKFLOW_CLAUDE_HOME: shellPath(claudeHome),
-    };
-    // The slug writer is a node, so its machine folder is in the native spelling.
-    const slugEnv = { ...env, WORKFLOW_HOME: home, WORKFLOW_CLAUDE_HOME: claudeHome };
+      WORKFLOW_HOME: home,
+      WORKFLOW_CLAUDE_HOME: claudeHome,
+    });
     const [codes, slugCode] = await Promise.all([
-      Promise.all(repos.map((repo) => start(BASH, [...NO_RC, shellPath(SCRIPT), shellPath(repo)], { env }).done
+      Promise.all(repos.map((repo) => start(process.execPath, [SCRIPT, repo], { env }).done
         .then((exit) => exit.status))),
-      start(process.execPath, [path.join(WORKFLOW_DIR, 'home.js'), 'set-slug', 'owner/workkit'], { env: slugEnv }).done.then((exit) => exit.status),
+      start(process.execPath, [path.join(WORKFLOW_DIR, 'home.js'), 'set-slug', 'owner/workkit'], { env }).done.then((exit) => exit.status),
     ]);
     expect(codes.join(','), `every session finished, none of them ended on a step another one won: ${codes.join(',')}`).toBe('0,0,0');
     // Swept before it is asserted on, never after: a regression here writes a

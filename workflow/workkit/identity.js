@@ -187,7 +187,7 @@ const identityStep = async (kit, force) => {
 };
 
 /** Whether <slug> is an enabled entry of this machine's roster, matched by each folder's origin. */
-const onRoster = async (kit, slug) => (await rosterPath(slug, await rosterOf(kit.env, readOrNull), repoSlug)) !== null;
+const onRoster = async (kit, slug) => (await rosterPath(slug, await rosterOf({ WORKFLOW_HOME: kit.userDir }, readOrNull), repoSlug)) !== null;
 
 /**
  * The doctor lines. `machine` says whether this machine is

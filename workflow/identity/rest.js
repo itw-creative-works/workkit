@@ -2,12 +2,13 @@
 // alone, as the account, so the kit's issue, label, auth, pr and release verbs
 // become `gh api` calls in gh's own shape (pr in ./rest-pr.js, release in
 // ./rest-release.js); any other call runs the real gh as it came.
-// Usage: WORKKIT_REAL_GH=<gh> GH_REPO=<owner/name> node rest.js <gh argv>
+// Usage: served(<gh argv>, { gh, repo, env }) in the shim's process, or
+// WORKKIT_REAL_GH=<gh> GH_REPO=<owner/name> node rest.js <gh argv> (the gate's reads)
 
 const fs = require('fs');
 const { spawnSync } = require('../lib/run');
 const { writeErr } = require('../lib/say');
-const { subAt } = require('./gate');
+const { subAt } = require('./argv');
 
 const HOST = 'https://github.com';
 const NOT_LOGGED_IN = 'You are not logged into any GitHub hosts. To log in, run: gh auth login';
@@ -57,8 +58,8 @@ const field = (key, value) => (Array.isArray(value)
   : ['-f', `${key}=${value}`]);
 
 /**
- * Runs `gh api` through the real gh. A non-zero exit throws GhFailure.
- * @param {{gh: string}} ctx
+ * Runs `gh api` through the real gh, in the call's env. A non-zero exit throws GhFailure.
+ * @param {{gh: string, env?: object}} ctx
  * @param {string} method
  * @param {string} route
  * @param {string[]} [extra] fields and flags after the route
@@ -66,7 +67,7 @@ const field = (key, value) => (Array.isArray(value)
  */
 const api = (ctx, method, route, extra = []) => {
   const argv = ['api', ...(method === 'GET' ? [] : ['-X', method]), route, ...extra];
-  const result = spawnSync(ctx.gh, argv, { encoding: 'utf8', maxBuffer: 1 << 28 });
+  const result = spawnSync(ctx.gh, argv, { encoding: 'utf8', maxBuffer: 1 << 28, env: ctx.env });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new GhFailure(result);
   return result.stdout;
@@ -589,10 +590,11 @@ const verbs = () => ({ ...VERBS, ...require('./rest-pr'), ...require('./rest-rel
  * Runs the real gh on the call as it came, its stdio this process's.
  * @param {string} gh
  * @param {string[]} argv
+ * @param {object} env the call's variables
  * @returns {number} gh's exit code, 1 when a signal ended it
  */
-const passThrough = (gh, argv) => {
-  const result = spawnSync(gh, argv, { stdio: 'inherit' });
+const passThrough = (gh, argv, env) => {
+  const result = spawnSync(gh, argv, { stdio: 'inherit', env });
   if (result.error) throw result.error;
   return result.status ?? 1;
 };
@@ -602,18 +604,19 @@ const passThrough = (gh, argv) => {
  * that is no flag and no `--repo` value) and the rest as that verb's arguments.
  * A call `verbs()` does not name, or one asking `-h`/`--help`, goes to the real gh.
  * @param {string[]} argv gh's argv, the verb first
- * @param {{gh: string, repo?: string}} opts the real gh's path and the repo the shim resolved
+ * @param {{gh: string, repo?: string, env?: object}} opts the real gh's path, the
+ *   repo the shim resolved, and the variables every real gh it starts gets
  * @returns {number} the exit code; a failed `gh api` call's own, its output relayed
  */
-const run = (argv, { gh, repo = '' }) => {
+const run = (argv, { gh, repo = '', env = process.env }) => {
   if (!gh) throw new Error('rest.js: no real gh to run; the shim hands its path over in WORKKIT_REAL_GH');
   const [verb, ...rest] = argv;
   const at = subAt(rest);
   const help = rest.includes('-h') || rest.includes('--help');
   const serve = !help && at >= 0 && verbs()[`${verb} ${rest[at]}`];
-  if (!serve) return passThrough(gh, argv);
+  if (!serve) return passThrough(gh, argv, env);
   try {
-    return serve({ gh, repo }, rest.filter((_, i) => i !== at));
+    return serve({ gh, repo, env }, rest.filter((_, i) => i !== at));
   } catch (err) {
     if (err instanceof GhFailure) {
       process.stdout.write(err.result.stdout);
@@ -626,17 +629,28 @@ const run = (argv, { gh, repo = '' }) => {
   }
 };
 
+/**
+ * run, with any failure it does not relay said as its message on stderr: the
+ * shim's call in its own process, and this file's program.
+ * @param {string[]} argv gh's argv, the verb first
+ * @param {{gh: string, repo?: string, env?: object}} opts run's
+ * @returns {number} run's code, else 1
+ */
+const served = (argv, opts) => {
+  try {
+    return run(argv, opts);
+  } catch (err) {
+    process.stderr.write(`${err.message}\n`);
+    return 1;
+  }
+};
+
 // Set before the main run below, so the helpers are whole when the verb files require them.
 module.exports = {
-  run, api, getJson, send, parse, repoOf, matchNumber, numberOf, limitOf, bodyOf, fieldsOf, pick, printJson, field, enc,
+  run, served, api, getJson, send, parse, repoOf, matchNumber, numberOf, limitOf, bodyOf, fieldsOf, pick, printJson, field, enc,
   GhFailure, UsageError,
 };
 
 if (require.main === module) {
-  try {
-    process.exitCode = run(process.argv.slice(2), { gh: process.env.WORKKIT_REAL_GH, repo: process.env.GH_REPO || '' });
-  } catch (err) {
-    process.stderr.write(`${err.message}\n`);
-    process.exitCode = 1;
-  }
+  process.exitCode = served(process.argv.slice(2), { gh: process.env.WORKKIT_REAL_GH, repo: process.env.GH_REPO || '' });
 }

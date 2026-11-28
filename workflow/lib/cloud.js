@@ -1,5 +1,5 @@
-// workflow/lib/cloud.js: whether this is a claude.ai/code cloud session, the Node
-// twin of `wk_is_cloud` in ./platform.sh.
+// workflow/lib/cloud.js: whether this is a claude.ai/code cloud session, for
+// the engine.
 // Usage: const { isCloud } = require('../lib/cloud');
 
 /**

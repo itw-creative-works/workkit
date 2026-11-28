@@ -79,7 +79,7 @@ async function unwired(facts) {
   return !want || !have || have !== want;
 }
 
-// The repo's log folder, `logs.dir` as wk_setting prints it walked to a path
+// The repo's log folder, the `logs.dir` setting walked to a path
 // from the root ('' the root itself, empty read as `.workkit`), as `{ dir }`,
 // or `{ error }`, the line naming the key.
 function logDirOf(settings) {

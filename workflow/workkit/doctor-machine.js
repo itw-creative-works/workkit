@@ -1,9 +1,9 @@
 /**
  * workflow/workkit/doctor-machine.js: doctor's own checks of this machine, each
  * a report that changes nothing and answers how many lines need attention:
- * the plugin, the engine's address, the command and its PATH, the gh and git
- * shims, and the 9am schedule.
- * Usage: const { reportPlugin, reportEngine, reportCommand, reportGhShim, reportGitShim, reportSchedule } = require('./doctor-machine');
+ * the plugin, the engine's address, the home variables, the command and its
+ * PATH, the gh and git shims, and the 9am schedule.
+ * Usage: const { reportPlugin, reportEngine, reportHomes, reportCommand, reportGhShim, reportGitShim, reportSchedule } = require('./doctor-machine');
  */
 
 const {
@@ -17,6 +17,7 @@ const { isLink } = require('../lib/link');
 const { isFile } = require('../lib/lock');
 const { isCloud } = require('../lib/cloud');
 const { executable } = require('../lib/participation');
+const { shellOnlyHomes } = require('../../hooks/mods/markers.js');
 const {
   reportBinLink, reportCmdLink, pathLine, GH_SHIM_OURS,
 } = require('./links');
@@ -60,6 +61,20 @@ const reportEngine = (kit) => {
   }
   warn(`engine: ${address} does not point at this engine; run \`workkit update\``);
   return 1;
+};
+
+/**
+ * Each home variable only Git Bash can read (shellOnlyHomes): the hooks read it
+ * by its spelling and the commands through cygpath, so they name two folders.
+ * @param {object} kit
+ * @returns {number} how many there are
+ */
+const reportHomes = (kit) => {
+  const names = shellOnlyHomes(kit.env, kit.platform);
+  for (const name of names) {
+    warn(`env: ${name} (${kit.env[name]}) is a path only Git Bash can read, so the hooks and the commands read different folders; set it as a drive path (C:/...)`);
+  }
+  return names.length;
 };
 
 /**
@@ -146,5 +161,5 @@ const reportSchedule = (kit) => {
 };
 
 module.exports = {
-  reportPlugin, reportEngine, reportCommand, reportGhShim, reportGitShim, reportSchedule,
+  reportPlugin, reportEngine, reportHomes, reportCommand, reportGhShim, reportGitShim, reportSchedule,
 };

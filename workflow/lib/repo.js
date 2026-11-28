@@ -1,8 +1,7 @@
 /**
  * workflow/lib/repo.js: what a repo is, for the kit's Node scripts: its origin
  * slug, whether it is a clone of the kit itself, and whether its package.json
- * takes the kit's test runner. The Node half of lib/slug.sh's wk_repo_slug and
- * wk_is_kit_checkout.
+ * takes the kit's test runner.
  * Usage: const { repoSlug, isKitCheckout, hasCorePackage } = require('../lib/repo');
  */
 
@@ -15,7 +14,7 @@ const { slugFromRemote } = require('../slug');
 const KIT_SLUG = /^[^/]+\/workkit$/i;
 
 /**
- * The origin slug of the git working tree at `dir` (`wk_repo_slug`), `''` when
+ * The origin slug of the git working tree at `dir`, `''` when
  * it has none.
  * @param {string} [dir] the cwd by default
  * @returns {string}
@@ -26,8 +25,8 @@ const repoSlug = (dir = '.') => {
 };
 
 /**
- * Whether `dir` lies in a git working tree whose origin names the workkit repo
- * (`wk_is_kit_checkout`): a clone of the kit itself.
+ * Whether `dir` lies in a git working tree whose origin names the workkit repo:
+ * a clone of the kit itself.
  * @param {string} dir
  * @returns {boolean}
  */

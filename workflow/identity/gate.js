@@ -1,13 +1,14 @@
 /**
- * workflow/identity/gate.js: the gh shim's gate, `node gate.js <cwd> <gh argv...>`.
+ * workflow/identity/gate.js: the gh shim's gate, `judge(<cwd, gh argv...>, env)`
+ * in the shim's process, or `node gate.js <cwd> <gh argv...>` as a program.
  * It reads the call from its real argv: the leak scan (safety:issue-guard) on
  * every call but a send to the secret store, and where the shim found the session's gates rule
- * (`WORKKIT_GATE_JUDGES=1`, its `wk_session_judges`) the label and filing
+ * (`WORKKIT_GATE_JUDGES=1`, its `sessionJudges`) the label and filing
  * gates (safety:proof-guard, spec-guard, findings-guard), each through its
- * verdict in hooks/mods. Exit 0 passes, its stdout the journal line for a
- * write; exit 1 bounces, the hook's text on stderr. The repo is the one the
- * shim resolved (`WORKKIT_GATE_REPO`), and every gh read runs the real gh
- * (`WORKKIT_REAL_GH`), never the shim.
+ * verdict in hooks/mods. Code 0 passes, with the journal line of a write (the
+ * program prints it on stdout); 1 bounces, the hook's text on stderr. The repo
+ * is the one the shim resolved (`WORKKIT_GATE_REPO`), and every gh read runs
+ * the real gh (`WORKKIT_REAL_GH`), never the shim.
  */
 
 const path = require('path');
@@ -15,17 +16,17 @@ const { parseEnv } = require('util');
 const { ioIn } = require('../lib/io');
 const { slugFromRemote } = require('../slug');
 const { isCloud } = require('../lib/cloud');
+const {
+  subAt, READ_SUBCOMMANDS, CLOUD_VERBS, ALIASES, ISSUE_URL,
+} = require('./argv');
 
 const MODS = path.join(__dirname, '..', '..', 'hooks', 'mods');
 const REST = path.join(__dirname, 'rest.js');
 
-// The subcommands that post nothing, so their calls write no journal line: the
-// shim's READ_SUBCOMMANDS (./gh), plus `checkout`, which the shim keeps the
-// owner's as a pr subcommand instead.
-const READS = new Set(['list', 'view', 'status', 'checks', 'diff', 'checkout']);
+// The reads plus `checkout`, which the shim keeps the owner's as a pr
+// subcommand instead: their calls write no journal line.
+const READS = new Set([...READ_SUBCOMMANDS, 'checkout']);
 const JOURNALED = new Set(['issue', 'pr', 'label']);
-// The verbs a cloud session's shim hands to rest.js, so the gate's reads go there too.
-const CLOUD_VERBS = new Set(['issue', 'label', 'pr', 'release']);
 
 // The flags that take no value, by `<verb> <subcommand>` (the endpoint's call
 // for api); `-h`/`--help` takes none on every call.
@@ -49,34 +50,9 @@ const BOOLEANS = {
   api: ['-i', '--include', '--paginate', '--silent', '--slurp', '--verbose'],
 };
 
-// The short flags the gate reads that take a value, as their long names, by verb.
-const PR_ALIASES = { '-R': '--repo', '-b': '--body', '-F': '--body-file', '-t': '--title', '-l': '--label' };
-const ALIASES = {
-  issue: { ...PR_ALIASES, '-r': '--reason' },
-  pr: PR_ALIASES,
-  label: { '-R': '--repo' },
-  api: { '-X': '--method', '-f': '--raw-field', '-F': '--field' },
-};
-
-const ISSUE_URL = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(issues|pull)\/([0-9]+)([/?#].*)?$/;
 const ISSUE_PATH = /^repos\/([^/]+)\/([^/]+)\/issues\/([0-9]+)(\/labels(?:\/([^/]+))?)?$/;
 
 const mod = (name) => require(path.join(MODS, `${name}.js`));
-
-/**
- * The subcommand's place: the first word after the verb that is neither a
- * flag nor the value of `-R`/`--repo`, -1 for none. The rule's one Node home,
- * ./rest.js calls it; its bash twin is `bot_verb` in ./gh: change both together.
- * @param {string[]} rest gh's argv after the verb
- * @returns {number}
- */
-function subAt(rest) {
-  for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === '-R' || rest[i] === '--repo') i++;
-    else if (!rest[i].startsWith('-')) return i;
-  }
-  return -1;
-}
 
 // The words after the verb, the subcommand taken out: each flag's values by
 // its long name, and the positionals in order.
@@ -298,14 +274,14 @@ async function sessionGates(call, facts) {
 /**
  * Judges one gh call: the leak scan (skipped on a send to the secret store),
  * then where the session judges the gates. A block goes to stderr and answers
- * 1; a pass writes each verdict's notice on stderr, prints the journal line of
- * a write on stdout and answers 0.
+ * code 1; a pass writes each verdict's notice on stderr and answers code 0,
+ * with the journal line of a write ('' for a read).
  * @param {string[]} args the cwd, then gh's argv
  * @param {object} env the variables: WORKKIT_GATE_JUDGES, WORKKIT_REAL_GH, WORKKIT_GATE_REPO
  * @param {{platform?: string, now?: function}} [opts] the platform and clock
- * @returns {Promise<number>}
+ * @returns {Promise<{code: number, line: string}>}
  */
-async function main([given = '', ...argv], env, { platform = process.platform, now = Date.now } = {}) {
+async function judge([given = '', ...argv], env, { platform = process.platform, now = Date.now } = {}) {
   const { shellDirOf } = mod('markers');
   const cwd = shellDirOf(given || process.cwd(), env, platform);
   const call = classify(argv, env.WORKKIT_GATE_REPO || '');
@@ -315,18 +291,41 @@ async function main([given = '', ...argv], env, { platform = process.platform, n
   const denied = verdicts.find((verdict) => verdict?.deny);
   if (denied) {
     process.stderr.write(`${denied.deny}\n`);
-    return 1;
+    return { code: 1, line: '' };
   }
   for (const verdict of verdicts) if (verdict?.context) process.stderr.write(`${verdict.context}\n`);
-  if (call.kind === 'write') process.stdout.write(`${journalLine(call, cwd, now())}\n`);
-  return 0;
+  return { code: 0, line: call.kind === 'write' ? journalLine(call, cwd, now()) : '' };
+}
+
+/**
+ * The program form of judge: the journal line of a write on stdout, and the code.
+ * @param {string[]} args the cwd, then gh's argv
+ * @param {object} env judge's variables
+ * @param {{platform?: string, now?: function}} [opts] the platform and clock
+ * @returns {Promise<number>}
+ */
+async function main(args, env, opts) {
+  const { code, line } = await judge(args, env, opts);
+  if (line) process.stdout.write(`${line}\n`);
+  return code;
+}
+
+/**
+ * A gate that threw before its verdict, said on stderr: the call does not run.
+ * @param {Error} err what judge threw
+ * @returns {number} 1
+ */
+function gateFailed(err) {
+  process.stderr.write(`gh: the workkit gate failed before it could judge this call, so the call did not run: ${err.message}\n`);
+  return 1;
 }
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((code) => { process.exitCode = code; }, (err) => {
-    process.stderr.write(`gh: the workkit gate failed before it could judge this call, so the call did not run: ${err.message}\n`);
-    process.exitCode = 1;
+    process.exitCode = gateFailed(err);
   });
 }
 
-module.exports = { classify, journalLine, main, subAt };
+module.exports = {
+  classify, journalLine, judge, main, gateFailed,
+};

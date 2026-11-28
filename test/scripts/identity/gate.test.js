@@ -37,7 +37,7 @@ describe('identity/gate: the classifier', () => {
     const table = [
       [['issue', 'edit', '7', '8', '--add-label', 'a,b', '--remove-label', 'c'],
         { kind: 'write', repo: CWD_REPO, steps: [step('edit', 7, ['a', 'b'], ['c']), step('edit', 8, ['a', 'b'], ['c'])] }],
-      // -R, --repo and a URL are the shim's to resolve (repo_of); the classifier keeps the repo it was given.
+      // -R, --repo and a URL are the shim's to resolve; the classifier keeps the repo it was given.
       [['issue', 'edit', '5', '-R', 'o/n', '--add-label', 'status:qa'],
         { kind: 'write', repo: CWD_REPO, steps: [step('edit', 5, ['status:qa'])] }],
       [['issue', 'close', '5', '--repo=o/n'],

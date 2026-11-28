@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the owner's
+// Tests for jobs/morning.js as a GitHub Actions runner runs it: the owner's
 // morning.d folder, which a runner never reads. The machine's own run of the
 // folder is ../morning-local/morning-d.test.js.
 // The shared prologue (world factory, job runner) is ./helpers.js.

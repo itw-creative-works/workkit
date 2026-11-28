@@ -1,4 +1,4 @@
-// Tests for standards.sh: the retired CHANGELOG linter copy, and a checks.yml
+// Tests for standards.js: the retired CHANGELOG linter copy, and a checks.yml
 // job running it; the caller itself is ./checks-caller.test.js.
 // The shared prologue is ./helpers.js.
 
@@ -21,7 +21,7 @@ const writeCopy = (repo, name, body) => {
   return file;
 };
 
-describe('standards.sh: the retired CHANGELOG linter copy', () => {
+describe('standards.js: the retired CHANGELOG linter copy', () => {
   test('a copy the kit vendored is removed, the deletion left unstaged like every heal output', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
@@ -74,7 +74,7 @@ describe('standards.sh: the retired CHANGELOG linter copy', () => {
   });
 });
 
-describe('standards.sh: a checks.yml job running the copy', () => {
+describe('standards.js: a checks.yml job running the copy', () => {
   // The caller's one job line: the kit's reusable workflow runs the checks.
   const CALLER = 'uses: itw-creative-works/workkit/.github/workflows/ci.yml@main';
   // checks.yml is the kit's caller now, naming no copy.

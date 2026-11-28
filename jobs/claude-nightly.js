@@ -18,6 +18,7 @@ const {
   CATEGORIES, ready, list, create, resolveCategory,
 } = require('../workflow/lib/discussions');
 const { holdSignals, Interrupted } = require('../workflow/lib/interrupt');
+const { unreadPathStop } = require('../workflow/lib/platform');
 const { withScratch } = require('../workflow/lib/scratch');
 const { homeSlug } = require('../workflow/lib/settings');
 const { spin } = require('../workflow/lib/spin');
@@ -254,7 +255,7 @@ const main = async (args) => {
 
 if (require.main === module) {
   // A code the hold's end set for a signal (Windows) stays.
-  main(process.argv.slice(2)).then((code) => { process.exitCode ??= code; });
+  main(process.argv.slice(2)).then((code) => { process.exitCode ??= code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }
 
 module.exports = {

@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { describe, test, expect } = require('../../lib/harness');
-const { IS_WINDOWS } = require('../../lib/platform');
+const { IS_WINDOWS, NODE_DIR, shellPath } = require('../../lib/platform');
 const { underEnv } = require('../../lib/under-env');
 const {
   KIT_DIR, cleanup, mkRemote, mkWorld, inHome, runHomeSteps, seeded,
@@ -65,7 +65,7 @@ describe('workflow/home: shape', () => {
   test('the addresses are the new layout: a plain folder with one repo in it', async () => {
     const world = mkWorld();
     const [userDir, homeDir, settings] = await underEnv({ WORKFLOW_HOME: world.workflowHome }, () => [userDirOf(), towerDir(), settingsFile()]);
-    expect(userDir, 'the user folder is ~/.workkit').toBe(world.workflowHome);
+    expect(userDir, 'the user folder is ~/.workkit, in / separators').toBe(world.workflowHome.replace(/\\/g, '/'));
     expect(homeDir, 'and the clone is the tower under it').toBe(path.join(world.workflowHome, 'tower'));
     expect(settings, 'the site options live beside the roster, outside the clone the user never edits').toBe(path.join(world.workflowHome, 'settings.json'));
     cleanup(world.root);
@@ -130,6 +130,19 @@ describe('workflow/home: the paths a line prints on Windows', {
     const line = out.split('\n').find((l) => l.includes('seeded the cloud brief')) || '';
     expect(line.toLowerCase().includes(`runner in ${native(world.tower)} (`), `the clone the runner landed in, got: ${out}`).toBeTruthy();
     expect(line.toLowerCase().includes(`from ${native(world.env.WORKKIT_KIT_DIR)},`), `and the kit it came from, got: ${line}`).toBeTruthy();
+    cleanup(world.root);
+  });
+
+  // `slug` reads the machine folder's settings before any git or gh. PATH is
+  // node's folder alone: Git's usr/bin, where cygpath lives, is left off.
+  test('a WORKFLOW_HOME in the shell\'s spelling with no cygpath on PATH: the one line naming WORKFLOW_HOME and the fix, exit 1, no stack', () => {
+    const world = mkWorld();
+    const folder = shellPath(world.workflowHome);
+    const { code, out, err } = inHome({ ...world, env: { ...world.env, WORKFLOW_HOME: folder, PATH: NODE_DIR } }, ['slug']);
+    expect(code, `exit 1, got: ${out}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe(err);
+    expect(err, 'the one line').toBe(`workkit: cannot read WORKFLOW_HOME (${folder}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set WORKFLOW_HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(err), `no stack line, got: ${err}`).toBe(false);
     cleanup(world.root);
   });
 });

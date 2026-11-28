@@ -1,6 +1,7 @@
 // Tests for the pure helpers in hooks/mods/markers.js: the gh journal mark (journalSizes, the folder's sized
 // listing, journalMarkText and journalMarks, the mark's text and its read back, and journalsGrown, the pick of the
-// journals a Bash call's Post hook reads), the marker paths, the folders Git Bash means by a path, and sessionPath,
+// journals a Bash call's Post hook reads), the marker paths, the folders Git Bash means by a path, the home variables
+// only Git Bash can read, and sessionPath,
 // the session's PATH with the git shim's folder first. The mark written and read through the hooks module:
 // test/mods/post-tool-use-bash.test.ts; the session's PATH set through it: test/mods/session-path.test.ts.
 
@@ -140,6 +141,20 @@ describe('markers: shellDirOf and tempDirOf, the folder Git Bash means by a path
     expect(unset.TMPDIR, 'TMPDIR unset reads /tmp').toBe('D:/a/_temp');
     expect(!('WORKFLOW_HOME' in unset) && !('HOME' in unset), 'an unset folder is not added').toBeTruthy();
     expect(markers().shellEnvOf({ TMPDIR: '/var/t', HOME: '/Users/x' }, 'darwin').HOME, 'off Windows as given').toBe('/Users/x');
+  });
+
+  test('shellOnlyHomes: on Windows the home variables set to a folder only Git Bash can read; none off Windows', () => {
+    const { shellOnlyHomes } = markers();
+    expect(shellOnlyHomes({ WORKFLOW_HOME: '/home/x/.workkit', HOME: '/c/Users/x', ...WIN }, 'win32'), 'a /home path, beside a drive mount').toEqual(['WORKFLOW_HOME']);
+    expect(shellOnlyHomes({ HOME: '/cygdrive/c/x', ...WIN }, 'win32'), 'a /cygdrive path').toEqual(['HOME']);
+    for (const folder of ['/c/x', '/tmp/wk', 'C:/x', 'C:\\x', '//server/x']) {
+      const all = { WORKFLOW_HOME: folder, WORKFLOW_CLAUDE_HOME: folder, HOME: folder, ...WIN };
+      expect(shellOnlyHomes(all, 'win32'), `${folder} in each of the three, with a native TEMP`).toEqual([]);
+    }
+    expect(shellOnlyHomes({ ...WIN }, 'win32'), 'none set').toEqual([]);
+    for (const platform of ['darwin', 'linux']) {
+      expect(shellOnlyHomes({ HOME: '/home/x' }, platform), `${platform}: a /home path is any program's`).toEqual([]);
+    }
   });
 
   test('guards: the facts carry TMPDIR as the folder it names, by the kit root\'s spelling', async () => {

@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: the reasons not to publish (no home repo,
+// Tests for workflow/publish.js: the reasons not to publish (no home repo,
 // no clone, no tooling, a clone that cannot move, a settings file that does
 // not parse, a build that fails).
 // The shared prologue is ./helpers.js.

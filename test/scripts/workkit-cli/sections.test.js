@@ -1,21 +1,23 @@
 // Tests for workflow/workkit.js: how a run is organized: titled sections,
 // color only at a terminal that wants it, and the indent a title or a section
-// gives every line after it, a wait line's and a question's included.
-// The shared prologue is ./helpers.js.
+// gives every line after it, a wait line's and a question's included. Then the
+// doctor's env: line under This machine. The shared prologue is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, start, run, until, SPAWN_DEADLINE,
 } = require('../../lib/harness');
-const { SYSTEM_PATH, nodeHomeEnv, jsPath } = require('../../lib/platform');
+const {
+  IS_WINDOWS, SYSTEM_PATH, nodeHomeEnv, jsPath, which,
+} = require('../../lib/platform');
 const { framesIn } = require('../../lib/spin-call');
 const { mkOriginRepo } = require('../../lib/git-repo');
 const {
-  INSTALL_FIX, repoRoute, writeLogin, useTokenService, startServer, startService,
+  INSTALL_FIX, repoRoute, writeLogin, useTokenService, startServer, startService, attentionCount, doctorWarnings,
 } = require('../../lib/identity');
 const {
-  WORKFLOW_DIR, cleanup, mkWorld, runCli, mkKit, SLUG, mkHomeWorld, mkRepo, mkSetupKit, rosterRepo, signInEnv, inNode,
+  WORKFLOW_DIR, cleanup, mkWorld, runCli, mkKit, SLUG, mkHomeWorld, mkRepo, mkSetupKit, rosterRepo, signInEnv, inNode, lines,
 } = require('./helpers');
 
 describe('workkit: how a run is organized (issue #90)', () => {
@@ -187,5 +189,32 @@ describe('workkit: a wait line or a question under a title carries its indent', 
     }
     const frames = framesIn(call.stderr(), message);
     expect(frames.length > 0 && frames.every((f) => /^ {2}\S/.test(f)), `every frame opens at the title's two spaces, got: ${JSON.stringify(frames)}`).toBe(true);
+  });
+});
+
+describe('workkit doctor: a home variable only Git Bash can read is said under This machine', {
+  skip: !IS_WINDOWS && 'off Windows every program reads a home by its spelling',
+}, () => {
+  // Git Bash reads /home under its own install folder; it rides no temp mount, which this world moved.
+  const SHELL_ONLY = '/home/wk-doctor/.claude';
+
+  test('WORKFLOW_CLAUDE_HOME in a spelling only Git Bash reads is one env: line under This machine, counted; the same folder as a drive path is none', () => {
+    const world = mkWorld();
+    const asked = run(which('cygpath', SYSTEM_PATH), ['-m', SHELL_ONLY], { env: world.env });
+    expect(asked.status, `cygpath named the folder's drive path, got: ${asked.output}`).toBe(0);
+    const drive = asked.stdout.trim();
+    // Every line on stderr, so a warning reads in its order among the section titles.
+    const doctorWith = (folder) => runCli(world, ['doctor'], { env: { WORKFLOW_CLAUDE_HOME: folder, WK_LOG_STDERR: '1' } });
+    const shell = doctorWith(SHELL_ONLY);
+    const native = doctorWith(drive);
+    cleanup(world.root);
+
+    const said = lines(shell.err);
+    const line = said.indexOf(`⚠ env: WORKFLOW_CLAUDE_HOME (${SHELL_ONLY}) is a path only Git Bash can read, so the hooks and the commands read different folders; set it as a drive path (C:/...)`);
+    const machine = said.indexOf('💻 This machine');
+    const next = said.indexOf('🏠 Home repo');
+    expect(machine >= 0 && line > machine && line < next, `the env: line under This machine, got: ${shell.said}`).toBe(true);
+    expect(attentionCount(shell.said), `the closing count holds it, got: ${shell.said}`).toBe(attentionCount(native.said) + 1);
+    expect(doctorWarnings(native).some((l) => l.trim().startsWith('⚠ env:')), `the drive spelling says no env: line, got: ${native.said}`).toBe(false);
   });
 });

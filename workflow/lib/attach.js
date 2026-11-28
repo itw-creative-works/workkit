@@ -19,31 +19,19 @@ const {
 } = require('./detach');
 const { writeWhole } = require('./write');
 const { colorOn } = require('./voice');
+const { floorOf, floorLine } = require('./floor');
 const {
   takeRunLock, writePid, leaveRecord, recordedCode, dropRunLock, doneCode, pidAlive,
 } = require('./run-lock');
 
 const PAINT = path.join(__dirname, '..', '..', 'packages', 'core', 'test', 'lib', 'paint.js');
 
-// The one home of the kit's node floor, `WK_NODE_FLOOR=<x.y>`.
-const FLOOR_HOME = path.join(__dirname, 'platform.sh');
-
 /**
- * Whether this process's Node reaches the kit's floor, read part by part as
- * numbers from platform.sh's WK_NODE_FLOOR: the `require()` of an ES module
- * needs it. A platform.sh that names no floor throws.
+ * Whether this process's Node reaches the kit's floor (floorOf, the root
+ * package.json's engines.node): the `require()` of an ES module needs it.
  * @returns {boolean}
  */
-const atFloor = () => {
-  const floor = /^WK_NODE_FLOOR=([\d.]+)\s*$/m.exec(fs.readFileSync(FLOOR_HOME, 'utf8'));
-  if (!floor) throw new Error(`attach: ${FLOOR_HOME} names no WK_NODE_FLOOR`);
-  const want = floor[1].split('.').map(Number);
-  const have = process.versions.node.split('.').map(Number);
-  for (let i = 0; i < want.length; i += 1) {
-    if ((have[i] ?? 0) !== want[i]) return (have[i] ?? 0) > want[i];
-  }
-  return true;
-};
+const atFloor = () => floorLine(process.version, floorOf()) === '';
 
 // How often the tail reads the run, and every how many reads it asks after a
 // supervisor whose lock still stands.

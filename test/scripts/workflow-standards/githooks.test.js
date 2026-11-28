@@ -1,4 +1,4 @@
-// Tests for standards.sh installing the kit's git hooks, in the heal and alone
+// Tests for standards.js installing the kit's git hooks, in the heal and alone
 // (`--git-hooks`): core.hooksPath set to the engine link's githooks (the kit's
 // own folder where the link is missing), a repo's own hooks folder saved to
 // workkit.hooksPath for ours to chain to, and `workkit doctor` reporting which.
@@ -45,7 +45,7 @@ const heal = (repo, claudeHome) => {
 const KIT_HOOKS = gitPath(fs.realpathSync(HOOKS));
 const viaLink = ({ link }) => gitPath(path.join(link, 'githooks'));
 
-describe('standards.sh: the git hooks', () => {
+describe('standards.js: the git hooks', () => {
   test('a repo with no core.hooksPath on a machine with no engine link gets the kit\'s own folder, and nothing saved', () => {
     const repo = makeRepo();
     heal(repo);
@@ -100,7 +100,7 @@ describe('standards.sh: the git hooks', () => {
   });
 });
 
-describe('standards.sh --git-hooks <repo>: the git hooks step alone', () => {
+describe('standards.js --git-hooks <repo>: the git hooks step alone', () => {
   // The mode over `repo` in a caller's voice (no WK_LOG_STDERR) with a recording gh
   // on PATH: its code, its streams, and what gh was asked.
   const gitHooks = (repo) => {

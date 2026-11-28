@@ -1,20 +1,18 @@
 // Tests for standards.js: `--command-link`, the `workkit` command's link made
-// alone, with no repo, no terminal and no wizard (a cloud session's bootstrap),
-// and the same mode reached through its shell starter, standards.sh.
+// alone, with no repo, no terminal and no wizard (a cloud session's bootstrap).
 // The shared prologue is ./helpers.js.
 
 const path = require('path');
 const fs = require('fs');
 const {
-  describe, test, expect, mkTmp, run, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, joinPath, homeEnv, nodeHomeEnv, samePath, spawnBash,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, shellPath, joinPath, nodeHomeEnv, samePath,
 } = require('../../lib/platform');
-const { WORKFLOW_DIR, SCRIPT, cleanup } = require('./helpers');
+const { WORKFLOW_DIR, cleanup, heal } = require('./helpers');
 
 const COMMAND = path.join(WORKFLOW_DIR, 'workkit.js');
-const ENGINE = path.join(WORKFLOW_DIR, 'standards.js');
 
 // A scratch machine: HOME (where ~/.local/bin is read from) with a ~/.claude,
 // so a stray engine-link step would have somewhere to write.
@@ -27,30 +25,21 @@ const mkMachine = ({ localBin = true } = {}) => {
   return { root, home, claude, link: path.join(home, '.local', 'bin', 'workkit') };
 };
 
-// The machine's env, each path spelled for the program it is handed to: the
-// shell's spelling for a bash, native for a node, which reads HOME as given.
-const machineEnv = (machine, starter) => {
-  const spell = starter === 'bash' ? shellPath : (p) => p;
-  return (starter === 'bash' ? homeEnv : nodeHomeEnv)(machine.home, {
-    ...process.env,
-    PATH: joinPath(SYSTEM_PATH, NODE_DIR),
-    WORKFLOW_HOME: spell(path.join(machine.root, 'workflow-home')),
-    WORKFLOW_CLAUDE_HOME: spell(machine.claude),
-  });
-};
+// The machine's env, each path native, as the node it is handed to reads it.
+const machineEnv = (machine) => nodeHomeEnv(machine.home, {
+  ...process.env,
+  PATH: joinPath(SYSTEM_PATH, NODE_DIR),
+  WORKFLOW_HOME: path.join(machine.root, 'workflow-home'),
+  WORKFLOW_CLAUDE_HOME: machine.claude,
+});
 
 // The mode as a cloud bootstrap runs it: from a folder that is no git repo,
 // with stdin closed, so any prompt or wizard step would have no one to answer.
-// `starter` is `node` (standards.js with the running node) or `bash` (standards.sh);
 // `over` is laid over the machine's env last.
-const runCommandLink = (machine, starter = 'node', over = {}) => {
+const runCommandLink = (machine, over = {}) => {
   const cwd = mkTmp('wf-std-');
-  const env = { ...machineEnv(machine, starter), ...over };
-  const res = starter === 'node'
-    ? run(process.execPath, [ENGINE, '--command-link'], { cwd, env })
-    : spawnBash([...NO_RC, shellPath(SCRIPT), '--command-link'], {
-      cwd, env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: SPAWN_DEADLINE,
-    });
+  const env = { ...machineEnv(machine), ...over };
+  const res = heal(['--command-link'], env, { cwd });
   cleanup(cwd);
   const out = res.stdout || '';
   const err = res.stderr || '';
@@ -61,17 +50,15 @@ const runCommandLink = (machine, starter = 'node', over = {}) => {
 const linksCommand = (link) => samePath(fs.realpathSync(link), fs.realpathSync(COMMAND), process.platform);
 
 describe('standards.js: --command-link', () => {
-  for (const starter of ['node', 'bash']) {
-    test(`links ~/.local/bin/workkit at workflow/workkit.js, outside any repo (${starter === 'node' ? 'standards.js' : 'standards.sh'})`, () => {
-      const machine = mkMachine();
-      const { code, output } = runCommandLink(machine, starter);
-      expect(code, `exits 0, got: ${output}`).toBe(0);
-      expect(fs.lstatSync(machine.link, { throwIfNoEntry: false })?.isSymbolicLink(),
-        `the command is a symlink, got: ${output}`).toBeTruthy();
-      expect(linksCommand(machine.link), `and it resolves to workflow/workkit.js, got: ${fs.realpathSync(machine.link)}`).toBe(true);
-      cleanup(machine.root);
-    });
-  }
+  test('links ~/.local/bin/workkit at workflow/workkit.js, outside any repo', () => {
+    const machine = mkMachine();
+    const { code, output } = runCommandLink(machine);
+    expect(code, `exits 0, got: ${output}`).toBe(0);
+    expect(fs.lstatSync(machine.link, { throwIfNoEntry: false })?.isSymbolicLink(),
+      `the command is a symlink, got: ${output}`).toBeTruthy();
+    expect(linksCommand(machine.link), `and it resolves to workflow/workkit.js, got: ${fs.realpathSync(machine.link)}`).toBe(true);
+    cleanup(machine.root);
+  });
 
   test('a second run exits 0 and leaves the link as it was', () => {
     const machine = mkMachine();
@@ -115,10 +102,31 @@ describe('standards.js --command-link: a HOME no cygpath can read', () => {
   }, () => {
     const machine = mkMachine();
     const home = shellPath(machine.home);
-    const { code, out, err } = runCommandLink(machine, 'node', { HOME: home, PATH: NODE_DIR });
+    const { code, out, err } = runCommandLink(machine, { HOME: home, PATH: NODE_DIR });
     expect(code, `exit 1, got: ${out}${err}`).toBe(1);
     expect(out, 'nothing on stdout').toBe('');
     expect(err, 'the one line').toBe(`workkit: cannot read HOME (${home}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n`);
+    expect(/^ {4}at /m.test(err), `no stack line, got: ${err}`).toBe(false);
+    cleanup(machine.root);
+  });
+});
+
+describe('standards.js: a WORKFLOW_HOME no cygpath can read', () => {
+  // --engine-link builds the heal's run, whose machine folder is user-dir.js's
+  // read, before any repo. PATH is node's folder alone, so no cygpath starts.
+  test('a WORKFLOW_HOME in the shell\'s spelling with no cygpath on PATH: the one line naming WORKFLOW_HOME and the fix, exit 1, no stack', {
+    skip: !IS_WINDOWS && 'off Windows a machine folder is never handed to cygpath',
+  }, () => {
+    const machine = mkMachine();
+    const folder = shellPath(path.join(machine.root, 'workflow-home'));
+    const cwd = mkTmp('wf-std-');
+    const res = heal(['--engine-link'], { ...machineEnv(machine), WORKFLOW_HOME: folder, PATH: NODE_DIR }, { cwd });
+    cleanup(cwd);
+    const out = res.stdout || '';
+    const err = res.stderr || '';
+    expect(res.status, `exit 1, got: ${out}${err}`).toBe(1);
+    expect(out, 'nothing on stdout').toBe('');
+    expect(err, 'the one line').toBe(`workkit: cannot read WORKFLOW_HOME (${folder}): cygpath could not convert it (ENOENT); start the command from Git Bash, or set WORKFLOW_HOME to a drive path (C:/Users/name)\n`);
     expect(/^ {4}at /m.test(err), `no stack line, got: ${err}`).toBe(false);
     cleanup(machine.root);
   });

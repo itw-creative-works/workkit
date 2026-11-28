@@ -1,6 +1,6 @@
-// workflow/slug.js: what a repo is called, for the Node half of the kit.
-// The twin of workflow/lib/slug.sh, shape for shape: change one and change the
-// other. It requires nothing, so the engine stays self-contained.
+// workflow/slug.js: what a repo is called, for the engine. hooks/mods/slug.js is
+// the hooks module's copy, shape for shape: change both together. It requires
+// nothing, so the engine stays self-contained.
 // Usage: const { slugFromRemote, splitRepo } = require('./slug');
 
 /**

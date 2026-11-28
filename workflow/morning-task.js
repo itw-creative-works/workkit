@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('./lib/run');
 const { isFile } = require('./lib/lock');
+const { unreadPathStop } = require('./lib/platform');
 const { machineHome } = require('../jobs/lib/machine');
 
 /** The morning of the kit this file is in: Node loads a file by its real path, so a linked folder still reaches the real kit. */
@@ -52,7 +53,11 @@ const main = () => morningTask({ job: jobFile(), log: logFile(machineHome()) });
 
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered for a pipe.
-  main().then((code) => { process.exitCode = code; });
+  try {
+    main().then((code) => { process.exitCode = code; });
+  } catch (err) {
+    process.exitCode = unreadPathStop(err);
+  }
 }
 
 module.exports = { jobFile, logFile, morningTask };

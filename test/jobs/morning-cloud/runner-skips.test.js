@@ -1,13 +1,13 @@
-// Tests for jobs/morning.sh as a GitHub Actions runner runs it: the steps a
+// Tests for jobs/morning.js as a GitHub Actions runner runs it: the steps a
 // runner skips, and the cloud steps that run on a runner only.
 // The shared prologue (world factory, job runner) is ./helpers.js.
 
 const fs = require('fs');
 const path = require('path');
-const { describe, test, expect, SPAWN_DEADLINE } = require('../../lib/harness');
-const { NO_RC, shellPath, spawnBash, spawnSync } = require('../../lib/platform');
+const { describe, test, expect } = require('../../lib/harness');
+const { spawnSync } = require('../../lib/platform');
 const {
-  SCRIPT, HOME_SLUG, cleanup, mkWorld, runJob,
+  HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');
 
 describe('jobs/morning (cloud): the steps a runner skips', () => {
@@ -42,7 +42,7 @@ describe('jobs/morning (cloud): the steps a runner skips', () => {
     spawnSync('git', ['init', '-q', '--bare', '-b', 'main', remote], { encoding: 'utf8' });
     const clone = path.join(world.home, '.workkit', 'tower');
     spawnSync('git', ['clone', '-q', remote, clone], { encoding: 'utf8' });
-    const seeded = path.join(clone, 'brief', 'jobs', 'morning.sh');
+    const seeded = path.join(clone, 'brief', 'jobs', 'morning.js');
     fs.mkdirSync(path.dirname(seeded), { recursive: true });
     fs.writeFileSync(seeded, '# last month’s runner\n');
     // The engine's own seam: with it the clone is the home repo's clone, which
@@ -80,7 +80,7 @@ describe('jobs/morning (cloud): a runner only', () => {
 
     const env = { ...world.env };
     delete env.GITHUB_ACTIONS;
-    spawnBash([...NO_RC, shellPath(SCRIPT)], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
+    runJob({ ...world, env });
 
     expect(fs.readFileSync(roster, 'utf8'), 'the roster is byte-identical: nothing was registered or dropped').toBe(before);
     expect(world.calls().length, 'and nothing was sent: the day is dispatched from a machine, never composed on it').toBe(0);

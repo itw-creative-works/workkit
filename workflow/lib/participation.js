@@ -2,13 +2,14 @@
  * workflow/lib/participation.js: what the kit means by its own git hooks
  * folder, for the kit's Node scripts: a kit's folder under any spelling, one
  * spelled as a kit's, and one a kit's or its leftover. The Node half of the
- * `wk_githooks_*` rules in lib/participation.sh. Also the check a file is
+ * `wk_githooks_*` rules in githooks/hook.sh. Also the check a file is
  * there and executable, which those rules use.
- * Usage: const { githooksKit, githooksSpelled, githooksKitlike, executable } = require('../lib/participation');
+ * Usage: const { githooksKit, githooksSpelled, githooksKitlike, gitHooksInstalled, executable } = require('../lib/participation');
  */
 
 const fs = require('fs');
 const path = require('path');
+const { localConfig } = require('./git');
 const { isFile, isDir } = require('./lock');
 const { physical } = require('./link');
 
@@ -63,4 +64,12 @@ const githooksKitlike = (root, folder) => {
   return !(isDir(root) && fs.existsSync(path.resolve(root, folder)));
 };
 
-module.exports = { githooksKit, githooksSpelled, githooksKitlike, executable };
+/** The folder core.hooksPath names in <root> when it is a kit's hooks folder, else null. */
+const gitHooksInstalled = (root) => {
+  const folder = localConfig(root, ['--path', 'core.hooksPath']);
+  return githooksKit(root, folder) === null ? null : folder;
+};
+
+module.exports = {
+  githooksKit, githooksSpelled, githooksKitlike, gitHooksInstalled, executable,
+};

@@ -1,14 +1,81 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// workflow/script-shell.js: a `test` event of npm's script shell, started by
-// script-shell.sh under a node at the kit's floor with npm's `-c <script>`. Its
-// detached bodies are this file again, `--suite-body <root> -c <script>` and
-// `--test-body <root> <pkg> -c <script>`.
+// workflow/script-shell.js: npm's script shell, the part in Node, started by
+// script-shell.sh: a `test` event with npm's `-c <script>`, and `--git-hooks`
+// after an install-time script. Its detached bodies are this file again,
+// `--suite-body <root> -c <script>` and `--test-body <root> <pkg> -c <script>`.
+
+// The floor first, ahead of every other require, in syntax an older Node reads.
+// npm's shell serves every repo, so below it a test still runs plain and
+// unrecorded, and the hooks are left; the line shows only where the kit is.
+if (require.main === module) {
+  const floor = require('./lib/floor');
+  const below = floor.floorLine(process.version, floor.floorOf());
+  if (below) {
+    const fs = require('fs');
+    const { repoRoot } = require('./lib/git');
+    const argv = process.argv.slice(2);
+    const hooks = argv[0] === '--git-hooks';
+    let code = 1;
+    if (!hooks) {
+      const { spawnSync } = require('./lib/run');
+      const { codeOf } = require('./lib/detach');
+      code = codeOf(spawnSync('sh', argv, { stdio: 'inherit', windowsHide: true }));
+    }
+    const root = repoRoot(process.cwd());
+    if (root !== null && fs.existsSync(`${root}/.workkit/settings.json`)) {
+      const line = hooks ? below : `${below.replace(/^workkit: /, 'npm test: ')}, so this run is not recorded`;
+      fs.writeSync(2, `${line}\n`);
+    }
+    process.exit(code);
+  }
+}
+
+const GIT_HOOKS = '--git-hooks';
+
+/**
+ * After an install-time script, which may set core.hooksPath itself (husky's
+ * prepare): in a repo that opted in, the kit's hooks put back through the
+ * heal's own step, its one line on stderr, flush left. Hooks that are a kit's
+ * already are left, with no line, before anything heavy loads.
+ * @returns {number} 1 when the step flagged the repo, else 0
+ */
+const hooksBack = () => {
+  const { repoRoot } = require('./lib/git');
+  const root = repoRoot(process.cwd());
+  if (root === null) return 0;
+  const { gitHooksInstalled } = require('./lib/participation');
+  if (gitHooksInstalled(root) !== null) return 0;
+  const { readOrNull } = require('./lib/read');
+  const { settingsOptedIn } = require('../hooks/mods/gate.js');
+  const { repoSettingsFile } = require('../hooks/mods/settings.js');
+  if (!settingsOptedIn(readOrNull(repoSettingsFile(root)))) return 0;
+  process.env.WK_LOG_STDERR = '1';
+  process.env.WK_LOG_INDENT = '';
+  const { newRun } = require('./standards');
+  const { ensureGitHooks } = require('./standards/githooks');
+  const heal = { ...newRun(), root };
+  ensureGitHooks(heal);
+  return heal.needsAttention ? 1 : 0;
+};
+
+// Every install-time script of an opted-in repo starts this, so it ends here,
+// ahead of a test run's requires. Each write it makes is sync, so exit loses none.
+if (require.main === module && process.argv[2] === GIT_HOOKS) {
+  let code;
+  try {
+    code = hooksBack();
+  } catch (err) {
+    code = require('./lib/platform').unreadPathStop(err);
+  }
+  process.exit(code);
+}
 
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('./lib/run');
 const { repoRoot, gitIn } = require('./lib/git');
+const { unreadPathStop } = require('./lib/platform');
 const { run } = require('./lib/runs');
 const { bodyEnd, endTraps } = require('./lib/body');
 const {
@@ -303,5 +370,5 @@ const main = async (argv) => {
 
 if (require.main === module) {
   // Set the code, never process.exit(): a body's last line follows its output.
-  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
+  main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }

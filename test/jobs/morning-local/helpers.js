@@ -1,5 +1,5 @@
-// The shared prologue of the jobs/morning.sh local suites beside this one: the
-// script as the 9am launchd job runs it, one step each (the runner leg is
+// The shared prologue of the jobs/morning.js local suites beside this one: the
+// program as the 9am launchd job runs it, one step each (the runner leg is
 // ../morning-cloud/). A scratch HOME and WORKFLOW_HOME, a fake `claude`, a fake
 // Notifly and a recording `gh` in ~/.local/bin, where the runner's own PATH puts
 // it ahead of the real one: nothing reaches GitHub, the screen, or the real home.
@@ -10,13 +10,13 @@ const { pathToFileURL } = require('url');
 const { mkTmp, SPAWN_DEADLINE, until } = require('../../lib/harness');
 const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
 const {
-  NO_RC, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, nodeEnv, stubTool, stubToolJs, pathWith, joinPath, spawnBash, spawnSync,
+  SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, stubToolJs, pathWith, joinPath, spawnSync,
 } = require('../../lib/platform');
 const { skipOnUsrLocalBin } = require('../../lib/job-path');
 const { mkKitRepo } = require('../../scripts/home/helpers');
 const { binDirWithout } = require('../../scripts/publish/helpers');
 
-const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.sh');
+const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.js');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
 // The title every published brief carries, from the module that owns the
 // literal, so this fixture and the step under test read one prefix.
@@ -206,7 +206,7 @@ const mkWorld = ({
   };
 };
 
-const runJob = (world, args = []) => spawnBash([...NO_RC, shellPath(SCRIPT), ...args], {
+const runJob = (world, args = []) => spawnSync(process.execPath, [SCRIPT, ...args], {
   encoding: 'utf8',
   timeout: SPAWN_DEADLINE,
   env: world.env,
@@ -216,7 +216,7 @@ const runJob = (world, args = []) => spawnBash([...NO_RC, shellPath(SCRIPT), ...
 // pushed, the way the last `workkit setup` left it, and a version behind.
 const STALE_RUNNER = '# last month’s runner\n';
 const plantStaleRunner = (world) => {
-  const file = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+  const file = path.join(world.tower, 'brief', 'jobs', 'morning.js');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, STALE_RUNNER);
   const git = (...args) => spawnSync('git', ['-C', world.tower, ...args], { encoding: 'utf8' });
@@ -274,14 +274,13 @@ const SHELL_TOOLS = ['jq', 'awk', 'sed', 'base64', 'timeout'];
 
 /**
  * The world as a machine without `gone`: the fake tools ahead of a mirror of
- * the system's with none of them, the suite's node handed to the starter. The
- * job's own PATH line reaches /opt/homebrew/bin and /usr/local/bin, where a
- * machine may keep one, so ~/.local/bin, first on that line, answers each as a
- * missing command does.
+ * the system's with none of them, the suite's node among it. The job's own
+ * PATH line reaches /opt/homebrew/bin and /usr/local/bin, where a machine may
+ * keep one, so ~/.local/bin, first on that line, answers each as a missing
+ * command does.
  */
 const withoutTools = (world, gone = SHELL_TOOLS) => {
   world.env.PATH = joinPath(path.join(world.root, 'bin'), binDirWithout(...gone));
-  Object.assign(world.env, nodeEnv);
   for (const tool of gone) {
     stubToolJs(world.localBin, tool, `process.stderr.write(${JSON.stringify(`${tool}: command not found\n`)});\nprocess.exitCode = 127;`);
   }

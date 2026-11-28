@@ -1,4 +1,4 @@
-// Tests for standards.sh: the issue templates and the CHANGELOG separator; the
+// Tests for standards.js: the issue templates and the CHANGELOG separator; the
 // checks.yml caller is ./checks-caller.test.js.
 // The shared prologue is ./helpers.js.
 
@@ -7,7 +7,7 @@ const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
 const { cleanup, makeRepo, makeGhStub, readFile, runScript } = require('./helpers');
 
-describe('standards.sh: issue templates', () => {
+describe('standards.js: issue templates', () => {
   test('creates all four templates with the right auto-labels', () => {
     const repo = makeRepo();
     const stub = makeGhStub();
@@ -77,7 +77,7 @@ describe('standards.sh: issue templates', () => {
   });
 });
 
-describe('standards.sh: the CHANGELOG separator', () => {
+describe('standards.js: the CHANGELOG separator', () => {
   test('an em dash CHANGELOG is converted to spaced hyphens once (#248)', () => {
     const repo = makeRepo();
     const stub = makeGhStub();

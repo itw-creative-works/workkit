@@ -32,7 +32,7 @@ const defaultExec = (cmd, args, opts = {}) => execFileSync(cmd, args, {
 /**
  * A path in git's spelling, the one every roster key is written under: on
  * Windows backslashes fold to `/`, elsewhere the path is the answer. Unlike
- * `wk_native_path` (workflow/lib/platform.sh) it leaves the MSYS `/c/` form alone.
+ * `nativePath` (workflow/lib/platform.js) it leaves the MSYS `/c/` form alone.
  * `process.platform` is read at call time, the one seam a test off Windows has.
  * @param {string} p
  * @returns {string}

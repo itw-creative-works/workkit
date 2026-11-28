@@ -1,4 +1,4 @@
-// Tests for standards.sh: the hook layer self-check, over a layer with no loader:
+// Tests for standards.js: the hook layer self-check, over a layer with no loader:
 // the hooks module and the tools the layer needs.
 // The shared prologue is ./helpers.js.
 
@@ -9,13 +9,10 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  NO_RC, shellPath, stubTool, joinPath, spawnSystemBash,
-} = require('../../lib/platform');
-const {
-  WORKFLOW_DIR, SCRIPT, cleanup, makeRepo, makeGhStub, binDirWithout, runScript,
+  WORKFLOW_DIR, cleanup, makeRepo, makeGhStub, runScript,
 } = require('./helpers');
 
-describe('standards.sh: the hook layer self-check', () => {
+describe('standards.js: the hook layer self-check', () => {
   // Every guard fails open by design, so a module that cannot load or a
   // missing tool disables a safety layer with nothing watching. This is the
   // once-a-day assertion that the layer is alive.
@@ -79,37 +76,6 @@ describe('standards.sh: the hook layer self-check', () => {
     expect(line.replace(/.*hooks: the hooks module fails to load:/, '').trim().length > 0, `and carries a stderr line, got: ${line}`).toBeTruthy();
     expect(!output.includes('the hooks module loads'), `and no line calls it loaded, got: ${output}`).toBeTruthy();
     cleanup(repo); cleanup(stub.dir); cleanup(hooks);
-  });
-
-  test('a digest tool under either name satisfies the check (workkit #245)', () => {
-    // wk_sha1 takes shasum or sha1sum, so the daily heal asks for the pair:
-    // a Linux machine with only sha1sum is whole, and a machine with neither
-    // is told both names.
-    const repo = makeRepo();
-    const hooks = makeHooksDir();
-    const stub = makeGhStub();
-    const binDir = binDirWithout('shasum');
-    // The mirror's sha1sum is a bash shim with its launcher beside it on Windows: both go.
-    for (const name of ['sha1sum', 'sha1sum.exe']) fs.rmSync(path.join(binDir, name), { force: true });
-    const check = () => {
-      const res = spawnSystemBash([...NO_RC, shellPath(SCRIPT), shellPath(repo)], {
-        env: {
-          PATH: joinPath(stub.binDir, binDir),
-          WORKFLOW_HOME: shellPath(path.join(binDir, 'wh')),
-          WORKFLOW_CLAUDE_HOME: shellPath(path.join(binDir, 'ch')),
-          WORKFLOW_HOOKS_DIR: shellPath(hooks),
-        },
-        encoding: 'utf8',
-        timeout: SPAWN_DEADLINE,
-      });
-      return (res.stdout || '') + (res.stderr || '');
-    };
-    const neither = check();
-    expect(/hooks: the hook layer needs.*shasum or sha1sum/.test(neither), `names both digest tools, got: ${neither}`).toBeTruthy();
-    stubTool(binDir, 'sha1sum', ['#!/bin/sh', 'exit 0']);
-    const one = check();
-    expect(!/hook layer needs/.test(one), `sha1sum alone satisfies the pair, got: ${one}`).toBeTruthy();
-    cleanup(repo); cleanup(hooks); cleanup(binDir); cleanup(stub.dir);
   });
 
   test('an engine installed without a hook layer beside it checks nothing', () => {

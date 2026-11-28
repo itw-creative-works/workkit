@@ -36,7 +36,8 @@ export function homeOf(env) {
 }
 
 /**
- * The machine folder, wk_user_dir's rule: WORKFLOW_HOME, else ~/.workkit.
+ * The machine folder: WORKFLOW_HOME as given, else <home>/.workkit. Nothing is
+ * respelled here, so a shell-spelled variable comes in through shellEnvOf (markers.js).
  * @param {string|undefined} workflowHome WORKFLOW_HOME
  * @param {string|undefined} home the home folder
  * @returns {string}

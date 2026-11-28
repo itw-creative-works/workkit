@@ -1,8 +1,7 @@
 /**
  * hooks/mods/slug.js: what a repo is called, for the hooks module. The
- * module's copy of slugFromRemote in workflow/slug.js and wk_slug_from_remote
- * in workflow/lib/slug.sh, shape for shape, since the session's hooks module
- * cannot import CommonJS: change all three together.
+ * module's copy of slugFromRemote in workflow/slug.js, shape for shape, since
+ * the session's hooks module cannot import CommonJS: change both together.
  */
 
 /**

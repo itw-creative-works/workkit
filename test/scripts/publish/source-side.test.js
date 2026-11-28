@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: the source side (an edit to the project
+// Tests for workflow/publish.js: the source side (an edit to the project
 // pushed to main, a source push that does not land, and --quiet).
 // The shared prologue is ./helpers.js.
 

@@ -60,7 +60,6 @@ const STILL_IMPORTING = [
   'test/scripts/identity/gh-shim.test.js',
   'test/scripts/identity/login.test.js',
   'test/scripts/identity/token.test.js',
-  'test/scripts/participation.test.js',
   'test/scripts/platform.test.js',
   'test/scripts/publish-plan.test.js',
   'test/scripts/publish-sync/helpers.js',

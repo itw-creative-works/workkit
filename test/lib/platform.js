@@ -31,8 +31,8 @@ const SYSTEM_DIR = IS_WINDOWS ? findDir('bash.exe', 'sed.exe') : null;
 
 /**
  * The system tools and nothing else: no Homebrew, no node manager, no stubs.
- * jq and git join from wherever the machine keeps them, one directory each,
- * since the kit's shell still reads JSON through jq.
+ * jq and git join from wherever the machine keeps them, one directory each:
+ * the stub gh the suites write answers `--jq` and edits its fixtures through jq.
  */
 const systemPath = () => {
   const dirs = IS_WINDOWS ? [SYSTEM_DIR] : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
@@ -110,8 +110,8 @@ const tmpMountRoot = () => {
  * under Git Bash, unchanged on macOS. A path under the folder Git Bash mounts at
  * `/tmp` reads as `/tmp/...`, compared without case as Git Bash does. Use it for
  * anything a shell script receives (argv, a JSON payload it reads, an env var it
- * manipulates) and for a raw value a shell function returns. A path a shell line
- * prints for a person is `wk_native_path`'s spelling: compare it through gitPath.
+ * manipulates) and for a raw value a shell function returns. A path a line
+ * prints for a person is `nativePath`'s spelling: compare it through gitPath.
  * A path already in that spelling comes back as it came, so asking twice costs nothing.
  * @param {string} p
  * @returns {string}
@@ -137,10 +137,10 @@ const shellPath = (p) => {
 const jsPath = (p) => JSON.stringify(p.replace(/\\/g, '/'));
 
 /**
- * A path as git prints it, and as `wk_native_path` prints one for a person:
- * under Git for Windows a drive letter with forward slashes (`C:/Users/x`).
- * Anything keyed off `git rev-parse --show-toplevel`, and any path a kit shell
- * line prints, wears this form, so an assertion about it compares against it.
+ * A path as git prints it, and as `nativePath` (workflow/lib/platform.js) prints
+ * one for a person: under Git for Windows a drive letter with forward slashes
+ * (`C:/Users/x`). Anything keyed off `git rev-parse --show-toplevel`, and any
+ * path a kit line prints, wears this form, so an assertion compares against it.
  * Unchanged on macOS.
  * @param {string} p
  * @returns {string}
@@ -169,18 +169,6 @@ const which = (name, searchPath = process.env.PATH) => {
   }
   return null;
 };
-
-/**
- * The digest tool this machine spells sha1 with: macOS ships `shasum`, a Linux
- * machine and Git Bash ship `sha1sum`, and `wk_sha1` takes either. Every
- * suite that names a marker path keys it through this one answer, or it would
- * only ever pass on half the platforms the kit runs on.
- * @param {string} [searchPath] - the PATH to search, this process's own by default
- * @returns {string|null} absolute path, or null on a machine carrying neither
- */
-const digestTool = (searchPath = process.env.PATH) => ['shasum', 'sha1sum']
-  .map((name) => which(name, searchPath))
-  .find(Boolean) || null;
 
 /**
  * A PATH entry's tool name, without the extension Windows gives it: the name a
@@ -349,47 +337,6 @@ const skipWithoutFileLink = () => {
 };
 
 /**
- * A `node` stub at `<dir>/node` answering `--version` (and `-v`) with
- * `v<version>` and failing every other call, as a node too old to load the
- * kit's ES modules would: the node a version pick has to pass over.
- * @param {string} dir - the folder, made when missing
- * @param {string} version - e.g. '20.15.1'
- * @returns {string} the stub that was written
- */
-const stubNode = (dir, version) => {
-  fs.mkdirSync(dir, { recursive: true });
-  return stubTool(dir, 'node', [
-    '#!/bin/bash',
-    `case "$1" in --version|-v) echo v${version}; exit 0 ;; esac`,
-    `echo "node v${version}: not this one" >&2`,
-    'exit 1',
-  ]);
-};
-
-/**
- * A `jq` on PATH that writes CRLF the way the Windows build does, handing back
- * jq's own exit status; like that build, `-b` (`--binary`, or a short cluster
- * holding `b`) makes it write LF. On Windows the real tool is the stub
- * (translating again would write `\r\r\n`). Every line keeps its `\r`, a
- * one-line answer included, so a call missing `-b` reads one.
- * @param {string} dir - the PATH directory, which must exist
- * @returns {string|null} the stub that was written, or null with no jq to wrap
- */
-const crlfJq = (dir) => {
-  const real = which('jq');
-  if (!real) return null;
-  const jq = `"${shellPath(real)}" "$@"`;
-  const body = IS_WINDOWS
-    ? [`exec ${jq}`]
-    : [
-      `for a in "$@"; do case $a in --binary) exec ${jq};; --*) ;; -*b*) exec ${jq};; esac; done`,
-      `${jq} | perl -pe 's/\\n/\\r\\n/'`,
-      'exit "${PIPESTATUS[0]}"',
-    ];
-  return stubTool(dir, 'jq', ['#!/bin/bash', ...body]);
-};
-
-/**
  * A `cygpath` on PATH answering the mixed form Git Bash answers with, so a suite
  * drives the engine's Windows branch (`OSTYPE=msys`) from a Mac: `/c/Users/x`
  * becomes `C:/Users/x`, any other path gets `C:` prefixed. `-u` strips a leading
@@ -526,13 +473,6 @@ const nodeHomeEnv = (home, env = {}) => ({ ...homeEnv(home, env), HOME: home });
 const nodeTempEnv = (dir, env = {}) => ({
   ...env, TMPDIR: dir, TEMP: dir, TMP: dir,
 });
-
-/**
- * The env pair that hands a shell this suite's own node as the kit's node
- * (`wk_node` tries `WORKKIT_NODE` first), so no PATH a case narrowed hides it.
- * A case spreads it into the env it spawns with.
- */
-const nodeEnv = { WORKKIT_NODE: shellPath(process.execPath) };
 
 /**
  * A mirror of the system PATH with one command left out: the machine without
@@ -727,8 +667,8 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, digestTool, toolStem, runsProgram, linkTool, stubTool, stubToolJs, stubNode, crlfJq,
-  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeTempEnv, nodeEnv, basePathWithout,
+  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, toolStem, runsProgram, linkTool, stubTool, stubToolJs,
+  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeTempEnv, basePathWithout,
   NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutByteArgv, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.

@@ -38,7 +38,7 @@ const publish = async (kit, ...args) => {
     return 0;
   }
   if (await nodeRun(kit, kit.files.publish, args) !== 0) {
-    warn(`site: the publish did not finish; run \`bash ${nativePath(path.join(kit.engine, 'publish.sh'))}\` to see why`);
+    warn(`site: the publish did not finish; run \`node ${nativePath(path.join(kit.engine, 'publish.js'))}\` to see why`);
     kit.run.publishFailed = true;
   }
   return 0;

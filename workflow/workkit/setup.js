@@ -11,8 +11,8 @@ const {
 } = require('../lib/voice');
 const { nativePath } = require('../lib/platform');
 const { isFile } = require('../lib/lock');
-const { repoRoot, localConfig } = require('../lib/git');
-const { githooksKit } = require('../lib/participation');
+const { repoRoot } = require('../lib/git');
+const { gitHooksInstalled } = require('../lib/participation');
 const {
   nodeRun, homeEnv, homeRun, homeMissing, flagged,
 } = require('./kit');
@@ -78,12 +78,6 @@ const homeReady = (kit) => {
 const homeSteps = (kit, force) => {
   if (!homeReady(kit)) return force ? 1 : 0;
   return homeRun(kit, ['setup', ...(force ? ['force'] : [])], { stdio: 'inherit' }).code;
-};
-
-/** The folder core.hooksPath names in <root> when it is a kit's hooks folder, else null. */
-const gitHooksInstalled = (root) => {
-  const folder = localConfig(root, ['--path', 'core.hooksPath']);
-  return githooksKit(root, folder) === null ? null : folder;
 };
 
 /**

@@ -63,7 +63,7 @@
 - A world is seeded once per process (`seeded()`) and copied per case.
 - A path in a world's env is spelled for the program it is handed to: `shellPath` for a bash, native for a node a case starts itself.
   - Only Git Bash turns `/d/a/x` back into `D:/a/x`, for a program it starts; a node handed it straight reads `D:\d\a\x`.
-  - A world both read keeps it native and hands its bash the shell's spelling (`bashEnv` in `test/scripts/home/helpers.js`).
+  - A world only a node reads keeps every path native, as the home suites' world does (`test/scripts/home/helpers.js`).
   - A world whose temp folder moved (`nodeTempEnv`, `mkRepo`'s `forNode`) spells a path written into bash text with `gitPath`, since Git Bash's `/tmp` moved with it (`AGENTS.md` § Tests).
   - The `workkit` command is a node, so its suites' world is native: `runCli` in `test/scripts/workkit-cli/helpers.js` starts `workflow/workkit.js` with the running Node, and `inNode` and `startInNode` call one of the command's functions in a node of its own, its `kit` built from the overrides a case hands in.
     - Beside them: `npmrcEnv(world)`, a scratch user npmrc so an npm on the system PATH reads and writes no other; `machineLinks(world, call)`, the machine steps through `inNode` under it; `windowsForm(p)`, a path as `workkit.cmd` and the Windows PATH line spell it; `lines(text)`, each line trimmed.
@@ -79,6 +79,8 @@
       - The answers come back in order, as JSON brings them. A call that throws in that node throws in the test with its message, and the asks after it are never made.
       - `kitUnderAsync(env, file, name, asks)` is the same asks started without waiting, so several nodes ask at one moment; it resolves the answers, or rejects as `kitUnder` throws.
     - A job's function called in this process under a world's env: `underEnv(over, fn)` in `test/lib/under-env.js` awaits `fn` with the keys of `over` laid on `process.env`, and puts every key back after, however `fn` ended.
+    - A Node below the kit's floor, and a count of a call's Node starts: `olderNode` and `recordingNode` in `test/lib/node-fakes.js` (`AGENTS.md` § Tests), the second also older than the floor with `older: '<version>'`. A case that builds a PATH and needs a `node` puts `NODE_DIR` (`test/lib/platform.js`) on it.
+    - The heal started by its suites: `heal` in `test/scripts/workflow-standards/helpers.js` always applies `seededEnv(env)`, which seeds a scratch workflow home and Claude home and throws when either would land in the machine's own `~/.workkit` or `~/.claude`.
     - The `schtasks` a Task Scheduler case puts first on a PATH: `schtasksStub(dir, { exists, create, createErr })` in `test/lib/schtasks-stub.js`, a Node stand-in recording each call (`calls()`, `creates()`), answering `/query` and `/create` by the state `set()` changes, and keeping a copy of the file `/create /xml` named (`kept()`).
     - `run` of `lib/runs.js` driven the same way, as npm's script shell (`workflow/script-shell.js`) calls it, so a signal to the call reaches that node:
       - `runJob(dir, script, { lock, root })` is the job the script shell hands `run`: `node -e <script>`, its log in `<dir>`, its lock there unless `lock` names one, `root` null unless given.

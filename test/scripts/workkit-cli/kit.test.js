@@ -61,6 +61,20 @@ describe('kitOf: the fields of a fixed env', () => {
     same(kit.binLink, `${home}/.local/bin/workkit`, 'binLink, still under the home');
   });
 
+  test('the Claude home of an overridden env is claudeHome\'s for that env and home, the node\'s own never read', () => {
+    const home = mkTmp('wk-kit-home-');
+    const claude = mkTmp('wk-kit-claude-');
+    const env = { HOME: home, PATH: SYSTEM_PATH, WORKFLOW_CLAUDE_HOME: mkTmp('wk-kit-node-claude-') };
+    const [moved, unmoved] = kitsUnder(env, { env: { WORKFLOW_CLAUDE_HOME: claude } }, { env: { WORKFLOW_CLAUDE_HOME: '' } });
+    const [fnMoved, fnUnmoved] = kitUnder(env, 'platform.js', 'claudeHome', [
+      [{ env: { WORKFLOW_CLAUDE_HOME: claude }, home }], [{ env: { WORKFLOW_CLAUDE_HOME: '' }, home }],
+    ]);
+    same(moved.claudeHome, claude, 'kitOf, WORKFLOW_CLAUDE_HOME given');
+    same(fnMoved, claude, 'claudeHome, WORKFLOW_CLAUDE_HOME given');
+    same(unmoved.claudeHome, `${home}/.claude`, 'kitOf, WORKFLOW_CLAUDE_HOME empty');
+    same(fnUnmoved, `${home}/.claude`, 'claudeHome, WORKFLOW_CLAUDE_HOME empty');
+  });
+
   test('the two waits: 10 and 180 seconds by default, WORKKIT_GH_TIMEOUT and WORKKIT_PAGES_WAIT when set', () => {
     const home = mkTmp('wk-kit-home-');
     const [plain] = kitsUnder({ HOME: home, PATH: SYSTEM_PATH }, {});

@@ -10,20 +10,24 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  describe, test, expect, mkTmp, SPAWN_DEADLINE,
+  describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, skipWithoutNodeStub, shellPath, gitPath, spawnBash, systemPathWith, homeEnv, basePathWithout, stubNode, stubTool,
+  BASH, NO_RC, NODE_DIR, skipWithoutNodeStub, skipWithoutFileLink, skipWithoutCaughtSignal, shellPath, gitPath, jsPath, which, spawnBash,
+  systemPathWith, joinPath, homeEnv, nodeTempEnv, basePathWithout, stubToolJs,
 } = require('../../lib/platform');
-const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
-  makeGhStub, ghCalls, ghEnvs, ghRequests,
+  eqArgv, fmtCalls, recordArgvJs, readArgv,
+} = require('../../lib/argv-log');
+const { olderNode, recordingNode } = require('../../lib/node-fakes');
+const {
+  makeGhStub, ghCalls, ghEnvs, ghRequests, pathWithoutGh,
 } = require('../../lib/gh-stub');
 const { mkOriginRepo, OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { mkRosterHome } = require('../../lib/roster');
 const {
   INSTALL_FIX, PRESELECTED, BOT_HINT, deviceFlowRoutes, userRoute, writeLogin, readWrittenLogin, useTokenService, startServer, startService,
-  scratchKit, hostsOf, PTY, atTerminal, journalFile, journalLines,
+  scratchKit, shimArgv, hostsOf, PTY, atTerminal, journalFile, journalLines,
 } = require('../../lib/identity');
 const { plantPkgRecord } = require('../../lib/suite-record');
 const { BLOCK: PROOF_BLOCK, QA_BLOCK } = require('../../hooks/proof-guard/helpers');
@@ -78,16 +82,16 @@ const mkWorld = ({ signedIn = true, cache = true, tokenUrl = NO_SERVICE } = {}) 
  * Run the shim with `args` from `cwd` (the rostered repo by default), PATH the
  * shim's folder, any `extraDirs`, the stub's, then node; `claude: false` leaves
  * CLAUDECODE unset, `env` adds variables, and `noJq` swaps the system part for
- * a mirror holding no jq. Neither token name is in the env, so null means unset.
+ * node's folder and a mirror holding no jq. Neither token name is in the env, so null means unset.
  * `keyboard: true` runs it at script's terminal, `stderr` then all it showed.
  * `remote` is CLAUDE_CODE_REMOTE (unset by default); `api`, when given, the stub's `gh api` routes.
  * `field` and `issues` are the stub's view fixtures, `input` the shim's stdin, and
  * `script`, when given, a bash command line run in place of the shim, `gh` on PATH being it.
- * `nodeDir` is the folder PATH finds node in, this run's own by default.
+ * `tempDir`, when given, is the temp folder in every name Node reads one by, HOME then native.
  */
 const runShim = (world, args, {
   claude = true, cwd = world.rostered, env: extra = {}, extraDirs = [], noJq = false, keyboard = false,
-  remote, api = null, field = 'body', issues = { 1: 'x' }, input, script, nodeDir = NODE_DIR,
+  remote, api = null, field = 'body', issues = { 1: 'x' }, input, script, tempDir,
 } = {}) => {
   // The stub holds one issue fixture by default, so a view of it answers the way gh does.
   const stub = makeGhStub({
@@ -96,27 +100,32 @@ const runShim = (world, args, {
   const dirs = [path.dirname(world.shim), ...extraDirs, stub.binDir];
   const env = homeEnv(world.home, {
     PATH: noJq
-      ? [...dirs, basePathWithout(world.root, 'jq')].join(path.delimiter)
-      : systemPathWith(...dirs, nodeDir),
+      ? [...dirs, NODE_DIR, basePathWithout(world.root, 'jq')].join(path.delimiter)
+      : systemPathWith(...dirs, NODE_DIR),
     ...(claude ? { CLAUDECODE: '1' } : {}),
     ...(remote === undefined ? {} : { CLAUDE_CODE_REMOTE: remote }),
     ...extra,
   });
+  if (noJq) expect(which('jq', env.PATH), 'the world\'s PATH holds no jq').toBe(null);
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
   if (!('GH_REPO' in extra)) delete env.GH_REPO;
+  if (tempDir) Object.assign(env, nodeTempEnv(tempDir), { HOME: world.home });
   if (keyboard) {
-    const res = atTerminal([BASH, ...NO_RC, shellPath(world.shim), ...args], { env, cwd, dir: world.root });
+    const res = atTerminal([BASH, ...shimArgv(world.shim, args)], { env, cwd, dir: world.root });
     return {
       code: res.status, stderr: res.terminal, calls: ghCalls(stub), envs: ghEnvs(stub),
     };
   }
-  const argv = script === undefined ? [...NO_RC, shellPath(world.shim), ...args] : [...NO_RC, '-c', script];
+  // A moved temp folder moves Git Bash's /tmp, so that run finds the shim by name, never by a /tmp path.
+  let argv = shimArgv(world.shim, args);
+  if (tempDir) argv = [...NO_RC, '-c', 'gh "$@"', 'gh', ...args];
+  if (script !== undefined) argv = [...NO_RC, '-c', script];
   const res = spawnBash(argv, {
     cwd, env, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return {
-    code: res.status, stderr: res.stderr || '', calls: ghCalls(stub), envs: ghEnvs(stub), requests: ghRequests(stub),
+    code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', calls: ghCalls(stub), envs: ghEnvs(stub), requests: ghRequests(stub),
   };
 };
 
@@ -199,24 +208,75 @@ const assertWrote = (res, argv, token, what) => {
 
 /**
  * `gh <args>` through the shim from the rostered repo, a `gh` ahead of the stub
- * on PATH that the shim takes for the real one: it prints `real-gh: <argv>` and
- * `real-gh-parent: <its parent pid>`, and the calling shell prints `caller: <pid>`
- * after it: `lines` are that output in write order, `execd` whether the real
- * gh's parent is the caller (the shim exec'd it), `ran` the hook's mark, null
- * when no hook ran.
+ * on PATH that the shim takes for the real one: it prints `real-gh: <argv>`, and
+ * the calling shell prints `code: <exit>` after it: `lines` are that output in
+ * write order, `ran` the hook's mark, null when no hook ran.
  */
 const runRealGh = (world, args, opts = {}) => {
   const realGh = path.join(world.root, 'real-gh');
   fs.mkdirSync(realGh, { recursive: true });
-  stubTool(realGh, 'gh', ['#!/usr/bin/env bash', 'echo "real-gh: $*"', 'echo "real-gh-parent: $PPID"', 'exit 0']);
+  stubToolJs(realGh, 'gh', "console.log(`real-gh: ${process.argv.slice(2).join(' ')}`);");
   const out = shellPath(path.join(world.root, 'real-gh.log'));
   const call = args.map((a) => `'${a}'`).join(' ');
-  const res = runShim(world, [], { ...opts, extraDirs: [realGh], script: `gh ${call} > '${out}' 2>&1; echo "code: $?" >> '${out}'; echo "caller: $$" >> '${out}'` });
+  const res = runShim(world, [], { ...opts, extraDirs: [realGh], script: `gh ${call} > '${out}' 2>&1; echo "code: $?" >> '${out}'` });
   const marks = path.join(world.rostered, 'ran.txt');
   const lines = fs.readFileSync(path.join(world.root, 'real-gh.log'), 'utf8').split('\n').filter(Boolean);
-  const caller = (lines.find((l) => l.startsWith('caller: ')) || '').slice('caller: '.length);
   expect(res.code === 0, `the calling shell finished, got: ${res.stderr}`).toBeTruthy();
-  return { lines, execd: lines.includes(`real-gh-parent: ${caller}`), ran: fs.existsSync(marks) ? fs.readFileSync(marks, 'utf8') : null };
+  return { lines, ran: fs.existsSync(marks) ? fs.readFileSync(marks, 'utf8') : null };
+};
+
+/**
+ * A real `gh` in `<dir>` that reads the body it was handed, as gh reads one
+ * (`-` and `@-` from stdin, else the file named), and records `{ body, token }`;
+ * `take()` answers that record and clears it, null with none. `<dir>` goes on a run's `extraDirs`.
+ */
+const bodyReader = (dir) => {
+  fs.mkdirSync(dir, { recursive: true });
+  const record = path.join(dir, 'read.json');
+  stubToolJs(dir, 'gh', [
+    "const fs = require('fs');",
+    'const args = process.argv.slice(2);',
+    "const from = (v) => fs.readFileSync(v === '-' ? 0 : v, 'utf8');",
+    'let body = null;',
+    'for (let i = 0; i < args.length; i += 1) {',
+    '  const [flag, inline] = args[i].split(/=(.*)/s);',
+    "  if (!['--body-file', '--input', '-F', '--field'].includes(flag)) continue;",
+    '  const value = inline === undefined ? args[(i += 1)] : inline;',
+    "  const field = /^([^=]+)=@(.*)$/s.exec(value);",
+    "  body = field ? from(field[2]) : from(value);",
+    '}',
+    `fs.writeFileSync(${jsPath(record)}, JSON.stringify({ body, token: process.env.GH_TOKEN ?? null }));`,
+  ].join('\n'));
+  const take = () => {
+    if (!fs.existsSync(record)) return null;
+    const got = JSON.parse(fs.readFileSync(record, 'utf8'));
+    fs.rmSync(record);
+    return got;
+  };
+  return { dir, take };
+};
+
+/** Every file under `dir` whose text holds `text`. */
+const heldIn = (dir, text) => fs.readdirSync(dir, { recursive: true }).map((rel) => path.join(dir, rel))
+  .filter((f) => fs.statSync(f).isFile() && fs.readFileSync(f, 'utf8').includes(text));
+
+// The line the shim prints under a Node that reads as v20.15.1.
+const FLOOR_LINE = 'workkit: this Node is v20.15.1; the kit needs 22.22 or newer';
+
+/** The env pair making every node under it read as v20.15.1 to the code it runs. */
+const olderNodeEnv = (dir) => ({ NODE_OPTIONS: `--require ${jsPath(olderNode('20.15.1', dir))}` });
+
+/**
+ * A `node` in `<dir>`, put first on PATH, that records each start and runs the
+ * suite's own node on the same arguments, a preload making every Node process
+ * under it record itself too: `{ dir, starts(), nodes() }`, each a list of argv.
+ */
+const countingNode = (dir) => {
+  fs.mkdirSync(dir, { recursive: true });
+  const [starts, nodes, preload] = ['starts.log', 'nodes.log', 'count.js'].map((name) => path.join(dir, name));
+  fs.writeFileSync(preload, `${recordArgvJs(jsPath(nodes), 'process.argv.slice(1)')}\n`);
+  recordingNode(dir, { log: starts, preload, everyNode: true });
+  return { dir, starts: () => readArgv(starts), nodes: () => readArgv(nodes) };
 };
 
 describe('identity/gh: the owner\'s own calls', () => {
@@ -383,6 +443,25 @@ describe('identity/gh: the escape hatch and the PATH', () => {
     assertRan(runShim(world, list, { claude: false, extraDirs: [path.join(second, 'workflow', 'identity')] }), list, null,
       'gh issue list past two shims');
   });
+
+  test('node shim case 2: a bookkeeping call the gate lets through starts one Node process besides the real gh, by the node a fake first on PATH counts', async () => {
+    const world = mkWorld();
+    const node = countingNode(path.join(world.root, 'counting-node'));
+    const comment = ['issue', 'comment', '1', '--body', 'x'];
+    assertRan(runShim(world, comment, { extraDirs: [node.dir] }), comment, 'ghs_testtoken', 'gh issue comment past the counting node');
+    expect(node.starts().length, `node started once, got: ${node.starts().join(' | ')}`).toBe(1);
+    expect(node.nodes().length, `one Node process in all, got: ${node.nodes().join(' | ')}`).toBe(1);
+  });
+
+  test('node shim case 5: a link to workflow/identity/gh in a folder of its own, run by its path, runs the kit\'s shim: a bookkeeping call gets its token', { skip: skipWithoutFileLink() }, async () => {
+    const world = mkWorld();
+    const bin = path.join(world.root, 'local-bin');
+    fs.mkdirSync(bin);
+    const link = path.join(bin, 'gh');
+    fs.symlinkSync(world.shim, link);
+    const comment = ['issue', 'comment', '1', '--body', 'x'];
+    assertRan(runShim({ ...world, shim: link }, comment), comment, 'ghs_testtoken', 'gh issue comment through the link');
+  });
 });
 
 describe('identity/gh: the refusals', () => {
@@ -451,11 +530,35 @@ describe('identity/gh: the refusals', () => {
     }
   });
 
-  test('case 17d: with no jq on PATH, a bookkeeping verb on a rostered repo exits 1 naming jq, and gh never runs', async () => {
+  test('node shim case 3: with no jq on PATH, a bookkeeping verb on a rostered repo gets its token and the real gh runs it', async () => {
     const world = mkWorld();
-    const res = runShim(world, ['issue', 'comment', '1', '--body', 'x'], { noJq: true });
-    expect(res.code, `exit 1, stderr: ${res.stderr}`).toBe(1);
-    expect(/\bjq\b/.test(res.stderr), `stderr names jq, got: ${res.stderr}`).toBeTruthy();
+    const comment = ['issue', 'comment', '1', '--body', 'x'];
+    assertRan(runShim(world, comment, { noJq: true }), comment, 'ghs_testtoken', 'gh issue comment with no jq');
+  });
+
+  test('node shim real gh: with no gh on PATH after the shim\'s folder, the call is the one line naming the shim, and 127', async () => {
+    const world = mkWorld();
+    const shimDir = path.dirname(world.shim);
+    const after = joinPath(NODE_DIR, pathWithoutGh());
+    expect(which('gh', after), 'the world holds no gh after the shim').toBe(null);
+    const env = homeEnv(world.home, { PATH: joinPath(shimDir, after), CLAUDECODE: '1' });
+    const res = spawnBash(shimArgv(world.shim, ['issue', 'list']), {
+      cwd: world.rostered, env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    expect(res.status, `exit 127 (stderr: ${res.stderr})`).toBe(127);
+    expect(res.stderr, 'the one line').toBe(`gh: no gh on PATH after the workkit shim at ${shimDir}/gh\n`);
+  });
+
+  test('node shim failure: a failure inside the shim, a kit whose package.json names no readable floor, is one gh: line and 1, never a stack, and gh never runs', async () => {
+    const world = mkWorld();
+    const kit = path.dirname(path.dirname(path.dirname(world.shim)));
+    fs.writeFileSync(path.join(kit, 'package.json'), '{ "name": "workkit", "engines": {} }\n');
+    const res = runShim(world, ['issue', 'list']);
+    expect(res.code, `exit 1 (stderr: ${res.stderr})`).toBe(1);
+    const lines = res.stderr.split('\n').filter(Boolean);
+    expect(lines.length, `one line, got: ${res.stderr}`).toBe(1);
+    expect(lines[0].startsWith('gh:'), `the line is the shim's, got: ${lines[0]}`).toBeTruthy();
+    expect(/^\s+at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
     expect(res.calls.length, `the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
   });
 
@@ -478,14 +581,23 @@ describe('identity/gh: the refusals', () => {
     }
   });
 
-  test('with only a node older than 22.22 on PATH and none under nvm, a Claude session\'s gh issue view runs the real gh, the gate saying it did not run', async () => {
+  test('node shim case 4: under a Node below the floor a Claude session\'s call prints the floor line and exits 1 in any folder, gh auth and WORKKIT_IDENTITY_OFF=1 reach the real gh, and outside a session the call reaches it with no line', async () => {
     const world = mkWorld();
-    const old = path.join(world.root, 'old-node');
-    stubNode(old, '20.15.1');
+    const older = olderNodeEnv(world.root);
     const view = ['issue', 'view', '1'];
-    const res = runShim(world, view, { nodeDir: old });
-    assertRan(res, view, null, 'gh issue view past a node 20');
-    expect(res.stderr.includes('did not run (no node 22.22 or newer found)'), `stderr names the gate's stand-down, got: ${res.stderr}`).toBeTruthy();
+    for (const [where, cwd] of [['the rostered repo', world.rostered], ['a folder in no repo', mkTmp('wk-gh-shim-norepo-')]]) {
+      const res = runShim(world, view, { cwd, env: older });
+      expect(res.code, `${where}: exit 1 (stderr: ${res.stderr.trim()})`).toBe(1);
+      expect(res.stderr.includes(FLOOR_LINE), `${where}: stderr carries the floor line, got: ${res.stderr}`).toBeTruthy();
+      expect(res.calls.length, `${where}: the real gh never runs, got ${fmtCalls(res.calls)}`).toBe(0);
+    }
+    const auth = ['auth', 'status'];
+    assertRan(runShim(world, auth, { env: older }), auth, null, 'gh auth status under the older Node');
+    assertRan(runShim(world, view, { env: { ...older, WORKKIT_IDENTITY_OFF: '1' } }), view, null,
+      'gh issue view under WORKKIT_IDENTITY_OFF=1 and the older Node');
+    const outside = runShim(world, view, { claude: false, env: older });
+    assertRan(outside, view, null, 'gh issue view outside a Claude session under the older Node');
+    expect(outside.stderr, 'outside a session no line is printed').toBe('');
   });
 });
 
@@ -525,6 +637,13 @@ describe('identity/gh: a cloud session and off it', () => {
       expect(res.calls.length > 0 && res.calls.every((c) => c[0] === 'api'), `${what}: only gh api runs, got ${fmtCalls(res.calls)}`).toBeTruthy();
       expect(res.envs.every((e) => e.GH_TOKEN === null), `${what}: no GH_TOKEN reaches gh, got: ${JSON.stringify(res.envs)}`).toBeTruthy();
     }
+  });
+
+  test('node shim cloud: a call rest.js passes on, gh issue develop 7 -R acme/x, reaches the real gh whole with GH_REPO the repo the shim read', { skip: skipWithoutNodeStub() }, async () => {
+    const argv = ['issue', 'develop', '7', '-R', 'acme/x'];
+    const res = runShim(mkWorld(), argv, { remote: 'true', api: {} });
+    assertRan(res, argv, null, 'gh issue develop in the cloud');
+    expect(res.envs[0].GH_REPO, 'the repo the shim read, from -R over the cwd\'s acme/rostered').toBe('acme/x');
   });
 
   test('in the cloud a verb the shim does not serve runs the real gh with the clone\'s repo as GH_REPO, so gh api placeholders resolve; off it GH_REPO stays unset', async () => {
@@ -623,11 +742,9 @@ describe('identity/gh: the gate\'s leak scan, in every session', () => {
 
     const tmp = mkTmp('wk-gh-gate-tmp-');
     const fromStdin = ['issue', 'comment', '1', '--body-file', '-'];
-    const res = runShim(world, fromStdin, { claude: false, input: `the key is ${SECRET}\n`, env: { TMPDIR: shellPath(tmp) } });
+    const res = runShim(world, fromStdin, { claude: false, input: `the key is ${SECRET}\n`, tempDir: tmp });
     assertBounced(res, fromStdin, ENV_LEAK, 'a --body-file - stdin body');
-    const held = fs.readdirSync(tmp, { recursive: true }).map((rel) => path.join(tmp, rel))
-      .filter((f) => fs.statSync(f).isFile() && fs.readFileSync(f, 'utf8').includes(SECRET));
-    expect(held.join(', '), 'no file under TMPDIR still holds the stdin body').toBe('');
+    expect(heldIn(tmp, SECRET).join(', '), 'no file under the temp folder still holds the stdin body').toBe('');
   });
 
   test('case 2: the .env value in a gh api --input file, a gh api --field key=@file and a gh issue comment -F file each bounce', async () => {
@@ -784,7 +901,7 @@ describe('identity/gh: the gate\'s label and filing gates, in a Claude session',
 });
 
 describe('identity/gh: a release call', () => {
-  test('ship hooks case 9: gh release create in an enabled repo declaring afterRelease runs no hook, and the shim execs the real gh', async () => {
+  test('ship hooks case 9: gh release create in an enabled repo declaring afterRelease runs no hook', async () => {
     const world = mkWorld();
     const settings = path.join(world.rostered, '.workkit', 'settings.json');
     fs.mkdirSync(path.dirname(settings), { recursive: true });
@@ -796,8 +913,119 @@ describe('identity/gh: a release call', () => {
       expect(res.lines.includes(`real-gh: ${release.join(' ')}`), `${what}: the real gh ran the release, got: ${said}`).toBeTruthy();
       expect(res.lines.includes('code: 0'), `${what}: the call exits the real gh's 0, got: ${said}`).toBeTruthy();
       expect(res.ran, `${what}: no hook ran`).toBe(null);
-      expect(res.execd, `${what}: the real gh is reached as for gh issue list, got: ${said}`).toBe(runRealGh(world, ['issue', 'list'], opts).execd);
-      if (opts.claude === false) expect(res.execd, `${what}: the shim exec'd the real gh, so its parent is the caller, got: ${said}`).toBeTruthy();
     }
+  });
+
+  test('node shim hand-over: outside a Claude session the caller gets the real gh\'s own non-zero exit and its stdout and stderr unchanged', async () => {
+    const world = mkWorld();
+    const realGh = path.join(world.root, 'failing-gh');
+    fs.mkdirSync(realGh);
+    stubToolJs(realGh, 'gh', [
+      "process.stdout.write('first line\\nno line end');",
+      "process.stderr.write('gh: HTTP 422: Validation Failed\\n');",
+      'process.exitCode = 3;',
+    ].join('\n'));
+    const res = runShim(world, ['issue', 'list'], { claude: false, extraDirs: [realGh] });
+    expect(res.code, `the real gh's exit (stderr: ${res.stderr.trim()})`).toBe(3);
+    expect(res.stdout, 'the real gh\'s stdout, byte for byte').toBe('first line\nno line end');
+    expect(res.stderr, 'the real gh\'s stderr, byte for byte').toBe('gh: HTTP 422: Validation Failed\n');
+  });
+});
+
+describe('identity/gh: the hand-over to the real gh', () => {
+  const BODY = 'first line\nsecond: ünïcode, "quotes" & $dollar `tick`\nno line end';
+  const COMMENTS = 'repos/acme/rostered/issues/1/comments';
+  const SPELLINGS = [
+    ['issue', 'comment', '1', '--body-file', '-'],
+    ['issue', 'comment', '1', '-F', '-'],
+    ['issue', 'comment', '1', '--body-file=-'],
+    ['api', '-X', 'POST', COMMENTS, '--input', '-'],
+    ['api', '-X', 'POST', COMMENTS, '-F', 'body=@-'],
+  ];
+
+  test('node shim stdin: the real gh reads the body piped in, byte for byte, through every - spelling, in a Claude session and out, a bot call with its token, and no temp copy is left', async () => {
+    const world = mkWorld();
+    const real = bodyReader(path.join(world.root, 'body-gh'));
+    for (const claude of [true, false]) {
+      for (const argv of SPELLINGS) {
+        const what = `${claude ? 'in a Claude session' : 'outside one'}, gh ${argv.join(' ')}`;
+        const tmp = mkTmp('wk-gh-body-tmp-');
+        const res = runShim(world, argv, {
+          claude, input: BODY, extraDirs: [real.dir], tempDir: tmp,
+        });
+        expect(res.code, `${what}: the exit (stderr: ${res.stderr.trim()})`).toBe(0);
+        const got = real.take();
+        expect(got && got.body, `${what}: the body the real gh read`).toBe(BODY);
+        const bot = claude && argv[0] === 'issue';
+        expect(got.token, `${what}: GH_TOKEN`).toBe(bot ? 'ghs_testtoken' : null);
+        expect(heldIn(tmp, 'nïcode').join(', '), `${what}: no file under the temp folder still holds the body`).toBe('');
+      }
+    }
+  });
+
+  test('node shim signal: a TERM to the shim while the real gh runs reaches the real gh', { skip: skipWithoutCaughtSignal() }, async (t) => {
+    const world = mkWorld();
+    const dir = path.join(world.root, 'term-gh');
+    fs.mkdirSync(dir);
+    const ready = path.join(dir, 'ready');
+    const termed = path.join(dir, 'termed');
+    stubToolJs(dir, 'gh', [
+      "const fs = require('fs');",
+      `process.on('SIGTERM', () => { fs.writeFileSync(${jsPath(termed)}, 'TERM'); process.exit(143); });`,
+      `fs.writeFileSync(${jsPath(ready)}, String(process.pid));`,
+      'setInterval(() => {}, 1000);',
+    ].join('\n'));
+    const env = homeEnv(world.home, { PATH: systemPathWith(path.dirname(world.shim), dir, NODE_DIR) });
+    delete env.GH_TOKEN;
+    delete env.GITHUB_TOKEN;
+    const shim = start(world.shim, ['issue', 'list'], { cwd: world.rostered, env });
+    t.after(async () => {
+      // The real gh outlives a shim that never passed the TERM on; ESRCH means it is gone.
+      try { process.kill(Number(fs.readFileSync(ready, 'utf8')), 'SIGKILL'); } catch {}
+      await shim.end('SIGKILL');
+    });
+    expect(await until(() => fs.existsSync(ready) && fs.readFileSync(ready, 'utf8') !== ''), `the real gh started, stderr: ${shim.stderr()}`).toBeTruthy();
+    process.kill(shim.child.pid, 'SIGTERM');
+    await shim.done;
+    expect(await until(() => fs.existsSync(termed)), `the real gh got the TERM, stderr: ${shim.stderr()}`).toBeTruthy();
+  });
+
+  test('node shim signal: a TERM while the token step waits, before the real gh runs, ends the shim by the signal and leaves no copy of the stdin body', { skip: skipWithoutCaughtSignal() }, async (t) => {
+    // One stand-in is GitHub's API and the token service, and it answers no request,
+    // so the token step waits on it for as long as the case holds it.
+    const asked = path.join(mkTmp('wk-gh-shim-hold-'), 'asked.log');
+    const hold = start(process.execPath, ['-e', [
+      "const http = require('http');",
+      "const fs = require('fs');",
+      'const held = [];',
+      `const server = http.createServer((req, res) => { held.push(res); fs.appendFileSync(${jsPath(asked)}, req.method + ' ' + req.url + '\\n'); });`,
+      "server.listen(0, '127.0.0.1', () => process.stdout.write(server.address().port + '\\n'));",
+    ].join('\n')]);
+    t.after(() => hold.end('SIGKILL'));
+    await until(() => hold.stdout().endsWith('\n') || hold.child.exitCode !== null);
+    const url = `http://127.0.0.1:${hold.stdout().trim()}`;
+
+    const world = mkWorld({ cache: false, tokenUrl: `${url}/token` });
+    const tmp = mkTmp('wk-gh-shim-hold-tmp-');
+    const stub = makeGhStub();
+    const env = {
+      ...homeEnv(world.home, { PATH: systemPathWith(path.dirname(world.shim), stub.binDir, NODE_DIR), CLAUDECODE: '1' }),
+      ...nodeTempEnv(tmp),
+      HOME: world.home,
+      GITHUB_SERVER_URL: url,
+      GITHUB_API_URL: url,
+    };
+    delete env.GH_TOKEN;
+    delete env.GITHUB_TOKEN;
+    const body = 'held body: ünïcode\nno line end';
+    const shim = start(world.shim, ['issue', 'comment', '1', '--body-file', '-'], { cwd: world.rostered, env, input: body });
+    t.after(() => shim.end('SIGKILL'));
+    expect(await until(() => fs.existsSync(asked) || shim.child.exitCode !== null), `the token step asked the stand-in, stderr: ${shim.stderr()}`).toBeTruthy();
+    expect(shim.child.exitCode, `the shim still waits on the token step, stderr: ${shim.stderr()}`).toBe(null);
+    process.kill(shim.child.pid, 'SIGTERM');
+    const done = await shim.done;
+    expect(done.signal, `the shim ended by the TERM, got status ${done.status}, stderr: ${shim.stderr()}`).toBe('SIGTERM');
+    expect(heldIn(tmp, 'nïcode').join(', '), 'no file under the temp folder still holds the stdin body').toBe('');
+    expect(ghCalls(stub).length, `the real gh never ran, got ${fmtCalls(ghCalls(stub))}`).toBe(0);
   });
 });

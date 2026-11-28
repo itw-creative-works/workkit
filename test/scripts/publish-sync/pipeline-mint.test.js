@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: the mint after any change (at the brand root,
+// Tests for workflow/publish.js: the mint after any change (at the brand root,
 // on a clone never minted, and a failed or empty mint aborting the build until a
 // mint succeeds), end to end with an `npm` shim and a stub `omega`.
 // The shared prologue is ./helpers.js.

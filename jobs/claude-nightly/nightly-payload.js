@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { unreadPathStop } = require('../../workflow/lib/platform');
 const { execFileSync } = require('../../workflow/lib/run');
 const { machineHome, projectsRoot } = require('../lib/machine');
 
@@ -276,7 +277,11 @@ if (require.main === module) {
   const cadence = flag === -1 ? 'daily' : process.argv[flag + 1];
 
   if (cadence === 'daily') {
-    process.stdout.write(render(composeNightly()));
+    try {
+      process.stdout.write(render(composeNightly()));
+    } catch (err) {
+      process.exitCode = unreadPathStop(err);
+    }
   } else if (cadence === 'weekly' || cadence === 'monthly') {
     // The prior summaries arrive on stdin: the API call belongs to the step that
     // already holds the credentials (workflow/lib/discussions.js), and this module

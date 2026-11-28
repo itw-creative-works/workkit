@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh on a machine with none of the file tools the
+// Tests for workflow/publish.js on a machine with none of the file tools the
 // shell once leaned on: no jq, awk, tar, find or cp on PATH, and a whole
 // publish still runs every step. The kit is committed, so every export of
 // committed files (the heal's kit, the sync's app) goes through git. The world

@@ -19,8 +19,9 @@ claude plugin install workkit@workkit
   - The command is `node <the engine in the plugin cache>/workkit.js setup`, its path spelled out for your machine.
 - `workkit` is a Node program. It runs on the first `node` on your PATH, which must be 22.22 or newer; an older one gets one line saying so, `workkit: this Node is <version>; the kit needs 22.22 or newer`, and the command stops.
 - Setup runs from the plugin cache as it does from a clone.
-  - The engine's address (`~/.claude/workkit`) takes the cached copy, and the 9am job runs through that address.
-  - So a plugin update that repoints it keeps the schedule current with no reinstall.
+  - The engine's address (`~/.claude/workkit`) takes the cached copy, and the 9am job finds its kit through that address.
+  - On Windows the task runs through it, so a plugin update that repoints it needs no reinstall.
+  - On a Mac the job file names the kit the address pointed at when it was installed, so `workkit setup` or `workkit update` rewrites it after a plugin update.
 - To work on workkit itself, install from a clone instead.
   - Setup installs the plugin from that clone, and a clone outranks the plugin cache:
 
@@ -72,7 +73,7 @@ claude plugin install workkit@workkit
      - On Windows it also writes `~/.local/bin/workkit.cmd`, so `workkit` starts from cmd and PowerShell as well as from Git Bash.
      - When that folder is not on your PATH, setup prints the `export` line to add (on Windows, the folder to add in Windows' own settings); it never edits a shell rc file or your PATH.
   5. **npm's script shell.** Points npm's `script-shell` setting at the kit's wrapper.
-     - From then on a root `npm test` records the tree it proved ([`project-state.md`](project-state.md) § The proof); a `test` event needs a node at 22.22 or later, and stops with one line, exit 1, without one ([`workflow/README.md`](../workflow/README.md), the `lib/platform.sh` entry).
+     - From then on a root `npm test` records the tree it proved ([`project-state.md`](project-state.md) § The proof); a `test` event runs on the Node npm runs on; below 22.22 the script still runs and is not recorded, one line saying so ([`workflow/README.md`](../workflow/README.md), the `script-shell.js` entry).
      - It lints any new CHANGELOG entry before the suite starts.
      - It keeps running if the call that started it is cut, and logs to `.workkit/suite.log` (another folder when the repo's `logs.dir` names one; [`project-state.md`](project-state.md) § The model).
      - The kit's own wrapper reached through a linked folder reads as current.
@@ -152,6 +153,7 @@ claude plugin install workkit@workkit
   - In the cloud, `workkit doctor` likewise shows the schedule, the home repo, its runner, the secrets and the sign-in as not applicable.
     - It counts none of them.
 - Afterwards, `workkit doctor` reports what is set up and what has drifted.
+  - On Windows it also warns about each of `HOME`, `WORKFLOW_HOME` and `WORKFLOW_CLAUDE_HOME` set to a path only Git Bash can read (`/home/x`), since the hooks and the commands would read different folders: set it as a drive path (`C:/...`).
 - `workkit help` is the map of every command.
 
 ## The bot identity
@@ -195,7 +197,7 @@ claude plugin install workkit@workkit
 
 ## The engine's address
 
-- The engine is the Node code in `workflow/`, with the few shell files the git hooks, the shims and the starters still need.
+- The engine is the Node code in `workflow/`, with the few thin shell files git's hooks, the `git` shim and npm's script shell still need.
 - Its stable address is `~/.claude/workkit`, a link to the engine's `workflow/` folder, in a clone or in the plugin cache.
 
 - The daily heal installs the link itself the first time a session runs it in a repo that has workkit turned on. It does so only from a real engine (a clone of workkit or the plugin's cached copy), so a test copy never takes the machine's address, and a clone keeps it over the cache.
@@ -206,8 +208,8 @@ claude plugin install workkit@workkit
 
 - Once a day per repo, the session-start heal runs `workkit update --auto`.
 - It re-renders the 9am schedule when the job template changed.
-  - The job runs through the engine's address, so a moved kit or a plugin update needs nothing.
-  - On Windows the task names the Node that installed it, so a Node update that moves that Node registers the task again.
+  - On a Mac the job names the kit the engine's address names and the folder of the Node that installed it, so a moved kit or a new Node rewrites the job file at the next update.
+  - On Windows the task runs through the engine's address and names the Node that installed it, so a Node update that moves that Node registers the task again.
 - It only ever updates a schedule you already installed; a machine with none never gets one this way.
 - It never creates a folder your machine does not already have.
 

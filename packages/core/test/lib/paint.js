@@ -45,7 +45,7 @@ export const paint = (text, stream) => {
 };
 
 // Whether this file is the script node was started with, by real path rather
-// than import.meta.main, which the shell's node floor (WK_NODE_FLOOR) predates.
+// than import.meta.main, which the kit's node floor (engines.node) predates.
 // An argument that names no file (`node -e ... x`) is no script of ours.
 const isScript = () => {
   try {

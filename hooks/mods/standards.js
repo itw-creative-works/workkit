@@ -7,7 +7,6 @@
 
 import { rootOptedIn } from './gate.js';
 import { homeOf, pad } from './log.js';
-import { parseJson } from './settings.js';
 import { LONG_RUN_MS } from './suite.js';
 import { chomp } from './text.js';
 
@@ -80,15 +79,6 @@ export function standardsContext(state, healResult, updateResult) {
   return ctx || null;
 }
 
-// Whether the engine is the workkit plugin's copy in Claude's plugin cache.
-async function inPluginCache(io, env, engine) {
-  const [kit, claudeHome] = await Promise.all([
-    io.real(`${engine}/..`), io.real(env.WORKFLOW_CLAUDE_HOME || `${homeOf(env)}/.claude`),
-  ]);
-  if (!kit || !claudeHome || !kit.startsWith(`${claudeHome}/plugins/cache/`)) return false;
-  return parseJson(await io.read(`${kit}/.claude-plugin/plugin.json`))?.name === 'workkit';
-}
-
 /**
  * The hook: the setup state, the participation the engine reports, then the
  * day's heal and upkeep, once per repo per day; the report returned.
@@ -107,14 +97,16 @@ export async function standardsGather(io, env, e) {
   const state = {
     isSetUp, cliLink, engine, isInCache: false, isCloud: env.CLAUDE_CODE_REMOTE === 'true', root: null, broken: null, offer: '',
   };
+  const standards = `${engine}/standards.js`;
   if (!isSetUp) {
     state.engine = (await io.real(engine)) ?? engine;
-    state.isInCache = await inPluginCache(io, env, engine);
+    // The engine owns the plugin cache rule too: only a clean run answering yes is the cache.
+    const cached = await io.run(['node', standards, '--in-cache']);
+    state.isInCache = cached.exitCode === 0 && cached.stdout.trimEnd().split('\n').pop() === 'yes';
   }
   state.root = await io.top(e.cwd);
   const { root } = state;
   if (!root) return standardsContext(state, null, null);
-  const standards = `${engine}/standards.js`;
   const manifest = `${engine}/labels.json`;
   // A broken install speaks once, only for a repo that said yes.
   let broken = null;

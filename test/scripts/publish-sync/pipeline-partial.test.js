@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: a partial write, its own sync code, and the
+// Tests for workflow/publish.js: a partial write, its own sync code, and the
 // publish aborting before it commits the half-copied tree.
 // The shared prologue is ./helpers.js.
 

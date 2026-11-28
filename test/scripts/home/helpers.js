@@ -12,7 +12,7 @@ const { spawnSync } = require('child_process');
 const {
   expect, mkTmp, run, start, seeded: seedOnce,
 } = require('../../lib/harness');
-const { SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, stubTool, joinPath } = require('../../lib/platform');
+const { SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, joinPath } = require('../../lib/platform');
 const { recordArgv, readArgv } = require('../../lib/argv-log');
 const { STAMP } = require('../../lib/version-stamp');
 
@@ -267,8 +267,7 @@ const mkWorld = ({
       : []),
     settings: () => JSON.parse(fs.readFileSync(path.join(workflowHome, 'settings.json'), 'utf8')),
     pkg: (rel = 'package.json') => JSON.parse(fs.readFileSync(path.join(workflowHome, 'tower', rel), 'utf8')),
-    // WORKFLOW_HOME native, for the node a case starts itself; a bash is handed
-    // the shell's spelling through bashEnv, which Git Bash turns back for its node.
+    // WORKFLOW_HOME native, for the node a case starts itself.
     env: homeEnv(home, {
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
       WORKFLOW_HOME: workflowHome,
@@ -280,15 +279,6 @@ const mkWorld = ({
     }),
   };
 };
-
-/**
- * A world's env as a bash under test is handed it: WORKFLOW_HOME in the shell's
- * spelling. A node started straight from a case reads `/d/a/x` as `D:\d\a\x`,
- * so the world keeps the native one.
- * @param {{env: object}} world
- * @returns {object}
- */
-const bashEnv = (world) => ({ ...world.env, WORKFLOW_HOME: shellPath(world.env.WORKFLOW_HOME) });
 
 /**
  * One verb of workflow/home.js in a node under the world's env, the way the
@@ -450,7 +440,7 @@ const workflowFiles = () => fs.readdirSync(WORKFLOW_DIR, { recursive: true })
 
 /**
  * A copy of this checkout's runner sources and its whole workflow/ folder (the
- * heal's standards.sh, its siblings, forms and labels), so a test can change
+ * heal's standards.js, its siblings, forms and labels), so a test can change
  * one of them. The drift a later setup exists to heal is drift in the
  * checkout, and the real one is not a test's to edit.
  */
@@ -516,6 +506,6 @@ const dropRunnerLine = (kit, src) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, bashEnv, inHome, runHomeSteps, runHomeStepsHeld, startHomeStepsHeld, setup, runnerPairs, seeded,
+  WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, runHomeSteps, runHomeStepsHeld, startHomeStepsHeld, setup, runnerPairs, seeded,
   mkKitCopy, mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP,
 };

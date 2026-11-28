@@ -1,4 +1,4 @@
-// Tests for workflow/workkit/floor.js, the entry's Node floor: the line a Node
+// Tests for workflow/lib/floor.js, the entry's Node floor: the line a Node
 // below 22.22 gets and the code each command stops with, in this process; and the
 // entry started under a Node that reads as older, so the check runs first.
 // The shared prologue is ./helpers.js.
@@ -9,15 +9,21 @@ const {
   describe, test, expect, mkTmp, run,
 } = require('../../lib/harness');
 const { SYSTEM_PATH, nodeHomeEnv } = require('../../lib/platform');
+const { olderNode } = require('../../lib/node-fakes');
 const { WORKFLOW_DIR, CLI } = require('./helpers');
 
-const { floorOf, floorLine, floorCode } = require(path.join(WORKFLOW_DIR, 'workkit', 'floor.js'));
+const { floorOf, floorLine, floorCode } = require(path.join(WORKFLOW_DIR, 'lib', 'floor.js'));
 
 const LINE = (version) => `workkit: this Node is ${version}; the kit needs 22.22 or newer`;
 
 describe('floor.js', () => {
   test('the floor is the root package.json\'s engines value, 22.22', () => {
     expect(floorOf()).toEqual([22, 22]);
+  });
+
+  test('workkit-core, published alone, asks for the same floor: packages/core/package.json\'s engines.node is the root\'s', () => {
+    const engines = (...parts) => JSON.parse(fs.readFileSync(path.join(WORKFLOW_DIR, '..', ...parts, 'package.json'), 'utf8')).engines.node;
+    expect(engines('packages', 'core'), 'the package\'s floor').toBe(engines());
   });
 
   test('a Node below 22.22 gets the line naming its version, one at 22.22.0 or above none', () => {
@@ -39,18 +45,8 @@ describe('floor.js', () => {
 });
 
 describe('workkit.js under a Node below the floor', () => {
-  // A node that reads as v20.15.1 to the code it runs: the check runs on that version before anything else.
-  const olderNode = () => {
-    const preload = path.join(mkTmp('wk-floor-'), 'older.js');
-    fs.writeFileSync(preload, [
-      "Object.defineProperty(process, 'version', { value: 'v20.15.1' });",
-      "Object.defineProperty(process, 'versions', { value: { ...process.versions, node: '20.15.1' } });",
-    ].join('\n'));
-    return preload;
-  };
-
   test('review covers prints the one line on stderr and stops with 2, doctor with 1, nothing on stdout', () => {
-    const preload = olderNode();
+    const preload = olderNode('20.15.1');
     const env = nodeHomeEnv(mkTmp('wk-floor-home-'), { PATH: SYSTEM_PATH });
     for (const [args, code] of [[['review', 'covers'], 2], [['doctor'], 1]]) {
       const res = run(process.execPath, ['-r', preload, CLI, ...args], { env });

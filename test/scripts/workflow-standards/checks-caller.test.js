@@ -1,4 +1,4 @@
-// Tests for standards.sh: the kit-owned caller at .github/workflows/checks.yml,
+// Tests for standards.js: the kit-owned caller at .github/workflows/checks.yml,
 // a job calling the kit's reusable ci.yml and, on a push alone, one calling its
 // release.yml, rewritten whenever it differs, the
 // repo's default branch filled in, a replaced copy's own steps named for
@@ -81,7 +81,7 @@ const assertCaller = (body, output) => {
 
 const warnings = (output) => output.split('\n').filter((l) => l.includes(RUN_ADVICE) || l.includes(USES_ADVICE));
 
-describe('standards.sh: the checks.yml caller', () => {
+describe('standards.js: the checks.yml caller', () => {
   test('a repo with no checks.yml gets the caller, its push on the repo\'s default branch', () => {
     const w = trunkWorld();
     const output = w.heal();
@@ -176,7 +176,7 @@ describe('standards.sh: the checks.yml caller', () => {
   });
 });
 
-describe('standards.sh: every other customization a replaced copy held is named', () => {
+describe('standards.js: every other customization a replaced copy held is named', () => {
   // The old template as a trunk repo held it, its push on its own default branch.
   const ON_TRUNK = OLD_CHECKS.replace('    branches: [main]\n', '    branches: [trunk]\n');
   // ON_TRUNK with `lines` put in after the first line equal to `anchor`.
@@ -250,7 +250,7 @@ describe('standards.sh: every other customization a replaced copy held is named'
   });
 });
 
-describe('standards.sh: a default branch nothing names', () => {
+describe('standards.js: a default branch nothing names', () => {
   test('no answer from GitHub and no origin/HEAD: the copy stays, one warning names the fix, the run is flagged', () => {
     const repo = makeRepo();
     spawnSync('git', ['symbolic-ref', '--delete', 'refs/remotes/origin/HEAD'], { cwd: repo });
@@ -278,7 +278,7 @@ describe('standards.sh: a default branch nothing names', () => {
   });
 });
 
-describe('standards.sh: the kit\'s own checkout', () => {
+describe('standards.js: the kit\'s own checkout', () => {
   test('the kit\'s own checks.yml is never rewritten to the caller', () => {
     const w = trunkWorld();
     spawnSync('git', ['remote', 'set-url', 'origin', 'https://example.invalid/acme/workkit.git'], { cwd: path.dirname(path.dirname(path.dirname(w.file))) });

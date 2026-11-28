@@ -1,14 +1,15 @@
 // workflow/identity/token.js: the client. `tokenFor` hands back the repo's App
 // token, cached under `identity/` while five minutes remain, else asked of the
-// token service with the user's sign-in. Usage: node token.js <owner/repo> |
-// --installation <owner/repo> | --probe <owner/repo> | --status (the token form
-// exits 0, 3, 4 or 1).
+// token service with the user's sign-in; `tokenAnswer` is the token form the gh
+// shim calls. Usage: node token.js <owner/repo> | --installation <owner/repo> |
+// --probe <owner/repo> | --status (the token form exits 0, 3, 4 or 1).
 
 const path = require('path');
 const { loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX } = require('./login');
 const { repoOwner, ownerId, installPage } = require('./install-page');
 const { splitRepo } = require('../slug');
 const { userDir } = require('../user-dir');
+const { unreadPathStop } = require('../lib/platform');
 const { faultsUnder } = require('../../hooks/mods/settings.js');
 const { settingsAt, faultsAt } = require('../lib/settings');
 const { readJsonOrNull } = require('../lib/read');
@@ -280,12 +281,14 @@ const tokenWithSignIn = async (repo, {
 const say = (stream, text) => new Promise((resolve) => { stream.write(text, () => resolve()); });
 
 /**
- * The token form: the token on stdout, or the refusal's message on stderr and
- * its exit code. A sign-in it runs speaks on stderr, so stdout stays the token's.
+ * The token form's answer: the token with code 0, or the refusal's message on
+ * stderr with its exit code and no token. A sign-in it runs speaks on stderr.
+ * The gh shim calls it in its own process.
  * @param {string} repo
- * @returns {Promise<number>}
+ * @returns {Promise<{code: number, token: string}>}
+ * @throws {Error} any failure that is no IdentityError
  */
-const printToken = async (repo) => {
+const tokenAnswer = async (repo) => {
   const out = process.stderr;
   try {
     const token = await tokenWithSignIn(repo, {
@@ -293,12 +296,38 @@ const printToken = async (repo) => {
       signIn: () => signIn({ out }),
       out,
     });
-    await say(process.stdout, `${token}\n`);
-    return 0;
+    return { code: 0, token };
   } catch (err) {
     if (!(err instanceof IdentityError)) throw err;
     process.stderr.write(`${err.message}\n`);
-    return EXIT_CODES[err.code] || 1;
+    return { code: EXIT_CODES[err.code] || 1, token: '' };
+  }
+};
+
+/**
+ * The token form: the token on stdout, so stdout stays the token's, or the
+ * refusal's code (tokenAnswer).
+ * @param {string} repo
+ * @returns {Promise<number>}
+ */
+const printToken = async (repo) => {
+  const { code, token } = await tokenAnswer(repo);
+  if (code === 0) await say(process.stdout, `${token}\n`);
+  return code;
+};
+
+/**
+ * The code of a failure no form gave its own: a path nativePath could not read
+ * is its one stop line, any other error its message on stderr and 1.
+ * @param {Error} err
+ * @returns {number}
+ */
+const failureCode = (err) => {
+  try {
+    return unreadPathStop(err);
+  } catch {
+    process.stderr.write(`${err.message}\n`);
+    return 1;
   }
 };
 
@@ -350,9 +379,10 @@ if (require.main === module) {
   main(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
   }, (err) => {
-    process.stderr.write(`${err.message}\n`);
-    process.exitCode = 1;
+    process.exitCode = failureCode(err);
   });
 }
 
-module.exports = { IdentityError, tokenFor, tokenWithSignIn, tokenUrlOf };
+module.exports = {
+  IdentityError, tokenFor, tokenWithSignIn, tokenUrlOf, tokenAnswer, failureCode,
+};

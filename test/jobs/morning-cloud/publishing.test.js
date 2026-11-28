@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as a GitHub Actions runner runs it: publishing the
+// Tests for jobs/morning.js as a GitHub Actions runner runs it: publishing the
 // digest as a Discussion, and the log that carries no digest body.
 // The shared prologue (world factory, job runner) is ./helpers.js.
 

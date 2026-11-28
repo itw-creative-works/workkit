@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it: the site publish, after
+// Tests for jobs/morning.js as this machine runs it: the site publish, after
 // the brief.
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 
@@ -24,7 +24,7 @@ describe('jobs/morning (local): the site publish', () => {
   });
 
   // The site publish's own block, told apart from the brief's lines, which say
-  // `brief: …` right beside it. Every line publish.sh prints is prefixed
+  // `brief: …` right beside it. Every line publish.js prints is prefixed
   // `publish: `, including the warnings no `--quiet` suppresses.
   const SITE_BLOCK = /publish:/;
 
@@ -66,7 +66,7 @@ describe('jobs/morning (local): the site publish', () => {
   });
 
   test('a publish that warns is heard: the block is not scoped to its failures', () => {
-    // A settings file that does not parse is publish.sh's loudest guarded skip:
+    // A settings file that does not parse is publish.js's loudest guarded skip:
     // it warns and exits 0, so an assertion looking only for a non-zero exit or
     // a branch name would call the morning quiet.
     const world = mkWorld({ badSettings: true });

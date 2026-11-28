@@ -7,7 +7,7 @@
 
 const { expect } = require('../../lib/harness');
 const { mods, textOf } = require('../../lib/mods-inputs');
-const { nodeEnv, spawnSync } = require('../../lib/platform');
+const { NODE_DIR, joinPath, spawnSync } = require('../../lib/platform');
 const { scratchWorkflowHome } = require('../../lib/workflow-home');
 const { ioIn, runResult } = require('../../../workflow/lib/io');
 
@@ -112,7 +112,7 @@ const flip = async (dir, env, answer = () => undefined) => {
 /** The session flip reads <dir> in, over a scratch workflow home, and the repo's root as git names it. */
 const sessionOf = (dir, prefix) => {
   const { env: homeEnv } = scratchWorkflowHome(prefix);
-  const env = { ...process.env, ...homeEnv, ...nodeEnv };
+  const env = { ...process.env, ...homeEnv, PATH: joinPath(NODE_DIR, process.env.PATH) };
   const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
   return { dir, env, root };
 };

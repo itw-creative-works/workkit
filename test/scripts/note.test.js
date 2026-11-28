@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, nodeEnv, stubTool, basePathWithout,
+  IS_WINDOWS, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, basePathWithout,
   systemPathWith, joinPath, spawnBash, spawnSync, skipWithoutByteArgv,
 } = require('../lib/platform');
 const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
@@ -88,7 +88,6 @@ const spawnOpts = (cwd, { home, bin }, extraEnv = {}) => ({
   env: homeEnv(home, {
     WORKFLOW_HOME: '',
     PATH: systemPathWith(bin),
-    ...nodeEnv,
     ...extraEnv,
   }),
   encoding: 'utf8',

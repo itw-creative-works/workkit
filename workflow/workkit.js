@@ -7,7 +7,7 @@
  * Usage: workkit <command> [args]   (`workkit help` is the map)
  */
 
-const floor = require('./workkit/floor');
+const floor = require('./lib/floor');
 
 const argv = process.argv.slice(2);
 const below = floor.floorLine(process.version, floor.floorOf());

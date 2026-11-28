@@ -1,7 +1,8 @@
 /**
  * workflow/standards/githooks.js: git's client-side hooks for a repo, the kit's
  * githooks folder set as its core.hooksPath (workflow/README.md, the githooks/
- * row). A step of the heal, and the heal's `--git-hooks` mode alone.
+ * row). A step of the heal, the heal's `--git-hooks` mode alone, and the
+ * script shell's re-point after an install-time script (`script-shell.js`).
  * Usage: const { ensureGitHooks } = require('./githooks');
  */
 

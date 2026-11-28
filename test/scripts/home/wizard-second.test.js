@@ -52,7 +52,7 @@ describe('workflow/home: the wizard, a second machine', () => {
     });
     world.env.WORKKIT_KIT_DIR = mkKitCopy(world.root);
     setup(world);
-    fs.writeFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '# a newer runner\n');
+    fs.writeFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.js'), '# a newer runner\n');
     return world;
   };
 
@@ -74,7 +74,7 @@ describe('workflow/home: the wizard, a second machine', () => {
     expect(git(world.tower, 'rev-list', '--count', 'origin/main..main').stdout.trim(), 'and the clone ends ahead of nothing').toBe('0');
     const check = path.join(world.root, 'check');
     spawnSync('git', ['clone', '-q', remote, check], { encoding: 'utf8' });
-    expect(fs.readFileSync(path.join(check, 'brief', 'jobs', 'morning.sh'), 'utf8'), 'the refreshed runner reached origin').toBe('# a newer runner\n');
+    expect(fs.readFileSync(path.join(check, 'brief', 'jobs', 'morning.js'), 'utf8'), 'the refreshed runner reached origin').toBe('# a newer runner\n');
     expect(fs.readFileSync(path.join(check, 'README.md'), 'utf8').replace(/\r\n/g, '\n'), 'on top of what the other machine pushed').toBe('# the tower, from the other machine\n');
     cleanup(world.root);
   });
@@ -82,7 +82,7 @@ describe('workflow/home: the wizard, a second machine', () => {
   test('a second machine that cannot reach origin warns once and leaves the clone alone', () => {
     const world = secondMachine();
     const remote = world.env.WORKKIT_HOME_REMOTE;
-    const runner = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    const runner = path.join(world.tower, 'brief', 'jobs', 'morning.js');
     const before = fs.readFileSync(runner, 'utf8');
     fs.renameSync(remote, `${remote}.away`);
 

@@ -1,9 +1,9 @@
 /**
  * jobs/lib/machine.js: what a job needs from the machine it wakes up on under
  * launchd or Task Scheduler: its home and the transcripts root under it, the
- * folders its programs live in, the quiet Claude, the bound on a child, and the
- * notifier.
- * Usage: const { machineHome, projectsRoot, enterMachine, jobTimeout, bounded, notify } = require('../lib/machine');
+ * folders its programs live in and the PATH the launchd file holds, the quiet
+ * Claude, the bound on a child, and the notifier.
+ * Usage: const { machineHome, projectsRoot, jobPath, enterMachine, jobTimeout, bounded, notify } = require('../lib/machine');
  */
 
 const fs = require('fs');
@@ -23,8 +23,24 @@ const DEFAULT_TIMEOUT_S = 900;
 // The longest a notification's message runs, in characters.
 const NOTE_CHARS = 180;
 
+// The PATH launchd hands a job of its own: the system's folders alone.
+const SYSTEM_DIRS = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
+
 /** Claude Code's session transcripts root under <home>. */
 const projectsRoot = (home) => path.join(home, '.claude', 'projects');
+
+/** The folders a job puts ahead of PATH off Windows, for its own children: launchd's PATH holds none of them. */
+const machineDirs = (home) => [path.posix.join(home, '.local', 'bin'), path.posix.join(home, '.nvm', 'default-bin'), '/opt/homebrew/bin', '/usr/local/bin'];
+
+/**
+ * The PATH the launchd file holds for the job: <nodeDir>, the Node that ran the
+ * install, then the folders enterMachine puts in front, then the system's.
+ * The first `node` on it starts the job, which checks the floor itself.
+ * @param {string} home
+ * @param {string} nodeDir
+ * @returns {string}
+ */
+const jobPath = (home, nodeDir) => [nodeDir, ...machineDirs(home), ...SYSTEM_DIRS].join(path.posix.delimiter);
 
 /**
  * Puts `~/.local/bin`, `~/.nvm/default-bin`, `/opt/homebrew/bin` and
@@ -42,8 +58,7 @@ const enterMachine = (env = process.env, { platform = PLATFORM, node = process.e
     const front = [path.win32.join(home, '.local', 'bin'), path.win32.join(home, '.nvm', 'default-bin'), path.win32.dirname(node)];
     env[key] = [...front, env[key] ?? ''].join(path.win32.delimiter);
   } else {
-    const front = [path.posix.join(home, '.local', 'bin'), path.posix.join(home, '.nvm', 'default-bin'), '/opt/homebrew/bin', '/usr/local/bin'];
-    env.PATH = [...front, env.PATH ?? ''].join(path.posix.delimiter);
+    env.PATH = [...machineDirs(home), env.PATH ?? ''].join(path.posix.delimiter);
   }
   env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
 };
@@ -112,5 +127,5 @@ const notify = (message, notes) => {
 };
 
 module.exports = {
-  machineHome, projectsRoot, enterMachine, jobTimeout, bounded, notify,
+  machineHome, projectsRoot, jobPath, enterMachine, jobTimeout, bounded, notify,
 };

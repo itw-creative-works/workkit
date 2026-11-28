@@ -1,4 +1,4 @@
-// Tests for workflow/publish.sh: the sync ahead of the build (the published page
+// Tests for workflow/publish.js: the sync ahead of the build (the published page
 // is the app’s, an npm-pinned tree keeps its manifests, the refresh is committed),
 // end to end with an `npm` shim and a stub `omega`. The shared prologue is ./helpers.js.
 

@@ -145,7 +145,7 @@ describe('workflow/home: doctor', () => {
   test('a seeded file the checkout has moved past is reported as behind', () => {
     const world = withRunner();
     // The checkout moved on: a `git pull` since the last setup.
-    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a later change\n');
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.js'), '\n# a later change\n');
     const { code, out } = runnerDoctor(world);
     expect(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`).toBeTruthy();
     expect(/1 of \d+ file\(s\) differ/.test(out), `and how much of it, got: ${out}`).toBeTruthy();
@@ -156,7 +156,7 @@ describe('workflow/home: doctor', () => {
 
   test('a git-backed kit: an uncommitted edit is not drift, the runner is current', () => {
     const world = withRunner({ repo: true });
-    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# an edit not yet committed\n');
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.js'), '\n# an edit not yet committed\n');
     const { code, out } = runnerDoctor(world);
     expect(/runner: the cloud brief's runner in/.test(out) && /is current/.test(out), `it reports current, got: ${out}`).toBeTruthy();
     expect(code, `and nothing needs attention, got: ${out}`).toBe(0);
@@ -165,7 +165,7 @@ describe('workflow/home: doctor', () => {
 
   test('a git-backed kit: a commit the clone lacks is reported as behind', () => {
     const world = withRunner({ repo: true });
-    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.sh'), '\n# a committed change\n');
+    fs.appendFileSync(path.join(world.env.WORKKIT_KIT_DIR, 'jobs', 'morning.js'), '\n# a committed change\n');
     commitKit(world.env.WORKKIT_KIT_DIR, 'fix: a later runner');
     const { code, out } = runnerDoctor(world);
     expect(/brief runner is behind this kit/.test(out), `it names the drift, got: ${out}`).toBeTruthy();
@@ -218,7 +218,7 @@ describe('workflow/home: doctor', () => {
 
   test('doctor only reads: it never writes the runner back or pushes', () => {
     const world = withRunner();
-    const file = path.join(world.tower, 'brief', 'jobs', 'morning.sh');
+    const file = path.join(world.tower, 'brief', 'jobs', 'morning.js');
     fs.writeFileSync(file, '# an old copy\n');
     runnerDoctor(world);
     expect(fs.readFileSync(file, 'utf8'), 'the clone is untouched: the writers are setup and the morning run').toBe('# an old copy\n');

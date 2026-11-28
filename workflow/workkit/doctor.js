@@ -20,7 +20,7 @@ const { secretsReport } = require('./secrets');
 const { reportGlobals } = require('./roster');
 const { cloudNa, gitHooksLine, homeReady } = require('./setup');
 const {
-  reportPlugin, reportEngine, reportCommand, reportGhShim, reportGitShim, reportSchedule,
+  reportPlugin, reportEngine, reportHomes, reportCommand, reportGhShim, reportGitShim, reportSchedule,
 } = require('./doctor-machine');
 
 /**
@@ -33,6 +33,7 @@ const machine = async (kit) => {
   let attention = reportPlugin(kit);
   attention += flagged(checkGh(kit));
   attention += reportEngine(kit);
+  attention += reportHomes(kit);
   attention += reportCommand(kit);
   attention += reportGhShim(kit);
   attention += reportGitShim(kit);

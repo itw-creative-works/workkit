@@ -1,4 +1,4 @@
-// The shared prologue of the workflow/publish.sh suites beside this one, one
+// The shared prologue of the workflow/publish.js suites beside this one, one
 // concern each. The script runs from a copied checkout and builds the clone: a
 // scratch `~/.workkit/tower` cloned from a local bare "GitHub", its tooling a
 // stub `omega` plus an `npm` shim. No omega, no network.
@@ -7,9 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { spawnSync } = require('child_process');
-const { expect, mkTmp, seeded, SPAWN_DEADLINE } = require('../../lib/harness');
+const { expect, mkTmp, seeded, run } = require('../../lib/harness');
 const {
-  spawnBash, SYSTEM_PATH, NODE_DIR, NO_RC, shellPath, gitPath, toolStem, homeEnv, linkTool, stubTool, joinPath,
+  SYSTEM_PATH, NODE_DIR, gitPath, toolStem, nodeHomeEnv, linkTool, stubTool, joinPath,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { copySettingsKit } = require('../../lib/settings-kit');
@@ -28,9 +28,11 @@ const writeStub = (file, lines) => {
  * engine is the copy and never this checkout. The engine requires the hooks
  * module's shared rules (the tower's temp folder, the changelog's closed
  * issues), so its mods/ travel whole; the package.json makes the copy a module.
+ * The root package.json holds the floor every entry checks.
  */
 const copyEngine = (kit) => {
   fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
+  fs.copyFileSync(path.join(REPO_ROOT, 'package.json'), path.join(kit, 'package.json'));
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
   spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
   copySettingsKit(kit);
@@ -169,9 +171,10 @@ const mkWorld = ({
     fs.writeFileSync(path.join(workflowHome, '.repos.json'), `${JSON.stringify({ version: 1, repos: registered }, null, 2)}\n`);
   }
 
-  const env = homeEnv(homeDir, {
+  // Native, as the publish's node reads it.
+  const env = nodeHomeEnv(homeDir, {
     PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
-    WORKFLOW_HOME: shellPath(workflowHome),
+    WORKFLOW_HOME: workflowHome,
     WORKKIT_HOME_REMOTE: bare,
   });
 
@@ -229,11 +232,14 @@ const binDirWithout = (...excluded) => {
   return binDir;
 };
 
-const publish = (world, args = []) => {
-  const res = spawnBash([...NO_RC, shellPath(path.join(world.kit, 'workflow', 'publish.sh')), ...args], {
-    env: world.env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-  });
-  expect(res.status !== null, `publish finished (no timeout): ${res.error || ''}`).toBeTruthy();
+/** `node <copy>/workflow/publish.js <args>` under this suite's node, `preload` (a path) loaded first when given. */
+const publishArgv = (world, args = [], preload = null) => [
+  ...(preload ? ['-r', preload] : []), path.join(world.kit, 'workflow', 'publish.js'), ...args,
+];
+
+const publish = (world, args = [], { preload } = {}) => {
+  const res = run(process.execPath, publishArgv(world, args, preload), { env: world.env });
+  expect(res.status !== null, `publish finished (no timeout): ${res.output}`).toBeTruthy();
   // `out` is both streams in the order a terminal shows them, since what these
   // tests read is what the run said; `err` stays separate for the checks about
   // the stream.
@@ -270,6 +276,6 @@ const readJson5 = (file) => JSON.parse(JSON.stringify(
 ));
 
 module.exports = {
-  REPO_ROOT, cleanup, git, writeStub, copyEngine, mkTowerRemote, mkWorld, binDirWithout, publish, setSite, fromPages,
+  REPO_ROOT, cleanup, git, writeStub, copyEngine, mkTowerRemote, mkWorld, binDirWithout, publishArgv, publish, setSite, fromPages,
   onMain, readJson5,
 };

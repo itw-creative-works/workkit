@@ -1,4 +1,4 @@
-// Tests for jobs/morning.sh as this machine runs it: reporting: the response
+// Tests for jobs/morning.js as this machine runs it: reporting: the response
 // printed, logged and notified, and the failures that still have to be.
 // The shared prologue (world factory, job runner, notification waits) is ./helpers.js.
 

@@ -14,7 +14,7 @@ const {
   expect, start, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, which, nodeHomeEnv, nodeTempEnv, nodeEnv, stubTool, joinPath, gitPath, spawnSync: runSync,
+  SYSTEM_PATH, NODE_DIR, which, nodeHomeEnv, nodeTempEnv, stubTool, linkTool, joinPath, gitPath, spawnSync: runSync,
 } = require('../../lib/platform');
 const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
 const { schtasksStub } = require('../../lib/schtasks-stub');
@@ -65,6 +65,14 @@ const secretList = (secrets) => JSON.stringify(secrets.map(({ name, days }) => (
   name,
   updatedAt: new Date(Date.now() - days * 86400000).toISOString().replace(/\.\d+Z$/, 'Z'),
 })));
+
+/** A folder under `root` holding this suite's node and nothing else, for a PATH. */
+const nodeOnly = (root) => {
+  const dir = path.join(root, 'node-only');
+  fs.mkdirSync(dir, { recursive: true });
+  linkTool(dir, process.execPath);
+  return dir;
+};
 
 /**
  * A scratch machine. `claude` reports the plugin as installed or not, `gh auth
@@ -230,17 +238,15 @@ const mkWorld = ({
     // file here, and a test that asks whether one was left behind must be asking
     // about this world's. No path a stub is handed rides Git Bash's /tmp mount.
     env: nodeHomeEnv(home, nodeTempEnv(tmp, {
-      PATH: joinPath(...(binOnPath ? [localBin] : []), bin, SYSTEM_PATH),
+      // The gh shim setup links into ~/.local/bin is a node program, so that PATH
+      // holds this suite's node too, in a folder of its own: npm stays absent.
+      PATH: joinPath(...(binOnPath ? [localBin] : []), bin, SYSTEM_PATH, ...(binOnPath ? [nodeOnly(root)] : [])),
       WORKFLOW_HOME: path.join(root, 'workflow-home'),
       WORKFLOW_CLAUDE_HOME: path.join(home, '.claude'),
       // jobs/install.js refuses a scratch HOME, since a scheduler is machine-global;
       // launchctl and schtasks here are recorders, so this world is the rehearsal
       // the override exists for. The guard itself is pinned in test/jobs.
       WORKKIT_SCHEDULE_OK: '1',
-      // The kit's node, off PATH, for the shell files a case can still start (npm's
-      // script shell, the gh and git shims), which find it through wk_node: node and
-      // npm stay absent from PATH, which the npm and sign-in cases read.
-      ...nodeEnv,
     })),
   };
 };

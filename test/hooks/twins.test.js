@@ -1,10 +1,11 @@
 // The shell-and-JavaScript twins that keep shell consumers, each held to one answer: every fixture goes to the bash
-// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the marker path, the marker sweep,
-// the opt-in read, the session rule, one setting, the machine folder, the slug, the native path, the repo slug and kit checkout,
-// the kit's hooks folder and git's value-taking global options. Plus one shell pair, the two shims' norm_dir, in_list, real_path and PATH walk.
+// function (spawned) and to the JavaScript export (required), and the two must agree. The rows: the kit's hooks folder in
+// git's hook.sh and git's value-taking global options in the git shim. Then the two shims' one promise, the real tool each
+// runs, and the Node pairs: the machine folder's and the slug's two readers held to one hard-coded answer, the Windows folder's two spellers to each other.
 // And the rows with no shell side, each its Node function alone: the suite log's path, the test script, the color gate, the voice lines,
-// the plain mutex, the tower folder, the hooks log, the clone rank, the physical path, the atomic link, the safe JSON edit, the yes or no question,
-// the opener choice, the spinner's frames and its one line, the poll's countdown frames, the repo flag, the public slug and the CHANGELOG test.
+// the plain mutex, the marker sweep, the opt-in read, the session rule, the tower folder, the hooks log, the native path, the repo slug
+// and kit checkout, the clone rank, the physical path, the atomic link, the safe JSON edit, the yes or no question, the opener choice,
+// the spinner's frames and its one line, the poll's countdown frames, the repo flag, the public slug and the CHANGELOG test.
 
 const fs = require('fs');
 const os = require('os');
@@ -14,7 +15,7 @@ const {
   describe, test, expect, mkTmp, run, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NO_RC, EMPTY_PATH, shellPath, gitPath, jsPath, stubTool, stubToolJs, spawnSystemBash, nodeEnv, samePath, homeEnv, joinPath, basePathWithout, pathWith, skipWithoutFileLink,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, shellPath, gitPath, jsPath, stubTool, stubToolJs, spawnSystemBash, samePath, homeEnv, joinPath, basePathWithout, pathWith, skipWithoutFileLink,
 } = require('../lib/platform');
 const { recordArgv, recordArgvJs, readArgv } = require('../lib/argv-log');
 const { underEnv } = require('../lib/under-env');
@@ -50,22 +51,6 @@ const bashAnswers = (files, fn, fixtures, env = {}) => {
 };
 
 /**
- * Each fixture through `fn` in one bash that sources `file`: what the function
- * printed, one string per fixture, in order, '' where it printed nothing.
- */
-const bashLines = (file, fn, fixtures, env = {}) => {
-  const script = `. "${file}"\nwhile IFS= read -r p; do printf '%s\\n' "$(${fn} "$p")"; done <<<"$FIXTURES"`;
-  const res = spawnSystemBash([...NO_RC, '-c', script], {
-    env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), FIXTURES: fixtures.join('\n'), ...env },
-    encoding: 'utf8',
-    timeout: SPAWN_DEADLINE,
-  });
-  const lines = (res.stdout || '').replace(/\r/g, '').split('\n').slice(0, -1);
-  expect(lines.length, `one line per fixture from ${fn}, stderr: ${res.stderr}`).toBe(fixtures.length);
-  return lines;
-};
-
-/**
  * Each [first, second] pair through `fn` in one bash that sources `files` (one or a list, in order):
  * what it printed where it exits 0, null where it does not, one per pair, in order.
  */
@@ -85,7 +70,7 @@ const bashPairs = (files, fn, pairs, env = {}) => {
 /**
  * A scratch file holding the named pieces of a shell script that cannot be sourced (it runs on load): each
  * `name() {` function through its closing `}` line, or the one `NAME=(...)` line, then `extra` lines. Bash
- * runs them as written; returns the file's shell path, for bashLines. `dir` is the folder the file goes in.
+ * runs them as written; returns the file's shell path, for a bash to source. `dir` is the folder the file goes in.
  */
 const scriptPieces = (script, names, extra = [], dir = mkTmp('twins-pieces-')) => {
   const lines = fs.readFileSync(script, 'utf8').split('\n');
@@ -113,15 +98,7 @@ const CHANGELOGS = [
   'CHANGELOG.md.bak', 'xCHANGELOG.md', 'changelog.md', 'CHANGELOG', 'CHANGELOG.md/x', 'docs/OLD-CHANGELOG.md',
 ];
 
-// A repo's settings text; null writes no file.
-const SETTINGS = [
-  null, '', '{}', '{ "version": 1 }\n', '{ "enabled": true }\n', '{ "version": 1, "enabled": false }\n',
-  '{"enabled":false}', '{ "enabled" :\tfalse }', '{ "enabled": "false" }', '{ "enabled": true, "x": { "enabled": false } }',
-  '{\n  "version": 1,\n  "enabled": false\n}\n', '{ "enabled":\nfalse }', '{ "enabled": "true" }',
-  '{ "enabled": true }{', '{ "enabled": false }{', '{ "enabled": true } { "enabled": true }',
-];
-
-/** One scratch repo root per settings text, the shell side's input. */
+/** One scratch repo root per settings text; null writes no file. */
 const settingsRoots = (texts) => texts.map((text) => {
   const root = mkTmp('twins-optin-');
   if (text !== null) {
@@ -184,21 +161,6 @@ describe('the test script, hasTestScript in hooks/mods/suite.js', () => {
   test('a scripts.test that is no string, a null scripts and no scripts at all are no test script', () => {
     expect(JSON.stringify(PACKAGES.map((pkg) => mods('suite').hasTestScript(pkg))), 'none of them is a test script')
       .toBe(JSON.stringify([false, false, false]));
-  });
-});
-
-describe('twins: the marker path, wk_marker_path in workflow/lib/platform.sh against markerPath in hooks/mods/markers.js', () => {
-  // The anchor spellings the shell must hash byte for byte as the module does: a space, a drive, backslashes, a trailing
-  // slash, a call id, none at all. The plain root through each marker kind is test/hooks/markers.test.js's.
-  const ANCHORS = ['/w/a b/repo', 'C:/Users/x/repo', 'C:\\Users\\x\\repo', '/repos/thing/', 'toolu_01AbC', ''];
-  const HOMES = { HOME: '/w/home', WORKFLOW_HOME: '/w/moved' };
-
-  test('wk_marker_path and markerPath give one path for one root and one marker folder', async () => {
-    const dir = 'claude-gh-journal';
-    const shell = bashLines(lib('workflow', 'lib', 'platform.sh'), `wk_marker_path ${dir}`, ANCHORS, HOMES);
-    const js = await Promise.all(ANCHORS.map((anchor) => mods('markers').markerPath(dir, anchor, HOMES.WORKFLOW_HOME)));
-    agree(ANCHORS.map((_, i) => i), shell, (i) => js[i], `the anchors by index, the module's paths ${JSON.stringify(js)}`);
-    expect(shell[0].startsWith(`${HOMES.WORKFLOW_HOME}/markers/${dir}/`), `under the machine folder's markers, got: ${shell[0]}`).toBeTruthy();
   });
 });
 
@@ -283,59 +245,27 @@ describe('the plain mutex, takeLock in workflow/lib/lock.js', () => {
   });
 });
 
-describe('twins: the marker sweep, wk_sweep_markers in workflow/lib/platform.sh against sweepMarkers in workflow/lib/lock.js', () => {
-  // Required in each case, so a missing module fails these cases alone.
-  const lockJs = () => require(path.join(KIT, 'workflow', 'lib', 'lock.js'));
-  /** <line> in a bash that sourced platform.sh, <env> added; spawnSync's result. */
-  const inPlatform = (line, env = {}) => spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"\n${line}`], {
-    env: { PATH: SYSTEM_PATH, HOME: shellPath(os.homedir()), ...env }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-  });
-
-  test('wk_sweep_markers and sweepMarkers leave the same files of one marker tree', async () => {
-    const { sweepMarkers } = lockJs();
-    const base = mkTmp('twins-sweep-');
-    const seed = path.join(base, 'seed');
+describe('the marker sweep, sweepMarkers in workflow/lib/lock.js', () => {
+  test('a record past 7 days goes; a younger one, a lock folder\'s file and a loose file stay', () => {
+    const { sweepMarkers } = require(path.join(KIT, 'workflow', 'lib', 'lock.js'));
+    const home = mkTmp('twins-sweep-');
     // [path under markers/, days since its last write]: records past and inside the 7 days, a lock folder's file, a loose file.
     const FILES = [
       ['claude-suite-marker/old', 8], ['claude-suite-marker/young', 1], ['claude-gh-journal/month', 30], ['claude-gh-journal/edge', 6],
       ['claude-suite-lock/held/pid', 8], ['loose', 8],
     ];
-    for (const [rel, days] of FILES) agedFile(path.join(seed, 'markers', rel), days);
-    fs.utimesSync(path.join(seed, 'markers', 'claude-suite-lock', 'held'), daysAgo(8), daysAgo(8));
-    const [shellHome, jsHome] = ['shell', 'js'].map((side) => {
-      const home = path.join(base, side);
-      fs.cpSync(seed, home, { recursive: true, preserveTimestamps: true });
-      return home;
-    });
-    const res = inPlatform('wk_sweep_markers', { WORKFLOW_HOME: shellPath(shellHome) });
-    expect(res.status, `the shell swept, stderr: ${res.stderr}`).toBe(0);
-    await sweepMarkers(jsHome);
-    const left = (home) => fs.readdirSync(path.join(home, 'markers'), { recursive: true })
+    for (const [rel, days] of FILES) agedFile(path.join(home, 'markers', rel), days);
+    fs.utimesSync(path.join(home, 'markers', 'claude-suite-lock', 'held'), daysAgo(8), daysAgo(8));
+    sweepMarkers(home);
+    const left = fs.readdirSync(path.join(home, 'markers'), { recursive: true })
       .map((rel) => rel.replace(/\\/g, '/'))
       .filter((rel) => fs.statSync(path.join(home, 'markers', rel)).isFile()).sort();
-    expect(JSON.stringify(left(jsHome)), 'the files sweepMarkers left, against wk_sweep_markers').toBe(JSON.stringify(left(shellHome)));
-    const kept = left(shellHome);
-    expect(!kept.includes('claude-suite-marker/old') && !kept.includes('claude-gh-journal/month')
-      && kept.includes('claude-suite-marker/young') && kept.includes('claude-gh-journal/edge') && kept.includes('claude-suite-lock/held/pid'),
-    `a record past 7 days goes, a younger one and a lock folder's file stay, left: ${kept.join(', ')}`).toBeTruthy();
+    expect(left, 'the files the sweep left').toEqual(['claude-gh-journal/edge', 'claude-suite-lock/held/pid', 'claude-suite-marker/young', 'loose']);
   });
 });
 
-describe('twins: the opt-in read, wk_opted_in in workflow/lib/participation.sh against settingsOptedIn in hooks/mods/gate.js', () => {
-  // platform.sh first, as every caller sources it, so wk_opted_in reads through the node wk_node finds.
-  const participation = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
+describe('the opt-in read, settingsOptedIn in hooks/mods/gate.js', () => {
   const fileOf = (root) => path.join(root, '.workkit', 'settings.json');
-  const shellOptedIn = (roots) => bashAnswers(participation, 'wk_opted_in', roots.map(shellPath),
-    { ...nodeEnv });
-
-  test('wk_opted_in and settingsOptedIn agree on every settings text, and only a top-level "enabled": true is in', () => {
-    const roots = settingsRoots(SETTINGS);
-    const shell = shellOptedIn(roots);
-    const js = (i) => mods('gate').settingsOptedIn(readOrNull(fileOf(roots[i])));
-    agree(SETTINGS.map((_, i) => i), shell, js, 'the settings texts (by index into SETTINGS)');
-    expect(JSON.stringify(shell), 'no file, an empty file, {}, a version alone, every false or non-true value, a broken tail and a second value are out')
-      .toBe(JSON.stringify([false, false, false, false, true, false, false, false, false, true, false, false, false, false, false, false]));
-  });
 
   test('settingsOptedIn reads only the top-level enabled key, and text that does not parse is out', () => {
     const { settingsOptedIn } = mods('gate');
@@ -356,34 +286,29 @@ describe('twins: the opt-in read, wk_opted_in in workflow/lib/participation.sh a
     fs.chmodSync(file, 0o000);
     try { fs.readFileSync(file); return null; } catch { return root; }
   })();
-  test('an unreadable settings file reads opted out on both sides',
+  test('an unreadable settings file reads opted out',
     { skip: !unreadable && 'this machine reads a mode-000 file (Windows, or root)' }, () => {
-      const [shell] = shellOptedIn([unreadable]);
-      expect(shell, 'the shell reads an unreadable file as opted out').toBe(false);
-      expect(mods('gate').settingsOptedIn(readOrNull(fileOf(unreadable))),
-        'and so does the module').toBe(false);
+      expect(mods('gate').settingsOptedIn(readOrNull(fileOf(unreadable))), 'the module reads an unreadable file as opted out').toBe(false);
     });
 });
 
-describe('twins: the session rule, wk_session_judges in workflow/lib/participation.sh against sessionJudges in hooks/mods/gate.js', () => {
-  // The variables the rule reads, each environment beside nothing else; an absent key is unset.
+describe('the session rule, sessionJudges in hooks/mods/gate.js', () => {
+  // [the variables the rule reads, each environment beside nothing else, an absent key unset; its answer per text in TEXTS].
   const ENVS = [
-    {}, { CLAUDECODE: '1' }, { CLAUDECODE: '1', HOOK_DISABLE: '1' }, { CLAUDECODE: '1', HOOK_DISABLE: '0' },
-    { CLAUDECODE: '1', HOOK_DISABLE: '' }, { CLAUDECODE: '0' }, { CLAUDECODE: 'true' }, { CLAUDECODE: '' }, { HOOK_DISABLE: '1' },
+    [{}, [false, false, false, false]], [{ CLAUDECODE: '1' }, [false, true, false, false]],
+    [{ CLAUDECODE: '1', HOOK_DISABLE: '1' }, [false, false, false, false]], [{ CLAUDECODE: '1', HOOK_DISABLE: '0' }, [false, true, false, false]],
+    [{ CLAUDECODE: '1', HOOK_DISABLE: '' }, [false, true, false, false]], [{ CLAUDECODE: '0' }, [false, false, false, false]],
+    [{ CLAUDECODE: 'true' }, [false, false, false, false]], [{ CLAUDECODE: '' }, [false, false, false, false]],
+    [{ HOOK_DISABLE: '1' }, [false, false, false, false]],
   ];
   // The settings texts: none, the opt-in, a decline, a string true.
   const TEXTS = [null, OPT_IN_SHAPES.current, '{ "version": 1, "enabled": false }\n', '{ "enabled": "true" }'];
 
-  test('wk_session_judges and sessionJudges answer every environment and settings text alike, and only CLAUDECODE=1, no HOOK_DISABLE=1 and an opted-in repo judge', () => {
-    const roots = settingsRoots(TEXTS);
-    const sources = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
-    const shell = ENVS.map((vars) => bashAnswers(sources, 'wk_session_judges', roots.map(shellPath), { ...nodeEnv, ...vars }));
+  test('only CLAUDECODE=1, no HOOK_DISABLE=1 and an opted-in repo judge', () => {
     const { sessionJudges } = mods('gate');
-    ENVS.forEach((vars, e) => agree(TEXTS.map((_, t) => t), shell[e], (t) => sessionJudges(vars, TEXTS[t]),
-      `the settings texts (by index into TEXTS) under ${JSON.stringify(vars)}`));
-    expect(JSON.stringify(shell[1]), 'CLAUDECODE=1 alone: the opted-in repo judges, no other').toBe(JSON.stringify([false, true, false, false]));
-    expect(JSON.stringify([shell[0][1], shell[2][1], shell[5][1], shell[6][1]]), 'unset, HOOK_DISABLE=1, CLAUDECODE 0 or true: the opted-in repo is not judged')
-      .toBe(JSON.stringify([false, false, false, false]));
+    const wrong = ENVS.flatMap(([vars, want]) => TEXTS.flatMap((text, t) => (sessionJudges(vars, text) === want[t]
+      ? [] : [`${JSON.stringify(vars)} over ${JSON.stringify(text)}: ${!want[t]}`])));
+    expect(wrong.join('; '), 'the environments and texts sessionJudges answers wrongly').toBe('');
   });
 });
 
@@ -408,76 +333,23 @@ describe('the repo flag, repoFlag in hooks/mods/gate.js', () => {
   });
 });
 
-describe('twins: one setting, wk_setting in workflow/lib/participation.sh against loadSettings in hooks/mods/settings.js', () => {
-  // [dotted key, machine file body, repo file body]; undefined writes no file.
-  const LAYERS = [
-    ['findings.file', undefined, undefined],
-    ['findings.file', { findings: { file: true } }, { enabled: true }],
-    ['findings.file', { findings: { file: true } }, { enabled: true, findings: { file: false } }],
-    ['tests.budget', { tests: { budget: 5 } }, { enabled: true, tests: { budget: null } }],
-    ['tests.check', undefined, { enabled: true }],
-    ['tests.check', { tests: { check: 2 } }, { enabled: true }],
-    ['tests.check', { tests: { check: 2 } }, { enabled: true, tests: { check: 0.5 } }],
-    ['proof.rootOnly', { proof: { rootOnly: ['a', 'b'] } }, { enabled: true, proof: { rootOnly: ['c'] } }],
-    ['hooks.afterRelease', { hooks: { afterRelease: null } }, { enabled: true }],
-    ['public', { public: 'acme/public' }, { enabled: true }],
-    ['site.repo', { site: { repo: 'acme/home' } }, { enabled: true, site: null }],
-    ['manager.tiers', { manager: { tiers: { workhorse: 'haiku' } } }, undefined],
-    ['enabled', { enabled: true }, {}],
-    ['enabled', { enabled: false }, { enabled: true }],
-    ['manager', { manager: 'off' }, undefined],
-    ['identity.tokenUrl', undefined, { enabled: true, identity: 'x' }],
-  ];
-
-  test('wk_setting and loadSettings give every key over every pair of layers the same value', () => {
-    const differ = [];
-    for (const [key, user, repo] of LAYERS) {
-      const dir = mkTmp('twins-setting-');
-      const files = { user: path.join(dir, 'home', '.workkit', 'settings.json'), repo: path.join(dir, 'repo', '.workkit', 'settings.json') };
-      for (const [layer, body] of [['user', user], ['repo', repo]]) {
-        fs.mkdirSync(path.dirname(files[layer]), { recursive: true });
-        if (body !== undefined) fs.writeFileSync(files[layer], `${JSON.stringify(body)}\n`);
-      }
-      const root = path.join(dir, 'repo');
-      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"\n. "${lib('workflow', 'lib', 'participation.sh')}"\nwk_setting "$1" "$2"`, 'bash', shellPath(root), key], {
-        env: { PATH: SYSTEM_PATH, HOME: shellPath(path.join(dir, 'home')), WORKFLOW_HOME: shellPath(path.dirname(files.user)) },
-        encoding: 'utf8',
-        timeout: SPAWN_DEADLINE,
-      });
-      // A string prints raw, null as nothing, anything else as JSON.
-      const printed = (res.stdout || '').replace(/\r/g, '').replace(/\n$/, '');
-      let shell = null;
-      if (printed !== '') { try { shell = JSON.parse(printed); } catch { shell = printed; } }
-      const merged = mods('settings').loadSettings(readOrNull, { kit: KIT, root, user: files.user });
-      const node = key.split('.').reduce((v, k) => (v === null || v === undefined ? v : v[k]), merged) ?? null;
-      if (JSON.stringify(shell) !== JSON.stringify(node)) differ.push(`${key} over ${JSON.stringify([user, repo])}: bash ${printed}, node ${JSON.stringify(node)}`);
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-    expect(differ.join('; '), 'the layers bash and JavaScript read differently').toBe('');
-  });
-});
-
-describe('twins: the machine folder, wk_user_dir against userDir in hooks/mods/log.js and workflow/user-dir.js', () => {
+describe('the machine folder, userDir in hooks/mods/log.js and workflow/user-dir.js', () => {
   const { userDir: nodeUserDir } = require(path.join(KIT, 'workflow', 'user-dir.js'));
-  // [WORKFLOW_HOME, HOME]; an unset WORKFLOW_HOME is undefined.
-  const HOMES = [[undefined, '/w/home'], ['/w/moved', '/w/home'], ['', '/w/home'], ['/w/moved', '/w/other'], [undefined, '/w/a b']];
+  // [WORKFLOW_HOME, HOME]; an unset WORKFLOW_HOME is undefined. The moved folder is
+  // drive-spelled, which nativePath keeps on every system; user-dir.test.js has the Git Bash spelling.
+  const HOMES = [[undefined, '/w/home'], ['C:/w/moved', '/w/home'], ['', '/w/home'], ['C:/w/moved', '/w/other'], [undefined, '/w/a b']];
+  const FOLDERS = ['/w/home/.workkit', 'C:/w/moved', '/w/home/.workkit', 'C:/w/moved', '/w/a b/.workkit'];
 
-  test('wk_user_dir, log.js userDir and user-dir.js userDir agree on every WORKFLOW_HOME and HOME', () => {
-    for (const [workflowHome, home] of HOMES) {
-      const env = { PATH: SYSTEM_PATH, HOME: home, ...(workflowHome === undefined ? {} : { WORKFLOW_HOME: workflowHome }) };
-      const res = spawnSystemBash([...NO_RC, '-c', `. "${lib('workflow', 'lib', 'platform.sh')}"; wk_user_dir`], {
-        env, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+  test('log.js userDir and user-dir.js userDir name one folder for every WORKFLOW_HOME and HOME: WORKFLOW_HOME, else .workkit under HOME', () => {
+    const saved = process.env.WORKFLOW_HOME;
+    try {
+      const said = HOMES.map(([workflowHome, home]) => {
+        if (workflowHome === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = workflowHome;
+        return [mods('log').userDir(workflowHome, home), nodeUserDir(home).replace(/\\/g, '/')];
       });
-      const shell = (res.stdout || '').replace(/\r?\n$/, '');
-      const label = `WORKFLOW_HOME ${JSON.stringify(workflowHome)}, HOME ${JSON.stringify(home)}`;
-      expect(mods('log').userDir(workflowHome, home), `${label}: log.js`).toBe(shell);
-      const saved = process.env.WORKFLOW_HOME;
-      if (workflowHome === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = workflowHome;
-      try {
-        expect(nodeUserDir(home).replace(/\\/g, '/'), `${label}: user-dir.js`).toBe(shell);
-      } finally {
-        if (saved === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = saved;
-      }
+      expect(said, `log.js and user-dir.js by index into ${JSON.stringify(HOMES)}`).toEqual(FOLDERS.map((folder) => [folder, folder]));
+    } finally {
+      if (saved === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = saved;
     }
   });
 
@@ -490,7 +362,7 @@ describe('twins: the machine folder, wk_user_dir against userDir in hooks/mods/l
         return towerDir(nodeUserDir(home)).replace(/\\/g, '/');
       });
       expect(JSON.stringify(node), `the tower folder by index into ${JSON.stringify(HOMES)}`).toBe(JSON.stringify([
-        '/w/home/.workkit/tower', '/w/moved/tower', '/w/home/.workkit/tower', '/w/moved/tower', '/w/a b/.workkit/tower',
+        '/w/home/.workkit/tower', 'C:/w/moved/tower', '/w/home/.workkit/tower', 'C:/w/moved/tower', '/w/a b/.workkit/tower',
       ]));
     } finally {
       if (saved === undefined) delete process.env.WORKFLOW_HOME; else process.env.WORKFLOW_HOME = saved;
@@ -540,27 +412,22 @@ describe('the hooks log, hooksLogOf and the line hooks/mods/log.js writes', () =
   });
 });
 
-describe('twins: the slug, wk_slug_from_remote in workflow/lib/slug.sh against slugFromRemote in workflow/slug.js and hooks/mods/slug.js', () => {
-  // Remote urls as git stores them; the last four name no repo.
+describe('the slug, slugFromRemote in workflow/slug.js and hooks/mods/slug.js', () => {
+  // [remote url as git stores it, its slug]; the last four name no repo.
   const REMOTES = [
-    'git@github.com:acme/widgets.git', 'https://github.com/acme/widgets.git', 'https://github.com/acme/widgets',
-    'ssh://git@github.com/acme/widgets.git', 'https://github.com/acme/widgets/', '  git@github.com:acme/widgets.git  ',
-    'C:\\Users\\x\\theirs.git', '/srv/git/acme/widgets.git', 'widgets', 'widgets.git', '', '   ',
+    ['git@github.com:acme/widgets.git', 'acme/widgets'], ['https://github.com/acme/widgets.git', 'acme/widgets'],
+    ['https://github.com/acme/widgets', 'acme/widgets'], ['ssh://git@github.com/acme/widgets.git', 'acme/widgets'],
+    ['https://github.com/acme/widgets/', 'acme/widgets'], ['  git@github.com:acme/widgets.git  ', 'acme/widgets'],
+    ['C:\\Users\\x\\theirs.git', 'x/theirs'], ['/srv/git/acme/widgets.git', 'acme/widgets'],
+    ['widgets', null], ['widgets.git', null], ['', null], ['   ', null],
   ];
 
-  test('the three slug readers give every remote the same slug, and no match the same nothing', () => {
-    const shell = bashLines(lib('workflow', 'lib', 'slug.sh'), 'wk_slug_from_remote', REMOTES);
+  test('the two slug readers give every remote its slug, and no match the same null', () => {
     const { slugFromRemote: engine } = require(path.join(KIT, 'workflow', 'slug.js'));
     const { slugFromRemote: module } = mods('slug');
-    const differ = REMOTES.flatMap((r, i) => {
-      const said = [engine(r), module(r)].map((s) => s ?? '');
-      return said.every((s) => s === shell[i]) ? [] : [`${JSON.stringify(r)}: bash ${JSON.stringify(shell[i])}, workflow/slug.js ${JSON.stringify(said[0])}, hooks/mods/slug.js ${JSON.stringify(said[1])}`];
-    });
-    expect(differ.join('; '), 'the remotes the three readers answer differently').toBe('');
-    expect(shell[0], 'an ssh remote names its repo').toBe('acme/widgets');
-    expect(shell[1], 'an https remote with .git names its repo').toBe('acme/widgets');
-    expect(shell[REMOTES.indexOf('widgets')], 'a remote with no match names nothing in bash').toBe('');
-    expect(engine('widgets'), 'and the two JavaScript readers answer no match alike').toBe(module('widgets'));
+    const wrong = REMOTES.flatMap(([remote, slug]) => (engine(remote) === slug && module(remote) === slug
+      ? [] : [`${JSON.stringify(remote)}: workflow/slug.js ${JSON.stringify(engine(remote))}, hooks/mods/slug.js ${JSON.stringify(module(remote))}`]));
+    expect(wrong.join('; '), 'the remotes a reader answers wrongly').toBe('');
   });
 });
 
@@ -582,14 +449,12 @@ describe('the public slug, SLUG_RE against the Public: link in workflow/public/l
   });
 });
 
-describe('twins: the native path, wk_native_path in workflow/lib/platform.sh against nativePath in workflow/lib/platform.js', () => {
-  test('both spell every path alike on this machine: unchanged off Windows, git\'s drive form on it', () => {
-    // The last three are spelled for Windows already (a `\`, a `..`, two separators): on Windows each only has `\` made `/`.
+describe('the native path off Windows, nativePath in workflow/lib/platform.js', () => {
+  test('macOS and Linux get every path back as it was given, a drive-mount spelling included, on a PATH where no cygpath starts', async () => {
     const PATHS = ['/c/Users/x/repo', 'C:/Users/x', '/w/a b/repo', 'rel/dir', '/d/a/x/', 'C:\\Users\\a b\\x', 'C:/a/../b', '//host/share/x'];
-    const shell = bashLines(lib('workflow', 'lib', 'platform.sh'), 'wk_native_path', PATHS);
-    expect(shell[0], 'the drive-mount spelling').toBe(IS_WINDOWS ? 'C:/Users/x/repo' : '/c/Users/x/repo');
     const { nativePath } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
-    agree(PATHS, shell, (p) => nativePath(p), 'wk_native_path against nativePath');
+    const said = await underEnv({ PATH: EMPTY_PATH }, () => ['darwin', 'linux'].map((platform) => PATHS.map((p) => nativePath(p, { platform }))));
+    expect(said).toEqual([PATHS, PATHS]);
   });
 });
 
@@ -601,6 +466,12 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
     expect(said).toEqual(['C:/Users/a b/x', '//host/share/x']);
   });
 
+  test('a drive or share folder answers with its trailing slash off, a drive root kept whole, on a PATH where no cygpath starts', async () => {
+    const PATHS = ['C:\\w\\kit\\', 'C:/w/kit/', 'C:\\w\\kit', 'C:/', '//server/share/x/'];
+    const said = await underEnv({ PATH: EMPTY_PATH }, () => PATHS.map((p) => nativePath(p, { platform: 'win32' })));
+    expect(said, `by index into ${JSON.stringify(PATHS)}`).toEqual(['C:/w/kit', 'C:/w/kit', 'C:/w/kit', 'C:/', '//server/share/x']);
+  });
+
   test('a POSIX path still goes through cygpath -m, and its answer is cygpath\'s', async () => {
     const bin = mkTmp('twins-cygpath-');
     const argvLog = path.join(bin, 'cygpath-argv.log');
@@ -608,6 +479,16 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
     const said = await underEnv({ PATH: pathWith(bin) }, () => nativePath('/c/Users/x', { platform: 'win32' }));
     expect(readArgv(argvLog), 'cygpath ran once, asked for the mixed form').toEqual([['-m', '/c/Users/x']]);
     expect(said).toBe('D:/from/cygpath');
+  });
+
+  test('cygpath\'s answer has its trailing slash off, a drive root kept whole', async () => {
+    const answerTo = async (answer) => {
+      const bin = mkTmp('twins-cygpath-');
+      stubToolJs(bin, 'cygpath', `process.stdout.write(${JSON.stringify(`${answer}\n`)});`);
+      return underEnv({ PATH: pathWith(bin) }, () => nativePath('/c/Users/x', { platform: 'win32' }));
+    };
+    expect(await answerTo('D:/from/cygpath/'), 'a folder answered with a trailing slash').toBe('D:/from/cygpath');
+    expect(await answerTo('D:/'), 'a drive root').toBe('D:/');
   });
 
   test('machineHome reads a Git Bash HOME through the same rule: the native home, cygpath\'s answer', async () => {
@@ -649,6 +530,48 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
   });
 });
 
+describe('twins: a Windows folder by its spelling, nativePath in workflow/lib/platform.js against shellDirOf in hooks/mods/markers.js', () => {
+  const { nativePath } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
+  // Two rules, one answer: nativePath trims and folds a Windows path by its own lines, shellDirOf by its own.
+  // Drive and share folders, each with and without a trailing slash, in either slash.
+  const FOLDERS = [
+    'C:\\w\\kit\\', 'C:\\w\\kit', 'C:/w/kit/', 'C:/w/kit', 'C:\\w\\a b\\', 'D:/a/_temp/x/', 'C:/', 'C:\\',
+    '//server/share/x/', '//server/share/x', '\\\\server\\share\\x\\', '\\\\server\\share\\x',
+  ];
+
+  test('the commands and the hooks name every drive or share folder as one string', async () => {
+    const commands = await underEnv({ PATH: EMPTY_PATH }, () => FOLDERS.map((p) => nativePath(p, { platform: 'win32' })));
+    const differ = FOLDERS.flatMap((p, i) => {
+      const hooks = mods('markers').shellDirOf(p, {}, 'win32');
+      return commands[i] === hooks ? [] : [`${JSON.stringify(p)}: nativePath ${JSON.stringify(commands[i])}, shellDirOf ${JSON.stringify(hooks)}`];
+    });
+    expect(differ.join('; '), 'the folders the two name apart').toBe('');
+  });
+});
+
+describe('the claude home, claudeHome in workflow/lib/platform.js, read from the env and home given', () => {
+  const { claudeHome } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
+  const PROCESS = { WORKFLOW_CLAUDE_HOME: '/process/claude', HOME: '/process/home' };
+
+  test('a WORKFLOW_CLAUDE_HOME in the env given is the claude home, this process\'s never read', async () => {
+    const said = await underEnv(PROCESS, () => claudeHome({ env: { WORKFLOW_CLAUDE_HOME: '/given/claude' }, home: '/given/home', platform: 'linux' }));
+    expect(said).toBe('/given/claude');
+  });
+
+  test('without it: <home>/.claude, the home given, else the env\'s HOME, this process\'s never read', async () => {
+    const said = await underEnv(PROCESS, () => [
+      claudeHome({ env: {}, home: '/given/home', platform: 'linux' }),
+      claudeHome({ env: { HOME: '/env/home' }, platform: 'linux' }),
+    ]);
+    expect(said).toEqual(['/given/home/.claude', '/env/home/.claude']);
+  });
+
+  test('a home given is used as is: on Windows no cygpath starts for it', async () => {
+    const said = await underEnv({ PATH: EMPTY_PATH }, () => claudeHome({ env: {}, home: '/c/Users/x', platform: 'win32' }));
+    expect(said).toBe('/c/Users/x/.claude');
+  });
+});
+
 /** A new folder at `dir`, a git repo with `origin` as its remote, or with none when `origin` is undefined. */
 const originRepo = (dir, origin) => {
   fs.mkdirSync(dir);
@@ -657,7 +580,7 @@ const originRepo = (dir, origin) => {
   return dir;
 };
 
-describe('twins: the repo slug and the kit checkout, wk_repo_slug and wk_is_kit_checkout in workflow/lib/slug.sh against workflow/lib/repo.js', () => {
+describe('the repo slug and the kit checkout, repoSlug and isKitCheckout in workflow/lib/repo.js', () => {
   // [name, origin]: undefined adds no origin. The kit is any owner's workkit, any letter case.
   const ORIGINS = [
     ['ssh', 'git@github.com:acme/workkit.git'], ['cased', 'https://github.com/ITW-Creative-Works/WorkKit'],
@@ -675,25 +598,21 @@ describe('twins: the repo slug and the kit checkout, wk_repo_slug and wk_is_kit_
     return dirs;
   };
 
-  test('wk_repo_slug and repoSlug name the same origin slug for every folder, and nothing where none is', () => {
+  test('repoSlug names each folder\'s origin slug, its subfolder\'s included, and nothing where none is', () => {
     const dirs = folders();
     const names = Object.keys(dirs);
-    const shell = bashLines(lib('workflow', 'lib', 'slug.sh'), 'wk_repo_slug', names.map((n) => shellPath(dirs[n])));
-    expect(JSON.stringify(shell), `each folder's slug, by ${names.join(', ')}`).toBe(JSON.stringify([
-      'acme/workkit', 'ITW-Creative-Works/WorkKit', 'acme/workkit-extra', 'workkit/widgets', 'acme/workkit', '', 'acme/workkit', '', '',
-    ]));
     const { repoSlug } = require(path.join(KIT, 'workflow', 'lib', 'repo.js'));
-    agree(names, shell, (n) => repoSlug(dirs[n]), 'wk_repo_slug against repoSlug (by folder name)');
+    expect(names.map((n) => repoSlug(dirs[n])), `each folder's slug, by ${names.join(', ')}`).toEqual([
+      'acme/workkit', 'ITW-Creative-Works/WorkKit', 'acme/workkit-extra', 'workkit/widgets', 'acme/workkit', '', 'acme/workkit', '', '',
+    ]);
   });
 
-  test('wk_is_kit_checkout and isKitCheckout read the same folders as a clone of the kit', () => {
+  test('isKitCheckout reads a workkit origin, its subfolder and a local workkit path as the kit, nothing else', () => {
     const dirs = { ...folders(), empty: '' };
     const names = Object.keys(dirs);
-    const shell = bashAnswers(lib('workflow', 'lib', 'slug.sh'), 'wk_is_kit_checkout', names.map((n) => (dirs[n] && shellPath(dirs[n]))));
-    expect(JSON.stringify(shell), `a workkit origin, its subfolder and a local workkit path are the kit, nothing else is, by ${names.join(', ')}`)
-      .toBe(JSON.stringify([true, true, false, false, true, false, true, false, false, false]));
     const { isKitCheckout } = require(path.join(KIT, 'workflow', 'lib', 'repo.js'));
-    agree(names, shell, (n) => isKitCheckout(dirs[n]), 'wk_is_kit_checkout against isKitCheckout (by folder name)');
+    expect(names.map((n) => isKitCheckout(dirs[n])), `by ${names.join(', ')}`)
+      .toEqual([true, true, false, false, true, false, true, false, false, false]);
   });
 });
 
@@ -863,8 +782,8 @@ describe('the safe JSON edit, editJson in workflow/lib/write.js', () => {
   });
 });
 
-describe('twins: the kit\'s hooks folder, wk_githooks_kit, wk_githooks_kitlike and wk_githooks_spelled in workflow/lib/participation.sh against workflow/lib/participation.js', () => {
-  const sources = [lib('workflow', 'lib', 'platform.sh'), lib('workflow', 'lib', 'participation.sh')];
+describe('twins: the kit\'s hooks folder, wk_githooks_kit, wk_githooks_kitlike and wk_githooks_spelled in workflow/githooks/hook.sh against workflow/lib/participation.js', () => {
+  const sources = lib('workflow', 'githooks', 'hook.sh');
   const participationJs = () => require(path.join(KIT, 'workflow', 'lib', 'participation.js'));
 
   /** A hooks folder at `<dir>/<folder>` holding `files` (each name, executable unless `plain` names it). */
@@ -902,7 +821,7 @@ describe('twins: the kit\'s hooks folder, wk_githooks_kit, wk_githooks_kitlike a
 
   test('wk_githooks_kit and githooksKit name the same kit root for every folder, the physical one, and none for the rest', () => {
     const { base, pairs } = world();
-    const shell = bashPairs(sources, 'wk_githooks_kit', shellArgs(pairs), nodeEnv);
+    const shell = bashPairs(sources, 'wk_githooks_kit', shellArgs(pairs));
     const kits = pairs.flatMap(([name], i) => (shell[i] === null ? [] : [name]));
     expect(kits.join(', '), 'the kit\'s folder in any spelling, nothing else').toBe('kit, relative, engine link');
     const kit = shellPath(path.join(base, 'kit'));
@@ -918,7 +837,7 @@ describe('twins: the kit\'s hooks folder, wk_githooks_kit, wk_githooks_kitlike a
 
   test('wk_githooks_kitlike and githooksKitlike read the same folders as a kit\'s, spelled as one and gone included', () => {
     const { pairs } = world();
-    const shell = bashPairs(sources, 'wk_githooks_kitlike', shellArgs(pairs), nodeEnv).map((out) => out !== null);
+    const shell = bashPairs(sources, 'wk_githooks_kitlike', shellArgs(pairs)).map((out) => out !== null);
     const kitlike = pairs.flatMap(([name], i) => (shell[i] ? [name] : []));
     expect(kitlike.join(', '), 'a kit\'s folder, and a kit spelling that is gone')
       .toBe(['kit', 'relative', 'engine link', 'gone kit', 'gone engine', 'gone relative', ...(IS_WINDOWS ? [] : ['dangling'])].join(', '));
@@ -953,102 +872,88 @@ describe('twins: git\'s value-taking global options, VALUE_FLAGS in workflow/git
   });
 });
 
-describe('twins: the shims\' shared readers, norm_dir, in_list, real_path and the PATH walk in workflow/gitshim/git against workflow/identity/gh', () => {
-  const SHIMS = [path.join(KIT, 'workflow', 'gitshim', 'git'), path.join(KIT, 'workflow', 'identity', 'gh')];
-  // norm_dir sets NORM rather than printing it; this prints it, so bashLines reads each answer.
-  const NORM_LINE = ['norm_line() { norm_dir "$1"; printf \'%s\' "$NORM"; }'];
+describe('the real tool, the git and gh shims\' PATH walk', () => {
+  // [tool, the shim, the shell line that starts it as a program does: git's under bash, gh's under node].
+  const SHIMS = [
+    ['git', path.join(KIT, 'workflow', 'gitshim', 'git'), '"$BASH" "$3" --version'],
+    ['gh', path.join(KIT, 'workflow', 'identity', 'gh'), '"$4" "$3" --version'],
+  ];
+  // [the folders after this node's and the system tools', by name; the one whose tool runs, or none]. The front
+  // comes before the shim's own folder, so the walk passes over it and a shim still finds node. `ownSlash` is
+  // the own folder with a trailing slash, `rel` a relative entry read from the cwd, `ownLink` a link to the own
+  // folder, whose shim run through it walks on from there, and `noexec`'s tool a file no one can run.
+  const ROWS = [
+    [['own', 'first', 'second'], 'first'],
+    [['first', 'own', 'second'], 'second'],
+    [['first', 'own', 'first', 'second'], 'second'],
+    [['own', 'missing', 'first'], 'first'],
+    [['first', 'own'], 'none'],
+    [['own', 'ownSlash', 'first'], 'first'],
+    [['own', 'rel', 'second'], 'rel'],
+    [['own', 'ownLink', 'first'], 'first'],
+    [['own', 'noexec', 'first'], 'first'],
+  ];
 
-  test('both shims\' norm_dir read every PATH entry alike: an empty entry is the cwd, a trailing slash dropped, a bare / kept', () => {
-    const entries = ['', '/', '/a/b', '/a/b/', 'rel/', '.', 'C:/x/', '/c/Program Files/Git/bin/'];
-    const [git, gh] = SHIMS.map((s) => bashLines(scriptPieces(s, ['norm_dir'], NORM_LINE), 'norm_line', entries));
-    agree(entries.map((_, i) => i), git, (i) => gh[i], 'git shim norm_dir against gh shim norm_dir (by index into the entries)');
-    expect(JSON.stringify(git.slice(0, 4)), 'the empty entry, /, and a trailing slash').toBe(JSON.stringify(['.', '/', '/a/b', '/a/b']));
-  });
-
-  test('both shims\' in_list answer every word alike: a whole-item match only, the empty item matched by the empty word', () => {
-    // in_list takes the word and the list; this asks it of one fixed list and prints 1 or 0.
-    const IN_LINE = ['in_line() { if in_list "$1" checkout "a b" "" "-c"; then printf 1; else printf 0; fi; }'];
-    const words = ['checkout', 'a b', '', '-c', 'check', 'checkoutx', 'a', '*', 'b'];
-    const [git, gh] = SHIMS.map((s) => bashLines(scriptPieces(s, ['in_list'], IN_LINE), 'in_line', words));
-    agree(words.map((_, i) => i), git, (i) => gh[i], 'git shim in_list against gh shim in_list (by index into the words)');
-    expect(git.join(''), 'the four items, and no part or pattern of one').toBe('111100000');
-  });
-
-  test('both shims\' real_path walk every link chain alike, to the file\'s real path',
-    { skip: IS_WINDOWS && 'Windows makes no symlink without a privilege this run may lack' }, () => {
-      const dir = fs.realpathSync(mkTmp('twins-real-path-'));
-      fs.mkdirSync(path.join(dir, 'real'));
-      const file = path.join(dir, 'real', 'tool');
-      fs.writeFileSync(file, '#!/bin/sh\n');
-      fs.symlinkSync('real/tool', path.join(dir, 'relative'));
-      fs.symlinkSync(file, path.join(dir, 'absolute'));
-      fs.symlinkSync('relative', path.join(dir, 'chain'));
-      fs.symlinkSync('real', path.join(dir, 'linked-dir'));
-      const paths = [file, 'relative', 'absolute', 'chain', 'linked-dir/tool'].map((p) => (path.isAbsolute(p) ? p : path.join(dir, p)));
-      const [git, gh] = SHIMS.map((s) => bashLines(scriptPieces(s, ['real_path']), 'real_path', paths));
-      agree(paths.map((_, i) => i), git, (i) => gh[i], 'git shim real_path against gh shim real_path (by index into the paths)');
-      expect(JSON.stringify(git), 'every path is the one real file').toBe(JSON.stringify(paths.map(() => file)));
-    });
-
-  test('both shims\' PATH walks pick the same entry: past their own folder and every folder met at or before it, linked, missing and relative entries as PATH spells them, executables alone', () => {
+  test('each shim runs the first tool on PATH after its own folder, every folder met at or before it passed over; with none, the line naming the shim and 127', () => {
     const root = mkTmp('twins-walk-');
-    // A PATH folder holding both tools, so each walk has its tool to find there.
-    const toolDir = (name) => {
-      const dir = path.join(root, name);
-      fs.mkdirSync(dir);
-      for (const tool of ['git', 'gh']) stubTool(dir, tool, ['#!/bin/sh', 'exit 0']);
-      return dir;
+    const front = [NODE_DIR, ...SYSTEM_PATH.split(path.delimiter)].map(shellPath).join(':');
+    const said = SHIMS.map(([tool, shim, line]) => {
+      // Each stand-in prints the name of its folder, which holds no other tool.
+      const folders = Object.fromEntries(['first', 'second', 'rel'].map((name) => {
+        const dir = path.join(root, `${tool}-${name}`);
+        fs.mkdirSync(dir);
+        stubToolJs(dir, tool, `process.stdout.write(${JSON.stringify(`${name}\n`)});`);
+        return [name, shellPath(dir)];
+      }));
+      // No mode bit and no `#!`, so no platform reads it as a program.
+      const noexec = path.join(root, `${tool}-noexec`);
+      fs.mkdirSync(noexec);
+      fs.writeFileSync(path.join(noexec, tool), 'not a tool\n', { mode: 0o644 });
+      // A junction on Windows, which needs no privilege; elsewhere the type is ignored.
+      const ownLink = path.join(root, `${tool}-own-link`);
+      fs.symlinkSync(path.dirname(shim), ownLink, 'junction');
+      const own = shellPath(path.dirname(shim));
+      const entries = {
+        ...folders, own, ownSlash: `${own}/`, ownLink: shellPath(ownLink), rel: `${tool}-rel`, noexec: shellPath(noexec), missing: shellPath(path.join(root, 'missing')),
+      };
+      return ROWS.map(([names]) => {
+        // PATH is set inside bash, so it reads the spellings as written on every platform.
+        const res = spawnSystemBash([...NO_RC, '-c', `PATH="$1:$2"; ${line}`, 'walk', front, names.map((n) => entries[n]).join(':'), shellPath(shim), shellPath(process.execPath)], {
+          cwd: root, env: homeEnv(mkTmp('twins-walk-home-'), { PATH: SYSTEM_PATH }), encoding: 'utf8', timeout: SPAWN_DEADLINE,
+        });
+        const out = (res.stdout || '').replace(/\r/g, '').trim();
+        if (out) return out;
+        const none = res.status === 127 && (res.stderr || '').startsWith(`${tool}: no ${tool} on PATH after the workkit shim at `);
+        return none ? 'none' : `exit ${res.status}: ${res.stderr}`;
+      });
+    });
+    const want = ROWS.map(([, pick]) => pick);
+    expect(said, `the folder whose tool ran, git's then gh's, by index into ${JSON.stringify(ROWS.map(([names]) => names))}`).toEqual([want, want]);
+  });
+
+  test('each shim reached through a chain of links, one relative and one absolute, runs from its own kit: git\'s judge refuses a discard, gh walks on to the tool after the chain', { skip: skipWithoutFileLink() }, () => {
+    const w = mkRepo('twins-chain-', { 'app.js': 'const x = 1;\n' });
+    w.write('app.js', 'const x = 2;\n');
+    // The chain first on PATH, then for gh a stand-in printing `after`; git's next is the real git it judges with.
+    const ran = (tool, shim, line, env) => {
+      // <tool>-chain/<tool> -> ../<tool>-hop/<tool> -> the real shim, by its absolute path.
+      const [chain, hop, after] = ['chain', 'hop', 'after'].map((name) => path.join(w.dir, `${tool}-${name}`));
+      for (const dir of [chain, hop, after]) fs.mkdirSync(dir);
+      fs.symlinkSync(shim, path.join(hop, tool), 'file');
+      fs.symlinkSync(path.join('..', `${tool}-hop`, tool), path.join(chain, tool), 'file');
+      if (tool === 'gh') stubToolJs(after, tool, "process.stdout.write('after\\n');");
+      const PATH = [chain, after, ...SYSTEM_PATH.split(path.delimiter), NODE_DIR].map(shellPath).join(':');
+      return spawnSystemBash([...NO_RC, '-c', `PATH="$1"; ${line}`, 'chain', PATH], {
+        cwd: w.repo, env: { ...w.env, PATH: SYSTEM_PATH, ...env }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      });
     };
-    const [copy, stub] = ['copy', 'stub'].map((name) => shellPath(toolDir(name)));
-    toolDir('rel-bin');
-    // Both tools there, neither executable: no mode bit, and no `#!` for Git Bash to read as one.
-    const noexec = path.join(root, 'noexec');
-    fs.mkdirSync(noexec);
-    for (const tool of ['git', 'gh']) fs.writeFileSync(path.join(noexec, tool), 'not a tool\n', { mode: 0o644 });
-    const missing = shellPath(path.join(root, 'missing'));
-    // Each walk runs from a pieces file in a folder of its own that holds its tool too, as the shim's folder holds the shim.
-    const walks = [['git', 'real_git', 'if real_git; then printf \'%s\' "$GIT"; else printf none; fi'], ['gh', 'real_gh', 'real_gh || printf none']]
-      .map(([tool, fn, print], i) => {
-        const lines = fs.readFileSync(SHIMS[i], 'utf8').split('\n');
-        const [from, to] = [lines.indexOf('OWN_DIR=.'), lines.indexOf('OWN_DIR="$NORM"')];
-        expect(from >= 0 && to > from, `${path.basename(SHIMS[i])} sets OWN_DIR from its own path`).toBeTruthy();
-        const own = toolDir(`own-${tool}`);
-        // A junction on Windows, which needs no privilege; elsewhere the type is ignored.
-        const ownLink = path.join(root, `own-${tool}-link`);
-        fs.symlinkSync(own, ownLink, 'junction');
-        const entries = {
-          own: shellPath(own), ownSlash: `${shellPath(own)}/`, ownLink: shellPath(ownLink), copy, stub, missing, rel: 'rel-bin', noexec: shellPath(noexec),
-        };
-        return { tool, entries, file: scriptPieces(SHIMS[i], ['norm_dir', fn], [...lines.slice(from, to + 1), print], own) };
-      });
-    // Each PATH and the entry the walk must pick: past the own folder spelled again, a copy met before it, a missing
-    // entry; a relative entry as spelled; the next shim copy after it; nothing after it; the whole PATH when it is absent;
-    // the own folder through a link, a different spelling; the own folder met first, not last; a tool not executable.
-    const ROWS = [
-      [['own', 'ownSlash', 'missing', 'stub'], 'stub'],
-      [['copy', 'own', 'copy', 'stub'], 'stub'],
-      [['own', 'missing', 'rel', 'stub'], 'rel'],
-      [['own', 'copy', 'stub'], 'copy'],
-      [['stub', 'own'], 'none'],
-      [['missing', 'rel', 'stub'], 'rel'],
-      [['own', 'ownLink', 'stub'], 'ownLink'],
-      [['own', 'stub', 'own', 'copy'], 'stub'],
-      [['own', 'noexec', 'stub'], 'stub'],
-    ];
-    const [git, gh] = walks.map(({ tool, entries, file }) => ROWS.map(([names]) => {
-      // PATH is set inside bash, so it reads the spellings as written on every platform.
-      const res = spawnSystemBash([...NO_RC, '-c', 'PATH="$1"; . "$2"', 'walk', names.map((n) => entries[n]).join(':'), file], {
-        cwd: root, env: { PATH: SYSTEM_PATH }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
-      });
-      const pick = (res.stdout || '').replace(/\r/g, '').trim();
-      if (pick === 'none') return pick;
-      expect(pick.endsWith(`/${tool}`), `the ${tool} walk printed a ${tool} or none, got: ${pick} ${res.stderr}`).toBeTruthy();
-      const dir = pick.slice(0, -(tool.length + 1));
-      return Object.keys(entries).find((n) => entries[n] === dir) || dir;
-    }));
-    const expected = ROWS.map(([, pick]) => pick);
-    agree(expected.map((_, i) => i), git, (i) => gh[i], 'git shim real_git against gh shim real_gh (by index into the PATHs)');
-    expect(JSON.stringify(git), 'the entry each PATH leads to').toBe(JSON.stringify(expected));
+    const git = ran('git', path.join(KIT, 'workflow', 'gitshim', 'git'), 'git reset --hard', { CLAUDECODE: '1' });
+    expect(git.status, `git: exit 1, stderr: ${git.stderr}`).toBe(1);
+    expect(git.stderr.includes('tree-guard: BLOCKED'), `git: the kit's judge refused, got: ${git.stderr}`).toBeTruthy();
+    expect(git.stdout, 'git: the reset never ran').toBe('');
+    expect(fs.readFileSync(path.join(w.repo, 'app.js'), 'utf8'), 'git: the edit is still there').toBe('const x = 2;\n');
+    const gh = ran('gh', path.join(KIT, 'workflow', 'identity', 'gh'), 'gh --version', {});
+    expect(`${gh.status} ${gh.stdout.replace(/\r/g, '')}`, `gh: the tool after the chain, stderr: ${gh.stderr}`).toBe('0 after\n');
   });
 });
 

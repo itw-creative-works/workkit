@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  NO_RC, shellPath, joinPath, spawnBash, nodeEnv, samePath,
+  NO_RC, NODE_DIR, shellPath, joinPath, spawnBash, samePath,
 } = require('../../lib/platform');
 const { workkitBin } = require('../../lib/workkit-bin');
 const { mods } = require('../../lib/mods-inputs');
@@ -34,7 +34,7 @@ const SCRATCH_WH = path.join(SCRATCH_HOME, '.workkit');
 const BIN = workkitBin();
 // The session's variables, the skill's shell and the guard alike reading them.
 const ENV = {
-  ...process.env, ...nodeEnv, HOME: shellPath(SCRATCH_HOME), WORKFLOW_HOME: shellPath(SCRATCH_WH), TMPDIR: shellPath(TMP), PATH: joinPath(BIN, process.env.PATH),
+  ...process.env, HOME: shellPath(SCRATCH_HOME), WORKFLOW_HOME: shellPath(SCRATCH_WH), TMPDIR: shellPath(TMP), PATH: joinPath(BIN, NODE_DIR, process.env.PATH),
 };
 const runSkillLine = (cwd) => spawnBash([...NO_RC, '-c', skillLine()], {
   cwd, env: ENV, encoding: 'utf8', timeout: SPAWN_DEADLINE,

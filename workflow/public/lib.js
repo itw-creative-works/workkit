@@ -7,6 +7,7 @@
 const { spawnSync } = require('../lib/run');
 const { lastErrLine } = require('../lib/say');
 const git = require('../lib/git');
+const { unreadPathStop } = require('../lib/platform');
 const { settingsAt } = require('../lib/settings');
 
 // An owner/name slug, the pairing key's and the heal's (standards/labels.js).
@@ -152,14 +153,19 @@ const issueNumbers = (args) => args.map((a) => {
 
 /**
  * A verb's entry: runs it, prints a PublicError's message after `public:`,
- * and exits with the code it answered (1 for a refusal).
+ * and exits with the code it answered (1 for a refusal); a path nativePath
+ * could not read is unreadPathStop's line and 1.
  * @param {function(): number} verb
  */
 const main = (verb) => {
   try {
     process.exitCode = verb();
   } catch (err) {
-    if (!(err instanceof PublicError)) throw err;
+    // unreadPathStop throws on any error that is not nativePath's, as this catch did.
+    if (!(err instanceof PublicError)) {
+      process.exitCode = unreadPathStop(err);
+      return;
+    }
     process.stderr.write(`public: ${err.message}\n`);
     process.exitCode = 1;
   }

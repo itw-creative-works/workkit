@@ -1,20 +1,32 @@
 #!/usr/bin/env node
 /**
- * jobs/morning.js: the morning, started by morning.sh under a node at the
- * kit's floor from the 9am LaunchAgent and the brief.yml workflow on the home
- * repo, and by workflow/morning-task.js from the 9am Windows task. Six steps
- * in one order, each gated on what the environment it woke up in can do:
- * jobs/README.md tells which runs where.
+ * jobs/morning.js: the morning, started by node from the 9am LaunchAgent and
+ * the brief.yml workflow on the home repo, and by workflow/morning-task.js from
+ * the 9am Windows task. A Node below the kit's floor gets one line and stops.
+ * Six steps in one order, each gated on what the environment it woke up in
+ * can do: jobs/README.md tells which runs where.
  * Usage: node morning.js [--now | message]. None is the scheduled morning;
  *        --now is the rehearsal, sent here and publishing nothing; a message
  *        is the generic headless runner. Log: ~/Library/Logs/claude-daily.log,
  *        or the Actions log.
  */
 
+// Ahead of every other require, so no newer file loads below the floor; in
+// syntax an older Node still reads, so the line prints there.
+if (require.main === module) {
+  const floor = require('../workflow/lib/floor');
+  const below = floor.floorLine(process.version, floor.floorOf());
+  if (below) {
+    require('fs').writeSync(2, `${below}\n`);
+    process.exit(1);
+  }
+}
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { holdSignals, Interrupted } = require('../workflow/lib/interrupt');
+const { unreadPathStop } = require('../workflow/lib/platform');
 const { withScratch } = require('../workflow/lib/scratch');
 const { homeUserDir } = require('../workflow/user-dir');
 const { enterMachine, machineHome } = require('./lib/machine');
@@ -130,7 +142,7 @@ const main = async (args) => {
 if (require.main === module) {
   // Set the code, never process.exit(): exiting discards output still buffered
   // for a pipe. A code the hold's end set for a signal (Windows) stays.
-  main(process.argv.slice(2)).then((code) => { process.exitCode ??= code; });
+  main(process.argv.slice(2)).then((code) => { process.exitCode ??= code; }, (err) => { process.exitCode = unreadPathStop(err); });
 }
 
 module.exports = { main };
