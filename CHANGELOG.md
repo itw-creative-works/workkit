@@ -7,10 +7,12 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+## [0.106.0] - 2026-11-27
+
 ### Changed
 
-- [#579](../../issues/579) - The kit's shell is thin: the `gh` shim is a Node program, and git's hooks, the `git` shim and npm's script shell start one Node check. No kit file searches for a Node; each program checks for 22.22 itself. `jq` is no longer needed. `WORKKIT_NODE` is unread.
-- [#579](../../issues/579) - With no `node` on PATH the `gh` shim does not start. In a Claude session a `node` below 22.22 stops `gh` but `gh auth`, and it or none stops commits and guarded `git` verbs in a repo holding `.workkit/settings.json`, where `npm test` on it runs unrecorded in any session.
+- [#579](../../issues/579) [`fd4e70f0`](../../commit/fd4e70f0) Thanks [@ianwieds]! - The kit's shell is thin: the `gh` shim is a Node program, and git's hooks, the `git` shim and npm's script shell start one Node check. No kit file searches for a Node; each program checks for 22.22 itself. `jq` is no longer needed. `WORKKIT_NODE` is unread.
+- [#579](../../issues/579) [`fd4e70f0`](../../commit/fd4e70f0) Thanks [@ianwieds]! - With no `node` on PATH the `gh` shim does not start. In a Claude session a `node` below 22.22 stops `gh` but `gh auth`, and it or none stops commits and guarded `git` verbs in a repo holding `.workkit/settings.json`, where `npm test` on it runs unrecorded in any session.
 
 ### Fixed
 
