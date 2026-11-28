@@ -7,14 +7,12 @@ const path = require('path');
 const {
   describe, test, expect, until, pidIn, alive, endTree,
 } = require('./lib/harness');
-const { IS_WINDOWS } = require('./lib/platform');
+const { IS_WINDOWS, RUN_JS } = require('./lib/platform');
 const { TOTALS_LINE, linesOf, totalsOf } = require('./lib/run-lists');
 const { TOTALS, skipWithoutNpm } = require('./lib/core-repo');
 const { coreBin } = require('./lib/workkit-bin');
+const { recordArgvJs, readArgv } = require('./lib/argv-log');
 const { RUNNER, SUITE, mkWorld } = require('./lib/runner-world');
-
-// The kit's program starter, which a member's suite starts a run of its own through.
-const RUN_JS = path.join(__dirname, '..', 'workflow', 'lib', 'run.js');
 
 // The root package.json declaring `workspaces`, none when undefined.
 const ROOT = (workspaces) => ({
@@ -43,7 +41,7 @@ const member = (name, {
 const runWith = (files, args = [], { env = {}, cwd = '', bins = [] } = {}) => {
   const w = mkWorld();
   w.write(files);
-  return { ...w.run(args, { cwd, env, bins: [coreBin(), ...bins] }), read: w.read };
+  return { ...w.run(args, { cwd, env, bins: [coreBin(), ...bins] }), read: w.read, root: w.root };
 };
 
 const trimmed = (output) => linesOf(output).map((line) => line.trim());
@@ -156,14 +154,14 @@ describe('run.js: workspace members', { skip: skipWithoutNpm() }, () => {
     });
 
     test('a bare run: the member starts with no filter appended, and its row and the totals read as ever', () => {
-      const { code, output, read } = runWith({
+      const { code, output, root } = runWith({
         ...ROOT(['packages/*']),
         ...ROOT_SUITE,
         ...member('a', { script: 'workkit test && node argv.js' }),
-        'packages/a/argv.js': "require('fs').writeFileSync(require('path').join(__dirname, 'argv.json'), JSON.stringify(process.argv.slice(2)));\n",
+        'packages/a/argv.js': `${recordArgvJs("require('path').join(__dirname, 'argv.log')")}\n`,
       });
       expect(code, `exit 0, got: ${output}`).toBe(0);
-      expect(read('packages/a/argv.json'), `npm appended nothing to the member's script, got: ${output}`).toBe('[]');
+      expect(readArgv(path.join(root, 'packages', 'a', 'argv.log')), `npm appended nothing to the member's script, got: ${output}`).toEqual([[]]);
       expect(has(output, '✓ a'), `a's row, got: ${output}`).toBe(true);
       expect(TOTALS(2, 1, { members: 1 }).test(totalsOf(output)), `the totals line, got: ${output}`).toBe(true);
     });

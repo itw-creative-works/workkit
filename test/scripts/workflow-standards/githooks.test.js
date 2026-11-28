@@ -186,7 +186,7 @@ describe('workkit doctor: the git hooks', () => {
     const husky = makeRepo();
     for (const hook of ['pre-commit', 'commit-msg']) {
       fs.mkdirSync(path.join(husky, '.husky', '_'), { recursive: true });
-      fs.writeFileSync(path.join(husky, '.husky', '_', hook), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      fs.writeFileSync(path.join(husky, '.husky', '_', hook), '#!/usr/bin/env node\n', { mode: 0o755 });
     }
     spawnSync('git', ['config', '--local', 'core.hooksPath', '.husky/_'], { cwd: husky });
     const theirs = doctor(world, husky);

@@ -8,7 +8,6 @@
 const {
   describe, test, expect,
 } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
   cloudWorld, assertSame, assertOk, printedJson, routes,
@@ -39,9 +38,8 @@ const restRelease = (tag, { draft = false, prerelease = false, body = `The ${tag
 
 const FIELDS = 'tagName,name,url,isDraft,isPrerelease,publishedAt,createdAt,targetCommitish,body';
 
-// The shim starts the stub `gh` from Node through rest.js, as rest.test.js does; on Windows these skip alike.
 describe('identity/gh in a cloud session: release view', () => {
-  test('release view <tag> --json reads the tag\'s release and prints gh\'s fields', { skip: skipWithoutNodeStub() }, async () => {
+  test('release view <tag> --json reads the tag\'s release and prints gh\'s fields', async () => {
     const api = { [`GET ${RELEASES}/tags/v1.2.0`]: { body: restRelease('v1.2.0', { prerelease: true }) } };
     const res = runCloud(['release', 'view', 'v1.2.0', '--json', FIELDS], { api });
     assertOk(res, 'release view v1.2.0');
@@ -59,7 +57,7 @@ describe('identity/gh in a cloud session: release view', () => {
     }, 'gh\'s fields');
   });
 
-  test('release view with no tag reads the latest release', { skip: skipWithoutNodeStub() }, async () => {
+  test('release view with no tag reads the latest release', async () => {
     const api = { [`GET ${RELEASES}/latest`]: { body: restRelease('v1.3.0') } };
     const res = runCloud(['release', 'view', '--json', 'tagName'], { api });
     assertOk(res, 'release view');
@@ -67,13 +65,13 @@ describe('identity/gh in a cloud session: release view', () => {
     assertSame(printedJson(res, 'release view'), { tagName: 'v1.3.0' }, 'its tag');
   });
 
-  test('release view of a tag with no release prints gh\'s release not found, exit 1', { skip: skipWithoutNodeStub() }, async () => {
+  test('release view of a tag with no release prints gh\'s release not found, exit 1', async () => {
     const res = runCloud(['release', 'view', 'v9.9.9', '--json', 'tagName'], { api: {} });
     expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
     expect(res.stderr.includes('release not found'), `gh's line, got: ${res.stderr}`).toBeTruthy();
   });
 
-  test('release view -q .<field> naming an asked field prints its value raw, as gh prints a string', { skip: skipWithoutNodeStub() }, async () => {
+  test('release view -q .<field> naming an asked field prints its value raw, as gh prints a string', async () => {
     const api = { [`GET ${RELEASES}/tags/v1.2.0`]: { body: restRelease('v1.2.0') } };
     for (const flag of ['-q', '--jq']) {
       const res = runCloud(['release', 'view', 'v1.2.0', '--json', 'tagName', flag, '.tagName'], { api });
@@ -92,7 +90,7 @@ describe('identity/gh in a cloud session: release view', () => {
     }
   });
 
-  test('release view with no --json prints the title, tag, draft, prerelease, published and url lines, then --, then the body', { skip: skipWithoutNodeStub() }, async () => {
+  test('release view with no --json prints the title, tag, draft, prerelease, published and url lines, then --, then the body', async () => {
     const api = { [`GET ${RELEASES}/tags/v1.2.0`]: { body: restRelease('v1.2.0', { body: '### Added\n\n- A thing.' }) } };
     const res = runCloud(['release', 'view', 'v1.2.0'], { api });
     assertOk(res, 'release view v1.2.0');
@@ -115,7 +113,7 @@ describe('identity/gh in a cloud session: release create', () => {
 });
 
 describe('identity/gh in a cloud session: release subcommands REST does not serve', () => {
-  test('release list runs the real gh once, whole, with no gh api call', { skip: skipWithoutNodeStub() }, async () => {
+  test('release list runs the real gh once, whole, with no gh api call', async () => {
     const argv = ['release', 'list', '--limit', '5'];
     const res = runCloud(argv, { api: {} });
     assertOk(res, 'release list');

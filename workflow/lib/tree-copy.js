@@ -11,7 +11,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('./run');
 const { gitIn } = require('./git');
 const { pause } = require('./pause');
 const { present } = require('./read');
@@ -105,10 +104,16 @@ const linkAs = (target, at, folder) => {
   fs.symlinkSync(target, at, type);
 };
 
+/** `stat`'s times set on `to`, in seconds, which keep the source's `mtimeMs` where a Date keeps only whole milliseconds. */
+const keepTimes = (to, stat) => fs.utimesSync(to, stat.atimeMs / 1000, stat.mtimeMs / 1000);
+
 /**
- * Node's own copy of one entry, `from` to `to`: a folder walked, a file's
- * mode and times kept, a link (a dangling one too) made again as a link with
- * its type, never followed. Windows' tree copy and red-proof's paths use it.
+ * Node's own copy of one entry, `from` to `to`, the same on every platform: a
+ * folder walked, then its mode and times set; a file cloned where the file
+ * system can, else copied, its mode and times kept; a link (a dangling one too)
+ * made again as a link with its type, never followed. A FIFO, a socket or a
+ * device is left out: reading one would stall or fail the copy. Owner, extended
+ * attributes and hard links are not carried. The tree copy and red-proof's paths use it.
  * @param {string} from
  * @param {string} to the path made, its parent there; a folder there is filled
  */
@@ -120,39 +125,19 @@ const copyEntry = (from, to) => {
   } else if (stat.isDirectory()) {
     fs.mkdirSync(to, { recursive: true });
     for (const name of fs.readdirSync(from)) copyEntry(path.join(from, name), path.join(to, name));
-  } else {
-    fs.copyFileSync(from, to);
-    fs.utimesSync(to, stat.atime, stat.mtime);
+    fs.chmodSync(to, stat.mode & 0o7777);
+    keepTimes(to, stat);
+  } else if (stat.isFile()) {
+    fs.copyFileSync(from, to, fs.constants.COPYFILE_FICLONE);
+    keepTimes(to, stat);
   }
-};
-
-/**
- * One entry copied whole, links kept as links: `cp` with the platform's flags,
- * a clone on macOS and a reflink where Linux can, and Node's own copy
- * (copyEntry) on Windows.
- * @throws {Error} the copy's own words
- */
-const copyOne = (from, to) => {
-  if (process.platform === 'win32') {
-    copyEntry(from, to);
-    return;
-  }
-  const flags = { darwin: ['-c', '-pPR'], linux: ['-a', '--reflink=auto'] }[process.platform] ?? ['-pPR'];
-  const res = spawnSync('cp', [...flags, from, `${path.dirname(to)}/`], {
-    encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true,
-  });
-  if (res.status === 0) {
-    if (res.stderr) process.stderr.write(res.stderr);
-    return;
-  }
-  throw new Error((res.stderr || '').trim() || `cp ${res.error ? `could not be run, ${res.error.code}` : 'failed'} on ${from}`);
 };
 
 /** `rel` copied whole into `dest`, unless left out; a folder holding a left-out path is made and walked entry by entry. */
 const put = (src, dest, rel, left) => {
   if (left.includes(rel)) return;
   if (!holdsUnder(left, rel)) {
-    copyOne(path.join(src, rel), path.join(dest, rel));
+    copyEntry(path.join(src, rel), path.join(dest, rel));
     return;
   }
   fs.mkdirSync(path.join(dest, rel), { recursive: true });

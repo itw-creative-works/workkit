@@ -11,7 +11,7 @@ const {
 } = require('../lib/voice');
 const { onPath } = require('../lib/run');
 const {
-  nativePath, physicalDir, physicalPath, cloneOutranks,
+  nativePath, UNREAD_PATH, physicalDir, physicalPath, cloneOutranks,
 } = require('../lib/platform');
 const { isLink } = require('../lib/link');
 const { isFile } = require('../lib/lock');
@@ -64,17 +64,33 @@ const reportEngine = (kit) => {
 };
 
 /**
+ * The Windows folder Git Bash's `/` is, as cygpath answers it, '' when none can
+ * (no cygpath on PATH); off Windows nativePath starts nothing and answers `/`.
+ * @param {object} kit
+ * @returns {string}
+ */
+const shellRootOf = (kit) => {
+  try {
+    return nativePath('/', { platform: kit.platform });
+  } catch (err) {
+    if (err.code !== UNREAD_PATH) throw err;
+    return '';
+  }
+};
+
+/**
  * Each home variable only Git Bash can read (shellOnlyHomes): the hooks read it
  * by its spelling and the commands through cygpath, so they name two folders.
+ * Each prints as Git Bash spells it, the list's `spelled`.
  * @param {object} kit
  * @returns {number} how many there are
  */
 const reportHomes = (kit) => {
-  const names = shellOnlyHomes(kit.env, kit.platform);
-  for (const name of names) {
-    warn(`env: ${name} (${kit.env[name]}) is a path only Git Bash can read, so the hooks and the commands read different folders; set it as a drive path (C:/...)`);
+  const homes = shellOnlyHomes(kit.env, kit.platform, shellRootOf(kit));
+  for (const { name, spelled } of homes) {
+    warn(`env: ${name} (${spelled}) is a path only Git Bash can read, so the hooks and the commands read different folders; set it as a drive path (C:/...)`);
   }
-  return names.length;
+  return homes.length;
 };
 
 /**

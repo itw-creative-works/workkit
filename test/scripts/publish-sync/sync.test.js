@@ -71,7 +71,7 @@ describe('workflow/home: the tower sync', () => {
     // A page an older app shipped, inside a folder the app owns.
     write(path.join(world.clone, 'targets', 'web', 'src', 'pages', 'retired.js'), 'export default 0;\n');
     // Everything else in the clone belongs to another step entirely.
-    write(path.join(world.clone, 'brief', 'jobs', 'morning.sh'), '#!/bin/sh\n');
+    write(path.join(world.clone, 'brief', 'jobs', 'morning.sh'), 'the morning runner\n');
     write(path.join(world.clone, '.github', 'workflows', 'brief.yml'), 'name: brief\n');
     write(path.join(world.clone, 'data', 'repos.json'), '{"repos":[]}\n');
 
@@ -277,7 +277,7 @@ describe('workflow/home: a top-level folder the app dropped', () => {
   test('an excluded folder is never retired, listed or not', () => {
     const world = dropAfterSync(['legacy']);
     // What an install, a mint and a run leave in the clone: excluded folders.
-    write(path.join(world.clone, 'node_modules', '.bin', 'omega'), '#!/bin/sh\n');
+    write(path.join(world.clone, 'node_modules', '.bin', 'omega'), 'the installed omega\n');
     write(path.join(world.clone, '.omega', 'runs', 'one.json'), '{}\n');
     write(path.join(world.clone, 'logs', 'deep', 'two.js'), 'export default 2;\n');
     // logs/ and .omega/ listed by the stamp, as a stamp from elsewhere could.
@@ -287,7 +287,7 @@ describe('workflow/home: a top-level folder the app dropped', () => {
     expect(!fs.existsSync(path.join(world.clone, 'legacy')), 'the retirement ran: legacy/ went').toBeTruthy();
     expect(read(path.join(world.clone, 'logs', 'deep', 'two.js')), 'the stamp-listed excluded folder stayed').toBe('export default 2;\n');
     expect(read(path.join(world.clone, '.omega', 'runs', 'one.json')), 'the stamp-listed dotted excluded folder stayed').toBe('{}\n');
-    expect(read(path.join(world.clone, 'node_modules', '.bin', 'omega')), 'and the unlisted excluded folder stayed').toBe('#!/bin/sh\n');
+    expect(read(path.join(world.clone, 'node_modules', '.bin', 'omega')), 'and the unlisted excluded folder stayed').toBe('the installed omega\n');
     cleanup(world.root);
   });
 

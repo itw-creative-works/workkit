@@ -3,12 +3,11 @@
 // The shared prologue is ./helpers.js.
 
 const { describe, test, expect, mkTmp } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   repoSlug, cleanup, git,
 } = require('./helpers');
 
-describe('changelog-links: reading the remote', { skip: skipWithoutNodeStub() }, () => {
+describe('changelog-links: reading the remote', () => {
   test('parses both GitHub remote URL forms, and rejects others', () => {
     const dir = mkTmp('cll-');
     git(dir, 'init', '-q', '-b', 'main');

@@ -189,12 +189,14 @@ const writeBriefMarks = (news, payload) => {
 module.exports = { composeBrief, render, writeBriefMarks, INSTRUCTION };
 
 if (require.main === module) {
-  try {
-    const news = collectCcNews();
-    const payload = composeBrief();
-    process.stdout.write(render(payload, news));
-    writeBriefMarks(news, payload);
-  } catch (err) {
-    process.exitCode = unreadPathStop(err);
-  }
+  (async () => {
+    try {
+      const news = await collectCcNews();
+      const payload = composeBrief();
+      process.stdout.write(render(payload, news));
+      writeBriefMarks(news, payload);
+    } catch (err) {
+      process.exitCode = unreadPathStop(err);
+    }
+  })();
 }

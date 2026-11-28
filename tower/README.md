@@ -33,6 +33,7 @@ workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://l
   - The ports belong to the tower, and a leftover server should never make the fresh one die on the address being in use.
 
 - `tower/start.js` starts the API and the dashboard's dev server together.
+  - Its first code is the kit's Node floor check (`workflow/lib/floor.js`): below the floor it prints the floor line on stderr, exits 1 and starts nothing.
   - One interrupt ends both, and either process ending takes the other with it.
   - A half has ended once its process exits and its last lines are read: its output to the end, or for at most a quarter second while a background child it left behind holds that output open, so such a half still takes the other with it at once.
   - A port's listeners and the end of one are `workflow/lib/ports.js`; a half's whole process tree is ended through `endTreeOf` (`workflow/lib/tree.js`), on Windows by its Windows ids.
@@ -84,6 +85,13 @@ workkit tower    # the API on http://127.0.0.1:8693 + the dashboard on https://l
   - The lines the tower composes itself (the announce, the one naming a half that ended) carry no color of their own.
 - `--verbose` passes everything through unchanged, from the first line (`workkit tower --verbose` reaches this script).
   - `WORKKIT_TOWER_VERBOSE=1` is the same door for callers that pass no arguments.
+
+- The suite runs `tower/start.js` with no real servers and no fixed ports through three seams.
+  - `WORKKIT_TOWER_API_CMD` and `WORKKIT_TOWER_APP_CMD` each hold a JSON list of strings, the program first (`["node", "half.js"]`).
+    - A set one starts that program for its half in place of the real one, with no shell between.
+    - A value that is not such a list is one line, `✖ tower: <name> is not a JSON list of strings`, and exit 1, before any port is touched.
+  - `WORKKIT_TOWER_PORTS` is the ports the run frees first (`8693 4300` by default), split on spaces, the second handed to the app half.
+  - `WORKKIT_TOWER_APP` is no seam of this script: it names the app's folder for the home seed (`workflow/home/options.js`).
 
 - Both halves speak the KIT's voice, not their own.
   - Every line either process writes for a person opens with the glyph for what happened (`✓ starting the dashboard`, `✖ could not free port 8693`).

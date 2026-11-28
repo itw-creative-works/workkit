@@ -6,12 +6,10 @@
 const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, alive, readPid } = require('../../lib/harness');
+const { readArgv, isCall, fmtCalls } = require('../../lib/argv-log');
+const { stubToolJs, jsPath, RUN_JS } = require('../../lib/platform');
 const {
-  recordArgv, recordArgvJs, readArgv, isCall, fmtCalls,
-} = require('../../lib/argv-log');
-const { gitPath, stubToolJs, jsPath } = require('../../lib/platform');
-const {
-  WORKFLOW_DIR, cleanup, writeStub, mkWorld, skipWithoutPty, runCli, seedSettings, inNode, mkKit, SLUG,
+  WORKFLOW_DIR, cleanup, recordCall, mkWorld, skipWithoutPty, runCli, seedSettings, inNode, mkKit, SLUG,
   HOME, mkHomeWorld,
 } = require('./helpers');
 
@@ -264,23 +262,31 @@ describe('workkit: the mint runs under a pty, and its capture file (issue #174)'
     // utility (it answers `--version`, which BSD's refuses).
     const gnuScript = (world) => {
       const logFile = path.join(world.root, 'script-argv.log');
-      writeStub(path.join(world.bin, 'script'), [
-        recordArgv(logFile),
-        'if [[ "$1" == \'--version\' ]]; then printf \'%s\\n\' \'script from util-linux 2.38\'; exit 0; fi',
-        'e=0; cmd=\'\'; file=\'\'',
-        'while [[ "$#" -gt 0 ]]; do',
-        '  case "$1" in',
-        '    -q) shift ;;',
-        '    -e) e=1; shift ;;',
-        '    -c) cmd="$2"; shift 2 ;;',
-        '    *) file="$1"; shift ;;',
-        '  esac',
-        'done',
-        'set -o pipefail',
-        'rc=0; bash -c "$cmd" 2>&1 | tee "$file" || rc=$?',
-        'if [[ "$e" -eq 1 ]]; then exit "$rc"; fi',
-        'exit 0',
-      ]);
+      // The command string is the kit's words joined by one space, so its words are the string split on one.
+      stubToolJs(world.bin, 'script', [
+        "const fs = require('fs');",
+        recordCall(logFile),
+        'const args = process.argv.slice(2);',
+        'const answer = () => {',
+        "  if (args[0] === '--version') { process.stdout.write('script from util-linux 2.38\\n'); return 0; }",
+        "  let status = false; let command = ''; let file = '';",
+        '  while (args.length) {',
+        '    const arg = args.shift();',
+        "    if (arg === '-e') status = true;",
+        "    else if (arg === '-c') command = args.shift();",
+        "    else if (arg !== '-q') file = arg;",
+        '  }',
+        `  const { spawnSync } = require(${jsPath(RUN_JS)});`,
+        // Both streams into the one capture file, in the order they came, as `2>&1 | tee` leaves it.
+        "  const fd = fs.openSync(file, 'w');",
+        "  const [program, ...rest] = command.split(' ');",
+        "  const res = spawnSync(program, rest, { stdio: ['inherit', fd, fd] });",
+        '  fs.closeSync(fd);',
+        '  process.stdout.write(fs.readFileSync(file));',
+        '  return status ? (res.status === null ? 1 : res.status) : 0;',
+        '};',
+        'process.exitCode = answer();',
+      ].join('\n'));
       return () => readArgv(logFile);
     };
 
@@ -310,13 +316,13 @@ describe('workkit: the mint runs under a pty, and its capture file (issue #174)'
       const logFile = path.join(world.root, 'script-argv.log');
       stubToolJs(world.bin, 'script', [
         "const fs = require('fs');",
-        recordArgvJs(jsPath(logFile), 'process.argv.slice(2)'),
+        recordCall(logFile),
         'const args = process.argv.slice(2);',
         "if (args[0] === '--version') { process.stderr.write('script: illegal option -- -\\n'); process.exit(1); }",
         'let status = false;',
         "while (args[0] === '-q' || args[0] === '-e') { if (args.shift() === '-e') status = true; }",
         'const [file, command, ...rest] = args;',
-        `const { spawnSync } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'run.js'))});`,
+        `const { spawnSync } = require(${jsPath(RUN_JS)});`,
         "const res = spawnSync(command, rest, { stdio: ['inherit', 'pipe', 'pipe'], encoding: 'utf8' });",
         "const screen = `${res.stdout || ''}${res.stderr || ''}`;",
         'fs.appendFileSync(file, screen);',
@@ -465,23 +471,26 @@ describe('workkit: the cloud secrets in the automatic and the report paths', () 
   test('a listing that never answers is bounded, and the bound is a quiet skip', () => {
     // A captive portal answers the handshake and never the request. The daily
     // path runs this at session start, so an unbounded read would hold the
-    // session open for as long as the portal felt like it. `exec` makes the
-    // recorded pid the sleep itself, the process the bound must signal.
+    // session open for as long as the portal felt like it. The recorded pid is
+    // the stand-in itself, the process that waits and the one the bound must signal.
     const world = mkHomeWorld({ binOnPath: true });
     const pidFile = path.join(world.root, 'gh.pid');
-    writeStub(path.join(world.root, 'bin', 'gh'), [
-      `if [[ "$1" == 'secret' && "$2" == 'list' ]]; then echo $$ > '${gitPath(pidFile)}'; exec sleep 60; fi`,
-      'exit 0',
-    ]);
-    // Five seconds: under a full parallel wave the stub's shell can take past
+    stubToolJs(world.bin, 'gh', [
+      "if (process.argv[2] === 'secret' && process.argv[3] === 'list') {",
+      `  require('fs').writeFileSync(${JSON.stringify(pidFile)}, \`\${process.pid}\\n\`);`,
+      '  setTimeout(() => {}, 60000);',
+      '}',
+    ].join('\n'));
+    // Five seconds: under a full parallel wave the stand-in's node can take past
     // two to start, and a bound that lands before the pid is written proves nothing.
     world.env.WORKKIT_GH_TIMEOUT = '5';
     const { kit, script } = mkKit(SLUG);
     const { code, out } = runCli(world, ['update', '--auto'], { script });
     expect(code, 'exit 0').toBe(0);
     const pid = readPid(pidFile);
-    // Git Bash's `$$` is an MSYS id Node cannot query, so there the exit code
-    // and runCli's own no-timeout assert are the proof.
+    // On Windows a stand-in whose node path holds a space starts through Git
+    // Bash's sh, so the process the bound ends is not the node that wrote its
+    // pid; there the exit code and runCli's own no-timeout assert are the proof.
     if (process.platform !== 'win32') expect(!alive(pid), `the read is bounded rather than waited out: the listing ${pid} was ended`).toBeTruthy();
     expect(!/secrets:/.test(out), `and the quiet path stays quiet about it, got: ${out}`).toBeTruthy();
     cleanup(world.root); cleanup(kit);

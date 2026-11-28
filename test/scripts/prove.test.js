@@ -11,9 +11,9 @@ const {
   describe, test, expect, run, pidIn, mkTmp, until,
 } = require('../lib/harness');
 const {
-  NODE_DIR, SYSTEM_PATH, shellPath, joinPath, which, stubTool, basePathWithout, skipWithoutCaughtSignal,
+  IS_WINDOWS, NODE_DIR, SYSTEM_PATH, joinPath, which, stubToolJs, handOverJs, basePathWithout, skipWithoutCaughtSignal,
 } = require('../lib/platform');
-const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const { recordArgvJs, readArgv, fmtCalls } = require('../lib/argv-log');
 const { mkRepo, OPT_IN_SHAPES } = require('../lib/git-repo');
 const { treeOf } = require('../lib/red-snapshot');
 const {
@@ -511,23 +511,37 @@ describe('workkit prove', { skip: skipWithoutWrapper() }, () => {
   });
 
   describe('workkit prove: the hold, asked in process', () => {
-    test('a proved index tree in a Claude session: the hold\'s line, exit 1, the record as it was, and no bash started on the way', () => {
+    // A proved index tree in a Claude session, asked of workflow/workkit.js under the running node.
+    // PATH is `first`, then node and the system tools, so no shim of the session's is a bash script reached by name.
+    const heldProve = (first) => {
       const w = mkWorld();
       stagePassing(w);
       holdBreaking(w);
       const tree = indexTree(w);
       plantRecord(w.workflowHome, w.repo, tree);
-      // A bash first on PATH that records each start, then hands it to the real one;
-      // the command itself is workflow/workkit.js under the running node.
-      // The rest of PATH is node and the system tools, so no shim of the session's is a bash script reached by name.
-      const bin = mkTmp('prove-bash-');
-      const starts = path.join(bin, 'starts.log');
-      stubTool(bin, 'bash', ['#!/bin/bash', recordArgv(starts), `exec "${shellPath(which('bash', SYSTEM_PATH))}" "$@"`]);
-      const env = { ...wiredNpmEnv(w), CLAUDECODE: '1', PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH) };
-      const res = run(process.execPath, [CLI, 'prove'], { cwd: w.repo, env });
+      const env = { ...wiredNpmEnv(w), CLAUDECODE: '1', PATH: joinPath(first, NODE_DIR, SYSTEM_PATH) };
+      return { w, tree, res: run(process.execPath, [CLI, 'prove'], { cwd: w.repo, env }) };
+    };
+
+    test('a proved index tree in a Claude session: the hold\'s line, exit 1, the record as it was', () => {
+      const { w, tree, res } = heldProve();
       expect(res.status, `refused with exit 1, got: ${res.status} ${res.stdout}${res.stderr}`).toBe(1);
       expect(res.stderr.includes('suite-hold: this tree is already proved'), `the hold's line, got: ${res.stderr}`).toBe(true);
       expect(recorded(w), 'the record as it was').toBe(`${tree}\n`);
+      cleanup(w.dir);
+    });
+
+    // run.js starts a bare `bash` as Git Bash's bash.exe, and child_process tries a name with no extension
+    // only as bash.com, then bash.exe: neither reaches an extensionless stand-in, so on Windows it would pass unseen.
+    test('a proved index tree in a Claude session: no bash started on the way', {
+      skip: IS_WINDOWS && 'every start of bash on Windows is bash.exe, which a Node stand-in cannot record',
+    }, () => {
+      // A bash first on PATH that records each start, then hands it to the real one.
+      const bin = mkTmp('prove-bash-');
+      const starts = path.join(bin, 'starts.log');
+      stubToolJs(bin, 'bash', [recordArgvJs(JSON.stringify(starts)), handOverJs(which('bash', SYSTEM_PATH))].join('\n'));
+      const { w, res } = heldProve(bin);
+      expect(res.status, `refused with exit 1, got: ${res.status} ${res.stdout}${res.stderr}`).toBe(1);
       expect(fmtCalls(readArgv(starts)), 'no bash was started').toBe(fmtCalls([]));
       cleanup(w.dir);
     });

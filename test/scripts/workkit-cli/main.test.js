@@ -165,7 +165,7 @@ describe('workkit: the arguments a routed program gets', () => {
     const argvLog = path.join(world.root, 'prove-argv.log');
     const whereLog = path.join(world.root, 'prove-file');
     fs.writeFileSync(path.join(kit, 'workflow', 'prove.js'), [
-      recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)'),
+      recordArgvJs(JSON.stringify(argvLog)),
       `require('fs').writeFileSync(${JSON.stringify(whereLog)}, __filename);`,
       'process.exit(3);',
     ].join('\n'));

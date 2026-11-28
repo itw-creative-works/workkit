@@ -17,7 +17,7 @@ describe('standards.js: it fails loudly, never silently', () => {
     const kit = mkTmp('wf-std-');
     const engine = path.join(kit, 'workflow');
     fs.mkdirSync(engine);
-    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
+    fs.cpSync(WORKFLOW_DIR, engine, { recursive: true });
     copyKitSiblings(kit);
     fs.rmSync(path.join(engine, 'templates', 'session.md'));
     const repo = makeRepo();
@@ -39,7 +39,7 @@ describe('standards.js: it fails loudly, never silently', () => {
     const kit = mkTmp('wf-std-');
     const engine = path.join(kit, 'workflow');
     fs.mkdirSync(engine);
-    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, engine]);
+    fs.cpSync(WORKFLOW_DIR, engine, { recursive: true });
     copyKitSiblings(kit);
     fs.rmSync(path.join(engine, 'labels.json'));
     const repo = makeRepo();

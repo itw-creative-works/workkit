@@ -11,7 +11,7 @@ const { stripVTControlCharacters } = require('util');
 const {
   start, until, mkTmp, SPAWN_DEADLINE,
 } = require('./harness');
-const { jsPath } = require('./platform');
+const { jsPath, RUN_JS } = require('./platform');
 const { escapeRegex } = require('../../workflow/lib/regex');
 
 const KIT = path.join(__dirname, '..', '..');
@@ -38,7 +38,7 @@ const HOLD = [
 const DRIVER = [
   "const fs = require('fs');",
   `const { spin } = require(${jsPath(path.join(KIT, 'workflow', 'lib', 'spin.js'))});`,
-  `const { spawnSync, spawn } = require(${jsPath(path.join(KIT, 'workflow', 'lib', 'run.js'))});`,
+  `const { spawnSync, spawn } = require(${jsPath(RUN_JS)});`,
   'const [mode, hold, release, bound, answers] = process.argv.slice(1);',
   "const argv = ['-e', hold, release, bound];",
   "const stdio = ['ignore', 'inherit', 'inherit'];",

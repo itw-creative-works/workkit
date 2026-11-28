@@ -7,6 +7,23 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 ## [Unreleased]
 
+### Changed
+
+- [#580](../../issues/580) - Every stand-in program the kit's test suite writes is Node, so about 110 cases that skipped on Windows run there now, with no C# compiler needed. A test file starts a shell only where the shell is its subject, and a test holds that list.
+- [#580](../../issues/580) - Each `run:` line in the kit's CI workflows starts one program. The scope, the install, the CHANGELOG check and the kit's Node are Node scripts under `.github/scripts/`, which write `GITHUB_ENV` and `GITHUB_OUTPUT` themselves; the fan-in check's rule is its step's `if:`.
+- [#580](../../issues/580) - The hooks start no `rm`, `wc`, `tail` or `mkdir`, which a Windows PATH may lack. A marker is ended by writing it empty, a journal's size is its stat's, its tail is read by ranges, and a write makes its own folders.
+- [#580](../../issues/580) - The snapshot copy is Node's own on every platform and starts no `cp`. A file is cloned where the file system has clones, modes, times and links are kept, and a FIFO, a socket or a device is left out.
+- [#580](../../issues/580) - The morning brief reads Claude Code's CHANGELOG with Node's `fetch`, bounded at 20 seconds, and starts no `curl`. A refusal, a 404, a stall or an empty answer is no news.
+- [#580](../../issues/580) - The tower's test seams are `WORKKIT_TOWER_API_CMD` and `WORKKIT_TOWER_APP_CMD`, each a JSON list of the program and its arguments, started with no shell. A value that is not such a list stops `tower/start.js` with one line and exit 1.
+- [#580](../../issues/580) - At session start the hooks say one line when Claude Code is older than the build they are proved on, naming the build they need, so a journal read that an older build cannot answer is never silent.
+- [#580](../../issues/580) - `tower/start.js` checks the kit's Node floor before it starts anything: on an older Node it prints the floor line and exits 1.
+- (no issue) - A Mac's 9am job starts through the engine's address (`~/.claude/workkit/morning-task.js`), as the Windows task does. A plugin update or a moved clone needs no reinstall there now. A Mac with no engine link is warned that its job cannot reach the kit.
+
+### Fixed
+
+- (no issue) - On Windows `workkit doctor` names a home variable only Git Bash can read when it is started from Git Bash too. Git Bash rewrites `/home/name` into a folder under its own before the doctor reads it, so the warning never printed there.
+- (no issue) - The kit's own test suite starts no `jq` and no `sed`: its `gh` fakes answer `--jq` in Node. Running `npm test` in this repo no longer needs `jq`.
+
 ## [0.106.0] - 2026-11-27
 
 ### Changed

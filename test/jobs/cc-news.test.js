@@ -1,16 +1,55 @@
 // Tests for jobs/morning/brief/cc-news.js: the upstream Claude Code entries the
-// morning brief carries, grouped by topic. Both reads go through the injected
-// exec seam (`curl` a fixture CHANGELOG, `gh` a fixture board), so nothing
-// here reaches the network or the real ~/.workkit.
+// morning brief carries, grouped by topic. The news read fetches a fixture
+// CHANGELOG from a local server on a port the system picks, and the board read
+// goes through the injected exec seam (`gh` a fixture board), so nothing here
+// reaches the network or the real ~/.workkit.
 
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
-const { describe, test, expect, WORKKIT_DIR, mkTmp } = require('../lib/harness');
+const { pathToFileURL } = require('url');
+const {
+  describe, test, expect, before, after, WORKKIT_DIR, mkTmp,
+} = require('../lib/harness');
 
-const { collectCcNews, renderCcNews, renderVersionMark, parseSections, topicOf } =
+const { collectCcNews, fetchChangelog, renderCcNews, renderVersionMark, parseSections, topicOf } =
   require(path.join(__dirname, '..', '..', 'jobs', 'morning', 'brief', 'cc-news.js'));
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+
+// The source the news read fetches: one server for the suite, each world a path
+// of its own answering by the world's `status` and `stall`.
+const worlds = new Map();
+let base = '';
+const server = http.createServer((req, res) => {
+  const world = worlds.get(req.url);
+  if (!world) { res.writeHead(404); res.end(); return; }
+  res.writeHead(world.status, { 'content-type': 'text/plain' });
+  // A stall sends the head and the start of the text, then nothing more.
+  if (world.stall) { res.write(world.text.slice(0, 20)); return; }
+  res.end(world.text);
+});
+
+before(() => new Promise((resolve) => {
+  server.listen(0, '127.0.0.1', () => {
+    base = `http://127.0.0.1:${server.address().port}`;
+    resolve();
+  });
+}));
+
+after(() => {
+  server.closeAllConnections();
+  server.close();
+});
+
+/** An address where nothing listens: a port the system gave out, then closed. */
+const refusedSource = () => new Promise((resolve) => {
+  const gone = http.createServer();
+  gone.listen(0, '127.0.0.1', () => {
+    const { port } = gone.address();
+    gone.close(() => resolve(`http://127.0.0.1:${port}/CHANGELOG.md`));
+  });
+});
 
 // Two releases of harness news and one of housekeeping, in the shape upstream
 // publishes: `## <version>` and a list under it.
@@ -35,25 +74,31 @@ const CHANGELOG = `# Changelog
 const SLUG = 'owner/private-home';
 
 /**
- * A world: a scratch workflow home naming a home repo, plus an exec seam that
- * answers `curl` with the fixture CHANGELOG and `gh` with the fixture board.
+ * A world: a scratch workflow home naming a home repo, its own path on the
+ * suite's server serving the fixture CHANGELOG, plus an exec seam that answers
+ * `gh` with the fixture board.
  *
  * `slug: null` writes no settings file: a machine with no home repo, which is
  * a board that cannot be read at all.
  */
 const mkWorld = (text = CHANGELOG, { slug = SLUG } = {}) => {
   const home = mkTmp('cc-news-');
+  const route = `/${path.basename(home)}/CHANGELOG.md`;
   const world = {
     home,
     workflowHome: path.join(home, WORKKIT_DIR),
     cacheFile: path.join(home, WORKKIT_DIR, '.cache.json'),
+    route,
+    source: `${base}${route}`,
     calls: [],
     text,
-    fail: null,        // the curl read throws
+    status: 200,       // what the server answers the news read with
+    stall: false,      // the server sends the head and a little text, then nothing
     ghFail: null,      // the board read throws
     ghOut: null,       // raw board stdout, for the answers jq would not parse
     discussions: [],   // what the home repo carries, newest first
   };
+  worlds.set(route, world);
   world.exec = (cmd, args) => {
     world.calls.push([cmd, ...args]);
     if (cmd === 'gh') {
@@ -61,8 +106,7 @@ const mkWorld = (text = CHANGELOG, { slug = SLUG } = {}) => {
       if (world.ghOut !== null) return world.ghOut;
       return JSON.stringify({ data: { repository: { discussions: { nodes: world.discussions } } } });
     }
-    if (world.fail) throw world.fail;
-    return world.text;
+    throw new Error(`the news read started ${cmd}: it fetches, it starts no program`);
   };
   fs.mkdirSync(world.workflowHome, { recursive: true });
   if (slug) {
@@ -74,9 +118,9 @@ const mkWorld = (text = CHANGELOG, { slug = SLUG } = {}) => {
   return world;
 };
 
-const collectIn = (world) => collectCcNews({
+const collectIn = async (world) => collectCcNews({
   workflowHome: world.workflowHome,
-  source: 'file:///fixture/CHANGELOG.md',
+  source: world.source,
   exec: world.exec,
 });
 
@@ -126,10 +170,10 @@ describe('jobs/cc-news: the topic map', () => {
 
 
 describe('jobs/cc-news: what is newer than the cursor', () => {
-  test('every entry above the cursor rides, each carrying its version and topic', () => {
+  test('every entry above the cursor rides, each carrying its version and topic', async () => {
     const world = mkWorld();
     board(world, '2.1.219');
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.matches.length, 'both entries of the one newer release').toBe(2);
     expect(news.matches[0].version, 'the version each shipped in').toBe('2.1.220');
     expect(news.matches[0].topic, 'the hook entry files under hooks').toBe('hooks');
@@ -138,28 +182,28 @@ describe('jobs/cc-news: what is newer than the cursor', () => {
     cleanup(world.home);
   });
 
-  test('an older cursor reaches back across releases, housekeeping included', () => {
+  test('an older cursor reaches back across releases, housekeeping included', async () => {
     const world = mkWorld();
     board(world, '2.1.218');
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.matches.length, 'all five entries of the two newer releases').toBe(5);
     expect(news.matches.some((m) => /model picker/.test(m.entry)), 'the picker fix rides too: the digest judges, not the job').toBeTruthy();
     cleanup(world.home);
   });
 
-  test('a cursor at the latest release reports nothing', () => {
+  test('a cursor at the latest release reports nothing', async () => {
     const world = mkWorld();
     board(world, '2.1.220');
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.matches.length, 'a quiet morning').toBe(0);
     expect(renderCcNews(news), 'and no block at all').toBe('');
     cleanup(world.home);
   });
 
-  test('the block groups by topic, versions on every line', () => {
+  test('the block groups by topic, versions on every line', async () => {
     const world = mkWorld();
     board(world, '2.1.219');
-    const block = renderCcNews(collectIn(world));
+    const block = renderCcNews(await collectIn(world));
     expect(/^\n--- CC NEWS ---\n/.test(block), 'it is a labeled block').toBeTruthy();
     expect(/since 2\.1\.219, by topic:/.test(block), 'saying where it counted from').toBeTruthy();
     expect(/\[hooks\]\n2\.1\.220: Added a `DirectoryAdded` hook/.test(block), `entries sit under their topic: ${block}`).toBeTruthy();
@@ -170,10 +214,10 @@ describe('jobs/cc-news: what is newer than the cursor', () => {
 });
 
 describe('jobs/cc-news: the cursor is the board', () => {
-  test('the since is read off the latest published brief, over gh', () => {
+  test('the since is read off the latest published brief, over gh', async () => {
     const world = mkWorld();
     board(world, '2.1.219');
-    expect(collectIn(world).since, 'the line in the brief IS the cursor').toBe('2.1.219');
+    expect((await collectIn(world)).since, 'the line in the brief IS the cursor').toBe('2.1.219');
     const calls = ghCalls(world);
     expect(calls.length, `one board read: ${JSON.stringify(calls)}`).toBe(1);
     const argv = calls[0].join(' ');
@@ -184,38 +228,38 @@ describe('jobs/cc-news: the cursor is the board', () => {
     cleanup(world.home);
   });
 
-  test('the newest brief wins, and older ones are not consulted', () => {
+  test('the newest brief wins, and older ones are not consulted', async () => {
     const world = mkWorld();
     world.discussions = [
       { title: 'brief: 2026-07-29', body: renderVersionMark('2.1.219') },
       { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.100') },
     ];
-    expect(collectIn(world).since, 'the board is newest first and the first brief answers').toBe('2.1.219');
+    expect((await collectIn(world)).since, 'the board is newest first and the first brief answers').toBe('2.1.219');
     cleanup(world.home);
   });
 
-  test('a summary discussion is not a brief', () => {
+  test('a summary discussion is not a brief', async () => {
     // The daily summaries share the board. Only a `brief: ` title is a cursor.
     const world = mkWorld();
     world.discussions = [
       { title: 'daily: 2026-07-29', body: renderVersionMark('2.1.100') },
       { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.219') },
     ];
-    expect(collectIn(world).since, 'the summary above it is passed over').toBe('2.1.219');
+    expect((await collectIn(world)).since, 'the summary above it is passed over').toBe('2.1.219');
     cleanup(world.home);
   });
 
-  test('a brief with no version line is passed over for one that has it', () => {
+  test('a brief with no version line is passed over for one that has it', async () => {
     const world = mkWorld();
     world.discussions = [
       { title: 'brief: 2026-07-29', body: 'HEADLINE: nothing to see.\n' },
       { title: 'brief: 2026-07-28', body: renderVersionMark('2.1.218') },
     ];
-    expect(collectIn(world).since, 'the line is what makes a brief a cursor').toBe('2.1.218');
+    expect((await collectIn(world)).since, 'the line is what makes a brief a cursor').toBe('2.1.218');
     cleanup(world.home);
   });
 
-  test('a brief far down a busy board is still the cursor', () => {
+  test('a brief far down a busy board is still the cursor', async () => {
     // Two posts a day share this board, and a morning whose send failed carries
     // no line at all. A narrow read window lets the last line-carrying brief
     // scroll out of view, which reads as an empty board and re-seeds the cursor,
@@ -225,7 +269,7 @@ describe('jobs/cc-news: the cursor is the board', () => {
       { title: `daily: 2026-07-${i}`, body: 'a summary carries no cursor' }
     ));
     world.discussions = [...filler, { title: 'brief: 2026-06-01', body: renderVersionMark('2.1.218') }];
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.since, 'sixty posts deep is still inside the window').toBe('2.1.218');
     expect(news.matches.length, 'so the entries in between are reported rather than seeded past').toBe(5);
     expect(/discussions\(first:100/.test(ghCalls(world)[0].join(' ')), 'the window is the GraphQL maximum').toBeTruthy();
@@ -238,102 +282,128 @@ describe('jobs/cc-news: the cursor is the board', () => {
 });
 
 describe('jobs/cc-news: a first run seeds, it does not report', () => {
-  test('an empty board is a first run: nothing reported, the latest carried', () => {
+  test('an empty board is a first run: nothing reported, the latest carried', async () => {
     const world = mkWorld();
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.since, 'nothing has ever been published').toBe(null);
     expect(news.matches.length, 'so the history is not dumped into the brief').toBe(0);
     expect(news.version, 'and the brief about to publish carries the latest').toBe('2.1.220');
     cleanup(world.home);
   });
 
-  test('no home repo reads as a first run, and asks gh nothing', () => {
+  test('no home repo reads as a first run, and asks gh nothing', async () => {
     const world = mkWorld(CHANGELOG, { slug: null });
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.since, 'there is no board to read').toBe(null);
     expect(ghCalls(world).length, 'so nothing was asked of it').toBe(0);
     expect(news.version, 'the version is still there to publish').toBe('2.1.220');
     cleanup(world.home);
   });
 
-  test('the cursor never moves backwards', () => {
+  test('the cursor never moves backwards', async () => {
     const world = mkWorld();
     board(world, '2.2.0');
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.version, 'an older source does not rewind the cursor').toBe('2.2.0');
     cleanup(world.home);
   });
 });
 
 describe('jobs/cc-news: nothing on this machine records the cursor', () => {
-  test('a pre-seeded ccNews key is left byte-identical', () => {
+  test('a pre-seeded ccNews key is left byte-identical', async () => {
     // No migration: the stale key is the owner's to remove, and no runner is
     // allowed to read it, write it, or take it away.
     const world = mkWorld();
     board(world, '2.1.218');
-    const before = JSON.stringify({ ccNews: { version: '1.0.0' }, homeCache: { [SLUG]: { repositoryId: 'R_1' } } });
-    fs.writeFileSync(world.cacheFile, before);
-    const news = collectIn(world);
+    const seeded = JSON.stringify({ ccNews: { version: '1.0.0' }, homeCache: { [SLUG]: { repositoryId: 'R_1' } } });
+    fs.writeFileSync(world.cacheFile, seeded);
+    const news = await collectIn(world);
     expect(news.since, 'the board answered, not the file').toBe('2.1.218');
-    expect(fs.readFileSync(world.cacheFile, 'utf8'), 'and the file is untouched').toBe(before);
+    expect(fs.readFileSync(world.cacheFile, 'utf8'), 'and the file is untouched').toBe(seeded);
     cleanup(world.home);
   });
 });
 
 describe('jobs/cc-news: a failure is silent', () => {
-  test('a fetch that throws reports nothing and carries the cursor forward', () => {
+  // The 404 serves a real changelog, so a read that ignored the status would
+  // hand it back; the stall sends a little of the text, then nothing, under a
+  // short bound in place of the module's 20 seconds.
+  test('the news read: a served text comes back whole, and a 404, a refused connection and a stall past the bound each answer null', async () => {
+    const served = mkWorld();
+    expect(await fetchChangelog(served.source), 'the served text, as served').toBe(CHANGELOG);
+    const missing = mkWorld();
+    missing.status = 404;
+    expect(await fetchChangelog(missing.source), 'a 404').toBe(null);
+    expect(await fetchChangelog(await refusedSource()), 'a refused connection').toBe(null);
+    const stalled = mkWorld();
+    stalled.stall = true;
+    expect(await fetchChangelog(stalled.source, 200), 'a stall past the bound').toBe(null);
+    for (const world of [served, missing, stalled]) cleanup(world.home);
+  });
+
+  test('the news read from a file: address: the file\'s text comes back, and a missing or an empty file answers null', async () => {
+    const dir = mkTmp('cc-news-file-');
+    const at = (name) => pathToFileURL(path.join(dir, name)).href;
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), CHANGELOG);
+    fs.writeFileSync(path.join(dir, 'empty.md'), '');
+    expect(await fetchChangelog(at('CHANGELOG.md')), 'the file\'s text, as written').toBe(CHANGELOG);
+    expect(await fetchChangelog(at('missing.md')), 'a missing file').toBe(null);
+    expect(await fetchChangelog(at('empty.md')), 'an empty file').toBe(null);
+  });
+
+  test('a read that answers null reports nothing and carries the cursor forward', async () => {
     const world = mkWorld();
     board(world, '2.1.218');
-    world.fail = new Error('curl: (6) Could not resolve host');
-    const news = collectIn(world);
+    world.source = await refusedSource();
+    const news = await collectIn(world);
     expect(news.matches.length, 'no news').toBe(0);
     expect(renderCcNews(news), 'no block').toBe('');
     expect(news.version, 'and the published line repeats the board\'s version rather than rewinding it').toBe('2.1.218');
     cleanup(world.home);
   });
 
-  test('an empty or unparseable body skips too', () => {
+  test('an empty or unparseable body skips too', async () => {
     const empty = mkWorld('');
-    expect(collectIn(empty).version, 'a non-200 curl -f prints nothing, and there is no version to carry').toBe(null);
+    expect((await collectIn(empty)).version, 'an empty text has no version to carry').toBe(null);
     cleanup(empty.home);
     const junk = mkWorld('<html><body>404: Not Found</body></html>\n');
-    expect(collectIn(junk).matches.length, 'and a page that is not a changelog has no releases').toBe(0);
+    expect((await collectIn(junk)).matches.length, 'and a page that is not a changelog has no releases').toBe(0);
     cleanup(junk.home);
   });
 
-  test('a gh that refuses publishes no version line rather than re-seeding', () => {
+  test('a gh that refuses publishes no version line rather than re-seeding', async () => {
     // A board that could not be read is not an empty board. Seeding here would
     // move the cursor to latest on a run that reported nothing, and everything
     // the last good brief had yet to cover would be lost.
     const world = mkWorld();
     world.ghFail = new Error('gh: could not authenticate');
-    const news = collectIn(world);
+    const news = await collectIn(world);
     expect(news.since, 'no board, no since').toBe(null);
     expect(news.matches.length, 'so nothing is reported').toBe(0);
     expect(news.version, 'and no line publishes: the last brief\'s cursor stands').toBe(null);
     cleanup(world.home);
   });
 
-  test('a board answer that is not the shape asked for is not a throw, and not a seed', () => {
+  test('a board answer that is not the shape asked for is not a throw, and not a seed', async () => {
     const world = mkWorld();
     world.ghOut = '{ not json';
-    const junk = collectIn(world);
+    const junk = await collectIn(world);
     expect(junk.since, 'nothing could be read').toBe(null);
     expect(junk.version, 'and a failed read publishes no cursor').toBe(null);
     cleanup(world.home);
 
     const hidden = mkWorld();
     hidden.ghOut = '{"data":{"repository":null}}';
-    const unseen = collectIn(hidden);
+    const unseen = await collectIn(hidden);
     expect(unseen.since, 'and so is a repo the token cannot see').toBe(null);
     expect(unseen.version, 'which is a failure too, not an empty board').toBe(null);
     cleanup(hidden.home);
   });
 
-  test('an unreadable settings file reads as no home repo', () => {
+  test('an unreadable settings file reads as no home repo', async () => {
     const world = mkWorld();
     fs.writeFileSync(path.join(world.workflowHome, 'settings.json'), '{ not json');
-    expect(collectIn(world).since, 'treated as never looked').toBe(null);
+    expect((await collectIn(world)).since, 'treated as never looked').toBe(null);
     expect(ghCalls(world).length, 'and nothing was asked of gh').toBe(0);
     cleanup(world.home);
   });

@@ -8,9 +8,12 @@ const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
 const {
-  shellPath, joinPath, which, spawnSync,
+  joinPath, which, spawnSync, stubToolJs,
 } = require('../../lib/platform');
-const { git, writeStub, binDirWithout } = require('./helpers');
+const {
+  recordArgvJs, readArgv, isCall, eqArgv, fmtCalls,
+} = require('../../lib/argv-log');
+const { git, binDirWithout } = require('./helpers');
 const { cleanup, writeJson, mkPublishWorld, publish, fromPages } = require('../publish-sync/helpers');
 
 const GONE = ['jq', 'awk', 'tar', 'find', 'cp'];
@@ -18,7 +21,7 @@ const GONE = ['jq', 'awk', 'tar', 'find', 'cp'];
 /**
  * mkPublishWorld with the kit committed, `site.url` set so the CNAME step
  * writes, a `gh` that records its argv, and an `npm` whose build copies the
- * page with bash alone. `PATH` is the stand-ins ahead of a mirror without GONE.
+ * page in Node alone. `PATH` is the stand-ins ahead of a mirror without GONE.
  */
 const mkBareWorld = () => {
   const world = mkPublishWorld();
@@ -32,27 +35,29 @@ const mkBareWorld = () => {
   writeJson(settings, { ...current, site: { ...current.site, url: 'https://board.example.com' } });
 
   const ghLog = path.join(world.root, 'gh-argv.log');
-  writeStub(path.join(bin, 'gh'), [`printf '%s\\n' "$*" >> ${JSON.stringify(shellPath(ghLog))}`, 'exit 0']);
+  stubToolJs(bin, 'gh', recordArgvJs(JSON.stringify(ghLog)));
   const npmLog = path.join(world.root, 'npm.log');
-  writeStub(path.join(bin, 'npm'), [
-    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(npmLog))}`,
-    'prefix="$PWD"',
-    'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
-    'if [[ "$1" == install ]]; then',
-    '  mkdir -p "$prefix/node_modules" && : > "$prefix/node_modules/.package-lock.json"',
-    '  exit 0',
-    'fi',
-    'mkdir -p "$prefix/dist"',
-    'while IFS= read -r line; do printf \'%s\\n\' "$line"; done < "$prefix/src/index.html" > "$prefix/dist/index.html"',
-    'exit 0',
-  ]);
+  stubToolJs(bin, 'npm', [
+    "const fs = require('fs');",
+    "const path = require('path');",
+    recordArgvJs(JSON.stringify(npmLog), '[process.cwd(), ...process.argv.slice(2)]'),
+    'const args = process.argv.slice(2);',
+    "const prefix = args[0] === '--prefix' ? args[1] : process.cwd();",
+    "if (args[0] === 'install') {",
+    "  fs.mkdirSync(path.join(prefix, 'node_modules'), { recursive: true });",
+    "  fs.writeFileSync(path.join(prefix, 'node_modules', '.package-lock.json'), '');",
+    '} else {',
+    "  fs.mkdirSync(path.join(prefix, 'dist'), { recursive: true });",
+    "  fs.writeFileSync(path.join(prefix, 'dist', 'index.html'), fs.readFileSync(path.join(prefix, 'src', 'index.html')));",
+    '}',
+  ].join('\n'));
 
   const PATH = joinPath(bin, binDirWithout(...GONE));
   return {
     ...world,
     PATH,
     env: { ...world.env, PATH },
-    ghCalls: () => fs.readFileSync(ghLog, 'utf8').trim().split('\n'),
+    ghCalls: () => readArgv(ghLog),
   };
 };
 
@@ -77,10 +82,10 @@ describe('workflow/publish: no jq, awk, tar, find or cp', () => {
     expect(fs.readFileSync(path.join(main, 'targets', 'web', 'src', 'index.html'), 'utf8'), 'the synced project pushed to it').toBe('<html>the current board</html>\n');
     expect(spawnSync('git', ['-C', main, 'log', '-1', '--format=%s'], { encoding: 'utf8' }).stdout.trim(), 'under the sync\'s subject').toBe('chore(home): sync the tower project');
 
-    expect(world.ghCalls().some((argv) => /label list/.test(argv)), `the heal ran: ${world.ghCalls().join(' | ')}`).toBeTruthy();
-    expect(world.npms().filter((call) => call.endsWith('|install')).length, `one install: ${world.npms().join(' | ')}`).toBe(1);
-    expect(world.npms().filter((call) => call.endsWith('run build')).length, `one build: ${world.npms().join(' | ')}`).toBe(1);
-    expect(world.mints().length, `one mint: ${world.mints().join(' | ')}`).toBe(1);
+    expect(world.ghCalls().some((call) => isCall(call, 'label', 'list')), `the heal ran: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
+    expect(world.npms().filter((call) => eqArgv(call.slice(1), ['install'])).length, `one install: ${fmtCalls(world.npms())}`).toBe(1);
+    expect(world.npms().filter((call) => eqArgv(call.slice(-2), ['run', 'build'])).length, `one build: ${fmtCalls(world.npms())}`).toBe(1);
+    expect(world.mints().length, `one mint: ${fmtCalls(world.mints())}`).toBe(1);
     const worktrees = spawnSync('git', ['-C', world.tower, 'worktree', 'list'], { encoding: 'utf8' }).stdout;
     expect(worktrees.trim().split('\n').length, `the published branch's worktree is gone: ${worktrees}`).toBe(1);
     cleanup(world.root);

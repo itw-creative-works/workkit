@@ -113,16 +113,29 @@ export function shellEnvOf(env, platform) {
 }
 
 /**
- * The HOME_VARS names set to a path shellDirOf cannot read by its spelling: on
- * Windows, one whose answer still starts with one `/` (two is a UNC path), such
- * as a home under Git Bash's own root or `/cygdrive/c/x`. None off Windows.
+ * The HOME_VARS set to a path only Git Bash can read, on Windows: a shellDirOf
+ * answer starting with one `/` (two is UNC), such as `/cygdrive/c/x`, or
+ * `shellRoot` or a folder in it (slashes, a closing slash and case ignored).
+ * None off Windows. `spelled` is Git Bash's spelling: the value as given for
+ * the first, `/` and the part after the root (`/` for the root) for the rest.
  * @param {object} env the variables as read
  * @param {string} platform `win32` on Windows
- * @returns {string[]} the names, in HOME_VARS order
+ * @param {string} [shellRoot] the Windows folder Git Bash's `/` is, none when ''
+ * @returns {{name: string, spelled: string}[]} in HOME_VARS order
  */
-export function shellOnlyHomes(env, platform) {
+export function shellOnlyHomes(env, platform, shellRoot = '') {
   if (platform !== 'win32') return [];
-  return HOME_VARS.filter((name) => env[name] && /^\/(?!\/)/.test(shellDirOf(env[name], env, platform)));
+  const folded = (path) => path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const root = folded(shellRoot);
+  return HOME_VARS.flatMap((name) => {
+    if (!env[name]) return [];
+    const dir = shellDirOf(env[name], env, platform);
+    if (/^\/(?!\/)/.test(dir)) return [{ name, spelled: env[name] }];
+    if (root === '') return [];
+    if (folded(dir) === root) return [{ name, spelled: '/' }];
+    // folded keeps every character but a closing slash, so the root's length cuts dir too.
+    return folded(dir).startsWith(`${root}/`) ? [{ name, spelled: `/${dir.slice(root.length + 1)}` }] : [];
+  });
 }
 
 // The folder every marker lives under.
@@ -222,18 +235,31 @@ export async function journalFor(gitTop, cwd, home) {
   return journalPath((await gitTop(cwd)) || cwd, home);
 }
 
+// The most bytes one engine read answers.
+const READ_RANGE = 4 * 1024 * 1024;
+
 /**
- * The gh journal's lines past an offset, parsed (journalLines): `tail -c` run
- * through `run`, so the journal is never read whole; an absent journal, or a
- * tail that fails, is no lines.
- * @param {function} run the facts' run, `(argv) => Promise<{exitCode, stdout}>`
+ * The gh journal's lines past an offset, parsed (journalLines): its bytes from
+ * the offset to the end, read in ranges of READ_RANGE through `io.readRange`,
+ * each decoded as a stream as it is read, so a range edge never cuts a
+ * character; an absent journal, or a range that cannot be read, is no lines.
+ * @param {{readRange: function}} io the engine calls register.js hands over (`ioOf`)
  * @param {string} journal the journal's path (journalFor, journalSizes)
  * @param {number} bytes the offset in bytes, the lines before it skipped
  * @returns {Promise<object[]>}
  */
-export async function journalTail(run, journal, bytes) {
-  const tail = await run(['tail', '-c', `+${(Number(bytes) || 0) + 1}`, journal]);
-  return tail.exitCode === 0 ? journalLines(tail.stdout) : [];
+export async function journalTail(io, journal, bytes) {
+  const decoder = new TextDecoder();
+  let text = '';
+  let offset = Number(bytes) || 0;
+  for (;;) {
+    const range = await io.readRange(journal, offset, READ_RANGE);
+    if (range === null) return [];
+    text += decoder.decode(range, { stream: true });
+    offset += range.length;
+    if (range.length < READ_RANGE) break;
+  }
+  return journalLines(text + decoder.decode());
 }
 
 /**
@@ -248,15 +274,17 @@ export const journalMarkPath = (toolUseId, home) => markerPath('claude-gh-journa
 
 /**
  * A mark's text: a path line and a length line per journal, in the order given.
+ * A live mark is never empty: with no journal it is one empty line, as '' is an ended one.
  * @param {{journal: string, bytes: number}[]} sized the journals and their lengths (journalSizes)
  * @returns {string}
  */
 export function journalMarkText(sized) {
-  return sized.map(({ journal, bytes }) => `${journal}\n${bytes}`).join('\n');
+  return sized.length === 0 ? '\n' : sized.map(({ journal, bytes }) => `${journal}\n${bytes}`).join('\n');
 }
 
 /**
- * A mark's journals and lengths, in the mark's order (journalMarkText).
+ * A mark's journals and lengths, in the mark's order (journalMarkText); the
+ * one empty line of a mark with no journal is none.
  * @param {string} text the mark's text
  * @returns {{journal: string, bytes: number}[]}
  */
@@ -280,7 +308,7 @@ export const callStartPath = (toolUseId, home) => markerPath('claude-call-start'
 
 /**
  * A call start's text: a line of the start time in epoch ms, then a line of
- * the repo root ('' outside one).
+ * the repo root ('' outside one). A live start is never empty: its time line is always there.
  * @param {{ms: number, root: string|null}} start
  * @returns {string}
  */

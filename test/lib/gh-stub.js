@@ -1,32 +1,44 @@
-// The PATH-shim `gh` the workflow-snapshot, suite-hold and identity shim suites
-// run against: a stub answering `issue view` (and `issue list`, one answer or one
-// per repo) from a fixture, and `gh api` from route fixtures, recording each
-// call, its directory and the env names
-// asked for; the world with no `gh` at all. Run as a program, it is the stub's
-// `gh api` half.
+// The one fake `gh` the suites put on PATH, a Node stand-in: `writeGh` is its
+// body, recording each call and answering it in process through an export
+// that answers `--jq` with ghJq. `makeGhStub` is the fixture `gh` the
+// workflow-snapshot, hold, suite-hold and identity suites run against: `issue
+// view` (and `issue list`, one answer or one per repo) from a fixture, and
+// `gh api` from route fixtures, recording each call, its directory and the env
+// names asked for; the world with no `gh` at all.
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-const { shellPath, stubTool, basePathWithout } = require('./platform');
-const { recordArgv, readArgv } = require('./argv-log');
+const { stubToolJs, basePathWithout, spawnSync } = require('./platform');
+const { recordArgvJs, readArgv } = require('./argv-log');
+const { ghJq } = require('./gh-jq');
 const { mkTmp } = require('./harness');
 
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 /**
+ * Write the fake `gh` into `binDir`: each call is appended to `log` (when given)
+ * in argv-log's framing, then answered by `answer.name`, an export of the
+ * module `answer.module`, called as `(config, argv)` in the stand-in's own
+ * process; what it returns is the call's exit code, and it writes the streams itself.
+ * @param {string} binDir - the PATH directory, which must exist
+ * @param {{log?: string|null, answer: {module: string, name: string}, config?: *}} spec - `config` plain JSON
+ * @returns {string} the stand-in that was written
+ */
+const writeGh = (binDir, { log = null, answer, config = null }) => stubToolJs(binDir, 'gh', [
+  ...(log ? [recordArgvJs(JSON.stringify(log))] : []),
+  `process.exitCode = require(${JSON.stringify(answer.module)})[${JSON.stringify(answer.name)}](${JSON.stringify(config)}, process.argv.slice(2));`,
+].join('\n'));
+
+/**
  * A `gh` on its own bin folder answering `issue view <N> --json <field>` with `{ <field>: issues[N] }`
  * (an unknown number exits 1) and, given `list`, every `issue list` with that array whatever its flags;
- * given `lists`, an `issue list` answers per repo instead.
- * @param {object} [opts]
- * @param {string} [opts.field] - the JSON field the fixture fills (`comments`, `body`)
- * @param {object} [opts.issues] - issue number to that field's value
- * @param {object[]} [opts.list] - the `issue list` answer, shaped like gh's (`[{ number, labels: [{ name }] }]`)
- * @param {object} [opts.lists] - `issue list` answers by the repo asked about (`-R`/`--repo`, else the folder's
- *   origin), keyed by its last path segment (`repo` for FIXTURE_ORIGIN); `[]` for any other repo
- * @param {boolean} [opts.fails] - every view (and list) exits 1 with a line on stderr, the way an offline gh does
- * @param {string[]} [opts.env] - variable names each call records, one JSON line per call, read by `ghEnvs`
- * @param {object} [opts.api] - `gh api` answers by `<METHOD> <route>`, each `{ status, body }` or `{ pages }` (`answerApi`)
+ * given `lists`, an `issue list` answers per repo instead (`-R`/`--repo`, else the folder's origin, keyed
+ * by its last path segment, `repo` for FIXTURE_ORIGIN; `[]` for any other repo). `field` is the JSON field
+ * the fixture fills (`comments`, `body`); `list` is shaped like gh's (`[{ number, labels: [{ name }] }]`);
+ * `fails`: every view (and list) exits 1 with a line on stderr, as an offline gh does; `env`: variable
+ * names each call records, read by `ghEnvs`; `api`: `gh api` answers by `<METHOD> <route>`, each
+ * `{ status, body }` or `{ pages }` (`answerApi`), kept in `<dir>/api.json` and read on every call.
+ * @param {{field?: string, issues?: object, list?: object[], lists?: object, fails?: boolean, env?: string[], api?: object}} [opts]
  * @returns {{binDir: string, logFile: string, cwdFile: string, envFile: string, requestFile: string, dir: string}}
  */
 const makeGhStub = ({
@@ -34,93 +46,74 @@ const makeGhStub = ({
 } = {}) => {
   const dir = mkTmp('gh-stub-');
   const logFile = path.join(dir, 'gh.log');
-  const issuesDir = path.join(dir, 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  for (const [number, value] of Object.entries(issues)) {
-    fs.writeFileSync(path.join(issuesDir, `${number}.json`), JSON.stringify({ [field]: value }));
-  }
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const cwdFile = path.join(dir, 'cwd');
   const envFile = path.join(dir, 'env.jsonl');
-  const listFile = path.join(dir, 'list.json');
-  if (list) fs.writeFileSync(listFile, JSON.stringify(list));
-  const listsDir = path.join(dir, 'lists');
-  fs.mkdirSync(listsDir, { recursive: true });
-  for (const [name, value] of Object.entries(lists || {})) fs.writeFileSync(path.join(listsDir, `${name}.json`), JSON.stringify(value));
   const apiFile = path.join(dir, 'api.json');
   const requestFile = path.join(dir, 'requests.jsonl');
   if (api) fs.writeFileSync(apiFile, JSON.stringify(api));
-  const offline = ['  echo "error connecting to api.github.com" >&2', '  exit 1'];
-  // Every path here crosses into a shell, so each is spelled the way the shell
-  // reads one; the values handed back stay native, because Node reads those.
-  stubTool(binDir, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(logFile),
-    `printf '%s\\n' "$PWD" >> "${shellPath(cwdFile)}"`,
-    ...(env.length ? recordEnv(envFile, env) : []),
-    ...(api ? [
-      'if [[ "$1" == "api" ]]; then',
-      `  exec "${shellPath(process.execPath)}" "${shellPath(__filename)}" "${shellPath(apiFile)}" "${shellPath(requestFile)}" "$@"`,
-      'fi',
-    ] : []),
-    'if [[ "$1 $2" == "issue view" ]]; then',
-    ...(fails ? offline : [
-      `  file="${shellPath(issuesDir)}/$3.json"`,
-      '  [[ -f "$file" ]] || exit 1',
-      '  cat "$file"',
-      '  exit 0',
-    ]),
-    'fi',
-    ...(list ? [
-      'if [[ "$1 $2" == "issue list" ]]; then',
-      ...(fails ? offline : [`  cat "${shellPath(listFile)}"`, '  exit 0']),
-      'fi',
-    ] : []),
-    ...(lists ? [
-      'if [[ "$1 $2" == "issue list" ]]; then',
-      ...(fails ? offline : [
-        "  repo=''; prev=''",
-        '  for a in "$@"; do',
-        '    case "$prev" in -R|--repo) repo=$a ;; esac',
-        '    case "$a" in --repo=*) repo=${a#--repo=} ;; esac',
-        '    prev=$a',
-        '  done',
-        '  [[ -n "$repo" ]] || repo=$(git remote get-url origin 2>/dev/null)',
-        '  name=${repo%.git}; name=${name##*/}',
-        `  cat "${shellPath(listsDir)}/$name.json" 2>/dev/null || echo '[]'`,
-        '  exit 0',
-      ]),
-      'fi',
-    ] : []),
-    'exit 0',
-  ]);
+  writeGh(binDir, {
+    log: logFile,
+    answer: { module: __filename, name: 'answerFixtures' },
+    config: {
+      cwdFile, envFile, env, apiFile: api ? apiFile : null, requestFile, field, issues, list, lists, fails,
+    },
+  });
   return {
     binDir, logFile, cwdFile, envFile, requestFile, dir,
   };
 };
 
+const OFFLINE = 'error connecting to api.github.com\n';
+
+/** The repo an `issue list` asks about, `-R`/`--repo` (the last one given) or the folder's origin, as its last path segment. */
+const listedRepo = (argv) => {
+  let repo = '';
+  argv.forEach((arg, i) => {
+    if (argv[i - 1] === '-R' || argv[i - 1] === '--repo') repo = arg;
+    if (arg.startsWith('--repo=')) repo = arg.slice('--repo='.length);
+  });
+  if (!repo) {
+    const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
+    repo = origin.status === 0 ? origin.stdout.trim() : '';
+  }
+  return repo.replace(/\.git$/, '').split('/').pop();
+};
+
 /**
- * Bash lines appending one JSON object per call to `envFile`: each name in
- * `names` mapped to its value, or to null when the variable is unset, so a
- * blank value and an absent one read apart. Names must be plain identifiers.
- * @param {string} envFile - absolute path to append to
- * @param {string[]} names
- * @returns {string[]} bash source
+ * makeGhStub's answers to one call: the call's directory and asked-for env
+ * recorded, then `gh api` from the route fixtures, `issue view` and `issue list`
+ * from their fixtures, and any other call exits 0 saying nothing.
+ * @returns {number} the exit code
  */
-const recordEnv = (envFile, names) => [
-  "line='{'; sep=''",
-  `for name in ${names.join(' ')}; do`,
-  '  if [[ -n "${!name+set}" ]]; then',
-  '    value=${!name//\\\\/\\\\\\\\}; value=${value//\\"/\\\\\\"}',
-  '    line+="$sep\\"$name\\":\\"$value\\""',
-  '  else',
-  '    line+="$sep\\"$name\\":null"',
-  '  fi',
-  "  sep=','",
-  'done',
-  `printf '%s}\\n' "$line" >> "${shellPath(envFile)}"`,
-];
+const answerFixtures = ({
+  cwdFile, envFile, env, apiFile, requestFile, field, issues, list, lists, fails,
+}, argv) => {
+  fs.appendFileSync(cwdFile, `${process.cwd()}\n`);
+  // A blank value and an absent one read apart: the absent one is null.
+  if (env.length) fs.appendFileSync(envFile, `${JSON.stringify(Object.fromEntries(env.map((name) => [name, name in process.env ? process.env[name] : null])))}\n`);
+  if (apiFile && argv[0] === 'api') return answerApi(apiFile, requestFile, argv);
+  const command = `${argv[0]} ${argv[1]}`;
+  const listed = command === 'issue list' && (list || lists);
+  if (command !== 'issue view' && !listed) return 0;
+  if (fails) {
+    process.stderr.write(OFFLINE);
+    return 1;
+  }
+  if (listed && list) {
+    process.stdout.write(JSON.stringify(list));
+    return 0;
+  }
+  if (listed) {
+    const name = listedRepo(argv);
+    process.stdout.write(Object.hasOwn(lists, name) ? JSON.stringify(lists[name]) : '[]\n');
+    return 0;
+  }
+  if (!Object.hasOwn(issues, String(argv[2]))) return 1;
+  process.stdout.write(JSON.stringify({ [field]: issues[argv[2]] }));
+  return 0;
+};
 
 /** Every call the stub recorded, each an argv array. */
 const ghCalls = (stub) => readArgv(stub.logFile);
@@ -176,17 +169,6 @@ const parseApi = (argv) => {
   };
 };
 
-/** `value` through `--jq` as gh prints it: a string raw, null as an empty line, the rest compact with sorted keys. */
-const viaJq = (expr, value) => {
-  const res = spawnSync('jq', ['-c', '-S', expr], { input: JSON.stringify(value), encoding: 'utf8' });
-  if (res.status !== 0) throw new Error(`the stub's jq failed on ${expr}: ${res.stderr}`);
-  return res.stdout.split('\n').filter(Boolean).map((line) => {
-    const parsed = JSON.parse(line);
-    if (parsed === null) return '\n';
-    return typeof parsed === 'string' ? `${parsed}\n` : `${line}\n`;
-  }).join('');
-};
-
 /**
  * Answer one `gh api` call as the real gh would: record the request, then print the route's fixture
  * (`--jq` applied), exit 0. A `pages` fixture serves `--paginate` every page merged into one array
@@ -194,7 +176,7 @@ const viaJq = (expr, value) => {
  * with no fixture (GitHub's 404), prints the body on stdout and `gh: <message> (HTTP <status>)` on
  * stderr, exit 1.
  */
-const answerApi = ([fixtureFile, requestFile, ...argv]) => {
+const answerApi = (fixtureFile, requestFile, argv) => {
   const req = parseApi(argv);
   fs.appendFileSync(requestFile, `${JSON.stringify({
     method: req.method, path: req.path, query: req.query, body: req.body,
@@ -213,7 +195,7 @@ const answerApi = ([fixtureFile, requestFile, ...argv]) => {
   else if (req.paginate) outputs = req.jq ? fixture.pages : [fixture.pages.flat()];
   else outputs = [fixture.pages[0]];
   if (outputs[0] === undefined) return 0;
-  process.stdout.write(outputs.map((out) => (req.jq ? viaJq(req.jq, out) : JSON.stringify(out))).join(''));
+  process.stdout.write(outputs.map((out) => (req.jq ? ghJq(req.jq, out) : JSON.stringify(out))).join(''));
   return 0;
 };
 
@@ -230,7 +212,5 @@ const dropPathWithoutGh = () => {
 };
 
 module.exports = {
-  cleanup, makeGhStub, ghCalls, ghEnvs, ghRequests, pathWithoutGh, dropPathWithoutGh, viaJq,
+  cleanup, writeGh, makeGhStub, answerFixtures, ghCalls, ghEnvs, ghRequests, pathWithoutGh, dropPathWithoutGh,
 };
-
-if (require.main === module) process.exitCode = answerApi(process.argv.slice(2));

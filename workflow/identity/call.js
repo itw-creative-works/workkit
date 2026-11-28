@@ -269,12 +269,12 @@ const call = async (argv, env, gh) => {
     // The client's code says what to do: 0 hands over the token, in the
     // environment alone; any other stops here with the client's message, so
     // such a call never runs as the owner.
-    const { tokenAnswer, failureCode } = require('./token');
+    const { tokenAnswer } = require('./token');
     let answer;
     try {
       answer = await tokenAnswer(repo);
     } catch (err) {
-      return failureCode(err);
+      return require('../lib/platform').errorStop(err);
     }
     if (answer.code !== 0) return answer.code;
     return await runGh({ ...env, GH_TOKEN: answer.token });

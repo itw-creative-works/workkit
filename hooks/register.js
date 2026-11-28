@@ -12,6 +12,7 @@ import { CAPTURE_PATH } from './mods/changed.js';
 import { changeTrackerGather } from './mods/change-tracker.js';
 import { checkpointContext } from './mods/checkpoint.js';
 import { closeGuardGather } from './mods/close-guard.js';
+import { ENGINE_UNNAMED_LINE, engineFloorLine } from './mods/engine-floor.js';
 import { featureContext, featureMatch } from './mods/feature.js';
 import { isSystemPrompt } from './mods/frame.js';
 import { isExempt } from './mods/gate.js';
@@ -96,6 +97,26 @@ async function readText($, path) {
     return await $.fs.read(path);
   } catch {
     return null;
+  }
+}
+
+// A file's bytes from `offset`, at most `length` of them, through the engine's
+// ranged read; null for a file that cannot be read.
+async function readRange($, path, offset, length) {
+  try {
+    return Uint8Array.fromBase64((await $.fs.read(path, { as: 'bytes', offset, length })).base64);
+  } catch {
+    return null;
+  }
+}
+
+// The line an engine below the floor gets, '' at or above it; a build with no
+// version call is older than the floor.
+async function engineLine($) {
+  try {
+    return engineFloorLine((await $.session.version()).base);
+  } catch {
+    return ENGINE_UNNAMED_LINE;
   }
 }
 
@@ -259,6 +280,7 @@ const namesIn = ($, path) => $.fs.list(path).then((entries) => entries.map((f) =
 const ioOf = ($, env, sid) => ({
   pluginRoot: $.plugin.root,
   top: (cwd) => gitTop($, cwd), read: (path) => readText($, path), now: () => now($),
+  readRange: (path, offset, length) => readRange($, path, offset, length),
   exists: (path) => exists($, path), real: (path) => realPath($, path), run: (argv, init) => run($, argv, init),
   list: (path) => namesIn($, path),
   write: (path, text) => quiet($.fs.write(path, text)), sha1: sha1Hex, stat: (path) => $.fs.stat(path).catch(() => null),
@@ -491,6 +513,7 @@ export function register(on) {
     if (stamps) fires.push([HOOK.reloadGuard, 'run']);
     fires.push([HOOK.session, verdictOf(HOOK.session, opted)]);
     const contexts = await Promise.all([
+      opted ? engineLine($) : null,
       opted ? caught($, HOOK.stateCheck, stateCheckHook($, env, e)) : null,
       caught($, HOOK.standards, standardsGather(ioOf($, env), env, e)),
       stamps ? caught($, HOOK.reloadGuard, reloadStampHook($, env, e)) : null,

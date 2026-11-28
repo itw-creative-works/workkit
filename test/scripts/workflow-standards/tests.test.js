@@ -42,11 +42,14 @@ const HANDOFF = [
   '',
 ].join('\n');
 
+// The module's name apart from the import shape, so the wrapper's text never reads as this file's own import.
+const CP = 'child_process';
+
 describe('standards.js: the test runner', () => {
   // A wrapper is a script of the repo's own that runs `workkit test` inside it.
   for (const [shape, script, files] of [
     ['a test script of workkit test', 'workkit test', {}],
-    ['a wrapper test script', 'bash test/run.sh', { 'test/run.sh': '#!/usr/bin/env bash\nworkkit test "$@"\n' }],
+    ['a wrapper test script', 'node test/run.js', { 'test/run.js': `require('${CP}').spawnSync('workkit', ['test', ...process.argv.slice(2)], { stdio: 'inherit' });\n` }],
   ]) {
     test(`devDependencies naming workkit-core and ${shape}: no warning, exit 0`, () => {
       const repo = repoTesting(script, files, ON_CORE);

@@ -47,23 +47,22 @@ describe('changelog.yml: the reusable workflow', () => {
     expect(triggers.join(','), 'the one trigger is a call from another workflow').toBe('workflow_call:');
   });
 
-  test('it checks out the kit into a subfolder and lints the caller from there', () => {
+  test('it checks out the kit into a subfolder and starts the kit\'s ci-changelog.js from there', () => {
     const text = read(REUSABLE);
     const repo = text.match(/^ +repository: (\S+)$/m);
     const sub = text.match(/^ +path: (\S+)$/m);
     expect(repo && sub, `a second checkout carries repository: and path:, got:\n${text}`).toBeTruthy();
-    expect(text.includes(`node ${sub[1]}/workflow/changelog/lint.js CHANGELOG.md --unreleased-only`),
-      `the linter runs from the kit's checkout over the caller's unreleased section, got:\n${text}`).toBeTruthy();
-    expect(fs.existsSync(path.join(ROOT, 'workflow', 'changelog', 'lint.js')), 'at a path the kit really has').toBeTruthy();
-    expect(text.includes('no CHANGELOG.md, nothing to check'), 'a caller with no CHANGELOG passes with a message').toBeTruthy();
+    expect(text.includes(`${sub[1]}/.github/scripts/ci-changelog.js`),
+      `the step starts ci-changelog.js from the kit's checkout, got:\n${text}`).toBeTruthy();
+    expect(fs.existsSync(path.join(ROOT, '.github', 'scripts', 'ci-changelog.js')), 'at a path the kit really has').toBeTruthy();
     expect(/uses: actions\/checkout@v5/.test(text) && /uses: actions\/setup-node@v5/.test(text),
       'actions pinned the way the checks template pins them').toBeTruthy();
   });
 
-  test('a pull request judges the entries it adds against its merge commit\'s first parent', () => {
+  // Which flags the base ref picks is ci-changelog.js's, held in test/scripts/ci-changelog.test.js.
+  test('a pull request\'s base reaches the step, and the checkout keeps its merge commit\'s first parent', () => {
     const text = read(REUSABLE);
     expect(/BASE_REF: \$\{\{ github\.base_ref \}\}/.test(text), `the base branch reaches the step, got:\n${text}`).toBeTruthy();
     expect(checkoutDepth(text), `the caller's checkout keeps the merge commit's parents, got:\n${text}`).toBe('2');
-    expect(/lint\.js CHANGELOG\.md --added-only --base=HEAD\^1/.test(text), `and the linter compares against the first, got:\n${text}`).toBeTruthy();
   });
 });

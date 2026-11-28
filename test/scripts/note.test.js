@@ -7,10 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, basePathWithout,
-  systemPathWith, joinPath, spawnBash, spawnSync, skipWithoutByteArgv,
+  IS_WINDOWS, NODE_DIR, shellPath, gitPath, homeEnv, stubToolJs, basePathWithout,
+  systemPathWith, joinPath, spawnSync,
 } = require('../lib/platform');
-const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
+const { recordArgvJs, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
 const { mkKit } = require('./workkit-cli/helpers');
 
@@ -57,18 +57,17 @@ const makeTree = ({ settings = OPT_IN_SHAPES.current, tower = true, gh = true } 
     spawnSync('git', ['-C', towerDir, 'remote', 'add', 'origin', origin], { encoding: 'utf8' });
   }
   if (gh) {
-    // Every call is recorded with its argument boundaries intact
-    // (test/lib/argv-log.js). The log is named in the shell's spelling: a native
-    // Windows path in the stub's redirect loses its backslashes to bash.
+    // Every call is recorded with its argument boundaries intact (test/lib/argv-log.js).
     const refuse = gh === 'down'
       ? 'true'
-      : (gh === 'labels' ? '[[ "$*" == *--label* ]]' : 'false');
-    stubTool(bin, 'gh', [
-      '#!/usr/bin/env bash',
-      recordArgv(ghLog),
-      `if ${refuse}; then printf 'gh: it did not work\\n' >&2; exit 1; fi`,
-      "printf 'https://github.com/owner/workkit/issues/7\\n'",
-    ]);
+      : (gh === 'labels' ? "process.argv.slice(2).join(' ').includes('--label')" : 'false');
+    stubToolJs(bin, 'gh', [
+      recordArgvJs(JSON.stringify(ghLog)),
+      `if (${refuse}) {`,
+      "  process.stderr.write('gh: it did not work\\n');",
+      '  process.exitCode = 1;',
+      "} else process.stdout.write('https://github.com/owner/workkit/issues/7\\n');",
+    ].join('\n'));
   }
   return {
     dir,
@@ -97,16 +96,6 @@ const spawnOpts = (cwd, { home, bin }, extraEnv = {}) => ({
 // `node workflow/note.js <args>`, started by the node running this suite.
 const runScript = (cwd, args, t, extraEnv = {}) => {
   const res = spawnSync(process.execPath, [SCRIPT, ...args], spawnOpts(cwd, t, extraEnv));
-  return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
-};
-
-// One note whose bytes are the point: bash builds the argument from a `$'...'`
-// literal, so an invalid UTF-8 sequence reaches the program as those bytes. A JS
-// string cannot carry them, since every encoding of one repairs them first.
-// `$0` is the node and `$1` the program, so the literal is the only thing interpolated.
-const runScriptBytes = (cwd, noteLiteral, t, extraEnv = {}) => {
-  const res = spawnBash([...NO_RC, '-c', `"$0" "$1" ${noteLiteral}`, shellPath(process.execPath), shellPath(SCRIPT)],
-    spawnOpts(cwd, t, extraEnv));
   return { code: res.status, out: res.stdout || '', err: res.stderr || '' };
 };
 
@@ -201,11 +190,12 @@ describe('note.js: which capture file a note lands in', () => {
     cleanup(t.dir);
   });
 
-  test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', { skip: skipWithoutByteArgv() }, async () => {
+  test('a note whose own bytes are invalid UTF-8 is filed with the title repaired', async () => {
     // Nothing is truncated here: the note arrives ending in a severed multibyte
     // sequence, which must be dropped once, never doubled and never left invalid.
+    // Node reads `a short note\xe2\x80` in process.argv as the note ending in one U+FFFD, handed here as such.
     const t = makeTree();
-    const { code, out } = runScriptBytes(t.outside, "$'a short note\\xe2\\x80'", t);
+    const { code, out } = runScript(t.outside, ['a short note�'], t);
     expect(code, `exit 0: ${out}`).toBe(0);
 
     const argv = t.ghCalls()[0];

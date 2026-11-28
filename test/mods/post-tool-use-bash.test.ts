@@ -1,7 +1,8 @@
 // tool.call then classic.PostToolUse (Bash) through the hooks module, POST_BASH_GUARDS, which never
 // blocks: tool.call marks every journal of the gh journal folder (a path line and a length line each, in
 // name order), and the Post hook, or PostToolUseFailure for a call that failed, reads the lines each
-// journal gained past its mark, oldest first, never the command text. workflow:snapshot's take, add
+// journal gained past its mark, oldest first, by the engine's ranged reads, never the command text, and
+// ends the mark by writing it empty. workflow:snapshot's take, add
 // and drop through the snapshot.js command, and workflow:public-mirror's public/mirror.js after a status
 // edit in a paired repo, each through $.process.run. The plans' own cases:
 // test/hooks/workflow-snapshot.test.js and public-mirror.test.js.
@@ -20,6 +21,8 @@ const OTHER = '/w/other'
 // The second repo's gh journal, keyed by the SHA-1 of its root.
 const OTHER_JOURNAL = `${HOME}/.workkit/markers/claude-gh-journal/733f07a1e1c6941aaa32abd5c1fa4661beb0e6cd`
 const MARK = `${HOME}/.workkit/markers/claude-gh-journal-mark/040bc3d6655defe8b366356995d3883a209b0561`
+// The call start of tool use toolu_1, keyed the same way.
+const START = `${HOME}/.workkit/markers/claude-call-start/040bc3d6655defe8b366356995d3883a209b0561`
 const issue = (number: number, ...labels: string[]) => ({ number, labels: labels.map((name) => ({ name })) })
 
 // The journal line each gh write leaves.
@@ -43,8 +46,11 @@ const ran = async ($: any, w: any, command: string, ...entries: any[]) => {
   journaled(w, ...entries)
   return after($, command)
 }
-// Every `tail` the module ran, as the file it read.
-const tailed = (w: any) => w.calls.filter((c: any) => c.argv[0].split('/').pop() === 'tail').map((c: any) => c.argv[c.argv.length - 1])
+// Each gh journal the module read, once, in the order first read.
+const journalsRead = (w: any) => [...new Set(w.fsOps
+  .filter((o: any) => o.op === 'read' && o.path.startsWith(`${HOME}/.workkit/markers/claude-gh-journal/`)).map((o: any) => o.path))]
+// Every start of a tool the engine's file calls stand in for, by its argv.
+const fileToolStarts = (w: any) => w.calls.filter((c: any) => ['tail', 'wc', 'rm', 'mkdir'].includes(c.argv[0].split('/').pop())).map((c: any) => c.argv)
 const world = (on: any, opts: any = {}) => mkWorld(on, { env: { TMPDIR: TMP }, ...opts })
 
 // Each snapshot.js run as [mode, root, ...args], with its init.
@@ -76,17 +82,17 @@ describe('classic.PostToolUse Bash: workflow:snapshot, the Contract cases', () =
     expect(w.files.get(MARK)).toBe(`${JOURNAL}\n${before.length}`)
     journaled(w, CLAIM(5))
     await after($, SCRIPTED)
-    expect(w.files.has(MARK)).toBe(false)
+    expect(w.files.get(MARK)).toBe('')
     const runs = snapshotRuns(w)
     expect(runs.map((x: any) => x.args[0])).toEqual(['take'])
     expect(runs[0].args.slice(2)).toEqual(['5'])
   })
 
-  test('case 1: a claim in the command whose gh write journaled nothing (the write failed), the journal folder empty: the mark is empty, no snapshot run', async ($, on) => {
+  test('case 1: a claim in the command whose gh write journaled nothing (the write failed), the journal folder empty: the mark is one empty line, no snapshot run', async ($, on) => {
     const w = world(on, { gh: { issues: [issue(5, 'status:building')] } })
     const command = 'gh issue edit 5 --add-label status:building'
     await call($, command)
-    expect(w.files.get(MARK)).toBe('')
+    expect(w.files.get(MARK)).toBe('\n')
     const r = await after($, command)
     expect(r?.block).toBeUndefined()
     expect(snapshotRuns(w)).toEqual([])
@@ -97,11 +103,12 @@ describe('classic.PostToolUse Bash: workflow:snapshot, the Contract cases', () =
     await call($, `cd ${OTHER} && ${SCRIPTED}`)
     journaled(w, CLAIM(5))
     await after($, `cd ${OTHER} && ${SCRIPTED}`, { cwd: OTHER })
-    expect(tailed(w)).toEqual([JOURNAL])
+    expect(journalsRead(w)).toEqual([JOURNAL])
+    expect(fileToolStarts(w)).toEqual([])
     expect(snapshotRuns(w).map((x: any) => x.args)).toEqual([['take', REPO, '5']])
   })
 
-  test('classic.PostToolUseFailure: a Bash call that failed after its gh write landed still takes the write\'s claim, and its mark is removed', async ($, on) => {
+  test('classic.PostToolUseFailure: a Bash call that failed after its gh write landed still takes the write\'s claim, and its mark is ended', async ($, on) => {
     const w = world(on, { gh: { issues: [issue(5, 'status:building')] } })
     const command = `${SCRIPTED} && false`
     await call($, command)
@@ -113,7 +120,7 @@ describe('classic.PostToolUse Bash: workflow:snapshot, the Contract cases', () =
     const runs = snapshotRuns(w)
     expect(runs.map((x: any) => x.args[0])).toEqual(['take'])
     expect(runs[0].args.slice(2)).toEqual(['5'])
-    expect(w.files.has(MARK)).toBe(false)
+    expect(w.files.get(MARK)).toBe('')
   })
 
   test('given a close journaled with no issue still building or at qa, then drop ran for the root', async ($, on) => {
@@ -179,7 +186,7 @@ describe('classic.PostToolUse Bash: every journal of the gh journal folder', () 
     expect(snapshotRuns(w)[0].init.cwd).toBe(OTHER)
   })
 
-  test('case 2: A\'s and B\'s journals each gaining a claim in one call, B\'s the older: both are read, B\'s first, and the mark is removed', async ($, on) => {
+  test('case 2: A\'s and B\'s journals each gaining a claim in one call, B\'s the older: both are read, B\'s first, and the mark is ended', async ($, on) => {
     const w = world(on, TWO)
     const command = `gh issue edit 5 --add-label status:building && ${INTO_B}`
     await call($, command)
@@ -187,16 +194,16 @@ describe('classic.PostToolUse Bash: every journal of the gh journal folder', () 
     journaledAt(w, OTHER_JOURNAL, CLAIM_B(7, { ms: CLAIM(5).ms - 1000 }))
     await after($, command)
     expect(takes(w)).toEqual([['take', OTHER, '7'], ['take', REPO, '5']])
-    expect(w.files.has(MARK)).toBe(false)
+    expect(w.files.get(MARK)).toBe('')
   })
 
-  test('case 3: B\'s claim of #6 held before the call is not read, the take records #7 alone, and A\'s journal, which did not grow, is never tailed', async ($, on) => {
+  test('case 3: B\'s claim of #6 held before the call is not read, the take records #7 alone, and A\'s journal, which did not grow, is never read', async ($, on) => {
     const w = world(on, { ...TWO, files: { [JOURNAL]: journalText(CLAIM(4)), [OTHER_JOURNAL]: journalText(CLAIM_B(6)) } })
     await call($, INTO_B)
     journaledAt(w, OTHER_JOURNAL, CLAIM_B(7))
     await after($, INTO_B)
     expect(takes(w)).toEqual([['take', OTHER, '7']])
-    expect(tailed(w)).toEqual([OTHER_JOURNAL])
+    expect(journalsRead(w)).toEqual([OTHER_JOURNAL])
   })
 
   test('case 4: bash scripts/flip.sh, no cd in the text, its write landing in B\'s journal: the take runs for B with #7', async ($, on) => {
@@ -230,6 +237,29 @@ describe('classic.PostToolUse Bash: every journal of the gh journal folder', () 
     expect(w.files.get(MARK)).toBe(`${JOURNAL}\n62\n${OTHER_JOURNAL}\n64`)
     const written = w.fsOps.find((o: any) => o.op === 'write' && o.path === MARK)
     expect(w.calls.slice(0, written.runs).filter((c: any) => c.argv[0].split('/').pop() === 'git')).toEqual([])
+  })
+
+  test('a call made while no journal exists marks one empty line, and the repo\'s first journal, which the call writes, is read from its start', async ($, on) => {
+    const w = world(on, { gh: { issues: [issue(5, 'status:building')] } })
+    await call($, SCRIPTED)
+    expect(w.files.get(MARK)).toBe('\n')
+    journaled(w, CLAIM(5))
+    await after($, SCRIPTED)
+    expect(takes(w)).toEqual([['take', REPO, '5']])
+  })
+
+  test('cases 13 and 16: the mark and start land in folders that did not exist, no program started for them; the Post ends both by writing each empty, no tail, wc, rm or mkdir started, and the lines still arrive', async ($, on) => {
+    const before = journalText(CLAIM(4))
+    const w = world(on, { gh: { issues: [issue(4, 'status:building'), issue(5, 'status:building')] }, files: { [JOURNAL]: before } })
+    await call($, SCRIPTED)
+    expect(w.files.get(MARK)).toBe(`${JOURNAL}\n${before.length}`)
+    expect(w.files.get(START)).toMatch(new RegExp(`^[0-9]+\\n${REPO}$`))
+    expect(fileToolStarts(w)).toEqual([])
+    journaled(w, CLAIM(5))
+    await after($, SCRIPTED)
+    expect([w.files.get(MARK), w.files.get(START)]).toEqual(['', ''])
+    expect(fileToolStarts(w)).toEqual([])
+    expect(takes(w)).toEqual([['take', REPO, '5']])
   })
 
   test('case 8: the session folder in C, bash scripts/flip.sh landing a claim from B\'s root in B\'s journal: the take runs for B with #7', async ($, on) => {

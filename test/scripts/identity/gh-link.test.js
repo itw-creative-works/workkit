@@ -8,7 +8,7 @@ const {
   describe, test, expect,
 } = require('../../lib/harness');
 const {
-  NODE_DIR, gitPath, joinPath, stubTool,
+  NODE_DIR, gitPath, joinPath, stubToolJs,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, cleanup, mkWorld, runCli, mkRepo, mkKit, mkSetupKit,
@@ -57,7 +57,7 @@ describe('identity/gh link: setup and update', () => {
   test('setup leaves a foreign gh link alone and reports it', () => {
     const { world, repo, kit, script } = mkSetupScene();
     const foreign = path.join(world.root, 'someone-elses-gh');
-    stubTool(world.root, 'someone-elses-gh', ['#!/usr/bin/env bash', 'exit 0']);
+    stubToolJs(world.root, 'someone-elses-gh', 'process.exitCode = 0;');
     fs.mkdirSync(world.localBin, { recursive: true });
     fs.symlinkSync(foreign, ghLink(world));
     const { said } = runCli(world, ['setup'], { cwd: repo, script });
@@ -104,7 +104,7 @@ describe('identity/gh link: doctor', () => {
     runCli(world, ['update']);
     const otherBin = path.join(world.root, 'other-gh-bin');
     fs.mkdirSync(otherBin);
-    stubTool(otherBin, 'gh', ['#!/usr/bin/env bash', 'exit 0']);
+    stubToolJs(otherBin, 'gh', 'process.exitCode = 0;');
 
     // The shim is a Node program, so doctor's gh check through it needs a node on PATH.
     const shimFirst = runCli(world, ['doctor'], { env: { PATH: joinPath(world.env.PATH, NODE_DIR) } });

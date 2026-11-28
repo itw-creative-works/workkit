@@ -9,9 +9,9 @@ const {
   describe, test, expect, before, after, until, SPAWN_DEADLINE, mkTmp,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, skipWithoutNodeStub, stubTool, pathWith,
+  IS_WINDOWS, stubToolJs, pathWith,
 } = require('../../lib/platform');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const { caught } = require('../../lib/caught');
 const {
   DEVICE_CODE, deviceFlowRoutes, readWrittenLogin, collector, json, startServer, scratchEnv, hostsOf,
@@ -183,10 +183,10 @@ describe('identity/login: the browser opener', () => {
   const OPEN_ROUTES = deviceFlowRoutes({ userCode: 'WDJB-MJHT', accessToken: 'ghu_opened', login: 'hubot' });
 
   test(
-    'case 21: --open <opener> prints the page and the code and runs the opener once with the page as its one argument; without --open nothing runs', { skip: skipWithoutNodeStub() }, async () => {
+    'case 21: --open <opener> prints the page and the code and runs the opener once with the page as its one argument; without --open nothing runs', async () => {
       const bin = mkTmp('wk-login-open-bin-');
       const openerLog = path.join(bin, 'opener-argv.log');
-      stubTool(bin, 'wk-opener', ['#!/usr/bin/env bash', recordArgv(openerLog), 'exit 0']);
+      stubToolJs(bin, 'wk-opener', recordArgvJs(JSON.stringify(openerLog)));
       const server = await startServer(OPEN_ROUTES, mkTmp('wk-login-open-server-'));
       try {
         const env = { ...hostsOf(server), PATH: pathWith(bin) };

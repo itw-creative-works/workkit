@@ -3,7 +3,7 @@
 - Scheduled work the kit runs.
 - **One job, at 9am, in six steps, and one script that runs them**.
   - `jobs/morning.js` is the morning in one program.
-  - On a Mac the launchd agent starts it with `node`, and on a runner the seeded workflow does; on Windows `workflow/morning-task.js` does.
+  - On a runner the seeded workflow starts it with `node`; on a Mac and on Windows `workflow/morning-task.js` does, the starter both machines' jobs start through the engine's address.
   - Its first code is the Node floor check (`workflow/lib/floor.js`): below 22.22 it prints the floor line and exits 1, with nothing else done.
   - The schedulers: this machine's launchd agent (a Mac) or Task Scheduler task (Windows), and the GitHub Actions workflow seeded onto the home repo.
 - There is no laptop version and cloud version.
@@ -47,11 +47,13 @@ node jobs/install.js
   - Any other system is one `install: the 9am job runs on macOS and Windows; ...` error line and exit 1.
 - **On a Mac** it renders the plist into `~/Library/LaunchAgents/` and loads it.
   - Idempotent: a second run with an unchanged plist confirms the agent is loaded and does nothing else.
-  - launchd expands nothing, so the rendered plist names every path: it starts `/usr/bin/env node <kit>/jobs/morning.js`.
-    - `<kit>` is the kit the engine's address (`~/.claude/workkit`) names when the install runs, else the installing kit.
+  - launchd expands nothing, so the rendered plist names every path: it starts `/usr/bin/env node <home>/.claude/workkit/morning-task.js`, the starter named through the engine's address.
+    - So a moved clone or a plugin update needs no re-run, as on Windows.
+    - The starter starts the morning in a session of its own and ends at once; the plist sets `AbandonProcessGroup`, which tells launchd to leave what the job started when the job ends.
+    - So launchd sees the starter's exit code (0 once the morning has started), never the morning's, whose outcome is in the job's log; and a reload of the job (the installer's bootout) does not end a morning that is running.
   - launchd gives a job no PATH of the person's, so the plist holds one (`jobPath` in `lib/machine.js`): the real folder of the Node that ran the install (`process.execPath`, links resolved), then the folders `enterMachine` puts in front, then the system's.
-    - It is a PATH, not a search: the first `node` on it runs, and `morning.js` checks the floor.
-  - A moved kit reads as out of date, and so does each new Node release, since the file names a release's own folder; `workkit setup` or `workkit update` rewrites the file.
+    - It is a PATH, not a search: the first `node` on it runs the starter, which checks the floor.
+  - Each new Node release reads as out of date, since the file names a release's own folder; `workkit setup` or `workkit update` rewrites the file.
     - Until then `~/.nvm/default-bin`, one of the folders `enterMachine` puts in front, can still find a `node`.
 - **On Windows** it registers the task `workkit\com.workkit.claude-daily`, rendered from `com.workkit.claude-daily.xml`.
   - The task starts at 9:00 AM every day. A morning the machine was off or you were signed out is set to run at the next chance (`StartWhenAvailable`), on battery too.
@@ -73,7 +75,7 @@ node jobs/install.js
 - **This script is also driven for you.** `workkit setup` runs it for the first install.
   - `workkit update` (which the standards hook calls once a day as `update --auto`) re-runs it when the job template changed.
   - So a changed template no longer waits for anyone to remember.
-  - On a Mac a moved clone or a new Node is a changed render, which that run rewrites; on Windows a moved clone needs no re-run, since the task is reached through the engine link.
+  - A moved clone needs no re-run on either system, since both jobs are reached through the engine link; on a Mac a new Node is a changed render, which that run rewrites.
 - The drift question is `node jobs/install.js --check`.
   - It is the same render and compare, with nothing written and no scheduler asked: neither launchd nor `schtasks`.
   - It prints one line per job that is missing (`<label> → not installed`) or out of date (`<label> → out of date for this kit`), and nothing at all when the machine matches.
@@ -96,12 +98,12 @@ node jobs/install.js
 | `../workflow/templates/github-workflows/brief.yml` | what runs `node brief/jobs/morning.js` on a runner: `workflow_dispatch` for the machine's trigger, a 17:30 UTC cron as the backup. It lives on the HOME repo, seeded there by setup; this is its source |
 | `claude-nightly/nightly-payload.js` | the summaries payload: the reflection instruction, then the day's transcript INDEX and commits as JSON, or, with `--cadence weekly\|monthly`, the rollup instruction over the prior summaries handed in on stdin. Pure gather |
 | `claude-nightly.js` | the summaries step, a program the morning starts in its own process: composes the day, sends it, and posts it as a Discussion on the home repo, logging what it decided to `~/Library/Logs/claude-nightly.log` |
-| `com.workkit.claude-daily.plist` | the Mac's schedule: 9:00 AM daily, `/usr/bin/env node {{KIT}}/jobs/morning.js` with `PATH` set to `{{PATH}}`, `{{HOME}}`, `{{KIT}}` and `{{PATH}}` rendered at install, each escaped for XML |
+| `com.workkit.claude-daily.plist` | the Mac's schedule: 9:00 AM daily, `/usr/bin/env node {{HOME}}/.claude/workkit/morning-task.js` with `PATH` set to `{{PATH}}` and `AbandonProcessGroup` true, `{{HOME}}` and `{{PATH}}` rendered at install, each escaped for XML |
 | `com.workkit.claude-daily.xml` | the Windows schedule, a Task Scheduler task file: 9:00 AM daily, only while the person is signed in, its command `{{NODE}}` and its argument the starter under `{{HOME}}`, the account `{{USER}}`, each rendered at install. It holds no `<?xml?>` line, so the tracked file claims no encoding |
 | `install.js` | the scheduler picked by the system, then render, compare, and only on change copy and reload (a Mac) or register (Windows) |
 | `lib/schedule.js` | what both halves of `install.js` share: `holds` (whether the kept plist or task copy holds the rendered text) and `skippedLine` (the line a run kept from the scheduler says) |
 | `lib/task-scheduler.js` | the Windows half of `install.js`: `renderTask` (the markers replaced, each value escaped for XML), `encodeTask` (the UTF-16LE bytes `schtasks` reads), `installTask` and `checkTask` (each answers its line and prints nothing; `install.js` says it), `copyPath` (the kept copy) |
-| `../workflow/morning-task.js` | the starter the Windows task runs: `jobs/morning.js` of the real kit, found from its own real folder, started hidden and detached with its output appended to `~/Library/Logs/com.workkit.claude-daily.log`, and then it ends. A job that cannot start is one `morning-task: could not start` line there and exit 1 |
+| `../workflow/morning-task.js` | the starter both machines' jobs run, the launchd agent and the Windows task: `jobs/morning.js` of the real kit, found from its own real folder, started hidden and detached with its output appended to `~/Library/Logs/com.workkit.claude-daily.log`, and then it ends. A job that cannot start is one `morning-task: could not start` line there and exit 1 |
 
 - **`install.js`**, the detail of its row:
   - "Loaded" means loaded from THIS plist.
@@ -111,9 +113,9 @@ node jobs/install.js
     - On Windows it prints what it WOULD have registered and writes no copy.
     - `WORKKIT_SCHEDULE_OK=1` forces the calls on either system.
   - `--check` is the same comparison as a report, writing nothing and asking neither launchd nor `schtasks`.
-  - Both halves warn when the engine's address is missing or names another kit (a workkit clone outranking this cached copy excepted), each in its platform's words, naming `workkit update` as the fix:
-    - a Mac: `<label> → the job reads its kit from <link>, which ...`, a link that does not resolve running this kit;
-    - Windows: `<label> → the job runs through <link>, which ...`, a link that does not resolve reaching no kit.
+  - Both halves warn, in the same words, when the engine's address is missing or names another kit (a workkit clone outranking this cached copy excepted), naming `workkit update` as the fix:
+    - `<label> → the job runs through <link>, which does not resolve, so it cannot reach this kit; ...`, since a job with no link reaches no kit;
+    - `<label> → the job runs through <link>, which resolves to <folder>, not this kit's <kit>/workflow; ...`, since the job runs the kit the link names.
 - **`lib/machine.js`**, the PATH folders a job puts in front of PATH, so its programs are found whatever PATH the scheduler hands it:
   - `jobPath(home, nodeDir)` is the PATH the launchd file holds: `nodeDir`, then the Mac's front folders below, then `/usr/bin`, `/bin`, `/usr/sbin` and `/sbin`; `enterMachine` builds its front from the same list.
   - on a Mac, `~/.local/bin`, `~/.nvm/default-bin`, `/opt/homebrew/bin` and `/usr/local/bin`;
@@ -172,6 +174,7 @@ node jobs/install.js
 
 - Claude Code releases most days and its CHANGELOG is the only announcement.
 - So `cc-news.js` reads that file: the raw one on the default branch, no token and no rate limit.
+  - The read is Node's `fetch`, bounded at 20 seconds, the answer's body included (`fetchChangelog`); `collectCcNews` is async for it.
   - It appends a `--- CC NEWS ---` block after the payload, carrying every entry since the last brief.
   - The entries are grouped by topic: the kit's own surfaces (hooks, agents, skills, plugins, settings, MCP, the statusline), then `other`.
 - The job never judges which entries matter; the digest model does, with the board in view. It looks for:
@@ -190,12 +193,13 @@ node jobs/install.js
   - With no cursor the honest "since" is the whole history, which would bury the brief.
   - It lets the publish carry the latest version instead.
 - Every failure is silent: no block, and the brief still prints.
-  - The failures: no network, a non-200, a body that is not a changelog, a `gh` that refuses.
+  - The failures: no network or a refused connection, a non-200 (a 404 among them), a stall past the bound, an empty answer or a body that is not a changelog, a `gh` that refuses.
 - A board that could not be read is not an empty one: it publishes no version line either.
   - So the last brief that carried one stays the cursor, rather than re-seeding to the latest.
 - When the upstream read failed but the board had a version, that version rides forward unchanged.
   - So the cursor never rewinds for want of a network.
-- `WORKKIT_CC_CHANGELOG` overrides the source: a seam for the suite, which points it at a file on disk.
+- `WORKKIT_CC_CHANGELOG` overrides the source: a seam for the suite, which points it at a local server or a file on disk.
+  - A `file:` address is read from disk, and a missing or empty file is no news; any other address goes through `fetch` and its bound.
 
 ## The morning on this machine
 
@@ -297,7 +301,8 @@ node jobs/install.js
     - `~/.local/bin`;
     - an nvm default link, where the machine keeps one;
     - Homebrew's `/opt/homebrew/bin` and `/usr/local/bin` (where the nodejs.org installer puts node too).
-    - The first `node` on the file's PATH starts the morning; one below the kit's floor prints `workkit: this Node is <version>; the kit needs 22.22 or newer` on stderr and exits 1.
+    - The first `node` on the file's PATH starts the starter, which starts the morning on that same Node.
+    - One below the kit's floor gets `workkit: this Node is <version>; the kit needs 22.22 or newer` from the starter on stderr, which the plist's `StandardErrorPath` sends to the job's log, and exit 1, with no morning started.
   - On Windows the task names its Node, so nothing looks for one. The program puts `~/.local/bin`, the nvm default link and the running Node's own folder ahead of PATH.
   - **The cwd is the job's own work folder**, `~/Library/Caches/claude-daily`, on both systems.
     - launchd starts a job at `/`, and Claude Code's startup scan from there trips macOS privacy prompts.
@@ -515,7 +520,7 @@ node jobs/install.js
 
 - `test/jobs/` runs all seven against fixtures:
   - a scratch `~/.workkit` carrying a fixture roster for the payloads;
-  - a fixture CHANGELOG and a fixture board of published briefs for the news;
+  - a fixture CHANGELOG, served by a local server in the case or read as a `file:` address, and a fixture board of published briefs for the news;
   - a fixture projects tree with fixture mtimes for the transcript index;
   - a fake `claude` and notifier plus a scratch `HOME` and `WORKFLOW_HOME` for the entry point;
   - a `gh` answering the Discussions API with canned JSON, and for the cloud the contents API with a base64 slug list;

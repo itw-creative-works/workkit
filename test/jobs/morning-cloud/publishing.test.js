@@ -4,13 +4,12 @@
 
 const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   cleanup, today, mkWorld, runJob,
 } = require('./helpers');
 
 describe('jobs/morning (cloud): publishing', () => {
-  test('the digest is posted as a Discussion titled with the date', { skip: skipWithoutNodeStub() }, () => {
+  test('the digest is posted as a Discussion titled with the date', () => {
     const world = mkWorld({ ccChangelog: '# Changelog\n\n## 2.1.220\n\n- Added a `DirectoryAdded` hook\n' });
     const res = runJob(world);
     expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
@@ -35,7 +34,7 @@ describe('jobs/morning (cloud): publishing', () => {
     cleanup(world.root);
   });
 
-  test('a failed upstream read carries the board’s version forward', { skip: skipWithoutNodeStub() }, () => {
+  test('a failed upstream read carries the board’s version forward', () => {
     const world = mkWorld({ posted: [{ title: 'brief: 2026-07-01', body: '<!-- cc-news: 2.1.219 -->' }] });
     runJob(world);
     expect(/<!-- cc-news: 2\.1\.219 -->/.test(world.postedBody()),

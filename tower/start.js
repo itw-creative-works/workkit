@@ -2,10 +2,22 @@
 /**
  * tower/start.js: the one door to the tower (`workkit tower`, `npm run tower`):
  * restarts the JSON API and the dashboard together, filtered quiet through
- * startup, and ends both when either ends. WORKKIT_TOWER_API / _APP / _PORTS let
- * the suite run it without real servers or ports. The behavior: tower/README.md § Run.
+ * startup, and ends both when either ends. WORKKIT_TOWER_API_CMD / _APP_CMD (each
+ * a JSON list, the program first) and WORKKIT_TOWER_PORTS let the suite run it
+ * without real servers or ports. The behavior: tower/README.md § Run.
  * Usage: node tower/start.js [-v|--verbose]
  */
+
+// Ahead of every other require, so no newer file loads below the floor; in
+// syntax an older Node still reads, so the line prints there.
+if (require.main === module) {
+  const floor = require('../workflow/lib/floor');
+  const below = floor.floorLine(process.version, floor.floorOf());
+  if (below) {
+    require('fs').writeSync(2, `${below}\n`);
+    process.exit(1);
+  }
+}
 
 const path = require('path');
 const { setTimeout: delay } = require('timers/promises');
@@ -136,15 +148,36 @@ const startHalf = ({
   return half;
 };
 
-/** The two halves' commands: a seam's line through `bash -c`, else the real server. */
+/**
+ * A seam's program and arguments, from its JSON list, the program first; null when it is unset.
+ * @param {string} name the variable
+ * @returns {{command: string, args: string[]}|null}
+ * @throws {Error} its line, when the value is not a JSON list of strings
+ */
+const seamOf = (name) => {
+  const value = process.env[name];
+  if (!value) return null;
+  let list = null;
+  try {
+    list = JSON.parse(value);
+  } catch {
+    // Not JSON at all: the same refusal as any other shape below.
+  }
+  if (!Array.isArray(list) || list.length === 0 || !list.every((part) => typeof part === 'string')) {
+    throw new Error(`tower: ${name} is not a JSON list of strings`);
+  }
+  return { command: list[0], args: list.slice(1) };
+};
+
+/**
+ * The two halves' commands: a seam's program, started with no shell, else the real server.
+ * @throws {Error} a seam's line, when its value is not a JSON list of strings
+ */
 const halvesOf = (appPort) => {
-  const seam = (line) => ({ command: 'bash', args: ['-c', line] });
-  const api = process.env.WORKKIT_TOWER_API
-    ? seam(process.env.WORKKIT_TOWER_API)
-    : { command: process.execPath, args: [path.join(ROOT, 'tower', 'api', 'server.js')] };
-  const app = process.env.WORKKIT_TOWER_APP
-    ? seam(process.env.WORKKIT_TOWER_APP)
-    : { command: 'npm', args: ['run', 'dev'], cwd: path.join(ROOT, 'tower', 'app') };
+  const api = seamOf('WORKKIT_TOWER_API_CMD')
+    ?? { command: process.execPath, args: [path.join(ROOT, 'tower', 'api', 'server.js')] };
+  const app = seamOf('WORKKIT_TOWER_APP_CMD')
+    ?? { command: 'npm', args: ['run', 'dev'], cwd: path.join(ROOT, 'tower', 'app') };
   return [{ name: 'API', port: '', ...api }, { name: 'app', port: appPort, ...app }];
 };
 
@@ -201,6 +234,7 @@ const endHalves = async (halves) => {
  * The call.
  * @param {string[]} args
  * @returns {Promise<number>} 0 when a half ends or a signal ends it; 1 when a port cannot be freed
+ *   or a start seam is not a JSON list of strings
  */
 const main = async (args) => {
   // The engine's voice with no indent.
@@ -210,6 +244,14 @@ const main = async (args) => {
   // A half writing to a pipe sees a non-tty and drops its colors; force them back
   // only when our own stdout is a terminal and the caller set no FORCE_COLOR.
   if (process.stdout.isTTY && !('FORCE_COLOR' in process.env)) process.env.FORCE_COLOR = '1';
+  // A seam that does not read stops the run before any port is touched.
+  let specs;
+  try {
+    specs = halvesOf(ports[1] ?? '');
+  } catch (err) {
+    error(err.message);
+    return 1;
+  }
 
   // An end signal ends the run, never the starter before its halves. The
   // hold's signalled() wakes the waits below; its end is never called, since it
@@ -230,7 +272,7 @@ const main = async (args) => {
   // A signal that landed before here ends the run with no half started.
   if (await hold.interrupted()) return 0;
 
-  const halves = halvesOf(ports[1] ?? '').map((spec) => startHalf(spec, verbose));
+  const halves = specs.map((spec) => startHalf(spec, verbose));
   await Promise.race([...halves.map((half) => half.ended), woken]);
 
   // A half that ended before any announce never came up: name it. Only in a

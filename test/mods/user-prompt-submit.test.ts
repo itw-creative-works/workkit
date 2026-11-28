@@ -183,8 +183,8 @@ describe('classic.SessionStart + UserPromptSubmit: workflow:reload-guard (reload
   })
 
   test('editing an existing hook script is not a change: those edits are already live', async ($, on) => {
-    const w = await stamped($, on, { kit: { 'hooks/docs/state-check/run.sh': '#!/bin/bash\nexit 0\n' } })
-    w.touchKit('hooks/docs/state-check/run.sh', '#!/bin/bash\n# rewritten\nexit 0\n')
+    const w = await stamped($, on, { kit: { 'hooks/docs/state-check/run.sh': 'exit 0\n' } })
+    w.touchKit('hooks/docs/state-check/run.sh', '# rewritten\nexit 0\n')
     expect(noticed(await prompt($, 'hello'))).toBe(false)
   })
 

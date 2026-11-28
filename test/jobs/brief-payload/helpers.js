@@ -9,7 +9,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { execFileSync } = require('child_process');
 const { mkTmp } = require('../../lib/harness');
-const { gitPath, homeEnv, pathWith, shellPath, stubTool } = require('../../lib/platform');
+const { gitPath, homeEnv, pathWith, stubToolJs } = require('../../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js');
 const { composeBrief, render, writeBriefMarks, INSTRUCTION } = require(SCRIPT);
@@ -56,7 +56,7 @@ const mkNewsWorld = () => {
     JSON.stringify({ data: { repository: { discussions: { nodes } } } }),
   );
   setBoard([]);
-  stubTool(bin, 'gh', ['#!/usr/bin/env bash', `cat ${JSON.stringify(shellPath(boardFile))}`]);
+  stubToolJs(bin, 'gh', `process.stdout.write(require('fs').readFileSync(${JSON.stringify(boardFile)}));`);
 
   return {
     home,

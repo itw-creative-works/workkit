@@ -8,7 +8,7 @@ const {
   describe, test, expect, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  NO_RC, NODE_DIR, joinPath, skipWithoutNodeStub, spawnBash, spawnSync,
+  NODE_DIR, joinPath, spawnSync,
 } = require('../../lib/platform');
 const {
   block, inlineValue, listItems, childrenOf, isContent, indentOf,
@@ -107,7 +107,7 @@ describe('workflow/home: the cloud brief runner', () => {
     cleanup(world.root);
   });
 
-  test('the seeded workflow\'s command, run in the clone alone, runs a cloud morning through to the publish', { skip: skipWithoutNodeStub() }, () => {
+  test('the seeded workflow\'s command, run in the clone alone, runs a cloud morning through to the publish', () => {
     // The closure whole: the command the seeded brief.yml runs, from the
     // clone's root as Actions runs a step, with the checkout out of its reach.
     // A file the list misses, or a command naming none it seeds, fails here.
@@ -116,7 +116,10 @@ describe('workflow/home: the cloud brief runner', () => {
     const cloud = mkCloudWorld();
     // The runner's node, after the fake tools so a global `claude` beside it stays hidden.
     const env = { ...cloud.env, PATH: joinPath(path.join(cloud.root, 'bin'), NODE_DIR, cloud.env.PATH) };
-    const res = spawnBash([...NO_RC, '-e', '-c', composeRun(world.tower)], {
+    const command = composeRun(world.tower);
+    expect(/^\S+( \S+)*$/.test(command), `the step is one program start, its words plain, got: ${command}`).toBeTruthy();
+    const [program, ...args] = command.split(' ');
+    const res = spawnSync(program, args, {
       cwd: world.tower, encoding: 'utf8', timeout: SPAWN_DEADLINE, env,
     });
     expect(res.status, `the seeded morning ran: ${res.stdout}${res.stderr}`).toBe(0);
@@ -127,7 +130,7 @@ describe('workflow/home: the cloud brief runner', () => {
     cleanup(world.root);
   });
 
-  test('every file a cloud morning loads is on the list', { skip: skipWithoutNodeStub() }, () => {
+  test('every file a cloud morning loads is on the list', () => {
     const pairs = runnerPairs();
     const onTheList = (src) => {
       const pair = pairs.find((p) => p.src === src);

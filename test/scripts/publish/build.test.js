@@ -9,10 +9,13 @@ const {
   describe, test, expect, mkTmp, run, start, until,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, joinPath, samePath, skipWithoutCaughtSignal,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, shellPath, homeEnv, joinPath, samePath, skipWithoutCaughtSignal, stubToolJs,
 } = require('../../lib/platform');
 const {
-  REPO_ROOT, writeStub, readJson5, binDirWithout,
+  recordArgvJs, readArgv, eqArgv, fmtCalls,
+} = require('../../lib/argv-log');
+const {
+  REPO_ROOT, omegaStub, readJson5, binDirWithout,
 } = require('./helpers');
 
 const SCRIPT = path.join(REPO_ROOT, 'workflow', 'publish', 'build.js');
@@ -20,13 +23,9 @@ const SIDEBAR_REL = path.join('targets', 'web', 'src', '_includes', 'backend', '
 const APP_SIDEBAR = path.join(REPO_ROOT, 'tower', 'app', SIDEBAR_REL);
 const SIDEBAR_WARNING = 'sidebar: site.sidebar is not a list of groups; the built-in sidebar is published';
 
-const readLog = (file) => (fs.existsSync(file)
-  ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean)
-  : []);
-
 /**
- * A scratch project and the two tools build.js reaches. The npm shim records
- * `<cwd>|<argv>|<OMEGA_PATH_PREFIX>` and the omega stub `<cwd>|<argv>`.
+ * A scratch project and the two tools build.js reaches. Each records a call's cwd, then
+ * each argument (npm its OMEGA_PATH_PREFIX after the cwd), read back by readArgv.
  * `installExit` is what `npm install` exits with. `mint` is `logo` (exit 0 and
  * a logo folder), `nothing` (exit 0, no logo) or `fails` (says why, exit 3).
  * `build` is `dist` (exit 0 and the output folder), `nothing` or `fails`.
@@ -67,33 +66,35 @@ const mkProject = ({
   // until its scratch folder is gone, so a failed case leaves no stand-in behind.
   const held = path.join(root, 'held');
   const go = path.join(root, 'go');
-  writeStub(path.join(bin, 'npm'), [
-    `printf '%s|%s|%s\\n' "$PWD" "$*" "\${OMEGA_PATH_PREFIX:-unset}" >> ${JSON.stringify(shellPath(npmLog))}`,
-    `if [[ "$1" == install ]]; then exit ${installExit}; fi`,
-    'prefix="$2"',
-    `cp "$prefix/src/_includes/backend/sections/sidebar.json" ${JSON.stringify(shellPath(builtSidebar))}`,
+  fs.mkdirSync(bin, { recursive: true });
+  stubToolJs(bin, 'npm', [
+    "const fs = require('fs');",
+    "const path = require('path');",
+    'const args = process.argv.slice(2);',
+    recordArgvJs(JSON.stringify(npmLog), "[process.cwd(), process.env.OMEGA_PATH_PREFIX || 'unset', ...args]"),
+    'const answer = () => {',
+    `  if (args[0] === 'install') return ${installExit};`,
+    '  const prefix = args[1];',
+    "  const sidebar = path.join(prefix, 'src', '_includes', 'backend', 'sections', 'sidebar.json');",
+    `  if (fs.existsSync(sidebar)) fs.copyFileSync(sidebar, ${JSON.stringify(builtSidebar)});`,
+    "  const dist = () => fs.mkdirSync(path.join(prefix, 'dist'), { recursive: true });",
     ...({
-      dist: ['mkdir -p "$prefix/dist"', 'exit 0'],
-      nothing: ['exit 0'],
-      fails: ['printf \'omega: the build could not resolve a page\\n\' >&2', 'exit 1'],
+      dist: ['  dist();', '  return 0;'],
+      nothing: ['  return 0;'],
+      fails: ["  process.stderr.write('omega: the build could not resolve a page\\n');", '  return 1;'],
       hold: [
-        `: > ${JSON.stringify(shellPath(held))}`,
-        `while [[ ! -e ${JSON.stringify(shellPath(go))} && -d ${JSON.stringify(shellPath(root))} ]]; do sleep 0.1; done`,
-        'mkdir -p "$prefix/dist"',
-        'exit 0',
+        `  fs.writeFileSync(${JSON.stringify(held)}, '');`,
+        `  const wait = () => (!fs.existsSync(${JSON.stringify(go)}) && fs.existsSync(${JSON.stringify(root)}) ? setTimeout(wait, 100) : dist());`,
+        '  wait();',
+        '  return 0;',
       ],
     })[build],
-  ]);
+    '};',
+    'process.exitCode = answer();',
+  ].join('\n'));
 
   const mintLog = path.join(root, 'mint.log');
-  writeStub(path.join(project, 'node_modules', '.bin', 'omega'), [
-    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(mintLog))}`,
-    ...({
-      logo: ['mkdir -p "$PWD/.omega/assets/logo/brandmark"', 'exit 0'],
-      nothing: ['exit 0'],
-      fails: ['printf \'omega: the brandmark could not be read\\n\' >&2', 'exit 3'],
-    })[mint],
-  ]);
+  omegaStub(project, mintLog, mint, { failCode: 3 });
 
   return {
     root,
@@ -103,8 +104,8 @@ const mkProject = ({
     builtSidebar,
     held,
     go,
-    npms: () => readLog(npmLog),
-    mints: () => readLog(mintLog),
+    npms: () => readArgv(npmLog),
+    mints: () => readArgv(mintLog),
     // Native: build.js is started here, not by Git Bash, which alone converts a shell spelling.
     env: homeEnv(home, {
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
@@ -165,7 +166,7 @@ const assertAppSidebar = (world, what) => {
 
 const assertBuilt = (world, code, out) => {
   expect(code, `the build goes on and exits 0: ${out}`).toBe(0);
-  expect(world.npms().some((line) => line.split('|')[1].endsWith('run build')), `the build ran: ${world.npms().join(' | ')}`).toBeTruthy();
+  expect(world.npms().some((call) => eqArgv(call.slice(-2), ['run', 'build'])), `the build ran: ${fmtCalls(world.npms())}`).toBeTruthy();
   expect(fs.existsSync(path.join(world.project, 'targets', 'web', 'dist')), 'and the output is there').toBeTruthy();
 };
 
@@ -175,10 +176,10 @@ describe('workflow/publish/build.js: install', () => {
     const { code, out, err } = build(world, ['install', world.project]);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     const npms = world.npms();
-    expect(npms.length, `one npm call: ${npms.join(' | ')}`).toBe(1);
-    const [cwd, argv] = npms[0].split('|');
-    expect(sameDir(cwd, world.project), `npm install, run inside the project, got: ${npms[0]}`).toBeTruthy();
-    expect(argv, 'npm install, nothing more').toBe('install');
+    expect(npms.length, `one npm call: ${fmtCalls(npms)}`).toBe(1);
+    const [cwd, , ...argv] = npms[0];
+    expect(sameDir(cwd, world.project), `npm install, run inside the project, got: ${fmtCalls(npms)}`).toBeTruthy();
+    expect(argv, 'npm install, nothing more').toEqual(['install']);
 
     const failing = mkProject({ installExit: 7 });
     expect(build(failing, ['install', failing.project]).code, 'and the exit is npm’s own').toBe(7);
@@ -198,8 +199,8 @@ describe('workflow/publish/build.js: mint', () => {
     const { code, out, err } = build(world, ['mint', world.project]);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     const mints = world.mints();
-    expect(mints.length, `one call of the project’s omega: ${mints.join(' | ')}`).toBe(1);
-    expect(sameDir(mints[0].split('|')[0], world.project), `run at the project, got: ${mints[0]}`).toBeTruthy();
+    expect(mints.length, `one call of the project’s omega: ${fmtCalls(mints)}`).toBe(1);
+    expect(sameDir(mints[0][0], world.project), `run at the project, got: ${fmtCalls(mints)}`).toBeTruthy();
   });
 
   test('a mint that exits 0 and leaves no logo folder exits 1 and says so', () => {
@@ -223,12 +224,11 @@ describe('workflow/publish/build.js: build', () => {
     const { code, out, err } = build(world, ['build', world.project, '/x/']);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     const npms = world.npms();
-    expect(npms.length, `one npm call: ${npms.join(' | ')}`).toBe(1);
-    const [, argv, prefix] = npms[0].split('|');
-    const words = argv.split(' ');
-    expect(words.length === 4 && words[0] === '--prefix' && words.slice(2).join(' ') === 'run build',
-      `the web target’s build script, got: ${argv}`).toBeTruthy();
-    expect(sameDir(words[1], path.join(world.project, 'targets', 'web')), `in the web target, got: ${argv}`).toBeTruthy();
+    expect(npms.length, `one npm call: ${fmtCalls(npms)}`).toBe(1);
+    const [, prefix, ...argv] = npms[0];
+    expect(argv.length === 4 && argv[0] === '--prefix' && eqArgv(argv.slice(2), ['run', 'build']),
+      `the web target’s build script, got: ${fmtCalls([argv])}`).toBeTruthy();
+    expect(sameDir(argv[1], path.join(world.project, 'targets', 'web')), `in the web target, got: ${fmtCalls([argv])}`).toBeTruthy();
     expect(prefix, 'the build was told the prefix the site serves at').toBe('/x/');
     expect(fs.existsSync(path.join(world.project, 'targets', 'web', 'dist')), 'and the output is there').toBeTruthy();
   });

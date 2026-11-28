@@ -9,8 +9,9 @@ const {
   describe, test, expect, start, until,
 } = require('../../lib/harness');
 const {
-  gitPath, skipWithoutCaughtSignal,
+  gitPath, skipWithoutCaughtSignal, stubToolJs,
 } = require('../../lib/platform');
+const { isCall, fmtCalls } = require('../../lib/argv-log');
 const { cleanup, git, mkWorld, publishArgv, publish, fromPages, onMain } = require('./helpers');
 
 describe('workflow/publish: the published branch', () => {
@@ -30,8 +31,8 @@ describe('workflow/publish: the published branch', () => {
 
     // The wiring itself, pinned: the daily publish heals the home repo's labels
     // on the way, so deleting publish.js's call of the heal goes red here.
-    expect(world.ghCalls().some((argv) => /label list/.test(argv)),
-      `the publish healed the home repo's labels: ${world.ghCalls().join(' | ')}`).toBeTruthy();
+    expect(world.ghCalls().some((call) => isCall(call, 'label', 'list')),
+      `the publish healed the home repo's labels: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
     cleanup(world.root);
   });
 
@@ -106,21 +107,16 @@ describe('workflow/publish: the published branch', () => {
     const held = path.join(world.root, 'held');
     const go = path.join(world.root, 'go');
     const released = path.join(world.root, 'released');
-    const hook = path.join(world.bare, 'hooks', 'pre-receive');
-    fs.writeFileSync(hook, [
-      '#!/bin/sh',
-      'while read old new ref; do',
-      `  if [ "$ref" = refs/heads/gh-pages ] && [ ! -e ${JSON.stringify(go)} ]; then`,
-      `    : > ${JSON.stringify(held)}`,
-      `    while [ ! -e ${JSON.stringify(go)} ] && [ -d ${JSON.stringify(world.root)} ]; do sleep 0.1; done`,
-      `    : > ${JSON.stringify(released)}`,
-      '    exit 1',
-      '  fi',
-      'done',
-      'exit 0',
-      '',
+    stubToolJs(path.join(world.bare, 'hooks'), 'pre-receive', [
+      "const fs = require('fs');",
+      "const refs = fs.readFileSync(0, 'utf8').split('\\n').filter(Boolean).map((line) => line.split(' ')[2]);",
+      `if (refs.includes('refs/heads/gh-pages') && !fs.existsSync(${JSON.stringify(go)})) {`,
+      `  fs.writeFileSync(${JSON.stringify(held)}, '');`,
+      `  const wait = () => (!fs.existsSync(${JSON.stringify(go)}) && fs.existsSync(${JSON.stringify(world.root)}) ? setTimeout(wait, 100) : fs.writeFileSync(${JSON.stringify(released)}, ''));`,
+      '  wait();',
+      '  process.exitCode = 1;',
+      '}',
     ].join('\n'));
-    fs.chmodSync(hook, 0o755);
     t.after(() => { if (fs.existsSync(world.root)) fs.writeFileSync(go, ''); });
     const worktrees = () => spawnSync('git', ['-C', world.tower, 'worktree', 'list'], { encoding: 'utf8' }).stdout.trim().split('\n');
 

@@ -109,7 +109,9 @@ describe('commit-gate: the review marker under the workflow home', () => {
     for (const file of aged) agedFile(file, 5);
     const later = runLine(world, skillLine('triage', 'workkit triage mark'), world.dir);
     expect(later.status, `a later marker write runs its sweep, got: ${later.stderr}`).toBe(0);
-    const covers = runLine(world, 'workkit review covers');
+    const covers = run(process.execPath, [path.join(KIT, 'workflow', 'workkit.js'), 'review', 'covers'], {
+      cwd: world.repo, env: { ...world.env, PATH: joinPath(workkitBin(), NODE_DIR, world.env.PATH) },
+    });
     expect(covers.stdout, `workkit review covers still sees the full marker, got: ${covers.stdout}${covers.stderr}`).toBe('review-covers: covered\n');
     const gate = await gateOn(world.repo, world.env);
     expect(gate.deny, 'and the gate still sees the review marker').toBe(null);

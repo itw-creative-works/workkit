@@ -14,7 +14,7 @@ const {
   describe, test, expect,
   run, start, endTree, alive, groupLives, until, readPid, mkTmp,
 } = require('./lib/harness');
-const { IS_WINDOWS, BASH, NO_RC, recordingRun, signalsRefused, samePath } = require('./lib/platform');
+const { IS_WINDOWS, BASH, NO_RC, RUN_JS, recordingRun, signalsRefused, samePath } = require('./lib/platform');
 const { caught } = require('./lib/caught');
 const { startNeverCollects, childOf } = require('./lib/never-collects');
 const { survivedText, groupMembers } = require(path.join(__dirname, '..', 'packages', 'core', 'test', 'lib', 'proc-state.js'));
@@ -66,8 +66,14 @@ const TRAPS = (record) => `
   process.stdout.write("ready\\n");
 `;
 
-// Spins until the pid in $1 is a zombie: exited, its parent not yet told.
-const UNTIL_ZOMBIE = 'until ps -o stat= -p "$1" | grep -q Z; do :; done';
+// Spins until the pid in its first argument is a zombie: exited, its parent not yet told.
+const UNTIL_ZOMBIE = `
+  const { spawnSync } = require(${JSON.stringify(RUN_JS)});
+  while (!spawnSync("ps", ["-o", "stat=", "-p", process.argv[1]], { encoding: "utf8" }).stdout.includes("Z"));
+`;
+
+// Exits 0 at once, on its own.
+const EXITS_0 = 'process.exit(0);';
 
 // Exits 4 at once, on its own.
 const EXITS = 'process.exit(4);';
@@ -221,9 +227,9 @@ describe('spawn: start()', () => {
     'end() on a detached child that exited and is not yet reaped resolves, and done reports its exit 0',
     { skip: IS_WINDOWS && 'Windows ends a child through one taskkill, no signal probe' },
     async () => {
-      const child = start('/bin/sh', ['-c', 'exit 0'], { detached: true });
+      const child = start(process.execPath, ['-e', EXITS_0], { detached: true });
       // Blocks the loop until the child is a zombie, so the signal probe meets it unreaped.
-      const stretch = run('/bin/sh', ['-c', UNTIL_ZOMBIE, 'sh', String(child.pid)]);
+      const stretch = run(process.execPath, ['-e', UNTIL_ZOMBIE, String(child.pid)]);
       expect(stretch.status, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`).toBe(0);
       let rejected;
       await child.end().catch((err) => { rejected = err; });
@@ -237,9 +243,9 @@ describe('spawn: start()', () => {
     'endTree on a detached child that exited and is not yet reaped ends quietly, and done reports its exit 0',
     { skip: IS_WINDOWS && 'Windows ends a tree through taskkill, not a signal' },
     async () => {
-      const child = start('/bin/sh', ['-c', 'exit 0'], { detached: true });
+      const child = start(process.execPath, ['-e', EXITS_0], { detached: true });
       // Blocks the loop until the child is a zombie, so endTree meets it unreaped.
-      const stretch = run('/bin/sh', ['-c', UNTIL_ZOMBIE, 'sh', String(child.pid)]);
+      const stretch = run(process.execPath, ['-e', UNTIL_ZOMBIE, String(child.pid)]);
       expect(stretch.status, `the child exited and waits unreaped, got: ${JSON.stringify(stretch)}`).toBe(0);
       const threw = await caught(() => endTree(child.pid, 'SIGKILL'));
       expect(threw?.message, 'endTree does not throw on a leader that already exited').toBe(undefined);

@@ -1,4 +1,4 @@
-// Tests for workflow/morning-task.js, the starter the Windows task runs: it
+// Tests for workflow/morning-task.js, the starter both machines' 9am jobs run: it
 // starts a job as a process of its own, its output appended to a log, and
 // answers once the job has started. Each job is a scratch Node file of the case's.
 
@@ -10,6 +10,7 @@ const {
 const {
   nodeHomeEnv, jsPath, samePath, spawnSync, stubToolJs,
 } = require('../lib/platform');
+const { olderNode } = require('../lib/node-fakes');
 const { escapeRegex } = require('../../workflow/lib/regex');
 
 const KIT = path.join(__dirname, '..', '..');
@@ -106,5 +107,32 @@ describe('workflow/morning-task: the starter', () => {
     expect(res.status, `the starter loads through the link: ${res.stderr}`).toBe(0);
     const real = fs.realpathSync(path.join(KIT, 'jobs', 'morning.js'));
     expect(samePath(res.stdout, real, process.platform), `the real kit's job, got: ${res.stdout}`).toBeTruthy();
+  });
+
+  test('run as a program under a Node below the floor: the floor line and 1, with no log written and no morning started', async () => {
+    const dir = mkTmp('morning-task-floor-');
+    const home = path.join(dir, 'home');
+    fs.mkdirSync(home);
+    // Every node under the run reads as older, and one running a morning.js marks that it started.
+    const mark = path.join(dir, 'morning-started');
+    const marker = path.join(dir, 'mark.js');
+    fs.writeFileSync(marker, [
+      "if (require('path').basename(process.argv[1] || '') === 'morning.js') {",
+      `  require('fs').writeFileSync(${JSON.stringify(mark)}, '');`,
+      '}',
+    ].join('\n'));
+    const older = olderNode('20.15.1', dir);
+    const res = spawnSync(process.execPath, [STARTER], {
+      encoding: 'utf8',
+      timeout: SPAWN_DEADLINE,
+      env: nodeHomeEnv(home, {
+        ...process.env, WORKFLOW_HOME: path.join(home, '.workkit'), NODE_OPTIONS: `--require ${older} --require ${marker}`,
+      }),
+    });
+    expect(res.status, `the floor's code, stdout: ${res.stdout} stderr: ${res.stderr}`).toBe(1);
+    expect(res.stderr, 'the one line').toBe('workkit: this Node is v20.15.1; the kit needs 22.22 or newer\n');
+    expect(res.stdout, 'nothing on stdout').toBe('');
+    expect(fs.existsSync(logIn(dir)), 'no log was written under the home').toBe(false);
+    expect(await until(() => fs.existsSync(mark), 1000), 'and no morning started').toBe(false);
   });
 });

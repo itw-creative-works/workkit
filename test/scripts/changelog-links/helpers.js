@@ -6,8 +6,8 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync, execFileSync } = require('child_process');
 const { mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { SYSTEM_PATH, stubTool, pathWith } = require('../../lib/platform');
-const { recordArgv } = require('../../lib/argv-log');
+const { SYSTEM_PATH, pathWith } = require('../../lib/platform');
+const { writeGh } = require('../../lib/gh-stub');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'workflow', 'changelog', 'changelog-links.js');
 const { repoSlug } = require(SCRIPT);
@@ -21,12 +21,19 @@ const makeGhStub = ({ login = 'who', fails = false } = {}) => {
   const dir = mkTmp('cll-');
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin, { recursive: true });
-  stubTool(bin, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(path.join(dir, 'gh.log')),
-    ...(fails ? ['exit 1'] : [`printf '%s\\n' "${login}"`, 'exit 0']),
-  ]);
+  writeGh(bin, {
+    log: path.join(dir, 'gh.log'),
+    answer: { module: __filename, name: 'answerLogin' },
+    config: { login, fails },
+  });
   return { binDir: bin, dir };
+};
+
+/** makeGhStub's answer to every call: the login on its own line, or 1. */
+const answerLogin = ({ login, fails }) => {
+  if (fails) return 1;
+  process.stdout.write(`${login}\n`);
+  return 0;
 };
 
 // ` - ` in the fixtures below is the CHANGELOG entry separator (a spaced hyphen).
@@ -73,5 +80,5 @@ const runScript = (cwd, stub, args = []) => {
 const readLog = (dir) => fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
 
 module.exports = {
-  repoSlug, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
+  repoSlug, cleanup, git, makeGhStub, answerLogin, CHANGELOG, mkRepo, runScript, readLog,
 };

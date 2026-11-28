@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const { describe, test, expect } = require('../../lib/harness');
 const { gitPath } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
+const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const { cleanup, git, mkWorld, publish, setSite, fromPages, onMain } = require('./helpers');
 
 describe('workflow/publish: the owner’s switches', () => {
@@ -264,8 +265,8 @@ describe('workflow/publish: the owner’s switches', () => {
     expect(fromPages(world), 'the branch Pages served is gone from the remote').toBe(null);
     expect(/taken down/.test(out) && /gh-pages/.test(out), `and the run says what it removed, got: ${out}`).toBeTruthy();
     expect(spawnSync('git', ['-C', world.tower, 'branch', '--list', 'gh-pages'], { encoding: 'utf8' }).stdout.trim(), 'the stale local copy of it goes too').toBe('');
-    expect(world.ghCalls().some((argv) => /-X DELETE repos\/owner\/workkit\/pages/.test(argv)),
-      `Pages itself is disabled, not just left with nothing to serve: ${world.ghCalls().join(' | ')}`).toBeTruthy();
+    expect(world.ghCalls().some((call) => eqArgv(call, ['api', '-X', 'DELETE', 'repos/owner/workkit/pages'])),
+      `Pages itself is disabled, not just left with nothing to serve: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
     expect(/Pages is disabled/.test(out), `and that is said too, got: ${out}`).toBeTruthy();
     expect(JSON.parse(fs.readFileSync(path.join(onMain(world), 'data', 'repos.json'), 'utf8')).repos.includes('owner/dotfiles'),
       'while the roster refreshed as it always does').toBeTruthy();
@@ -280,8 +281,8 @@ describe('workflow/publish: the owner’s switches', () => {
       `nothing was removed, so nothing is reported, got: ${out}`).toBeTruthy();
     // Scoped to Pages: the run above the switch heals the home repo's labels,
     // so gh is spoken to on every publish, never about Pages.
-    expect(!world.ghCalls().some((argv) => /pages/.test(argv)),
-      `and GitHub is never asked to disable Pages nobody enabled: ${world.ghCalls().join(' | ')}`).toBeTruthy();
+    expect(!world.ghCalls().some((call) => call.some((arg) => /pages/.test(arg))),
+      `and GitHub is never asked to disable Pages nobody enabled: ${fmtCalls(world.ghCalls())}`).toBeTruthy();
     cleanup(world.root);
   });
 

@@ -6,18 +6,20 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { shellPath, samePath } = require('../../lib/platform');
-const { cleanup, writeStub, mkPublishWorld, publish, fromPages } = require('./helpers');
+const { samePath } = require('../../lib/platform');
+const { eqArgv, fmtCalls } = require('../../lib/argv-log');
+const { omegaStub } = require('../publish/helpers');
+const { cleanup, mkPublishWorld, publish, fromPages } = require('./helpers');
 
 describe('workflow/publish: the mint after any change', () => {
   test('a sync that changed something mints the brand assets, at the brand root', () => {
     const world = mkPublishWorld();
     publish(world);
     const mints = world.mints();
-    expect(mints.length, `one mint: ${mints.join(' | ')}`).toBe(1);
-    // The stand-in's $PWD is the spelling Node handed it, native on Windows.
-    const [cwd, argv] = mints[0].split('|');
-    expect(samePath(cwd, world.tower, process.platform) && argv === 'manage --service=assets', `the assets service, run at the clone’s brand root, got: ${mints[0]}`).toBe(true);
+    expect(mints.length, `one mint: ${fmtCalls(mints)}`).toBe(1);
+    // The stand-in records its own cwd, native on Windows.
+    const [cwd, ...argv] = mints[0];
+    expect(samePath(cwd, world.tower, process.platform) && eqArgv(argv, ['manage', '--service=assets']), `the assets service, run at the clone’s brand root, got: ${fmtCalls(mints)}`).toBe(true);
     cleanup(world.root);
   });
 
@@ -48,15 +50,11 @@ describe('workflow/publish: the mint after any change', () => {
 
   test('a mint that exits 0 and leaves no logo aborts the publish before the build, marked failed', () => {
     const world = mkPublishWorld();
-    const mintLog = path.join(world.root, 'mint.log');
-    writeStub(path.join(world.tower, 'node_modules', '.bin', 'omega'), [
-      `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(mintLog))}`,
-      'exit 0',
-    ]);
+    omegaStub(world.tower, path.join(world.root, 'mint.log'), 'nothing');
     const { code, out, err } = publish(world);
     expect(code !== 0, `a mint that minted nothing is a failure: ${out}${err}`).toBeTruthy();
     expect(world.mints().length, 'the mint ran').toBe(1);
-    expect(world.npms().filter((call) => /run build/.test(call)).length, 'and the build never did').toBe(0);
+    expect(world.npms().filter((call) => eqArgv(call.slice(-2), ['run', 'build'])).length, 'and the build never did').toBe(0);
     expect(fs.existsSync(world.dist), 'so nothing was built').toBe(false);
     expect(fromPages(world), 'nor published').toBe(null);
     expect(fs.existsSync(path.join(world.tower, '.omega', '.mint-failed')),
@@ -76,12 +74,7 @@ describe('workflow/publish: the mint after any change', () => {
     expect(second.code !== 0, `run 2 aborts too: the failure is sticky, got exit ${second.code}`).toBeTruthy();
     expect(fromPages(world), 'and nothing was published over it').toBe(null);
 
-    const mintLog = path.join(world.root, 'mint.log');
-    writeStub(path.join(world.tower, 'node_modules', '.bin', 'omega'), [
-      `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(mintLog))}`,
-      'mkdir -p "$PWD/.omega/assets/logo/brandmark"',
-      'exit 0',
-    ]);
+    omegaStub(world.tower, path.join(world.root, 'mint.log'), 'logo');
     const third = publish(world);
     expect(third.code, `a repaired mint publishes again: ${third.out}${third.err}`).toBe(0);
     expect(!fs.existsSync(path.join(world.tower, '.omega', '.mint-failed')),

@@ -10,9 +10,12 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, seeded, run } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, shellPath, jsPath, homeEnv, nodeHomeEnv, stubTool, joinPath,
+  SYSTEM_PATH, NODE_DIR, jsPath, homeEnv, nodeHomeEnv, stubToolJs, joinPath,
 } = require('../../lib/platform');
-const { copyEngine, mkTowerRemote } = require('../publish/helpers');
+const {
+  copyEngine, mkTowerRemote, omegaStub,
+} = require('../publish/helpers');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const WORKFLOW_DIR = path.join(REPO_ROOT, 'workflow');
@@ -26,10 +29,6 @@ const writeJson = (file, value) => {
 const write = (file, body) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body);
-};
-const writeStub = (file, lines) => {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  return stubTool(path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines]);
 };
 
 /**
@@ -66,7 +65,7 @@ const mkTowerApp = (root) => {
   write(path.join(app, 'targets', 'web', 'src', 'index.html'), '<html>the board</html>\n');
   write(path.join(app, 'targets', 'web', 'src', 'pages', 'board.js'), 'export default 1;\n');
 
-  write(path.join(app, 'node_modules', '.bin', 'omega'), '#!/bin/sh\n');
+  write(path.join(app, 'node_modules', '.bin', 'omega'), 'the installed omega\n');
   write(path.join(app, 'targets', 'web', 'node_modules', 'x.js'), 'nested\n');
   write(path.join(app, 'package-lock.json'), '{}\n');
   write(path.join(app, '.omega', 'runs', 'one.json'), '{}\n');
@@ -267,31 +266,40 @@ const mkPublishWorld = ({
   // of the app, recording its cwd and argv: `--prefix` names the project, the
   // cwd names the tree npm writes.
   const npmLog = path.join(root, 'npm.log');
-  writeStub(path.join(bin, 'npm'), [
-    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(npmLog))}`,
-    'prefix="$PWD"',
-    'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
-    'if [[ "$*" == *install* ]]; then',
+  fs.mkdirSync(bin, { recursive: true });
+  stubToolJs(bin, 'npm', [
+    "const fs = require('fs');",
+    "const path = require('path');",
+    recordArgvJs(JSON.stringify(npmLog), '[process.cwd(), ...process.argv.slice(2)]'),
+    'const args = process.argv.slice(2);',
+    "const prefix = args[0] === '--prefix' ? args[1] : process.cwd();",
+    'const answer = () => {',
+    "  if (args.join(' ').includes('install')) {",
     ...(installFails
-      ? ['  printf \'npm: ERESOLVE could not resolve @omega.js/web\\n\' >&2', '  exit 1']
-      : ['  mkdir -p "$prefix/node_modules"', '  touch "$prefix/node_modules/.package-lock.json"', '  exit 0']),
-    'fi',
-    'mkdir -p "$prefix/dist"',
-    'cp "$prefix/src/index.html" "$prefix/dist/index.html"',
-    'exit 0',
-  ]);
-  writeStub(path.join(bin, 'gh'), ['exit 0']);
+      ? ["    process.stderr.write('npm: ERESOLVE could not resolve @omega.js/web\\n');", '    return 1;']
+      : [
+        "    fs.mkdirSync(path.join(prefix, 'node_modules'), { recursive: true });",
+        // A touch: the file made when missing, its time now either way, since that time is the install's stamp.
+        "    const stamp = path.join(prefix, 'node_modules', '.package-lock.json');",
+        "    fs.closeSync(fs.openSync(stamp, 'a'));",
+        '    fs.utimesSync(stamp, new Date(), new Date());',
+        '    return 0;',
+      ]),
+    '  }',
+    "  fs.mkdirSync(path.join(prefix, 'dist'), { recursive: true });",
+    "  const page = path.join(prefix, 'src', 'index.html');",
+    "  if (fs.existsSync(page)) fs.copyFileSync(page, path.join(prefix, 'dist', 'index.html'));",
+    '  return 0;',
+    '};',
+    'process.exitCode = answer();',
+  ].join('\n'));
+  stubToolJs(bin, 'gh', '');
 
   // The clone's own build tooling: the gate publish checks for, and the binary
   // the mint calls. It records where it ran and with what, and leaves what a
   // real mint leaves: the minted tree the "has it ever minted" check reads.
   const mintLog = path.join(root, 'mint.log');
-  writeStub(path.join(tower, 'node_modules', '.bin', 'omega'), [
-    `printf '%s|%s\\n' "$PWD" "$*" >> ${JSON.stringify(shellPath(mintLog))}`,
-    ...(mintFails
-      ? ['printf \'omega: the brandmark could not be read\\n\' >&2', 'exit 1']
-      : ['mkdir -p "$PWD/.omega/assets/logo/brandmark"', 'exit 0']),
-  ]);
+  omegaStub(tower, mintLog, mintFails ? 'fails' : 'logo');
   if (minted) fs.mkdirSync(path.join(tower, '.omega', 'assets', 'logo', 'brandmark'), { recursive: true });
 
   return {
@@ -301,12 +309,9 @@ const mkPublishWorld = ({
     tower,
     app,
     dist: path.join(tower, 'targets', 'web', 'dist'),
-    mints: () => (fs.existsSync(mintLog)
-      ? fs.readFileSync(mintLog, 'utf8').trim().split('\n').filter(Boolean)
-      : []),
-    npms: () => (fs.existsSync(npmLog)
-      ? fs.readFileSync(npmLog, 'utf8').trim().split('\n').filter(Boolean)
-      : []),
+    // One call each, its working folder and then each argument.
+    mints: () => readArgv(mintLog),
+    npms: () => readArgv(npmLog),
     // Native, as the publish's node reads it.
     env: nodeHomeEnv(homeDir, {
       PATH: joinPath(bin, SYSTEM_PATH, NODE_DIR),
@@ -335,6 +340,6 @@ const fromPages = (world) => {
 };
 
 module.exports = {
-  REPO_ROOT, cleanup, git, writeJson, write, writeStub, mkSyncWorld, commitCheckout, sync, seed, mtimes,
+  REPO_ROOT, cleanup, git, writeJson, write, mkSyncWorld, commitCheckout, sync, seed, mtimes,
   mkPublishWorld, publish, fromPages,
 };

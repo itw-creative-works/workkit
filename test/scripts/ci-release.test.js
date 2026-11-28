@@ -9,7 +9,7 @@ const {
   describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  NODE_DIR, SYSTEM_PATH, joinPath, shellPath, spawnSync,
+  NODE_DIR, SYSTEM_PATH, joinPath, spawnSync,
 } = require('../lib/platform');
 const { fmtCalls, isCall } = require('../lib/argv-log');
 const { mkRepo, commitGh } = require('../lib/git-repo');
@@ -92,9 +92,14 @@ const releaseCommit = (g, version, { notes = NOTES, body = null } = {}) => {
 const releaseGh = (g, opts = {}) => {
   const dir = path.join(g.dir, 'notes');
   fs.mkdirSync(dir, { recursive: true });
-  const D = shellPath(dir);
-  const onCreate = `prev=''; for a in "$@"; do if [[ "$prev" == --notes-file ]]; then cat "$a" > "${D}/notes-$3"; `
-    + `elif [[ "$prev" == --notes ]]; then printf '%s' "$a" > "${D}/notes-$3"; fi; prev=$a; done`;
+  const onCreate = [
+    "const fs = require('fs');",
+    `const kept = require('path').join(${JSON.stringify(dir)}, \`notes-\${argv[2]}\`);`,
+    'argv.forEach((arg, i) => {',
+    "  if (argv[i - 1] === '--notes-file') fs.writeFileSync(kept, fs.readFileSync(arg));",
+    "  else if (argv[i - 1] === '--notes') fs.writeFileSync(kept, arg);",
+    '});',
+  ].join('\n');
   const gh = commitGh({ ...opts, onCreate });
   const notes = (tag) => {
     const file = path.join(dir, `notes-${tag}`);

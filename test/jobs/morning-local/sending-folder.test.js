@@ -11,11 +11,15 @@ const { fmtCalls } = require('../../lib/argv-log');
 const {
   joinPath, spawnSync, stubToolJs, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
 } = require('../../lib/platform');
+const { mkPluginCopy } = require('../../lib/plugin-copy');
 const {
-  SCRIPT, INSTRUCTION, cleanup, mkWorld, runJob, skipOnUsrLocalBin, withBarePath,
+  SCRIPT, BRIEF_TITLE_PREFIX, cleanup, mkWorld, runJob, skipOnUsrLocalBin, withBarePath,
 } = require('./helpers');
 
 const INSTALL = path.join(__dirname, '..', '..', '..', 'jobs', 'install.js');
+const ENGINE = path.join(path.dirname(SCRIPT), '..', 'workflow');
+
+const SKIP_OFF_MAC = process.platform !== 'darwin' && 'the launchd file is a Mac\'s; the Windows task names workflow/morning-task.js';
 
 /**
  * The launchd file jobs/install.js renders for the world's home, read back as
@@ -37,26 +41,80 @@ const renderedAgent = (world) => {
   return JSON.parse(json.stdout);
 };
 
+/** The agent's program started as launchd starts it: its own arguments, on its own PATH, the fake tools ahead. */
+const startAgent = (world, agent) => {
+  const [program, ...args] = agent.ProgramArguments;
+  const env = { ...world.env, PATH: joinPath(path.join(world.root, 'bin'), agent.EnvironmentVariables.PATH) };
+  return spawnSync(program, args, { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
+};
+
+/** What the morning wrote to the job's log and its own, for a failure message. */
+const logsOf = (world) => {
+  const jobLog = path.join(world.home, 'Library', 'Logs', 'com.workkit.claude-daily.log');
+  return `${fs.existsSync(jobLog) ? fs.readFileSync(jobLog, 'utf8') : ''}${world.log()}`;
+};
+
+/**
+ * Every node the world starts loads a file first that writes the pid of the one
+ * whose program is a `morning.js` to the file it returns, so a case can wait for
+ * the detached morning to end before its world is removed.
+ */
+const recordMorningPid = (world) => {
+  const pidFile = path.join(world.root, 'morning.pid');
+  const preload = path.join(world.root, 'morning-pid.js');
+  fs.writeFileSync(preload, [
+    "if (require('path').basename(process.argv[1] || '') === 'morning.js') {",
+    `  require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
+    '}',
+  ].join('\n'));
+  world.env.NODE_OPTIONS = `--require ${preload}`;
+  return pidFile;
+};
+
+/** Whether the morning whose pid `pidFile` holds started and has ended, by the shared deadline. */
+const morningEnded = (pidFile) => until(() => pidIn(pidFile) > 0 && !alive(pidIn(pidFile)));
+
 describe('jobs/morning (local)', () => {
   describe('jobs/morning (local): the folder it runs from', () => {
     // launchd runs the job exactly as its file names it: `/usr/bin/env node`
-    // on the file's own PATH, and the kit the engine link resolved to at install.
-    // So the rendered file, run as it is, must start the morning whole.
-    test('started as the launchd file starts it, the job runs from the kit\'s jobs folder', {
-      skip: process.platform !== 'darwin' && 'the launchd file is a Mac\'s; the Windows task names workflow/morning-task.js',
-    }, () => {
-      const world = mkWorld();
-      // The engine link the installer reads the kit from, at this checkout.
-      fs.symlinkSync(path.join(path.dirname(SCRIPT), '..', 'workflow'), path.join(world.home, '.claude', 'workkit'));
+    // on the file's own PATH. The starter ends before the morning does, so a
+    // case waits for the morning to end, then reads what it left behind.
+    test('started as the launchd file starts it, the morning of the kit the engine link names runs', { skip: SKIP_OFF_MAC }, async (t) => {
+      const world = mkWorld({ home: 'owner/private-home', dispatch: true, posted: [{ title: `${BRIEF_TITLE_PREFIX}2026-08-17` }] });
+      fs.symlinkSync(ENGINE, path.join(world.home, '.claude', 'workkit'));
       const agent = renderedAgent(world);
-      const [program, ...args] = agent.ProgramArguments;
-      // launchd's PATH is the file's own; the fake tools stay ahead of it.
-      const env = { ...world.env, PATH: joinPath(path.join(world.root, 'bin'), agent.EnvironmentVariables.PATH) };
-      const res = spawnSync(program, [...args, '--now'], { encoding: 'utf8', timeout: SPAWN_DEADLINE, env });
+      const pidFile = recordMorningPid(world);
+      t.after(() => { const pid = pidIn(pidFile); if (pid > 0 && alive(pid)) process.kill(pid, 'SIGKILL'); });
+      const res = startAgent(world, agent);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
-      const calls = world.calls();
-      expect(calls.length, `the brief was composed and sent: ${fmtCalls(calls)}`).toBe(1);
-      expect(calls[0][1].startsWith(INSTRUCTION), 'from the real jobs folder\'s payload builder').toBeTruthy();
+      expect(await morningEnded(pidFile), `the morning ran to its end: ${logsOf(world)}`).toBeTruthy();
+      expect(world.marker() !== null, `it reached its marker step: ${logsOf(world)}`).toBeTruthy();
+      expect(world.dispatched().length, `the day was handed to the cloud: ${fmtCalls(world.ghCalls())}`).toBe(1);
+      expect(JSON.parse(world.marker()).lastBrief, `and the marker read the board: ${logsOf(world)}`).toBe('2026-08-17');
+      cleanup(world.root);
+    });
+
+    test('the engine link moved to a second kit after the install: the same file starts that kit\'s morning', { skip: SKIP_OFF_MAC }, async (t) => {
+      const world = mkWorld();
+      const link = path.join(world.home, '.claude', 'workkit');
+      fs.symlinkSync(ENGINE, link);
+      const agent = renderedAgent(world);
+      // The second kit's morning only says where it ran from.
+      const second = path.join(world.root, 'second-kit');
+      mkPluginCopy(second, { dirs: ['workflow', 'jobs', 'hooks'] });
+      const mark = path.join(world.root, 'second-morning');
+      fs.writeFileSync(path.join(second, 'jobs', 'morning.js'), `require('fs').writeFileSync(${JSON.stringify(mark)}, __filename);\n`);
+      fs.unlinkSync(link);
+      fs.symlinkSync(path.join(second, 'workflow'), link);
+      const pidFile = recordMorningPid(world);
+      t.after(() => { const pid = pidIn(pidFile); if (pid > 0 && alive(pid)) process.kill(pid, 'SIGKILL'); });
+
+      const res = startAgent(world, agent);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      expect(await morningEnded(pidFile), `a morning ran to its end: ${logsOf(world)}`).toBeTruthy();
+      const ran = fs.existsSync(mark) ? fs.readFileSync(mark, 'utf8') : '';
+      expect(ran !== '', `the second kit's morning ran: ${logsOf(world)}`).toBeTruthy();
+      expect(fs.realpathSync(ran), 'from the second kit\'s jobs folder').toBe(fs.realpathSync(path.join(second, 'jobs', 'morning.js')));
       cleanup(world.root);
     });
   });

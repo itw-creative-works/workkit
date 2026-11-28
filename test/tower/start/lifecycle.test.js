@@ -1,34 +1,90 @@
 //
-// Tests for tower/start.js: the two halves' lifecycle (one interrupt or either
+// Tests for tower/start.js: the two seams (a JSON list started with no shell, any
+// other value refused), the two halves' lifecycle (one interrupt or either
 // ending ends both, a half's last line read before it is ended) and a held port,
 // replaced not collided with. Prologue: ./helpers.js.
 //
 
-const fs = require('fs');
 const path = require('path');
 const {
   describe, test, expect, mkTmp, endTree,
 } = require('../../lib/harness');
-const { shellPath } = require('../../lib/platform');
+const { RUN_JS, stubToolJs, pathWith } = require('../../lib/platform');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const {
-  cleanup, alive, until, pidIn, pidOnSight, start, standIn, nodeHalf, STARTING, skipOnWindowsTerm,
+  cleanup, alive, until, pidIn, pidOnSight, start, standIn, nodeCmd, half, HOLD, nodeHalf, STARTING,
+  skipOnWindowsTerm,
 } = require('./helpers');
 
-// A half stub that puts a child between itself and the sleeper, the way npm
-// and omega put children between the wrapper and the real server.
-const grandchild = (pidFile) => `bash -c "echo \\$\\$ > '${pidFile}'; exec sleep 30" & wait`;
+// A half that puts a child between itself and the holder, the way npm and omega
+// put children between the wrapper and the real server; the child records its pid.
+const grandchild = (pidFile) => nodeCmd(
+  `require(${JSON.stringify(RUN_JS)}).spawn(process.execPath, ['-e', ${JSON.stringify(
+    "require('fs').writeFileSync(process.argv[1], String(process.pid)); setTimeout(() => {}, 30000);")}, process.argv[1]], { stdio: 'inherit' });`,
+  pidFile);
+
+// A half that leaves a child holding its output for <life> ms, records the
+// child's pid, and exits 0 at once.
+const leaver = (pidFile, life) => nodeCmd([
+  `const kid = require(${JSON.stringify(RUN_JS)}).spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${life})'], { stdio: ['ignore', 'inherit', 'inherit'] });`,
+  "require('fs').writeFileSync(process.argv[1], String(kid.pid));",
+  'kid.unref();',
+].join('\n'), pidFile);
+
+// The arguments a recording half was handed, or null until its record is finished.
+const argvIn = (file) => readArgv(file)[0] ?? null;
 
 // The pids recorded so far by the grandchild stubs writing <files>.
 const recorded = (files) => files.map(pidIn).filter(Boolean);
+
+describe('tower/start: the two seams', () => {
+  test('a JSON list in each seam starts that program with exactly its arguments, and no shell starts', async () => {
+    // Words a shell would split, expand, glob or refuse; a bash or sh started
+    // by name records itself.
+    const words = ['two words', '$HOME', '*', "it's"];
+    const dir = mkTmp('tower-start-');
+    const bin = mkTmp('tower-start-bin-');
+    const shells = path.join(bin, 'shells.log');
+    for (const name of ['bash', 'sh']) stubToolJs(bin, name, recordArgvJs(JSON.stringify(shells)));
+    const said = { API: path.join(dir, 'api.argv'), app: path.join(dir, 'app.argv') };
+    const recorder = (file) => nodeCmd(`${recordArgvJs('process.argv[1]')} setTimeout(() => {}, 30000);`, file, ...words);
+    const tower = start(dir, recorder(said.API), recorder(said.app), '', { env: { PATH: pathWith(bin) } });
+    try {
+      expect(await until(() => argvIn(said.API) && argvIn(said.app)), `both halves started: ${tower.output()}`).toBeTruthy();
+      for (const [which, file] of Object.entries(said)) {
+        expect(readArgv(file), `the ${which} half was started once, with its arguments as listed`).toEqual([words]);
+      }
+      expect(readArgv(shells), 'no shell was started').toEqual([]);
+    } finally {
+      await tower.end('SIGKILL');
+      cleanup(dir);
+    }
+  });
+
+  test('a value that is not a JSON list of strings, in either seam, is one line naming it and exit 1', async () => {
+    for (const name of ['WORKKIT_TOWER_API_CMD', 'WORKKIT_TOWER_APP_CMD']) {
+      for (const value of ['node start.js', '"node"', '{"program":"node"}', '["node",3]']) {
+        const dir = mkTmp('tower-start-');
+        const tower = start(dir, HOLD, HOLD, '', { env: { [name]: value } });
+        try {
+          const { status } = await tower.done;
+          expect(status, `${name}=${value}: exit 1`).toBe(1);
+          expect(tower.output(), `${name}=${value}: the line`).toContain(`tower: ${name} is not a JSON list of strings`);
+        } finally {
+          await tower.end('SIGKILL');
+          cleanup(dir);
+        }
+      }
+    }
+  });
+});
 
 describe('tower/start: one command, both processes', () => {
   test('both halves start, and one interrupt ends both', { skip: skipOnWindowsTerm() }, async () => {
     const dir = mkTmp('tower-start-');
     const apiPid = path.join(dir, 'api.pid');
     const appPid = path.join(dir, 'app.pid');
-    const tower = start(dir,
-      `echo $$ > '${apiPid}'; exec sleep 30`,
-      `echo $$ > '${appPid}'; exec sleep 30`);
+    const tower = start(dir, nodeHalf(apiPid), nodeHalf(appPid));
     try {
       expect(await until(() => pidIn(apiPid) > 0 && pidIn(appPid) > 0), 'both commands were started').toBeTruthy();
       const pids = [pidIn(apiPid), pidIn(appPid)];
@@ -45,7 +101,7 @@ describe('tower/start: one command, both processes', () => {
   test('either half ending takes the other with it - nothing lingers half-up', async () => {
     const dir = mkTmp('tower-start-');
     const appPid = path.join(dir, 'app.pid');
-    const tower = start(dir, 'sleep 0.3', nodeHalf(dir, appPid));
+    const tower = start(dir, half([], { hold: 300 }), nodeHalf(appPid));
     try {
       expect(await until(() => pidIn(appPid) > 0), 'the surviving half started').toBeTruthy();
       const pid = pidIn(appPid);
@@ -64,7 +120,7 @@ describe('tower/start: one command, both processes', () => {
     const dir = mkTmp('tower-start-');
     const appPid = path.join(dir, 'app.pid');
     const leftPid = path.join(dir, 'left.pid');
-    const tower = start(dir, `sleep 120 & echo $! > '${leftPid}'; exit 0`, nodeHalf(dir, appPid, 120000));
+    const tower = start(dir, leaver(leftPid, 120000), nodeHalf(appPid, 120000));
     try {
       expect(await until(() => pidIn(appPid) > 0), 'the surviving half started').toBeTruthy();
       const pid = pidIn(appPid);
@@ -81,10 +137,8 @@ describe('tower/start: one command, both processes', () => {
   test('a half that prints its last line and exits at once has that line shown', async () => {
     // The line has no newline, as a half that dies mid-line leaves it.
     const dir = mkTmp('tower-start-');
-    const half = path.join(dir, 'last.js');
     const last = 'omega: the last line before the end';
-    fs.writeFileSync(half, `process.stdout.write(${JSON.stringify(last)});\n`);
-    const tower = start(dir, 'exec sleep 30', `"${shellPath(process.execPath)}" "${shellPath(half)}"`);
+    const tower = start(dir, HOLD, nodeCmd(`process.stdout.write(${JSON.stringify(last)});`));
     try {
       const { timedOut } = await tower.done;
       expect(timedOut, 'the run ended when its half did').toBe(false);
@@ -98,7 +152,7 @@ describe('tower/start: one command, both processes', () => {
   test('ending a half ends its whole tree - a grandchild server dies with it', { skip: skipOnWindowsTerm() }, async () => {
     const dir = mkTmp('tower-start-');
     const kidPid = path.join(dir, 'kid.pid');
-    const tower = start(dir, 'exec sleep 30', grandchild(kidPid));
+    const tower = start(dir, HOLD, grandchild(kidPid));
     try {
       expect(await until(() => pidIn(kidPid) > 0), 'the grandchild started').toBeTruthy();
       const pid = pidIn(kidPid);
@@ -144,7 +198,7 @@ describe('tower/start: one command, both processes', () => {
     const port = listener.stdout();
 
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 0.5', 'exec sleep 0.5', port.trim());
+    const tower = start(dir, half([], { hold: 500 }), half([], { hold: 500 }), port.trim());
     try {
       expect(await until(() => listener.child.exitCode !== null || listener.child.signalCode !== null),
         'the wrapper ended it before starting its own').toBeTruthy();
@@ -166,7 +220,7 @@ describe('tower/start: one command, both processes', () => {
     const port = listener.stdout();
 
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 0.5', 'exec sleep 0.5', port.trim());
+    const tower = start(dir, half([], { hold: 500 }), half([], { hold: 500 }), port.trim());
     try {
       expect(await until(() => listener.child.exitCode !== null || listener.child.signalCode !== null),
         'the wrapper ended it anyway - the escalation exists').toBeTruthy();
@@ -185,10 +239,7 @@ describe('tower/start: one command, both processes', () => {
       // half running.
       const dir = mkTmp('tower-start-');
       const halves = [path.join(dir, 'api.pid'), path.join(dir, 'app.pid')];
-      const tower = start(dir,
-        `echo $$ > '${halves[0]}'; exec sleep 30`,
-        `echo $$ > '${halves[1]}'; exec sleep 30`,
-        '');
+      const tower = start(dir, nodeHalf(halves[0]), nodeHalf(halves[1]), '');
       const out = tower.output;
       let signalled = false;
       tower.child.stdout.on('data', () => {

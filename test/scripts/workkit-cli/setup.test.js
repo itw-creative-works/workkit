@@ -661,7 +661,7 @@ describe('workkit setup: npm script-shell', () => {
     const cscLog = path.join(world.root, 'csc-argv.log');
     if (compiler) {
       stubToolJs(cscDir, 'csc.exe', [
-        recordArgvJs(JSON.stringify(cscLog), 'process.argv.slice(2)'),
+        recordArgvJs(JSON.stringify(cscLog)),
         'for (const a of process.argv.slice(2)) {',
         "  if (a.startsWith('-out:')) require('fs').writeFileSync(a.slice(5).replace(/\\\\/g, '/').replace(/^[A-Za-z]:/, ''), '');",
         '}',

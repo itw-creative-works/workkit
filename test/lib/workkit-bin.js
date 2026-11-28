@@ -8,15 +8,15 @@
 
 const path = require('path');
 const { mkTmp } = require('./harness');
-const { stubTool, shellPath } = require('./platform');
+const { stubToolJs, handOverJs } = require('./platform');
 
 const CLI = path.join(__dirname, '..', '..', 'workflow', 'workkit.js');
 const CORE_BIN = path.join(__dirname, '..', '..', 'packages', 'core', 'bin', 'workkit.js');
 
-/** A fresh scratch folder holding a `workkit` that runs <program> under the running node; returns the folder. */
+/** A fresh scratch folder holding a `workkit` that hands over to <program> under the running node; returns the folder. */
 const nodeBin = (prefix, program) => {
   const bin = mkTmp(prefix);
-  stubTool(bin, 'workkit', ['#!/usr/bin/env bash', `exec "${shellPath(process.execPath)}" "${shellPath(program)}" "$@"`]);
+  stubToolJs(bin, 'workkit', handOverJs(process.execPath, [program]));
   return bin;
 };
 

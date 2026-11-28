@@ -10,11 +10,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const {
-  shellPath, homeEnv, nodeHomeEnv, nodeTempEnv, stubTool, which,
-} = require('./platform');
+const { homeEnv, nodeHomeEnv, nodeTempEnv } = require('./platform');
 const { mkTmp, WORKKIT_DIR } = require('./harness');
-const { recordArgv, readArgv } = require('./argv-log');
+const { readArgv } = require('./argv-log');
+const { ghJq } = require('./gh-jq');
+const { writeGh } = require('./gh-stub');
 const { OPT_IN_SHAPES } = require('./mod-fixtures.mjs');
 
 // The origin every fixture repo carries, never fetched: a repo without one is a
@@ -93,71 +93,89 @@ const mkOriginRepo = (dir, origin) => {
 /**
  * A recording `gh` on its own bin folder, every answer from `opts`: `issue view <N>`
  * prints `issues[N]` as JSON (unknown: exit 1); `release view <tag>` runs `onView`
- * (a bash line), then prints the tag when `tags` holds it or `late` (tag to its
- * "not found" misses) has spent them, else "release not found", exit 1; `release
- * create` runs `onCreate` (a bash line), prints `createSays` on stderr, exits
- * `createExit`; `run list` prints `runs` as JSON, through jq for `--jq`/`-q`; `workflow run <file>` exits 1 with a
- * refusal on stderr when `dispatchFails` names the file, else 0; with `fails`
- * every call exits 1 the way a signed-out gh does.
+ * (JavaScript, given `argv`, the call's arguments, and `require`), then prints the tag when `tags` holds it
+ * or `late` (tag to its "not found" misses) has spent them, else "release not found",
+ * exit 1; `release create` runs `onCreate` (JavaScript, as `onView`), prints
+ * `createSays` on stderr, exits `createExit`; `run list` prints `runs` as JSON, through
+ * ghJq for `--jq`/`-q`; `workflow run <file>` exits 1 with a refusal on stderr when
+ * `dispatchFails` names the file, else 0; with `fails` every call exits 1 the way a signed-out gh does.
  * @param {object} [opts]
  * @returns {{binDir: string, calls: Function}} `calls()` is every argv, in order
  */
 const commitGh = ({
-  issues = {}, tags = [], late = {}, fails = false, createExit = 0, createSays = '', onCreate = ':', onView = ':', runs = [], dispatchFails = [],
+  issues = {}, tags = [], late = {}, fails = false, createExit = 0, createSays = '', onCreate = '', onView = '', runs = [], dispatchFails = [],
 } = {}) => {
   const dir = mkTmp('commit-gh-');
   const binDir = path.join(dir, 'bin');
-  const issuesDir = path.join(dir, 'issues');
   fs.mkdirSync(binDir, { recursive: true });
-  fs.mkdirSync(issuesDir, { recursive: true });
-  for (const [n, answer] of Object.entries(issues)) fs.writeFileSync(path.join(issuesDir, `${n}.json`), JSON.stringify(answer));
-  const lateDir = path.join(dir, 'late');
-  fs.mkdirSync(lateDir, { recursive: true });
-  for (const [tag, misses] of Object.entries(late)) fs.writeFileSync(path.join(lateDir, tag), String(misses));
-  const runsFile = path.join(dir, 'runs.json');
-  fs.writeFileSync(runsFile, JSON.stringify(runs));
-  // A file, so any text reaches stderr whole, whatever quotes it holds.
-  const saysFile = path.join(dir, 'create-says.txt');
-  fs.writeFileSync(saysFile, createSays ? `${createSays}\n` : '');
-  const jq = which('jq');
+  // The misses left per tag, which each view spends.
+  const lateFile = path.join(dir, 'late.json');
+  fs.writeFileSync(lateFile, JSON.stringify(late));
   const log = path.join(dir, 'gh.log');
-  stubTool(binDir, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(log),
-    ...(fails ? ["echo 'gh: To get started with GitHub CLI, please run: gh auth login' >&2", 'exit 1'] : []),
-    'if [[ "$1 $2" == "issue view" ]]; then',
-    `  cat "${shellPath(issuesDir)}/$3.json" 2>/dev/null || exit 1`,
-    '  exit 0',
-    'fi',
-    'if [[ "$1 $2" == "release view" ]]; then',
-    `  ${onView}`,
-    `  case " ${tags.join(' ')} " in *" $3 "*) echo "$3"; exit 0 ;; esac`,
-    `  late="${shellPath(lateDir)}/$3"`,
-    '  if [[ -f "$late" ]]; then',
-    '    n=$(cat "$late")',
-    '    if (( n <= 0 )); then echo "$3"; exit 0; fi',
-    '    echo $(( n - 1 )) > "$late"',
-    '  fi',
-    "  echo 'release not found' >&2",
-    '  exit 1',
-    'fi',
-    'if [[ "$1 $2" == "release create" ]]; then',
-    `  ${onCreate}`,
-    `  cat "${shellPath(saysFile)}" >&2`,
-    `  exit ${createExit}`,
-    'fi',
-    'if [[ "$1 $2" == "run list" ]]; then',
-    "  q=''; prev=''",
-    '  for a in "$@"; do case "$prev" in -q|--jq) q=$a ;; esac; prev=$a; done',
-    `  if [[ -n "$q" ]]; then "${jq ? shellPath(jq) : 'jq'}" -r "$q" "${shellPath(runsFile)}"; else cat "${shellPath(runsFile)}"; fi`,
-    '  exit 0',
-    'fi',
-    'if [[ "$1 $2" == "workflow run" ]]; then',
-    `  case " ${dispatchFails.join(' ')} " in *" $3 "*) echo '${DISPATCH_REFUSAL}' >&2; exit 1 ;; esac`,
-    'fi',
-    'exit 0',
-  ]);
+  writeGh(binDir, {
+    log,
+    answer: { module: __filename, name: 'answerCommitGh' },
+    config: {
+      issues, tags, lateFile, fails, createExit, createSays, onCreate, onView, runs, dispatchFails,
+    },
+  });
   return { binDir, calls: () => readArgv(log) };
 };
 
-module.exports = { mkRepo, mkOriginRepo, commitGh, FIXTURE_ORIGIN, OPT_IN_SHAPES };
+/** The value after the last `-q`/`--jq` in `argv`, or '' when none is given. */
+const jqOf = (argv) => argv.reduce((q, arg, i) => (argv[i - 1] === '-q' || argv[i - 1] === '--jq' ? arg : q), '');
+
+/**
+ * commitGh's answer to one call, its options as `config`; what it prints, and its exit code.
+ * @returns {number}
+ */
+const answerCommitGh = ({
+  issues, tags, lateFile, fails, createExit, createSays, onCreate, onView, runs, dispatchFails,
+}, argv) => {
+  const say = (text) => process.stdout.write(text);
+  const complain = (text) => process.stderr.write(text);
+  // A Function body sees only globals, so the call's argv and `require` are handed in.
+  const runHook = (source) => new Function('argv', 'require', source)(argv, require);
+  if (fails) {
+    complain('gh: To get started with GitHub CLI, please run: gh auth login\n');
+    return 1;
+  }
+  const command = `${argv[0]} ${argv[1]}`;
+  const tag = argv[2];
+  if (command === 'issue view') {
+    if (!Object.hasOwn(issues, String(tag))) return 1;
+    say(JSON.stringify(issues[tag]));
+    return 0;
+  }
+  if (command === 'release view') {
+    runHook(onView);
+    if (tags.includes(tag)) { say(`${tag}\n`); return 0; }
+    const late = JSON.parse(fs.readFileSync(lateFile, 'utf8'));
+    if (Object.hasOwn(late, String(tag))) {
+      if (late[tag] <= 0) { say(`${tag}\n`); return 0; }
+      late[tag] -= 1;
+      fs.writeFileSync(lateFile, JSON.stringify(late));
+    }
+    complain('release not found\n');
+    return 1;
+  }
+  if (command === 'release create') {
+    runHook(onCreate);
+    if (createSays) complain(`${createSays}\n`);
+    return createExit;
+  }
+  if (command === 'run list') {
+    const q = jqOf(argv);
+    say(q ? ghJq(q, runs) : JSON.stringify(runs));
+    return 0;
+  }
+  if (command === 'workflow run' && dispatchFails.includes(tag)) {
+    complain(`${DISPATCH_REFUSAL}\n`);
+    return 1;
+  }
+  return 0;
+};
+
+module.exports = {
+  mkRepo, mkOriginRepo, commitGh, answerCommitGh, FIXTURE_ORIGIN, OPT_IN_SHAPES,
+};

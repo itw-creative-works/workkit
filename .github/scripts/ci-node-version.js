@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// .github/scripts/ci-node-version.js [repo]: the Node version ci.yml sets up for the repo, one line:
-// its root .nvmrc, else its root .node-version, else lts/*. A file's value is its first line that is
-// neither blank nor a comment, read as nvm reads it; no folder below the root is read.
+// .github/scripts/ci-node-version.js [repo]: the Node version ci.yml sets up for the repo, one
+// `version=<answer>` line appended to the file GITHUB_OUTPUT names: its root .nvmrc, else its root
+// .node-version, else lts/*. A file's value is its first line that is neither blank nor a comment,
+// read as nvm reads it; no folder below the root is read.
 
 const path = require('path');
 const { readOrNull } = require('../../workflow/lib/read');
+const { appendTo } = require('../../workflow/lib/step-value');
 
 const FILES = ['.nvmrc', '.node-version'];
 const FALLBACK = 'lts/*';
@@ -24,19 +26,17 @@ const versionOf = (text) => {
   return nvm ? nvm[1] : line;
 };
 
-const main = (argv) => {
-  const repo = argv[0] || '.';
+/** The repo's version: the first version file's value, else FALLBACK. */
+const versionIn = (repo) => {
   for (const file of FILES) {
     const text = readOrNull(path.join(repo, file));
     const version = text === null ? null : versionOf(text);
-    if (version !== null) {
-      process.stdout.write(`${version}\n`);
-      return 0;
-    }
+    if (version !== null) return version;
   }
-  process.stdout.write(`${FALLBACK}\n`);
-  return 0;
+  return FALLBACK;
 };
+
+const main = (argv) => appendTo('ci-node-version', 'GITHUB_OUTPUT', `version=${versionIn(argv[0] || '.')}\n`);
 
 if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));

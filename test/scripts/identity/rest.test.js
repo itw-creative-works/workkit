@@ -9,7 +9,6 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp,
 } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
   cloudWorld, assertSame, assertOk, printedJson, writes, routes,
@@ -99,9 +98,8 @@ const LISTED = [...Array.from({ length: 100 }, (_, i) => 300 - i).filter((n) => 
 const REPO_LABELS = { 'GET repos/acme/rostered/labels': { pages: [['status:qa', 'status:building', 'agent:claimed', 'status:inbox', 'type:feature'].map(restLabel)] } };
 const NO_LABEL = "could not add label: 'status:qq' not found";
 
-// rest.js starts the stub `gh` from Node; written before the stub launcher, these still skip on Windows.
 describe('identity/gh in a cloud session: auth', () => {
-  test('case 1: auth status names the login gh api user answers, exit 0; an empty login exits 1 with gh\'s not-logged-in line', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 1: auth status names the login gh api user answers, exit 0; an empty login exits 1 with gh\'s not-logged-in line', async () => {
     const res = runCloud(['auth', 'status'], { api: { 'GET user': { body: { login: 'octocat', id: 583231, type: 'User' } } } });
     assertOk(res, 'auth status with a login');
     const lines = `${res.stdout}${res.stderr}`.split('\n').filter((l) => l.trim());
@@ -117,7 +115,7 @@ describe('identity/gh in a cloud session: auth', () => {
 });
 
 describe('identity/gh in a cloud session: issue reads', () => {
-  test('case 2: issue list reads every page of open issues with the label, drops the pull request, and prints gh\'s array', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 2: issue list reads every page of open issues with the label, drops the pull request, and prints gh\'s array', async () => {
     const api = {
       'GET repos/acme/rostered/issues': { pages: LIST_PAGES },
       'GET repos/other/rostered/issues': { pages: [[restIssue('other/rostered', 12, { labels: ['status:building'] })]] },
@@ -152,7 +150,7 @@ describe('identity/gh in a cloud session: issue reads', () => {
     }
   });
 
-  test('case 2: issue list --search sends the search to search/issues scoped to the repo\'s open issues, and prints every page\'s items', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 2: issue list --search sends the search to search/issues scoped to the repo\'s open issues, and prints every page\'s items', async () => {
     const page = (numbers) => ({
       total_count: 3, incomplete_results: false, items: numbers.map((n) => restIssue('acme/rostered', n, { labels: ['status:qa'] })),
     });
@@ -169,7 +167,7 @@ describe('identity/gh in a cloud session: issue reads', () => {
     assertSame(printed[0].labels.map((l) => l.name), ['status:qa'], 'labels[].name');
   });
 
-  test('case 2: issue list with no --json prints gh\'s plain rows: number, state, title, labels in their order, updatedAt', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 2: issue list with no --json prints gh\'s plain rows: number, state, title, labels in their order, updatedAt', async () => {
     const api = {
       'GET repos/acme/rostered/issues': {
         pages: [[
@@ -188,7 +186,7 @@ describe('identity/gh in a cloud session: issue reads', () => {
     ].join('\n'));
   });
 
-  test('case 3: issue view reads the issue and its comments and prints them with gh\'s field names, state upper-cased', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 3: issue view reads the issue and its comments and prints them with gh\'s field names, state upper-cased', async () => {
     const api = {
       'GET repos/acme/rostered/issues/7': {
         body: restIssue('acme/rostered', 7, { labels: ['status:qa', 'type:bug'], body: 'The body of #7.\n\n## Spec\nIt works.' }),
@@ -217,7 +215,7 @@ describe('identity/gh in a cloud session: issue reads', () => {
     assertSame(bare.requests.map((r) => r.path), ['repos/acme/rostered/issues/7'], 'no comments asked, no /comments request');
   });
 
-  test('case 3: issue view and issue view --comments with no --json print gh\'s plain text', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 3: issue view and issue view --comments with no --json print gh\'s plain text', async () => {
     const api = {
       'GET repos/acme/rostered/issues/7': {
         body: restIssue('acme/rostered', 7, { labels: ['type:bug', 'status:qa'], comments: 2, body: 'The body of #7.\n' }),
@@ -249,7 +247,7 @@ describe('identity/gh in a cloud session: issue reads', () => {
 });
 
 describe('identity/gh in a cloud session: issue writes', () => {
-  test('case 4: issue edit adds labels with one POST then one DELETE per removed label; a title and body become one PATCH', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 4: issue edit adds labels with one POST then one DELETE per removed label; a title and body become one PATCH', async () => {
     const base = 'repos/acme/rostered/issues/7';
     const api = {
       ...REPO_LABELS,
@@ -281,7 +279,7 @@ describe('identity/gh in a cloud session: issue writes', () => {
     expect(writes(fromFile)[0].body.body, 'carrying the file\'s text as the body').toBe('## Spec\n\nFrom a file.\n');
   });
 
-  test('case 4: issue edit --add-label naming a label the repo lacks exits 1 with gh\'s not-found line and writes nothing; case differs, still found', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 4: issue edit --add-label naming a label the repo lacks exits 1 with gh\'s not-found line and writes nothing; case differs, still found', async () => {
     const base = 'repos/acme/rostered/issues/7';
     const api = { ...REPO_LABELS, [`POST ${base}/labels`]: { body: [restLabel('status:qa')] } };
     const res = runCloud(['issue', 'edit', '7', '--add-label', 'status:qa,status:qq'], { api });
@@ -294,7 +292,7 @@ describe('identity/gh in a cloud session: issue writes', () => {
     assertSame(routes(writes(cased)), [['POST', `${base}/labels`]], 'the add goes through, as gh matches a label by name in any case');
   });
 
-  test('case 5: issue comment posts the body, from --body or --body-file, and prints the comment\'s URL', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 5: issue comment posts the body, from --body or --body-file, and prints the comment\'s URL', async () => {
     const url = 'https://github.com/acme/rostered/issues/7#issuecomment-2002';
     const api = {
       'POST repos/acme/rostered/issues/7/comments': { status: 201, body: restComment(7, 2002, { body: 'x', login: 'octocat', createdAt: UPDATED }) },
@@ -314,7 +312,7 @@ describe('identity/gh in a cloud session: issue writes', () => {
     expect(fromFile.stdout, 'and the comment URL prints').toBe(`${url}\n`);
   });
 
-  test('case 6: issue close --comment posts the comment, then PATCHes the issue closed', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 6: issue close --comment posts the comment, then PATCHes the issue closed', async () => {
     const api = {
       'POST repos/acme/rostered/issues/7/comments': { status: 201, body: restComment(7, 2003, { body: 'x', login: 'octocat', createdAt: UPDATED }) },
       'PATCH repos/acme/rostered/issues/7': { body: restIssue('acme/rostered', 7, { state: 'closed' }) },
@@ -327,7 +325,7 @@ describe('identity/gh in a cloud session: issue writes', () => {
     expect(writes(res)[1].body.state, 'the PATCH closes it').toBe('closed');
   });
 
-  test('case 6: issue close --reason "not planned" PATCHes the issue closed with REST\'s not_planned reason', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 6: issue close --reason "not planned" PATCHes the issue closed with REST\'s not_planned reason', async () => {
     const api = { 'PATCH repos/acme/rostered/issues/7': { body: restIssue('acme/rostered', 7, { state: 'closed', state_reason: 'not_planned' }) } };
     const res = runCloud(['issue', 'close', '7', '--reason', 'not planned'], { api });
     assertOk(res, 'issue close --reason');
@@ -335,7 +333,7 @@ describe('identity/gh in a cloud session: issue writes', () => {
     assertSame([writes(res)[0].body.state, writes(res)[0].body.state_reason], ['closed', 'not_planned'], 'closed, with the reason');
   });
 
-  test('case 7: issue create posts the title, body and labels and prints the new issue\'s URL', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 7: issue create posts the title, body and labels and prints the new issue\'s URL', async () => {
     const api = {
       ...REPO_LABELS,
       'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 475, { labels: ['status:inbox', 'type:feature'] }) },
@@ -349,7 +347,7 @@ describe('identity/gh in a cloud session: issue writes', () => {
     expect(res.stdout, 'the issue URL, as gh prints it').toBe('https://github.com/acme/rostered/issues/475\n');
   });
 
-  test('case 7: issue create --label naming a label the repo lacks exits 1 with gh\'s not-found line and creates no issue', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 7: issue create --label naming a label the repo lacks exits 1 with gh\'s not-found line and creates no issue', async () => {
     const api = { ...REPO_LABELS, 'POST repos/acme/rostered/issues': { status: 201, body: restIssue('acme/rostered', 476) } };
     const res = runCloud(['issue', 'create', '--title', 'A note', '--body', 'Noted.', '--label', 'status:qq,type:feature'], { api });
     expect(res.code, `exit 1, stdout: ${res.stdout}, stderr: ${res.stderr}`).toBe(1);
@@ -359,7 +357,7 @@ describe('identity/gh in a cloud session: issue writes', () => {
 });
 
 describe('identity/gh in a cloud session: labels', () => {
-  test('case 8: label list reads every page; label create POSTs and label edit PATCHes the named label', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 8: label list reads every page; label create POSTs and label edit PATCHes the named label', async () => {
     const names = [...Array.from({ length: 100 }, (_, i) => `area:${String(i).padStart(3, '0')}`), 'status:qa', 'type:bug'];
     const api = {
       'GET repos/acme/rostered/labels': { pages: [names.slice(0, 100).map(restLabel), names.slice(100).map(restLabel)] },
@@ -385,7 +383,7 @@ describe('identity/gh in a cloud session: labels', () => {
     assertSame([patch.description, patch.color], ['Built, checking.', 'FBCA04'], 'description and color');
   });
 
-  test('case 8: label edit --name PATCHes the old label with the new name', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 8: label edit --name PATCHes the old label with the new name', async () => {
     const api = { 'PATCH repos/acme/rostered/labels/status:qa': { body: restLabel('status:check') } };
     const res = runCloud(['label', 'edit', 'status:qa', '--name', 'status:check'], { api });
     assertOk(res, 'label edit --name');
@@ -395,7 +393,7 @@ describe('identity/gh in a cloud session: labels', () => {
 });
 
 describe('identity/gh in a cloud session: the gate runs first', () => {
-  test('case 9: a planted .env value in a comment bounces before rest.js runs; a flip to status:qa the gate passes reaches rest.js as off the gate', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 9: a planted .env value in a comment bounces before rest.js runs; a flip to status:qa the gate passes reaches rest.js as off the gate', async () => {
     const secret = 'sup3rSecretValue_9f2a';
     const files = { '.env': `API_SECRET=${secret}\n` };
     const leak = runCloud(['issue', 'comment', '1', '--body', `the key is ${secret}`], { files });
@@ -414,7 +412,7 @@ describe('identity/gh in a cloud session: the gate runs first', () => {
 });
 
 describe('identity/gh in a cloud session: the proxy\'s refusal', () => {
-  test('case 11: a repo the session has not attached answers the proxy\'s 403, relayed with its message, exit 1', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 11: a repo the session has not attached answers the proxy\'s 403, relayed with its message, exit 1', async () => {
     const api = { 'GET repos/other/unattached/issues': { status: 403, body: { message: NOT_ATTACHED } } };
     const res = runCloud(['issue', 'list', '--state', 'open', '--json', 'number', '--repo', 'other/unattached'], { api });
     expect(res.code, `gh's exit 1, stderr: ${res.stderr}`).toBe(1);
@@ -442,7 +440,7 @@ describe('identity/gh in a cloud session: what REST does not serve', () => {
     assertSame(writes(res), [], 'no issue is created');
   });
 
-  test('a subcommand REST does not serve (issue develop) runs the real gh once, whole, with no gh api call', { skip: skipWithoutNodeStub() }, async () => {
+  test('a subcommand REST does not serve (issue develop) runs the real gh once, whole, with no gh api call', async () => {
     const argv = ['issue', 'develop', '7', '--name', 'fix-7'];
     const res = runCloud(argv, { api: {} });
     assertOk(res, 'issue develop');

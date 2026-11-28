@@ -15,9 +15,9 @@ const {
   describe, test, expect, mkTmp, run, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, shellPath, gitPath, jsPath, stubTool, stubToolJs, spawnSystemBash, samePath, homeEnv, joinPath, basePathWithout, pathWith, skipWithoutFileLink,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, shellPath, gitPath, jsPath, stubToolJs, spawnSystemBash, samePath, homeEnv, joinPath, basePathWithout, pathWith, skipWithoutFileLink,
 } = require('../lib/platform');
-const { recordArgv, recordArgvJs, readArgv } = require('../lib/argv-log');
+const { recordArgvJs, readArgv } = require('../lib/argv-log');
 const { underEnv } = require('../lib/under-env');
 const { ioOf } = require('../lib/io-streams');
 const { speak } = require('../lib/speak');
@@ -475,7 +475,7 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
   test('a POSIX path still goes through cygpath -m, and its answer is cygpath\'s', async () => {
     const bin = mkTmp('twins-cygpath-');
     const argvLog = path.join(bin, 'cygpath-argv.log');
-    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}\nprocess.stdout.write('D:/from/cygpath\\n');`);
+    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog))}\nprocess.stdout.write('D:/from/cygpath\\n');`);
     const said = await underEnv({ PATH: pathWith(bin) }, () => nativePath('/c/Users/x', { platform: 'win32' }));
     expect(readArgv(argvLog), 'cygpath ran once, asked for the mixed form').toEqual([['-m', '/c/Users/x']]);
     expect(said).toBe('D:/from/cygpath');
@@ -495,7 +495,7 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
     const { machineHome } = require(path.join(KIT, 'workflow', 'lib', 'machine-home.js'));
     const bin = mkTmp('twins-cygpath-');
     const argvLog = path.join(bin, 'cygpath-argv.log');
-    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}\nprocess.stdout.write('C:/Users/x\\n');`);
+    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog))}\nprocess.stdout.write('C:/Users/x\\n');`);
     const said = await underEnv({ PATH: pathWith(bin) }, () => machineHome({ HOME: '/c/Users/x' }, { platform: 'win32' }));
     expect(readArgv(argvLog), 'cygpath ran once, on the HOME given').toEqual([['-m', '/c/Users/x']]);
     expect(said).toBe('C:/Users/x');
@@ -505,7 +505,7 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
     const { claudeHome } = require(path.join(KIT, 'workflow', 'lib', 'platform.js'));
     const bin = mkTmp('twins-cygpath-');
     const argvLog = path.join(bin, 'cygpath-argv.log');
-    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}\nprocess.stdout.write('C:/Users/x/.claude\\n');`);
+    stubToolJs(bin, 'cygpath', `${recordArgvJs(JSON.stringify(argvLog))}\nprocess.stdout.write('C:/Users/x/.claude\\n');`);
     const said = await underEnv({ PATH: pathWith(bin), WORKFLOW_CLAUDE_HOME: '/c/Users/x/.claude' }, () => claudeHome({ platform: 'win32' }));
     expect(readArgv(argvLog), 'cygpath ran once, on the folder given').toEqual([['-m', '/c/Users/x/.claude']]);
     expect(said).toBe('C:/Users/x/.claude');
@@ -527,6 +527,49 @@ describe('workflow/lib/platform: nativePath on Windows, asked from any system', 
     expect(res.status, `exit 1, got: ${res.output}`).toBe(1);
     expect(res.stderr, 'the one line').toBe('workkit: cannot read HOME (/c/Users/x): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n');
     expect(/^ {4}at /m.test(res.stderr), `no stack line, got: ${res.stderr}`).toBe(false);
+  });
+
+  // A child that hands errorStop the error `lines` leave in `err` and prints what it returned on stdout.
+  const errorStopRun = (lines) => {
+    const entry = path.join(mkTmp('twins-error-stop-'), 'entry.js');
+    fs.writeFileSync(entry, [
+      `const { errorStop } = require(${jsPath(path.join(KIT, 'workflow', 'lib', 'platform.js'))});`,
+      `const { machineHome } = require(${jsPath(path.join(KIT, 'workflow', 'lib', 'machine-home.js'))});`,
+      'let err;',
+      ...lines,
+    ].join('\n'));
+    return run(process.execPath, [entry], { env: { ...process.env, PATH: EMPTY_PATH } });
+  };
+
+  test('the one stop, errorStop: nativePath\'s error for HOME is the one line naming HOME and the fix, and 1', () => {
+    const res = errorStopRun([
+      "try { machineHome({ HOME: '/c/Users/x' }, { platform: 'win32' }); } catch (caught) { err = caught; }",
+      'process.stdout.write(String(errorStop(err)));',
+    ]);
+    expect(res.status, `it returned, it did not throw, got: ${res.output}`).toBe(0);
+    expect(res.stdout, 'it returned 1').toBe('1');
+    expect(res.stderr, 'the one line').toBe('workkit: cannot read HOME (/c/Users/x): cygpath could not convert it (ENOENT); start the command from Git Bash, or set HOME to a drive path (C:/Users/name)\n');
+  });
+
+  test('the one stop, errorStop: any other error is its message as one line, no stack, and 1', () => {
+    const res = errorStopRun([
+      "err = new Error('the roster broke');",
+      'process.stdout.write(String(errorStop(err)));',
+    ]);
+    expect(res.status, `it returned, it did not throw, got: ${res.output}`).toBe(0);
+    expect(res.stdout, 'it returned 1').toBe('1');
+    expect(res.stderr, 'the message alone, one line').toBe('the roster broke\n');
+  });
+
+  test('the one stop, errorStop: a lineOf given is the line written for the error, and 1', () => {
+    const res = errorStopRun([
+      "err = new Error('the roster broke');",
+      'const lineOf = (e) => `site-repos: ${e.message}; nothing was written`;',
+      'process.stdout.write(String(errorStop(err, lineOf)));',
+    ]);
+    expect(res.status, `it returned, it did not throw, got: ${res.output}`).toBe(0);
+    expect(res.stdout, 'it returned 1').toBe('1');
+    expect(res.stderr, 'lineOf\'s line for the error').toBe('site-repos: the roster broke; nothing was written\n');
   });
 });
 
@@ -991,7 +1034,7 @@ describe('the terminal questions and the spinner, workflow/lib/flows.js and spin
     const say = ({ stubs, vars = {} }) => {
       const bin = mkTmp('twins-opener-');
       const log = (tool) => path.join(bin, `${tool}.log`);
-      if (stubs) for (const tool of OPENERS) stubTool(bin, tool, ['#!/usr/bin/env bash', recordArgv(log(tool)), 'exit 0']);
+      if (stubs) for (const tool of OPENERS) stubToolJs(bin, tool, recordArgvJs(jsPath(log(tool))));
       const env = { PATH: stubs ? joinPath(bin, SYSTEM_PATH) : bare, ...vars };
       const err = run(process.execPath, ['-e', `Promise.resolve(require(${jsPath(path.join(KIT, 'workflow', 'lib', 'flows.js'))}).openUrl(process.argv[1]))`, URL], {
         env: homeEnv(mkTmp('twins-opener-home-'), env),

@@ -40,17 +40,37 @@ const statOf = (p) => {
   } catch { return null; }
 };
 
+// As the engine's ranged read: at most `length` bytes from `offset`, empty past
+// the end, null for a file that cannot be read.
+const readRangeOf = (p, offset, length) => {
+  let fd;
+  try {
+    fd = fs.openSync(p, 'r');
+    const bytes = new Uint8Array(Math.min(length, Math.max(fs.fstatSync(fd).size - offset, 0)));
+    return bytes.subarray(0, fs.readSync(fd, bytes, 0, bytes.length, offset));
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+};
+
 /** The io chain for a process whose variables are `env`, `pluginRoot` this kit. */
 const ioIn = (env) => ({
   top: async (dir) => repoRoot(dir),
   read: async (p) => readOrNull(p),
+  readRange: async (p, offset, length) => readRangeOf(p, offset, length),
   exists: async (p) => fs.existsSync(p),
   list: async (dir) => { try { return fs.readdirSync(dir); } catch { return []; } },
   run: runIn(env),
   pluginRoot: KIT,
   stat: async (p) => statOf(p),
   real: async (p) => { try { return fs.realpathSync(p); } catch { return null; } },
-  write: async (p, text) => fs.writeFileSync(p, text),
+  // As the engine's write: the file's missing folders made first.
+  write: async (p, text) => {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, text);
+  },
   now: () => Date.now(),
 });
 

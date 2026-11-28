@@ -10,9 +10,9 @@ const {
   describe, test, expect, mkTmp, alive, until, pidIn, start, endTree, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubTool, systemPathWith, spawnSync: startSync,
+  IS_WINDOWS, BASH, NODE_DIR, NO_RC, shellPath, gitPath, homeEnv, stubToolJs, systemPathWith, spawnSync: startSync,
 } = require('../lib/platform');
-const { recordArgv, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
+const { recordArgvJs, readArgv, isCall, eqArgv, fmtCalls } = require('../lib/argv-log');
 const { ciLockPath, suiteLogPath } = require('../lib/suite-record');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'watch.js');
@@ -69,34 +69,55 @@ const makeWorld = ({
   for (const id of down) fs.writeFileSync(path.join(fx, `down-${id}`), '');
   for (const [id, body] of Object.entries(logs)) fs.writeFileSync(path.join(fx, `log-${id}.txt`), body);
 
-  const F = shellPath(fx);
-  stubTool(bin, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(logFile),
-    `F="${F}"`,
-    'case "$1 $2" in',
-    '  "run list")',
-    '    if [[ -f "$F/list.fail" ]]; then printf "HTTP 401: Bad credentials\\n" >&2; exit 1; fi',
-    '    n=$(( $(cat "$F/list.count" 2>/dev/null || echo 0) + 1 )); printf "%s" "$n" > "$F/list.count"',
-    '    if (( n <= $(cat "$F/list.empty") )); then printf "[]\\n"; else cat "$F/list.json"; fi ;;',
+  stubToolJs(bin, 'gh', [
+    recordArgvJs(JSON.stringify(logFile)),
+    "const fs = require('fs');",
+    "const path = require('path');",
+    `const F = ${JSON.stringify(fx)};`,
+    'const argv = process.argv.slice(2);',
+    'const at = (name) => path.join(F, name);',
+    // A fixture printed as `cat` prints it: a missing one is cat's line and exit 1.
+    'const cat = (name) => {',
+    '  if (fs.existsSync(at(name))) return process.stdout.write(fs.readFileSync(at(name)));',
+    '  process.stderr.write(`cat: ${at(name)}: No such file or directory\\n`);',
+    '  process.exitCode = 1;',
+    '};',
     // Both drain stdin first, the way any child that reads it would: a script
     // that hands them its own stdin loses whatever it was reading there.
-    '  "run watch")',
-    '    cat >/dev/null; printf "%s" "$$" > "$F/watch-$3.pid"',
-    '    if [[ -f "$F/watch-sleep" ]]; then sleep "$(cat "$F/watch-sleep")"; fi',
-    '    printf "watching %s\\n" "$3"',
-    '    if [[ -f "$F/down-$3" ]]; then printf "error connecting to api.github.com\\n" >&2; fi',
-    '    exit "$(cat "$F/watch-$3.exit")" ;;',
-    '  "pr list")',
-    '    if [[ -f "$F/pr.fail" ]]; then printf "HTTP 403: Resource not accessible by integration\\nsecond line\\n" >&2; exit 1; fi',
-    '    cat "$F/pr.json" ;;',
-    '  "run view")',
-    '    cat >/dev/null',
-    '    if [[ -f "$F/down-$3" ]]; then printf "error connecting to api.github.com\\n" >&2; exit 1; fi',
-    '    if [[ " $* " == *" --log-failed "* ]]; then cat "$F/log-$3.txt"; else cat "$F/view-$3.json"; fi ;;',
-    '  *) printf "gh stub: unexpected %s\\n" "$*" >&2; exit 9 ;;',
-    'esac',
-  ]);
+    'const drain = () => fs.readFileSync(0);',
+    "const command = `${argv[0] ?? ''} ${argv[1] ?? ''}`;",
+    // A failure's line is written and the code set, never process.exit: a pipe's write may still be queued.
+    'const fail = (line) => { process.stderr.write(line); process.exitCode = 1; };',
+    'const counted = () => {',
+    "  const n = (fs.existsSync(at('list.count')) ? Number(fs.readFileSync(at('list.count'), 'utf8')) : 0) + 1;",
+    "  fs.writeFileSync(at('list.count'), String(n));",
+    '  return n;',
+    '};',
+    "if (command === 'run list') {",
+    "  if (fs.existsSync(at('list.fail'))) fail('HTTP 401: Bad credentials\\n');",
+    "  else if (counted() <= Number(fs.readFileSync(at('list.empty'), 'utf8'))) process.stdout.write('[]\\n');",
+    "  else cat('list.json');",
+    "} else if (command === 'run watch') {",
+    '  drain();',
+    '  fs.writeFileSync(at(`watch-${argv[2]}.pid`), String(process.pid));',
+    "  if (fs.existsSync(at('watch-sleep'))) {",
+    "    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(fs.readFileSync(at('watch-sleep'), 'utf8')) * 1000);",
+    '  }',
+    '  process.stdout.write(`watching ${argv[2]}\\n`);',
+    "  if (fs.existsSync(at(`down-${argv[2]}`))) process.stderr.write('error connecting to api.github.com\\n');",
+    "  process.exitCode = Number(fs.readFileSync(at(`watch-${argv[2]}.exit`), 'utf8'));",
+    "} else if (command === 'pr list') {",
+    "  if (fs.existsSync(at('pr.fail'))) fail('HTTP 403: Resource not accessible by integration\\nsecond line\\n');",
+    "  else cat('pr.json');",
+    "} else if (command === 'run view') {",
+    '  drain();',
+    "  if (fs.existsSync(at(`down-${argv[2]}`))) fail('error connecting to api.github.com\\n');",
+    "  else cat(argv.includes('--log-failed') ? `log-${argv[2]}.txt` : `view-${argv[2]}.json`);",
+    '} else {',
+    "  process.stderr.write(`gh stub: unexpected ${argv.join(' ')}\\n`);",
+    '  process.exitCode = 9;',
+    '}',
+  ].join('\n'));
 
   return {
     dir, repo, sub: path.join(repo, 'sub'), bin, fx, home: path.join(dir, 'home'), tmp: path.join(dir, 'tmp'),

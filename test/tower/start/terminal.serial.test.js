@@ -8,7 +8,7 @@ const fs = require('fs');
 const { stripVTControlCharacters } = require('util');
 const { describe, test, expect, mkTmp } = require('../../lib/harness');
 const {
-  cleanup, until, start, QUIET_PORTS, RED, CYAN, OFF, COLORED_APP,
+  cleanup, until, start, half, HOLD, QUIET_PORTS, RED, CYAN, OFF, COLORED_APP,
   probeStub, ptyRun, skipWithoutExpect,
 } = require('./helpers');
 
@@ -19,7 +19,7 @@ describe('tower/start: the terminal', () => {
     // a refusal falls out of the keep net, a forgiven warning rides through, and
     // the tag stops opening the flowing phase.
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', COLORED_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, COLORED_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       // The last line of the run, carrying no keep-net word, so seeing it is
@@ -46,7 +46,7 @@ describe('tower/start: the terminal', () => {
     // plain text, so the halves are left to decide for themselves.
     const dir = mkTmp('tower-start-');
     const { app, seen } = probeStub(dir);
-    const tower = start(dir, 'exec sleep 30', app, QUIET_PORTS);
+    const tower = start(dir, HOLD, app, QUIET_PORTS);
     try {
       expect(await until(() => fs.existsSync(seen)), 'the half started and reported what it was given').toBeTruthy();
       expect(fs.readFileSync(seen, 'utf8'), 'which is nothing at all').toBe('unset');
@@ -66,6 +66,8 @@ describe('tower/start: the terminal', () => {
     try {
       expect(await until(() => fs.existsSync(seen)), 'the half started under the terminal').toBeTruthy();
       expect(fs.readFileSync(seen, 'utf8'), 'and was told to color its log').toBe('1');
+      // The run ends on the Ctrl-C the script sends; a kill of expect alone leaves the tower running.
+      expect((await pty.done).timedOut, 'the run came down on the interrupt').toBe(false);
     } finally {
       await pty.end('SIGKILL');
       cleanup(dir);
@@ -75,10 +77,11 @@ describe('tower/start: the terminal', () => {
   test('a FORCE_COLOR the caller exported is the caller\'s - a deliberate 0 included', { skip: skipWithoutExpect() }, async () => {
     const dir = mkTmp('tower-start-');
     const { app, seen } = probeStub(dir);
-    const pty = ptyRun(dir, app, ['export FORCE_COLOR=0']);
+    const pty = ptyRun(dir, app, { FORCE_COLOR: '0' });
     try {
       expect(await until(() => fs.existsSync(seen)), 'the half started under the terminal').toBeTruthy();
       expect(fs.readFileSync(seen, 'utf8'), 'with the answer its caller gave, not the one the tower would have').toBe('0');
+      expect((await pty.done).timedOut, 'the run came down on the interrupt').toBe(false);
     } finally {
       await pty.end('SIGKILL');
       cleanup(dir);
@@ -87,10 +90,10 @@ describe('tower/start: the terminal', () => {
 
   test('a real Ctrl-C ends it silently - no job-control lines under a terminal', { skip: skipWithoutExpect() }, async () => {
     // Only a pty shows this: the suite's own runs redirect both streams and
-    // never signal, so bash's "Terminated: 15 … Done …" lines, made for a job
+    // never signal, so a shell's "Terminated: 15 … Done …" lines, made for a job
     // another shell killed, never appear here.
     const dir = mkTmp('tower-start-');
-    const pty = ptyRun(dir, "echo 'Dev server: https://localhost:14300'; exec sleep 30");
+    const pty = ptyRun(dir, half(['Dev server: https://localhost:14300']));
     try {
       expect(await until(() => pty.child.exitCode !== null), 'the run came down on the interrupt').toBeTruthy();
       // A terminal gets the tower's own lines painted, so they are read under the paint.

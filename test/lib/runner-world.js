@@ -10,9 +10,10 @@ const fs = require('fs');
 const path = require('path');
 const { mkTmp, start, SPAWN_DEADLINE } = require('./harness');
 const {
-  spawnSync, homeEnv, stubTool, shellPath, joinPath,
+  spawnSync, homeEnv, stubToolJs, joinPath,
 } = require('./platform');
 const { aloneEnv } = require('./alone-env');
+const { recordArgvJs, readArgv } = require('./argv-log');
 
 const CORE_TEST = path.join(__dirname, '..', '..', 'packages', 'core', 'test');
 const RUNNER = path.join(CORE_TEST, 'run.js');
@@ -82,26 +83,28 @@ const mkWorld = ({ git = true } = {}) => {
 };
 
 /**
- * A scratch bin holding a `claude` that prints `lines`, exits `code`, and notes each
- * argument it was started with; `started()` says whether it was, `args()` is the last start's.
+ * A scratch bin holding a `claude` that prints `lines`, exits `code`, and records the
+ * arguments of each start; `started()` says whether it was, `args()` is the last start's.
  * With `hang` it never ends after its lines until `release()` (a case's `t.after`), or until it is ended.
  */
 const claudeStub = ({ lines = [], code = 0, hang = false } = {}) => {
   const bin = mkTmp('runner-claude-');
-  const marker = path.join(bin, 'started');
+  const log = path.join(bin, 'argv.log');
   const stop = path.join(bin, 'stop');
-  stubTool(bin, 'claude', [
-    '#!/usr/bin/env bash',
-    `printf '%s\\n' "$@" > "${shellPath(marker)}"`,
-    ...lines.map((line) => `printf '%s\\n' ${JSON.stringify(line)}`),
-    ...(hang ? ["trap 'exit 130' INT", `while [ ! -e "${shellPath(stop)}" ]; do sleep 0.1; done`] : []),
-    `exit ${code}`,
-  ]);
-  const started = () => fs.existsSync(marker);
+  stubToolJs(bin, 'claude', [
+    "const fs = require('fs');",
+    recordArgvJs(JSON.stringify(log)),
+    ...lines.map((line) => `fs.writeSync(1, ${JSON.stringify(`${line}\n`)});`),
+    ...(hang ? [
+      `process.on('SIGINT', () => process.exit(130));`,
+      `setInterval(() => { if (fs.existsSync(${JSON.stringify(stop)})) process.exit(${code}); }, 100);`,
+    ] : [`process.exitCode = ${code};`]),
+  ].join('\n'));
+  const starts = () => readArgv(log);
   return {
     bin,
-    started,
-    args: () => (started() ? fs.readFileSync(marker, 'utf8').split('\n').slice(0, -1) : null),
+    started: () => starts().length > 0,
+    args: () => starts().at(-1) ?? null,
     release: () => fs.writeFileSync(stop, ''),
   };
 };

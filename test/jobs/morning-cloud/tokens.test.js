@@ -5,13 +5,12 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   HOME_SLUG, cleanup, mkWorld, runJob,
 } = require('./helpers');
 
 describe('jobs/morning (cloud): the two tokens', () => {
-  test('the post is made with the built-in token, the sweep with the secret', { skip: skipWithoutNodeStub() }, () => {
+  test('the post is made with the built-in token, the sweep with the secret', () => {
     // The Discussion lands on the repo the run belongs to, so it
     // needs nothing longer-lived than the workflow's own GITHUB_TOKEN. The
     // cross-repo secret is for the board, and only the board.

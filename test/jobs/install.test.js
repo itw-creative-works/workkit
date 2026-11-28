@@ -8,12 +8,12 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
 const {
-  recordArgv, recordArgvJs, readArgv, isCall, fmtCalls,
+  recordArgvJs, readArgv, isCall, fmtCalls,
 } = require('../lib/argv-log');
 // The installer starts through run.js as every case's child does; the plist
 // tools below stay raw.
 const {
-  IS_WINDOWS, NODE_DIR, homeEnv, nodeHomeEnv, shellPath, stubTool, stubToolJs, pathWith, gitPath, spawnSync: spawnThroughRun,
+  IS_WINDOWS, NODE_DIR, homeEnv, nodeHomeEnv, shellPath, stubToolJs, pathWith, gitPath, spawnSync: spawnThroughRun,
 } = require('../lib/platform');
 const { schtasksStub } = require('../lib/schtasks-stub');
 const { mkPluginCopy } = require('../lib/plugin-copy');
@@ -32,10 +32,48 @@ const LABEL = AGENT.label;
 const LAUNCHD_PATH = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
 
 /**
- * The daily agent's whole text for a home, the folder of the Node that ran the
- * install and the kit it starts, written out: launchd reads the file as written.
+ * The daily agent's whole text for a home and the folder of the Node that ran
+ * the install, written out: launchd reads the file as written. It starts the
+ * starter through the engine address, and launchd leaves the morning it starts.
  */
-const dailyAgent = ({ home, nodeDir, kit }) => [
+const dailyAgent = ({ home, nodeDir }) => [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+  '<plist version="1.0">',
+  '<dict>',
+  '\t<key>Label</key>',
+  '\t<string>com.workkit.claude-daily</string>',
+  '\t<key>ProgramArguments</key>',
+  '\t<array>',
+  '\t\t<string>/usr/bin/env</string>',
+  '\t\t<string>node</string>',
+  `\t\t<string>${home}/.claude/workkit/morning-task.js</string>`,
+  '\t</array>',
+  '\t<key>AbandonProcessGroup</key>',
+  '\t<true/>',
+  '\t<key>EnvironmentVariables</key>',
+  '\t<dict>',
+  '\t\t<key>PATH</key>',
+  `\t\t<string>${nodeDir}:${home}/.local/bin:${home}/.nvm/default-bin:/opt/homebrew/bin:/usr/local/bin:${LAUNCHD_PATH.join(':')}</string>`,
+  '\t</dict>',
+  '\t<key>StartCalendarInterval</key>',
+  '\t<dict>',
+  '\t\t<key>Hour</key>',
+  '\t\t<integer>9</integer>',
+  '\t\t<key>Minute</key>',
+  '\t\t<integer>0</integer>',
+  '\t</dict>',
+  '\t<key>StandardOutPath</key>',
+  `\t<string>${home}/Library/Logs/com.workkit.claude-daily.log</string>`,
+  '\t<key>StandardErrorPath</key>',
+  `\t<string>${home}/Library/Logs/com.workkit.claude-daily.log</string>`,
+  '</dict>',
+  '</plist>',
+  '',
+].join('\n');
+
+// The agent a kit that named its own folder in the program line installed.
+const kitAgent = ({ home, nodeDir, kit }) => [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
   '<plist version="1.0">',
@@ -109,7 +147,7 @@ const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }
  * HOME is never the account's home, so the guard would skip every launchctl
  * call: `scheduleOk` sets the override it reads, so a launchd case rehearses
  * against the recorder. `engineLink` is the ~/.claude/workkit address the plist
- * reads its kit from, at this checkout's engine. `homeName` is the home folder's name.
+ * starts the morning through, at this checkout's engine. `homeName` is the home folder's name.
  */
 const mkWorld = ({
   loaded = false, loadedPath = null, scheduleOk = true, engineLink = true, homeName = 'home',
@@ -128,20 +166,13 @@ const mkWorld = ({
   const body = loadedPath === null ? path.join(agents, `${LABEL}.plist`) : loadedPath;
 
   const logFile = path.join(root, 'launchctl-argv.log');
-  const stub = stubTool(bin, 'launchctl', [
-    '#!/usr/bin/env bash',
-    recordArgv(logFile),
-    'if [[ "$1" == \'print\' ]]; then',
-    '  case "$2" in',
-    `    */${LABEL})`,
-    ...(loaded
-      ? [`      printf '\\tpath = %s\\n' '${body}'`, '      exit 0 ;;']
-      : ['      exit 1 ;;']),
-    '  esac',
-    '  exit 1',
-    'fi',
-    'exit 0',
-  ]);
+  const stub = stubToolJs(bin, 'launchctl', [
+    recordArgvJs(JSON.stringify(logFile)),
+    'const argv = process.argv.slice(2);',
+    "if (argv[0] === 'print') {",
+    ...(loaded ? [`  if ((argv[1] ?? '').endsWith(${JSON.stringify(`/${LABEL}`)})) process.stdout.write(${JSON.stringify(`\tpath = ${body}\n`)});`, '  else process.exitCode = 1;'] : ['  process.exitCode = 1;']),
+    '}',
+  ].join('\n'));
 
   // The Claude home named, so a caller's WORKFLOW_CLAUDE_HOME (a proof run's) never stands in for it.
   const env = homeEnv(home, { ...process.env, PATH: pathWith(bin), WORKFLOW_CLAUDE_HOME: path.join(home, '.claude') });
@@ -178,36 +209,33 @@ const strayKit = () => {
 describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and plutil are macOS' }, () => {
   describe('jobs/install: rendering', () => {
     // The job starts under the first node on the file's own PATH, the folder of
-    // the Node that ran the install first, and names the kit the engine link
-    // resolves to at install time: `workkit update` re-renders it after a move.
-    test('the daily agent for a home and a Node folder, the engine link at this kit, is its whole text', () => {
+    // the Node that ran the install first, and reaches the kit through the
+    // engine address when it runs, so a moved kit needs no new file.
+    test('the daily agent for a home and a Node folder is its whole text, starting the engine address\'s starter', () => {
       const world = mkWorld();
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
-        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
+        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR }));
       cleanup(world.root);
     });
 
-    test('with no engine link in the home, the agent starts the kit that ran the install', () => {
-      const world = mkWorld({ engineLink: false });
-      const res = install(world);
-      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
-      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
-        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
-      cleanup(world.root);
-    });
-
-    test('an engine link at another kit: the agent starts that kit', () => {
-      const world = mkWorld({ engineLink: false });
+    test('the agent is the same text whatever the engine link names: this kit, another kit, or no link', () => {
       const other = strayKit();
-      fs.mkdirSync(path.join(world.home, '.claude'), { recursive: true });
-      fs.symlinkSync(other, path.join(world.home, '.claude', 'workkit'));
-      const res = install(world);
-      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
-      expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
-        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(path.dirname(other)) }));
-      cleanup(world.root); cleanup(path.dirname(other));
+      const states = [['this kit', path.join(REPO, 'workflow')], ['another kit', other], ['no link', null]];
+      for (const [state, target] of states) {
+        const world = mkWorld({ engineLink: false });
+        if (target) {
+          fs.mkdirSync(path.join(world.home, '.claude'), { recursive: true });
+          fs.symlinkSync(target, path.join(world.home, '.claude', 'workkit'));
+        }
+        const res = install(world);
+        expect(res.status, `${state}: exit 0, stderr: ${res.stderr}`).toBe(0);
+        expect(fs.readFileSync(world.plist(LABEL), 'utf8'), `${state}: the installed plist`)
+          .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR }));
+        cleanup(world.root);
+      }
+      cleanup(path.dirname(other));
     });
 
     // launchd parses the file as XML, so a home holding `&` is written escaped.
@@ -216,7 +244,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(fs.readFileSync(world.plist(LABEL), 'utf8'), 'the installed plist')
-        .toBe(dailyAgent({ home: `${world.root}/a&amp;b`, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
+        .toBe(dailyAgent({ home: `${world.root}/a&amp;b`, nodeDir: NODE_DIR }));
       cleanup(world.root);
     });
 
@@ -242,16 +270,17 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
 
     // The plist reaches the job through the engine address, so a home without
     // one would install a schedule that runs nothing: both modes name it.
-    test('no engine address: install and --check both name the missing link', () => {
+    test('no engine address: install and --check both warn, naming the link, that the job cannot reach the kit', () => {
       const world = mkWorld({ engineLink: false });
       const link = `${world.home}/.claude/workkit`;
+      const unreached = (text) => text.split('\n').some((l) => l.includes('⚠') && l.includes(link) && l.includes('cannot reach'));
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       const said = `${res.stdout}${res.stderr}`;
-      expect(said.split('\n').some((l) => l.includes('⚠') && l.includes(link)), `install warns, naming ${link}: ${said}`).toBeTruthy();
+      expect(unreached(said), `install warns, naming ${link}: ${said}`).toBeTruthy();
       const checked = check(world);
       const checkSaid = `${checked.stdout}${checked.stderr}`;
-      expect(checkSaid.split('\n').some((l) => l.includes('⚠') && l.includes(link)), `and so does --check: ${checkSaid}`).toBeTruthy();
+      expect(unreached(checkSaid), `and so does --check: ${checkSaid}`).toBeTruthy();
       cleanup(world.root);
     });
 
@@ -316,7 +345,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       const world = mkWorld();
       // The agent is not loaded, and its load is refused with launchd's I/O error code.
       stubToolJs(world.bin, 'launchctl', [
-        recordArgvJs(JSON.stringify(world.logFile), 'process.argv.slice(2)'),
+        recordArgvJs(JSON.stringify(world.logFile)),
         'const verb = process.argv[2];',
         "process.exitCode = verb === 'print' ? 1 : verb === 'bootstrap' ? 5 : 0;",
       ].join('\n'));
@@ -382,7 +411,7 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       const res = install(world);
       expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
       expect(fs.readFileSync(world.installed, 'utf8'), 'the file is the agent this kit renders')
-        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) }));
+        .toBe(dailyAgent({ home: world.env.HOME, nodeDir: NODE_DIR }));
       const loads = bootCalls(world.calls());
       expect(loads.length, `one bootout, one bootstrap: ${fmtCalls(loads)}`).toBe(2);
       expect(isCall(loads[0], 'bootout', `gui/${process.getuid()}/${LABEL}`), `the running agent goes first: ${fmtCalls(loads)}`).toBeTruthy();
@@ -456,6 +485,21 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       cleanup(world.root);
     });
 
+    // The installed file names the kit's own folder, which a moved kit leaves behind.
+    test('an installed agent that starts the kit\'s own jobs/morning.js reads as out of date, and is neither rewritten nor loaded', () => {
+      const world = mkWorld({ loaded: true });
+      const old = kitAgent({ home: world.env.HOME, nodeDir: NODE_DIR, kit: fs.realpathSync(REPO) });
+      fs.mkdirSync(path.dirname(world.installed), { recursive: true });
+      fs.writeFileSync(world.installed, old);
+
+      const res = check(world);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      expect(res.stdout, 'the one line the update relays').toBe(`✓ ${LABEL} → out of date for this kit\n`);
+      expect(fs.readFileSync(world.installed, 'utf8'), 'the installed file is as it was').toBe(old);
+      expect(fmtCalls(world.calls()), 'and launchd was never asked').toBe('');
+      cleanup(world.root);
+    });
+
     test('a current machine reports nothing, and never asks launchd', () => {
       const world = mkWorld({ loaded: true });
       install(world);
@@ -467,14 +511,20 @@ describe('jobs/install', { skip: process.platform !== 'darwin' && 'launchd and p
       cleanup(world.root);
     });
 
-    test('a plist from another checkout reads as out of date, and is not replaced', () => {
+    test('a current machine whose engine link then moves to another kit: --check says nothing about the agent', () => {
       const world = mkWorld({ loaded: true });
       install(world);
-      fs.appendFileSync(world.installed, '\n<!-- from an older checkout -->\n');
+      const link = path.join(world.home, '.claude', 'workkit');
+      const other = strayKit();
+      fs.unlinkSync(link);
+      fs.symlinkSync(other, link);
       const res = check(world);
-      expect(res.stdout, 'it names the drift, in the one line the update relays').toBe(`✓ ${LABEL} → out of date for this kit\n`);
-      expect(fs.readFileSync(world.installed, 'utf8').includes('older checkout'), 'and the check writes nothing').toBeTruthy();
-      cleanup(world.root);
+      expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
+      // A matching machine prints nothing; the one line left is the link's own warning.
+      const said = `${res.stdout}${res.stderr}`;
+      const rest = said.split('\n').filter(Boolean).filter((l) => !(l.includes('⚠') && l.includes(other)));
+      expect(rest, `nothing but the warning naming where the link points: ${said}`).toEqual([]);
+      cleanup(world.root); cleanup(path.dirname(other));
     });
   });
 });

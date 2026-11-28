@@ -6,13 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   SCRIPT, writeBriefMarks, INSTRUCTION, parseStatsMark, CC_CHANGELOG, cleanup, mkNewsWorld,
 } = require('./helpers');
 
 describe('jobs/brief-payload: the upstream news', () => {
-  test('a first run prints no block and hands the runner the latest version', { skip: skipWithoutNodeStub() }, () => {
+  test('a first run prints no block and hands the runner the latest version', () => {
     // The cursor is a line in the latest published brief, so the
     // world here is an empty board and a scratch mark file, never the network.
     const world = mkNewsWorld();
@@ -35,7 +34,7 @@ describe('jobs/brief-payload: the upstream news', () => {
     cleanup(world.home);
   });
 
-  test('the mark file carries both lines: the cursor and the day’s stats', { skip: skipWithoutNodeStub() }, () => {
+  test('the mark file carries both lines: the cursor and the day’s stats', () => {
     // The runner appends this file verbatim under the digest, so
     // both lines the published brief is meant to carry leave together.
     const world = mkNewsWorld();
@@ -49,7 +48,7 @@ describe('jobs/brief-payload: the upstream news', () => {
     cleanup(world.home);
   });
 
-  test('the stats line rides even when there was no news to carry', { skip: skipWithoutNodeStub() }, () => {
+  test('the stats line rides even when there was no news to carry', () => {
     // The two lines are independent: an upstream read that failed publishes no
     // cursor, and the day's numbers are not the news's to take with it.
     const world = mkNewsWorld();
@@ -85,7 +84,7 @@ describe('jobs/brief-payload: the upstream news', () => {
     cleanup(dir);
   });
 
-  test('with no mark file named, the script still prints its brief', { skip: skipWithoutNodeStub() }, () => {
+  test('with no mark file named, the script still prints its brief', () => {
     // The runner names the file; a human running `node jobs/morning/brief/brief-payload.js`
     // does not, and the payload is the whole point of the script.
     const world = mkNewsWorld();

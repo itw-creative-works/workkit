@@ -6,17 +6,14 @@
 const {
   describe, test, expect,
 } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   mkPublicWorld, publicLine, said, PRIVATE, PUBLIC,
 } = require('./helpers');
 
-// The verb's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
-
 const sorted = (labels) => JSON.stringify([...labels].sort());
 
 describe('workkit public mirror', () => {
-  test('mirror sets the public label to the private one\'s and removes any other status: label, posting no comment', { skip: skipWithoutNodeStub() }, () => {
+  test('mirror sets the public label to the private one\'s and removes any other status: label, posting no comment', () => {
     const world = mkPublicWorld({
       issues: {
         private: [{
@@ -36,7 +33,7 @@ describe('workkit public mirror', () => {
     expect(sorted(world.gh.issue(PRIVATE, 12).labels), 'the private issue is untouched').toBe(sorted(['status:qa', 'type:bug']));
   });
 
-  test('mirror --all mirrors every open linked issue and skips unlinked and closed ones', { skip: skipWithoutNodeStub() }, () => {
+  test('mirror --all mirrors every open linked issue and skips unlinked and closed ones', () => {
     const world = mkPublicWorld({
       issues: {
         private: [
@@ -58,7 +55,7 @@ describe('workkit public mirror', () => {
     expect(JSON.stringify(world.gh.writes()), 'the one write is that label edit: the unlinked and the closed issues are skipped').toBe(JSON.stringify([{ slug: PUBLIC, number: 44, op: 'labels' }]));
   });
 
-  test('mirror --all reads each public repo once, never one view per linked issue', { skip: skipWithoutNodeStub() }, () => {
+  test('mirror --all reads each public repo once, never one view per linked issue', () => {
     const world = mkPublicWorld({
       issues: {
         private: [44, 45, 46].map((n) => ({
@@ -76,7 +73,7 @@ describe('workkit public mirror', () => {
 });
 
 describe('workkit public: the Public: line is the link', () => {
-  test('a private issue with no Public: line: mirror and close skip it', { skip: skipWithoutNodeStub() }, () => {
+  test('a private issue with no Public: line: mirror and close skip it', () => {
     // The public URL in the prose is no link: only a first-line `Public:` is.
     const world = mkPublicWorld({
       issues: {

@@ -460,3 +460,53 @@ describe('classic.SessionStart: docs:session (session suite)', () => {
     expect(w.ghCalls().filter((c: any) => c.argv.includes('run'))).toHaveLength(0)
   })
 })
+
+// The engine floor: the Claude Code release the kit's hooks are proved on, 2.1.328.
+const belowFloor = (base: string) => `workkit: this Claude Code is ${base}; the kit's hooks need 2.1.328 or newer`
+const OLDER_THAN = "workkit: this Claude Code is older than 2.1.328; the kit's hooks need 2.1.328 or newer"
+// The floor lines a session start's additional context holds.
+const floorLines = async ($: any) => contextOf(await start($, REPO)).split('\n').filter((l: string) => l.includes("the kit's hooks need"))
+
+describe('classic.SessionStart: the engine floor (the Contract cases)', () => {
+  test('28a. base 2.1.327: the context holds the line once, naming 2.1.327', async ($, on) => {
+    mkWorld(on, { version: { version: '2.1.327', base: '2.1.327' } })
+    expect(await floorLines($)).toEqual([belowFloor('2.1.327')])
+  })
+
+  test('a repo that never opted in, base 2.1.327: no floor line', async ($, on) => {
+    mkWorld(on, { repos: { [REPO]: null }, standards: { state: 'undecided' }, version: { version: '2.1.327', base: '2.1.327' } })
+    expect(await floorLines($)).toEqual([])
+  })
+
+  for (const base of ['2.1.328', '2.2.0']) {
+    test(`28b. base ${base}: no floor line`, async ($, on) => {
+      mkWorld(on, { version: { version: base, base } })
+      expect(await floorLines($)).toEqual([])
+    })
+  }
+
+  test('28c. base 2.1.99, below by number though above by text: the line', async ($, on) => {
+    mkWorld(on, { version: { version: '2.1.99', base: '2.1.99' } })
+    expect(await floorLines($)).toEqual([belowFloor('2.1.99')])
+  })
+
+  test('28d. base 2.1.300-dev: the line, naming the base as the engine gave it', async ($, on) => {
+    mkWorld(on, { version: { version: '2.1.300-dev', base: '2.1.300-dev' } })
+    expect(await floorLines($)).toEqual([belowFloor('2.1.300-dev')])
+  })
+
+  test('28d. base 2.1.328-dev: no floor line, the suffix dropped before comparing', async ($, on) => {
+    mkWorld(on, { version: { version: '2.1.328-dev', base: '2.1.328-dev' } })
+    expect(await floorLines($)).toEqual([])
+  })
+
+  test('28e. a build whose version call throws: the "older than" line', async ($, on) => {
+    mkWorld(on, { versionFails: true })
+    expect(await floorLines($)).toEqual([OLDER_THAN])
+  })
+
+  test('28f. an answer with no base: no floor line', async ($, on) => {
+    mkWorld(on, { version: { version: '2.1.327' } })
+    expect(await floorLines($)).toEqual([])
+  })
+})

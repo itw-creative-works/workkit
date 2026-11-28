@@ -28,7 +28,7 @@ const schtasksStub = (dir, state = {}) => {
   set(state);
   stubToolJs(dir, 'schtasks', [
     "const fs = require('fs');",
-    recordArgvJs(JSON.stringify(log), 'process.argv.slice(2)'),
+    recordArgvJs(JSON.stringify(log)),
     `const state = JSON.parse(fs.readFileSync(${JSON.stringify(stateFile)}, 'utf8'));`,
     'const args = process.argv.slice(2);',
     "if (args[0] === '/query') process.exitCode = state.exists ? 0 : 1;",

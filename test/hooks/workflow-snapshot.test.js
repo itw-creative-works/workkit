@@ -9,7 +9,7 @@ const {
   describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, NODE_DIR, SYSTEM_PATH, shellPath, which, stubTool, joinPath, systemPathWith, homeEnv, spawnBash, spawnSync,
+  NODE_DIR, shellPath, stubToolJs, joinPath, systemPathWith, homeEnv, spawnBash, spawnSync,
   skipWithoutModes, skipWithoutCaughtSignal,
 } = require('../lib/platform');
 const { makeGhStub, ghCalls } = require('../lib/gh-stub');
@@ -97,7 +97,7 @@ const viaShim = (w, args, { fails = false } = {}) => {
   let bin = makeGhStub().binDir;
   if (fails) {
     bin = mkTmp('snapshot-gh-fails-');
-    stubTool(bin, 'gh', ['#!/usr/bin/env bash', 'echo "HTTP 422: Validation Failed" >&2', 'exit 1']);
+    stubToolJs(bin, 'gh', "process.stderr.write('HTTP 422: Validation Failed\\n'); process.exitCode = 1;");
   }
   const env = homeEnv(w.home, { PATH: systemPathWith(shimDir(), bin, NODE_DIR), CLAUDECODE: '1' });
   delete env.GH_TOKEN;
@@ -245,28 +245,6 @@ describe('workflow:snapshot: the claim', () => {
     take(w, 5);
     expect(takenTree(w)[path.join('pkg', 'node_modules', 'dep', 'index.js')],
       'a node_modules no package owns is copied as it is').toBe('file module.exports = 7;\n');
-  });
-
-  // A cp ahead on PATH that records each call's arguments and copies for real.
-  const recordingCp = (w) => {
-    const bin = mkTmp('snapshot-cp-');
-    const logFile = path.join(bin, 'cp.log');
-    stubTool(bin, 'cp', ['#!/bin/bash', `printf '%s\\n' "$*" >> "${shellPath(logFile)}"`,
-      `exec "${shellPath(which('cp', SYSTEM_PATH))}" "$@"`]);
-    return { logFile, envPath: joinPath(bin, w.env.PATH) };
-  };
-  const CLONE_FLAG = { darwin: '-c', linux: '--reflink=auto' }[process.platform];
-
-  test('the copy on a Mac or Linux starts cp with the platform\'s clone flag on every call, so a clone stays a clone', {
-    skip: !CLONE_FLAG && 'cp clones only on a Mac or Linux; the Windows copy is Node\'s own',
-  }, () => {
-    const w = mkWorld();
-    const cp = recordingCp(w);
-    ok(mode(w, 'take', ['5'], cp.envPath), 'take 5 through the recording cp');
-    const calls = fs.existsSync(cp.logFile) ? fs.readFileSync(cp.logFile, 'utf8').split('\n').filter(Boolean) : [];
-    expect(calls.length > 0, 'the take copied through cp').toBeTruthy();
-    expect(calls.filter((args) => !args.split(' ').includes(CLONE_FLAG)).join(' | '), `every cp call carries ${CLONE_FLAG}`).toBe('');
-    expect(takenTree(w)[path.join('src', 'x.js')], 'the copy landed').toBe('file module.exports = 1;\n');
   });
 
   // World `w` whose home's .workkit is the repo's dotfiles/.workkit, `ignore`
@@ -564,61 +542,62 @@ describe('workflow:snapshot: anything else', () => {
 });
 
 describe('workflow:snapshot: a failed take', () => {
-  // The cp the take uses off Windows, stubbed ahead on PATH to copy for real and
-  // then fail, so a whole tree is left under the temporary name for the take to
-  // clear. Each call is logged.
-  const failingCopy = (w) => {
-    const tool = 'cp';
-    const bin = mkTmp(`snapshot-${tool}-`);
-    const logFile = path.join(bin, `${tool}.log`);
-    stubTool(bin, tool, ['#!/bin/bash', `echo "$*" >> "${shellPath(logFile)}"`,
-      `"${shellPath(which(tool, SYSTEM_PATH))}" "$@"`, `echo "${tool}: refused" >&2`, 'exit 1']);
-    return { tool, logFile, envPath: joinPath(bin, w.env.PATH) };
-  };
-  const NODE_COPY = IS_WINDOWS && 'the Windows copy is Node\'s own, so no tool on PATH can fail it';
+  // The ignored dist/out.js made unreadable, so the copy fails on it partway,
+  // the tree before it already under the temporary name for the take to clear.
+  const UNREADABLE = path.join('dist', 'out.js');
+  const failingCopy = (w) => fs.chmodSync(path.join(w.repo, UNREADABLE), 0o000);
+  const NO_UNREADABLE = skipWithoutModes('a file with mode 0 still reads');
 
-  test('a take whose copy fails leaves no snapshot folder and no temporary sibling', { skip: NODE_COPY }, () => {
+  test('a take whose copy fails leaves no snapshot folder and no temporary sibling', { skip: NO_UNREADABLE }, () => {
     const w = mkWorld();
-    const copy = failingCopy(w);
-    const out = mode(w, 'take', ['5'], copy.envPath);
+    failingCopy(w);
+    const out = mode(w, 'take', ['5']);
     expect(out.code !== 0, `the failed take says so in its exit: ${out.code}`).toBeTruthy();
-    expect(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`).toBeTruthy();
+    expect(out.stderr.includes(UNREADABLE), `the failure names the file the copy could not read: ${out.stderr}`).toBeTruthy();
     expect(json(snapshots(w)), 'no snapshot folder and no temporary sibling').toBe(json([]));
   });
 
-  test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', { skip: NODE_COPY }, () => {
+  test('a take whose copy fails on top of a live snapshot keeps that one whole and leaves no temporary sibling', { skip: NO_UNREADABLE }, () => {
     const w = mkWorld();
     take(w, 5);
     const snap = snapshotDir(homeOf(w), w.repo);
     const before = { tree: treeOf(path.join(snap, 'tree')), head: read(snap, 'head'), issues: read(snap, 'issues') };
     w.write('src/x.js', 'module.exports = 9;\n');
     w.git('commit', '-q', '-am', 'later');
-    const copy = failingCopy(w);
-    const out = mode(w, 'take', ['6'], copy.envPath);
+    failingCopy(w);
+    const out = mode(w, 'take', ['6']);
     expect(out.code !== 0, `the failed take says so in its exit: ${out.code}`).toBeTruthy();
-    expect(fs.existsSync(copy.logFile), `the take reached the failing ${copy.tool}`).toBeTruthy();
+    expect(out.stderr.includes(UNREADABLE), `the failure names the file the copy could not read: ${out.stderr}`).toBeTruthy();
     expect(json(treeOf(path.join(snap, 'tree'))), 'the live tree is as it was').toBe(json(before.tree));
     expect(read(snap, 'head'), 'head is as it was').toBe(before.head);
     expect(read(snap, 'issues'), 'issues is as it was').toBe(before.issues);
     expect(json(snapshots(w)), 'one folder under the final name, no sibling').toBe(json([path.basename(snap)]));
   });
 
-  // cp stubbed ahead on PATH to mark that it started and then wait to be
-  // ended, so a signal lands while the take copies.
-  const stalledCopy = (w) => {
-    const bin = mkTmp('snapshot-stall-');
-    const started = path.join(bin, 'started');
-    stubTool(bin, 'cp', ['#!/bin/bash', `: > "${shellPath(started)}"`, 'while :; do sleep 1; done']);
-    return { started, envPath: joinPath(bin, w.env.PATH) };
+  // A preload every node under the take loads through NODE_OPTIONS. In the copy's
+  // own node, the one whose arguments name tree-copy.js, it marks that the copy
+  // started and then blocks, so a signal lands while the take copies.
+  const stalledCopy = () => {
+    const dir = mkTmp('snapshot-stall-');
+    const started = path.join(dir, 'started');
+    const preload = path.join(dir, 'stall.js');
+    fs.writeFileSync(preload, [
+      "if (process.argv.slice(1).some((arg) => require('path').basename(arg) === 'tree-copy.js')) {",
+      `  require('fs').writeFileSync(${JSON.stringify(started)}, '');`,
+      '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);',
+      '}',
+      '',
+    ].join('\n'));
+    return { started, nodeOptions: `--require ${preload}` };
   };
 
   for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) {
     test(`a take ended by ${signal} while it copies leaves no temporary sibling and exits ${code}`, { skip: skipWithoutCaughtSignal() }, async (t) => {
       const w = mkWorld();
-      const copy = stalledCopy(w);
+      const copy = stalledCopy();
       // The take leads its own group and the signal goes to the whole group, the way a cut ends a call.
       const run = start(process.execPath, [SNAPSHOT, 'take', rootOf(w), '5'], {
-        env: { ...w.env, PATH: copy.envPath }, detached: true,
+        env: { ...w.env, NODE_OPTIONS: copy.nodeOptions }, detached: true,
       });
       t.after(() => run.end('SIGKILL'));
       expect(await until(() => fs.existsSync(copy.started) && snapshots(w).length === 1),

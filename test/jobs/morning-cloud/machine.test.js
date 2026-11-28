@@ -6,7 +6,7 @@ const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
 const { fmtCalls } = require('../../lib/argv-log');
 const {
-  IS_WINDOWS, samePath, skipWithoutNodeStub,
+  IS_WINDOWS, samePath,
 } = require('../../lib/platform');
 const {
   INSTRUCTION, HOME_SLUG, cleanup, mkWorld, runJob,
@@ -24,7 +24,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     cleanup(world.root);
   });
 
-  test('an existing settings file wins over the repo the run belongs to', { skip: skipWithoutNodeStub() }, () => {
+  test('an existing settings file wins over the repo the run belongs to', () => {
     const world = mkWorld({
       settings: { version: 1, site: { repo: 'configured/home' } },
       githubRepo: 'env/home',
@@ -61,7 +61,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     cleanup(world.root);
   });
 
-  test('the roster comes from the home repo’s own branch, and the composer reads it back', { skip: skipWithoutNodeStub() }, () => {
+  test('the roster comes from the home repo’s own branch, and the composer reads it back', () => {
     // Private, and read with the cross-repo token, never from gh-pages, which
     // is public even on a private repo.
     const world = mkWorld({ siteRepos: { repos: ['a/one', 'b/two', HOME_SLUG], home: HOME_SLUG } });
@@ -75,7 +75,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     cleanup(world.root);
   });
 
-  test('the branch the roster is read from is asked for, never assumed to be main', { skip: skipWithoutNodeStub() }, () => {
+  test('the branch the roster is read from is asked for, never assumed to be main', () => {
     // The publish pushes whatever branch the home clone is on. A runner has no
     // site's data/home.json to read that from, so it asks GitHub for the repo
     // it is standing in.
@@ -93,7 +93,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     cleanup(world.root);
   });
 
-  test('no slug list falls back to the home repo alone, and still composes', { skip: skipWithoutNodeStub() }, () => {
+  test('no slug list falls back to the home repo alone, and still composes', () => {
     const world = mkWorld();
     const res = runJob(world);
     expect(res.status, `exit 0, stderr: ${res.stderr}`).toBe(0);
@@ -121,7 +121,7 @@ describe('jobs/morning (cloud): the machine it makes', () => {
     cleanup(world.root);
   });
 
-  test('a repo the token cannot read is named in the log, not in the payload', { skip: skipWithoutNodeStub() }, () => {
+  test('a repo the token cannot read is named in the log, not in the payload', () => {
     // The scope gap the Actions log has to show: the token reaches the home repo
     // and not the rest, the brief reads clean, and only this line says so.
     const world = mkWorld({ boardBroken: true });

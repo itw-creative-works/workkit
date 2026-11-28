@@ -340,6 +340,18 @@ const PTY = (() => {
   return /util-linux/.test(`${version.stdout}${version.stderr}`) ? 'gnu' : 'bsd';
 })();
 
+// The Node hand-over script starts: `<out file> <program> <args...>` runs the
+// program with stdout that file, the terminal's stdin and stderr, and ends as it did.
+const TO_FILE = [
+  "const fs = require('fs');",
+  "const { spawnSync } = require('child_process');",
+  'const [out, file, ...args] = process.argv.slice(1);',
+  "const res = spawnSync(file, args, { stdio: [0, fs.openSync(out, 'w'), 2] });",
+  'if (res.error) throw res.error;',
+  'if (res.signal) process.kill(process.pid, res.signal);',
+  'process.exit(res.status);',
+].join('\n');
+
 /**
  * Run `argv` at a keyboard: stdin and stderr are script's terminal, stdout a file
  * in `dir`, so the token's stream stays apart from the sign-in's. Returns
@@ -347,8 +359,9 @@ const PTY = (() => {
  */
 const atTerminal = (argv, { env, cwd, dir }) => {
   const outFile = path.join(dir, `terminal-stdout-${process.hrtime.bigint()}.txt`);
-  const inner = `${argv.map(shQuote).join(' ')} > ${shQuote(outFile)}`;
-  const args = PTY === 'gnu' ? ['-q', '-e', '-c', inner, '/dev/null'] : ['-q', '/dev/null', 'sh', '-c', inner];
+  const handOver = [process.execPath, '-e', TO_FILE, outFile, ...argv];
+  // util-linux script takes its command only as one line in -c.
+  const args = PTY === 'gnu' ? ['-q', '-e', '-c', handOver.map(shQuote).join(' '), '/dev/null'] : ['-q', '/dev/null', ...handOver];
   // A file, not a pipe: node's pipes are socketpairs on macOS and BSD script refuses one.
   const stdinFile = path.join(dir, 'terminal-stdin');
   fs.writeFileSync(stdinFile, '');

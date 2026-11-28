@@ -13,7 +13,7 @@ const {
   describe, test, expect, mkTmp, until, alive, pidIn, run, start,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, BASH, NO_RC, NODE_DIR, jsPath, stubTool, systemPathWith, homeEnv,
+  IS_WINDOWS, BASH, NO_RC, NODE_DIR, jsPath, stubToolJs, systemPathWith, homeEnv,
 } = require('../lib/platform');
 const {
   CHECK_MINUTES, skipOnWindows, FROZEN_LINE, checkSettings, rootHolding, rootWith, pidOf, reap,
@@ -49,7 +49,7 @@ const machineEnv = (settings) => {
 const failingPsEnv = (dir) => {
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin);
-  stubTool(bin, 'ps', ['#!/bin/bash', 'exit 1']);
+  stubToolJs(bin, 'ps', 'process.exitCode = 1;');
   return { ...machineEnv(), PATH: systemPathWith(bin, NODE_DIR) };
 };
 

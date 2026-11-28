@@ -111,14 +111,15 @@ describe('workflow/site-repos: an empty machine and a roster that will not read'
     cleanup(tmp);
   });
 
-  test('the CLI exits non-zero and writes nothing when the roster will not read', () => {
+  test('the CLI is one line saying why and that nothing was written, exit 1, when the roster will not read', () => {
     const tmp = mkTmp('workkit-site-repos-');
     const outfile = path.join(tmp, 'data', 'repos.json');
     const workflowHome = mkWorkflowHome(tmp, ['omega'], { roster: '{ not json' });
     const script = path.join(__dirname, '..', '..', 'workflow', 'publish', 'site-repos.js');
     const res = spawnSync(process.execPath, [script, outfile, workflowHome], { encoding: 'utf8' });
-    expect(res.status !== 0, `non-zero, got ${res.status}`).toBeTruthy();
-    expect(/could not be read/.test(res.stderr), `it says why, got: ${res.stderr}`).toBeTruthy();
+    expect(res.status, `exit 1, got: ${res.stdout}${res.stderr}`).toBe(1);
+    expect(res.stdout, 'nothing on stdout').toBe('');
+    expect(/^site-repos: [^\n]*could not be read[^\n]*; nothing was written\n$/.test(res.stderr), `the one line, got: ${res.stderr}`).toBe(true);
     expect(fs.existsSync(outfile), 'and nothing was written where the list goes').toBe(false);
     cleanup(tmp);
   });

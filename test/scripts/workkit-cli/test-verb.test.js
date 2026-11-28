@@ -9,7 +9,7 @@ const {
   describe, test, expect,
 } = require('../../lib/harness');
 const {
-  NODE_DIR, shellPath, joinPath, basePathWithout, spawnSync,
+  NODE_DIR, joinPath, basePathWithout, spawnSync, stubToolJs, handOverJs,
 } = require('../../lib/platform');
 const { treeHash } = require('../../lib/suite-record');
 const {
@@ -18,7 +18,7 @@ const {
 const { TOTALS, mkCoreRepo } = require('../../lib/core-repo');
 const { linesOf } = require('../../lib/run-lists');
 const {
-  CLI, cleanup, writeStub, mkWorld, runCli,
+  CLI, cleanup, mkWorld, runCli,
 } = require('./helpers');
 
 // The fixture's root package.json, `scripts` its whole scripts block (none when absent).
@@ -108,11 +108,11 @@ describe('workkit test: the repo\'s npm test, from its root', { skip: skipWithou
     fs.rmSync(path.join(repo, 'node_modules'), { recursive: true, force: true });
     const bin = path.join(world.root, 'workkit-bin');
     fs.mkdirSync(bin);
-    writeStub(path.join(bin, 'workkit'), [
-      'export WK_LOOP_DEPTH=$(( ${WK_LOOP_DEPTH:-0} + 1 ))',
-      'if [ "$WK_LOOP_DEPTH" -gt 2 ]; then exit 99; fi',
-      `exec "${shellPath(process.execPath)}" "${shellPath(CLI)}" "$@"`,
-    ]);
+    stubToolJs(bin, 'workkit', [
+      'process.env.WK_LOOP_DEPTH = String(Number(process.env.WK_LOOP_DEPTH || 0) + 1);',
+      'if (Number(process.env.WK_LOOP_DEPTH) > 2) process.exit(99);',
+      handOverJs(process.execPath, [CLI]),
+    ].join('\n'));
     const { code, said } = runTest(world, [], { cwd: repo, env: { PATH: joinPath(bin, NODE_DIR, world.env.PATH) } });
     expect(code !== 0, `non-zero, got ${code}: ${said}`).toBeTruthy();
     expect(said.includes('workkit-core is not installed here: run npm install'), `the missing-package line, got: ${said}`).toBeTruthy();

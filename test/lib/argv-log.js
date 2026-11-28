@@ -1,43 +1,27 @@
-// Argv recording for PATH-shim stubs (the fake `gh` the suites put on PATH).
+// Argv recording for the PATH stand-ins the suites write (the fake `gh` first).
 // Each argument is its own NUL-terminated field and each call ends with a 0x1e
 // record separator, so an assertion sees where one argument ended and the next
 // began. An argument that is exactly 0x1e would read back as a boundary; nothing
 // recorded here is one.
 
 const fs = require('fs');
-const { gitPath } = require('./platform');
 
 const NUL = '\0';
 const RS = '\x1e';
 
 /**
- * Bash line that appends the current invocation's argv to `logFile`, spelled in
- * git's drive form (gitPath), which no Git Bash mount moves when a world moves
- * TEMP. The path must be shell-safe, which a mkdtemp path is.
- *
- * One printf, so one O_APPEND write while the record fits bash's stdout buffer
- * (1024 bytes on macOS): racing stubs cannot interleave their fields. A call
- * with no arguments writes just the separator and reads back as an empty argv.
- *
- * @param {string} logFile - absolute path to append to
- * @returns {string} bash source, one line
- */
-const recordArgv = (logFile) => `printf '%s\\0' "$@" $'\\036' >> "${gitPath(logFile)}"`;
-
-/**
- * The Node twin of `recordArgv`: one JavaScript statement that appends one
- * record, in the same framing, as a single append.
+ * One JavaScript statement that appends one record to a log, as a single
+ * append, so racing stand-ins cannot interleave their fields. A call with no
+ * arguments writes just the separator and reads back as an empty argv.
  *
  * @param {string} fileExpr - JavaScript expression for the log path, e.g. `JSON.stringify(logFile)`
- * @param {string} argvExpr - JavaScript expression for the argv array to record, e.g. `'process.argv.slice(2)'`
+ * @param {string} [argvExpr] - JavaScript expression for the argv array to record; the stand-in's own arguments by default
  * @returns {string} JavaScript source, one line
  */
-const recordArgvJs = (fileExpr, argvExpr) => `require('fs').appendFileSync(${fileExpr}, [...${argvExpr}, ${JSON.stringify(RS)}].map((f) => f + ${JSON.stringify(NUL)}).join(''));`;
+const recordArgvJs = (fileExpr, argvExpr = 'process.argv.slice(2)') => `require('fs').appendFileSync(${fileExpr}, [...${argvExpr}, ${JSON.stringify(RS)}].map((f) => f + ${JSON.stringify(NUL)}).join(''));`;
 
 /**
- * Read a log written by `recordArgv` back into one argv array per invocation.
- * The path is Node's own to open, so it stays native: only the line the stub
- * runs is spelled for a shell.
+ * Read a log written by `recordArgvJs` back into one argv array per invocation.
  * @param {string} logFile - path written by a stub; a missing file reads as no calls
  * @returns {string[][]} one array of arguments per recorded call
  */
@@ -88,4 +72,4 @@ const eqArgv = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
  */
 const fmtCalls = (calls) => calls.map((c) => JSON.stringify(c)).join(' | ');
 
-module.exports = { recordArgv, recordArgvJs, readArgv, isCall, eqArgv, fmtCalls };
+module.exports = { recordArgvJs, readArgv, isCall, eqArgv, fmtCalls };

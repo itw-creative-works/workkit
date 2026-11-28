@@ -18,7 +18,8 @@
 <repo>/
 ├── .claude-plugin/       # plugin.json + marketplace.json (this repo is its own marketplace)
 ├── .github/workflows/    # checks.yml (the suite on every pull request and push to main but a release-only one; the release job on a push) · ci.yml, release.yml (the reusable CI and release job every kit-owned checks.yml calls) · changelog.yml (the reusable entry check) · pages.yml (the central dashboard, on a release)
-├── .github/scripts/      # release-push.js (checks.yml's scope job and ci.yml's Scope step: whether a push is a release stamp only) · ci-node-version.js, ci-hooks.js, ci-test.js (ci.yml's steps: the Node version, a repo's hooks.ciSetup and hooks.ciPostInstall, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
+├── .github/scripts/      # each CI step's one program: ci-env.js (WORKKIT_NODE and the long temp dir, into GITHUB_ENV) · release-push.js, no argument (the scope: whether the event needs the suite, into GITHUB_OUTPUT) · ci-install.js (npm ci or npm install, by the lockfile) · ci-changelog.js (changelog.yml's lint, its flags)
+│                         # ci-node-version.js, ci-hooks.js, ci-test.js (ci.yml's steps: the Node version, a repo's hooks.ciSetup and hooks.ciPostInstall, the suite) · ci-release.js (release.yml's step: the releases, then the dispatch)
 ├── hooks/                # hooks.json (its `modules` list) + the hooks module, resolved via ${CLAUDE_PLUGIN_ROOT}
 │   ├── register.js       # the hooks module: the twenty-two in-process hooks (nine guards run in the `gh` and `git` shims and git's hooks), the one file that touches `$`
 │   ├── mods/             # each hook's logic and the reads they share, plain functions over plain data (facts.js: the Bash guards' facts; changed.js: a call's changed files; slug.js)
@@ -26,7 +27,7 @@
 ├── agents/               # the crew: surface as workkit:<name> (roster + contract: docs/agents.md)
 ├── briefs/               # the role brief templates, one per crew job, the manager fills the slots: docs/agents.md § File-handoff convention
 ├── skills/               # the nine workflow skills: surface as workkit:<name>
-├── workflow/             # the agent-agnostic engine (labels.json, standards.js + standards/, workkit.js + workkit.cmd + workkit/, note.js, home.js + home/, publish.js + publish/ (build.js, site-repos.js), lib/, morning-task.js (the 9am task's starter), changelog/, ship/, review/, triage/, checkpoint/, proof/, public/, gitshim/ (the `git` shim), templates)
+├── workflow/             # the agent-agnostic engine (labels.json, standards.js + standards/, workkit.js + workkit.cmd + workkit/, note.js, home.js + home/, publish.js + publish/ (build.js, site-repos.js), lib/, morning-task.js (the starter of both machines' 9am jobs), changelog/, ship/, review/, triage/, checkpoint/, proof/, public/, gitshim/ (the `git` shim), templates)
 ├── defaults/             # settings.json: every setting with its default, the layer under ~/.workkit/settings.json and each repo's .workkit/settings.json (docs/project-state.md § The model)
 ├── packages/core/        # workkit-core, the npm package of the test runner and its library (`workkit test`, `workkit-core/test`) plus the kit's `workflow/lib/run.js` packed as `workkit-core/run` and its `workflow/lib/expand-workspaces.js` and `workflow/lib/proc-state.js` packed for the runner and its library, a workspace member at the kit's version
 ├── tower/                # mission control: api/ (the JSON API + its libs) + app/ (the OMEGA dashboard)
@@ -114,7 +115,7 @@
 
 - ONE job, at 9am, in six steps:
   - the summaries, the runner reconcile, the brief, the publish, the stale-brief marker, the owner's `morning.d` scripts.
-- ONE program runs them: `morning.js`, started by `node` from the launchd agent on a Mac and from the runner's workflow, and by `workflow/morning-task.js` on Windows.
+- ONE program runs them: `morning.js`, started by `node` from the runner's workflow, and by the 9am job's starter, `workflow/morning-task.js`, on a Mac and on Windows.
   - The schedulers: this machine's launchd agent or Task Scheduler task, and the seeded `brief.yml` on a runner.
 - Each step is gated by what the environment it woke up in can do.
 - The brief itself runs in the CLOUD, on the home repo, since that is where the sweep token and the roster live.
@@ -132,7 +133,7 @@
 - The runner reads no list file: a suite that runs alone says so in its name, `*.serial.test.js`, and runs in the serial tail after the parallel wave (`docs/tests.md` § The kit's runner).
 - Every suite is Node's own shape, `describe`, `test` and `expect` from `test/lib/harness.js` (`docs/tests.md` § The shape).
 - A suite or case this machine cannot answer states a `skip` value, `false` or the reason; the runner names the skip.
-  - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnUsrLocalBin`, `skipWithoutNodeStub`, `skipWithoutModes`, `skipWithoutFileLink`, `skipWithoutCaughtSignal`, `skipWithoutByteArgv`, `skipWithoutHomebrewPath` in `test/lib/`.
+  - Each helper returns one: `needs()` for a command (outside a cloud session a missing one throws, failing the file), and `skipWithoutNpm`, `skipWithoutWrapper`, `skipOnWindows`, `skipOnUsrLocalBin`, `skipWithoutModes`, `skipWithoutFileLink`, `skipWithoutCaughtSignal`, `skipWithoutHomebrewPath` in `test/lib/`.
 - The runner finds a suite by its name (`*.test.js`, `*.test.mjs`, `*.test.cjs`) anywhere under the repo root, never in `node_modules`, a `.` or `_` name, a nested package or a file git ignores (`docs/tests.md` § The kit's runner).
 - This repo's suites live under `test/hooks/`, `test/scripts/`, `test/tower/`, `test/jobs/`, `test/docs/` and `test/mods/`.
   - The library's own suites sit at the `test/` root (`runner`, `runner-color`, `runner-filter`, `runner-folders`, `runner-skip`, `members`, `kit-module`, `paint`, `harness`, `expect`, `log`, `spawn`, `convert`, `lexer`, `events`, `app-cases`, `mod-case`).
@@ -155,21 +156,23 @@
     - `nodeHomeEnv()` is the same env for a node a case starts, HOME native in place of the shell's spelling.
     - `nodeTempEnv(dir, env)` is a node's temp folder in every name Node reads one by: TMPDIR, and TEMP and TMP for Windows.
       - Never for a world whose Git Bash is handed a `/tmp/...` path: Git Bash mounts `/tmp` on TMP or TEMP.
-      - So a world using it has a native HOME and spells a bash path by `gitPath`, as `recordArgv` does; `mkRepo(..., { forNode: true })` builds one.
+      - So a world using it has a native HOME and spells a bash path by `gitPath`; `mkRepo(..., { forNode: true })` builds one.
   - `NODE_DIR` is the folder of the suite's own node: a case whose PATH must find a `node` puts it on the PATH it builds, since the kit looks for no other.
     - `test/lib/node-fakes.js` holds the two Node fakes: `olderNode(version, dir)`, a preload that makes a node read as older than the floor, and `recordingNode(dir, { log, preload, everyNode, older })`, a `node` for the front of a PATH that records each start, then runs the suite's own; `older: '<version>'` writes `olderNode`'s preload into its folder.
   - A child a case starts goes through `workflow/lib/run.js` too.
-    - `test/lib/platform.js` re-exports its `spawnSync`, `spawn` and `execFileSync`.
+    - `test/lib/platform.js` re-exports its `spawnSync`, `spawn` and `execFileSync`, and `RUN_JS`, its path, for a snippet a child runs.
     - `spawnBash()`, the one way a case starts the test bash, launches through it, as does `spawnSystemBash()` for a case whose child PATH resolves nothing.
     - So do the harness's `run` and `start` (workkit-core's `test/lib/spawn.js`).
     - A test file still importing `child_process` sits on `test/scripts/run-home.test.js`'s list, which only shrinks.
   - `samePath(a, b, platform)` is the one compare of two spellings of a path.
     - On `win32` a Git Bash `/d/x` reads as `D:/x`, `\` folds to `/` and case is ignored.
     - Elsewhere the strings compare as they are.
-  - `stubTool()` and `stubToolJs()` are the two writers of a PATH stub, which a shell starts by its bare name on either platform: `stubTool()` takes shell lines, `stubToolJs()` a Node program's source, the form of a new stand-in program.
-    - A Node stand-in records its arguments with `recordArgvJs()` of `test/lib/argv-log.js`.
-    - Its `<name>.exe` launcher (`test/lib/stub-launcher.cs`, built once per machine) makes the stub startable from Node on Windows where the C# compiler exists.
-    - A case resting on a stub written before it skips on Windows through `skipWithoutNodeStub()` (`NO_NODE_STUB`) until it is run there once.
+  - `stubToolJs(dir, name, source)` is the one builder of a PATH stand-in: a Node program a shell starts by its bare name, and `workflow/lib/run.js` by its `#!` line, on every platform.
+    - It needs no compiler on Windows, so its cases run there as everywhere.
+    - A stand-in records its arguments with `recordArgvJs(file)` of `test/lib/argv-log.js` (its own arguments unless a second expression names others), read back with `readArgv()`.
+    - `handOverJs(file, lead)` is the source of one that only hands over: it starts the real program with the same arguments and streams and passes its exit code on (`nodeBin`, `linkTool`).
+    - `writeGh()` of `test/lib/gh-stub.js` is the shared `gh` fake, answering `--jq` in process through `ghJq` (`test/lib/gh-jq.js`). `makeGhStub`, `commitGh` and `mkGhWorld` build on it; a suite with one answer writes its own through `stubToolJs`.
+    - The test files that may still start a shell, each with its reason: `docs/tests.md` § The shape.
   - `test/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions, so every suite spells a shape the same way.
     - Its exports: `mods(name)`, `textOf`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`, `sessionFacts`, `briefMarker`, `daysBefore`, `row` (`row.user`, `row.result`, `row.tool`), `ghEntry`, `MODELS`, `REMINDER_ROOT`.
   - `test/lib/mod-fixtures.mjs` is the one home of the fixtures both halves share.
@@ -178,6 +181,9 @@
     - `git-repo.js` re-exports the opt-in shapes for the logic suites.
   - And `test/lib/mod-world.ts` is the one world beneath the hooks module for the `test/mods/*.test.ts` wiring suites.
     - `mkWorld(on)`: files, git, gh, the engine scripts, the store and the session, answered from memory.
+    - Its files answer as the engine's: a read cut by `offset` and `length` and refused past 4 MiB, a size in bytes, a write that makes its folders.
+    - It records each program start (`calls`) and each read and write (`fsOps`), so a case shows a hook started no `rm`, `wc`, `tail` or `mkdir`.
+    - Its `$.session.version()` answers `opts.version`, a build above the engine floor unless given; `opts.versionFails` makes the call throw, as a build without it does.
 - A scratch folder has one writer as well: `mkTmp(prefix)` in the kit's `scratch.js`, reached through `test/lib/harness.js`.
   - It resolves the path and removes every folder it made when the process exits.
 - The kit's version stamp has one reader as well: `test/lib/version-stamp.js` holds `STAMP`, `readStamp(file)` and `kitVersion()`.

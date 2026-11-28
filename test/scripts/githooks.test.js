@@ -12,7 +12,7 @@ const {
   describe, test, expect, run, mkTmp, WORKKIT_DIR,
 } = require('../lib/harness');
 const {
-  SH, NODE_DIR, shellPath, gitPath, joinPath, systemPathWith, which,
+  SH, NODE_DIR, shellPath, gitPath, joinPath, systemPathWith, which, stubToolJs,
 } = require('../lib/platform');
 const { readArgv } = require('../lib/argv-log');
 const { recordingNode } = require('../lib/node-fakes');
@@ -111,11 +111,13 @@ const treeWith = (w, ...paths) => {
   return kitIndexTree(w.repo, env);
 };
 
-// An executable hook body at `file`.
-const hookAt = (file, lines) => {
+// An executable hook at `file` running `source` under this suite's node, named on its `#!` line.
+const hookAt = (file, source) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${['#!/bin/sh', ...lines].join('\n')}\n`, { mode: 0o755 });
+  stubToolJs(path.dirname(file), path.basename(file), source);
 };
+// A hook's source that appends `text` and a newline to `file`.
+const appends = (file, text) => `require('fs').appendFileSync(${JSON.stringify(file)}, ${JSON.stringify(`${text}\n`)});`;
 
 // What a hook that appends to `file` wrote there, '' when it never ran.
 const wrote = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
@@ -252,9 +254,17 @@ describe('githooks: commit-msg judges the real message', () => {
     w.git('add', 'README.md');
     // The editor keeps git's scissors line and the diff under it, and writes the body above;
     // with no scissors in the file it exits 1, so the commit never lands.
-    const editor = path.join(w.tmp, 'editor.sh');
-    hookAt(editor, ['grep -q \' >8 \' "$1" || exit 1', '{ printf \'docs: note the watcher\\n\\nA plain body.\\n\'; sed -n \'/ >8 /,$p\' "$1"; } > "$1.new"', 'mv "$1.new" "$1"']);
-    landed(commit(w, ['-v'], { env: { GIT_EDITOR: gitPath(editor) } }), 'the diff text under the scissors');
+    const editor = path.join(w.tmp, 'editor.js');
+    fs.writeFileSync(editor, [
+      "const fs = require('fs');",
+      'const file = process.argv[2];',
+      "const lines = fs.readFileSync(file, 'utf8').split('\\n');",
+      "const at = lines.findIndex((line) => line.includes(' >8 '));",
+      'if (at === -1) process.exit(1);',
+      "fs.writeFileSync(file, ['docs: note the watcher', '', 'A plain body.', ...lines.slice(at)].join('\\n'));",
+    ].join('\n'));
+    const gitEditor = `"${gitPath(process.execPath)}" "${gitPath(editor)}"`;
+    landed(commit(w, ['-v'], { env: { GIT_EDITOR: gitEditor } }), 'the diff text under the scissors');
   });
 
   test('an amend with nothing newly staged is judged on its message: two issues on one closing line bounce on check 8', () => {
@@ -310,7 +320,7 @@ describe('githooks: reached through the engine link', () => {
     const w = mkWorld();
     w.git('config', 'core.hooksPath', path.join(linkedClaudeHome().link, 'githooks'));
     const ran = path.join(w.tmp, 'theirs-ran');
-    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), appends(ran, 'ran'));
     stageUntested(w);
     bounced(commit(w, ['-m', BAD_MSG]), NEW_FILES, 'the hook found its kit through the link');
     stageTested(w);
@@ -322,7 +332,7 @@ describe('githooks: reached through the engine link', () => {
     const w = mkWorld();
     w.git('config', 'core.hooksPath', path.join(linkedClaudeHome().link, 'githooks'));
     const ran = path.join(w.tmp, 'theirs-ran');
-    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), appends(ran, 'ran'));
     stageTested(w);
     w.git('config', '--local', 'workkit.hooksPath', fs.realpathSync(HOOKS));
     const before = commits(w);
@@ -430,7 +440,7 @@ describe('githooks: the repo\'s own hooks run after ours', () => {
   test('.git/hooks/pre-commit does not run when ours bounced, and runs once ours passed', () => {
     const w = mkWorld();
     const ran = path.join(w.tmp, 'theirs-ran');
-    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), appends(ran, 'ran'));
     stageUntested(w);
     bounced(commit(w, ['-m', BAD_MSG]), NEW_FILES, 'ours bounces first');
     expect(!fs.existsSync(ran), 'their hook never ran behind our bounce').toBeTruthy();
@@ -442,7 +452,7 @@ describe('githooks: the repo\'s own hooks run after ours', () => {
   test('a copy of the kit with no workflow/lib/*.sh file: its hooks judge, then chain to the repo\'s own', () => {
     const w = mkWorld({ hooks: path.join(kitWithoutShellLibs(), 'workflow', 'githooks') });
     const ran = path.join(w.tmp, 'theirs-ran');
-    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), appends(ran, 'ran'));
     stageUntested(w);
     bounced(commit(w, ['-m', BAD_MSG]), NEW_FILES, 'the copy judges');
     expect(wrote(ran), 'their hook never ran behind the bounce').toBe('');
@@ -456,9 +466,9 @@ describe('githooks: the repo\'s own hooks run after ours', () => {
     const other = path.join(w.dir, 'other', 'workflow', 'githooks');
     const otherRan = path.join(w.tmp, 'other-kit-ran');
     const ran = path.join(w.tmp, 'theirs-ran');
-    for (const hook of ['pre-commit', 'commit-msg']) hookAt(path.join(other, hook), [`echo ${hook} >> "${shellPath(otherRan)}"`]);
+    for (const hook of ['pre-commit', 'commit-msg']) hookAt(path.join(other, hook), appends(otherRan, hook));
     fs.writeFileSync(path.join(other, 'judge.js'), '');
-    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), appends(ran, 'ran'));
     w.git('config', '--local', 'workkit.hooksPath', other);
     stageTested(w);
     landed(commit(w, ['-m', BAD_MSG]), 'ours passes');
@@ -469,7 +479,7 @@ describe('githooks: the repo\'s own hooks run after ours', () => {
   test('the folder workkit.hooksPath saved holds a pre-commit that refuses: the commit ends 1 after ours passed', () => {
     const w = mkWorld();
     const saved = path.join(w.repo, '.husky', '_');
-    hookAt(path.join(saved, 'pre-commit'), ["echo 'theirs: refused' >&2", 'exit 1']);
+    hookAt(path.join(saved, 'pre-commit'), "process.stderr.write('theirs: refused\\n');\nprocess.exitCode = 1;");
     w.git('config', '--local', 'workkit.hooksPath', saved);
     stageTested(w);
     const res = commit(w, ['-m', BAD_MSG]);
@@ -481,7 +491,7 @@ describe('githooks: the repo\'s own hooks run after ours', () => {
     const w = mkWorld();
     const own = path.join(w.repo, 'tools', 'workflow', 'githooks');
     const ran = path.join(w.tmp, 'own-ran');
-    hookAt(path.join(own, 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    hookAt(path.join(own, 'pre-commit'), appends(ran, 'ran'));
     w.git('config', 'core.hooksPath', own);
     const healed = runScript(w.repo, { pathPrefix: makeGhStub().binDir });
     expect(healed.code, `the heal runs clean: ${healed.output}`).toBe(0);
@@ -495,7 +505,7 @@ describe('githooks: the repo\'s own hooks run after ours', () => {
   test('outside a Claude session the repo\'s own hook still runs', () => {
     const w = mkWorld({ claude: false });
     const ran = path.join(w.tmp, 'theirs-ran');
-    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), [`echo ran >> "${shellPath(ran)}"`]);
+    hookAt(path.join(w.repo, '.git', 'hooks', 'pre-commit'), appends(ran, 'ran'));
     stageUntested(w);
     landed(commit(w, ['-m', BAD_MSG]), 'the owner\'s terminal');
     expect(fs.readFileSync(ran, 'utf8'), 'their hook ran').toBe('ran\n');
@@ -510,7 +520,7 @@ describe('githooks: every other client-side hook passes through', () => {
     for (const [who, claude] of SESSIONS) {
       const w = mkWorld({ claude });
       const ran = path.join(w.tmp, 'pre-push-ran');
-      hookAt(path.join(w.repo, '.git', 'hooks', 'pre-push'), [`echo ran >> "${shellPath(ran)}"`]);
+      hookAt(path.join(w.repo, '.git', 'hooks', 'pre-push'), appends(ran, 'ran'));
       const bare = path.join(w.dir, 'remote.git');
       w.git('init', '-q', '--bare', bare);
       const res = attempt(w, 'git', ['push', '-q', bare, 'main']);
@@ -523,7 +533,8 @@ describe('githooks: every other client-side hook passes through', () => {
     for (const [who, claude] of SESSIONS) {
       const w = mkWorld({ claude });
       const ran = path.join(w.tmp, 'post-commit-ran');
-      hookAt(path.join(w.repo, '.git', 'hooks', 'post-commit'), [`git rev-parse HEAD >> "${shellPath(ran)}"`]);
+      hookAt(path.join(w.repo, '.git', 'hooks', 'post-commit'),
+        `require('fs').appendFileSync(${JSON.stringify(ran)}, require('child_process').execFileSync('git', ['rev-parse', 'HEAD']));`);
       w.write('README.md', '# fixture, noted\n');
       w.git('add', 'README.md');
       landed(commit(w, ['-m', 'docs: note']), `${who}: a docs commit`);
@@ -537,8 +548,8 @@ describe('githooks: every other client-side hook passes through', () => {
       const savedRan = path.join(w.tmp, 'saved-ran');
       const gitRan = path.join(w.tmp, 'git-hooks-ran');
       const saved = path.join(w.repo, '.husky', '_');
-      hookAt(path.join(saved, 'pre-push'), [`echo ran >> "${shellPath(savedRan)}"`]);
-      hookAt(path.join(w.repo, '.git', 'hooks', 'pre-push'), [`echo ran >> "${shellPath(gitRan)}"`]);
+      hookAt(path.join(saved, 'pre-push'), appends(savedRan, 'ran'));
+      hookAt(path.join(w.repo, '.git', 'hooks', 'pre-push'), appends(gitRan, 'ran'));
       w.git('config', '--local', 'workkit.hooksPath', saved);
       const bare = path.join(w.dir, 'remote.git');
       w.git('init', '-q', '--bare', bare);

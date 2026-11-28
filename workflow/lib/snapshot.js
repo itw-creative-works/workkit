@@ -31,7 +31,7 @@ const SIBLING_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234
 const TREE_COPY = path.join(__dirname, 'tree-copy.js');
 const COPY_SCRIPT = 'try { require(process.argv[1]).copyTree(process.argv[2], process.argv[2], process.argv[3]); } catch (err) { process.stderr.write(`${err.message}\\n`); process.exitCode = 1; }';
 
-// Off Windows the copy leads its own process group, so a signal ends it and every cp under it.
+// Off Windows the copy leads its own process group, so a signal ends it and every git under it.
 const OWN_GROUP = process.platform !== 'win32';
 
 // The command's own lines open with `snapshot:`; a step's error is its words

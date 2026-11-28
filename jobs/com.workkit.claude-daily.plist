@@ -8,8 +8,10 @@
 	<array>
 		<string>/usr/bin/env</string>
 		<string>node</string>
-		<string>{{KIT}}/jobs/morning.js</string>
+		<string>{{HOME}}/.claude/workkit/morning-task.js</string>
 	</array>
+	<key>AbandonProcessGroup</key>
+	<true/>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>

@@ -1,16 +1,13 @@
 #!/usr/bin/env node
-// .github/scripts/release-push.js <before>: whether the pushed commit at HEAD needs the suite, one
-// `run=true|false` line. A release stamp (false) changed since <before> only the root CHANGELOG.md
-// and manifests whose change is the version alone (isManifest, versionOnly), read from both commits
-// through git, so no ref moves. A <before> the shallow checkout lacks is fetched first.
+// .github/scripts/release-push.js: whether the event needs the suite, one `run=true|false` line
+// appended to the file GITHUB_OUTPUT names. An event other than a push runs (true). A push from
+// BEFORE to HEAD that is a release stamp (false) changed only the root CHANGELOG.md and manifests
+// whose change is the version alone (isManifest, versionOnly), read from both commits through git,
+// so no ref moves. A BEFORE the shallow checkout lacks is fetched first.
 
 const { gitIn, hasCommit, textAt } = require('../../workflow/lib/git');
-const { writeErr } = require('../../workflow/lib/say');
 const { isManifest, versionOnly } = require('../../hooks/mods/commit-gate/checks.js');
-
-const USAGE = 'usage: release-push.js <before>';
-// sysexits' EX_USAGE.
-const USAGE_CODE = 64;
+const { appendTo } = require('../../workflow/lib/step-value');
 
 /**
  * Whether the push from <before> to HEAD needs the suite.
@@ -32,15 +29,12 @@ const needsSuite = (root, before) => {
     && !(isManifest(file) && versionOnly(textAt(root, before, file), textAt(root, 'HEAD', file))));
 };
 
-const main = (argv) => {
-  if (argv.length < 1) {
-    writeErr(`${USAGE}\n`);
-    return USAGE_CODE;
-  }
-  process.stdout.write(`run=${needsSuite(process.cwd(), argv[0])}\n`);
-  return 0;
+const main = () => {
+  const { GITHUB_EVENT_NAME: event, BEFORE: before = '' } = process.env;
+  const run = event !== 'push' || needsSuite(process.cwd(), before);
+  return appendTo('release-push', 'GITHUB_OUTPUT', `run=${run}\n`);
 };
 
 if (require.main === module) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = main();
 }

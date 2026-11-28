@@ -13,7 +13,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { stubTool, joinPath } = require('../../lib/platform');
+const { stubToolJs, joinPath } = require('../../lib/platform');
 const { mods, textOf, runResult } = require('../../lib/mods-inputs');
 const { mkRepo: mkGitRepo, FIXTURE_ORIGIN, OPT_IN_SHAPES } = require('../../lib/git-repo');
 
@@ -215,7 +215,7 @@ const rewriteRoot = (branch) => {
   const root = mkTmp('cg-rewrite-root-');
   const bin = path.join(root, '.bin');
   fs.mkdirSync(bin);
-  stubTool(bin, 'gh', ['#!/usr/bin/env bash', 'exit 1']);
+  stubToolJs(bin, 'gh', 'process.exit(1);');
   const git = (...args) => expect(spawnSync('git', args, { cwd: root, encoding: 'utf8' }).status, `git ${args.join(' ')}`).toBe(0);
   git('init', '-q');
   if (branch !== null) git('symbolic-ref', 'refs/remotes/origin/HEAD', `refs/remotes/origin/${branch}`);

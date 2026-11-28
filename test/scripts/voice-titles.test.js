@@ -3,12 +3,9 @@
 // picks, and the two-space indent a heading sets for this process alone. Each
 // case speaks in a node of its own, so the streams and the env are real.
 
-const path = require('path');
 const { describe, test, expect } = require('../lib/harness');
-const { jsPath } = require('../lib/platform');
+const { jsPath, RUN_JS } = require('../lib/platform');
 const { speak, VOICE } = require('../lib/speak');
-
-const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 
 describe('voice: title, section and done', () => {
   test('their bytes with color off, each level line after a heading two spaces in, the closing line at the margin', () => {
@@ -48,7 +45,7 @@ describe('voice: title, section and done', () => {
     const child = `require(${jsPath(VOICE)}).ok('child');`;
     const res = speak([
       "v.title('Setup');",
-      `require(${jsPath(path.join(LIB, 'run.js'))}).spawnSync(process.execPath, ['-e', ${JSON.stringify(child)}], { stdio: 'inherit' });`,
+      `require(${jsPath(RUN_JS)}).spawnSync(process.execPath, ['-e', ${JSON.stringify(child)}], { stdio: 'inherit' });`,
       "v.ok('parent');",
     ]);
     expect(res.stdout).toBe('Setup\n✓ child\n  ✓ parent\n');

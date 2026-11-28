@@ -9,18 +9,38 @@ const vm = require('vm');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, seeded, run } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, gitPath, toolStem, nodeHomeEnv, linkTool, stubTool, joinPath,
+  SYSTEM_PATH, NODE_DIR, gitPath, toolStem, nodeHomeEnv, linkTool, stubToolJs, joinPath,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { copySettingsKit } = require('../../lib/settings-kit');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
 
-const writeStub = (file, lines) => {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  return stubTool(path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines]);
+/**
+ * A project's `omega` stand-in, in `<project>/node_modules/.bin`: it records
+ * each run to `mintLog` (its working folder, then each argument, for readArgv),
+ * then mints (`logo`: the tree a real mint leaves), mints nothing (`nothing`,
+ * exit 0) or fails as a mint over a broken SVG would (`fails`: says why, exits `failCode`).
+ * @param {string} project
+ * @param {string} mintLog
+ * @param {'logo'|'nothing'|'fails'} mint
+ * @param {{failCode?: number}} [opts]
+ * @returns {string} the stand-in that was written
+ */
+const omegaStub = (project, mintLog, mint, { failCode = 1 } = {}) => {
+  const toolBin = path.join(project, 'node_modules', '.bin');
+  fs.mkdirSync(toolBin, { recursive: true });
+  return stubToolJs(toolBin, 'omega', [
+    recordArgvJs(JSON.stringify(mintLog), '[process.cwd(), ...process.argv.slice(2)]'),
+    ...({
+      logo: ["require('fs').mkdirSync(require('path').join(process.cwd(), '.omega', 'assets', 'logo', 'brandmark'), { recursive: true });"],
+      nothing: [],
+      fails: ["process.stderr.write('omega: the brandmark could not be read\\n');", `process.exitCode = ${failCode};`],
+    })[mint],
+  ].join('\n'));
 };
 
 /**
@@ -33,10 +53,10 @@ const writeStub = (file, lines) => {
 const copyEngine = (kit) => {
   fs.mkdirSync(path.join(kit, 'tower'), { recursive: true });
   fs.copyFileSync(path.join(REPO_ROOT, 'package.json'), path.join(kit, 'package.json'));
-  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'workflow'), kit]);
-  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower')]);
+  fs.cpSync(path.join(REPO_ROOT, 'workflow'), path.join(kit, 'workflow'), { recursive: true });
+  fs.cpSync(path.join(REPO_ROOT, 'tower', 'api'), path.join(kit, 'tower', 'api'), { recursive: true });
   copySettingsKit(kit);
-  spawnSync('cp', ['-R', path.join(REPO_ROOT, 'hooks', 'mods'), path.join(kit, 'hooks')]);
+  fs.cpSync(path.join(REPO_ROOT, 'hooks', 'mods'), path.join(kit, 'hooks', 'mods'), { recursive: true });
 };
 
 /**
@@ -124,35 +144,39 @@ const mkWorld = ({
   const prefixLog = path.join(root, 'prefix.log');
   // Both stand-ins record the QUIET their environment carried, `unset` for none.
   const quietLog = path.join(root, 'quiet.log');
-  const recordQuiet = `printf '%s\\n' "\${QUIET-unset}" >> ${JSON.stringify(quietLog)}`;
-  writeStub(path.join(bin, 'npm'), [
+  const recordQuiet = `require('fs').appendFileSync(${JSON.stringify(quietLog)}, (process.env.QUIET ?? 'unset') + '\\n');`;
+  fs.mkdirSync(bin, { recursive: true });
+  stubToolJs(bin, 'npm', [
+    "const fs = require('fs');",
+    "const path = require('path');",
     recordQuiet,
-    `printf '%s' "\${OMEGA_PATH_PREFIX:-unset}" > ${JSON.stringify(prefixLog)}`,
+    `fs.writeFileSync(${JSON.stringify(prefixLog)}, process.env.OMEGA_PATH_PREFIX || 'unset');`,
     ...(buildFails
-      ? ['printf \'omega: build failed\\n\' >&2', 'exit 1']
+      ? ["process.stderr.write('omega: build failed\\n');", 'process.exitCode = 1;']
       : [
-        'prefix=""',
-        'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
-        'mkdir -p "$prefix/dist/assets"',
+        "const prefix = process.argv[2] === '--prefix' ? process.argv[3] : '';",
+        'if (prefix) {',
+        "  fs.mkdirSync(path.join(prefix, 'dist', 'assets'), { recursive: true });",
         // The output follows the source, so a test can change what the build
         // ships the way a real change would: by editing the app.
-        'cp "$prefix/src/index.html" "$prefix/dist/index.html"',
-        'printf \'body{}\\n\' > "$prefix/dist/assets/app.css"',
-        'exit 0',
+        "  const page = path.join(prefix, 'src', 'index.html');",
+        "  if (fs.existsSync(page)) fs.copyFileSync(page, path.join(prefix, 'dist', 'index.html'));",
+        "  fs.writeFileSync(path.join(prefix, 'dist', 'assets', 'app.css'), 'body{}\\n');",
+        '}',
       ]),
-  ]);
+  ].join('\n'));
 
   // The only thing this script asks `gh` for: disabling Pages when the site is
   // taken down. It records its argv and answers a 404 the way gh does for a repo
   // with no Pages, which the teardown reads as "already off", not a failure.
   const ghLog = path.join(root, 'gh-argv.log');
-  writeStub(path.join(bin, 'gh'), [
+  stubToolJs(bin, 'gh', [
     recordQuiet,
-    `printf '%s\\n' "$*" >> ${JSON.stringify(ghLog)}`,
+    recordArgvJs(JSON.stringify(ghLog)),
     ...(pages === 'none'
-      ? ['printf \'gh: Not Found (HTTP 404)\\n\' >&2', 'exit 1']
-      : ['exit 0']),
-  ]);
+      ? ["process.stderr.write('gh: Not Found (HTTP 404)\\n');", 'process.exitCode = 1;']
+      : []),
+  ].join('\n'));
 
   // The site options are the user's and live beside the roster: the clone
   // below is engine territory and carries nothing hand-written.
@@ -186,8 +210,9 @@ const mkWorld = ({
     // The mint leaves what a real one leaves: a minted logo, which the build
     // checks for before it builds.
     if (tooling) {
-      writeStub(path.join(tower, 'node_modules', '.bin', 'omega'),
-        ['mkdir -p "$PWD/.omega/assets/logo"', 'exit 0']);
+      const toolBin = path.join(tower, 'node_modules', '.bin');
+      fs.mkdirSync(toolBin, { recursive: true });
+      stubToolJs(toolBin, 'omega', "require('fs').mkdirSync(require('path').join(process.cwd(), '.omega', 'assets', 'logo'), { recursive: true });");
     }
   }
 
@@ -201,7 +226,7 @@ const mkWorld = ({
     // A tracked file of the project itself, for the cases about what the clone
     // carries rather than what the owner configured.
     source: path.join(tower, 'README.md'),
-    ghCalls: () => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8').trim().split('\n').filter(Boolean) : []),
+    ghCalls: () => readArgv(ghLog),
     buildPrefix: () => (fs.existsSync(prefixLog) ? fs.readFileSync(prefixLog, 'utf8') : null),
     quietSeen: () => (fs.existsSync(quietLog) ? fs.readFileSync(quietLog, 'utf8').trim().split('\n').filter(Boolean) : []),
     dist: path.join(tower, 'targets', 'web', 'dist'),
@@ -276,6 +301,6 @@ const readJson5 = (file) => JSON.parse(JSON.stringify(
 ));
 
 module.exports = {
-  REPO_ROOT, cleanup, git, writeStub, copyEngine, mkTowerRemote, mkWorld, binDirWithout, publishArgv, publish, setSite, fromPages,
+  REPO_ROOT, cleanup, git, omegaStub, copyEngine, mkTowerRemote, mkWorld, binDirWithout, publishArgv, publish, setSite, fromPages,
   onMain, readJson5,
 };

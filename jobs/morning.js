@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * jobs/morning.js: the morning, started by node from the 9am LaunchAgent and
- * the brief.yml workflow on the home repo, and by workflow/morning-task.js from
- * the 9am Windows task. A Node below the kit's floor gets one line and stops.
+ * jobs/morning.js: the morning, started by node from the brief.yml workflow on
+ * the home repo, and by the 9am job's starter, workflow/morning-task.js, on a
+ * Mac and on Windows. A Node below the kit's floor gets one line and stops.
  * Six steps in one order, each gated on what the environment it woke up in
  * can do: jobs/README.md tells which runs where.
  * Usage: node morning.js [--now | message]. None is the scheduled morning;

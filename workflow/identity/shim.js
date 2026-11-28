@@ -91,18 +91,22 @@ async function shimCall(argv, env) {
 }
 
 /**
- * A failure the call did not answer, as one line: a path nativePath could not
- * read is its stop line (unreadPathStop), any other names gh and the reason.
+ * A failure the call did not answer, as one line and 1 (errorStop): a path
+ * nativePath could not read is its stop line, any other names gh and the
+ * reason, as does a kit whose lib/platform will not load.
  * @param {*} err
  * @returns {number} 1
  */
 function failed(err) {
+  const lineOf = (e) => `gh: the workkit shim failed: ${e && e.message ? e.message : String(e)}`;
+  let platform;
   try {
-    return require('../lib/platform').unreadPathStop(err);
-  } catch (other) {
-    fs.writeSync(2, `gh: the workkit shim failed: ${err && err.message ? err.message : String(err)}\n`);
+    platform = require('../lib/platform');
+  } catch (unloaded) {
+    fs.writeSync(2, `${lineOf(err)}\n`);
     return 1;
   }
+  return platform.errorStop(err, lineOf);
 }
 
 /**

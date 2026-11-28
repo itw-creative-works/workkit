@@ -73,7 +73,40 @@ const plainColonLines = (text) => {
   return out;
 };
 
+// A YAML scalar's text: a quoted one unquoted (`''` in single quotes is one `'`), a plain one its comment stripped.
+const scalarText = (value) => {
+  if (value.startsWith("'")) return value.replace(/^'|'\s*(#.*)?$/g, '').replace(/''/g, "'");
+  if (value.startsWith('"')) return value.replace(/^"|"\s*(#.*)?$/g, '').replace(/\\(["\\])/g, '$1');
+  return value.replace(/\s+#.*$/, '');
+};
+
+// Every shell line of every `run:` value in a workflow's text, as `{ line, text }`,
+// `line` 1-based: a `|` or `>` body line by line, its `#` lines left out and a `\`
+// continuation joined to its line; an inline value as one line. A `run:` holding a map is `defaults.run`.
+const runLines = (text) => {
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  lines.forEach((raw, i) => {
+    const m = !isComment(raw) && raw.match(/^( *(?:- +)?)run:(?:\s+(.*))?$/);
+    if (!m) return;
+    const value = (m[2] || '').trim();
+    if (value === '' || value.startsWith('#')) return;
+    if (!/^[|>][-+0-9]*(\s+#.*)?$/.test(value)) {
+      out.push({ line: i + 1, text: scalarText(value).trim() });
+      return;
+    }
+    let open = null;
+    for (let j = i + 1; j < lines.length && (lines[j].trim() === '' || indentOf(lines[j]) > m[1].length); j++) {
+      const body = lines[j].trim();
+      if (open) open.text = `${open.text.slice(0, -1)} ${body}`;
+      else if (body !== '' && !body.startsWith('#')) out.push(open = { line: j + 1, text: body });
+      if (open && !open.text.endsWith('\\')) open = null;
+    }
+  });
+  return out;
+};
+
 module.exports = {
   indentOf, isComment, isContent, childrenOf, block, inlineValue, listValue, listItems, unquote,
-  plainColonLines,
+  plainColonLines, runLines,
 };

@@ -2,13 +2,13 @@
 // between the Mac and Windows (AGENTS.md § Tests). Every export is the identity
 // on macOS and Linux; a dotfiles repo carries the same seam, name for name.
 
-const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 // The kit's one Node home for starting a program, which this seam re-exports.
 const run = require('../../workflow/lib/run');
+// That file by absolute path, for a snippet a child runs to start its own children.
+const RUN_JS = require.resolve('../../workflow/lib/run');
 const { SPAWN_DEADLINE, mkTmp } = require('./harness');
 
 const IS_WINDOWS = process.platform === 'win32';
@@ -27,17 +27,18 @@ const findDir = (...names) => {
 
 // Git Bash keeps bash, sh and the POSIX toolset in one directory (/usr/bin,
 // which /bin is a mount of), so that single dir is the Mac's `/usr/bin:/bin`.
-const SYSTEM_DIR = IS_WINDOWS ? findDir('bash.exe', 'sed.exe') : null;
+// cygpath marks it: Git Bash alone ships one, and tmpMountRoot starts it there.
+const SYSTEM_DIR = IS_WINDOWS ? findDir('bash.exe', 'cygpath.exe') : null;
 
 /**
  * The system tools and nothing else: no Homebrew, no node manager, no stubs.
- * jq and git join from wherever the machine keeps them, one directory each:
- * the stub gh the suites write answers `--jq` and edits its fixtures through jq.
+ * git joins from wherever the machine keeps it, its one directory, since the
+ * suites' fixture repos and the kit's own steps run it.
  */
 const systemPath = () => {
   const dirs = IS_WINDOWS ? [SYSTEM_DIR] : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
   const entries = (process.env.PATH || '').split(path.delimiter);
-  for (const tool of IS_WINDOWS ? ['git.exe', 'jq.exe'] : ['git', 'jq']) {
+  for (const tool of IS_WINDOWS ? ['git.exe'] : ['git']) {
     if (dirs.some((d) => fs.existsSync(path.join(d, tool)))) continue;
     const dir = entries.find((d) => d && !dirs.includes(d) && fs.existsSync(path.join(d, tool)));
     if (dir) dirs.push(dir);
@@ -188,81 +189,11 @@ const toolStem = (file) => (IS_WINDOWS ? file.replace(/\.(exe|cmd|bat|com)$/i, '
 const runsProgram = (argv, name) => toolStem(path.basename(argv[0])) === name;
 
 /**
- * Compile the stub launcher's filled `source` into `exe`: a build beside it,
- * hard linked into place, so a parallel suite never runs a half-written file. A
- * build that fails throws with csc's output, never reading as no compiler.
- * @param {string} source - stub-launcher.cs with its bash filled in
- * @param {string} exe - the cache path, keyed by the source's digest
- */
-const buildLauncher = (source, exe) => {
-  fs.mkdirSync(path.dirname(exe), { recursive: true });
-  const stem = exe.replace(/\.exe$/, `.${process.pid}`);
-  const src = `${stem}.cs`;
-  const tmp = `${stem}.tmp.exe`;
-  try {
-    fs.writeFileSync(src, source);
-    const res = spawnSync(WINDOWS_CSC, ['-nologo', '-optimize', '-target:exe', `-out:${tmp}`, src],
-      { encoding: 'utf8', timeout: SPAWN_DEADLINE });
-    if (res.status !== 0) {
-      throw new Error(`test/lib/platform: csc could not build the stub launcher: ${res.error || ''}${res.stderr}${res.stdout}`);
-    }
-    try {
-      fs.linkSync(tmp, exe);
-    } catch (e) {
-      // EEXIST: another suite's build of the same digest took the cache first,
-      // and it is the same launcher.
-      if (e.code !== 'EEXIST') throw e;
-    }
-  } finally {
-    fs.rmSync(src, { force: true });
-    fs.rmSync(tmp, { force: true });
-  }
-};
-
-let launcher;
-
-/**
- * The `.exe` that starts the bash script of its own name beside it, built once
- * per machine from stub-launcher.cs under the OS temp folder. Read at call time.
- * @returns {string|null} its path on Windows with the compiler, else null
- */
-const stubLauncher = () => {
-  if (launcher) return launcher;
-  if (!onWindows() || !WINDOWS_CSC || !fs.existsSync(WINDOWS_CSC)) return null;
-  const source = fs.readFileSync(path.join(__dirname, 'stub-launcher.cs'), 'utf8').replace('{{BASH}}', () => BASH);
-  const digest = crypto.createHash('sha1').update(source).digest('hex').slice(0, 12);
-  const exe = path.join(os.tmpdir(), 'workkit-stub-launcher', `${digest}.exe`);
-  if (!fs.existsSync(exe)) buildLauncher(source, exe);
-  launcher = exe;
-  return exe;
-};
-
-/**
- * Write a PATH stub named `name` that runs `lines` as bash. A shell finds it on
- * both platforms. Node on Windows does not find the script alone (libuv appends
- * only `.com` and `.exe` to a bare name), so there it also gets the launcher as
- * `<name>.exe` where the compiler exists. The cases written before the launcher
- * still skip on every Windows (`NO_NODE_STUB`) until each is run there once, and
- * `homeEnv` keeps the real tool harmless.
- * @param {string} dir - the PATH directory, which must exist
- * @param {string} name - the tool being stubbed, with no extension
- * @param {string[]} lines - the stub's bash source, shebang included
- * @returns {string} the script that was written
- */
-const stubTool = (dir, name, lines) => {
-  const script = path.join(dir, name);
-  fs.writeFileSync(script, `${lines.join('\n')}\n`, { mode: 0o755 });
-  const exe = stubLauncher();
-  if (exe) fs.copyFileSync(exe, `${script}.exe`);
-  return script;
-};
-
-/**
  * Write a PATH stand-in named `name` that runs `source` as JavaScript under the
  * node running this suite, named on its `#!` line, or through sh when that
  * node's path holds a space. A shell finds it by bare name; a Node file finds it
  * through workflow/lib/run.js, whose `#!` rule starts it under node or Git Bash
- * on Windows, so no launcher is copied beside it.
+ * on Windows.
  * @param {string} dir - the PATH directory, which must exist
  * @param {string} name - the tool being stood in for, with no extension
  * @param {string} source - the stand-in's JavaScript, no `#!` line
@@ -279,14 +210,29 @@ const stubToolJs = (dir, name, source) => {
   return script;
 };
 
-/** The skip reason for the stubTool rule above, stated once. */
-const NO_NODE_STUB = 'this case still skips on Windows: its stub predates the launcher';
+// The signals a hand-over stand-in passes on to the program it started.
+const PASSED_ON = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 /**
- * The skip value of a case or suite resting on a stub Node finds by name.
- * @returns {false|string} false, or on Windows NO_NODE_STUB
+ * A stand-in's JavaScript, for stubToolJs, that hands every call to `file`: it
+ * starts `file` through run.js with `lead` and then the call's own arguments,
+ * the same three streams, passes a signal it gets on, and ends as the program
+ * did, its exit code, or its signal raised on itself.
+ * @param {string} file - the real program, by absolute path
+ * @param {string[]} [lead] - arguments ahead of the call's own
+ * @returns {string} the stand-in's source
  */
-const skipWithoutNodeStub = () => IS_WINDOWS && NO_NODE_STUB;
+const handOverJs = (file, lead = []) => [
+  `const child = require(${JSON.stringify(RUN_JS)}).spawn(${JSON.stringify(file)}, [...${JSON.stringify(lead)}, ...process.argv.slice(2)], { stdio: 'inherit' });`,
+  `const passedOn = ${JSON.stringify(PASSED_ON)};`,
+  'for (const signal of passedOn) process.on(signal, () => child.kill(signal));',
+  "child.on('error', (err) => { throw err; });",
+  "child.on('exit', (code, signal) => {",
+  '  if (signal === null) process.exit(code);',
+  '  for (const name of passedOn) process.removeAllListeners(name);',
+  '  process.kill(process.pid, signal);',
+  '});',
+].join('\n');
 
 /**
  * The skip value of a case a file mode must refuse something in: Windows
@@ -302,13 +248,6 @@ const skipWithoutModes = (what) => (IS_WINDOWS || process.getuid() === 0)
  * @returns {false|string} false, or on Windows the reason
  */
 const skipWithoutCaughtSignal = () => IS_WINDOWS && 'Windows ends a process with no signal it can catch';
-
-/**
- * The skip value of a case that hands a program an argument of bytes that are
- * not text, invalid UTF-8 say.
- * @returns {false|string} false, or on Windows the reason
- */
-const skipWithoutByteArgv = () => IS_WINDOWS && 'a Windows command line is UTF-16 text, so an argument cannot carry bytes that are not text';
 
 /**
  * The skip value of a case about the Homebrew folders a job puts on its PATH.
@@ -345,29 +284,27 @@ const skipWithoutFileLink = () => {
  * @param {string} dir - the PATH directory, which must exist
  * @returns {string|null} the stub that was written, or null on Windows
  */
-const cygpathStub = (dir) => (IS_WINDOWS ? null : stubTool(dir, 'cygpath', [
-  '#!/bin/bash',
-  'p="${@: -1}"',
-  'if [[ "$1" == -u ]]; then printf "%s\\n" "${p#[A-Za-z]:}"; exit 0; fi',
-  'case "$p" in',
-  '  /[a-zA-Z]/*) printf "%s:/%s\\n" "$(printf "%s" "${p:1:1}" | tr "a-z" "A-Z")" "${p:3}" ;;',
-  '  *) printf "C:%s\\n" "$p" ;;',
-  'esac',
-]));
+const cygpathStub = (dir) => (IS_WINDOWS ? null : stubToolJs(dir, 'cygpath', [
+  'const argv = process.argv.slice(2);',
+  "const p = argv[argv.length - 1] ?? '';",
+  "const drive = /^\\/([a-zA-Z])\\//.exec(p);",
+  "if (argv[0] === '-u') process.stdout.write(`${p.replace(/^[A-Za-z]:/, '')}\\n`);",
+  'else if (drive) process.stdout.write(`${drive[1].toUpperCase()}:/${p.slice(3)}\\n`);',
+  'else process.stdout.write(`C:${p}\\n`);',
+].join('\n')));
 
 /**
  * Make `real` reachable from `dir`: a symlink on macOS and Linux. On Windows a
- * program loads its libraries from beside itself, so an executable gets a shim
- * that runs it where it lives (its launcher with it, as `stubTool` writes one)
- * and anything else is hard linked or copied.
+ * program loads its libraries from beside itself, so an executable gets a
+ * stand-in that hands over to it where it lives (handOverJs), and anything
+ * else is hard linked or copied.
  * @param {string} dir - the mirror directory, which must exist
  * @param {string} real - the tool, by absolute path
  * @returns {string|null} what was created, or null when nothing could be
  */
 const linkTool = (dir, real) => {
   if (IS_WINDOWS && /\.(exe|com)$/i.test(real)) {
-    return stubTool(dir, path.basename(real).replace(/\.[^.]+$/, ''),
-      ['#!/bin/bash', `exec "${shellPath(real)}" "$@"`]);
+    return stubToolJs(dir, path.basename(real).replace(/\.[^.]+$/, ''), handOverJs(real));
   }
   const dest = path.join(dir, path.basename(real));
   try {
@@ -477,7 +414,7 @@ const nodeTempEnv = (dir, env = {}) => ({
 /**
  * A mirror of the system PATH with one command left out: the machine without
  * `gh`, built rather than assumed, since many ship it in /usr/bin. It holds the
- * system directories plus wherever this machine keeps jq, gh, git and node,
+ * system directories plus wherever this machine keeps gh, git and node,
  * first-wins like a PATH lookup. It throws unless `sh` is reachable (an empty
  * mirror would pass an absence case for the wrong reason) and `command` is gone.
  * @param {string} dir - where to build the mirror, which must exist
@@ -490,7 +427,7 @@ const basePathWithout = (dir, command) => {
   const dirs = SYSTEM_PATH.split(path.delimiter);
   // node's folder before gh's: a gh found in a shim folder (where the kit's own
   // gh goes) must not outrank the real npm beside node with its own npm shim.
-  for (const tool of ['jq', 'git', 'node', 'gh']) {
+  for (const tool of ['git', 'node', 'gh']) {
     const real = which(tool);
     if (real) dirs.push(path.dirname(real));
   }
@@ -666,10 +603,10 @@ const windowsTables = (processes, { onSignal = () => {}, onRead = () => {}, answ
 const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 
 module.exports = {
-  IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC,
-  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, toolStem, runsProgram, linkTool, stubTool, stubToolJs,
+  IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC, RUN_JS,
+  shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, toolStem, runsProgram, linkTool, stubToolJs, handOverJs,
   cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeTempEnv, basePathWithout,
-  NO_EXEC_BIT, NO_NODE_STUB, skipWithoutNodeStub, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutByteArgv, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
+  NO_EXEC_BIT, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.
   spawnSync: run.spawnSync,

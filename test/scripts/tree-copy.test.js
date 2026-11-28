@@ -1,18 +1,21 @@
-// Tests for workflow/lib/tree-copy.js, the Node home of a tree copy: copyTree with `only`, and
-// a link kept as a link where the copy is Node's own (Windows); fillCopy, each package's
-// node_modules a real folder of links to the live repo's entries, a workspace link pointed into
-// the copy; heldModules; worktreeAdd and worktreeRemove on a real scratch repo. The whole copy
-// a take makes (.git, every package's node_modules and the kit's own paths left out, cp's clone
-// flag) is test/hooks/workflow-snapshot.test.js's, through the snapshot command.
+// Tests for workflow/lib/tree-copy.js, the Node home of a tree copy: copyTree with `only`, a
+// copy equal to its source on every platform (links kept as links, modes and times kept, no
+// `cp` started); fillCopy, each package's node_modules a real folder of links to the live
+// repo's entries, a workspace link pointed into the copy; heldModules; worktreeAdd and
+// worktreeRemove on a real scratch repo. The whole copy a take makes (.git, every package's
+// node_modules and the kit's own paths left out) is test/hooks/workflow-snapshot.test.js's,
+// through the snapshot command.
 
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, mkTmp,
+  describe, test, expect, mkTmp, needs,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, homeEnv, samePath, skipWithoutFileLink,
+  IS_WINDOWS, homeEnv, samePath, skipWithoutFileLink, stubToolJs, pathWith, spawnSync,
 } = require('../lib/platform');
+const { recordArgvJs, readArgv } = require('../lib/argv-log');
+const { underEnv } = require('../lib/under-env');
 const { mkRepo } = require('../lib/git-repo');
 const { treeOf, takeSnapshot } = require('../lib/red-snapshot');
 
@@ -37,6 +40,14 @@ const realFolder = (p) => {
   const st = fs.lstatSync(p);
   return st.isDirectory() && !st.isSymbolicLink();
 };
+
+/** Each file under `root` by its path: its permission bits and its modified time. */
+const modesAndTimes = (root) => Object.fromEntries(Object.entries(treeOf(root))
+  .filter(([, kind]) => kind.startsWith('file '))
+  .map(([rel]) => {
+    const st = fs.lstatSync(path.join(root, rel));
+    return [rel, { mode: (st.mode & 0o777).toString(8), mtime: st.mtimeMs }];
+  }));
 
 /** What `fn` gave back, or what it threw or rejected with. */
 const outcome = async (fn) => {
@@ -76,7 +87,7 @@ describe('copyTree', () => {
   // Each link sorts before its target, so a copy that types a link by looking at
   // a target not yet copied would guess; a folder link typed as a file reads as nothing.
   test('a folder link and a file link come over as links with their targets, each read through to its target', {
-    skip: (!IS_WINDOWS && 'off Windows cp makes the copy and keeps links; the Windows copy is Node\'s own') || skipWithoutFileLink(),
+    skip: skipWithoutFileLink(),
   }, async () => {
     const src = mkTmp('tree-copy-links-');
     fs.mkdirSync(path.join(src, 'real'));
@@ -91,6 +102,49 @@ describe('copyTree', () => {
     }
     expect(fs.readdirSync(path.join(dest, 'a-dirlink')), 'the folder link lists its target\'s entry').toEqual(['a.txt']);
     expect(fs.readFileSync(path.join(dest, 'a-filelink'), 'utf8'), 'the file link reads its target').toBe('a\n');
+  });
+
+  // A read-only file and a group-run one differ from a fresh file's mode on every platform,
+  // and an old whole-second time from the moment of the copy.
+  test('a copied tree equals its source: a dangling link kept as a link, each file\'s mode and time kept, and no cp started', {
+    skip: skipWithoutFileLink(),
+  }, async () => {
+    const src = mkTmp('tree-copy-same-');
+    const old = new Date('2020-01-02T03:04:05Z');
+    fs.mkdirSync(path.join(src, 'bin'));
+    fs.writeFileSync(path.join(src, 'bin', 'run'), 'run\n');
+    fs.chmodSync(path.join(src, 'bin', 'run'), 0o750);
+    fs.writeFileSync(path.join(src, 'notes.txt'), 'kept\n');
+    fs.utimesSync(path.join(src, 'bin', 'run'), old, old);
+    fs.utimesSync(path.join(src, 'notes.txt'), old, old);
+    fs.chmodSync(path.join(src, 'notes.txt'), 0o444);
+    fs.symlinkSync(path.join('bin', 'run'), path.join(src, 'run-link'), 'file');
+    fs.symlinkSync('gone', path.join(src, 'dangling'), 'file');
+    const bin = mkTmp('tree-copy-bin-');
+    const log = path.join(bin, 'cp.log');
+    stubToolJs(bin, 'cp', recordArgvJs(JSON.stringify(log)));
+    const dest = emptyDest();
+    await underEnv({ PATH: pathWith(bin) }, () => copyTree(src, src, dest));
+    expect(readArgv(log), 'no cp was started').toEqual([]);
+    expect(fs.lstatSync(path.join(dest, 'dangling')).isSymbolicLink(), 'the dangling link is a link in the copy').toBe(true);
+    expect(treeOf(dest), 'every entry, link target and file text as the source has it').toEqual(treeOf(src));
+    expect(modesAndTimes(dest), 'every file\'s mode and modified time as the source has them').toEqual(modesAndTimes(src));
+  });
+
+  // A FIFO opened for its text waits for a writer that never comes, so a copy
+  // that read it would never end.
+  test('a FIFO in the source tree is left out, and the copy still ends with the rest', {
+    skip: (IS_WINDOWS && 'Windows has no FIFO in a folder') || needs('mkfifo'),
+  }, async () => {
+    const src = mkTmp('tree-copy-fifo-');
+    fs.writeFileSync(path.join(src, 'kept.txt'), 'kept\n');
+    const made = spawnSync('mkfifo', [path.join(src, 'pipe')], { encoding: 'utf8' });
+    expect(made.status, `mkfifo made the FIFO: ${made.stderr}`).toBe(0);
+    const dest = emptyDest();
+    await copyTree(src, src, dest);
+    // Names first: reading a copied FIFO's text would wait and never fail.
+    expect(fs.readdirSync(dest), 'the file copied, the FIFO not').toEqual(['kept.txt']);
+    expect(treeOf(dest), 'the copied file holds its text').toEqual({ 'kept.txt': 'file kept\n' });
   });
 });
 

@@ -8,8 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { mkTmp } = require('../../lib/harness');
-const { stubTool, homeEnv, joinPath } = require('../../lib/platform');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { stubToolJs, homeEnv, joinPath } = require('../../lib/platform');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const { mkOriginRepo, commitGh } = require('../../lib/git-repo');
 const { ioIn } = require('../../../workflow/lib/io');
 const { mods, textOf } = require('../../lib/mods-inputs');
@@ -38,21 +38,19 @@ const answerOf = (result, calls) => {
 // known name, an E404 otherwise, ENOTFOUND for every view when `npmFails`.
 const npmStub = (binDir, { npmTaken = [], npmKnown = [], npmFails = false }) => {
   const log = path.join(path.dirname(binDir), 'npm.log');
-  stubTool(binDir, 'npm', [
-    '#!/usr/bin/env bash',
-    recordArgv(log),
-    'if [[ "$1" == view ]]; then',
-    ...(npmFails ? ["  echo 'npm error code ENOTFOUND request to https://registry.npmjs.org failed' >&2", '  exit 1'] : []),
-    '  spec="${@: -2:1}"',
-    '  case "$spec" in',
-    ...npmTaken.map((t) => `    '${t}') echo '${t.slice(t.lastIndexOf('@') + 1)}'; exit 0 ;;`),
-    '  esac',
-    ...npmKnown.map((name) => `  [[ "\${spec%@*}" == '${name}' ]] && exit 0`),
-    "  echo 'npm error code E404' >&2",
-    '  exit 1',
-    'fi',
-    'exit 0',
-  ]);
+  stubToolJs(binDir, 'npm', [
+    recordArgvJs(JSON.stringify(log)),
+    'const argv = process.argv.slice(2);',
+    "if (argv[0] !== 'view') process.exit(0);",
+    ...(npmFails ? ["process.stderr.write('npm error code ENOTFOUND request to https://registry.npmjs.org failed\\n');", 'process.exit(1);'] : []),
+    "const spec = argv[argv.length - 2] ?? '';",
+    `const taken = ${JSON.stringify(npmTaken)}.find((t) => t === spec);`,
+    "if (taken !== undefined) { process.stdout.write(`${taken.slice(taken.lastIndexOf('@') + 1)}\\n`); process.exit(0); }",
+    "const name = spec.includes('@') ? spec.slice(0, spec.lastIndexOf('@')) : spec;",
+    `if (${JSON.stringify(npmKnown)}.includes(name)) process.exit(0);`,
+    "process.stderr.write('npm error code E404\\n');",
+    'process.exit(1);',
+  ].join('\n'));
   return () => readArgv(log).filter((argv) => argv[0] === 'view').map((argv) => argv[argv.length - 2]);
 };
 

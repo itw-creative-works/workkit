@@ -8,9 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { mkTmp, SPAWN_DEADLINE, until } = require('../../lib/harness');
-const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const {
-  SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, stubToolJs, pathWith, joinPath, spawnSync,
+  SYSTEM_PATH, NODE_DIR, homeEnv, stubToolJs, pathWith, joinPath, spawnSync,
 } = require('../../lib/platform');
 const { skipOnUsrLocalBin } = require('../../lib/job-path');
 const { mkKitRepo } = require('../../scripts/home/helpers');
@@ -88,21 +88,18 @@ const mkWorld = ({
   const claudeLog = path.join(root, 'claude-argv.log');
   const claudePathLog = path.join(root, 'claude-path.log');
   const notifLog = path.join(root, 'notifly-argv.log');
-  const claude = stubTool(bin, 'claude', [
-    '#!/usr/bin/env bash',
-    recordArgv(claudeLog),
-    `printf '%s\\n' "$PATH" >> ${JSON.stringify(claudePathLog)}`,
-    // %b, not %s: the escapes JSON.stringify wrote have to become real newlines,
-    // or the whole response is one line and "first line" proves nothing.
-    `printf '%b' ${JSON.stringify(response)}`,
-    `exit ${status}`,
-  ]);
+  const claude = stubToolJs(bin, 'claude', [
+    recordArgvJs(JSON.stringify(claudeLog)),
+    `require('fs').appendFileSync(${JSON.stringify(claudePathLog)}, \`\${process.env.PATH}\\n\`);`,
+    `process.stdout.write(${JSON.stringify(response)});`,
+    `process.exitCode = ${status};`,
+  ].join('\n'));
   // The app's own layout: the executable inside the bundle is Contents/MacOS/Notifly.
   const notifierDir = notifier === 'home-app'
     ? path.join(home, 'Applications', 'Notifly.app', 'Contents', 'MacOS') : bin;
   fs.mkdirSync(notifierDir, { recursive: true });
-  const notifly = notifier === 'none' ? null : stubTool(notifierDir, notifier === 'home-app' ? 'Notifly' : 'notifly',
-    ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
+  const notifly = notifier === 'none' ? null : stubToolJs(notifierDir, notifier === 'home-app' ? 'Notifly' : 'notifly',
+    recordArgvJs(JSON.stringify(notifLog)));
 
   // The `gh` the publish speaks to and the news cursor reads back through. Every
   // world gets it: a recorder that logged nothing proves a skip, and it keeps
@@ -114,30 +111,30 @@ const mkWorld = ({
   const nodes = posted.map(({ title, body = '' }) => JSON.stringify({
     title, createdAt: `${today()}T09:00:00Z`, body,
   })).join(',');
-  stubTool(localBin, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(ghLog),
-    ...(ghFails ? ['exit 1'] : []),
-    'all="$*"',
-    'case "$all" in',
+  // An empty list still prints its one newline, as printf with no arguments does.
+  const listing = secrets.map((n) => `${n}\tUpdated 2026-07-01\n`).join('') || '\n';
+  stubToolJs(localBin, 'gh', [
+    "const fs = require('fs');",
+    recordArgvJs(JSON.stringify(ghLog)),
+    ...(ghFails ? ['process.exit(1);'] : []),
+    'const argv = process.argv.slice(2);',
+    "const all = argv.join(' ');",
     // The cloud trigger. A refusal is the morning that gets no brief at all.
-    `  "workflow run"*) exit ${dispatch ? 0 : 1} ;;`,
+    `if (all.startsWith('workflow run')) process.exitCode = ${dispatch ? 0 : 1};`,
     // The secrets the runner needs, checked before the day is handed to it. Both
     // are required, so each world names exactly the ones it carries.
-    `  "secret list"*) ${secretsUnlistable ? 'exit 1' : `printf '%s\\n'${secrets.map((n) => ` "${n}\tUpdated 2026-07-01"`).join('')}`} ;;`,
-    '  *createDiscussion*)',
+    `else if (all.startsWith('secret list')) ${secretsUnlistable ? 'process.exitCode = 1;' : `process.stdout.write(${JSON.stringify(listing)});`}`,
+    "else if (all.includes('createDiscussion')) {",
     // The body travels as `@file` and the file goes away with the run, so
     // what was published is kept here for the assertions.
-    `    for a in "$@"; do case "$a" in body=@*) cat "\${a#body=@}" >> ${JSON.stringify(bodyLog)} ;; esac; done`,
-    `    printf '%s' '{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/private-home/discussions/9"}}}}' ;;`,
-    '  *discussionCategories*)',
-    `    printf '%s' '{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[{"id":"DIC_0","name":"General"}]}}}}' ;;`,
-    '  *"discussions(first"*)',
-    `    printf '%s' '{"data":{"repository":{"discussions":{"nodes":[${nodes}]}}}}' ;;`,
-    '  *) printf \'%s\' \'{}\' ;;',
-    'esac',
-    'exit 0',
-  ]);
+    `  for (const a of argv) if (a.startsWith('body=@')) fs.appendFileSync(${JSON.stringify(bodyLog)}, fs.readFileSync(a.slice('body=@'.length)));`,
+    `  process.stdout.write(${JSON.stringify('{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/private-home/discussions/9"}}}}')});`,
+    "} else if (all.includes('discussionCategories')) {",
+    `  process.stdout.write(${JSON.stringify('{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[{"id":"DIC_0","name":"General"}]}}}}')});`,
+    "} else if (all.includes('discussions(first')) {",
+    `  process.stdout.write(${JSON.stringify(`{"data":{"repository":{"discussions":{"nodes":[${nodes}]}}}}`)});`,
+    "} else process.stdout.write('{}');",
+  ].join('\n'));
 
   // The upstream CHANGELOG the news read is pointed at. `/dev/null` is the
   // module's silent-skip path: an empty body, no version, no line.

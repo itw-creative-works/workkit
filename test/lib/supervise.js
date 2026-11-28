@@ -17,7 +17,7 @@ const {
   endTree, until, expect, pidIn, alive, start, mkTmp,
 } = require('./harness');
 const {
-  IS_WINDOWS, jsPath, spawnSync,
+  IS_WINDOWS, jsPath, spawnSync, RUN_JS,
 } = require('./platform');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
@@ -159,7 +159,7 @@ const ridesSignals = (go, ended, code = 0) => [
  */
 const nodeBody = (pidFile, command, cleanup = '() => {}') => [process.execPath, '-e', [
   `const { bodyEnd } = require(${jsPath(path.join(LIB, 'body.js'))});`,
-  `const { spawn } = require(${jsPath(path.join(LIB, 'run.js'))});`,
+  `const { spawn } = require(${jsPath(RUN_JS)});`,
   `bodyEnd('probe', ${cleanup});`,
   writesPid(pidFile),
   `spawn(process.execPath, ['-e', ${JSON.stringify(command)}], { stdio: 'ignore' }).on('close', (code) => { process.exitCode = code; });`,

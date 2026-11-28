@@ -1,7 +1,9 @@
 // Tests for the scripts the kit's reusable ci.yml runs beside a repo's checkout:
-// .github/scripts/ci-node-version.js (the Node version), ci-hooks.js (the repo's
-// hooks.ciSetup and hooks.ciPostInstall commands) and ci-test.js (the suite).
-// Each runs for real under this Node, given a scratch repo, from a folder outside it.
+// .github/scripts/ci-env.js (the variables it appends to GITHUB_ENV), ci-node-version.js
+// (the Node version), ci-hooks.js (the repo's hooks.ciSetup and hooks.ciPostInstall
+// commands), ci-install.js (the dependency install) and ci-test.js (the suite).
+// Each runs for real under this Node, given a scratch repo, from a folder outside it
+// or, as the workflow starts the install, from the repo's root.
 
 const fs = require('fs');
 const path = require('path');
@@ -9,10 +11,10 @@ const {
   describe, test, expect, mkTmp, WORKKIT_DIR, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  NODE_DIR, shellPath, stubTool, joinPath, homeEnv, basePathWithout, spawnSync, skipWithoutNodeStub,
+  NODE_DIR, RUN_JS, shellPath, stubToolJs, joinPath, homeEnv, basePathWithout, spawnSync,
 } = require('../lib/platform');
 const {
-  recordArgv, readArgv, eqArgv, fmtCalls,
+  recordArgvJs, readArgv, eqArgv, fmtCalls,
 } = require('../lib/argv-log');
 const { enabledWith } = require('../lib/ship-world');
 
@@ -48,10 +50,12 @@ const basePath = () => {
   return mirror;
 };
 
-/** `node .github/scripts/<name> <args>` (default the repo) from a folder outside the repo; `all` is stdout then stderr. */
-const run = (w, name, { PATH = basePath(), env = {}, args = [w.repo] } = {}) => {
+/** `node .github/scripts/<name> <args>` (default the repo) from `cwd` (default a folder outside the repo); `all` is stdout then stderr. */
+const run = (w, name, {
+  PATH = basePath(), env = {}, args = [w.repo], cwd = w.away,
+} = {}) => {
   const res = spawnSync(process.execPath, [path.join(SCRIPTS, name), ...args], {
-    cwd: w.away,
+    cwd,
     env: homeEnv(w.home, { ...env, PATH, NPM_CONFIG_UPDATE_NOTIFIER: 'false' }),
     encoding: 'utf8',
     timeout: SPAWN_DEADLINE,
@@ -78,39 +82,49 @@ const withTestScript = (code = 0) => ({
   })}\n`,
 });
 
-// A stub, not the real xvfb-run: a Mac has none, and this is the only way to see
-// the wrapper there. It records its argv, then runs the command after `-a`.
+// A stand-in, not the real xvfb-run: a Mac has none, and this is the only way to see
+// the wrapper there. It records its argv, then runs the command after `-a`, passing its exit on.
 const xvfbStub = (w) => {
-  const log = path.join(w.dir, 'xvfb-argv.txt');
-  stubTool(w.bin, 'xvfb-run', [
-    '#!/usr/bin/env bash',
-    `printf '%s\\n' "$@" > "${shellPath(log)}"`,
-    '[ "$1" = "-a" ] && shift',
-    'exec "$@"',
-  ]);
-  return { PATH: joinPath(w.bin, basePath()), argv: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : null) };
+  const log = path.join(w.dir, 'xvfb-argv.log');
+  stubToolJs(w.bin, 'xvfb-run', [
+    recordArgvJs(JSON.stringify(log)),
+    'const args = process.argv.slice(2);',
+    "if (args[0] === '-a') args.shift();",
+    `const res = require(${JSON.stringify(RUN_JS)}).spawnSync(args[0], args.slice(1), { stdio: 'inherit' });`,
+    'process.exit(res.status === null ? 1 : res.status);',
+  ].join('\n'));
+  return { PATH: joinPath(w.bin, basePath()), calls: () => readArgv(log) };
 };
 
-describe('ci-node-version.js: which Node the job sets up', () => {
+/** A scratch file holding `seed`, as the runner's GITHUB_ENV or GITHUB_OUTPUT file; `read()` is its text. */
+const runnerFile = (w, name, seed = 'seed=1\n') => {
+  const file = path.join(w.dir, name);
+  fs.writeFileSync(file, seed);
+  return { file, seed, read: () => fs.readFileSync(file, 'utf8') };
+};
+
+/** ci-node-version.js over `files`: the version line it appended after the output file's seed, or its failure. */
+const nodeVersion = (files) => {
+  const w = mkWorld(files);
+  const output = runnerFile(w, 'github-output');
+  const res = run(w, 'ci-node-version.js', { env: { GITHUB_OUTPUT: output.file } });
+  expect(res.code, `${JSON.stringify(files)}: exit 0, got: ${res.all}`).toBe(0);
+  const text = output.read();
+  expect(text.startsWith(output.seed), `${JSON.stringify(files)}: appended after the file's own lines, got: ${JSON.stringify(text)}`).toBeTruthy();
+  return text.slice(output.seed.length);
+};
+
+describe('ci-node-version.js: which Node the job sets up, appended to GITHUB_OUTPUT', () => {
   test('a root .nvmrc is the version, over a root .node-version', () => {
-    const w = mkWorld({ '.nvmrc': '20.11.1\n', '.node-version': '18.19.0\n' });
-    const { code, out, err } = run(w, 'ci-node-version.js');
-    expect(code, `exit 0, stderr: ${err}`).toBe(0);
-    expect(out.trim(), 'the .nvmrc value').toBe('20.11.1');
+    expect(nodeVersion({ '.nvmrc': '20.11.1\n', '.node-version': '18.19.0\n' }), 'the .nvmrc value').toBe('version=20.11.1\n');
   });
 
   test('only a root .node-version: its value', () => {
-    const w = mkWorld({ '.node-version': '22.3.0\n' });
-    const { code, out, err } = run(w, 'ci-node-version.js');
-    expect(code, `exit 0, stderr: ${err}`).toBe(0);
-    expect(out.trim(), 'the .node-version value').toBe('22.3.0');
+    expect(nodeVersion({ '.node-version': '22.3.0\n' }), 'the .node-version value').toBe('version=22.3.0\n');
   });
 
   test('neither at the root, a targets/web/.nvmrc below it: lts/*', () => {
-    const w = mkWorld({ 'targets/web/.nvmrc': '20\n' });
-    const { code, out, err } = run(w, 'ci-node-version.js');
-    expect(code, `exit 0, stderr: ${err}`).toBe(0);
-    expect(out.trim(), 'no folder below the root is read').toBe('lts/*');
+    expect(nodeVersion({ 'targets/web/.nvmrc': '20\n' }), 'no folder below the root is read').toBe('version=lts/*\n');
   });
 
   test('nvm\'s spellings: vN/* and vN are N; lts/*, node and a plain version pass through', () => {
@@ -119,9 +133,7 @@ describe('ci-node-version.js: which Node the job sets up', () => {
       ['22.3.0\n', '22.3.0'], ['lts/iron\n', 'lts/iron'],
     ];
     for (const [body, want] of forms) {
-      const { code, out } = run(mkWorld({ '.nvmrc': body }), 'ci-node-version.js');
-      expect(code, `${JSON.stringify(body)}: exit 0`).toBe(0);
-      expect(out, `${JSON.stringify(body)}: the version setup-node takes`).toBe(`${want}\n`);
+      expect(nodeVersion({ '.nvmrc': body }), `${JSON.stringify(body)}: the version setup-node takes`).toBe(`version=${want}\n`);
     }
   });
 
@@ -131,9 +143,95 @@ describe('ci-node-version.js: which Node the job sets up', () => {
       ['\r\n#only\r\n18\r\n', '18'],
     ];
     for (const [body, want] of forms) {
-      expect(run(mkWorld({ '.nvmrc': body }), 'ci-node-version.js').out, `${JSON.stringify(body)}`).toBe(`${want}\n`);
+      expect(nodeVersion({ '.nvmrc': body }), `${JSON.stringify(body)}`).toBe(`version=${want}\n`);
     }
-    expect(run(mkWorld({ '.nvmrc': '# nothing\n\n', '.node-version': '21\n' }), 'ci-node-version.js').out, 'an .nvmrc of comments alone falls through to .node-version').toBe('21\n');
+    expect(nodeVersion({ '.nvmrc': '# nothing\n\n', '.node-version': '21\n' }), 'an .nvmrc of comments alone falls through to .node-version').toBe('version=21\n');
+  });
+
+  test('GITHUB_OUTPUT unset: the line naming it, exit 1', () => {
+    const { code, all } = run(mkWorld({ '.nvmrc': '22\n' }), 'ci-node-version.js');
+    expect(code, `exit 1, got: ${all}`).toBe(1);
+    expect(all.split(/\r?\n/).includes('ci-node-version: GITHUB_OUTPUT names no file'), `the line, got: ${all}`).toBeTruthy();
+  });
+});
+
+describe('ci-env.js: the variables a job\'s later steps read, appended to GITHUB_ENV', () => {
+  test('node appends exactly WORKKIT_NODE=<the Node that ran it>, never the first node on PATH', () => {
+    const w = mkWorld();
+    stubToolJs(w.bin, 'node', 'process.exit(0);');
+    const env = runnerFile(w, 'github-env');
+    const { code, all } = run(w, 'ci-env.js', { args: ['node'], PATH: joinPath(w.bin, basePath()), env: { GITHUB_ENV: env.file } });
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(env.read(), 'the seed, then the one line').toBe(`${env.seed}WORKKIT_NODE=${process.execPath}\n`);
+  });
+
+  test('temp appends TEMP= and TMPDIR=, each the runner\'s temp folder', () => {
+    const w = mkWorld();
+    const runnerTemp = path.join(w.dir, 'runner temp');
+    const env = runnerFile(w, 'github-env');
+    const { code, all } = run(w, 'ci-env.js', { args: ['temp'], env: { GITHUB_ENV: env.file, RUNNER_TEMP: runnerTemp } });
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(env.read(), 'the seed, then the two lines').toBe(`${env.seed}TEMP=${runnerTemp}\nTMPDIR=${runnerTemp}\n`);
+  });
+
+  test('another word, no word, GITHUB_ENV unset or temp with no RUNNER_TEMP: exit 1, nothing appended', () => {
+    const w = mkWorld();
+    const shapes = {
+      'another word': { args: ['path'], set: true, line: true },
+      'no word': { args: [], set: true, line: true },
+      'GITHUB_ENV unset': { args: ['node'], set: false, says: 'ci-env: GITHUB_ENV names no file' },
+      'temp with no RUNNER_TEMP': { args: ['temp'], set: true },
+    };
+    for (const [name, { args, set, line, says }] of Object.entries(shapes)) {
+      const env = runnerFile(w, 'github-env');
+      const { code, all } = run(w, 'ci-env.js', { args, env: set ? { GITHUB_ENV: env.file } : {} });
+      expect(code, `${name}: exit 1, got: ${all}`).toBe(1);
+      expect(env.read(), `${name}: nothing appended`).toBe(env.seed);
+      if (line) expect(all.trim().split(/\r?\n/).length, `${name}: one usage line, got: ${all}`).toBe(1);
+      if (says) expect(all.split(/\r?\n/).includes(says), `${name}: the line, got: ${all}`).toBeTruthy();
+    }
+  });
+});
+
+// An npm ahead of the real one on PATH, recording each start and exiting `exit`.
+const npmStandIn = (w, exit = 0) => {
+  const log = path.join(w.dir, 'npm.argv');
+  stubToolJs(w.bin, 'npm', `${recordArgvJs(JSON.stringify(log))}\nprocess.exit(${exit});`);
+  return { PATH: joinPath(w.bin, basePath()), calls: () => readArgv(log) };
+};
+
+/** ci-install.js started as the workflow starts it, from the repo's root, with no argument. */
+const install = (w, npm) => run(w, 'ci-install.js', { PATH: npm.PATH, args: [], cwd: w.repo });
+
+describe('ci-install.js: the install the lockfile picks, on PATH\'s npm', () => {
+  test('a lockfile starts npm ci, a package.json alone npm install, each once', () => {
+    const shapes = [
+      ['a lockfile', { 'package.json': '{}\n', 'package-lock.json': '{}\n' }, ['ci', '--no-audit', '--no-fund']],
+      ['a package.json alone', { 'package.json': '{}\n' }, ['install', '--no-audit', '--no-fund']],
+    ];
+    for (const [name, files, want] of shapes) {
+      const w = mkWorld(files);
+      const npm = npmStandIn(w);
+      const { code, all } = install(w, npm);
+      expect(code, `${name}: exit 0, got: ${all}`).toBe(0);
+      expect(fmtCalls(npm.calls()), `${name}: npm's one start`).toBe(fmtCalls([want]));
+    }
+  });
+
+  test('neither file: npm never starts, exit 0', () => {
+    const w = mkWorld();
+    const npm = npmStandIn(w);
+    const { code, all } = install(w, npm);
+    expect(code, `exit 0, got: ${all}`).toBe(0);
+    expect(fmtCalls(npm.calls()), 'no npm start').toBe('');
+  });
+
+  test('npm\'s failure is the script\'s exit code', () => {
+    const w = mkWorld({ 'package.json': '{}\n', 'package-lock.json': '{}\n' });
+    const npm = npmStandIn(w, 7);
+    const { code, all } = install(w, npm);
+    expect(code, `npm's exit 7 passed on, got: ${all}`).toBe(7);
+    expect(npm.calls().length, 'npm started once').toBe(1);
   });
 });
 
@@ -294,7 +392,7 @@ describe('ci-test.js: the suite', () => {
     const xvfb = xvfbStub(w);
     const { code, all } = run(w, 'ci-test.js', { PATH: xvfb.PATH });
     expect(code, `exit 0, got: ${all}`).toBe(0);
-    expect(xvfb.argv(), 'the wrapper got -a npm test').toBe('-a\nnpm\ntest\n');
+    expect(fmtCalls(xvfb.calls()), 'the wrapper got -a npm test').toBe(fmtCalls([['-a', 'npm', 'test']]));
     expect(w.read('ran.txt'), 'and the repo\'s test script ran').toBe('ran');
   });
 
@@ -320,7 +418,7 @@ describe('ci-test.js: the suite', () => {
       expect(code, `${name}: exit 0, got: ${all}`).toBe(0);
       expect(all.trim().split('\n').length, `${name}: one line, got: ${all}`).toBe(1);
       expect(all.trim() !== '', `${name}: a line, not silence`).toBeTruthy();
-      expect(xvfb.argv(), `${name}: xvfb-run never called`).toBe(null);
+      expect(fmtCalls(xvfb.calls()), `${name}: xvfb-run never called`).toBe('');
     }
   });
 });
@@ -329,12 +427,12 @@ describe('ci-test.js: the suite', () => {
 // scripts run under this suite's Node, so a command that reached it instead leaves no record.
 const pathTools = (w) => {
   const logs = { node: path.join(w.dir, 'node.argv'), npm: path.join(w.dir, 'npm.argv') };
-  for (const [name, log] of Object.entries(logs)) stubTool(w.bin, name, ['#!/bin/bash', recordArgv(log), 'exit 0']);
+  for (const [name, log] of Object.entries(logs)) stubToolJs(w.bin, name, recordArgvJs(JSON.stringify(log)));
   return { PATH: joinPath(w.bin, basePath()), calls: (name) => readArgv(logs[name]) };
 };
 
 describe('ci-hooks.js and ci-test.js: the repo runs on PATH\'s Node, not the one that started the script', () => {
-  test('a ciSetup or ciPostInstall command starting node reaches PATH\'s node', { skip: skipWithoutNodeStub() }, () => {
+  test('a ciSetup or ciPostInstall command starting node reaches PATH\'s node', () => {
     for (const event of ['ciSetup', 'ciPostInstall']) {
       const w = mkWorld({ [SETTINGS]: enabledWith({ [event]: [`node --probe ${event}`] }) });
       const tools = pathTools(w);
@@ -345,7 +443,7 @@ describe('ci-hooks.js and ci-test.js: the repo runs on PATH\'s Node, not the one
     }
   });
 
-  test('the suite runs as PATH\'s npm test', { skip: skipWithoutNodeStub() }, () => {
+  test('the suite runs as PATH\'s npm test', () => {
     const w = mkWorld(withTestScript());
     const tools = pathTools(w);
     const { code, all } = run(w, 'ci-test.js', { PATH: tools.PATH });

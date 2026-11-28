@@ -9,10 +9,10 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { WORKKIT_DIR: W, mkTmp, run } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, shellPath, gitPath, stubTool, basePathWithout,
-  joinPath,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, gitPath, basePathWithout, joinPath,
 } = require('../../lib/platform');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { readArgv } = require('../../lib/argv-log');
+const { writeGh } = require('../../lib/gh-stub');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
@@ -74,7 +74,7 @@ const makeRepo = ({ remote = true, settings = OPT_IN_SHAPES.current } = {}) => {
 
 // PATH shim: records each `gh` invocation with its argument boundaries (a label
 // description has spaces, so an unquoted expansion must not pass) and answers
-// `label list` and `issue list` from fixtures.
+// `label list` and `issue list` from fixtures, through answerStandards.
 const makeGhStub = ({
   labels = [], issues = [], authed = true, createFails = false, editFails = false,
   // `labeled` maps a label name to the issues carrying it, so
@@ -83,8 +83,8 @@ const makeGhStub = ({
   labeled = {}, labelQueryFails = false,
   // Branch protection: 'absent' (404s, PUT accepted), 'present' (GET answers
   // `protectionBody`, empty by default), 'denied' (404s, PUT rejected: the
-  // free-plan private repo); `patchFails` refuses the required-checks PATCH;
-  // `remoteChecks`: the default branch's checks.yml, a 404 when null.
+  // free-plan private repo), 'unreadable' (GET rate-limited, PUT accepted).
+  // `patchFails` refuses the PATCH; `remoteChecks`: checks.yml, null a 404.
   protection = 'absent', protectionBody = '', patchFails = false, remoteChecks = null,
   // `repoRead`: answer the repo's REST read, `defaultBranch` its branch; off by
   // default, so a case meets the "cannot resolve" bail-out unless it opts in.
@@ -92,91 +92,76 @@ const makeGhStub = ({
 } = {}) => {
   const dir = mkTmp('wf-std-');
   const logFile = path.join(dir, 'gh.log');
-  const labelsFile = path.join(dir, 'labels.json');
-  const issuesFile = path.join(dir, 'issues.json');
-  fs.writeFileSync(labelsFile, JSON.stringify(labels));
-  fs.writeFileSync(issuesFile, JSON.stringify(issues));
-  fs.writeFileSync(path.join(dir, 'protection.json'), protectionBody);
-  if (remoteChecks !== null) fs.writeFileSync(path.join(dir, 'remote-checks.yml'), remoteChecks);
-  // An entry is a bare number, or a whole object when the fields matter (the
-  // stale-claim sweep reads updatedAt and assignees). Fixtures are numbered and
-  // the stub looks its label up: a label's colon would open an NTFS alternate
-  // data stream on Windows, so a label name is never a file name.
-  const labelFixtures = Object.entries(labeled).map(([label, numbers], i) => {
-    const file = path.join(dir, `issues-${i}.json`);
-    fs.writeFileSync(
-      file,
-      JSON.stringify(numbers.map((n) => (typeof n === 'object' ? n : { number: n }))),
-    );
-    return { label, file };
-  });
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
-  stubTool(binDir, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(logFile),
-    'if [[ "$1 $2" == "auth status" ]]; then',
-    `  exit ${authed ? 0 : 1}`,
-    'fi',
-    'if [[ "$1 $2" == "label list" ]]; then',
-    `  cat "${labelsFile}"`,
-    '  exit 0',
-    'fi',
-    'if [[ "$1 $2" == "issue list" ]]; then',
+  writeGh(binDir, {
+    log: logFile,
+    answer: { module: __filename, name: 'answerStandards' },
+    config: {
+      labels, issues, authed, createFails, editFails, labelQueryFails,
+      // An entry is a bare number, or a whole object when the fields matter (the
+      // stale-claim sweep reads updatedAt and assignees).
+      labeled: Object.fromEntries(Object.entries(labeled).map(([label, numbers]) => [
+        label, numbers.map((n) => (typeof n === 'object' ? n : { number: n })),
+      ])),
+      protection, protectionBody, patchFails, remoteChecks, repoRead, defaultBranch,
+      putBody: path.join(dir, 'put-body.json'),
+      patchBody: path.join(dir, 'patch-body.json'),
+    },
+  });
+  return { binDir, logFile, dir };
+};
+
+/**
+ * makeGhStub's answer to one call, its options as `config`: what it prints, and
+ * its exit code. A PUT or PATCH body is read off stdin into its file.
+ * @returns {number} the exit code
+ */
+const answerStandards = (config, argv) => {
+  const command = `${argv[0]} ${argv[1]}`;
+  const says = (text) => process.stdout.write(text);
+  const fails = (line) => { process.stderr.write(`${line}\n`); return 1; };
+  if (command === 'auth status') return config.authed ? 0 : 1;
+  if (command === 'label list') { says(JSON.stringify(config.labels)); return 0; }
+  if (command === 'issue list') {
     // A --label query asks who carries one label; without it this is the
     // whole-repo report, which gets the full fixture.
-    '  want=""; prev=""',
-    '  for a in "$@"; do [[ "$prev" == "--label" ]] && want="$a"; prev="$a"; done',
-    '  if [[ -z "$want" ]]; then',
-    `    cat "${issuesFile}"`,
-    '    exit 0',
-    '  fi',
-    ...(labelQueryFails ? ['  exit 1'] : []),
-    '  case "$want" in',
-    ...labelFixtures.map(({ label, file }) => `    '${label}') cat "${shellPath(file)}" ;;`),
-    '    *) echo "[]" ;;',
-    '  esac',
-    '  exit 0',
-    'fi',
-    'if [[ "$1 $2" == "issue edit" ]]; then',
-    '  exit 0',
-    'fi',
-    'if [[ "$1 $2" == "label create" ]]; then',
-    `  exit ${createFails ? 1 : 0}`,
-    'fi',
-    'if [[ "$1 $2" == "label edit" ]]; then',
-    `  exit ${editFails ? 1 : 0}`,
-    'fi',
-    'if [[ "$1" == "api" && ( "$2" == "repos/{owner}/{repo}" || "$2" == "repos/stub/repo" ) ]]; then',
-    ...(repoRead ? [
-      '  if [[ "$*" == *.full_name* ]]; then echo "stub/repo"; fi',
-      `  if [[ "$*" == *.default_branch* ]]; then echo "${defaultBranch}"; fi`,
-    ] : []),
-    '  exit 0',
-    'fi',
-    'if [[ "$1" == "api" && "$2" == *"/contents/.github/workflows/checks.yml"* ]]; then',
-    ...(remoteChecks === null
-      ? ['  echo "gh: Not Found (HTTP 404)" >&2', '  exit 1']
-      : [`  cat "${shellPath(path.join(dir, 'remote-checks.yml'))}"`, '  exit 0']),
-    'fi',
-    'if [[ "$1" == "api" ]]; then',
-    '  if [[ "$*" == *"-X PUT"* ]]; then',
-    `    cat > "${path.join(dir, 'put-body.json')}"`,
-    `    exit ${protection === 'denied' ? 1 : 0}`,
-    '  fi',
-    '  if [[ "$*" == *"-X PATCH"* ]]; then',
-    `    cat > "${path.join(dir, 'patch-body.json')}"`,
-    `    exit ${patchFails ? 1 : 0}`,
-    '  fi',
-    // A real 404 answers with this text; the heal must see it to distinguish
-    // "unprotected" from a transient failure it must not write over.
-    ...(protection === 'present'
-      ? [`  cat "${shellPath(path.join(dir, 'protection.json'))}"`, '  exit 0']
-      : ['  echo "gh: Branch not protected (HTTP 404)" >&2', '  exit 1']),
-    'fi',
-    'exit 0',
-  ]);
-  return { binDir, logFile, dir };
+    const at = argv.lastIndexOf('--label');
+    if (at === -1 || at === argv.length - 1) { says(JSON.stringify(config.issues)); return 0; }
+    if (config.labelQueryFails) return 1;
+    const want = argv[at + 1];
+    says(Object.hasOwn(config.labeled, want) ? JSON.stringify(config.labeled[want]) : '[]\n');
+    return 0;
+  }
+  if (command === 'issue edit') return 0;
+  if (command === 'label create') return config.createFails ? 1 : 0;
+  if (command === 'label edit') return config.editFails ? 1 : 0;
+  if (argv[0] !== 'api') return 0;
+  const asks = (field) => argv.some((arg) => arg.includes(field));
+  if (argv[1] === 'repos/{owner}/{repo}' || argv[1] === 'repos/stub/repo') {
+    if (config.repoRead && asks('.full_name')) says('stub/repo\n');
+    if (config.repoRead && asks('.default_branch')) says(`${config.defaultBranch}\n`);
+    return 0;
+  }
+  if (argv[1].includes('/contents/.github/workflows/checks.yml')) {
+    if (config.remoteChecks === null) return fails('gh: Not Found (HTTP 404)');
+    says(config.remoteChecks);
+    return 0;
+  }
+  const sends = (method) => argv.some((arg, i) => arg === '-X' && argv[i + 1] === method);
+  if (sends('PUT')) {
+    fs.writeFileSync(config.putBody, fs.readFileSync(0));
+    return config.protection === 'denied' ? 1 : 0;
+  }
+  if (sends('PATCH')) {
+    fs.writeFileSync(config.patchBody, fs.readFileSync(0));
+    return config.patchFails ? 1 : 0;
+  }
+  if (config.protection === 'present') { says(config.protectionBody); return 0; }
+  // A real 404 answers with this text; the heal must see it to distinguish
+  // "unprotected" from a transient failure it must not write over.
+  if (config.protection === 'unreadable') return fails('gh: API rate limit exceeded');
+  return fails('gh: Branch not protected (HTTP 404)');
 };
 
 const readFile = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
@@ -286,6 +271,6 @@ const copyKitSiblings = (root) => {
 
 module.exports = {
   copyKitSiblings, WORKFLOW_DIR, SCRIPT, MANIFEST, IGNORE_GLOB, IGNORE_GLOB_ALL, IGNORE_NEGATION,
-  desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, readFile, ghCalls,
+  desiredLabels, cleanup, rosterOf, winRosterKey, makeRepo, makeGhStub, answerStandards, readFile, ghCalls,
   binDirWithout, seededEnv, heal, runScript, claudeHomeWith, linkedClaudeHome,
 };

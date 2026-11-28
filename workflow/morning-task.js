@@ -1,10 +1,23 @@
 /**
- * workflow/morning-task.js: the program the 9am Task Scheduler task starts. It
- * starts jobs/morning.js of the real kit as a hidden process of its own, its
- * output appended to the job's log, and ends at once. It lives in workflow/
- * because the engine address names this folder (jobs/README.md).
+ * workflow/morning-task.js: the program both machines' 9am jobs start, the
+ * launchd agent and the Task Scheduler task. It starts jobs/morning.js of the
+ * real kit as a hidden process of its own, its output appended to the job's
+ * log, and ends at once; a Node below the kit's floor gets one line and stops.
+ * It lives in workflow/ because the engine address names this folder
+ * (jobs/README.md).
  * Usage: node ~/.claude/workkit/morning-task.js
  */
+
+// Ahead of every other require, so no newer file loads below the floor; in
+// syntax an older Node still reads, so the line prints there.
+if (require.main === module) {
+  const floor = require('./lib/floor');
+  const below = floor.floorLine(process.version, floor.floorOf());
+  if (below) {
+    require('fs').writeSync(2, `${below}\n`);
+    process.exit(1);
+  }
+}
 
 const fs = require('fs');
 const path = require('path');

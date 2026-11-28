@@ -8,7 +8,7 @@ const path = require('path');
 const nodeTest = require('node:test');
 const { stripVTControlCharacters } = require('util');
 const door = require('./lib/harness');
-const { IS_WINDOWS, NO_EXEC_BIT, stubTool } = require('./lib/platform');
+const { IS_WINDOWS, NO_EXEC_BIT, stubToolJs } = require('./lib/platform');
 const { aloneEnv } = require('./lib/alone-env');
 const { listsOf, marksOf } = require('./lib/run-lists');
 
@@ -289,8 +289,8 @@ describe('harness: needs', () => {
 
   test('a file of the tool\'s name on PATH without the executable bit is not the command', { skip: IS_WINDOWS && NO_EXEC_BIT }, () => {
     const bin = mkTmp('needs-bin-');
-    stubTool(bin, 'wk-tool-a', ['#!/bin/sh', 'exit 0']);
-    fs.writeFileSync(path.join(bin, 'hugo'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
+    stubToolJs(bin, 'wk-tool-a', 'process.exit(0);');
+    fs.chmodSync(stubToolJs(bin, 'hugo', 'process.exit(0);'), 0o644);
     expect(needsIn(sessionEnv('true', { PATH: bin }), ['wk-tool-a', 'hugo']), 'the stub found, the file without the bit missing').toEqual({ returned: 'needs hugo' });
   });
 

@@ -124,7 +124,7 @@ async function keepsMemory(io, cwd) {
 // prompt recorded; no record, no lines.
 async function turnLines(io, env, cwd, turn) {
   if (!turn) return [];
-  return journalTail(io.run, await journalFor(io.top, cwd, userDirOf(env)), turn.bytes);
+  return journalTail(io, await journalFor(io.top, cwd, userDirOf(env)), turn.bytes);
 }
 
 /**
@@ -171,9 +171,6 @@ export async function changeTrackerGather(io, env, e, turn) {
     cwd, findings: findingsOn(settings), board, surfaces: `${inboxText ?? ''}${captureText ?? ''}`,
   });
   if (!verdict) return null;
-  if (memory) {
-    if ((await io.stat(`${cwd}/.workkit/agents`))?.kind !== 'dir') await io.run(['mkdir', '-p', `${cwd}/.workkit/agents`]);
-    await io.write(`${cwd}/${STATE_FILE}`, `${verdict.fingerprint}\n`);
-  }
+  if (memory) await io.write(`${cwd}/${STATE_FILE}`, `${verdict.fingerprint}\n`);
   return { block: `${verdict.block}\n\n${verdict.context}` };
 }

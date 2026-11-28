@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
+const { stubToolJs } = require('../../lib/platform');
 const { cleanup, mkWorld, publish, fromPages, onMain } = require('./helpers');
 
 describe('workflow/publish: the source side', () => {
@@ -23,16 +24,10 @@ describe('workflow/publish: the source side', () => {
     const world = mkWorld();
     // A remote that refuses every ref but the published branch: the source
     // push cannot land, the pages push can.
-    const hook = path.join(world.bare, 'hooks', 'pre-receive');
-    fs.writeFileSync(hook, [
-      '#!/bin/sh',
-      'while read old new ref; do',
-      '  [ "$ref" = "refs/heads/gh-pages" ] || exit 1',
-      'done',
-      'exit 0',
-      '',
+    stubToolJs(path.join(world.bare, 'hooks'), 'pre-receive', [
+      "const refs = require('fs').readFileSync(0, 'utf8').split('\\n').filter(Boolean).map((line) => line.split(' ')[2]);",
+      "process.exitCode = refs.every((ref) => ref === 'refs/heads/gh-pages') ? 0 : 1;",
     ].join('\n'));
-    fs.chmodSync(hook, 0o755);
     fs.writeFileSync(world.source, '# the tower, edited\n');
     const { code, out, err } = publish(world);
     expect(code, `the failed push surfaces as the exit code: ${out}${err}`).toBe(1);

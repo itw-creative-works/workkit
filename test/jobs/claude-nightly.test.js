@@ -9,10 +9,10 @@ const {
   describe, test, expect, mkTmp, run, start, until, alive,
 } = require('../lib/harness');
 const {
-  recordArgv, recordArgvJs, readArgv, fmtCalls,
+  recordArgvJs, readArgv, fmtCalls,
 } = require('../lib/argv-log');
 const {
-  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, homeEnv, shellPath, stubTool, stubToolJs, joinPath, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
+  IS_WINDOWS, SYSTEM_PATH, NODE_DIR, homeEnv, shellPath, stubToolJs, joinPath, skipWithoutCaughtSignal, skipWithoutHomebrewPath,
 } = require('../lib/platform');
 const { skipOnUsrLocalBin } = require('../lib/job-path');
 
@@ -92,13 +92,13 @@ const mkWorld = ({
   // Node, so the folder and the PATH it records are spelled as the job's node spells them.
   stubToolJs(bin, 'claude', [
     "const fs = require('fs');",
-    recordArgvJs(JSON.stringify(claudeLog), 'process.argv.slice(2)'),
+    recordArgvJs(JSON.stringify(claudeLog)),
     `fs.appendFileSync(${JSON.stringify(claudeCwdLog)}, \`\${process.cwd()}\\n\`);`,
     `fs.appendFileSync(${JSON.stringify(claudePathLog)}, \`\${process.env.PATH}\\n\`);`,
     ...(claudeStderr ? [`process.stderr.write(${JSON.stringify(claudeStderr)});`] : []),
     `process.stdout.write(${JSON.stringify(summary)});`,
   ].join('\n'));
-  const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
+  const notifly = stubToolJs(bin, 'notifly', recordArgvJs(JSON.stringify(notifLog)));
 
   // The three shapes the delivery asks for, told apart by the query text;
   // anything else answers empty so an unexpected call fails. The shim is always
@@ -111,25 +111,23 @@ const mkWorld = ({
     const priorNodes = posted.map((title) => JSON.stringify({
       title, createdAt: `${today()}T09:00:00Z`, body: 'already published',
     })).join(',');
-    stubTool(bin, 'gh', [
-      '#!/usr/bin/env bash',
-      recordArgv(ghLog),
-      ...(ghFails ? ['exit 1'] : []),
-      'all="$*"',
-      'case "$all" in',
-      '  *createDiscussion*)',
+    stubToolJs(bin, 'gh', [
+      "const fs = require('fs');",
+      recordArgvJs(JSON.stringify(ghLog)),
+      ...(ghFails ? ['process.exit(1);'] : []),
+      'const argv = process.argv.slice(2);',
+      "const all = argv.join(' ');",
+      "if (all.includes('createDiscussion')) {",
       // The body travels as `@file`, and the file goes away with the run, so
       // what was actually published is kept here for the assertions.
-      `    for a in "$@"; do case "$a" in body=@*) cat "\${a#body=@}" >> ${JSON.stringify(bodyLog)} ;; esac; done`,
-      `    printf '%s' '{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/private-home/discussions/7"}}}}' ;;`,
-      '  *discussionCategories*)',
-      `    printf '%s' '{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[${nodes}]}}}}' ;;`,
-      '  *"discussions(first"*)',
-      `    printf '%s' '{"data":{"repository":{"discussions":{"nodes":[${priorNodes}]}}}}' ;;`,
-      '  *) printf \'%s\' \'{}\' ;;',
-      'esac',
-      'exit 0',
-    ]);
+      `  for (const a of argv) if (a.startsWith('body=@')) fs.appendFileSync(${JSON.stringify(bodyLog)}, fs.readFileSync(a.slice('body=@'.length)));`,
+      `  process.stdout.write(${JSON.stringify('{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/private-home/discussions/7"}}}}')});`,
+      "} else if (all.includes('discussionCategories')) {",
+      `  process.stdout.write(${JSON.stringify(`{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[${nodes}]}}}}`)});`,
+      "} else if (all.includes('discussions(first')) {",
+      `  process.stdout.write(${JSON.stringify(`{"data":{"repository":{"discussions":{"nodes":[${priorNodes}]}}}}`)});`,
+      "} else process.stdout.write('{}');",
+    ].join('\n'));
   }
 
   return {

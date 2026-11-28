@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
-// The kit's workflows: each parses and holds no plain value with a colon; checks.yml's
-// triggers and jobs; ci.yml's Scope step gates the rest and is checks.yml's but name and path;
-// the hook lists around the install; the 60 minute limits; every kit script runs on the
-// kit's own Node ("$WORKKIT_NODE"), the repo's install and suite on the one it names.
+// The kit's workflows: each parses, holds no plain value with a colon and no `run:` line
+// but a program start; checks.yml's triggers and jobs; ci.yml's Scope step gates the rest
+// and is checks.yml's but name and path; the hook lists around the install; the 60 minute
+// limits; every kit script runs on the kit's own Node ("$WORKKIT_NODE"), the repo on its own.
 
 const path = require('path');
 const fs = require('fs');
@@ -11,14 +11,18 @@ const {
   describe, test, expect, run, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  indentOf, isContent, block, inlineValue, listValue, listItems, unquote, plainColonLines,
+  indentOf, isContent, block, inlineValue, listValue, listItems, unquote, plainColonLines, runLines,
 } = require('../lib/workflow-yaml');
 
 const ROOT = path.join(__dirname, '..', '..');
-const WORKFLOW = path.join(ROOT, '.github', 'workflows', 'checks.yml');
-const CI = path.join(ROOT, '.github', 'workflows', 'ci.yml');
+const KIT_WORKFLOWS = path.join(ROOT, '.github', 'workflows');
+const WORKFLOW = path.join(KIT_WORKFLOWS, 'checks.yml');
+const CI = path.join(KIT_WORKFLOWS, 'ci.yml');
 // The kit's own workflows and the workflow templates it installs into a repo.
-const WORKFLOW_DIRS = [path.join(ROOT, '.github', 'workflows'), path.join(ROOT, 'workflow', 'templates', 'github-workflows')];
+const WORKFLOW_DIRS = [KIT_WORKFLOWS, path.join(ROOT, 'workflow', 'templates', 'github-workflows')];
+// Every workflow and template, as `{ rel, file }`, `rel` from the kit's root with `/`.
+const workflowFiles = () => WORKFLOW_DIRS.flatMap((dir) => fs.readdirSync(dir).filter((f) => f.endsWith('.yml'))
+  .map((f) => ({ rel: path.relative(ROOT, path.join(dir, f)).split(path.sep).join('/'), file: path.join(dir, f) })));
 
 // Ruby's YAML is the real parser the kit reads with, so no dependency ships for it.
 const HAS_RUBY = spawnSync('ruby', ['-ryaml', '-e', ''], { timeout: SPAWN_DEADLINE }).status === 0;
@@ -84,24 +88,69 @@ const stepJobs = (file) => {
     .filter((j) => j.stepsBlock).map(({ job, stepsBlock }) => ({ job, steps: parseSteps(stepsBlock) }));
 };
 
-// Each kit script a step's run starts: its file name under .github/scripts/, and
-// whether the word right before it is "$WORKKIT_NODE".
-const kitCalls = (step) => [...(step.run || '').matchAll(/"?[^\s"]*\.github\/scripts\/([^\s"]+)"?/g)]
-  .map((m) => ({ script: m[1], node: step.run.slice(0, m.index).trimEnd().endsWith('"$WORKKIT_NODE"') }));
+// Each kit script a step's run starts, as `{ script, starter, arg }`: its file name
+// under .github/scripts/, the word before it and the word after it (null when none).
+const kitCalls = (step) => (step.run || '').split('\n').flatMap((line) => {
+  const words = line.trim().split(/\s+/).map(unquote);
+  return words.flatMap((word, at) => {
+    const m = word.match(/(?:^|\/)\.github\/scripts\/([^/]+)$/);
+    return m ? [{ script: m[1], starter: words[at - 1] || null, arg: words[at + 1] || null }] : [];
+  });
+});
 
 const isSetupNode = (step) => (step.uses || '').startsWith('actions/setup-node@');
 // The kit's own Node: setup-node at lts/*.
 const isKitNode = (step) => isSetupNode(step) && step.nodeVersion === 'lts/*';
-// A step whose run line appends a WORKKIT_NODE value to $GITHUB_ENV, the file later steps read their variables from.
-const setsKitNode = (step) => (step.run || '').split('\n')
-  .some((line) => line.includes('WORKKIT_NODE=') && /> *"?\$\{?GITHUB_ENV\b/.test(line));
+// The step that writes WORKKIT_NODE for the later steps: `ci-env.js node`.
+const setsKitNode = (step) => kitCalls(step).some((c) => c.script === 'ci-env.js' && c.arg === 'node');
+// A kit script started on the kit's Node by the variable ci-env.js wrote.
+const onKitNode = (call) => call.starter === '$WORKKIT_NODE';
 
 // The word a step's run line passes .github/scripts/ci-hooks.js, or null when it runs no such script.
-const hooksEvent = (step) => {
-  const words = (step.run || '').split(/\s+/).map(unquote);
-  const at = words.findIndex((w) => w.endsWith('/.github/scripts/ci-hooks.js'));
-  return at === -1 ? null : words[at + 1] || null;
+const hooksEvent = (step) => (kitCalls(step).find((c) => c.script === 'ci-hooks.js') || { arg: null }).arg;
+
+// Shell words that make a line logic rather than a program start.
+const SHELL_WORDS = new Set(['if', 'then', 'elif', 'else', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac',
+  'select', 'function', '{', '}', '(', ')', '!', '[[']);
+
+// What makes one shell line more than one program start, each named: a shell word
+// first, and outside quotes a `$(`, a backtick, a pipe, `&&`, `>>` or `;` (`$(` and
+// the backtick inside double quotes too). A `${{ }}` expression is GitHub's, gone before the shell reads.
+const lineFaults = (text) => {
+  const line = text.replace(/\$\{\{.*?\}\}/g, 'X');
+  const faults = [];
+  const first = line.split(/\s+/)[0];
+  if (SHELL_WORDS.has(first)) faults.push(`\`${first}\``);
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    const two = line.slice(i, i + 2);
+    if (quote === "'") {
+      if (c === "'") quote = null;
+    } else if (two === '$(' || c === '`') {
+      faults.push(`\`${two === '$(' ? '$(' : '`'}\``);
+    } else if (quote === '"') {
+      if (c === '\\') i++;
+      else if (c === '"') quote = null;
+    } else if (c === '\\') {
+      i++;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+    } else if (two === '&&' || two === '>>' || two === '||') {
+      faults.push(`\`${two}\``);
+      i++;
+    } else if (c === '|' || c === ';') {
+      faults.push(c === '|' ? 'a pipe' : '`;`');
+    }
+  }
+  return [...new Set(faults)];
 };
+
+// Each `run:` line of `text` that is more than one program start, as `<rel>:<line>: <faults>: <text>`.
+const runFaults = (rel, text) => runLines(text).flatMap(({ line, text: shell }) => {
+  const faults = lineFaults(shell);
+  return faults.length ? [`${rel}:${line}: ${faults.join(', ')}: ${shell}`] : [];
+});
 
 // Every content line of the step with id scope in `jobs.<job>.steps` of `file`,
 // trimmed, its `name:` left out and the release-push.js argument as one fixed
@@ -133,6 +182,40 @@ describe('workflows: a plain value holding a colon', () => {
       }
     }
     expect(named.join('\n'), 'lines YAML refuses').toBe('');
+  });
+});
+
+describe('workflows: a run: line starts one program', () => {
+  test('names the file and each line holding an if, a $(, a pipe, a >>, an && or an ||, and only those', () => {
+    const text = [
+      'jobs:', //                                                              1
+      '  a:', //                                                               2
+      '    defaults:', //                                                      3
+      '      run:', //                                                         4
+      '        shell: bash', //                                                5
+      '    steps:', //                                                         6
+      '      - run: |', //                                                     7
+      '          if [ -f package-lock.json ]; then', //                        8
+      '            npm ci', //                                                 9
+      '          fi', //                                                       10
+      '      - run: echo "v=$(node x.js)" >> "$GITHUB_OUTPUT"', //             11
+      '      - run: npm test | tee log', //                                    12
+      '      - name: fine', //                                                 13
+      '        run: |', //                                                     14
+      '          git config --global user.name "checks"', //                   15
+      '          node "$RUNNER_TEMP/kit/.github/scripts/ci-env.js" node', //   16
+      "          echo 'a | b && c >> d'", //                                   17
+      '      - run: test "$A" = x || exit 1', //                               18
+      "      - run: 'node a.js && node b.js'", //                              19
+      '      - run: exit 1', //                                                20
+    ].join('\n');
+    const named = runFaults('x.yml', text).map((f) => f.replace(/: .*$/, ''));
+    expect(named.join(' '), 'the lines named').toBe('x.yml:8 x.yml:10 x.yml:11 x.yml:12 x.yml:18 x.yml:19');
+  });
+
+  test('every kit workflow and installed workflow template holds program starts only', () => {
+    const faults = workflowFiles().flatMap(({ rel, file }) => runFaults(rel, fs.readFileSync(file, 'utf8')));
+    expect(faults.join('\n'), 'run: lines holding shell logic').toBe('');
   });
 });
 
@@ -228,7 +311,7 @@ describe('ci.yml: a repo\'s two hook lists', () => {
 describe('ci.yml and checks.yml: the kit\'s scripts on the kit\'s Node, the repo on its own', () => {
   test('in each job that starts a kit script, setup-node at lts/* comes before the first one', () => {
     const seen = [];
-    for (const file of [CI, WORKFLOW]) {
+    for (const file of fs.readdirSync(KIT_WORKFLOWS).filter((f) => f.endsWith('.yml')).map((f) => path.join(KIT_WORKFLOWS, f))) {
       for (const { job, steps } of stepJobs(file)) {
         const first = steps.findIndex((s) => kitCalls(s).length > 0);
         if (first === -1) continue;
@@ -238,39 +321,50 @@ describe('ci.yml and checks.yml: the kit\'s scripts on the kit\'s Node, the repo
         expect(kitNode >= 0 && kitNode < first, `${where}: the lts/* setup (step ${kitNode}) before the first kit script (step ${first})`).toBeTruthy();
       }
     }
-    for (const where of ['ci.yml jobs.test', 'checks.yml jobs.scope']) {
+    for (const where of ['ci.yml jobs.test', 'checks.yml jobs.scope', 'changelog.yml jobs.changelog']) {
       expect(seen.includes(where), `${where} starts a kit script, got: ${JSON.stringify(seen)}`).toBeTruthy();
     }
   });
 
-  test('ci.yml jobs.test and checks.yml jobs.scope write WORKKIT_NODE after the lts/* setup, before the first kit script and any later setup-node', () => {
+  test('ci.yml jobs.test and checks.yml jobs.scope write WORKKIT_NODE after the lts/* setup, before the first script on it and any later setup-node', () => {
     for (const [file, job] of [[CI, 'test'], [WORKFLOW, 'scope']]) {
       const steps = parseSteps(jobKey(file)(job, 'steps'));
       const kitNode = steps.findIndex(isKitNode);
       const sets = steps.findIndex(setsKitNode);
-      const first = steps.findIndex((s) => kitCalls(s).length > 0);
+      const first = steps.findIndex((s) => kitCalls(s).some(onKitNode));
       const nextSetup = steps.findIndex((s, i) => i > kitNode && isSetupNode(s));
-      const at = `the lts/* setup ${kitNode}, the WORKKIT_NODE step ${sets}, the first kit script ${first}, the next setup-node ${nextSetup}`;
+      const at = `the lts/* setup ${kitNode}, the ci-env.js node step ${sets}, the first script on "$WORKKIT_NODE" ${first}, the next setup-node ${nextSetup}`;
       expect(kitNode >= 0 && sets > kitNode && first > sets && (nextSetup === -1 || nextSetup > sets),
         `${path.basename(file)} jobs.${job}: ${at}`).toBeTruthy();
     }
   });
 
-  test('every kit script is started as "$WORKKIT_NODE" <kit>/.github/scripts/<name>.js, and ci.yml starts all four', () => {
+  test('ci-env.js node starts on PATH\'s node, every kit script after it on "$WORKKIT_NODE", and ci.yml starts all six', () => {
     const wrong = [];
-    for (const file of [CI, WORKFLOW]) {
-      for (const { job, steps } of stepJobs(file)) {
-        for (const step of steps) {
-          for (const call of kitCalls(step)) {
-            if (!call.node || !call.script.endsWith('.js')) wrong.push(`${path.basename(file)} jobs.${job} ${step.name || step.id}: ${call.script}`);
-          }
+    for (const [file, job] of [[CI, 'test'], [WORKFLOW, 'scope']]) {
+      const steps = parseSteps(jobKey(file)(job, 'steps'));
+      const sets = steps.findIndex(setsKitNode);
+      steps.forEach((step, at) => {
+        for (const call of kitCalls(step)) {
+          const writes = call.script === 'ci-env.js' && call.arg === 'node';
+          const fine = writes ? call.starter === 'node' && at === sets : at > sets && onKitNode(call);
+          if (!fine || !call.script.endsWith('.js')) wrong.push(`${path.basename(file)} jobs.${job} ${step.name || step.id}: ${call.starter} ${call.script}`);
         }
-      }
+      });
     }
-    expect(wrong.join('\n'), 'kit scripts not started with "$WORKKIT_NODE" or not a .js file').toBe('');
+    expect(wrong.join('\n'), 'kit scripts started on the wrong Node, or not a .js file').toBe('');
     const scripts = [...new Set(ciSteps().flatMap((s) => kitCalls(s).map((c) => c.script)))].sort();
     expect(JSON.stringify(scripts), 'the kit scripts ci.yml starts')
-      .toBe(JSON.stringify(['ci-hooks.js', 'ci-node-version.js', 'ci-test.js', 'release-push.js']));
+      .toBe(JSON.stringify(['ci-env.js', 'ci-hooks.js', 'ci-install.js', 'ci-node-version.js', 'ci-test.js', 'release-push.js']));
+  });
+
+  test('checks.yml jobs.scope checks out on every event, before the scope step starts release-push.js from the workspace', () => {
+    const steps = parseSteps(jobKey(WORKFLOW)('scope', 'steps'));
+    const scope = steps.findIndex((s) => s.id === 'scope');
+    const checkout = steps.findIndex((s) => (s.uses || '').startsWith('actions/checkout@'));
+    expect(scope >= 0 && kitCalls(steps[scope]).some((c) => c.script === 'release-push.js'), `the scope step starts release-push.js, got: ${JSON.stringify(steps)}`).toBeTruthy();
+    expect(checkout >= 0 && checkout < scope, `a checkout (step ${checkout}) before the scope step (step ${scope})`).toBeTruthy();
+    expect(steps[checkout].if, 'the checkout\'s if: a pull request reaches the scope step too, and its script must be there').toBe(null);
   });
 
   test('ci.yml sets up the Node ci-node-version.js names after the kit\'s, before the repo\'s hooks and install', () => {

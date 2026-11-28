@@ -1,7 +1,8 @@
-// Tests for .github/scripts/release-push.js, the CI scope job's answer, started with
-// Node at the root of a scratch repo with no jq on PATH. A push that only stamps a
-// release prints `run=false`; anything else, or a before it cannot read, `run=true`.
-// A before the shallow CI clone lacks is fetched from origin first.
+// Tests for .github/scripts/release-push.js, the CI scope step's answer, started with
+// Node at the root of a scratch repo with no jq on PATH, the event and its before
+// handed in GITHUB_EVENT_NAME and BEFORE. It appends to the file GITHUB_OUTPUT names:
+// a push that only stamps a release `run=false`; any other event, any other push, or a
+// before it cannot read, `run=true`. A before the shallow CI clone lacks is fetched from origin first.
 
 const fs = require('fs');
 const path = require('path');
@@ -75,23 +76,37 @@ const noJqPath = () => {
   return noJq;
 };
 
-/** The script at `w`'s root, started with this Node, given `args`. */
-const run = (w, args) => {
-  const res = spawnSync(process.execPath, [SCRIPT, ...args], {
-    cwd: w.repo, env: { ...w.env, PATH: noJqPath() }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+// A line already in the step's output file, which the answer is appended after.
+const SEEDED = 'seed=1\n';
+
+/**
+ * The script started with this Node in `cwd` (default `w`'s root), as the scope step
+ * starts it: no argument, `event` and `before` in the env, GITHUB_OUTPUT a file holding SEEDED.
+ * `output` is that file's text after the run.
+ */
+const run = (w, { event = 'push', before, cwd = w.repo } = {}) => {
+  const file = path.join(mkTmp('release-push-out-'), 'github-output');
+  fs.writeFileSync(file, SEEDED);
+  const res = spawnSync(process.execPath, [SCRIPT], {
+    cwd,
+    env: {
+      ...w.env, PATH: noJqPath(), GITHUB_EVENT_NAME: event, BEFORE: before, GITHUB_OUTPUT: file,
+    },
+    encoding: 'utf8',
+    timeout: SPAWN_DEADLINE,
   });
-  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '' };
+  return { code: res.status, stderr: res.stderr || '', output: fs.readFileSync(file, 'utf8') };
 };
 
 /**
- * The script's answer for `before` is exactly `line`, exit 0, and the checkout
- * ends as it began: HEAD at the pushed commit and nothing staged or changed.
+ * The script's answer for a push from `before` is exactly `line`, exit 0, and the
+ * checkout ends as it began: HEAD at the pushed commit and nothing staged or changed.
  */
 const answers = (w, before, line, what) => {
   const pushed = w.git('rev-parse', 'HEAD').trim();
-  const out = run(w, [before]);
+  const out = run(w, { before });
   expect(out.code, `${what}: exit code (stderr: ${out.stderr})`).toBe(0);
-  expect(out.stdout, `${what}: the printed line`).toBe(`${line}\n`);
+  expect(out.output, `${what}: the line appended to GITHUB_OUTPUT`).toBe(`${SEEDED}${line}\n`);
   expect(w.git('rev-parse', 'HEAD').trim(), `${what}: HEAD is back at the pushed commit`).toBe(pushed);
   expect(w.git('status', '--porcelain'), `${what}: the tree is clean`).toBe('');
 };
@@ -106,6 +121,19 @@ const STAMP = {
 
 // A sha no world holds.
 const UNKNOWN = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+
+describe('release-push.js: an event that is not a push runs', () => {
+  test('a pull request appends run=true, over a before a push would skip, and in a folder with no checkout', () => {
+    const { w, before } = mkWorld();
+    push(w, STAMP);
+    const bare = mkTmp('release-push-bare-');
+    for (const [event, cwd, what] of [['pull_request', w.repo, 'a stamp\'s before'], ['pull_request', bare, 'no checkout'], ['workflow_dispatch', w.repo, 'a dispatch']]) {
+      const out = run(w, { event, before, cwd });
+      expect(out.code, `${what}: exit code (stderr: ${out.stderr})`).toBe(0);
+      expect(out.output, `${what}: the line appended to GITHUB_OUTPUT`).toBe(`${SEEDED}run=true\n`);
+    }
+  });
+});
 
 describe('release-push.js: a release stamp skips', () => {
   test('a push changing CHANGELOG.md and the version in plugin.json, package.json and the lockfile prints run=false', () => {
@@ -241,21 +269,25 @@ describe('release-push.js: the checkout is left as it was', () => {
     for (const [what, world, given, line] of paths) {
       dirty(world.w);
       const was = checkoutState(world.w);
-      const out = run(world.w, [given === null ? world.before : given]);
+      const out = run(world.w, { before: given === null ? world.before : given });
       expect(out.code, `${what}: exit code (stderr: ${out.stderr})`).toBe(0);
-      expect(out.stdout, `${what}: the printed line`).toBe(`${line}\n`);
+      expect(out.output, `${what}: the line appended to GITHUB_OUTPUT`).toBe(`${SEEDED}${line}\n`);
       const now = checkoutState(world.w);
       for (const key of Object.keys(was)) expect(now[key], `${what}: ${key} as it was`).toBe(was[key]);
     }
   });
 });
 
-describe('release-push.js: usage', () => {
-  test('no argument exits 64 with the usage line naming the file, and answers nothing', () => {
-    const { w } = mkWorld();
-    const out = run(w, []);
-    expect(out.code, `exit code (stderr: ${out.stderr})`).toBe(64);
-    expect(`${out.stdout}${out.stderr}`.split(/\r?\n/).includes('usage: release-push.js <before>'), `the usage line, got: ${out.stdout}${out.stderr}`).toBeTruthy();
-    expect(!/run=/.test(out.stdout), `no run= answer on stdout: ${out.stdout}`).toBeTruthy();
+describe('release-push.js: no output file', () => {
+  test('GITHUB_OUTPUT unset ends 1 naming it, and answers nothing', () => {
+    const { w, before } = mkWorld();
+    push(w, STAMP);
+    const res = spawnSync(process.execPath, [SCRIPT], {
+      cwd: w.repo, env: { ...w.env, PATH: noJqPath(), GITHUB_EVENT_NAME: 'push', BEFORE: before }, encoding: 'utf8', timeout: SPAWN_DEADLINE,
+    });
+    const all = `${res.stdout || ''}${res.stderr || ''}`;
+    expect(res.status, `exit code, got: ${all}`).toBe(1);
+    expect(all.split(/\r?\n/).includes('release-push: GITHUB_OUTPUT names no file'), `the line naming the variable, got: ${all}`).toBeTruthy();
+    expect(!/run=/.test(all), `no run= answer anywhere: ${all}`).toBeTruthy();
   });
 });

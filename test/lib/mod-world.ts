@@ -38,6 +38,12 @@ const KIT_DEFAULT: Record<string, string> = {
   'docs/project-state.md': '# project state\n',
 }
 
+// The most bytes one engine read answers.
+const READ_MAX = 4 * 1024 * 1024
+
+// A text's length in bytes, the size the engine's stat and list answer.
+const byteLength = (text: string) => new TextEncoder().encode(text).length
+
 const ok = (stdout = '', stderr = '', exitCode = 0) => ({
   value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false },
 })
@@ -196,7 +202,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
     const add = (rest: string, full: string) => {
       const [name, ...more] = rest.split('/')
       if (more.length) out.set(name, { name, kind: 'dir', size: 0, mtimeMs: 0, isLink: false })
-      else out.set(name, { name, kind: 'file', size: (fileText(full) || '').length, mtimeMs: mtimeOf(full), isLink: false })
+      else out.set(name, { name, kind: 'file', size: byteLength(fileText(full) || ''), mtimeMs: mtimeOf(full), isLink: false })
     }
     for (const f of files.keys()) if (f.startsWith(`${p}/`)) add(f.slice(p.length + 1), f)
     const kd = kitDir(p)
@@ -205,13 +211,26 @@ export const mkWorld = (on: any, opts: any = {}) => {
   }
   const missing = (p: string) => ({ deny: `ENOENT: no such file or directory, '${p}'` })
 
+  // The engine's read: `offset` and `length` cut the file's bytes (a text cut
+  // decoded, as the engine's U+FFFD at a cut character), `as: 'bytes'` answers
+  // them as `{ base64 }`, and an answer or a `length` over READ_MAX is refused.
+  // A ranged read's op carries its `offset` and `length`.
   on('fs.read', ($: any, e: any) => {
     const p = norm(e.path, world.cwd)
-    world.fsOps.push({ op: 'read', path: p })
+    const ranged = e.offset !== undefined || e.length !== undefined
+    world.fsOps.push({ op: 'read', path: p, ...(ranged ? { offset: e.offset, length: e.length } : {}) })
     if (unreadable.has(p)) return { deny: `EACCES: permission denied, open '${p}'` }
     const text = fileText(p)
-    return text === undefined ? missing(p) : { value: text }
+    if (text === undefined) return missing(p)
+    if ((e.length ?? 0) > READ_MAX) return { deny: `RangeError: length ${e.length} is over ${READ_MAX} bytes` }
+    const all = new TextEncoder().encode(text)
+    const offset = e.offset ?? 0
+    const cut = all.slice(offset, e.length === undefined ? undefined : offset + e.length)
+    if (cut.length > READ_MAX) return { deny: `RangeError: the answer for '${p}' is over ${READ_MAX} bytes; read it by ranges` }
+    if (e.as === 'bytes') return { value: { base64: cut.toBase64() } }
+    return { value: ranged ? new TextDecoder().decode(cut) : text }
   })
+  // A write makes its missing folders, as the engine's does: a folder is any path a file sits under.
   on('fs.write', ($: any, e: any) => {
     const p = norm(e.path, world.cwd)
     world.fsOps.push({ op: 'write', path: p, runs: world.calls.length })
@@ -232,7 +251,7 @@ export const mkWorld = (on: any, opts: any = {}) => {
     const p = norm(e.path, world.cwd)
     const real = through(p)
     if (fileText(p) !== undefined) {
-      return { value: { kind: 'file', size: (fileText(p) as string).length, mtimeMs: mtimeOf(real), isLink: real !== p, ...(e.resolve ? { realPath: real } : {}) } }
+      return { value: { kind: 'file', size: byteLength(fileText(p) as string), mtimeMs: mtimeOf(real), isLink: real !== p, ...(e.resolve ? { realPath: real } : {}) } }
     }
     if (isDir(p)) return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath: p } : {}) } }
     return missing(p)
@@ -251,17 +270,6 @@ export const mkWorld = (on: any, opts: any = {}) => {
     const cmd = base(argv[0])
     if ((runDir && inWorld(runDir) && !isDir(through(runDir))) || (opts.absent || []).includes(cmd)) {
       return { value: { exitCode: null, stdout: '', stderr: `spawn ${argv[0]} ENOENT`, isStdoutTruncated: false, isStderrTruncated: false, isStarted: false } }
-    }
-    // `tail -c +<N> <file>`: the file's bytes from offset N-1 on; an absent file exits 1 with no output.
-    if (cmd === 'tail' && argv[1] === '-c' && /^\+[0-9]+$/.test(argv[2] ?? '')) {
-      const text = fileText(norm(argv[3], world.cwd))
-      if (text === undefined) return ok('', '', 1)
-      return ok(new TextDecoder().decode(new TextEncoder().encode(text).slice(Number(argv[2].slice(1)) - 1)))
-    }
-    // `rm -f <file>...`: each file gone from the tree, an absent one no error.
-    if (cmd === 'rm' && argv[1] === '-f') {
-      for (const p of argv.slice(2)) files.delete(norm(p, world.cwd))
-      return ok()
     }
     if (cmd === 'git') {
       let dir = init.cwd ? norm(init.cwd, world.cwd) : world.cwd
@@ -408,6 +416,11 @@ export const mkWorld = (on: any, opts: any = {}) => {
   // `opts.cwdFails`: the session's folder cannot be read, as a dead session answers.
   on('session.cwd', () => (opts.cwdFails ? { deny: 'session.cwd: the session has no folder' } : { value: world.cwd }))
   on('session.root', () => ({ value: world.cwd }))
+  // `opts.version`: what $.session.version() answers, `{ version, base }`, a build above the kit's
+  // engine floor unless given; `opts.versionFails`: the call throws, as a build without it answers.
+  on('session.version', () => (opts.versionFails
+    ? { deny: 'session.version: no such call on this build' }
+    : { value: opts.version ?? { version: '2.1.332', base: '2.1.332' } }))
   on('session.id', () => ({ value: SID }))
   on('session.messages', () => ({ value: world.messages }))
   on('ui.log', ($: any, e: any) => { world.logs.push(e.text); return { value: undefined } })

@@ -52,6 +52,8 @@
 | `lib/interrupt.js` | An end signal held off for a run that must clean up first, as a shell's EXIT trap lets a script: the run stops, cleans up, then ends by that same signal (on Windows, by its code), CJS, requiring `lib/run.js` and `lib/detach.js` |
 | `lib/say.js` | The line helpers the kit's Node commands share, CJS, requiring only `lib/pause.js` |
 | `lib/read.js` | The read of a file that may not be there, CJS, requiring nothing beyond Node |
+| `lib/step-value.js` | The one append a CI step's value takes (`appendTo`), to the file `GITHUB_ENV` or `GITHUB_OUTPUT` names, for the scripts under `.github/scripts/`, CJS, requiring only `lib/say.js` |
+| `lib/io.js` | The real machine as the hooks module's io (`ioIn(env)`, the twin of `hooks/register.js`'s `ioOf`), for the `gh` shim's gate, git's hooks' judge and the `status:building` reads, CJS, requiring `lib/run.js`, `lib/git.js` and `lib/read.js` |
 | `lib/write.js` | The write of a file through a temp file and a rename (`writeWhole`), so a reader never sees it half-written, a JSON file changed whole on it (`editJson`), and a JSON file's value as jq reads it (`readJsonText`), CJS, requiring `lib/voice.js`, `lib/platform.js` and `lib/link.js` (the `lib/write.js` entry) |
 | `lib/voice.js` | The kit's one voice: the color gate, the five levels, the title, the section and the closing line, a relayed line made plain, a tool's lines warned, the wait line, the process's own quiet and indent, CJS, requiring only `lib/say.js` |
 | `lib/spin.js` | The moving wait line: a worker thread draws the frames while the caller's call runs, on the terminal device a logged command names or on stderr, CJS, requiring only `lib/voice.js` |
@@ -89,7 +91,7 @@
 | `script-shell.cs` | npm's script shell on Windows, a C# 5 console program |
 | `prove.js` | `workkit prove`, the root suite on exactly the staged tree, the suite record's second writer |
 | `supervise.js` | `workkit supervise -- <command>`, any command run detached under the supervisor, as the root suite runs |
-| `morning-task.js` | The program the 9am Task Scheduler task starts on Windows, through the engine's address: it starts `jobs/morning.js` of the real kit hidden and detached, its output appended to `~/Library/Logs/com.workkit.claude-daily.log`, and ends at once; a job that cannot start is one line in that log and exit 1, CJS (`../jobs/README.md` § Install) |
+| `morning-task.js` | The program both machines' 9am jobs start, the launchd agent and the Task Scheduler task, through the engine's address: it starts `jobs/morning.js` of the real kit hidden and detached, its output appended to `~/Library/Logs/com.workkit.claude-daily.log`, and ends at once; a job that cannot start is one line in that log and exit 1, CJS (`../jobs/README.md` § Install) |
 | `watch.js` | `workkit watch [--end] [suite\|run\|<pid>]`, the call attached again to the repo's live run, given the code of one that ended with no call attached, or that run ended on request |
 | `githooks/` | Git's own hooks, set as a repo's `core.hooksPath` by the heal |
 | `note.js` | The capture command, `workkit note`'s program: `node note.js <text...>` appends one bullet to the right capture file, or files an issue on the home repo outside one |
@@ -233,20 +235,33 @@
     - Job `checks` calls the kit's `.github/workflows/ci.yml@main` with `secrets: inherit`.
     - Job `release` runs on a push only (`if: github.event_name == 'push'`), so a pull request's token stays read-only.
     - `release` has `contents: write` and `actions: write`, and calls the kit's `.github/workflows/release.yml@main` with no secrets. The job's own token is its only credential.
-  - The reusable `ci.yml`'s `test` job runs the kit's `.github/scripts/ci-node-version.js`, `ci-hooks.js` and `ci-test.js` from a shallow clone of the kit in `$RUNNER_TEMP`, outside the workspace.
-    - What they run: the Node version, the repo's `hooks.ciSetup` before the dependency install, its `hooks.ciPostInstall` after it, the suite under `xvfb-run -a`.
+  - The reusable `ci.yml`'s `test` job runs the kit's `.github/scripts/` from a shallow clone of the kit in `$RUNNER_TEMP`, outside the workspace.
+    - What they run: the kit's Node (`ci-env.js`), the scope (`release-push.js`), the Node version (`ci-node-version.js`), the repo's `hooks.ciSetup` before the dependency install (`ci-hooks.js`), the install (`ci-install.js`), its `hooks.ciPostInstall` after it, the suite under `xvfb-run -a` (`ci-test.js`).
+    - A `run:` block in the kit's workflows and in the templates holds program starts only, one per line: no `if`, loop, `$(...)`, pipe, `>>`, `||` or `&&`. `test/scripts/ci-workflow.test.js` holds the rule.
     - Every kit script runs on the kit's own Node, never the repo's, which may be older: right after the kit's clone, `actions/setup-node` sets up `lts/*`, and a `Kit Node` step keeps its path in `WORKKIT_NODE`.
-      - Each script's step is `"$WORKKIT_NODE" "<kit>/.github/scripts/<name>.js"`. The kit's own `checks.yml` has the same two steps in its `scope` job.
+      - That step is `node <kit>/.github/scripts/ci-env.js node`, which appends `WORKKIT_NODE=<the Node that ran it>` to the file `GITHUB_ENV` names.
+      - Each later script's step is `"$WORKKIT_NODE" "<kit>/.github/scripts/<name>.js"`. The kit's own `checks.yml` has the same two steps in its `scope` job.
       - The repo's Node is set up after the `Scope` step, at the version `ci-node-version.js` names; the install, the hook commands and the suite run on it, through PATH. A `workkit` command started inside them runs on PATH's `node`, the repo's, and stops on its floor line where that Node is below the kit's floor (§ The one command).
+    - A script hands a step's value to GitHub itself, never through the shell: `appendTo` in `lib/step-value.js` appends its lines to the file a variable names, and a variable naming no file is one `<script>: <name> names no file` line and 1.
+      - `GITHUB_ENV`: `ci-env.js node`, and `ci-env.js temp`, the `TEMP=` and `TMPDIR=` lines of the runner's long-form temp folder (`RUNNER_TEMP`), which the kit's own `checks.yml` runs on Windows. Any other word is one usage line and 1.
+      - `GITHUB_OUTPUT`: `release-push.js` (`run=true` or `run=false`) and `ci-node-version.js` (`version=<answer>`).
+    - `ci-install.js` starts `npm ci --no-audit --no-fund` with a `package-lock.json`, else `npm install --no-audit --no-fund` with a `package.json`, else nothing and 0.
+      - It starts `npm` by name, so PATH's npm runs it, the repo's, and passes npm's exit code on.
     - A newer run on the same pull request cancels the older.
   - A release push runs no setup, install or suite.
-    - A `Scope` step right after the kit's Node answers `run=true` for a pull request.
-    - For a push it asks the kit's `release-push.js` with the push's `before`, which fetches it when the shallow checkout lacks it.
+    - A `Scope` step right after the kit's Node runs `release-push.js`, which takes no argument and reads `GITHUB_EVENT_NAME` and `BEFORE` from its environment.
+    - Any event but a push answers `run=true`.
+    - For a push it reads the push's `before` from `BEFORE`, which it fetches when the shallow checkout lacks it.
       - It reads each changed file at both commits through git, so it moves no ref, and needs no `jq`.
       - A version stamp is the commit gate's version-only rule (`isManifest` and `versionOnly` in `hooks/mods/commit-gate/checks.js`), so a release that also moves the dependency pins equal to the version, as a workspace releasing in lockstep does, skips too.
     - Every later step runs only on `run=true`.
     - On `run=false` one last step prints one line saying every change is the CHANGELOG or a version stamp.
   - Its `changelog` job calls the kit's `changelog.yml`, whose header says what a push and a pull request judge.
+    - Its one step is `.github/scripts/ci-changelog.js`, on the kit's checkout: no `CHANGELOG.md` prints `no CHANGELOG.md, nothing to check` and passes.
+    - With `BASE_REF` set (a pull request) it runs the linter with `--added-only --base=HEAD^1`, else with `--unreleased-only`, and passes the linter's exit code on.
+  - The kit's own `checks.yml` fans its matrix legs in with a `test` job, the one check branch protection requires by name.
+    - Its one step's `if:` holds the rule, `needs.suite.result != 'success' && (needs.scope.result != 'success' || needs.scope.outputs.run != 'false')`, and its line is `exit 1`.
+    - So it passes for a green suite, and for a skipped suite after a scope job that passed and answered `false`.
   - The reusable `release.yml` clones the kit the same way and runs `.github/scripts/ci-release.js` on a full checkout, `GH_TOKEN` the job's token.
     - It takes each `chore(release): <x.y.z>` commit the push brought, oldest first.
       - The range is `before..after` from the event, a merged branch's included.
@@ -349,7 +364,7 @@
   - `floorLine(version, floor)` is the line a Node below it gets, `workkit: this Node is <version>; the kit needs 22.22 or newer`, else `''`. `floorCode(argv)` is the command's code (the `workkit.js` entry).
   - It is written in syntax an older Node still reads, so the line prints there.
   - Each program the machine starts checks it as its first code, ahead of every other `require`, when it is the program started.
-    - `workkit.js`, `standards.js`, `publish.js`, `jobs/morning.js` and `githooks/judge.js` print the floor line on stderr and exit 1 with nothing else done (the command with `floorCode`'s code).
+    - `workkit.js`, `standards.js`, `publish.js`, `morning-task.js`, `jobs/morning.js`, `tower/start.js` and `githooks/judge.js` print the floor line on stderr and exit 1 with nothing else done (the command with `floorCode`'s code).
     - `identity/shim.js` and `script-shell.js` do more below the floor: their entries.
   - No program looks for another Node: each runs on the first `node` on PATH, or on the Node that starts it. Giving one at the floor is the machine's job.
   - `lib/attach.js` reads it too, for whether its painter can load.
@@ -448,8 +463,12 @@
   - The Node home of a tree copy, CJS, which `lib/snapshot.js`, `prove.js`, `proof/place.js` and `ship/publish.js` share.
   - `copyTree(src, root, dest, only)` copies every entry of `src` but `.git`, or only the paths in `only` whose parent `dest` holds.
     - It leaves out each package's `node_modules` the live repo `root` holds (`heldModules`) and the kit's paths inside it; the list and the walk: `../docs/hooks.md` § Platforms.
-    - Each platform's copy and its flags: `../docs/hooks.md` § Platforms.
-  - `copyEntry(from, to)` copies one entry in Node: a folder walked, a file's mode and times kept, a link (a dangling one too) made again as a link and never followed, its type set, never guessed: a junction for a folder with an absolute target, else a folder link, else a file link. `proof/place.js` copies its paths through it too.
+    - Every entry it copies whole goes through `copyEntry`, on every platform; what is kept and what is not: `../docs/hooks.md` § Platforms.
+  - `copyEntry(from, to)` copies one entry in Node, the one copy the kit has, starting no program. `proof/place.js` copies its paths through it too.
+    - A folder is walked, then its mode and times are set.
+    - A file is cloned where the file system has clones (`COPYFILE_FICLONE`), else copied, its mode and times kept.
+    - A link (a dangling one too) is made again as a link and never followed, its type set, never guessed: a junction for a folder with an absolute target, else a folder link, else a file link.
+    - A FIFO, a socket and a device are left out. Owner, extended attributes and hard links are not carried.
   - `fillCopy(src, root, dest, only)` is that copy, then each package's `node_modules` the live repo holds made a real folder wherever the copy holds its parent and lacks it.
     - Each live entry is linked in absolutely; a workspace link points at the same path inside the copy; a scope folder and `.bin` are filled one level down.
     - On Windows a folder's link is a junction, which needs no privilege.
@@ -680,7 +699,7 @@
     - `exitOf(code, signal)` is a child's end as that code: its exit code, else `signalCode` of its signal. Every Node file that waits on a child reads it.
     - `startFailed` (127) is the code of a child that never started, beside it: the supervisor's, the jobs', the installer's, the script shell's, `prove`'s, the CI watch's, the red proof's, `runHere`'s, `bounded`'s and the token mint's pty.
     - `notRunnable` (126) is the code of a command found that cannot run, which the red proof and `runHere` give apart from `startFailed`.
-    - `codeOf(res)` is a `spawnSync` result read as that code: `startFailed` when it has no code and no signal, else `exitOf`. The jobs and the installer read a sync child's end through it.
+    - `codeOf(res)` is a `spawnSync` result read as that code: `startFailed` when it has no code and no signal, else `exitOf`. The jobs, the installer, `workflow/script-shell.js`, `.github/scripts/ci-install.js` and `.github/scripts/ci-changelog.js` read a sync child's end through it.
   - `END_SIGNALS` are the three signals that end a run's caller (HUP, INT, TERM), and `INT_CODE` the code of an interrupted call.
   - The rule it runs (the checks, the verdicts, the evidence, the ends and every line they write): `../docs/tests.md` § The checks.
   - With `--root` the launcher first reads that root's `tests.check` (`checkMinutes` in `hooks/mods/settings.js`); a bad value exits 2 with nothing run.
@@ -750,7 +769,7 @@
   - `writeErr(text)` writes a text or Buffer to stderr whole, as it is.
     - It writes straight to the fd, so the text lands before the output of a child started after it.
     - It writes the whole text as bytes. On a full pipe that is not blocking, a write that answers `EAGAIN` waits 10 ms (`pause` in `lib/pause.js`) and goes on from the byte it reached, with no bound, as a blocking pipe has none; any other error throws.
-    - Its callers: `sayAs`; `.github/scripts/ci-release.js` and `identity/rest.js`, which pass on gh's stderr; `.github/scripts/release-push.js`'s usage line; `lib/voice.js`'s lines; `standards/labels.js`'s public key error.
+    - Its callers: `sayAs`; `.github/scripts/ci-release.js` and `identity/rest.js`, which pass on gh's stderr; `.github/scripts/ci-env.js`'s usage line; `lib/voice.js`'s lines; `standards/labels.js`'s public key error.
     - And the usage lines of `home.js` and `publish/build.js`, a failed step's tail (`publish.js`), the heal's lines (`home/install.js`) and the questions (`lib/flows.js`).
   - `writeOut(text)` is its stdout twin, the same whole write to fd 1; `lib/voice.js` prints a reporting line through it, and `home.js` a verb's value.
   - `drained(stream)` settles once everything written to the stream so far is handed on, so a line written straight to the fd next lands after it; its callers: the command's exit (`workkit.js`, stdout and then stderr), the red proof's last lines (`proof/red.js`) and the command log's secret marks (`lib/command-log.js`).
@@ -776,6 +795,12 @@
     - `identity/token.js` and `login.js`, `publish/site-repos.js`, `home/repo.js`, `lib/discussions.js`;
     - `review/covers.js`, and `.github/scripts/ci-node-version.js`, `ci-hooks.js` and `ci-test.js` (its `readJsonOrNull`);
     - and `tower/api/lib/repos.js`, `sessions.js`, `board.js` and `health.js`.
+- `lib/io.js`:
+  - `ioIn(env)` is the io chain for a process whose variables are `env`, answered off the real machine in the shape the engine answers the hooks module (`../docs/hooks.md` § The hooks module).
+  - Its `run` starts a program with `env` laid over the process's own, a child named `node` under this process's own Node; `runResult` is the engine's run answer.
+  - Its `write` makes the file's missing folders first, as the engine's does, so a marker written into a new folder lands and nothing starts to make one.
+  - Its `readRange(path, offset, length)` is the twin of `ioOf`'s: at most `length` bytes from `offset`, empty past the end, null for a file it cannot read.
+  - Its callers: the `gh` shim's gate (`identity/gate.js`), git's hooks' judge (`githooks/judge.js`), the `status:building` reads of `lib/hold.js` and `lib/snapshot.js` (its `run`), and the test library's real gate.
 - `lib/settings.js`:
   - `settingsAt(root, user?)` is `loadSettings` in `hooks/mods/settings.js`, read through `readOrNull` in `lib/read.js`.
     - The files: the kit's `defaults/settings.json`, then `<user dir>/settings.json` or `user`, then `<root>/.workkit/settings.json`, none with a null root.
@@ -834,11 +859,14 @@
   - `nativePath` is the path unchanged off Windows. `platform` is the system it spells for, read once at load by default; `variable` is the variable the path was read from, which the stop line names.
     - On Windows a path that starts with a drive letter, `:` and a separator, or with two separators, is read with no program started, so a task's PATH without Git Bash still answers.
     - Any other path goes through `cygpath -m`; a failed `cygpath` throws, since an empty roster key is worse than none.
-      - The error carries the code `WK_UNREAD_PATH`, and `unreadPathStop(err)` is the stop each program started alone that reads one of these folders makes of it: one line on stderr naming the variable, its value and the fix (start from Git Bash, or set the variable to a drive path), then 1; any other error is thrown on.
+      - The error carries the code `WK_UNREAD_PATH`, exported as `UNREAD_PATH` for a caller that tells it from any other error (the doctor's `reportHomes`).
+      - `unreadPathStop(err)` is the stop each program started alone that reads one of these folders makes of it: one line on stderr naming the variable, its value and the fix (start from Git Bash, or set the variable to a drive path), then 1; any other error is thrown on.
         - A path read from no variable prints the path alone and only the Git Bash fix.
-        - Its callers: the command (`workkit/main.js`), `standards.js`, `note.js`, `home.js`, `publish.js`, `publish/site-repos.js`, `publish/build.js`, `morning-task.js`, `script-shell.js`, `identity/token.js`, `identity/login.js` and the three `public/` verbs (through `main` of `public/lib.js`).
+        - Its callers: the command (`workkit/main.js`), `standards.js`, `note.js`, `home.js`, `publish.js`, `publish/build.js`, `morning-task.js`, `script-shell.js` and the three `public/` verbs (through `main` of `public/lib.js`).
         - And the jobs': `install.js`, `morning.js`, `claude-nightly.js` and its `nightly-payload.js`, `brief-dispatch.js`, and `morning/brief/brief-payload.js`.
         - A program only `workkit <verb>` starts leaves the stop to the command, whose kit reads the same folders first; `lib/detach.js` leaves it to the program that calls `lib/runs.js`.
+      - `errorStop(err, lineOf)` is the stop a program makes of any error its top caught: nativePath's is `unreadPathStop`'s line, any other is `lineOf(err)` (the message by default) as one line on stderr, and 1 either way.
+        - Its callers: `identity/login.js`, `identity/token.js` and `identity/call.js` (the bare message), `publish/site-repos.js` (`site-repos: <message>; nothing was written`) and the `gh` shim's `failed` in `identity/shim.js` (`gh: the workkit shim failed: <message>`).
     - Either Windows answer has each `\` made `/` and a trailing slash trimmed, a drive root (`C:/`) kept whole, so a folder the hooks read by its spelling is the same string here.
       - The trim is a twin of `shellDirOf`'s in `hooks/mods/markers.js`, since `lib/platform.js` reads no `hooks/` module (`standards.js` runs from a copy of `workflow/` alone); `test/hooks/twins.test.js` holds the two together.
   - `claudeHome({ env, home, platform })` is the claude home's one reader the `workflow/` programs share, read at the call from `env` (`process.env` by default): `WORKFLOW_CLAUDE_HOME`, else `<home>/.claude`.
@@ -1049,7 +1077,7 @@
     - `onHeld` runs once the child's wait holds the signals, in the same synchronous run as the spawn, so the caller's handlers give way to the wait's with no gap; `onExit` runs once the child has ended.
     - HUP and TERM are passed on, INT is left to the terminal that sent it to both, and the shim ends with the child's code, a signal's as 128 plus its number.
   - At or above the floor it hands the call to `call` of `identity/call.js`, the real `gh` found.
-  - A failure the call did not answer is one line and 1, never a stack: `unreadPathStop`'s line for a path it could not read, else `gh: the workkit shim failed: <reason>`.
+  - A failure the call did not answer is one line and 1, never a stack (`errorStop`): `unreadPathStop`'s line for a path it could not read, else `gh: the workkit shim failed: <reason>`, the same line when the kit's `lib/platform.js` will not load.
 - `identity/call.js`:
   - It resolves the call's repo once (`repoOf`): the `--repo`/`-R` value in any spelling gh takes, else `GH_REPO`, else a github.com issue or pull request URL among the arguments (never a body's or a title's), else the cwd's origin (`repoSlug`).
   - Then it hands the call to the gate first (`judge` of `identity/gate.js`), the owner's terminal calls included.
@@ -1845,6 +1873,10 @@ node workflow/workkit.js setup
   - It reports on:
     - plugin, gh, the three links (the engine's address, the `workkit` command, the `gh` shim), npm's `script-shell`;
     - on Windows, each of `WORKFLOW_HOME`, `WORKFLOW_CLAUDE_HOME` and `HOME` set to a path only Git Bash can read (`shellOnlyHomes` in `hooks/mods/markers.js`, through `reportHomes`): ``env: <NAME> (<value>) is a path only Git Bash can read, so the hooks and the commands read different folders; set it as a drive path (C:/...)``;
+      - from Git Bash too, which rewrites a variable that looks like a path for a Windows program it starts, so `/home/x` reaches the doctor inside Git Bash's own root (`C:/Program Files/Git/home/x`);
+        - `reportHomes` asks `nativePath('/')` (`cygpath -m /`) for that root once and hands it to `shellOnlyHomes`, which names a home that is the root or a folder inside it;
+        - `shellOnlyHomes` answers `{ name, spelled }` per home, `spelled` as Git Bash spells it (`/home/x`), and `reportHomes` prints that list and decides nothing again, so both starts print one line;
+        - with no `cygpath` to answer there is no root, and only a value still starting with `/` is named;
     - whether `~/.local/bin` is on PATH, and on Windows `workkit.cmd`: ``command: <file> is missing or differs; run `workkit update` `` when it is not the template's text;
     - the `git` shim: present and executable in the kit, and in a session the `git` the PATH finds first;
     - each of the kit's allow rules and ask rules missing from `~/.claude/settings.json`, and each retired one still in it;
@@ -1876,7 +1908,7 @@ node workflow/workkit.js setup
 - **Upkeep is automatic.** Claude Code has no plugin-install hook, so the trigger is the one this kit owns.
   - The `workflow:standards` SessionStart hook's once-per-day run calls `workkit update --auto`.
   - It starts `node <engine>/workkit.js update --auto`, resolved beside the engine, never through the PATH or the symlink, which are exactly what may not exist yet.
-  - A moved kit needs nothing on Windows, whose task reaches its job through the engine's address; a Mac's job file names the kit the address pointed at when it was installed, so this run rewrites it (`../jobs/README.md` § Install).
+  - A moved kit needs nothing on either machine, since both jobs reach the kit through the engine's address; a new Node makes a Mac's job file out of date, since its PATH names that Node's folder, so this run rewrites it (`../jobs/README.md` § Install).
   - A job template that changed is corrected the next morning, instead of waiting for someone to remember the installer.
   - Two boundaries keep that safe:
     - **It only ever UPDATES a schedule a human already installed**: the installer's `--check` saying `not installed` is the one reading of the marker, the installed plist on a Mac and the kept copy of the task file on Windows. A machine with no schedule never gets one at session start.
@@ -2003,7 +2035,7 @@ workkit note fix the tower poller
   - So the format is also checked in CI, which every author passes through.
 - The kit publishes a reusable workflow, `.github/workflows/changelog.yml`.
   - It checks the kit out beside the calling repo, and runs its `changelog/lint.js` over the caller's `CHANGELOG.md`.
-  - It runs in the mode its header gives a push and a pull request.
+  - It runs in the mode its header gives a push and a pull request, which the kit's `.github/scripts/ci-changelog.js` picks (the `templates/github-workflows/` entry, its `changelog` job).
 - A participating repo's `changelog` job is the one line `uses: itw-creative-works/workkit/.github/workflows/changelog.yml@main`.
   - So no repo carries a copy of the linter, and a change to it reaches every repo on its next run.
 - The heal removes a linter copy at `.github/changelog-lint.cjs` or `.js` whose line 2 carries the kit's `// Vendored` header.
@@ -2739,8 +2771,7 @@ node ~/.claude/workkit/standards.js --git-hooks <repo>  # set git's hooks alone,
 - A plugin install takes it too: a folder under `<claude home>/plugins/cache/` whose `.claude-plugin/plugin.json` names `workkit`.
   - The home is read by its physical path, so a symlinked `~/.claude` counts.
   - A clone outranks it: a cache engine leaves an address naming a workkit clone alone.
-  - The 9am job reads it too. On Windows the task runs through the address, `~/.claude/workkit/morning-task.js`, so a plugin update that repoints it needs no reinstall of the schedule.
-    - On a Mac the launchd file names `<kit>/jobs/morning.js`, `<kit>` the kit this address names when the install runs; a moved kit is picked up when `workkit setup` or `workkit update` rewrites the file (`../jobs/README.md` § Install).
+  - The 9am job reads it too. The launchd agent and the Windows task both run through the address, `~/.claude/workkit/morning-task.js`, so a plugin update that repoints it needs no reinstall of the schedule (`../jobs/README.md` § Install).
 - It is one path for the whole machine, so it is written ATOMICALLY.
   - It is made under a temporary name and renamed onto the address, which is also how `~/.local/bin/workkit` is written.
   - Sessions opening at once in several repos all write it.

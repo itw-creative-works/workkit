@@ -143,9 +143,7 @@ claude
 - git
 - the GitHub CLI (`gh`), signed in with `gh auth login`
 - Node.js with npm, 22.22 or newer, first on your PATH (the root `package.json` names the floor); `workkit`, the `gh` shim and the commit checks run on that `node`, and an older one gets one line saying so
-- the Claude Code CLI (`claude`)
-
-- The kit's own test suite (`npm test` in this repo) also needs `jq` on your PATH, since its `gh` stub answers `--jq` with it.
+- the Claude Code CLI (`claude`); the hooks are proved from Claude Code 2.1.328, and an older one gets one line saying so at session start in a project workkit is on in
 
 - It runs on macOS, on Linux, and on Windows.
   - On Windows `workkit` starts from cmd, PowerShell and Git Bash; git's hooks, the `git` shim and npm's script shell run through the bash Git for Windows ships.

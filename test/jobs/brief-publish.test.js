@@ -43,7 +43,7 @@ const mkWorld = ({ home = 'owner/private-home', posted = [], gh = true } = {}) =
   if (gh) {
     stubToolJs(bin, 'gh', [
       "const fs = require('fs');",
-      recordArgvJs(JSON.stringify(ghLog), 'process.argv.slice(2)'),
+      recordArgvJs(JSON.stringify(ghLog)),
       'const args = process.argv.slice(2);',
       "const all = args.join(' ');",
       'const answer = (data) => process.stdout.write(JSON.stringify({ data }));',

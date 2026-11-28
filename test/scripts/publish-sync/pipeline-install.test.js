@@ -6,7 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
 const { samePath } = require('../../lib/platform');
+const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const { cleanup, writeJson, write, mkPublishWorld, publish, fromPages } = require('./helpers');
+
+// An npm call one of whose arguments is `install`; a call's first field is its working folder.
+const isInstall = (call) => call.slice(1).includes('install');
 
 describe('workflow/publish: the install after a manifest change', () => {
   test('a sync that changed a manifest installs the clone’s dependencies', () => {
@@ -14,18 +18,18 @@ describe('workflow/publish: the install after a manifest change', () => {
     // follows resolves against the tree the last install left.
     const world = mkPublishWorld();
     publish(world);
-    const before = world.npms().filter((call) => /install/.test(call)).length;
+    const before = world.npms().filter(isInstall).length;
 
     writeJson(path.join(world.app, 'targets', 'web', 'package.json'), {
       name: 'workkit-tower-web', private: true, dependencies: { 'chart.js': '^4.0.0' },
     });
     const { code, out, err } = publish(world);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
-    const installs = world.npms().filter((call) => /install/.test(call));
-    expect(installs.length, `one install for the manifest that moved: ${installs.join(' | ')}`).toBe(before + 1);
+    const installs = world.npms().filter(isInstall);
+    expect(installs.length, `one install for the manifest that moved: ${fmtCalls(installs)}`).toBe(before + 1);
     // The stand-in's $PWD is the spelling Node handed it, native on Windows.
-    const [cwd, argv] = installs[installs.length - 1].split('|');
-    expect(samePath(cwd, world.tower, process.platform) && argv === 'install', `in the clone, which is the project the build runs out of, got: ${installs[installs.length - 1]}`).toBe(true);
+    const [cwd, ...argv] = installs[installs.length - 1];
+    expect(samePath(cwd, world.tower, process.platform) && eqArgv(argv, ['install']), `in the clone, which is the project the build runs out of, got: ${fmtCalls(installs.slice(-1))}`).toBe(true);
     cleanup(world.root);
   });
 
@@ -35,13 +39,13 @@ describe('workflow/publish: the install after a manifest change', () => {
     // The seeded clone's root manifest carries no `file:` transform yet, so the
     // first sync composes one and that run does install, which is what makes
     // the second run's silence mean something.
-    const before = world.npms().filter((call) => /install/.test(call)).length;
+    const before = world.npms().filter(isInstall).length;
     expect(before, 'the first publish’s sync did write a manifest').toBe(1);
 
     write(path.join(world.app, 'targets', 'web', 'src', 'index.html'), '<html>a newer board</html>\n');
     const { code, out, err } = publish(world);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
-    expect(world.npms().filter((call) => /install/.test(call)).length, 'the ordinary morning does not reinstall the dependencies to publish a page').toBe(before);
+    expect(world.npms().filter(isInstall).length, 'the ordinary morning does not reinstall the dependencies to publish a page').toBe(before);
     const pages = fromPages(world);
     expect(fs.readFileSync(path.join(pages, 'index.html'), 'utf8'), 'and the page still published').toBe('<html>a newer board</html>\n');
     cleanup(world.root);
@@ -56,12 +60,12 @@ describe('workflow/publish: the install after a manifest change', () => {
     const current = JSON.parse(fs.readFileSync(settings, 'utf8'));
     writeJson(settings, { ...current, site: { ...current.site, publish: false } });
     publish(world);
-    expect(world.npms().filter((call) => /install/.test(call)).length, 'the switch-off run synced but never reached the install').toBe(0);
+    expect(world.npms().filter(isInstall).length, 'the switch-off run synced but never reached the install').toBe(0);
 
     writeJson(settings, { ...current, site: { ...current.site, publish: true } });
     const { code, out, err } = publish(world);
     expect(code, `exit 0: ${out}${err}`).toBe(0);
-    expect(world.npms().filter((call) => /install/.test(call)).length, 'the first switched-on run installs the manifests the off run left newer than the stamp').toBe(1);
+    expect(world.npms().filter(isInstall).length, 'the first switched-on run installs the manifests the off run left newer than the stamp').toBe(1);
     cleanup(world.root);
   });
 
@@ -73,7 +77,7 @@ describe('workflow/publish: the install after a manifest change', () => {
     publish(world);
     const second = publish(world);
     expect(second.code !== 0, `run 2 aborts too: the install is asked again, got exit ${second.code}`).toBeTruthy();
-    expect(world.npms().filter((call) => /install/.test(call)).length, 'one attempt per run, not one ever').toBe(2);
+    expect(world.npms().filter(isInstall).length, 'one attempt per run, not one ever').toBe(2);
     expect(fromPages(world), 'and nothing published over the failure').toBe(null);
     cleanup(world.root);
   });

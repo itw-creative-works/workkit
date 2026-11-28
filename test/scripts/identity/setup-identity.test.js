@@ -10,7 +10,6 @@ const path = require('path');
 const {
   describe, test, expect, WORKKIT_DIR: W, until,
 } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   INSTALL_FIX, PRESELECTED, UNREADABLE, hostsOf, deviceFlowRoutes, repoRoute, writeLogin, readWrittenLogin, useTokenService, startServer,
 } = require('../../lib/identity');
@@ -43,15 +42,9 @@ const withSetupScene = async (routes, fn, worldOpts = {}) => {
  * Asserts login.js opened the device page once with the world's opener. It
  * runs the opener detached, so a first call is awaited for until's own default,
  * the budget the login suite gives the same opener, then a moment more for a
- * second. Written before the stub launcher, it still skips on Windows, as a
- * skipped subcase of the case `t` runs.
+ * second.
  */
-const assertDevicePageOpened = async (t, world, label) => {
-  const skip = skipWithoutNodeStub();
-  if (skip) {
-    await t.test(`${label}: the world's opener records the device page`, { skip });
-    return;
-  }
+const assertDevicePageOpened = async (world, label) => {
   await until(() => world.openerCalls().length > 0);
   await until(() => world.openerCalls().length > 1, 300);
   expect(JSON.stringify(world.openerCalls()), `${label}: the opener ran once, on the device page`).toBe(JSON.stringify([['https://github.com/login/device']]));
@@ -158,7 +151,7 @@ describe('workkit setup: identity', () => {
     expect(signed.envMade, 'signed in: no .env at the kit root').toBe(false);
   });
 
-  test('case 22: not signed in at a keyboard, Enter, y or YES answers the sign-in question by signing in with the device page opened', async (t) => {
+  test('case 22: not signed in at a keyboard, Enter, y or YES answers the sign-in question by signing in with the device page opened', async () => {
     for (const input of ['\n', 'y\n', 'YES\n']) {
       const label = JSON.stringify(input);
       await withSetupScene(SIGN_IN_ROUTES, async ({
@@ -170,7 +163,7 @@ describe('workkit setup: identity', () => {
         expect(deviceRequests(server).length, `${label}: one device-code request, got: ${JSON.stringify(server.requests())}`).toBe(1);
         expect(JSON.stringify(readWrittenLogin(world.home)), `${label}: the login file holds the stand-in's sign-in`).toBe(JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }));
         expect(res.said.includes('identity: signed in as @hubot'), `${label}: the step then says who is signed in, got: ${res.said}`).toBeTruthy();
-        await assertDevicePageOpened(t, world, `case 22 ${label}`);
+        await assertDevicePageOpened(world, `case 22 ${label}`);
       });
     }
   });
@@ -193,7 +186,7 @@ describe('workkit setup: identity', () => {
 });
 
 describe('workkit setup --login', () => {
-  test('case 20, 22: setup --login at a terminal asks nothing, opens the device page and runs the device flow into the login file, replacing the sign-in already there, and nothing else of setup', async (t) => {
+  test('case 20, 22: setup --login at a terminal asks nothing, opens the device page and runs the device flow into the login file, replacing the sign-in already there, and nothing else of setup', async () => {
     await withSetupScene(SIGN_IN_ROUTES, async ({ world, script, server }) => {
       writeLogin(world.home, { token: 'ghu_cliuser', login: 'octocat' });
       const res = inNode(world, {
@@ -215,11 +208,11 @@ describe('workkit setup --login', () => {
         expect(!res.said.includes(title), `no "${title}" section, got: ${res.said}`).toBeTruthy();
       }
       expect(!res.said.includes(SIGN_IN_QUESTION), `setup --login puts no question, got: ${res.said}`).toBeTruthy();
-      await assertDevicePageOpened(t, world, 'case 22: setup --login');
+      await assertDevicePageOpened(world, 'case 22: setup --login');
     });
   });
 
-  test('case 20: setup --login without a terminal runs the device flow into the login file, prints the code and opens the device page', async (t) => {
+  test('case 20: setup --login without a terminal runs the device flow into the login file, prints the code and opens the device page', async () => {
     await withSetupScene(SIGN_IN_ROUTES, async ({
       world, script, repo, server,
     }) => {
@@ -232,7 +225,7 @@ describe('workkit setup --login', () => {
       expect(deviceRequests(server).length, `one device-code request, got: ${JSON.stringify(server.requests())}`).toBe(1);
       expect(JSON.stringify(readWrittenLogin(world.home)), 'the new sign-in replaces the old').toBe(JSON.stringify({ token: 'ghu_fromcli', login: 'hubot' }));
       expect(!/needs a terminal/.test(res.said), `it names no terminal, got: ${res.said}`).toBeTruthy();
-      await assertDevicePageOpened(t, world, 'case 20: no terminal');
+      await assertDevicePageOpened(world, 'case 20: no terminal');
     });
   });
 

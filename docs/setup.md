@@ -20,8 +20,7 @@ claude plugin install workkit@workkit
 - `workkit` is a Node program. It runs on the first `node` on your PATH, which must be 22.22 or newer; an older one gets one line saying so, `workkit: this Node is <version>; the kit needs 22.22 or newer`, and the command stops.
 - Setup runs from the plugin cache as it does from a clone.
   - The engine's address (`~/.claude/workkit`) takes the cached copy, and the 9am job finds its kit through that address.
-  - On Windows the task runs through it, so a plugin update that repoints it needs no reinstall.
-  - On a Mac the job file names the kit the address pointed at when it was installed, so `workkit setup` or `workkit update` rewrites it after a plugin update.
+  - On a Mac and on Windows alike the job runs through it, so a plugin update that repoints it needs no reinstall.
 - To work on workkit itself, install from a clone instead.
   - Setup installs the plugin from that clone, and a clone outranks the plugin cache:
 
@@ -208,8 +207,9 @@ claude plugin install workkit@workkit
 
 - Once a day per repo, the session-start heal runs `workkit update --auto`.
 - It re-renders the 9am schedule when the job template changed.
-  - On a Mac the job names the kit the engine's address names and the folder of the Node that installed it, so a moved kit or a new Node rewrites the job file at the next update.
-  - On Windows the task runs through the engine's address and names the Node that installed it, so a Node update that moves that Node registers the task again.
+  - Both machines' jobs run through the engine's address, so a moved kit changes nothing on either.
+  - On a Mac the job names the folder of the Node that installed it, so a new Node rewrites the job file at the next update.
+  - On Windows the task names the Node that installed it, so a Node update that moves that Node registers the task again.
 - It only ever updates a schedule you already installed; a machine with none never gets one this way.
 - It never creates a folder your machine does not already have.
 

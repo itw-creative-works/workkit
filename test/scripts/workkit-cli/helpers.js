@@ -14,9 +14,9 @@ const {
   expect, start, WORKKIT_DIR: W, mkTmp, SPAWN_DEADLINE, seeded,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, which, nodeHomeEnv, nodeTempEnv, stubTool, linkTool, joinPath, gitPath, spawnSync: runSync,
+  SYSTEM_PATH, NODE_DIR, which, nodeHomeEnv, nodeTempEnv, stubToolJs, linkTool, joinPath, gitPath, spawnSync: runSync,
 } = require('../../lib/platform');
-const { recordArgv, recordArgvJs, readArgv } = require('../../lib/argv-log');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const { schtasksStub } = require('../../lib/schtasks-stub');
 const { mkPluginCopy } = require('../../lib/plugin-copy');
 const { mkOriginRepo, OPT_IN_SHAPES } = require('../../lib/git-repo');
@@ -49,9 +49,8 @@ const COMMAND_TABLE = [
   ['watch', 'allow'],
 ];
 
-const writeStub = (file, lines) => stubTool(
-  path.dirname(file), path.basename(file), ['#!/usr/bin/env bash', ...lines],
-);
+// The stand-in source line that records the call's own arguments to `logFile`.
+const recordCall = (logFile) => recordArgvJs(JSON.stringify(logFile));
 
 // A kit file a scratch kit holds in place of the real one, started by `node <file>`.
 const writeKitFile = (file, lines) => {
@@ -100,103 +99,109 @@ const mkWorld = ({
   fs.mkdirSync(tmp, { recursive: true });
 
   const launchctlLog = path.join(root, 'launchctl-argv.log');
-  writeStub(path.join(bin, 'launchctl'), [recordArgv(launchctlLog), 'if [[ "$1" == \'print\' ]]; then exit 1; fi', 'exit 0']);
+  stubToolJs(bin, 'launchctl', [recordCall(launchctlLog), "process.exitCode = process.argv[2] === 'print' ? 1 : 0;"].join('\n'));
   // A run of the real installer on Windows registers through this, never the machine's.
   schtasksStub(bin);
 
   const claudeLog = path.join(root, 'claude-argv.log');
   if (claude) {
-    writeStub(path.join(bin, 'claude'), [
-      recordArgv(claudeLog),
-      'if [[ "$1" == \'plugin\' && "$2" == \'list\' ]]; then',
-      `  printf '%s\\n' '${pluginInstalled ? '[{ "id": "workkit@workkit" }]' : '[]'}'`,
-      'fi',
-      'if [[ "$1" == \'setup-token\' ]]; then',
-      '  printf \'%s\\n\' \'Opening your browser to approve this token…\' >&2',
-      '  printf \'%s\\n\' \'Paste the authorization code here:\'',
-      ...(claudeToken ? [`  printf '%s\\n' '${claudeToken}'`] : []),
-      `  exit ${mintExit}`,
-      'fi',
-      'exit 0',
-    ]);
+    stubToolJs(bin, 'claude', [
+      recordCall(claudeLog),
+      'const args = process.argv.slice(2);',
+      "if (args[0] === 'plugin' && args[1] === 'list') {",
+      `  process.stdout.write(${JSON.stringify(`${pluginInstalled ? '[{ "id": "workkit@workkit" }]' : '[]'}\n`)});`,
+      '}',
+      "if (args[0] === 'setup-token') {",
+      "  process.stderr.write('Opening your browser to approve this token…\\n');",
+      `  process.stdout.write(${JSON.stringify(`Paste the authorization code here:\n${claudeToken ? `${claudeToken}\n` : ''}`)});`,
+      `  process.exitCode = ${mintExit};`,
+      '}',
+    ].join('\n'));
   }
 
   const ghLog = path.join(root, 'gh-argv.log');
   const stdinDir = path.join(root, 'gh-stdin');
   fs.mkdirSync(stdinDir, { recursive: true });
-  // The Pages answers, one file for the sequence and one for how far through it
-  // this world has been read: the stub is a fresh process per poll, so the count
-  // has to live on disk for the second answer to differ from the first.
-  const pollSeq = path.join(root, 'pages-builds.tsv');
+  // How far through the Pages answers this world has been read: the stand-in is
+  // a fresh process per poll, so the count has to live on disk for the second
+  // answer to differ from the first.
   const pollCount = path.join(root, 'pages-polls');
-  fs.writeFileSync(pollSeq, pagesBuilds.map(([status, commit]) => `${status}\t${commit}\n`).join(''));
-  writeStub(path.join(bin, 'gh'), [
-    recordArgv(ghLog),
-    'if [[ "$1" == \'secret\' && "$2" == \'set\' ]]; then',
+  const ghAnswers = {
+    stdinDir,
+    pollCount,
+    builds: pagesBuilds.map(([status, commit]) => `${status}\t${commit}`),
+    // Shaped like the live tool, which answers JSON only when asked for it: the
+    // secrets wizard reads `--json name,updatedAt`, and the brief dispatch reads
+    // the plain listing, one `NAME<tab>Updated <date>` per line.
+    secretsJson: secrets && `${secretList(secrets)}\n`,
+    secretsPlain: secrets && (secrets.length ? secrets.map(({ name }) => `${name}\tUpdated 2026-07-01\n`).join('') : '\n'),
+    login,
+    authToken,
+    pagesRef,
+    authed: ghAuthed,
+  };
+  stubToolJs(bin, 'gh', [
+    "const fs = require('fs');",
+    "const path = require('path');",
+    recordCall(ghLog),
+    `const o = ${JSON.stringify(ghAnswers)};`,
+    'const answer = ([verb, sub, name], said) => {',
+    "  if (verb === 'secret' && sub === 'set') {",
     // Shaped like the live API: GitHub refuses a secret whose name starts with
     // `GITHUB_`, and only that; a name that merely contains it is accepted.
-    '  if [[ "$3" == GITHUB_* ]]; then printf \'refusing to set %s: secret names must not start with GITHUB_\\n\' "$3" >&2; exit 1; fi',
-    `  cat > "${stdinDir}/$3"`,
-    '  exit 0',
-    'fi',
-    ...(secrets ? [
-      'if [[ "$1" == \'secret\' && "$2" == \'list\' ]]; then',
-      // Shaped like the live tool, which answers JSON only when asked for it:
-      // the secrets wizard reads `--json name,updatedAt`, and the brief dispatch
-      // reads the plain listing, one `NAME<tab>Updated <date>` per line.
-      '  if [[ "$*" == *--json* ]]; then',
-      `    printf '%s\\n' '${secretList(secrets)}'`,
-      '  else',
-      `    printf '%s\\n'${secrets.map(({ name }) => ` '${name}\tUpdated 2026-07-01'`).join('')}`,
-      '  fi',
-      '  exit 0',
-      'fi',
-    ] : []),
-    ...(login ? [
-      'if [[ "$1" == \'api\' && "$2" == \'user\' ]]; then',
-      `  printf '%s\\n' '${login}'`,
-      '  exit 0',
-      'fi',
-    ] : []),
-    ...(authToken ? [
-      'if [[ "$1" == \'auth\' && "$2" == \'token\' ]]; then',
-      `  printf '%s\\n' '${authToken}'`,
-      '  exit 0',
-      'fi',
-    ] : []),
+    "    if (name.startsWith('GITHUB_')) {",
+    '      process.stderr.write(`refusing to set ${name}: secret names must not start with GITHUB_\\n`);',
+    '      return 1;',
+    '    }',
+    '    fs.writeFileSync(path.join(o.stdinDir, name), fs.readFileSync(0));',
+    '    return 0;',
+    '  }',
+    "  if (o.secretsJson && verb === 'secret' && sub === 'list') {",
+    "    process.stdout.write(said.includes('--json') ? o.secretsJson : o.secretsPlain);",
+    '    return 0;',
+    '  }',
+    "  if (o.login && verb === 'api' && sub === 'user') {",
+    '    process.stdout.write(`${o.login}\\n`);',
+    '    return 0;',
+    '  }',
+    "  if (o.authToken && verb === 'auth' && sub === 'token') {",
+    '    process.stdout.write(`${o.authToken}\\n`);',
+    '    return 0;',
+    '  }',
     // The two reads the token handover makes. Both are answered as the tool
     // renders them for the flags the step passes: `--jq` reduces the ref to its
-    // sha and the latest build to a status/commit pair, so the stub prints those
-    // values and nothing around them.
-    'if [[ "$1" == \'api\' && "$2" == repos/*/git/ref/heads/* ]]; then',
-    `  printf '%s\\n' '${pagesRef}'`,
-    '  exit 0',
-    'fi',
-    'if [[ "$1" == \'api\' && "$2" == */pages/builds/latest ]]; then',
-    `  polls="$(cat "${pollCount}" 2>/dev/null || printf 0)"`,
-    '  polls=$((polls + 1))',
-    `  printf '%s' "$polls" > "${pollCount}"`,
-    `  total="$(grep -c '' "${pollSeq}" 2>/dev/null || printf 0)"`,
-    '  if [[ "$total" -gt 0 ]]; then',
-    '    if [[ "$polls" -gt "$total" ]]; then polls="$total"; fi',
-    `    sed -n "\${polls}p" "${pollSeq}"`,
-    '  fi',
-    '  exit 0',
-    'fi',
-    `exit ${ghAuthed ? 0 : 1}`,
-  ]);
+    // sha and the latest build to a status/commit pair, so the stand-in prints
+    // those values and nothing around them.
+    "  if (verb === 'api' && /^repos\\/.*\\/git\\/ref\\/heads\\//.test(sub)) {",
+    '    process.stdout.write(`${o.pagesRef}\\n`);',
+    '    return 0;',
+    '  }',
+    "  if (verb === 'api' && sub.endsWith('/pages/builds/latest')) {",
+    "    const polls = (fs.existsSync(o.pollCount) ? Number(fs.readFileSync(o.pollCount, 'utf8')) : 0) + 1;",
+    '    fs.writeFileSync(o.pollCount, String(polls));',
+    '    if (o.builds.length) process.stdout.write(`${o.builds[Math.min(polls, o.builds.length) - 1]}\\n`);',
+    '    return 0;',
+    '  }',
+    '  return o.authed ? 0 : 1;',
+    '};',
+    "process.exitCode = answer(process.argv.slice(2), process.argv.slice(2).join(' '));",
+  ].join('\n'));
 
   // The browser opener, whichever name this machine's desktop uses. Both record
   // and keep a copy of the page: the CLI removes the original at exit, and its
-  // mode is half the question, so the copy is made with `cp -p`.
+  // mode is half the question, so the copy carries the original's mode.
   const openerLog = path.join(root, 'opener-argv.log');
   const openedFile = path.join(root, 'opened.html');
   for (const opener of ['open', 'xdg-open']) {
-    writeStub(path.join(bin, opener), [
-      recordArgv(openerLog),
-      `if [[ -f "$1" ]]; then cp -p "$1" "${openedFile}"; fi`,
-      'exit 0',
-    ]);
+    stubToolJs(bin, opener, [
+      "const fs = require('fs');",
+      recordCall(openerLog),
+      'const page = process.argv[2];',
+      'if (page && fs.statSync(page, { throwIfNoEntry: false })?.isFile()) {',
+      `  fs.copyFileSync(page, ${JSON.stringify(openedFile)});`,
+      `  fs.chmodSync(${JSON.stringify(openedFile)}, fs.statSync(page).mode & 0o7777);`,
+      '}',
+    ].join('\n'));
   }
 
   const agents = path.join(home, 'Library', 'LaunchAgents');
@@ -515,7 +520,7 @@ const mkSetupKit = () => mkKitCopy('checkout/workkit', true);
 const mkInstallerKit = (lines) => {
   const { kit, script } = mkKitCopy('checkout/workkit', false);
   const runLog = path.join(kit, 'installer-argv.log');
-  writeKitFile(path.join(kit, 'jobs', 'install.js'), [recordArgvJs(JSON.stringify(runLog), 'process.argv.slice(2)'), ...lines]);
+  writeKitFile(path.join(kit, 'jobs', 'install.js'), [recordCall(runLog), ...lines]);
   const runs = () => readArgv(runLog);
   return {
     kit, script, runs, installs: () => runs().filter((args) => args[0] !== '--check'),
@@ -574,7 +579,7 @@ const mkHomeWorld = (opts = {}) => {
 };
 
 module.exports = {
-  WORKFLOW_DIR, CLI, LABEL, COMMAND_TABLE, cleanup, writeStub, mkWorld, withNpm, skipWithoutPty, runCli, inNode, startInNode, npmrcEnv, machineLinks, windowsForm, lines,
+  WORKFLOW_DIR, CLI, LABEL, COMMAND_TABLE, cleanup, recordCall, mkWorld, withNpm, skipWithoutPty, runCli, inNode, startInNode, npmrcEnv, machineLinks, windowsForm, lines,
   signInEnv, ACTED, mkRepo, rosterRepo,
   installSchedule, seedSettings, signIn, copyHooks, mkPartialKit, mkKit, mkSetupKit, mkCacheKit,
   mkInstallerKit, mkScheduleKit, SLUG, HOME, mkHomeWorld,

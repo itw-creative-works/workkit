@@ -108,6 +108,9 @@ const waiting = (g, timeout = '5') => ({
 /** The same repo world run as a claude.ai cloud session. */
 const inCloud = (g) => ({ ...g, env: { ...g.env, CLAUDE_CODE_REMOTE: 'true' } });
 
+/** The fake gh's `onView`: append `view` to the world's order file, as `g.note('view')` does in a hook. */
+const viewNote = (g) => `require('fs').appendFileSync(${JSON.stringify(g.orderPath)}, 'view\\n');`;
+
 const creates = (gh) => gh.calls().filter((c) => isCall(c, 'release', 'create'));
 const views = (gh) => gh.calls().filter((c) => isCall(c, 'release', 'view')).length;
 
@@ -188,7 +191,7 @@ describe('ship cut: HEAD decides the caller', () => {
 describe('ship cut: the wait', () => {
   test('from a subfolder, the release appearing on the fourth view: the cut waits for it, then runs the hooks; exit 0, no gh create', () => {
     const g = mkCutRepo();
-    const gh = commitGh({ late: { 'v1.2.3': 3 }, onView: g.note('view') });
+    const gh = commitGh({ late: { 'v1.2.3': 3 }, onView: viewNote(g) });
     const { code, err } = runShip(waiting(g), 'cut', ['1.2.3'], { cwd: g.sub, binDirs: [gh.binDir] });
     expect(code, `exit 0, got: ${err}`).toBe(0);
     expect(g.order(), `three misses, the release, then the afterRelease hook, got: ${fmtCalls(gh.calls())}`).toBe('view\nview\nview\nview\nhook\n');
@@ -208,7 +211,7 @@ describe('ship cut: the wait', () => {
   test('a WORKKIT_CUT_RELEASE_TIMEOUT that is no number of 0 or more is the default: a release on the second view is waited for, exit 0', () => {
     for (const timeout of ['soon', '-1']) {
       const g = mkCutRepo();
-      const gh = commitGh({ late: { 'v1.2.3': 1 }, onView: g.note('view') });
+      const gh = commitGh({ late: { 'v1.2.3': 1 }, onView: viewNote(g) });
       const { code, err } = runShip(waiting(g, timeout), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
       expect(code, `${timeout}: exit 0, got: ${err}`).toBe(0);
       expect(g.order(), `${timeout}: one miss, the release, then the hook, got: ${fmtCalls(gh.calls())}`).toBe('view\nview\nhook\n');
@@ -310,7 +313,7 @@ describe('ship cut: earlier versions without a release', () => {
 describe('ship cut: a cloud session', () => {
   test('a cloud cut waits for the release and runs the hooks as a machine does; exit 0, no gh create', () => {
     const g = mkCutRepo();
-    const gh = commitGh({ late: { 'v1.2.3': 1 }, onView: g.note('view') });
+    const gh = commitGh({ late: { 'v1.2.3': 1 }, onView: viewNote(g) });
     const { code, err } = runShip(inCloud(waiting(g)), 'cut', ['1.2.3'], { binDirs: [gh.binDir] });
     expect(code, `exit 0, got: ${err}`).toBe(0);
     expect(g.order(), `a miss, the release, then the hook, got: ${fmtCalls(gh.calls())}`).toBe('view\nview\nhook\n');

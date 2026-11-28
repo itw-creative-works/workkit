@@ -9,6 +9,7 @@ const {
   describe, test, expect, mkTmp,
 } = require('../lib/harness');
 const { shellPath } = require('../lib/platform');
+const { recordArgvJs, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
   cleanup, skipWithoutWrapper, mkRepo, mkWorld, npm,
 } = require('../lib/script-shell');
@@ -19,10 +20,10 @@ describe('script-shell: the CHANGELOG check before a bare root run', { skip: ski
   test('WORKFLOW_DIR names the engine whose linter it runs', () => {
     const world = mkWorld();
     const engine = mkTmp('changelog-lint-engine-');
-    const argvFile = path.join(engine, 'argv.json');
+    const argvFile = path.join(engine, 'argv.log');
     fs.mkdirSync(path.join(engine, 'changelog'));
     fs.writeFileSync(path.join(engine, 'changelog', 'lint.js'), [
-      `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));`,
+      recordArgvJs(JSON.stringify(argvFile)),
       "console.error('the stand-in linter said no');",
       'process.exit(1);',
     ].join('\n'));
@@ -31,9 +32,11 @@ describe('script-shell: the CHANGELOG check before a bare root run', { skip: ski
     const out = npm(world, repo, ['test'], world.wrapper, { WORKFLOW_DIR: shellPath(engine) });
     expect(out.code, `the stand-in's failure is the answer, got: ${out.out}|${out.err}`).toBe(1);
     expect(out.err.includes('the stand-in linter said no'), `its words reach the message, got: ${out.err}`).toBeTruthy();
-    const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
-    expect(argv[0].replace(/\\/g, '/').endsWith('/CHANGELOG.md'), `it was handed the repo's CHANGELOG, got: ${argv}`).toBeTruthy();
-    expect(JSON.stringify(argv.slice(1)), 'judging only the added lines').toBe('["--added-only"]');
+    const calls = readArgv(argvFile);
+    expect(calls.length, `the linter ran once, got: ${fmtCalls(calls)}`).toBe(1);
+    const [[changelog, ...rest]] = calls;
+    expect(changelog.replace(/\\/g, '/').endsWith('/CHANGELOG.md'), `it was handed the repo's CHANGELOG, got: ${fmtCalls(calls)}`).toBeTruthy();
+    expect(rest, 'judging only the added lines').toEqual(['--added-only']);
     cleanup(world.root); cleanup(repo);
   });
 });

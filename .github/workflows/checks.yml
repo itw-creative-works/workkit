@@ -34,24 +34,20 @@ jobs:
     outputs:
       run: ${{ steps.scope.outputs.run }}
     steps:
+      # The checkout holds the scripts below; on a push it is the pushed commit alone,
+      # and release-push.js fetches the event's before commit itself.
       - uses: actions/checkout@v5
-        if: github.event_name == 'push'
       # The kit's scripts run on this Node, as ci.yml starts them.
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
       - name: Kit Node
-        run: echo "WORKKIT_NODE=$(command -v node)" >> "$GITHUB_ENV"
-      # The checkout is the pushed commit alone; the script fetches <before> itself.
+        run: node "$GITHUB_WORKSPACE/.github/scripts/ci-env.js" node
       - id: scope
         env:
           BEFORE: ${{ github.event.before }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" != push ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            "$WORKKIT_NODE" "$GITHUB_WORKSPACE/.github/scripts/release-push.js" "$BEFORE" >> "$GITHUB_OUTPUT"
-          fi
+          "$WORKKIT_NODE" "$GITHUB_WORKSPACE/.github/scripts/release-push.js"
   suite:
     needs: scope
     if: needs.scope.outputs.run == 'true'
@@ -77,23 +73,18 @@ jobs:
           git config --global core.autocrlf false
           git config --global user.name "checks"
           git config --global user.email "checks@ci.local"
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
       # The runner's temp dir is 8.3 (RUNNER~1) while git and `pwd -P` answer the
       # long name, so scratch goes to runner.temp. TMP stays: Git Bash mounts /tmp
       # at TMP, and a scratch dir under that mount reads back as /tmp/... instead.
       - name: Long-form temp dir
         if: runner.os == 'Windows'
-        run: printf 'TEMP=%s\nTMPDIR=%s\n' '${{ runner.temp }}' '${{ runner.temp }}' >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: lts/*
+        run: node "$GITHUB_WORKSPACE/.github/scripts/ci-env.js" temp
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          elif [ -f package.json ]; then
-            npm install --no-audit --no-fund
-          fi
+        run: node "$GITHUB_WORKSPACE/.github/scripts/ci-install.js"
       # No FORCE_COLOR here: it would reach every program a suite starts, and Node then colors what they print.
       - name: Test
         run: npm test
@@ -105,11 +96,8 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - env:
-          SUITE: ${{ needs.suite.result }}
-          SCOPE: ${{ needs.scope.result }}
-          RUN: ${{ needs.scope.outputs.run }}
-        run: test "$SUITE" = success || { test "$SCOPE" = success && test "$RUN" = false; }
+      - if: needs.suite.result != 'success' && (needs.scope.result != 'success' || needs.scope.outputs.run != 'false')
+        run: exit 1
   changelog:
     needs: scope
     if: needs.scope.outputs.run == 'true'

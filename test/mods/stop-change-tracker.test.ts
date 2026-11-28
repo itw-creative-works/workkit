@@ -1,6 +1,6 @@
 // classic.Stop through the hooks module: docs:change-tracker after manager:close-guard, its `{ block }` carrying
 // the nag on uncommitted code or unfiled entries at a turn that parked, blocked or closed an issue (a gh journal line
-// past the offset the turn's UserPromptSubmit stored as `turn-journal`, read with `tail`), the fingerprint's SHA-1 kept in
+// past the offset the turn's UserPromptSubmit stored as `turn-journal`, read by ranges), the fingerprint's SHA-1 kept in
 // .workkit/agents/.change-tracker where .workkit/ is gitignored, and silence on a state already nagged about.
 // The verdict's own cases are test/hooks/change-tracker.test.js.
 
@@ -122,16 +122,21 @@ describe('classic.Stop: docs:change-tracker, the endpoint gate', () => {
     expect(w.files.has(STATE)).toBe(false)
   })
 
-  // The engine's $.fs.read refuses a file past 4 MiB; the test world's does not, so the reader is asserted.
-  test('a journal past 4 MiB: the park past the offset still nags, read by tail from the stored offset, never by fs.read', async ($, on) => {
-    const claim = journalText(ghEntry({ numbers: [11], add: ['status:building'] }))
-    const big = claim.repeat(Math.ceil((5 * 1024 * 1024) / claim.length))
-    const w = world(on, { files: { [JOURNAL]: big } })
-    await parkedTurn($, w)
+  // One engine read answers at most 4 MiB. The turn's one park straddles the first 4 MiB past the offset,
+  // so a read that stops there, or parses each range alone, loses it; more claims follow it to the end.
+  test('case 14b: a journal grown past 4 MiB this turn: the park at the range edge still nags, read by ranges, no program started', async ($, on) => {
+    const MiB = 1024 * 1024
+    const claim = journalText(ghEntry({ ms: TURN + 1500, numbers: [11], add: ['status:building'] }))
+    // Claims, then one line that is no journal line, together 6 bytes short of 4 MiB: the park starts there.
+    const bulk = claim.repeat(Math.floor((4 * MiB - 7) / claim.length))
+    const pad = `${'#'.repeat(4 * MiB - 7 - bulk.length)}\n`
+    const w = world(on, { files: { [JOURNAL]: claim } })
+    await prompt($)
+    w.files.set(JOURNAL, `${claim}${bulk}${pad}${PARKED}${claim.repeat(Math.ceil(MiB / claim.length))}`)
     expect(blockOf(await stop($))).toContain(CODE)
-    const tails = w.runs(JOURNAL).filter((c: any) => c.argv[0].split('/').pop() === 'tail')
-    expect(tails.map((c: any) => c.argv.slice(1))).toEqual([['-c', `+${big.length + 1}`, JOURNAL]])
-    expect(w.fsOps.filter((o: any) => o.op === 'read' && o.path === JOURNAL)).toEqual([])
+    expect(w.runs(JOURNAL)).toEqual([])
+    expect(w.calls.filter((c: any) => ['tail', 'wc'].includes(c.argv[0].split('/').pop()))).toEqual([])
+    expect(w.fsOps.filter((o: any) => o.op === 'read' && o.path === JOURNAL).length).toBeGreaterThan(1)
   })
 })
 

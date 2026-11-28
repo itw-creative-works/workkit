@@ -10,9 +10,7 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp, start, until,
 } = require('../../lib/harness');
-const {
-  BASH, skipWithoutNodeStub,
-} = require('../../lib/platform');
+const { BASH } = require('../../lib/platform');
 const { makeGhStub, ghRequests } = require('../../lib/gh-stub');
 const { eqArgv, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -94,9 +92,8 @@ const checkLines = (res) => lines(res.stdout).map((l) => {
   return [f[0], f[1], f[3]];
 }).sort((a, b) => a[0].localeCompare(b[0]));
 
-// The shim starts the stub `gh` from Node through rest.js, as rest.test.js does; on Windows these skip alike.
 describe('identity/gh in a cloud session: pr create', () => {
-  test('pr create with no --head or --base posts the current branch against the repo\'s default branch and prints the PR\'s URL', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr create with no --head or --base posts the current branch against the repo\'s default branch and prints the PR\'s URL', async () => {
     const api = {
       'GET repos/acme/rostered': { body: { full_name: 'acme/rostered', default_branch: 'develop' } },
       [`POST ${PULLS}`]: { status: 201, body: restPull(42, { base: 'develop' }) },
@@ -110,7 +107,7 @@ describe('identity/gh in a cloud session: pr create', () => {
     expect(res.stdout, 'the PR\'s URL, as gh prints it').toBe('https://github.com/acme/rostered/pull/42\n');
   });
 
-  test('pr create -t -F -H -B posts the given title, the file\'s text as body, and the named head and base', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr create -t -F -H -B posts the given title, the file\'s text as body, and the named head and base', async () => {
     const dir = mkTmp('wk-gh-rest-pr-body-');
     const file = path.join(dir, 'body.md');
     fs.writeFileSync(file, 'Fixes #7\nFixes #8\n');
@@ -124,7 +121,7 @@ describe('identity/gh in a cloud session: pr create', () => {
     expect(res.stdout, 'the PR\'s URL').toBe('https://github.com/acme/rostered/pull/43\n');
   });
 
-  test('pr create on a detached HEAD with no --head is refused with a line and opens no PR', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr create on a detached HEAD with no --head is refused with a line and opens no PR', async () => {
     const api = {
       'GET repos/acme/rostered': { body: { full_name: 'acme/rostered', default_branch: 'main' } },
       [`POST ${PULLS}`]: { status: 201, body: restPull(44) },
@@ -137,7 +134,7 @@ describe('identity/gh in a cloud session: pr create', () => {
 });
 
 describe('identity/gh in a cloud session: pr list', () => {
-  test('pr list --head --state open reads every page with head=<owner>:<branch> and prints gh\'s fields, an open PR\'s mergeCommit null', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr list --head --state open reads every page with head=<owner>:<branch> and prints gh\'s fields, an open PR\'s mergeCommit null', async () => {
     const api = { [`GET ${PULLS}`]: { pages: [[restPull(12, { draft: true })], [restPull(9, { title: 'Older' })]] } };
     const fields = 'number,url,title,state,headRefName,headRefOid,baseRefName,isDraft,mergedAt,mergeCommit';
     const res = runCloud(['pr', 'list', '--head', 'claude/work', '--state', 'open', '--json', fields], { api });
@@ -161,7 +158,7 @@ describe('identity/gh in a cloud session: pr list', () => {
     }, 'gh\'s fields for an open draft');
   });
 
-  test('pr list --state merged reads the closed pulls and keeps only the merged, state MERGED with its merge commit', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr list --state merged reads the closed pulls and keeps only the merged, state MERGED with its merge commit', async () => {
     const api = {
       [`GET ${PULLS}`]: {
         pages: [[restPull(12, { state: 'closed', mergedAt: '2026-11-05T11:00:00Z' }), restPull(11, { state: 'closed' })]],
@@ -175,7 +172,7 @@ describe('identity/gh in a cloud session: pr list', () => {
     }], 'the merged one alone, the closed-unmerged dropped');
   });
 
-  test('pr list with no --json prints one row per PR, number, title, head, STATE, createdAt; --limit caps it', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr list with no --json prints one row per PR, number, title, head, STATE, createdAt; --limit caps it', async () => {
     const api = {
       [`GET ${PULLS}`]: {
         pages: [[
@@ -196,7 +193,7 @@ describe('identity/gh in a cloud session: pr list', () => {
 });
 
 describe('identity/gh in a cloud session: pr view', () => {
-  test('pr view by number, by URL and by branch reads that PR, a merged one printing MERGED and its merge commit', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr view by number, by URL and by branch reads that PR, a merged one printing MERGED and its merge commit', async () => {
     const merged = restPull(12, { state: 'closed', mergedAt: '2026-11-05T11:00:00Z' });
     const api = {
       [`GET ${PULLS}/12`]: { body: merged },
@@ -219,7 +216,7 @@ describe('identity/gh in a cloud session: pr view', () => {
     assertSame(printedJson(byBranch, 'pr view <branch>'), { number: 15, headRefName: 'claude/other' }, 'that branch\'s PR');
   });
 
-  test('pr view with no argument is the current branch\'s open PR; with none, gh\'s no-pull-requests line and exit 1', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr view with no argument is the current branch\'s open PR; with none, gh\'s no-pull-requests line and exit 1', async () => {
     const found = runCloud(['pr', 'view', '--json', 'number'], { api: { [`GET ${PULLS}`]: { pages: [[restPull(12)]] } } });
     assertOk(found, 'pr view');
     const query = asked(found, PULLS)[0].query;
@@ -231,7 +228,7 @@ describe('identity/gh in a cloud session: pr view', () => {
     expect(none.stderr.includes('no pull requests found for branch "claude/work"'), `gh's line, got: ${none.stderr}`).toBeTruthy();
   });
 
-  test('pr view with no --json prints the title, state, number and url lines, then --, then the body', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr view with no --json prints the title, state, number and url lines, then --, then the body', async () => {
     const api = { [`GET ${PULLS}/12`]: { body: restPull(12, { title: 'feat: a thing', body: 'Fixes #7\n\nThe change.' }) } };
     const res = runCloud(['pr', 'view', '12'], { api });
     assertOk(res, 'pr view 12');
@@ -249,7 +246,7 @@ describe('identity/gh in a cloud session: pr view', () => {
 });
 
 describe('identity/gh in a cloud session: pr checks', () => {
-  test('pr checks reads the head sha\'s check runs on every page and its statuses, one line each, exit 0 when all pass or skip', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr checks reads the head sha\'s check runs on every page and its statuses, one line each, exit 0 when all pass or skip', async () => {
     const api = checksApi(
       [runsPage([checkRun('build', 'completed', 'success'), checkRun('lint', 'completed', 'skipped')], 3), runsPage([checkRun('deploy', 'completed', 'success')], 3)],
       [['ci/legacy', 'success']],
@@ -267,7 +264,7 @@ describe('identity/gh in a cloud session: pr checks', () => {
     ], 'every run on both pages and the status, each bucketed');
   });
 
-  test('pr checks exits 1 when a run or a status fails, and 8 when one is pending and none fails', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr checks exits 1 when a run or a status fails, and 8 when one is pending and none fails', async () => {
     const failed = runCloud(['pr', 'checks', '12'], {
       api: checksApi([runsPage([checkRun('build', 'completed', 'success'), checkRun('test', 'completed', 'failure')])]),
     });
@@ -287,7 +284,7 @@ describe('identity/gh in a cloud session: pr checks', () => {
       'the run in progress and the pending status read pending');
   });
 
-  test('pr checks with no argument on a branch whose PR has no checks prints gh\'s no-checks line, exit 1', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr checks with no argument on a branch whose PR has no checks prints gh\'s no-checks line, exit 1', async () => {
     const api = {
       [`GET ${PULLS}`]: { pages: [[restPull(12)]] },
       [`GET repos/acme/rostered/commits/${HEAD_SHA}/check-runs`]: { pages: [runsPage([])] },
@@ -298,7 +295,7 @@ describe('identity/gh in a cloud session: pr checks', () => {
     expect(`${res.stdout}${res.stderr}`.includes('no checks reported on the \'claude/work\' branch'), `gh's line, got: ${res.stderr}`).toBeTruthy();
   });
 
-  test('pr checks --watch reads again until no check is pending, then exits as the last read says', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr checks --watch reads again until no check is pending, then exits as the last read says', async () => {
     const world = mkWorld();
     const stub = makeGhStub({ api: checksApi([runsPage([checkRun('build', 'in_progress')])]) });
     const runsRoute = `repos/acme/rostered/commits/${HEAD_SHA}/check-runs`;
@@ -322,7 +319,7 @@ describe('identity/gh in a cloud session: pr checks', () => {
 });
 
 describe('identity/gh in a cloud session: pr merge', () => {
-  test('pr merge PUTs the method, subject and body, from -m/-s/-r, -t, -b or -F, and prints nothing', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr merge PUTs the method, subject and body, from -m/-s/-r, -t, -b or -F, and prints nothing', async () => {
     const dir = mkTmp('wk-gh-rest-pr-merge-');
     const file = path.join(dir, 'body.md');
     fs.writeFileSync(file, 'Fixes #7\n');
@@ -344,7 +341,7 @@ describe('identity/gh in a cloud session: pr merge', () => {
     }
   });
 
-  test('pr merge with no method, or with two, exits 1 and merges nothing; with none, gh\'s required line', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr merge with no method, or with two, exits 1 and merges nothing; with none, gh\'s required line', async () => {
     const api = { [`GET ${PULLS}/12`]: { body: restPull(12) }, [`PUT ${PULLS}/12/merge`]: { body: { merged: true } } };
     const none = runCloud(['pr', 'merge', '12', '--subject', 'x'], { api });
     expect(none.code, `exit 1, stdout: ${none.stdout}, stderr: ${none.stderr}`).toBe(1);
@@ -356,7 +353,7 @@ describe('identity/gh in a cloud session: pr merge', () => {
     assertSame(writes(two), [], 'nothing merged');
   });
 
-  test('pr merge --delete-branch deletes the head branch after the merge; a refused delete leaves the merge standing with its line, exit 0', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr merge --delete-branch deletes the head branch after the merge; a refused delete leaves the merge standing with its line, exit 0', async () => {
     const ref = 'repos/acme/rostered/git/refs/heads/claude/work';
     const base = {
       [`GET ${PULLS}/12`]: { body: restPull(12) },
@@ -374,7 +371,7 @@ describe('identity/gh in a cloud session: pr merge', () => {
     expect(left.stderr.includes('gh: merged #12; branch claude/work left, this cloud session cannot delete branches'), `the left line, got: ${left.stderr}`).toBeTruthy();
   });
 
-  test('pr merge --delete-branch on a fork\'s PR merges and deletes no branch: the same-named one in the base repo is not the fork\'s', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr merge --delete-branch on a fork\'s PR merges and deletes no branch: the same-named one in the base repo is not the fork\'s', async () => {
     const api = {
       [`GET ${PULLS}/12`]: { body: restPull(12, { headRepo: 'fork/rostered' }) },
       [`PUT ${PULLS}/12/merge`]: { body: { sha: MERGE_SHA, merged: true, message: 'Pull Request successfully merged' } },
@@ -385,7 +382,7 @@ describe('identity/gh in a cloud session: pr merge', () => {
     assertSame(routes(writes(res)), [['PUT', `${PULLS}/12/merge`]], 'the merge alone');
   });
 
-  test('a merge GitHub refuses exits 1 with its message and deletes no branch', { skip: skipWithoutNodeStub() }, async () => {
+  test('a merge GitHub refuses exits 1 with its message and deletes no branch', async () => {
     const api = {
       [`GET ${PULLS}/12`]: { body: restPull(12) },
       [`PUT ${PULLS}/12/merge`]: { status: 405, body: { message: 'Pull Request is not mergeable' } },
@@ -399,7 +396,7 @@ describe('identity/gh in a cloud session: pr merge', () => {
 });
 
 describe('identity/gh in a cloud session: pr subcommands REST does not serve', () => {
-  test('pr diff runs the real gh once, whole, with no gh api call', { skip: skipWithoutNodeStub() }, async () => {
+  test('pr diff runs the real gh once, whole, with no gh api call', async () => {
     const argv = ['pr', 'diff', '12', '--name-only'];
     const res = runCloud(argv);
     assertOk(res, 'pr diff');

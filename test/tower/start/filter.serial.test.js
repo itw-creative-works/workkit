@@ -6,7 +6,7 @@
 
 const { describe, test, expect, mkTmp } = require('../../lib/harness');
 const {
-  cleanup, until, start, QUIET_PORTS, NOISY_APP, FAILURE_SHAPES, FAILING_APP,
+  cleanup, until, start, HOLD, QUIET_PORTS, NOISY_APP, FAILURE_SHAPES, FAILING_APP,
   REFUSING_APP, REFUSING_API, ANNOUNCED_APP, ANNOUNCING_APP, BENIGN_APP, STARTING, WEB_APP,
   PHASED_APP, CHATTY_API, BUMPED_APP,
 } = require('./helpers');
@@ -14,7 +14,7 @@ const {
 describe('tower/start: the log filter', () => {
   test('the default run is quiet: the log wall is dropped, the problems and one URL line survive', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, NOISY_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       expect(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced').toBeTruthy();
@@ -36,7 +36,7 @@ describe('tower/start: the log filter', () => {
 
   test('the shapes a failure really arrives in all survive the filter', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', FAILING_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, FAILING_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       expect(await until(() => /ELIFECYCLE/.test(out())), 'the app half was read to its last line').toBeTruthy();
@@ -54,7 +54,7 @@ describe('tower/start: the log filter', () => {
     // omega's refusal carries none of the keep net's words; dropped, it leaves a
     // terminal showing only "starting the dashboard…" while both halves end.
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', REFUSING_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, REFUSING_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       expect(await until(() => /ended before the dashboard/.test(out())), 'the run said a half ended before the dashboard came up').toBeTruthy();
@@ -71,7 +71,7 @@ describe('tower/start: the log filter', () => {
 
   test('the half named is the one that ended - the API side says so too', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, REFUSING_API, 'exec sleep 30', QUIET_PORTS);
+    const tower = start(dir, REFUSING_API, HOLD, QUIET_PORTS);
     const out = tower.output;
     try {
       expect(await until(() => /ended before the dashboard/.test(out())), 'the run explained itself').toBeTruthy();
@@ -86,7 +86,7 @@ describe('tower/start: the log filter', () => {
 
   test('a run that got its dashboard explains nothing when it ends', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', ANNOUNCED_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, ANNOUNCED_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       expect(await until(() => tower.child.exitCode !== null), 'the run ended when its app half did').toBeTruthy();
@@ -104,7 +104,7 @@ describe('tower/start: the log filter', () => {
     // a half ending before the announce must not read a run that had its
     // dashboard as one that never came up.
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', ANNOUNCING_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, ANNOUNCING_APP, QUIET_PORTS);
     const out = tower.output;
     const closed = new Promise((resolve) => { tower.child.on('close', resolve); });
     try {
@@ -122,7 +122,7 @@ describe('tower/start: the log filter', () => {
 
   test('the known-benign lines are dropped, and a summary with real failures is not', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', BENIGN_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, BENIGN_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       // The error is the app half's last line, so seeing it means every line
@@ -145,9 +145,9 @@ describe('tower/start: the log filter', () => {
     // The quiet phase is otherwise a blank terminal: omega builds for a while
     // before it names a URL, and every line of that is filtered.
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, NOISY_APP, QUIET_PORTS);
     const out = tower.output;
-    const loud = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { args: ['--verbose'] });
+    const loud = start(dir, HOLD, NOISY_APP, QUIET_PORTS, { args: ['--verbose'] });
     const loudOut = loud.output;
     try {
       expect(await until(() => out().includes('\n')), 'the quiet run printed').toBeTruthy();
@@ -163,7 +163,7 @@ describe('tower/start: the log filter', () => {
 
   test('the web target\'s own tag is the phase boundary - the manage cycle before it is not', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', WEB_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, WEB_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       // The last line of the run, carrying no keep-net word at all, so seeing
@@ -185,7 +185,7 @@ describe('tower/start: the log filter', () => {
 
   test('an app that never tags a line still switches at the URL it names', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', PHASED_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, PHASED_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       // The last line of the run, and one that carries no keep-net word at all,
@@ -212,7 +212,7 @@ describe('tower/start: the log filter', () => {
 
   test('the API half owns no port, so it never switches - chatter stays hidden for its whole life', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, CHATTY_API, 'exec sleep 30', QUIET_PORTS);
+    const tower = start(dir, CHATTY_API, HOLD, QUIET_PORTS);
     const out = tower.output;
     try {
       expect(await until(() => /sweep token is missing/.test(out())), 'its problem line came through').toBeTruthy();
@@ -229,7 +229,7 @@ describe('tower/start: the log filter', () => {
 
   test('an app on a bumped port is still announced - and says it was bumped', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', BUMPED_APP, QUIET_PORTS);
+    const tower = start(dir, HOLD, BUMPED_APP, QUIET_PORTS);
     const out = tower.output;
     try {
       expect(await until(() => /✓ dashboard at/.test(out())), 'the dashboard was announced').toBeTruthy();
@@ -245,7 +245,7 @@ describe('tower/start: the log filter', () => {
 
   test('--verbose passes the whole wall through, as before', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS, { args: ['--verbose'] });
+    const tower = start(dir, HOLD, NOISY_APP, QUIET_PORTS, { args: ['--verbose'] });
     const out = tower.output;
     try {
       // The app half's last line, the way the quiet case above polls for it: a
@@ -265,7 +265,7 @@ describe('tower/start: the log filter', () => {
 
   test('WORKKIT_TOWER_VERBOSE=1 is the same door, for callers that pass no arguments', async () => {
     const dir = mkTmp('tower-start-');
-    const tower = start(dir, 'exec sleep 30', NOISY_APP, QUIET_PORTS,
+    const tower = start(dir, HOLD, NOISY_APP, QUIET_PORTS,
       { env: { WORKKIT_TOWER_VERBOSE: '1' } });
     const out = tower.output;
     try {

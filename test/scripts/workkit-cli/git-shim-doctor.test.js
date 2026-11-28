@@ -9,7 +9,7 @@ const {
   describe, test, expect,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, NO_EXEC_BIT, SYSTEM_PATH, gitPath, joinPath, shellPath, stubTool, which,
+  IS_WINDOWS, NO_EXEC_BIT, SYSTEM_PATH, gitPath, joinPath, stubToolJs, handOverJs, which,
 } = require('../../lib/platform');
 const {
   WORKFLOW_DIR, cleanup, mkWorld, runCli, mkKit,
@@ -46,7 +46,7 @@ const pathFirst = (world, dir) => ({ PATH: joinPath(dir, world.env.PATH) });
 const otherGitBin = (world) => {
   const dir = path.join(world.root, 'other-git-bin');
   fs.mkdirSync(dir);
-  stubTool(dir, 'git', ['#!/usr/bin/env bash', `exec ${JSON.stringify(shellPath(which('git', SYSTEM_PATH)))} "$@"`]);
+  stubToolJs(dir, 'git', handOverJs(which('git', SYSTEM_PATH)));
   return dir;
 };
 

@@ -8,7 +8,7 @@ const {
   describe, test, expect, mkTmp, run,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, which, stubToolJs, joinPath, samePath,
+  SYSTEM_PATH, which, stubToolJs, joinPath,
 } = require('../../lib/platform');
 const { recordArgvJs, readArgv, fmtCalls } = require('../../lib/argv-log');
 const {
@@ -68,7 +68,7 @@ describe('workflow/home: the clone’s own heal', () => {
     const logOf = (name) => path.join(starts, `${name}.log`);
     for (const [name, real] of [['bash', which('bash', SYSTEM_PATH)], ['node', process.execPath]]) {
       stubToolJs(starts, name, [
-        recordArgvJs(JSON.stringify(logOf(name)), 'process.argv.slice(2)'),
+        recordArgvJs(JSON.stringify(logOf(name))),
         `const res = require('child_process').spawnSync(${JSON.stringify(real)}, process.argv.slice(2), { stdio: 'inherit' });`,
         'process.exit(res.status === null ? 1 : res.status);',
       ].join('\n'));
@@ -76,10 +76,8 @@ describe('workflow/home: the clone’s own heal', () => {
     const { code, out, err } = heal({ ...world, env: { ...world.env, PATH: joinPath(starts, world.env.PATH) } });
     expect(code, `exit 0: ${out}${err}`).toBe(0);
     expect(world.labels().some((l) => l.name === 'status:inbox'), `the heal ran: the labels were made, got: ${out}${err}`).toBe(true);
-    // The world's gh and npm are bash scripts, so a bash start of one of them is the world's own.
-    const bin = path.join(world.root, 'bin');
-    const kitBash = readArgv(logOf('bash')).filter((argv) => !samePath(path.dirname(argv[0] || ''), bin, process.platform));
-    expect(fmtCalls(kitBash), 'no bash was started but the world\'s own stand-ins').toBe(fmtCalls([]));
+    // The world's own stand-ins are Node, so any bash start at all is the kit's.
+    expect(fmtCalls(readArgv(logOf('bash'))), 'no bash was started').toBe(fmtCalls([]));
     const byName = readArgv(logOf('node')).filter((argv) => argv.some((a) => /standards\.(js|sh)$/.test(a)));
     expect(fmtCalls(byName), 'and the engine was never started by a node found on PATH').toBe(fmtCalls([]));
     cleanup(world.root);

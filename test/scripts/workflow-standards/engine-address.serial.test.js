@@ -184,7 +184,7 @@ describe("standards.js: the engine's address", () => {
     const copyRoot = mkTmp('wf-std-');
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
-    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    fs.cpSync(WORKFLOW_DIR, copy, { recursive: true });
     copyKitSiblings(copyRoot);
     const res = heal([repo], healEnv(claude), { engine: path.join(copy, 'standards.js') });
     expect(res.status, `the heal itself still runs: ${res.stderr}`).toBe(0);
@@ -200,7 +200,7 @@ describe("standards.js: the engine's address", () => {
     const copyRoot = mkTmp('wf-std-');
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
-    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    fs.cpSync(WORKFLOW_DIR, copy, { recursive: true });
     copyKitSiblings(copyRoot);
     mkOriginRepo(copyRoot, 'https://github.com/someone/not-the-kit.git');
     const res = heal([repo], healEnv(claude), { engine: path.join(copy, 'standards.js') });
@@ -215,7 +215,7 @@ describe("standards.js: the engine's address", () => {
     const copyRoot = mkTmp('wf-std-');
     const copy = path.join(copyRoot, 'workflow');
     fs.mkdirSync(copy, { recursive: true });
-    spawnSync('cp', ['-R', `${WORKFLOW_DIR}/.`, copy]);
+    fs.cpSync(WORKFLOW_DIR, copy, { recursive: true });
     copyKitSiblings(copyRoot);
     mkOriginRepo(copyRoot, 'git@github.com:ITW-Creative-Works/workkit.git');
     runScript(repo, { claudeHome: claude });   // prime it with THIS engine first

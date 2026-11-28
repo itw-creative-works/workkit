@@ -8,7 +8,9 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp, SPAWN_DEADLINE,
 } = require('../lib/harness');
-const { jsPath, spawnSync, which } = require('../lib/platform');
+const {
+  jsPath, spawnSync, which, stubToolJs,
+} = require('../lib/platform');
 const { WORKFLOW_DIR, cleanup } = require('./workkit-cli/helpers');
 
 const KIT_JS = path.join(WORKFLOW_DIR, 'workkit', 'kit.js');
@@ -20,8 +22,7 @@ const PTY_JS = path.join(WORKFLOW_DIR, 'workkit', 'pty.js');
  * return what the outer harness observed: the call's answer line and the capture.
  */
 const runMint = (root, { child, send = '' }) => {
-  const childFile = path.join(root, 'child.sh');
-  fs.writeFileSync(childFile, child, { mode: 0o755 });
+  const childFile = stubToolJs(root, 'child', child);
   const capture = path.join(root, 'capture.txt');
   fs.writeFileSync(capture, '');
   const driver = path.join(root, 'driver.js');
@@ -65,7 +66,11 @@ describe('workflow: mint-pty: Ctrl-C ends a mint whose child ignores it (#187)',
     const root = mkTmp('workkit-mintpty-');
     try {
       const out = runMint(root, {
-        child: '#!/bin/bash\ntrap "" INT\necho CHILD-UP\nsleep 60\necho CHILD-DONE\n',
+        child: [
+          "process.on('SIGINT', () => {});",
+          "process.stdout.write('CHILD-UP\\n');",
+          "setTimeout(() => process.stdout.write('CHILD-DONE\\n'), 60000);",
+        ].join('\n'),
         send: '\x03',
       });
       expect(out.result, 'the outer binding ends the run the CLI would sit through').toBe('exit=130');
@@ -77,7 +82,7 @@ describe('workflow: mint-pty: Ctrl-C ends a mint whose child ignores it (#187)',
     const root = mkTmp('workkit-mintpty-');
     try {
       const out = runMint(root, {
-        child: '#!/bin/bash\necho CHILD-UP\necho FAKE-TOKEN-LINE\nexit 3\n',
+        child: "process.stdout.write('CHILD-UP\\nFAKE-TOKEN-LINE\\n');\nprocess.exitCode = 3;",
       });
       expect(out.result, 'the child’s own status is the wrapper’s answer').toBe('exit=3');
       expect(out.capture.includes('FAKE-TOKEN-LINE'), 'and the screen the token rides on is in the capture').toBeTruthy();

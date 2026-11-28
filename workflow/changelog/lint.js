@@ -2,7 +2,7 @@
 /* eslint-disable no-console */
 // CHANGELOG entry format: the one home of the rules, executable
 // (`docs/project-state.md` § CHANGELOG entries), called by the guards at write
-// and commit time and by CI (`.github/workflows/changelog.yml` picks the mode).
+// and commit time and by CI (`.github/scripts/ci-changelog.js` picks the mode).
 //
 // CLI: workkit changelog lint <file> [--added-only [--base=<ref>]] [--staged] [--unreleased-only]
 //   --added-only judges only the entries this change added (vs HEAD, or vs

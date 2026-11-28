@@ -7,7 +7,7 @@ const {
   describe, test, expect, mkTmp, start, until,
 } = require('../../lib/harness');
 const {
-  gitPath, joinPath, skipWithoutNodeStub, shellPath, stubTool, SYSTEM_PATH, NODE_DIR,
+  gitPath, joinPath, stubToolJs, handOverJs, SYSTEM_PATH, NODE_DIR,
 } = require('../../lib/platform');
 const { isCall, eqArgv, fmtCalls } = require('../../lib/argv-log');
 const { PTY, atTerminal } = require('../../lib/identity');
@@ -159,8 +159,7 @@ describe('standards.js: labels', () => {
     cleanup(repo); cleanup(stub.dir);
   });
 
-  // The mirror sweep's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
-  test('the session-start sweep runs the mirror over the open linked issues, and a failed mirror is a warning, never a failed heal', { skip: skipWithoutNodeStub() }, () => {
+  test('the session-start sweep runs the mirror over the open linked issues, and a failed mirror is a warning, never a failed heal', () => {
     const repo = makeRepo({ settings: '{ "enabled": true, "public": "acme/public" }\n' });
     // The stub answers the public issue's read with no JSON, so the mirror of #12 fails.
     const stub = makeGhStub({
@@ -243,14 +242,18 @@ describe('standards.js: the wait line of a gh call', () => {
     const [armed, release, bin] = ['armed', 'release', 'bin'].map((name) => path.join(dir, name));
     fs.mkdirSync(bin);
     t.after(() => fs.writeFileSync(release, ''));
-    stubTool(bin, 'gh', [
-      '#!/usr/bin/env bash',
-      'case "$*" in',
-      `  *.full_name*) : > "${shellPath(armed)}" ;;`,
-      `  *.default_branch*) if [[ -f "${shellPath(armed)}" ]]; then for ((i = 0; i < 1200; i++)); do [[ -f "${shellPath(release)}" ]] && break; sleep 0.05; done; fi ;;`,
-      'esac',
-      `exec "${shellPath(path.join(stub.binDir, 'gh'))}" "$@"`,
-    ]);
+    stubToolJs(bin, 'gh', [
+      "const fs = require('fs');",
+      "const asks = (field) => process.argv.slice(2).some((arg) => arg.includes(field));",
+      `if (asks('.full_name')) fs.writeFileSync(${JSON.stringify(armed)}, '');`,
+      `const held = !asks('.full_name') && asks('.default_branch') && fs.existsSync(${JSON.stringify(armed)});`,
+      'const until = Date.now() + 60000;',
+      'const go = () => {',
+      `  if (held && !fs.existsSync(${JSON.stringify(release)}) && Date.now() < until) return setTimeout(go, 50);`,
+      handOverJs(path.join(stub.binDir, 'gh')),
+      '};',
+      'go();',
+    ].join('\n'));
     const heal = start(process.execPath, [SCRIPT, makeRepo()], {
       env: healEnv({ binDir: joinPath(bin, stub.binDir) }, { WORKKIT_SPIN: '1' }),
     });

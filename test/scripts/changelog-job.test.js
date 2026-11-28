@@ -6,7 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const { SYSTEM_PATH, shellPath, stubTool, joinPath } = require('../lib/platform');
+const { SYSTEM_PATH, stubToolJs, joinPath } = require('../lib/platform');
+const { recordArgvJs, readArgv } = require('../lib/argv-log');
 
 const ROOT = path.join(__dirname, '..', '..');
 const JOB = path.join(ROOT, 'workflow', 'changelog', 'job.js');
@@ -95,12 +96,14 @@ function branchWorld({ answer, originHead = true }) {
   if (originHead) git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk');
   const log = path.join(dir, 'gh.log');
   if (answer !== null) {
-    stubTool(bin, 'gh', ['#!/usr/bin/env bash', `printf '%s\\n' "$*" >> ${JSON.stringify(shellPath(log))}`,
-      ...(answer === 'fail' ? ['exit 1'] : [`echo ${JSON.stringify(answer)}`])]);
+    stubToolJs(bin, 'gh', [
+      recordArgvJs(JSON.stringify(log)),
+      answer === 'fail' ? 'process.exitCode = 1;' : `process.stdout.write(${JSON.stringify(`${answer}\n`)});`,
+    ].join('\n'));
   }
   const template = path.join(dir, 'checks.yml');
   fs.writeFileSync(template, TEMPLATE);
-  const asked = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '');
+  const asked = () => readArgv(log);
   return { dir, repo, template, asked, env: { PATH: joinPath(bin, SYSTEM_PATH), HOME } };
 }
 
@@ -118,7 +121,7 @@ describe('changelog-job rewrite: the default branch the caller and branch protec
     const { code, out, err, asked } = rewriteAt({ answer: 'develop' });
     expect(code, `exit 0, stderr: ${err}`).toBe(0);
     expect(out, 'the template on GitHub\'s default branch').toBe(filled('develop'));
-    expect(asked, 'one REST read of the repo').toBe('api repos/{owner}/{repo} --jq .default_branch\n');
+    expect(asked, 'one REST read of the repo').toEqual([['api', 'repos/{owner}/{repo}', '--jq', '.default_branch']]);
   });
 
   test('no answer from GitHub (gh failing, empty, or absent): origin/HEAD\'s branch', () => {

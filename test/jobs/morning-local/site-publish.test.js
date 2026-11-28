@@ -35,7 +35,7 @@ describe('jobs/morning (local): the site publish', () => {
     const preload = path.join(world.root, 'publish-stand-in.js');
     fs.writeFileSync(preload, [
       "if (require('path').basename(process.argv[1] || '') === 'publish.js') {",
-      `  ${recordArgvJs(JSON.stringify(argvLog), 'process.argv.slice(2)')}`,
+      `  ${recordArgvJs(JSON.stringify(argvLog))}`,
       '  process.exit(0);',
       '}',
     ].join('\n'));

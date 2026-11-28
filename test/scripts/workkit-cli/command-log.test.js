@@ -11,8 +11,9 @@ const {
   describe, test, expect, mkTmp, run, until, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, nodeHomeEnv, jsPath, samePath, which, skipWithoutCaughtSignal, spawnSync,
+  SYSTEM_PATH, nodeHomeEnv, jsPath, samePath, which, skipWithoutCaughtSignal, spawnSync, RUN_JS,
 } = require('../../lib/platform');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const {
   WORKFLOW_DIR, CLI, mkWorld, mkRepo, runCli, inNode, startInNode,
 } = require('./helpers');
@@ -53,7 +54,7 @@ const playProgram = (code, { held = false } = {}) => {
   if (!held) fs.writeFileSync(go, '');
   fs.writeFileSync(file, [
     "const fs = require('fs');",
-    `fs.appendFileSync(${jsPath(ran)}, \`\${JSON.stringify(process.argv.slice(2))}\\n\`);`,
+    recordArgvJs(jsPath(ran)),
     'const logged = process.env.WK_COMMAND_LOGGED;',
     `fs.writeFileSync(${jsPath(seen)}, JSON.stringify({`,
     '  logged: logged ?? null, there: Boolean(logged) && fs.existsSync(logged),',
@@ -72,7 +73,7 @@ const playProgram = (code, { held = false } = {}) => {
   return {
     file,
     go,
-    runs: () => linesOf(readOr(ran) || '').map((line) => JSON.parse(line)),
+    runs: () => readArgv(ran),
     seen: () => JSON.parse(fs.readFileSync(seen, 'utf8')),
   };
 };
@@ -311,7 +312,7 @@ describe('command-log.js: secretStep', () => {
       "const fs = require('fs');",
       `const { secretStep } = require(${jsPath(COMMAND_LOG)});`,
       `const { kitOf } = require(${jsPath(path.join(WORKFLOW_DIR, 'workkit', 'kit.js'))});`,
-      `const { spawnSync } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'run.js'))});`,
+      `const { spawnSync } = require(${jsPath(RUN_JS)});`,
       'const start = (stdio) => {',
       `  fs.appendFileSync(${jsPath(mark)}, \`\${JSON.stringify(stdio)}\\n\`);`,
       `  const res = spawnSync(process.execPath, [${jsPath(secret)}], { stdio: ['ignore', stdio.stdout, stdio.stderr] });`,
@@ -402,7 +403,7 @@ describe('command-log.js: a secret step\'s marks, with no device', () => {
     const program = writeProgram([
       `const { secretStep } = require(${jsPath(COMMAND_LOG)});`,
       `const { kitOf } = require(${jsPath(path.join(WORKFLOW_DIR, 'workkit', 'kit.js'))});`,
-      `const { spawn } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'run.js'))});`,
+      `const { spawn } = require(${jsPath(RUN_JS)});`,
       `fs.writeFileSync(${jsPath(seen)}, String(process.env.WK_COMMAND_MARKS));`,
       "fs.writeSync(1, 'before out\\n');",
       "fs.writeSync(2, 'before err\\n');",

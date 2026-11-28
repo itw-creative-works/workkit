@@ -12,8 +12,9 @@ const { spawnSync } = require('child_process');
 const {
   expect, mkTmp, run, start, seeded: seedOnce,
 } = require('../../lib/harness');
-const { SYSTEM_PATH, NODE_DIR, homeEnv, stubTool, joinPath } = require('../../lib/platform');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { SYSTEM_PATH, NODE_DIR, homeEnv, stubToolJs, joinPath } = require('../../lib/platform');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
+const { writeGh } = require('../../lib/gh-stub');
 const { STAMP } = require('../../lib/version-stamp');
 
 const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
@@ -21,6 +22,8 @@ const WORKFLOW_DIR = path.join(__dirname, '..', '..', '..', 'workflow');
 // because the point of that seed is that the scripts a runner executes are these
 // scripts. A fixture would prove only that files copy.
 const KIT_DIR = path.join(__dirname, '..', '..', '..');
+// The omega bin a tower tree holds: only its presence and its mode are read.
+const OMEGA_BIN = '#!/usr/bin/env node\n';
 const cleanup = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
 
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -90,7 +93,7 @@ const mkTowerApp = (root, { registryPin = null } = {}) => {
 
   // Everything a working checkout accretes and a seed must not carry.
   fs.mkdirSync(path.join(app, 'node_modules', '.bin'), { recursive: true });
-  fs.writeFileSync(path.join(app, 'node_modules', '.bin', 'omega'), '#!/bin/sh\n');
+  fs.writeFileSync(path.join(app, 'node_modules', '.bin', 'omega'), OMEGA_BIN);
   fs.mkdirSync(path.join(app, 'targets', 'web', 'node_modules'), { recursive: true });
   fs.writeFileSync(path.join(app, 'targets', 'web', 'node_modules', 'x.js'), 'nested\n');
   fs.writeFileSync(path.join(app, 'package-lock.json'), '{}\n');
@@ -102,6 +105,92 @@ const mkTowerApp = (root, { registryPin = null } = {}) => {
   fs.writeFileSync(path.join(app, '.claude', 'settings.json'), '{}\n');
 
   return { app, framework };
+};
+
+/**
+ * The world's fake npm, answering in its own process: the cwd recorded, one
+ * path a line, and the calls counted, the bin linked from the `linksOn`th on
+ * (0 never) under `--prefix` or, npm's own default, the cwd.
+ * @returns {number} the exit code
+ */
+const answerNpm = ({ cwdLog, countFile, linksOn }, argv) => {
+  fs.appendFileSync(cwdLog, `${process.cwd()}\n`);
+  const prefix = argv[0] === '--prefix' ? argv[1] : process.cwd();
+  const n = (fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, 'utf8')) : 0) + 1;
+  fs.writeFileSync(countFile, String(n));
+  if (linksOn > 0 && n >= linksOn) {
+    const bin = path.join(prefix, 'node_modules', '.bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'omega'), OMEGA_BIN);
+    fs.chmodSync(path.join(bin, 'omega'), 0o755);
+  }
+  return 0;
+};
+
+/** The fake gh's `label create <name>`: its description and color flags, appended to the store. */
+const createLabel = (labelsFile, argv) => {
+  let description = '';
+  let color = '';
+  argv.forEach((arg, i) => {
+    if (argv[i - 1] === '--description') description = arg;
+    if (argv[i - 1] === '--color') color = arg;
+  });
+  const labels = JSON.parse(fs.readFileSync(labelsFile, 'utf8'));
+  labels.push({ name: argv[2], description, color });
+  fs.writeFileSync(labelsFile, `${JSON.stringify(labels)}\n`);
+};
+
+/**
+ * The categories the fake gh reads: a pending store moves in once its count of
+ * further reads runs out, so the owner's page is answered by reads, never seconds.
+ */
+const readCategories = ({ categoriesFile, pendingFile, pendingReads }) => {
+  if (fs.existsSync(pendingFile)) {
+    const left = Number(fs.readFileSync(pendingReads, 'utf8'));
+    if (left > 0) fs.writeFileSync(pendingReads, String(left - 1));
+    else fs.renameSync(pendingFile, categoriesFile);
+  }
+  return fs.readFileSync(categoriesFile, 'utf8').replace(/\n+$/, '');
+};
+
+/** Whether `all` holds `first`, then `then` somewhere after it. */
+const holdsInOrder = (all, first, then) => {
+  const at = all.indexOf(first);
+  return at >= 0 && all.includes(then, at + first.length);
+};
+
+/**
+ * The world's fake gh, answering in its own process by the words its call
+ * holds, the first match winning. The Pages calls are a GET (is it on?) then a
+ * POST (turn it on), and the two answer apart.
+ * @returns {number} the exit code
+ */
+const answerGh = (config, argv) => {
+  const {
+    login, repoExists, labelsFile, discussionsOn, pagesOn, pagesFails,
+  } = config;
+  const all = argv.join(' ');
+  const say = (text) => { process.stdout.write(text); return 0; };
+  if (all.includes('api user')) return say(`${login}\n`);
+  if (all.includes('repo view')) return repoExists ? 0 : 1;
+  if (all.includes('repo create')) return 0;
+  if (all.includes('label list')) return say(fs.readFileSync(labelsFile, 'utf8'));
+  if (all.includes('label create')) { createLabel(labelsFile, argv); return 0; }
+  if (all.includes('label edit')) return 0;
+  if (all.includes('updateRepository')) return say('{"data":{"updateRepository":{"repository":{"hasDiscussionsEnabled":true}}}}');
+  if (all.includes('createDiscussion')) return say('{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/workkit/discussions/3"}}}}');
+  if (all.includes('discussions(first')) {
+    return say('{"data":{"repository":{"discussions":{"nodes":['
+      + '{"title":"daily: 2026-07-27","createdAt":"2026-07-27T09:00:00Z","body":"yesterday"},'
+      + '{"title":"daily: 2026-06-01","createdAt":"2026-06-01T09:00:00Z","body":"long ago"}]}}}}');
+  }
+  if (all.includes('discussionCategories')) {
+    return say(`{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":${discussionsOn},"discussionCategories":{"nodes":[${readCategories(config)}]}}}}`);
+  }
+  if (pagesOn && all.includes('pages')) return 0;
+  if (holdsInOrder(all, '-X POST', 'pages')) return pagesFails ? 1 : 0;
+  if (all.includes('pages')) return 1;
+  return say('{}');
 };
 
 /**
@@ -137,22 +226,11 @@ const mkWorld = ({
   const npmLog = path.join(root, 'npm-argv.log');
   const npmCwdLog = path.join(root, 'npm-cwd.log');
   const npmCount = path.join(root, 'npm-count');
-  stubTool(bin, 'npm', [
-    '#!/usr/bin/env bash',
-    recordArgv(npmLog),
-    `printf '%s\\n' "$PWD" >> ${JSON.stringify(npmCwdLog)}`,
-    // npm's own default: no --prefix means the project is the cwd.
-    'prefix="$PWD"',
-    'if [[ "$1" == "--prefix" ]]; then prefix="$2"; fi',
-    `n=$(( $(cat ${JSON.stringify(npmCount)} 2>/dev/null || printf 0) + 1 ))`,
-    `printf '%s' "$n" > ${JSON.stringify(npmCount)}`,
-    `if [[ "$n" -ge ${npmLinksOn} && ${npmLinksOn} -gt 0 ]]; then`,
-    '  mkdir -p "$prefix/node_modules/.bin"',
-    '  printf \'#!/bin/sh\\n\' > "$prefix/node_modules/.bin/omega"',
-    '  chmod +x "$prefix/node_modules/.bin/omega"',
-    'fi',
-    'exit 0',
-  ]);
+  const npmConfig = { cwdLog: npmCwdLog, countFile: npmCount, linksOn: npmLinksOn };
+  stubToolJs(bin, 'npm', [
+    recordArgvJs(JSON.stringify(npmLog)),
+    `process.exitCode = require(${JSON.stringify(__filename)}).answerNpm(${JSON.stringify(npmConfig)}, process.argv.slice(2));`,
+  ].join('\n'));
 
   const ghLog = path.join(root, 'gh-argv.log');
   // The labels the stub believes the repo carries: a store, not a fixture, so a
@@ -170,60 +248,13 @@ const mkWorld = ({
   // where every stub in the chain costs a process spawn answers the same one.
   const pendingFile = path.join(root, 'categories-pending.json');
   const pendingReads = path.join(root, 'categories-pending-reads');
-  stubTool(bin, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(ghLog),
-    'all="$*"',
-    'case "$all" in',
-    `  *"api user"*) printf '%s\\n' '${login}' ;;`,
-    `  *"repo view"*) exit ${repoExists ? 0 : 1} ;;`,
-    '  *"repo create"*) exit 0 ;;',
-    `  *"label list"*) cat ${JSON.stringify(labelsFile)} ;;`,
-    '  *"label create"*)',
-    '    name="$3"; desc=""; color=""; prev=""',
-    '    for a in "$@"; do',
-    '      case "$prev" in --description) desc="$a" ;; --color) color="$a" ;; esac',
-    '      prev="$a"',
-    '    done',
-    `    jq --arg n "$name" --arg d "$desc" --arg c "$color" '. + [{name:$n,description:$d,color:$c}]' `
-      + `${JSON.stringify(labelsFile)} > ${JSON.stringify(`${labelsFile}.tmp`)}`
-      + ` && mv ${JSON.stringify(`${labelsFile}.tmp`)} ${JSON.stringify(labelsFile)} ;;`,
-    '  *"label edit"*) exit 0 ;;',
-    `  *updateRepository*) printf '%s' '{"data":{"updateRepository":{"repository":{"hasDiscussionsEnabled":true}}}}' ;;`,
-    '  *createDiscussion*)',
-    `    printf '%s' '{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/workkit/discussions/3"}}}}' ;;`,
-    '  *"discussions(first"*)',
-    `    printf '%s' '{"data":{"repository":{"discussions":{"nodes":[`
-      + `{"title":"daily: 2026-07-27","createdAt":"2026-07-27T09:00:00Z","body":"yesterday"},`
-      + `{"title":"daily: 2026-06-01","createdAt":"2026-06-01T09:00:00Z","body":"long ago"}]}}}}' ;;`,
-    '  *discussionCategories*)',
-    `    if [[ -f ${JSON.stringify(pendingFile)} ]]; then`,
-    `      left=$(cat ${JSON.stringify(pendingReads)})`,
-    '      if [[ "$left" -gt 0 ]]; then',
-    `        printf '%s' "$(( left - 1 ))" > ${JSON.stringify(pendingReads)}`,
-    '      else',
-    `        mv ${JSON.stringify(pendingFile)} ${JSON.stringify(categoriesFile)}`,
-    '      fi',
-    '    fi',
-    `    printf '%s' "{\\"data\\":{\\"repository\\":{\\"id\\":\\"R_kdt\\",\\"hasDiscussionsEnabled\\":${discussionsOn},\\"discussionCategories\\":{\\"nodes\\":[$(cat ${JSON.stringify(categoriesFile)})]}}}}" ;;`,
-    `  *"pages"*) exit ${pagesOn ? 0 : (pagesFails ? 1 : 0)} ;;`,
-    `  *) printf '%s' '{}' ;;`,
-    'esac',
-    'exit 0',
-  ]);
-
-  // The Pages calls are a GET (is it on?) then a POST (turn it on), and the two
-  // must be able to answer differently.
-  if (!pagesOn) {
-    stubTool(bin, 'gh', fs.readFileSync(path.join(bin, 'gh'), 'utf8').replace(
-      `  *"pages"*) exit ${pagesFails ? 1 : 0} ;;`,
-      [
-        '  *"-X POST"*pages*)',
-        `    exit ${pagesFails ? 1 : 0} ;;`,
-        '  *pages*) exit 1 ;;',
-      ].join('\n'),
-    ).trimEnd().split('\n'));
-  }
+  writeGh(bin, {
+    log: ghLog,
+    answer: { module: __filename, name: 'answerGh' },
+    config: {
+      login, repoExists, labelsFile, discussionsOn, categoriesFile, pendingFile, pendingReads, pagesOn, pagesFails,
+    },
+  });
 
   // A browser opener that records what it was handed and, when a test says so,
   // plays the owner: it writes the categories into the store at once, or after
@@ -235,16 +266,15 @@ const mkWorld = ({
   const installOpener = ({ makes = [], afterReads = 0, breaks = false } = {}) => {
     const made = JSON.stringify(breaks ? 'not json' : asNodes(makes));
     const write = afterReads
-      ? [`printf '%s' ${made} > ${JSON.stringify(pendingFile)}`,
-        `printf '%s' ${afterReads} > ${JSON.stringify(pendingReads)}`]
-      : [`printf '%s' ${made} > ${JSON.stringify(categoriesFile)}`];
+      ? [`fs.writeFileSync(${JSON.stringify(pendingFile)}, ${made});`,
+        `fs.writeFileSync(${JSON.stringify(pendingReads)}, ${JSON.stringify(String(afterReads))});`]
+      : [`fs.writeFileSync(${JSON.stringify(categoriesFile)}, ${made});`];
     for (const opener of ['open', 'xdg-open']) {
-      stubTool(bin, opener, [
-        '#!/usr/bin/env bash',
-        recordArgv(openerLog),
+      stubToolJs(bin, opener, [
+        "const fs = require('fs');",
+        recordArgvJs(JSON.stringify(openerLog)),
         ...(makes.length || breaks ? write : []),
-        'exit 0',
-      ]);
+      ].join('\n'));
     }
   };
   installOpener();
@@ -507,5 +537,5 @@ const dropRunnerLine = (kit, src) => {
 
 module.exports = {
   WORKFLOW_DIR, KIT_DIR, cleanup, git, mkRemote, mkWorld, inHome, runHomeSteps, runHomeStepsHeld, startHomeStepsHeld, setup, runnerPairs, seeded,
-  mkKitCopy, mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP,
+  mkKitCopy, mkKitRepo, commitKit, kitCommitted, dropRunnerLine, STAMP, answerNpm, answerGh,
 };

@@ -8,9 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const { describe, test, expect, mkTmp, run } = require('../lib/harness');
 const {
-  shellPath, homeEnv, stubTool, pathWith, joinPath, which, basePathWithout,
+  homeEnv, stubToolJs, pathWith, joinPath, which, basePathWithout,
 } = require('../lib/platform');
-const { recordArgv, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
+const { recordArgvJs, readArgv, isCall, fmtCalls } = require('../lib/argv-log');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'workflow', 'ship', 'items.js');
 
@@ -36,18 +36,23 @@ const mkWorld = ({ qa = [], complete = [], fail = false } = {}) => {
   const body = (fixture) => (typeof fixture === 'string' ? fixture : JSON.stringify(fixture));
   fs.writeFileSync(path.join(fixtures, 'qa.json'), body(qa));
   fs.writeFileSync(path.join(fixtures, 'complete.json'), body(complete));
-  const refuse = fail === true ? 'true' : (fail ? `[ "$label" = "status:${fail}" ]` : 'false');
-  stubTool(bin, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(logFile),
-    'label=""',
-    'for arg in "$@"; do',
-    '  if [ "${prev:-}" = --label ]; then label="$arg"; fi',
-    '  prev="$arg"',
-    'done',
-    `if ${refuse}; then printf 'error connecting to api.github.com\\n' >&2; exit 1; fi`,
-    `cat "${shellPath(fixtures)}/\${label#status:}.json"`,
-  ]);
+  const refuse = fail === true ? 'true' : (fail ? `label === ${JSON.stringify(`status:${fail}`)}` : 'false');
+  stubToolJs(bin, 'gh', [
+    recordArgvJs(JSON.stringify(logFile)),
+    "const fs = require('fs');",
+    'const argv = process.argv.slice(2);',
+    // The last value given to --label, as the call names its stage.
+    "const label = argv.reduce((found, arg, i) => (argv[i - 1] === '--label' ? arg : found), '');",
+    `const fixture = require('path').join(${JSON.stringify(fixtures)}, \`\${label.replace(/^status:/, '')}.json\`);`,
+    `if (${refuse}) {`,
+    "  process.stderr.write('error connecting to api.github.com\\n');",
+    '  process.exitCode = 1;',
+    '} else if (fs.existsSync(fixture)) process.stdout.write(fs.readFileSync(fixture));',
+    'else {',
+    '  process.stderr.write(`cat: ${fixture}: No such file or directory\\n`);',
+    '  process.exitCode = 1;',
+    '}',
+  ].join('\n'));
   return { dir, bin, home, calls: () => readArgv(logFile) };
 };
 

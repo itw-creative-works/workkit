@@ -8,9 +8,9 @@ const path = require('path');
 const {
   describe, test, expect, mkTmp, run,
 } = require('../lib/harness');
-const { recordArgv, readArgv, fmtCalls } = require('../lib/argv-log');
+const { recordArgvJs, readArgv, fmtCalls } = require('../lib/argv-log');
 const {
-  IS_WINDOWS, NODE_DIR, homeEnv, shellPath, stubTool, basePathWithout, systemPathWith, joinPath,
+  IS_WINDOWS, NODE_DIR, homeEnv, shellPath, stubToolJs, basePathWithout, systemPathWith, joinPath,
 } = require('../lib/platform');
 const { underEnv } = require('../lib/under-env');
 
@@ -44,15 +44,14 @@ const mkWorld = ({
 
   const ghLog = path.join(root, 'gh-argv.log');
   if (gh) {
-    stubTool(bin, 'gh', [
-      '#!/usr/bin/env bash',
-      recordArgv(ghLog),
-      'case "$*" in',
-      `  "workflow run"*) exit ${dispatch ? 0 : 1} ;;`,
-      `  "secret list"*) ${secretsUnlistable ? 'exit 1' : `printf '%s\\n'${secrets.map((n) => ` "${n}\tUpdated 2026-07-01"`).join('')}`} ;;`,
-      'esac',
-      'exit 0',
-    ]);
+    // An empty list still prints its one newline, as printf with no arguments does.
+    const listing = secrets.map((n) => `${n}\tUpdated 2026-07-01\n`).join('') || '\n';
+    stubToolJs(bin, 'gh', [
+      recordArgvJs(JSON.stringify(ghLog)),
+      "const all = process.argv.slice(2).join(' ');",
+      `if (all.startsWith('workflow run')) process.exitCode = ${dispatch ? 0 : 1};`,
+      `else if (all.startsWith('secret list')) ${secretsUnlistable ? 'process.exitCode = 1;' : `process.stdout.write(${JSON.stringify(listing)});`}`,
+    ].join('\n'));
   }
 
   // What the world lays over this process's env: the scratch home, its settings,

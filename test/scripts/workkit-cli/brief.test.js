@@ -54,7 +54,7 @@ describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
     const { kit, script } = mkPartialKit();
     const morningLog = path.join(kit, 'morning-argv.log');
     fs.mkdirSync(path.join(kit, 'jobs'), { recursive: true });
-    fs.writeFileSync(path.join(kit, 'jobs', 'morning.js'), `${recordArgvJs(JSON.stringify(morningLog), 'process.argv.slice(2)')}\n`);
+    fs.writeFileSync(path.join(kit, 'jobs', 'morning.js'), `${recordArgvJs(JSON.stringify(morningLog))}\n`);
     const { code } = runCli(world, ['brief', '--local'], { script });
     expect(code, 'exit 0').toBe(0);
     expect(readArgv(morningLog).map((c) => c.join(' ')).join('; '), 'the rehearsal: composed here, publishing nothing').toBe('--now');
@@ -99,13 +99,15 @@ describe('workkit brief: today’s brief, asked for now (issue #54)', () => {
     // wrapper takes one half down the moment the other is gone, so a half that
     // exits at once can kill its sibling before it runs. Waiting ends the run
     // once both halves have demonstrably run, which is what this case claims.
-    const half = (mine, theirs) => [
-      `echo x > '${gitPath(mine)}'`,
-      `while [ ! -e '${gitPath(theirs)}' ]; do sleep 0.2; done`,
-    ].join('; ');
+    const half = (mine, theirs) => JSON.stringify([process.execPath, '-e', [
+      "const fs = require('fs');",
+      "fs.writeFileSync(process.argv[1], 'x\\n');",
+      'const wait = () => { if (!fs.existsSync(process.argv[2])) setTimeout(wait, 200); };',
+      'wait();',
+    ].join('\n'), mine, theirs]);
     const { code } = runCli(world, ['tower'], {
       // Ports emptied so a test run never reclaims this machine's real tower.
-      env: { WORKKIT_TOWER_API: half(api, app), WORKKIT_TOWER_APP: half(app, api), WORKKIT_TOWER_PORTS: '' },
+      env: { WORKKIT_TOWER_API_CMD: half(api, app), WORKKIT_TOWER_APP_CMD: half(app, api), WORKKIT_TOWER_PORTS: '' },
     });
     expect(code, 'exit 0 once both halves ended').toBe(0);
     expect(fs.existsSync(api) && fs.existsSync(app), 'both halves were started through the wrapper').toBeTruthy();

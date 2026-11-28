@@ -105,9 +105,11 @@
     - The sweep removes every regular file one folder under that base whose mtime is older than `MARKER_KEEP_DAYS` (7 days).
     - It never enters a folder there (a run lock).
   - The hooks module runs no sweep.
-    - The module reads markers, and writes and removes one: the gh journal mark (`journalMarkPath` in `hooks/mods/markers.js`).
-    - A Bash call's `tool.call` writes that mark, and its `PostToolUse` or `PostToolUseFailure` removes it.
-    - So the sweep finds only a mark no call came back to.
+    - The module reads markers, and writes and ends two: the gh journal mark and the call's start (`journalMarkPath`, `callStartPath` in `hooks/mods/markers.js`).
+    - A Bash call's `tool.call` writes both, and its `PostToolUse` or `PostToolUseFailure` ends both by writing each empty (`callSince` in `hooks/mods/guards.js`).
+    - An ended marker is an empty file, and it reads as no marker, as one never written does.
+    - A live mark is never empty: a mark taken with no journal is one empty line, a mark with no journals.
+    - So an ended marker stays on disk until the sweep takes it, past `MARKER_KEEP_DAYS`, as it takes a mark no call came back to.
 - `slugFromRemote`: what a repo is CALLED, which is platform-shaped too.
   - git stores a remote exactly as it was typed, so a Windows checkout's origin comes back a native path with backslashes.
   - A reader that took only a forward slash answered nothing about it.
@@ -123,9 +125,12 @@
     - Either answer has each `\` made `/` and a trailing slash trimmed, a drive root kept whole, so a folder both sides read by its spelling is one string.
     - The trim is a twin of `shellDirOf`'s in `hooks/mods/markers.js`, since `workflow/lib/platform.js` reads no `hooks/` module (`standards.js` runs from a copy of `workflow/` alone); `test/hooks/twins.test.js` holds the two together.
   - It is git's spelling too, so a path git printed is in it already, and a roster key is written and looked up through it.
-- `copyTree` in `workflow/lib/tree-copy.js`: the snapshot copy, in Node, since the copy is the one step whose tool differs per platform.
-  - macOS clones with `cp -c -pPR`, Linux copies with `cp -a --reflink=auto`, any other POSIX system with `cp -pPR`, each walking into a folder only where it holds a package's `node_modules`.
-  - Windows copies with Node's own walk (`copyEntry`), walking the same way, each link made again as a link with its type set: a junction for a folder with an absolute target.
+- `copyTree` in `workflow/lib/tree-copy.js`: the snapshot copy, one Node copy on every platform (`copyEntry`), starting no `cp`.
+  - It walks into a folder only where it holds a package's `node_modules`, and copies every other entry whole.
+  - A file is cloned where the file system has clones (Node's `COPYFILE_FICLONE`), else copied. A file's and a folder's mode and times are kept.
+  - Each link, a dangling one too, is made again as a link with its type set: a junction for a folder with an absolute target.
+  - A FIFO, a socket and a device are left out, since reading one would stall or fail the copy.
+  - Owner, extended attributes and hard links are not carried.
   - Every platform leaves out `.git` and each package's `node_modules`.
     - A package is a folder whose `package.json` git lists, tracked or untracked and not ignored, outside every `node_modules` (`heldModules`).
     - The fill rebuilds those: § `workflow:snapshot`.
@@ -152,7 +157,8 @@
   - `suite.js`: the proved-tree records, the tree hash and the tested package, with `LONG_RUN_MS`, the ceiling of every long program run.
   - `optin.js`: the roster, a folder's origin (`repoSlug`, `originless`) and the folder a gh journal line's call acted on (`placeLine`).
   - `turn.js`: the turn the Stop hooks read (`turnMessages`).
-  - `markers.js`: the marker paths, the folder rule for what the shell spelled, and the home variables it cannot read (`shellOnlyHomes`), which `workkit doctor` names.
+  - `markers.js`: the marker paths, the folder rule for what the shell spelled, and the home variables it cannot read (`shellOnlyHomes`, given Git Bash's root to name one Git Bash rewrote), which `workkit doctor` names.
+    - `shellOnlyHomes` answers `{ name, spelled }` per variable, `spelled` the value as Git Bash spells it (`/home/x`), so the doctor prints from the list and decides nothing again.
     - It also holds the gh journal folder and its sized listing, the per-call mark, the journals a call changed and their tail read.
     - Those are `journalDir`, `journalPath`, `journalSizes`, `journalFor`, `journalMarkText`, `journalMarks`, `journalsGrown`, `journalTail`, `journalLines`, `onIssue`.
     - It holds a call's start beside its mark (`callStartPath`, `callStartText`, `callStartOf`) and the triage marker's age limit `TRIAGE_MAX_AGE_S`.
@@ -203,7 +209,7 @@
     - Each reads it through `homeSlugOf` in `hooks/mods/settings.js`, the scripts by way of `homeSlug` in `workflow/lib/settings.js`.
 - No reader parses a settings file itself but one, for `hooks.ciSetup` and `hooks.ciPostInstall`.
   - `.github/scripts/ci-hooks.js` reads each off the repo's own file alone, on a CI runner.
-  - The runner has no machine file. The script runs on the kit's Node (`WORKKIT_NODE`), and each command on the repo's.
+  - The runner has no machine file. The script runs on the kit's Node (`WORKKIT_NODE`, which `.github/scripts/ci-env.js node` writes), and each command on the repo's.
   - Its entries pass the ship hooks' own check (`workflow/ship/entries.js`).
 - `docs:change-tracker`, `safety:capture-guard` and `safety:findings-guard` read `findings.file` through `findingsOn` and `findingsRoute`.
   - `findingsOn` is true when the setting reads `true`, the one read all three make.
@@ -228,6 +234,7 @@
 - `hooks/hooks.json` names the module under `modules` (`./register.js`), and the session loads it once.
   - So dispatching a fire starts no process.
   - A hook runs only the programs it asks for (`git`, `gh`, `node`, an engine entry).
+  - No hook starts `rm`, `wc`, `tail` or `mkdir`: a marker is ended by writing it empty, a journal's size is `stat`'s, a tail is a ranged read, and a write makes its own folders.
 - [`hooks/register.js`](../hooks/register.js) is the one file that touches `$`, the engine's interface.
   - It gathers each hook's facts (a file's text, a `git` or `gh` answer, a stored marker).
   - It gates the hook, logs the fire and answers the event.
@@ -235,6 +242,9 @@
   - Every guard gathers through its `<name>Guard` gatherer.
   - The session hooks gather through `<name>Gather` (`standardsGather`, `sessionGather`, `closeGuardGather`, `changeTrackerGather`).
   - `register.js` hands them the engine calls as plain functions (`ioOf`), so no mods file touches `$`.
+    - Its `readRange(path, offset, length)` is the engine's ranged read (`$.fs.read` with `offset` and `length`): the file's bytes from `offset`, at most `length`, null for a file it cannot read.
+    - Its `write` is the engine's, which makes the file's missing folders.
+    - The Node io (`ioIn` in `workflow/lib/io.js`) answers both the same way, for the `gh` shim's gate and git's hooks.
 - Each hook's logic is plain functions over plain data in `hooks/mods/<name>.js`.
   - So the logic suites under `test/hooks/` `require()` them straight.
   - Only the wiring suites need the engine: `test/mods/*.test.ts`, run by `claude plugin test` (one `modCase` case of the host suite `test/mods.test.js`, AGENTS.md § Tests).
@@ -291,7 +301,7 @@
 | Handler | Its hooks, in order |
 |---|---|
 | `classic.PostToolUse` (Edit/Write) | `docs:board-guard`, `docs:changelog-guard`, `docs:session-guard`, `safety:test-reminder`, `safety:test-bar`, through `writeChecks` in `hooks/mods/script-write.js`: the first block wins, and the hooks after it do not run |
-| `classic.SessionStart` | first the `git` shim's folder put on the session's PATH, on every source (§ `safety:tree-guard`); then `docs:state-check`, `workflow:standards`, `workflow:reload-guard`'s stamp on a `startup` or `resume` source, then `docs:session`: its context last, and one `$.ui.log` line the owner sees when state carried over |
+| `classic.SessionStart` | first the `git` shim's folder put on the session's PATH, on every source (§ `safety:tree-guard`); then the engine floor line, its first context (below); then `docs:state-check`, `workflow:standards`, `workflow:reload-guard`'s stamp on a `startup` or `resume` source, then `docs:session`: its context last, and one `$.ui.log` line the owner sees when state carried over |
 | `classic.UserPromptSubmit` | `manager:profile`, `workflow:reload-guard`, `docs:checkpoint`, `workflow:feature`, their contexts in that order; it also records the turn's start for `docs:change-tracker` (the `turn-journal` key), adding no context |
 | `classic.SubagentStart` (`^workkit:`) | `manager:addon` |
 | `classic.PreToolUse` (Task/Agent) | `manager:spawn-guard`: its warning as `additionalContext`, and one `$.ui.log` line the owner sees |
@@ -302,12 +312,19 @@
 | `tool.call` (Edit/Write) and (Read/Grep) | `FILE_GUARDS` (`safety:vendor-guard`, then `safety:capture-guard`) and `READ_GUARDS` (`safety:capture-guard`) in `hooks/mods/guards.js` |
 | `classic.PostToolUse` and `classic.PostToolUseFailure` (Bash) | `POST_BASH_GUARDS` in `hooks/mods/guards.js`: `workflow:snapshot`, then `workflow:public-mirror`, then `safety:script-write` |
 
+- **`classic.SessionStart`**, the row's detail:
+  - Its first context is the engine floor line, said on every source in a repo that opted in; it stands down with the rest elsewhere.
+    - The floor is the oldest Claude Code build the hooks are proved on, the one whose ranged read (`readRange`, above) the journal tail needs. Its one home is `ENGINE_FLOOR` in `hooks/mods/engine-floor.js`.
+  - `engineFloorLine` there reads the `base` `$.session.version()` names, a `-dev` suffix dropped, compared by number.
+    - Below the floor: `workkit: this Claude Code is <base>; the kit's hooks need <floor> or newer`.
+    - At or above it, or for a `base` absent or not a release: no line.
+  - A build with no `$.session.version` is older than the floor: `workkit: this Claude Code is older than <floor>; the kit's hooks need <floor> or newer`.
 - **`tool.call` (Bash)**, the row's detail:
   - The chain first leaves the call's gh journal mark (`journalMarkPath` in `hooks/mods/markers.js`, keyed by its `tool_use_id`).
     - Per journal, the mark holds a line of its path, then a line of its length in bytes (`journalMarkText`).
     - The length comes from the journal's stat, never a read of it.
   - The journals are every gh journal on the machine: the files of the journal folder (`journalDir`) in name order, each with its length (`journalSizes`).
-    - An empty folder is an empty mark.
+    - An empty folder is a mark of one empty line, since an empty file is an ended mark (§ Platforms).
   - The mark reads no command text and is written before any git call (`markCall` in `hooks/mods/guards.js`).
   - Beside it goes the call's start (`callStartPath`, `callStartText` in `hooks/mods/markers.js`), keyed the same way.
     - It holds the time taken when the call began, before the journals are sized, and the repo root of the call's folder, one `git rev-parse`.
@@ -327,10 +344,11 @@
   - Their notices go as one `additionalContext` entry and one `$.ui.log` line, never a block.
   - A Bash call that exited non-zero fires only `PostToolUseFailure`.
   - The facts carry `lines`, `since` and `roots`, and no command text (`bashFacts`). The opt-in is § Where every hook stands down's.
-  - `callSince` in `hooks/mods/guards.js` reads the mark (`journalMarks`) and the start (`callStartOf`), and removes both. No mark, no lines; no start, no `since` and no roots.
+  - `callSince` in `hooks/mods/guards.js` reads the mark (`journalMarks`) and the start (`callStartOf`), and ends both, writing each empty. No mark, no lines; no start, no `since` and no roots. An empty one is none.
   - `since` is the start's time. `roots` are the root the start recorded and the root of the event's `cwd`, each once (`callRoots`), cut by `runChain` to those that opted in.
   - `grownLines` in `hooks/mods/guards.js` then lists and measures the journal folder again.
     - Each journal longer than its marked length is read past it as a tail (`journalTail`, `journalsGrown` in `hooks/mods/markers.js`).
+      - `journalTail` reads from the offset to the end by ranges of at most 4 MiB, through the io's `readRange`, and decodes each range as a stream as it is read, so a range edge never cuts a character.
     - One the mark does not hold, or one shorter than its mark (replaced during the call), is read from its start.
   - The lines are joined and ordered by `ms`, oldest first.
   - Each is kept only when the repo holding its `cwd` opted in (`folderOpted`, each folder asked once per call).
@@ -413,7 +431,7 @@
     - On Windows `/tmp/<rest>` is the Windows temp folder plus the rest: the first native `TMP` or `TEMP`, else `%LOCALAPPDATA%\Temp`.
     - On Windows `/c/<rest>` is `C:/<rest>`.
     - So the markers a script wrote and the machine folder's other files are where the module looks.
-    - The module starts no `cygpath`, so a home only Git Bash can read (`/home/x`, `/cygdrive/c/x`) stays as spelled; `workkit doctor` names each one (`shellOnlyHomes`).
+    - The module starts no `cygpath`, so a home only Git Bash can read (`/home/x`, `/cygdrive/c/x`) stays as spelled; `workkit doctor` names each one (`shellOnlyHomes`), from a native shell and from Git Bash alike (`workflow/README.md`, the `workkit doctor` entry).
 
 ### `workflow:standards`: SessionStart
 
@@ -1284,7 +1302,7 @@
   - For the copy, `snapshotGuard` runs the command from the repo root with a 600-second `timeoutMs`, as `workflow:public-mirror` starts its Node file: `node <engine>/lib/snapshot.js take|add|stale|drop <root> [args]`, the engine `WORKFLOW_DIR` or the plugin's own `workflow/`.
   - The command runs its export of that name (`take`, `add`, `stale`, `drop`), its code passed through; a usage fault is a `snapshot:` line and 64.
   - The module writes no snapshot file of its own. The `issues` list is appended by the command, and read whole by the module for the re-claim test.
-- The copy is `copyTree` in `workflow/lib/tree-copy.js`; how each platform copies, a macOS clone costing almost nothing: § Platforms.
+- The copy is `copyTree` in `workflow/lib/tree-copy.js`, one Node copy on every platform, a clone costing almost nothing where the file system has one: § Platforms.
 - No platform copies a package's `node_modules` folder.
   - That is one beside a `package.json` git lists, tracked or untracked and not ignored, never one under another `node_modules`.
   - Red-proof's copy makes each one a real folder with its entries linked from the live repo.
@@ -1413,7 +1431,8 @@
 - The turn's lines are those the journal of the cwd's repo root (`journalFor` in `hooks/mods/markers.js`) gained since the owner prompt that opened the turn.
   - `classic.UserPromptSubmit` records `{ ms, bytes }` on an owner prompt, under the session's `turn-journal` key: the time, and the journal's length from its stat.
   - It never records on a harness frame (`isSystemPrompt` in `hooks/mods/frame.js`: a hand-back, a task notification).
-  - The Stop reads past `bytes` as a tail (`journalTail`), never the journal or the transcript whole, since the engine's `$.fs.read` refuses a file over 4 MiB.
+  - The Stop reads past `bytes` as a tail (`journalTail`), never the journal or the transcript whole.
+    - The engine's `$.fs.read` answers at most 4 MiB, so the tail is read by ranges of that size (§ The hooks module, the Bash `classic.PostToolUse` row's detail).
   - A Stop with no record (no prompt yet this session) reads no lines.
 - The journal is the shim's (`workflow/README.md`, the `identity/call.js` entry).
   - So a close a script made counts, and a command that names one in its text but failed does not.

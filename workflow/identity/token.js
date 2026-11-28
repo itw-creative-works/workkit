@@ -9,7 +9,7 @@ const { loginFile, readLogin, loginStatus, writeOwnerOnly, signIn, LOGIN_FIX } =
 const { repoOwner, ownerId, installPage } = require('./install-page');
 const { splitRepo } = require('../slug');
 const { userDir } = require('../user-dir');
-const { unreadPathStop } = require('../lib/platform');
+const { errorStop } = require('../lib/platform');
 const { faultsUnder } = require('../../hooks/mods/settings.js');
 const { settingsAt, faultsAt } = require('../lib/settings');
 const { readJsonOrNull } = require('../lib/read');
@@ -317,21 +317,6 @@ const printToken = async (repo) => {
 };
 
 /**
- * The code of a failure no form gave its own: a path nativePath could not read
- * is its one stop line, any other error its message on stderr and 1.
- * @param {Error} err
- * @returns {number}
- */
-const failureCode = (err) => {
-  try {
-    return unreadPathStop(err);
-  } catch {
-    process.stderr.write(`${err.message}\n`);
-    return 1;
-  }
-};
-
-/**
  * The installation form, the same request as a token: `installed`, or
  * `not installed` with the refusal (the install page) on stderr. The probe
  * form (`page` false) prints the verdict alone and makes no public id read.
@@ -379,10 +364,10 @@ if (require.main === module) {
   main(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
   }, (err) => {
-    process.exitCode = failureCode(err);
+    process.exitCode = errorStop(err);
   });
 }
 
 module.exports = {
-  IdentityError, tokenFor, tokenWithSignIn, tokenUrlOf, tokenAnswer, failureCode,
+  IdentityError, tokenFor, tokenWithSignIn, tokenUrlOf, tokenAnswer,
 };

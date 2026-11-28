@@ -4,9 +4,11 @@
 // and every failure is silent (jobs/README.md § The upstream news).
 //
 // Usage: const { collectCcNews, renderVersionMark } = require('./cc-news');
-//   collectCcNews()              // { version, since, matches }
+//   await collectCcNews()        // { version, since, matches }
 //   renderVersionMark(version)   // the line the published brief carries
 
+const fs = require('fs');
+const { fileURLToPath } = require('url');
 const { execFileSync } = require('../../../workflow/lib/run');
 
 const { BRIEF_TITLE_PREFIX } = require('../../../tower/api/lib/history');
@@ -33,10 +35,13 @@ const BRIEF_QUERY = `query($owner:String!,$name:String!){
 }`;
 
 // `WORKKIT_CC_CHANGELOG` overrides the source: a seam for the suite, which
-// points it at a `file://` fixture so running the tests never reaches the
-// network (curl reads both schemes, so the fetch has no test-only branch).
+// points it at a local server or a `file:` fixture so running the tests never
+// reaches the network.
 const SOURCE = process.env.WORKKIT_CC_CHANGELOG
   || 'https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md';
+
+// How long the upstream read may take, its answer included.
+const FETCH_BOUND_MS = 20000;
 
 // The topics, in the order the block prints them: the kit's own surfaces
 // first, the rest under `other`. A table of contents, not a gate: an entry
@@ -57,13 +62,30 @@ const defaultExec = (cmd, args) => execFileSync(cmd, args, {
   windowsHide: true,
 });
 
-/** The upstream text, or null when it could not be read. */
-const fetchChangelog = (source, exec) => {
+/**
+ * The upstream text, or null when it could not be read within the bound.
+ * A `file:` address is read from disk, any other fetched within the bound.
+ * @param {string} source the CHANGELOG's URL
+ * @param {number} [boundMs] the bound, FETCH_BOUND_MS by default
+ * @returns {Promise<string|null>}
+ */
+const fetchChangelog = async (source, boundMs = FETCH_BOUND_MS) => {
+  if (source.startsWith('file:')) {
+    try {
+      const text = fs.readFileSync(fileURLToPath(source), 'utf8');
+      return text.trim() ? text : null;
+    } catch {
+      // A missing or unreadable file: the same answer as an unreachable address.
+      return null;
+    }
+  }
   try {
-    const text = exec('curl', ['-sSfL', '--max-time', '20', source]);
-    return typeof text === 'string' && text.trim() ? text : null;
+    const res = await fetch(source, { signal: AbortSignal.timeout(boundMs) });
+    // Read whole either way, so a refused answer holds no connection open.
+    const text = await res.text();
+    return res.ok && text.trim() ? text : null;
   } catch {
-    // Offline, DNS down, a 404 on a renamed branch: all the same answer.
+    // Offline, DNS down, a stall past the bound: all the same answer.
     return null;
   }
 };
@@ -145,11 +167,11 @@ const readBoardVersion = (workflowHome, exec) => {
  * @param {object} [opts]
  * @param {string} [opts.workflowHome] the user's ~/.workkit
  * @param {string} [opts.home] overrides ~ for the default above
- * @param {string} [opts.source] the CHANGELOG URL (or any curl-readable path)
- * @param {Function} [opts.exec] (cmd, args) => stdout: the curl and gh seam
- * @returns {{version: string|null, since: string|null, matches: Array<{version: string, topic: string, entry: string}>}}
+ * @param {string} [opts.source] the CHANGELOG URL, or a `file:` one
+ * @param {Function} [opts.exec] (cmd, args) => stdout: the gh seam
+ * @returns {Promise<{version: string|null, since: string|null, matches: Array<{version: string, topic: string, entry: string}>}>}
  */
-const collectCcNews = (opts = {}) => {
+const collectCcNews = async (opts = {}) => {
   const workflowHome = opts.workflowHome || userDir(opts.home);
   const exec = opts.exec || defaultExec;
 
@@ -160,7 +182,7 @@ const collectCcNews = (opts = {}) => {
   if (!board.ok) return { version: null, since: null, matches: [] };
   const since = board.version;
 
-  const text = fetchChangelog(opts.source || SOURCE, exec);
+  const text = await fetchChangelog(opts.source || SOURCE);
   const sections = text ? parseSections(text) : [];
   // The upstream read failed, or served something that is not a changelog. The
   // board's version rides forward so the brief about to publish does not rewind
@@ -208,6 +230,7 @@ const renderCcNews = (news) => {
 
 module.exports = {
   collectCcNews,
+  fetchChangelog,
   renderCcNews,
   renderVersionMark,
   parseSections,

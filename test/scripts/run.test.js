@@ -5,7 +5,9 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect, mkTmp, SPAWN_DEADLINE } = require('../lib/harness');
-const { IS_WINDOWS, NODE_DIR, SYSTEM_PATH, joinPath, asWindows } = require('../lib/platform');
+const {
+  IS_WINDOWS, NODE_DIR, SYSTEM_PATH, RUN_JS, joinPath, asWindows,
+} = require('../lib/platform');
 const { launchOf, windowsQuoted, spawnSync, execFileSync } = require('../../workflow/lib/run');
 const { caught } = require('../lib/caught');
 
@@ -21,8 +23,6 @@ const WIN_PARENT = {
 };
 
 const onWin32 = (cmd, args, options, parentEnv = WIN_PARENT) => launchOf(cmd, args, options, { platform: 'win32', parentEnv });
-
-const RUN_JS = require.resolve('../../workflow/lib/run');
 
 /** run.js as Windows loads it: this one on Windows, elsewhere a fresh copy loaded under a faked win32. */
 const win32Run = () => {

@@ -12,7 +12,7 @@ const {
   describe, test, expect, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  IS_WINDOWS, NO_RC, shellPath, which, joinPath, stubTool, spawnBash, NODE_DIR, SYSTEM_PATH,
+  IS_WINDOWS, NO_RC, shellPath, which, joinPath, stubToolJs, handOverJs, spawnBash, NODE_DIR, SYSTEM_PATH,
 } = require('../lib/platform');
 const { reviewMarkerPath, suiteLogPath, suiteMarkerPath, treeHash } = require('../lib/suite-record');
 const { recordingNode } = require('../lib/node-fakes');
@@ -53,7 +53,7 @@ const npmOnOwnNode = (world) => {
   const bin = path.join(world.root, 'npm-bin');
   fs.mkdirSync(bin);
   const cli = IS_WINDOWS ? path.join(NODE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js') : fs.realpathSync(which('npm', NODE_DIR));
-  stubTool(bin, 'npm', ['#!/bin/bash', `exec "${shellPath(process.execPath)}" "${shellPath(cli)}" "$@"`]);
+  stubToolJs(bin, 'npm', handOverJs(process.execPath, [cli]));
   return bin;
 };
 
@@ -175,9 +175,12 @@ describe('script-shell', { skip: skipWithoutWrapper() }, () => {
       const bin = path.join(world.root, 'git-shim');
       const flag = path.join(world.root, 'break-hash');
       fs.mkdirSync(bin);
-      stubTool(bin, 'git', ['#!/bin/bash',
-        `if [ -e "${shellPath(flag)}" ]; then for a in "$@"; do [ "$a" = add ] && { echo 'git: add refused' >&2; exit 1; }; done; fi`,
-        `exec "${shellPath(which('git'))}" "$@"`]);
+      stubToolJs(bin, 'git', [
+        `if (require('fs').existsSync(${JSON.stringify(flag)}) && process.argv.slice(2).includes('add')) {`,
+        "  process.stderr.write('git: add refused\\n');",
+        '  process.exitCode = 1;',
+        `} else {\n${handOverJs(which('git'))}\n}`,
+      ].join('\n'));
       const repo = mkRepo({ scripts: { test: ': > "$WK_FLAG"' } });
       const res = npm(world, repo, ['test'], world.wrapper, { PATH: joinPath(bin, NODE_DIR, SYSTEM_PATH), WK_FLAG: shellPath(flag) });
       expect(fs.existsSync(flag), 'the suite ran and left its flag').toBeTruthy();

@@ -7,7 +7,6 @@
 const {
   describe, test, expect, until,
 } = require('../lib/harness');
-const { skipWithoutNodeStub } = require('../lib/platform');
 const { mods, ghEntry } = require('../lib/mods-inputs');
 const { ioIn } = require('../../workflow/lib/io');
 const { mkPublicWorld, publicLine, PUBLIC, PRIVATE } = require('../scripts/public/helpers');
@@ -46,13 +45,13 @@ const BUILDING = JSON.stringify(['status:building']);
 const QUIET_MS = 1500;
 
 describe('workflow:public-mirror', () => {
-  test('case 2: a journal line adding status:qa to #12 in a paired repo runs the mirror for #12', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 2: a journal line adding status:qa to #12 in a paired repo runs the mirror for #12', async () => {
     const world = linkedWorld();
     await posted(world, [edit(world, ['status:qa'])]);
     expect(await until(() => publicLabels(world) === QA), `the public issue took status:qa, got: ${publicLabels(world)}`).toBeTruthy();
   });
 
-  test('case 2: a journal line adding no status: label runs nothing', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 2: a journal line adding no status: label runs nothing', async () => {
     const world = linkedWorld();
     await posted(world, [edit(world, ['priority:high'])]);
     expect(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),
@@ -81,7 +80,7 @@ describe('workflow:public-mirror', () => {
 });
 
 describe('workflow:public-mirror: a repo with no public key', () => {
-  test('a repo with no public key: the hook does nothing', { skip: skipWithoutNodeStub() }, async () => {
+  test('a repo with no public key: the hook does nothing', async () => {
     const world = linkedWorld({ paired: false });
     await posted(world, [edit(world, ['status:qa'])]);
     expect(!(await until(() => publicLabels(world) !== BUILDING, QUIET_MS)),

@@ -7,9 +7,9 @@ const {
   describe, test, expect, mkTmp, before, after, until,
 } = require('../lib/harness');
 const {
-  SYSTEM_PATH, stubTool, joinPath, homeEnv,
+  SYSTEM_PATH, stubToolJs, joinPath, homeEnv,
 } = require('../lib/platform');
-const { recordArgv, readArgv } = require('../lib/argv-log');
+const { recordArgvJs, readArgv } = require('../lib/argv-log');
 const { ioOf } = require('../lib/io-streams');
 const {
   drivePoll, secondsOf, CLEAR, POLL_SECONDS,
@@ -61,7 +61,7 @@ describe('flows: enterToOpen', () => {
     const bin = mkTmp('flows-opener-');
     const log = path.join(bin, 'opener.log');
     // Both names, so whichever this platform's opener is, it is the stand-in and never a real browser.
-    for (const tool of ['open', 'xdg-open']) stubTool(bin, tool, ['#!/usr/bin/env bash', recordArgv(log), 'exit 0']);
+    for (const tool of ['open', 'xdg-open']) stubToolJs(bin, tool, recordArgvJs(JSON.stringify(log)));
     const saved = process.env.PATH;
     process.env.PATH = joinPath(bin, SYSTEM_PATH);
     t.after(() => { process.env.PATH = saved; });

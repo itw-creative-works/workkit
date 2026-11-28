@@ -1,6 +1,6 @@
 // Tests for `workkit setup --cloud`: the links a cloud session can take, and
 // the identity step it has no use for. Each run is a scratch kit on a scratch
-// machine, node and jq real, npm and gh argv recorders on PATH.
+// machine, node real, npm and gh argv recorders on PATH.
 // The shared prologue is ./helpers.js.
 
 const fs = require('fs');
@@ -8,10 +8,10 @@ const path = require('path');
 const {
   describe, test, expect,
 } = require('../../lib/harness');
-const { recordArgv } = require('../../lib/argv-log');
+const { stubToolJs } = require('../../lib/platform');
 const { IDENTITY_NA } = require('../../lib/identity');
 const {
-  cleanup, writeStub, mkWorld, runCli, signInEnv, mkSetupKit,
+  cleanup, recordCall, mkWorld, runCli, signInEnv, mkSetupKit,
 } = require('./helpers');
 
 /**
@@ -22,11 +22,10 @@ const {
 const cloudSetup = ({ localBin = true } = {}, fn) => {
   const world = mkWorld({ pluginInstalled: true });
   // npm answers an unset key as null, the way the real one does.
-  writeStub(path.join(world.bin, 'npm'), [
-    recordArgv(path.join(world.root, 'npm-argv.log')),
-    'if [[ "$1" == \'config\' && "$2" == \'get\' ]]; then printf \'null\\n\'; fi',
-    'exit 0',
-  ]);
+  stubToolJs(world.bin, 'npm', [
+    recordCall(path.join(world.root, 'npm-argv.log')),
+    "if (process.argv[2] === 'config' && process.argv[3] === 'get') process.stdout.write('null\\n');",
+  ].join('\n'));
   if (localBin) fs.mkdirSync(world.localBin, { recursive: true });
   const { kit, script } = mkSetupKit();
   try {

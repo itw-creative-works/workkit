@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { describe, test, expect, mkTmp } = require('./lib/harness');
 const {
-  joinPath, basePathWithout, which, NODE_DIR, IS_WINDOWS,
+  joinPath, basePathWithout, which, stubToolJs, NODE_DIR, IS_WINDOWS,
 } = require('./lib/platform');
 const { failuresOf, marksOf, totalsOf } = require('./lib/run-lists');
 const { MOD_FILES, mkWorld, claudeStub } = require('./lib/runner-world');
@@ -117,7 +117,7 @@ describe('modCase: finding claude', () => {
     if (IS_WINDOWS) {
       fs.writeFileSync(path.join(bin, 'claude.cmd'), ['@echo off', 'echo 2 pass', 'echo 0 fail', 'exit /b 0', ''].join('\r\n'));
     } else {
-      fs.writeFileSync(path.join(bin, 'claude'), ['#!/bin/sh', "echo ' 2 pass'", "echo ' 0 fail'", 'exit 0', ''].join('\n'), { mode: 0o755 });
+      stubToolJs(bin, 'claude', "process.stdout.write(' 2 pass\\n 0 fail\\n');");
     }
     const { code, output } = w.run([], { env: { PATH: joinPath(bin, basePathWithout(tmp, 'claude'), NODE_DIR) } });
     expect(code, `exit 0, got: ${output}`).toBe(0);
@@ -129,7 +129,7 @@ describe('modCase: finding claude', () => {
     { skip: IS_WINDOWS && 'Windows starts a file by its extension, not an execute bit' },
     () => {
       const w = pluginWorld();
-      const PATH = pathWithClaudeFile(['#!/bin/sh', 'exit 0'], 0o644);
+      const PATH = pathWithClaude((file) => fs.chmodSync(stubToolJs(path.dirname(file), 'claude', 'process.exit(0);'), 0o644));
       const { code, output } = w.run([], { env: { PATH } });
       expect(code, `exit 1, got: ${output}`).toBe(1);
       expect(marksOf(output), `the one case failed, got: ${output}`).toEqual([`✗ ${w.name}`]);
@@ -142,7 +142,7 @@ describe('modCase: finding claude', () => {
     { skip: IS_WINDOWS && 'Windows reads no #! line' },
     () => {
       const w = pluginWorld();
-      const PATH = pathWithClaudeFile([`#!${path.join(mkTmp('mod-case-noprog-'), 'no-such-program')}`, 'exit 0'], 0o755);
+      const PATH = pathWithClaudeFile([`#!${path.join(mkTmp('mod-case-noprog-'), 'no-such-program')}`, 'process.exit(0);'], 0o755);
       const { code, output } = w.run([], { env: { PATH } });
       expect(code, `exit 1, got: ${output}`).toBe(1);
       expect(marksOf(output), `the one case failed, got: ${output}`).toEqual([`✗ ${w.name}`]);

@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const { describe, test, expect } = require('../../lib/harness');
-const { stubTool, spawnSync } = require('../../lib/platform');
+const { spawnSync } = require('../../lib/platform');
 const { cleanup, makeRepo, makeGhStub, readFile, ghCalls, runScript } = require('./helpers');
 const { OLD_CHECKS } = require('../../lib/checks-template');
 
@@ -46,11 +46,7 @@ describe('standards.js: branch protection', () => {
     // "protected but unreadable" (rate limit, outage) must not be answered by
     // PUTting the minimal payload over whatever configuration exists.
     const repo = makeRepo();
-    const stub = makeGhStub({ repoRead: true, protection: 'absent' });
-    stubTool(stub.binDir, 'gh',
-      readFile(path.join(stub.binDir, 'gh'))
-        .replace('Branch not protected (HTTP 404)', 'API rate limit exceeded')
-        .trimEnd().split('\n'));
+    const stub = makeGhStub({ repoRead: true, protection: 'unreadable' });
     const { code, output } = runScript(repo, { pathPrefix: stub.binDir });
     expect(code, 'exit 0').toBe(0);
     expect(!ghCalls(stub).some((c) => c.includes('PUT')), `no PUT after an unexplained GET failure, got: ${output}`).toBeTruthy();

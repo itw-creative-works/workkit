@@ -17,7 +17,7 @@ import {
 } from './markers.js';
 import { rootOf } from './optin.js';
 import { publicMirrorGuard } from './public-mirror.js';
-import { dirOf, scriptWriteGuard } from './script-write.js';
+import { scriptWriteGuard } from './script-write.js';
 import { snapshotGuard } from './snapshot.js';
 import { vendorGuardGuard } from './vendor-guard.js';
 
@@ -75,7 +75,7 @@ export async function folderOpted(io, dir) {
  */
 export async function grownLines(io, home, marks, size) {
   const now = await journalSizes(io.list, size, home);
-  const reads = await Promise.all(journalsGrown(marks, now).map(({ journal, bytes }) => journalTail(io.run, journal, bytes)));
+  const reads = await Promise.all(journalsGrown(marks, now).map(({ journal, bytes }) => journalTail(io, journal, bytes)));
   const lines = reads.flat().sort((a, b) => a.ms - b.ms);
   const asked = new Map();
   const optedAt = (dir) => {
@@ -88,31 +88,20 @@ export async function grownLines(io, home, marks, size) {
 
 /**
  * A gh journal's length in bytes, measured and never read: the stat's size,
- * else `wc -c`; an absent journal is 0.
+ * which the engine's stat always carries; an absent journal is 0.
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {string} journal the journal's path
  * @returns {Promise<number>}
  */
 export async function journalSize(io, journal) {
-  const stat = await io.stat(journal);
-  if (!stat) return 0;
-  if (typeof stat.size === 'number') return stat.size;
-  const counted = await io.run(['wc', '-c', journal]);
-  return counted.exitCode === 0 ? Number.parseInt(counted.stdout.trim(), 10) || 0 : 0;
-}
-
-// A marker file written, its folder made first where it is missing; a folder
-// still missing shows as the write's own throw.
-async function writeMarker(io, path, text) {
-  const dir = dirOf(path);
-  if ((await io.stat(dir))?.kind !== 'dir') await io.run(['mkdir', '-p', dir]);
-  await io.write(path, text);
+  return (await io.stat(journal))?.size ?? 0;
 }
 
 /**
  * Before a Bash call runs: its journal mark holds every gh journal on the
  * machine and its length (journalSizes), written before any git call; then
  * its start (callStartText) holds the time taken first and its folder's repo root.
+ * Each write makes a missing folder itself, so nothing starts to make one.
  * @param {object} io the engine calls register.js hands over (`ioOf`), its `write` one that throws on a failure
  * @param {object} env the variables the module read
  * @param {string|undefined} id the call's tool_use_id; none leaves no mark
@@ -126,14 +115,15 @@ export async function markCall(io, env, id, cwd) {
   const [sized, mark, start] = await Promise.all([
     journalSizes(io.list, (journal) => journalSize(io, journal), home), journalMarkPath(id, home), callStartPath(id, home),
   ]);
-  await writeMarker(io, mark, journalMarkText(sized));
-  await writeMarker(io, start, callStartText({ ms, root: cwd ? await io.top(cwd) : null }));
+  await io.write(mark, journalMarkText(sized));
+  await io.write(start, callStartText({ ms, root: cwd ? await io.top(cwd) : null }));
 }
 
 /**
- * After it ran: the call's mark and start read and removed, and the opted-in
- * lines of each journal the call changed, oldest first (grownLines); no mark,
- * no lines, and no start, no start time.
+ * After it ran: the call's mark and start read and ended, each written empty,
+ * and the opted-in lines of each journal the call changed, oldest first
+ * (grownLines); no mark, no lines, and no start, no start time. An empty one
+ * is no marker, as one never written is: a live one is never empty.
  * @param {object} io the engine calls register.js hands over (`ioOf`)
  * @param {object} env the variables the module read
  * @param {string|undefined} id the call's tool_use_id
@@ -143,11 +133,11 @@ export async function callSince(io, env, id) {
   if (!id) return { lines: [], since: null, began: null };
   const home = userDirOf(env);
   const [mark, startPath] = await Promise.all([journalMarkPath(id, home), callStartPath(id, home)]);
-  const [held, started] = await Promise.all([io.read(mark), io.read(startPath)]);
-  if (started !== null) await io.run(['rm', '-f', startPath]);
+  const [held, started] = (await Promise.all([io.read(mark), io.read(startPath)])).map((text) => text || null);
+  if (started !== null) await io.write(startPath, '');
   const { ms, root } = started === null ? { ms: null, root: null } : callStartOf(started);
   if (held === null) return { lines: [], since: ms, began: root };
-  await io.run(['rm', '-f', mark]);
+  await io.write(mark, '');
   const lines = await grownLines(io, home, journalMarks(held), (journal) => journalSize(io, journal));
   return { lines, since: ms, began: root };
 }

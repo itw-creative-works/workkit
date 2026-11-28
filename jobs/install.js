@@ -82,25 +82,21 @@ const skipLaunchd = (label, what) => {
 };
 
 /**
- * The Windows task reaches the job through ~/.claude/workkit, and a Mac's job reads
- * its kit from it at install, so a link that is missing or names another kit runs
- * no task, this kit, or that kit's job; a workkit clone outranking this cached
- * copy is the one other answer that holds. Both modes say it.
+ * Both machines' jobs reach their kit through ~/.claude/workkit, so a link that is
+ * missing or names another kit runs no job or that kit's; a workkit clone
+ * outranking this cached copy is the one other answer that holds. Both modes say it.
  * @param {string} home
  * @param {string} label
- * @param {boolean} mac whether the line speaks of a Mac's job, else the Windows task
  */
-const checkEngineLink = (home, label, mac) => {
+const checkEngineLink = (home, label) => {
   const link = path.join(home, '.claude', 'workkit');
   const linked = physicalDir(link) ?? '';
   if (linked === path.join(WORKKIT_DIR, 'workflow')) return;
   if (cloneOutranks(WORKKIT_DIR, linked)) return;
-  const how = mac ? 'reads its kit from' : 'runs through';
   if (!linked) {
-    const then = mac ? `so it runs this kit at ${nativePath(WORKKIT_DIR)}` : 'so it cannot reach this kit';
-    warn(`${label} → the job ${how} ${nativePath(link)}, which does not resolve, ${then}; run \`workkit update\``);
+    warn(`${label} → the job runs through ${nativePath(link)}, which does not resolve, so it cannot reach this kit; run \`workkit update\``);
   } else {
-    warn(`${label} → the job ${how} ${nativePath(link)}, which resolves to ${nativePath(linked)}, not this kit's ${nativePath(WORKKIT_DIR)}/workflow; run \`workkit update\``);
+    warn(`${label} → the job runs through ${nativePath(link)}, which resolves to ${nativePath(linked)}, not this kit's ${nativePath(WORKKIT_DIR)}/workflow; run \`workkit update\``);
   }
 };
 
@@ -176,18 +172,16 @@ const installAgent = (run, label, when) => {
     error(`template missing: ${nativePath(template)}`);
     return 1;
   }
-  // The kit is the one the engine link names now, else this one; the Node is
-  // this run's. A moved kit or a new Node reads as out of date, and the next
-  // `workkit update` writes the file again.
-  const linked = physicalDir(path.join(run.home, '.claude', 'workkit'));
-  const kit = linked === null ? WORKKIT_DIR : path.dirname(linked);
-  const values = { HOME: run.home, KIT: kit, PATH: jobPath(run.home, path.dirname(process.execPath)) };
-  const rendered = fs.readFileSync(template, 'utf8').replace(/\{\{(HOME|KIT|PATH)\}\}/g, (_, key) => escaped(values[key]));
+  // The job reaches its kit through the engine link, so a moved kit changes
+  // nothing here; the PATH names this run's Node, so a new Node reads as out
+  // of date, and the next `workkit update` writes the file again.
+  const values = { HOME: run.home, PATH: jobPath(run.home, path.dirname(process.execPath)) };
+  const rendered = fs.readFileSync(template, 'utf8').replace(/\{\{(HOME|PATH)\}\}/g, (_, key) => escaped(values[key]));
   if (!lints(rendered)) {
     error(`${label} → rendered plist fails plutil -lint`);
     return 1;
   }
-  checkEngineLink(run.home, label, true);
+  checkEngineLink(run.home, label);
 
   const installed = isFile(target);
   if (run.mode === 'check') {
@@ -260,7 +254,7 @@ const installTaskFile = (run, label, when) => {
     home: path.win32.normalize(run.home),
     user: os.userInfo().username,
   });
-  checkEngineLink(run.home, label, false);
+  checkEngineLink(run.home, label);
   const copy = copyPath(label, userDir(run.home));
   if (run.mode === 'check') {
     const { line } = checkTask({ label, text, copy });

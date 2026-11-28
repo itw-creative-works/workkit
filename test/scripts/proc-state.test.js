@@ -6,12 +6,11 @@ const path = require('path');
 const {
   describe, test, expect, until, alive, start,
 } = require('../lib/harness');
-const { IS_WINDOWS } = require('../lib/platform');
+const { IS_WINDOWS, spawnSync } = require('../lib/platform');
 const { startNeverCollects, childOf } = require('../lib/never-collects');
 
 const LIB = path.join(__dirname, '..', '..', 'workflow', 'lib');
 const { ended } = require(path.join(LIB, 'proc-state.js'));
-const { spawnSync } = require(path.join(LIB, 'run.js'));
 
 /** Whether <pid> still answers signal 0, as a process its parent has yet to collect does. */
 const answers = (pid) => {

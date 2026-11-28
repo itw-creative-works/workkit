@@ -1,9 +1,10 @@
 /**
  * workflow/lib/platform.js: the platform reads the kit's Node scripts share:
- * a path's native spelling and a command's stop when it cannot be read, the
- * claude home, a folder's or a file's physical path, and whether the kit runs
- * from Claude's plugin cache, where a workkit clone outranks it.
- * Usage: const { nativePath, unreadPathStop, claudeHome, physicalDir, physicalPath, inPluginCache, cloneOutranks } = require('../lib/platform');
+ * a path's native spelling and a command's stop when it cannot be read, a
+ * program's stop on any error its top caught, the claude home, a folder's or a
+ * file's physical path, and whether the kit runs from Claude's plugin cache,
+ * where a workkit clone outranks it.
+ * Usage: const { nativePath, UNREAD_PATH, unreadPathStop, errorStop, claudeHome, physicalDir, physicalPath, inPluginCache, cloneOutranks } = require('../lib/platform');
  */
 
 const os = require('os');
@@ -68,6 +69,20 @@ const unreadPathStop = (err) => {
 };
 
 /**
+ * A program's stop on the error its top caught: a path nativePath could not
+ * read is unreadPathStop's line, any other error is one plain line on stderr,
+ * and either is 1.
+ * @param {*} err what the program's run threw
+ * @param {(err: *) => string} [lineOf] the plain line, without its newline; the message by default
+ * @returns {number} 1
+ */
+const errorStop = (err, lineOf = (e) => e.message) => {
+  if (err && err.code === UNREAD_PATH) return unreadPathStop(err);
+  writeErr(`${lineOf(err)}\n`);
+  return 1;
+};
+
+/**
  * The claude home the workflow/ programs share, read at the call: WORKFLOW_CLAUDE_HOME
  * (the tests' seam), else `<home>/.claude`. A `home` given is taken as is; else HOME,
  * else `os.homedir()`. Each variable or homedir read is in its native spelling (nativePath).
@@ -122,5 +137,5 @@ const inPluginCache = (kitDir) => {
 const cloneOutranks = (kitDir, linkedDir) => inPluginCache(kitDir) && isKitCheckout(linkedDir || '');
 
 module.exports = {
-  nativePath, unreadPathStop, claudeHome, physicalDir, physicalPath, inPluginCache, cloneOutranks,
+  nativePath, UNREAD_PATH, unreadPathStop, errorStop, claudeHome, physicalDir, physicalPath, inPluginCache, cloneOutranks,
 };

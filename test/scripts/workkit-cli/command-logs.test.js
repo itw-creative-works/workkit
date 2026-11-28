@@ -13,13 +13,13 @@ const {
   describe, test, expect, mkTmp, seeded, until, run, start, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  NODE_DIR, SYSTEM_PATH, jsPath, joinPath, homeEnv, which, spawnSync,
+  NODE_DIR, SYSTEM_PATH, jsPath, joinPath, homeEnv, which, spawnSync, stubToolJs,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { takeSnapshot } = require('../../lib/red-snapshot');
 const { deviceFlowRoutes, hostsOf, startServer } = require('../../lib/identity');
 const {
-  CLI, mkWorld, runCli, mkRepo, mkSetupKit, mkKit, seedSettings, writeStub, signInEnv, SLUG, HOME,
+  CLI, mkWorld, runCli, mkRepo, mkSetupKit, mkKit, seedSettings, signInEnv, SLUG, HOME,
 } = require('./helpers');
 
 /** A scratch machine whose machine folder is its home's `.workkit`, the `~/.workkit` the logs go under. */
@@ -252,13 +252,8 @@ describe('workkit-cli: a secret step runs outside the log', () => {
     // A home repo whose Claude token is young, so the flag re-mints it; the mint draws the secret last.
     const world = mkMachine({ secrets: [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', days: 3 }] });
     seedSettings(world, { repo: HOME, publish: false, url: null });
-    writeStub(path.join(world.bin, 'claude'), [
-      'if [[ "$1" == \'setup-token\' ]]; then',
-      '  printf \'%s\\n\' \'Paste the authorization code here:\'',
-      `  printf '%s\\n' '${SECRET}'`,
-      'fi',
-      'exit 0',
-    ]);
+    stubToolJs(world.bin, 'claude',
+      `if (process.argv[2] === 'setup-token') process.stdout.write(${JSON.stringify(`Paste the authorization code here:\n${SECRET}\n`)});`);
     const { script } = mkKit(SLUG);
     const res = atTerminal(world, script, ['setup', '--token'], world.root);
     const log = readOr(machineLog(world, 'setup.log'));

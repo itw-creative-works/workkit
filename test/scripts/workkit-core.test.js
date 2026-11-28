@@ -10,7 +10,7 @@ const { stripVTControlCharacters } = require('util');
 const {
   describe, test, expect, run, mkTmp,
 } = require('../lib/harness');
-const { BASH, NO_RC, NODE_DIR, SYSTEM_PATH, joinPath } = require('../lib/platform');
+const { NODE_DIR, SYSTEM_PATH, joinPath, RUN_JS } = require('../lib/platform');
 const {
   CORE, TOTALS, skipWithoutNpm, npmIn, mkCoreRepo,
 } = require('../lib/core-repo');
@@ -18,7 +18,7 @@ const { linesOf, totalsOf } = require('../lib/run-lists');
 
 const KIT = path.join(CORE, '..', '..');
 // What the kit's workflow/lib/run.js exports, sorted: the one source `workkit-core/run` must match.
-const RUN_EXPORTS = Object.keys(require(path.join(KIT, 'workflow', 'lib', 'run.js'))).sort();
+const RUN_EXPORTS = Object.keys(require(RUN_JS)).sort();
 // One win32 launch no file is read for: a .cmd by path through the parent's ComSpec.
 const WIN32_CMD = [
   'C:\\tools\\x.cmd', ['a b'], {}, { platform: 'win32', parentEnv: { ComSpec: 'C:\\Windows\\system32\\cmd.exe' } },
@@ -66,7 +66,7 @@ const ran = (output, name) => linesOf(output).some((line) => line.includes(name)
 
 // The installed bin by its name, through the shim npm made for it.
 const bin = (repo, args) => {
-  const res = run(BASH, [...NO_RC, '-c', 'exec node_modules/.bin/workkit "$@"', 'workkit', ...args], {
+  const res = run(path.join(repo, 'node_modules', '.bin', 'workkit'), args, {
     cwd: repo, env: { ...process.env, PATH: joinPath(NODE_DIR, SYSTEM_PATH) },
   });
   return { code: res.status, output: stripVTControlCharacters(res.output) };

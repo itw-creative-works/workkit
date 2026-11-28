@@ -69,7 +69,21 @@
     - Beside them: `npmrcEnv(world)`, a scratch user npmrc so an npm on the system PATH reads and writes no other; `machineLinks(world, call)`, the machine steps through `inNode` under it; `windowsForm(p)`, a path as `workkit.cmd` and the Windows PATH line spell it; `lines(text)`, each line trimmed.
     - `test/scripts/workkit-cmd.test.js` holds the `workkit.cmd` cases: `renderCmd`, the copy the machine steps write, and the doctor's lines for it and for the PATH, each Windows half reached through the system argument.
   - The home suites start `workflow/home.js` with the running Node too: `inHome(world, [verb, ...args])` in `test/scripts/home/helpers.js` runs one verb from the world's root, the caller's voice at its defaults, and answers `{ code, out, err }`; its `seeded(world)` clones the home and seeds the runner, its code the seed's.
+  - The tower start suites start `tower/start.js` through `test/tower/start/helpers.js`, which guards each start (`guarded(env)`), so a starter that ignored its seams reaches neither the real app nor the live tower's API port and home:
+    - a guard folder first on its `PATH`, of `npm` and `omega` stand-ins (`stubToolJs`) that say `the suite reached the real <name>` on stderr and exit 1;
+    - a scratch home (`HOME`, `USERPROFILE`, `WORKFLOW_HOME`) and a `TOWER_PORT` free a moment before.
   - A run: line meant for Linux runs under `MSYS2_ARG_CONV_EXCL=*`, so Git Bash rewrites no argument that looks like a path (`/workkit/`).
+- A stand-in a case puts on a PATH is a Node program, built by `stubToolJs`, the one builder (`AGENTS.md` § Tests), so it needs no compiler on Windows.
+  - It does a fake's file work in Node: a read, a write, a folder, a copy, a wait. No `cat`, `mkdir`, `cp`, `sleep`, `grep` or `tr` runs inside one.
+  - A test file starts a shell only where a start from a shell is the case's subject: the `git` shim, git's hook files, npm's script shell, a skill line, the starter's `bash` name, a descriptor a shell hands over, a `run:` line.
+- `test/scripts/shell-list.test.js` holds three lists, each entry with its reason, read against the tree's own text:
+  - the test files that may hold a shell `#!` line or start `bash` or `sh`;
+  - the programs a kit Node file outside `test/` may start by name;
+    - A name is seen as a literal at the start, under a `program:` key or as any `<name>.exe` literal, or held in a constant of the same file: a literal, either arm of a choice of two, a template's or a `path.join`'s last part, and an array's first element below a destructure (`const [cmd] = ...`).
+    - A constant whose value starts with another name (`awake`, `opener()`) is followed to that name's constant, read the same way.
+    - A start handed a function's parameter stays unseen.
+  - the shell files that stay.
+  - A use off a list fails its case, naming the file; so does a listed test file that no longer uses a shell, and a listed program no kit Node file is seen starting ("on the list, started nowhere"), so no list goes stale.
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
 - A suite or a case that cannot run here states a `skip` value, its reason, and the run lists every skip after the totals.
   - A whole file skips through its outer `describe`'s `skip` option: `describe('supervise', { skip: skipOnWindows() }, () => { ... })`, the kit's helper in `test/lib/supervise.js`. A suite that needs a tool states `needs` there (its bullets below).

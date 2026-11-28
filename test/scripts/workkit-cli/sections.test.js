@@ -6,10 +6,10 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  describe, test, expect, mkTmp, start, run, until, SPAWN_DEADLINE,
+  describe, test, expect, before, after, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  IS_WINDOWS, SYSTEM_PATH, nodeHomeEnv, jsPath, which,
+  IS_WINDOWS, SYSTEM_PATH, NO_RC, nodeHomeEnv, jsPath, gitPath, spawnBash, joinPath, basePathWithout, stubToolJs, RUN_JS,
 } = require('../../lib/platform');
 const { framesIn } = require('../../lib/spin-call');
 const { mkOriginRepo } = require('../../lib/git-repo');
@@ -17,7 +17,7 @@ const {
   INSTALL_FIX, repoRoute, writeLogin, useTokenService, startServer, startService, attentionCount, doctorWarnings,
 } = require('../../lib/identity');
 const {
-  WORKFLOW_DIR, cleanup, mkWorld, runCli, mkKit, SLUG, mkHomeWorld, mkRepo, mkSetupKit, rosterRepo, signInEnv, inNode, lines,
+  WORKFLOW_DIR, CLI, cleanup, mkWorld, runCli, mkKit, SLUG, mkHomeWorld, mkRepo, mkSetupKit, rosterRepo, signInEnv, inNode, npmrcEnv, lines,
 } = require('./helpers');
 
 describe('workkit: how a run is organized (issue #90)', () => {
@@ -171,7 +171,7 @@ describe('workkit: a wait line or a question under a title carries its indent', 
     fs.writeFileSync(caller, [
       `const { title } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'voice.js'))});`,
       `const { spin } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'spin.js'))});`,
-      `const { spawnSync } = require(${jsPath(path.join(WORKFLOW_DIR, 'lib', 'run.js'))});`,
+      `const { spawnSync } = require(${jsPath(RUN_JS)});`,
       'const hold = [',
       '  "const fs = require(\'fs\');",',
       '  "const giveUp = setTimeout(() => process.exit(3), Number(process.argv[2]));",',
@@ -192,29 +192,107 @@ describe('workkit: a wait line or a question under a title carries its indent', 
   });
 });
 
+// Git Bash reads /home under its own install folder; it rides no temp mount, which this world moved.
+const SHELL_ONLY = '/home/wk-doctor/.claude';
+// Whether a doctor run logged to stderr says WORKFLOW_CLAUDE_HOME's env: line for `value` under This machine.
+const envLineUnderMachine = (res, value) => {
+  const said = lines(res.err);
+  const line = said.indexOf(`⚠ env: WORKFLOW_CLAUDE_HOME (${value}) is a path only Git Bash can read, so the hooks and the commands read different folders; set it as a drive path (C:/...)`);
+  const machine = said.indexOf('💻 This machine');
+  return machine >= 0 && line > machine && line < said.indexOf('🏠 Home repo');
+};
+const saysEnvLine = (res) => doctorWarnings(res).some((l) => l.trim().startsWith('⚠ env:'));
+
 describe('workkit doctor: a home variable only Git Bash can read is said under This machine', {
   skip: !IS_WINDOWS && 'off Windows every program reads a home by its spelling',
 }, () => {
-  // Git Bash reads /home under its own install folder; it rides no temp mount, which this world moved.
-  const SHELL_ONLY = '/home/wk-doctor/.claude';
-
-  test('WORKFLOW_CLAUDE_HOME in a spelling only Git Bash reads is one env: line under This machine, counted; the same folder as a drive path is none', () => {
+  test('WORKFLOW_CLAUDE_HOME in a spelling only Git Bash reads is one env: line under This machine, counted; a drive path is none', () => {
     const world = mkWorld();
-    const asked = run(which('cygpath', SYSTEM_PATH), ['-m', SHELL_ONLY], { env: world.env });
-    expect(asked.status, `cygpath named the folder's drive path, got: ${asked.output}`).toBe(0);
-    const drive = asked.stdout.trim();
+    // A drive path outside Git Bash's install folder: the world's own Claude home.
+    const drive = world.claudeHome;
     // Every line on stderr, so a warning reads in its order among the section titles.
     const doctorWith = (folder) => runCli(world, ['doctor'], { env: { WORKFLOW_CLAUDE_HOME: folder, WK_LOG_STDERR: '1' } });
     const shell = doctorWith(SHELL_ONLY);
     const native = doctorWith(drive);
     cleanup(world.root);
 
-    const said = lines(shell.err);
-    const line = said.indexOf(`⚠ env: WORKFLOW_CLAUDE_HOME (${SHELL_ONLY}) is a path only Git Bash can read, so the hooks and the commands read different folders; set it as a drive path (C:/...)`);
-    const machine = said.indexOf('💻 This machine');
-    const next = said.indexOf('🏠 Home repo');
-    expect(machine >= 0 && line > machine && line < next, `the env: line under This machine, got: ${shell.said}`).toBe(true);
+    expect(envLineUnderMachine(shell, SHELL_ONLY), `the env: line under This machine, got: ${shell.said}`).toBe(true);
     expect(attentionCount(shell.said), `the closing count holds it, got: ${shell.said}`).toBe(attentionCount(native.said) + 1);
-    expect(doctorWarnings(native).some((l) => l.trim().startsWith('⚠ env:')), `the drive spelling says no env: line, got: ${native.said}`).toBe(false);
+    expect(saysEnvLine(native), `the drive spelling says no env: line, got: ${native.said}`).toBe(false);
+  });
+
+  describe('started through Git Bash, which rewrites the value before node reads it', () => {
+    let world;
+    let shell;
+    let drive;
+    // bash holds the folder in its own environment and starts node, so the value node reads is Git Bash's rewrite.
+    const doctorFromBash = (folder) => {
+      const res = spawnBash([...NO_RC, '-c', `WORKFLOW_CLAUDE_HOME='${folder}' "$0" "$1" doctor`, gitPath(process.execPath), gitPath(CLI)], {
+        cwd: world.root, env: { ...world.env, WK_LOG_STDERR: '1' }, input: '', encoding: 'utf8', timeout: SPAWN_DEADLINE,
+      });
+      expect(res.status !== null, `the doctor finished (no timeout, no signal): ${res.error || ''}`).toBe(true);
+      return { err: res.stderr || '', said: `${res.stdout || ''}${res.stderr || ''}` };
+    };
+
+    before(() => {
+      world = mkWorld();
+      shell = doctorFromBash(SHELL_ONLY);
+      // A drive path outside Git Bash's install folder: the world's own Claude home.
+      drive = doctorFromBash(gitPath(world.claudeHome));
+    });
+    after(() => cleanup(world.root));
+
+    test('WORKFLOW_CLAUDE_HOME set to a /home path in bash is one env: line under This machine, counted', () => {
+      expect(envLineUnderMachine(shell, SHELL_ONLY), `the env: line under This machine, got: ${shell.said}`).toBe(true);
+      expect(attentionCount(shell.said), `the closing count holds it, got: ${shell.said}`).toBe(attentionCount(drive.said) + 1);
+    });
+
+    test('WORKFLOW_CLAUDE_HOME set to a drive path in bash is no env: line', () => {
+      expect(saysEnvLine(drive), `no env: line, got: ${drive.said}`).toBe(false);
+    });
+  });
+});
+
+describe('workkit doctor on a Windows platform: the Git Bash root as cygpath answers it', () => {
+  // The drive path a node started from Git Bash reads for SHELL_ONLY.
+  const REWRITTEN = `C:/Program Files/Git${SHELL_ONLY}`;
+  let world;
+  let noRoot;
+  let rooted;
+  let unset;
+  const doctorOnWindows = (pathDir, env = {}) => inNode(world, {
+    file: 'workkit/doctor.js', fn: 'doctor', kit: { platform: 'win32' },
+    env: { ...npmrcEnv(world), PATH: joinPath(world.bin, pathDir), WK_LOG_STDERR: '1', ...env },
+  });
+
+  before(() => {
+    world = mkWorld();
+    const bare = basePathWithout(world.root, 'cygpath');
+    const fake = path.join(world.root, 'cygpath-root');
+    fs.mkdirSync(fake);
+    // Git Bash's / as cygpath -m names it, closing slash and all; any other ask is refused out loud.
+    stubToolJs(fake, 'cygpath', [
+      'const args = process.argv.slice(2);',
+      "if (args.length === 2 && args[0] === '-m' && args[1] === '/') process.stdout.write('C:/Program Files/Git/\\n');",
+      "else { process.stderr.write(`cygpath fake: no answer for ${args.join(' ')}\\n`); process.exitCode = 1; }",
+    ].join('\n'));
+    unset = doctorOnWindows(bare);
+    noRoot = doctorOnWindows(bare, { WORKFLOW_CLAUDE_HOME: REWRITTEN });
+    rooted = doctorOnWindows(joinPath(fake, bare), { WORKFLOW_CLAUDE_HOME: REWRITTEN });
+  });
+  after(() => cleanup(world.root));
+
+  test('no cygpath on PATH: no root, so no env: line, and the doctor ends as it does with the world\'s own Claude home', () => {
+    // Only this variable's line: on a Mac the world's own HOME and WORKFLOW_HOME are POSIX, named in every run here.
+    const named = doctorWarnings(noRoot).some((l) => l.trim().startsWith('⚠ env: WORKFLOW_CLAUDE_HOME'));
+    expect(named, `no env: line for WORKFLOW_CLAUDE_HOME, got: ${noRoot.said}`).toBe(false);
+    // Another Claude home is other folders to check, so the count may differ; the end may not.
+    expect(noRoot.code, `the exit code it has with the world's home, got: ${noRoot.said}`).toBe(unset.code);
+    expect(attentionCount(noRoot.said) > 0, `the doctor reached its closing count, got: ${noRoot.said}`).toBe(true);
+  });
+
+  test('a cygpath naming the root: the env: line under This machine in Git Bash\'s spelling, counted', () => {
+    expect(envLineUnderMachine(rooted, SHELL_ONLY), `the env: line under This machine, got: ${rooted.said}`).toBe(true);
+    expect(attentionCount(rooted.said), `the closing count holds it, got: ${rooted.said}`).toBe(attentionCount(noRoot.said) + 1);
   });
 });

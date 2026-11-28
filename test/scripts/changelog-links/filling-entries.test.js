@@ -5,12 +5,11 @@
 const fs = require('fs');
 const path = require('path');
 const { describe, test, expect } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
 } = require('./helpers');
 
-describe('changelog-links: filling entries in', { skip: skipWithoutNodeStub() }, () => {
+describe('changelog-links: filling entries in', () => {
   test('an entry gains its commit link and the author handle', () => {
     const { dir, shas } = mkRepo(
       CHANGELOG('- [#4](../../issues/4) - Plugins install from settings.json.'),

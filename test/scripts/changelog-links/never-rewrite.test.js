@@ -3,12 +3,11 @@
 // The shared prologue is ./helpers.js.
 
 const { describe, test, expect } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
 } = require('./helpers');
 
-describe('changelog-links: what it must never rewrite', { skip: skipWithoutNodeStub() }, () => {
+describe('changelog-links: what it must never rewrite', () => {
   // A wrong link written into the file is permanent, so each shape is pinned.
 
   test('an example bullet inside a fenced block is left alone', () => {

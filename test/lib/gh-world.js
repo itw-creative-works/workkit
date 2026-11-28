@@ -6,9 +6,9 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { shellPath, stubTool } = require('./platform');
 const { mkTmp } = require('./harness');
-const { viaJq } = require('./gh-stub');
+const { ghJq } = require('./gh-jq');
+const { writeGh } = require('./gh-stub');
 
 const HOST = 'https://github.com';
 const STAMP = '2026-10-29T00:00:00Z';
@@ -39,10 +39,7 @@ const mkGhWorld = (repos, { fail = [] } = {}) => {
   fs.writeFileSync(stateFile, JSON.stringify(state));
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir);
-  stubTool(binDir, 'gh', [
-    '#!/usr/bin/env bash',
-    `exec "${shellPath(process.execPath)}" "${shellPath(__filename)}" "${shellPath(stateFile)}" "$@"`,
-  ]);
+  writeGh(binDir, { answer: { module: __filename, name: 'answerWorld' }, config: stateFile });
   const read = () => JSON.parse(fs.readFileSync(stateFile, 'utf8'));
   return {
     binDir,
@@ -54,7 +51,7 @@ const mkGhWorld = (repos, { fail = [] } = {}) => {
   };
 };
 
-// The program half: one gh call against the state file.
+// The stand-in's half: one gh call against the state file.
 
 class Refusal extends Error {}
 const refuse = (message) => { throw new Refusal(message); };
@@ -152,7 +149,7 @@ const serve = (state, argv) => {
     if (file === undefined) return one(flags, 'body');
     return fs.readFileSync(file === '-' ? 0 : file, 'utf8');
   };
-  const emit = (value, jq) => out.push(jq ? viaJq(jq, value) : `${JSON.stringify(value)}\n`);
+  const emit = (value, jq) => out.push(jq ? ghJq(jq, value) : `${JSON.stringify(value)}\n`);
   const command = `${argv[0]} ${argv[1]}`;
   if (!FLAGS[command]) refuse(`the fake gh does not serve gh ${command}`);
   const { flags, args } = parse(argv.slice(2), FLAGS[command], command);
@@ -221,7 +218,8 @@ const serve = (state, argv) => {
   return { out, code: 0 };
 };
 
-const main = ([stateFile, ...argv]) => {
+/** One call against the state file at `stateFile`, the fake gh's answer: what it prints, and its exit code. */
+const answerWorld = (stateFile, argv) => {
   const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
   state.calls.push(argv);
   let result;
@@ -237,6 +235,4 @@ const main = ([stateFile, ...argv]) => {
   return result.code;
 };
 
-module.exports = { mkGhWorld };
-
-if (require.main === module) process.exitCode = main(process.argv.slice(2));
+module.exports = { mkGhWorld, answerWorld };

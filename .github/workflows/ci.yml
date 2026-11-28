@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: lts/*
       - name: Kit Node
-        run: echo "WORKKIT_NODE=$(command -v node)" >> "$GITHUB_ENV"
+        run: node "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-env.js" node
       # Whether the suite runs, decided before the repo's own setup: always for a pull request;
       # for a push unless it is a release stamp, which the kit's release-push.js answers.
       - name: Scope
@@ -41,15 +41,12 @@ jobs:
         env:
           BEFORE: ${{ github.event.before }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" != push ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/release-push.js" "$BEFORE" >> "$GITHUB_OUTPUT"
-          fi
+          "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/release-push.js"
       - name: Node version
         id: node
         if: steps.scope.outputs.run == 'true'
-        run: echo "version=$("$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-node-version.js")" >> "$GITHUB_OUTPUT"
+        run: |
+          "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-node-version.js"
       - uses: actions/setup-node@v5
         if: steps.scope.outputs.run == 'true'
         with:
@@ -69,11 +66,7 @@ jobs:
       - name: Install dependencies
         if: steps.scope.outputs.run == 'true'
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          elif [ -f package.json ]; then
-            npm install --no-audit --no-fund
-          fi
+          "$WORKKIT_NODE" "$RUNNER_TEMP/workkit-kit/.github/scripts/ci-install.js"
       # After the install, so a command that needs an installed package can run.
       - name: Post-install (hooks.ciPostInstall)
         if: steps.scope.outputs.run == 'true'

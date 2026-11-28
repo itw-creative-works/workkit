@@ -6,12 +6,9 @@
 const {
   describe, test, expect,
 } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   mkPublicWorld, publicLine, said, PRIVATE, PUBLIC,
 } = require('./helpers');
-
-// The verb's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
 
 const REPORT = {
   number: 44,
@@ -28,7 +25,7 @@ const INTAKE_WORDING = "Thanks for the report. We're tracking this internally. T
 const madeIssues = (world) => world.gh.issues(PRIVATE).filter((i) => i.number > PRIVATE_OPEN.number);
 
 describe('workkit public intake', () => {
-  test('intake takes an open public issue with no status: label: one private inbox issue with the Public: line and the quoted report, one intake comment, status:inbox on the public issue', { skip: skipWithoutNodeStub() }, () => {
+  test('intake takes an open public issue with no status: label: one private inbox issue with the Public: line and the quoted report, one intake comment, status:inbox on the public issue', () => {
     const world = mkPublicWorld({ issues: { public: [REPORT], private: [PRIVATE_OPEN] } });
     const res = world.run(['intake']);
     expect(res.code, `intake exits 0 (${said(res)})`).toBe(0);
@@ -53,7 +50,7 @@ describe('workkit public intake', () => {
     expect(pub.state, 'the public issue stays open').toBe('open');
   });
 
-  test('intake names the reporter as a bare mention: Reported by @octo on the public repo#N, no backticks', { skip: skipWithoutNodeStub() }, () => {
+  test('intake names the reporter as a bare mention: Reported by @octo on the public repo#N, no backticks', () => {
     const world = mkPublicWorld({ issues: { public: [{ ...REPORT, author: 'octo' }], private: [PRIVATE_OPEN] } });
     const res = world.run(['intake']);
     expect(res.code, `intake exits 0 (${said(res)})`).toBe(0);
@@ -62,7 +59,7 @@ describe('workkit public intake', () => {
       `the body carries the bare mention line, got: ${issue.body}`).toBeTruthy();
   });
 
-  test('intake skips a public issue that already has a status: label', { skip: skipWithoutNodeStub() }, () => {
+  test('intake skips a public issue that already has a status: label', () => {
     const labelled = {
       number: 45, title: 'Already routed', author: 'someone', body: 'x', labels: ['status:building'],
     };
@@ -76,7 +73,7 @@ describe('workkit public intake', () => {
     expect(writes.length, `public #45 is left alone, got: ${JSON.stringify(writes)}`).toBe(0);
   });
 
-  test('intake run twice takes nothing the second time', { skip: skipWithoutNodeStub() }, () => {
+  test('intake run twice takes nothing the second time', () => {
     const world = mkPublicWorld({ issues: { public: [REPORT], private: [PRIVATE_OPEN] } });
     const first = world.run(['intake']);
     expect(first.code, `the first intake exits 0 (${said(first)})`).toBe(0);
@@ -89,7 +86,7 @@ describe('workkit public intake', () => {
     expect(JSON.stringify(world.gh.writes().slice(writesAfterFirst)), 'the second run wrote nothing').toBe('[]');
   });
 
-  test('a retry after a failed public label edit makes no second private issue', { skip: skipWithoutNodeStub() }, () => {
+  test('a retry after a failed public label edit makes no second private issue', () => {
     const world = mkPublicWorld({
       issues: { public: [REPORT], private: [PRIVATE_OPEN] }, fail: [{ slug: PUBLIC, number: 44, op: 'labels' }],
     });
@@ -106,7 +103,7 @@ describe('workkit public intake', () => {
     expect(JSON.stringify(pub.comments.map((c) => c.body.trim())), 'one intake comment, after the private issue the first run made').toBe(JSON.stringify([INTAKE_WORDING]));
   });
 
-  test('a comment refused once, then a retry, ends with one comment and the label', { skip: skipWithoutNodeStub() }, () => {
+  test('a comment refused once, then a retry, ends with one comment and the label', () => {
     const world = mkPublicWorld({
       issues: { public: [REPORT], private: [PRIVATE_OPEN] }, fail: [{ slug: PUBLIC, number: 44, op: 'comment' }],
     });
@@ -125,7 +122,7 @@ describe('workkit public intake', () => {
 });
 
 describe('workkit public: a repo with no public key', () => {
-  test('a repo with no public key: intake and mirror do nothing', { skip: skipWithoutNodeStub() }, () => {
+  test('a repo with no public key: intake and mirror do nothing', () => {
     const linked = {
       number: 12, title: 'Split the lists', body: `${publicLine(44)}\n\nThe fix.`, labels: ['status:qa', 'type:bug'],
     };

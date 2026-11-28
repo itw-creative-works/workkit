@@ -6,18 +6,15 @@
 const {
   describe, test, expect,
 } = require('../../lib/harness');
-const { skipWithoutNodeStub } = require('../../lib/platform');
 const {
   mkPublicWorld, publicLine, said, PUBLIC,
 } = require('./helpers');
-
-// The verb's Node half starts gh by name; written before the stub launcher, it still skips on Windows.
 
 // The close wording over #12's entry in the seeded CHANGELOG, its own period not doubled.
 const CLOSE = 'Fixed in v1.4.0: Lists over 20 MB split into parts, so jsDelivr serves each one. Thanks for reporting it.';
 
 describe('workkit public close', () => {
-  test('close comments the close wording with the version and the entry\'s summary, then closes the public issue', { skip: skipWithoutNodeStub() }, () => {
+  test('close comments the close wording with the version and the entry\'s summary, then closes the public issue', () => {
     const world = mkPublicWorld({
       issues: {
         private: [{
@@ -40,7 +37,7 @@ describe('workkit public close', () => {
     expect(JSON.stringify(writes), 'the public issue is commented and closed in one gh issue close').toBe(JSON.stringify([['issue', 'close', '44', '--repo', PUBLIC, '--comment', CLOSE]]));
   });
 
-  test('a public issue already closed is a quiet skip, even with no CHANGELOG entry to read', { skip: skipWithoutNodeStub() }, () => {
+  test('a public issue already closed is a quiet skip, even with no CHANGELOG entry to read', () => {
     const world = mkPublicWorld({
       issues: {
         private: [{

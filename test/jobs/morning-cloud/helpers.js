@@ -9,9 +9,9 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { mkTmp, SPAWN_DEADLINE } = require('../../lib/harness');
-const { recordArgv, readArgv } = require('../../lib/argv-log');
+const { recordArgvJs, readArgv } = require('../../lib/argv-log');
 const {
-  homeEnv, stubTool, pathWith, spawnSync,
+  homeEnv, stubToolJs, pathWith, spawnSync,
 } = require('../../lib/platform');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.js');
@@ -58,20 +58,18 @@ const mkWorld = ({
   }
 
   const claudeLog = path.join(root, 'claude-argv.log');
-  const claude = stubTool(bin, 'claude', [
-    '#!/usr/bin/env bash',
-    recordArgv(claudeLog),
-    // %b, not %s: the escapes JSON.stringify wrote have to become real newlines.
+  const claude = stubToolJs(bin, 'claude', [
+    recordArgvJs(JSON.stringify(claudeLog)),
     // A send that failed says so on stderr, the way the CLI does: the runner
     // logs that and never the digest.
-    `printf '%b' ${JSON.stringify(response)}${status === 0 ? '' : ' >&2'}`,
-    `exit ${status}`,
-  ]);
+    `process.${status === 0 ? 'stdout' : 'stderr'}.write(${JSON.stringify(response)});`,
+    `process.exitCode = ${status};`,
+  ].join('\n'));
 
   // A notifier that must never be reached: there is no desktop on a runner, and
   // a recorder that stayed silent is the only way to assert it.
   const notifLog = path.join(root, 'notifly-argv.log');
-  const notifly = stubTool(bin, 'notifly', ['#!/usr/bin/env bash', recordArgv(notifLog), 'exit 0']);
+  const notifly = stubToolJs(bin, 'notifly', recordArgvJs(JSON.stringify(notifLog)));
 
   const ghLog = path.join(root, 'gh-argv.log');
   const bodyLog = path.join(root, 'posted-body.md');
@@ -85,50 +83,45 @@ const mkWorld = ({
   // The contents API answers with a base64 body, which is what the script
   // decodes; `gh api -q .content` is the field it asks for.
   const encoded = siteRepos ? Buffer.from(JSON.stringify(siteRepos)).toString('base64') : null;
-  stubTool(bin, 'gh', [
-    '#!/usr/bin/env bash',
-    recordArgv(ghLog),
-    ...(ghFails ? ['exit 1'] : []),
-    'all="$*"',
-    'case "$all" in',
-    `  *createDiscussion*) printf 'post %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
-    `  *"issues(states: OPEN"*) printf 'sweep %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
-    `  *contents/data/repos.json*) printf 'roster %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
-    `  *.default_branch*) printf 'branch %s\\n' "\${GH_TOKEN:-none}" >> ${JSON.stringify(tokenLog)} ;;`,
-    'esac',
-    'case "$all" in',
+  stubToolJs(bin, 'gh', [
+    "const fs = require('fs');",
+    recordArgvJs(JSON.stringify(ghLog)),
+    ...(ghFails ? ['process.exit(1);'] : []),
+    'const argv = process.argv.slice(2);',
+    "const all = argv.join(' ');",
+    "const say = (text) => process.stdout.write(text);",
+    // The first kind the call matches, with the token it carried.
+    `const kinds = ${JSON.stringify([['createDiscussion', 'post'], ['issues(states: OPEN', 'sweep'], ['contents/data/repos.json', 'roster'], ['.default_branch', 'branch']])};`,
+    'const kind = kinds.find(([needle]) => all.includes(needle));',
+    `if (kind) fs.appendFileSync(${JSON.stringify(tokenLog)}, \`\${kind[1]} \${process.env.GH_TOKEN || 'none'}\\n\`);`,
     // The default branch, asked for before the roster is read:
     // `gh api ... -q .default_branch` answers the bare string.
-    `  *.default_branch*) printf '%s\\n' ${JSON.stringify(defaultBranch)} ;;`,
-    `  *contents/data/repos.json\\?ref=${defaultBranch}*)`,
+    `if (all.includes('.default_branch')) say(${JSON.stringify(`${defaultBranch}\n`)});`,
+    `else if (all.includes(${JSON.stringify(`contents/data/repos.json?ref=${defaultBranch}`)})) {`,
     ...(encoded
       // Wrapped at 60 characters, the way GitHub serves it: a decoder that
       // cannot take the newlines would pass against one long line.
-      // %b, not %s: the escapes JSON.stringify wrote have to become real
-      // newlines, or the wrap proves nothing.
-      ? [`    printf '%b' ${JSON.stringify(encoded.replace(/(.{60})/g, '$1\n'))} ;;`]
-      : ['    exit 1 ;;']),
-    '  *createDiscussion*)',
-    `    for a in "$@"; do case "$a" in body=@*) cat "\${a#body=@}" >> ${JSON.stringify(bodyLog)} ;; esac; done`,
-    `    printf '%s' '{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/private-home/discussions/9"}}}}' ;;`,
-    '  *discussionCategories*)',
-    `    printf '%s' '{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[{"id":"DIC_0","name":"General"}]}}}}' ;;`,
+      ? [`  say(${JSON.stringify(encoded.replace(/(.{60})/g, '$1\n'))});`]
+      : ['  process.exitCode = 1;']),
+    "} else if (all.includes('createDiscussion')) {",
+    `  for (const a of argv) if (a.startsWith('body=@')) fs.appendFileSync(${JSON.stringify(bodyLog)}, fs.readFileSync(a.slice('body=@'.length)));`,
+    `  say(${JSON.stringify('{"data":{"createDiscussion":{"discussion":{"url":"https://github.com/owner/private-home/discussions/9"}}}}')});`,
+    "} else if (all.includes('discussionCategories')) {",
+    `  say(${JSON.stringify('{"data":{"repository":{"id":"R_kdt","hasDiscussionsEnabled":true,"discussionCategories":{"nodes":[{"id":"DIC_0","name":"General"}]}}}}')});`,
     // The board sweep. A repo the token cannot read comes back as a per-repo
     // error beside the data, and real `gh` exits non-zero when an errors array
     // is present: the shape the composer's warning is about.
-    '  *"issues(states: OPEN"*)',
+    "} else if (all.includes('issues(states: OPEN')) {",
     ...(boardBroken
       ? [
-        `    printf '%s' '{"data":{"r0":null},"errors":[{"type":"NOT_FOUND","path":["r0"],"message":"Could not resolve to a Repository"}]}'`,
-        '    exit 1 ;;',
+        `  say(${JSON.stringify('{"data":{"r0":null},"errors":[{"type":"NOT_FOUND","path":["r0"],"message":"Could not resolve to a Repository"}]}')});`,
+        '  process.exitCode = 1;',
       ]
-      : [`    printf '%s' '{"data":{"r0":{"issues":{"totalCount":0,"nodes":[]}}}}' ;;`]),
-    '  *"discussions(first"*)',
-    `    printf '%s' '{"data":{"repository":{"discussions":{"nodes":[${nodes}]}}}}' ;;`,
-    '  *) printf \'%s\' \'{}\' ;;',
-    'esac',
-    'exit 0',
-  ]);
+      : [`  say(${JSON.stringify('{"data":{"r0":{"issues":{"totalCount":0,"nodes":[]}}}}')});`]),
+    "} else if (all.includes('discussions(first')) {",
+    `  say(${JSON.stringify(`{"data":{"repository":{"discussions":{"nodes":[${nodes}]}}}}`)});`,
+    "} else say('{}');",
+  ].join('\n'));
 
   // The upstream CHANGELOG the news read is pointed at. `/dev/null` is the
   // module's silent-skip path: an empty body, no version, no line.

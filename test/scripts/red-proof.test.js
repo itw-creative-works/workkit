@@ -12,7 +12,7 @@ const {
   describe, test, expect, SPAWN_DEADLINE, alive, pidIn,
 } = require('../lib/harness');
 const {
-  BASH, jsPath, gitPath, joinPath, spawnSync, spawn, skipWithoutModes, skipWithoutCaughtSignal, nodeTempEnv,
+  RUN_JS, jsPath, gitPath, joinPath, spawnSync, spawn, skipWithoutModes, skipWithoutCaughtSignal, nodeTempEnv,
 } = require('../lib/platform');
 const { mkRepo } = require('../lib/git-repo');
 const { skipWithoutNpm } = require('../lib/core-repo');
@@ -45,12 +45,19 @@ const NODE_TEST_OF = (value) => [
 // node's whole tap summary block for one passing test, in node's order.
 const TAP_BLOCK = ['# tests 1', '# suites 0', '# pass 1', '# fail 0', '# cancelled 0', '# skipped 0', '# todo 0', '# duration_ms 1'];
 
+// A person's wrapper command around the suite, as a node: `body` runs with `go(cmd, args)`,
+// which runs a program to its end and answers its exit code. Its arguments follow the command.
+const WRAPPER = (body) => ['node', '-e', [
+  `const go = (cmd, args) => require(${JSON.stringify(RUN_JS)}).spawnSync(cmd, args, { stdio: 'inherit' }).status;`,
+  body,
+].join('\n')];
+
 // A test file's opening lines printing each of `texts` to stdout as it stands.
 const PRINTS = (texts) => texts.map((t) => `console.log(${JSON.stringify(t)});\n`).join('');
 
 // Every world is a node's (`forNode`): its runs read the home natively and its
 // tmp/ as their temp folder under every name, so the TMPDIR checks read the
-// folder a run wrote to on every platform; no path a run hands bash rides /tmp.
+// folder a run wrote to on every platform.
 const FOR_NODE = { forNode: true };
 
 /**
@@ -999,7 +1006,7 @@ describe('proof red: the test summary', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('tests/x.test.js', NODE_TEST_OF(1));
-    const { code, out, err } = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', 'node --test tests/x.test.js; exit 3']);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', ...WRAPPER("go(process.execPath, ['--test', 'tests/x.test.js']);\nprocess.exit(3);")]);
     expect(code, `exit 2: ${out}${err}`).toBe(2);
     expect(!out.includes('red-proof: red') && !out.includes('red-proof: green'), `no verdict: ${out}`).toBeTruthy();
     expect(lines(err).pop(), `the last stderr line: ${err}`).toBe('red-proof: not runnable: no test failed; the command stopped another way');
@@ -1111,7 +1118,7 @@ describe('proof red: the kit runner\'s summary file', () => {
     const w = mkWorld();
     takeSnapshot(w);
     w.write('tests/x.test.js', NODE_TEST_OF(1));
-    const { code, out, err } = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', 'node "$1" && exit 3', '_', RUNNER]);
+    const { code, out, err } = runScript(w, ['src/x.js', '--', ...WRAPPER('process.exit(go(process.execPath, [process.argv[1]]) || 3);'), RUNNER]);
     expect(totalsAt(`${out}${err}`, 1, 0) >= 0, `the runner passed its one case: ${out}${err}`).toBeTruthy();
     assertStop(code, out, err, NO_TEST_FAILED);
     assertNoWorktree(w);
@@ -1143,8 +1150,11 @@ describe('proof red: the kit runner\'s summary file', () => {
     takeSnapshot(w);
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('tests/x.test.js', NODE_TEST_OF(2));
-    const both = 'status=0; node "$1" tests/x.test.js || status=1; node "$1" tests/a.test.js || status=1; exit "$status"';
-    const { code, out, err } = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', both, '_', RUNNER]);
+    const both = WRAPPER([
+      "const codes = ['tests/x.test.js', 'tests/a.test.js'].map((suite) => go(process.execPath, [process.argv[1], suite]));",
+      'process.exit(codes.every((c) => c === 0) ? 0 : 1);',
+    ].join('\n'));
+    const { code, out, err } = runScript(w, ['src/x.js', '--', ...both, RUNNER]);
     const said = `${out}${err}`;
     const [failing, passing] = [totalsAt(said, 0, 1), totalsAt(said, 1, 0)];
     expect(failing >= 0 && passing > failing, `both runs ran, the failing one first: ${said}`).toBeTruthy();
@@ -1180,9 +1190,14 @@ describe('proof red: the kit runner\'s summary file', () => {
     w.write('src/x.js', 'module.exports = 2;\n');
     w.write('packages/m/test/m.test.js', memberTestOf(2));
     const copy = path.join(w.dir, 'summary.copy');
-    const command = 'node "$1" "${@:3}"; s=$?; cp "$WORKKIT_TEST_SUMMARY" "$2"; exit "$s"';
+    const command = WRAPPER([
+      'const [runner, copy, ...rest] = process.argv.slice(1);',
+      'const s = go(process.execPath, [runner, ...rest]);',
+      "require('fs').copyFileSync(process.env.WORKKIT_TEST_SUMMARY, copy);",
+      'process.exit(s);',
+    ].join('\n'));
     const env = { ...w.env, PATH: joinPath(coreBin(), w.env.PATH) };
-    const res = runScript(w, ['src/x.js', '--', gitPath(BASH), '-c', command, '_', RUNNER, gitPath(copy), ...runnerArgs], w.repo, env);
+    const res = runScript(w, ['src/x.js', '--', ...command, RUNNER, copy, ...runnerArgs], w.repo, env);
     const summary = fs.existsSync(copy) ? lines(fs.readFileSync(copy, 'utf8')) : null;
     cleanup(w.dir);
     return { ...res, summary };

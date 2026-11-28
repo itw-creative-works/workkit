@@ -13,8 +13,8 @@ const {
   describe, test, expect, mkTmp, start, until, SPAWN_DEADLINE,
 } = require('../../lib/harness');
 const {
-  BASH, NO_RC, NODE_DIR, skipWithoutNodeStub, skipWithoutFileLink, skipWithoutCaughtSignal, shellPath, gitPath, jsPath, which, spawnBash,
-  systemPathWith, joinPath, homeEnv, nodeTempEnv, basePathWithout, stubToolJs,
+  BASH, NO_RC, NODE_DIR, skipWithoutFileLink, skipWithoutCaughtSignal, shellPath, gitPath, jsPath, which, spawnBash,
+  systemPathWith, joinPath, homeEnv, nodeTempEnv, basePathWithout, stubToolJs, samePath,
 } = require('../../lib/platform');
 const {
   eqArgv, fmtCalls, recordArgvJs, readArgv,
@@ -88,6 +88,7 @@ const mkWorld = ({ signedIn = true, cache = true, tokenUrl = NO_SERVICE } = {}) 
  * `field` and `issues` are the stub's view fixtures, `input` the shim's stdin, and
  * `script`, when given, a bash command line run in place of the shim, `gh` on PATH being it.
  * `tempDir`, when given, is the temp folder in every name Node reads one by, HOME then native.
+ * `ghBin` in the result is the stub's own folder.
  */
 const runShim = (world, args, {
   claude = true, cwd = world.rostered, env: extra = {}, extraDirs = [], noJq = false, keyboard = false,
@@ -125,7 +126,7 @@ const runShim = (world, args, {
     cwd, env, input, encoding: 'utf8', timeout: SPAWN_DEADLINE,
   });
   return {
-    code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', calls: ghCalls(stub), envs: ghEnvs(stub), requests: ghRequests(stub),
+    code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', calls: ghCalls(stub), envs: ghEnvs(stub), requests: ghRequests(stub), ghBin: stub.binDir,
   };
 };
 
@@ -269,14 +270,16 @@ const olderNodeEnv = (dir) => ({ NODE_OPTIONS: `--require ${jsPath(olderNode('20
 /**
  * A `node` in `<dir>`, put first on PATH, that records each start and runs the
  * suite's own node on the same arguments, a preload making every Node process
- * under it record itself too: `{ dir, starts(), nodes() }`, each a list of argv.
+ * under it record itself too: `{ dir, starts(), nodes(ghBin) }`, each a list of argv.
+ * `nodes` leaves out the fake real gh in `ghBin`, itself a Node stand-in.
  */
 const countingNode = (dir) => {
   fs.mkdirSync(dir, { recursive: true });
   const [starts, nodes, preload] = ['starts.log', 'nodes.log', 'count.js'].map((name) => path.join(dir, name));
   fs.writeFileSync(preload, `${recordArgvJs(jsPath(nodes), 'process.argv.slice(1)')}\n`);
   recordingNode(dir, { log: starts, preload, everyNode: true });
-  return { dir, starts: () => readArgv(starts), nodes: () => readArgv(nodes) };
+  const isGhFake = (argv, ghBin) => samePath(argv[0] || '', path.join(ghBin, 'gh'), process.platform);
+  return { dir, starts: () => readArgv(starts), nodes: (ghBin) => readArgv(nodes).filter((argv) => !isGhFake(argv, ghBin)) };
 };
 
 describe('identity/gh: the owner\'s own calls', () => {
@@ -448,9 +451,10 @@ describe('identity/gh: the escape hatch and the PATH', () => {
     const world = mkWorld();
     const node = countingNode(path.join(world.root, 'counting-node'));
     const comment = ['issue', 'comment', '1', '--body', 'x'];
-    assertRan(runShim(world, comment, { extraDirs: [node.dir] }), comment, 'ghs_testtoken', 'gh issue comment past the counting node');
+    const res = runShim(world, comment, { extraDirs: [node.dir] });
+    assertRan(res, comment, 'ghs_testtoken', 'gh issue comment past the counting node');
     expect(node.starts().length, `node started once, got: ${node.starts().join(' | ')}`).toBe(1);
-    expect(node.nodes().length, `one Node process in all, got: ${node.nodes().join(' | ')}`).toBe(1);
+    expect(node.nodes(res.ghBin).length, `one Node process in all, got: ${node.nodes(res.ghBin).join(' | ')}`).toBe(1);
   });
 
   test('node shim case 5: a link to workflow/identity/gh in a folder of its own, run by its path, runs the kit\'s shim: a bookkeeping call gets its token', { skip: skipWithoutFileLink() }, async () => {
@@ -621,7 +625,7 @@ describe('identity/gh: a cloud session and off it', () => {
     }
   });
 
-  test('in the cloud gh pr and gh release reach GitHub as gh api calls alone, never the real gh\'s own pr or release, with no bot token', { skip: skipWithoutNodeStub() }, async () => {
+  test('in the cloud gh pr and gh release reach GitHub as gh api calls alone, never the real gh\'s own pr or release, with no bot token', async () => {
     const pull = {
       number: 12, state: 'open', merged_at: null, html_url: 'https://github.com/acme/rostered/pull/12', head: { ref: 'claude/work', sha: 'a'.repeat(40) }, base: { ref: 'main' },
     };
@@ -639,7 +643,7 @@ describe('identity/gh: a cloud session and off it', () => {
     }
   });
 
-  test('node shim cloud: a call rest.js passes on, gh issue develop 7 -R acme/x, reaches the real gh whole with GH_REPO the repo the shim read', { skip: skipWithoutNodeStub() }, async () => {
+  test('node shim cloud: a call rest.js passes on, gh issue develop 7 -R acme/x, reaches the real gh whole with GH_REPO the repo the shim read', async () => {
     const argv = ['issue', 'develop', '7', '-R', 'acme/x'];
     const res = runShim(mkWorld(), argv, { remote: 'true', api: {} });
     assertRan(res, argv, null, 'gh issue develop in the cloud');
@@ -657,7 +661,7 @@ describe('identity/gh: a cloud session and off it', () => {
     expect(local.envs[0].GH_REPO, 'off the cloud gh reads the remote itself').toBe(null);
   });
 
-  test('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', { skip: skipWithoutNodeStub() }, async () => {
+  test('case 10: in the cloud a bookkeeping verb on a rostered repo never fetches the bot\'s token, cached or from the service', async () => {
     const comment = ['issue', 'comment', '1', '--body', 'x'];
     const api = {
       'POST repos/acme/rostered/issues/1/comments': {

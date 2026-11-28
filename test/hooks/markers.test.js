@@ -1,13 +1,18 @@
 // Tests for the pure helpers in hooks/mods/markers.js: the gh journal mark (journalSizes, the folder's sized
 // listing, journalMarkText and journalMarks, the mark's text and its read back, and journalsGrown, the pick of the
-// journals a Bash call's Post hook reads), the marker paths, the folders Git Bash means by a path, the home variables
-// only Git Bash can read, and sessionPath,
+// journals a Bash call's Post hook reads), the call's marks on a real disk (markCall, callSince and journalSize in
+// hooks/mods/guards.js), the marker paths, the folders Git Bash means by a path, the home variables only Git Bash
+// can read, and sessionPath,
 // the session's PATH with the git shim's folder first. The mark written and read through the hooks module:
 // test/mods/post-tool-use-bash.test.ts; the session's PATH set through it: test/mods/session-path.test.ts.
 
-const { describe, test, expect } = require('../lib/harness');
+const fs = require('fs');
+const path = require('path');
+const { describe, test, expect, mkTmp } = require('../lib/harness');
 const { mods } = require('../lib/mods-inputs');
 const { OPT_IN_SHAPES } = require('../lib/git-repo');
+const { nodeHomeEnv } = require('../lib/platform');
+const { ioIn } = require('../../workflow/lib/io');
 
 const markers = () => mods('markers');
 
@@ -28,9 +33,10 @@ describe('markers: the gh journal mark', () => {
     same(markers().journalMarks(text), [{ journal: A, bytes: 62 }, { journal: B, bytes: 0 }], 'the mark read back');
   });
 
-  test('case 9: no journals make the empty mark, read back as none', () => {
+  // A live mark is never empty: an empty one is a mark the Post hook ended.
+  test('case 9: no journals make a mark of one empty line, read back as a mark of no journals', () => {
     const text = markers().journalMarkText([]);
-    expect(text, 'the mark text').toBe('');
+    expect(text, 'the mark text').toBe('\n');
     same(markers().journalMarks(text), [], 'the mark read back');
   });
 
@@ -61,6 +67,89 @@ describe('markers: journalsGrown', () => {
   test('case 11: a journal at its marked length is left out', () => {
     const now = [{ journal: B, bytes: 20 }];
     same(markers().journalsGrown(MARKS, now), [], 'B at its length');
+  });
+});
+
+describe('markers: the call\'s marks on disk, markCall, callSince and journalSize in hooks/mods/guards.js', () => {
+  const guards = () => mods('guards');
+  const CALL_MS = 1700000000000;
+  // The machine io over a scratch machine folder with one gh journal, `aaa`, each program it starts recorded.
+  const diskWorld = () => {
+    const dir = mkTmp('markers-disk-');
+    const home = path.join(dir, '.workkit');
+    const env = nodeHomeEnv(dir, { PATH: process.env.PATH, WORKFLOW_HOME: home });
+    const base = ioIn(env);
+    const starts = [];
+    const io = { ...base, now: () => CALL_MS, run: (argv, init) => { starts.push(argv); return base.run(argv, init); } };
+    const journal = `${home}/markers/claude-gh-journal/aaa`;
+    fs.mkdirSync(path.dirname(journal), { recursive: true });
+    fs.writeFileSync(journal, 'x\n');
+    return { dir, home, env, io, starts, journal };
+  };
+  const marksOf = async (w, id) => ({
+    mark: await markers().journalMarkPath(id, w.home),
+    start: await markers().callStartPath(id, w.home),
+  });
+  const textOf = (file) => fs.readFileSync(file, 'utf8');
+
+  test('case 16: marks written into folders that do not exist yet land, and no program starts', async () => {
+    const w = diskWorld();
+    await guards().markCall(w.io, w.env, 'toolu_1', w.dir);
+    const { mark, start } = await marksOf(w, 'toolu_1');
+    expect(textOf(mark), 'the journal mark landed: the journal and its length').toBe(`${w.journal}\n2`);
+    expect(textOf(start), 'the call start landed: the time, then no repo root').toBe(`${CALL_MS}\n`);
+    expect(w.starts, 'no mkdir, nor any other program').toEqual([]);
+  });
+
+  test('case 13: the Post read ends the call\'s mark and start by writing each empty, starting no program; the next read finds no marker', async () => {
+    const w = diskWorld();
+    await guards().markCall(w.io, w.env, 'toolu_1', w.dir);
+    w.starts.length = 0;
+    expect(await guards().callSince(w.io, w.env, 'toolu_1'), 'the first read: no journal grew, the start time, no repo').toEqual({ lines: [], since: CALL_MS, began: null });
+    const { mark, start } = await marksOf(w, 'toolu_1');
+    expect([textOf(mark), textOf(start)], 'both marks stay on disk, empty').toEqual(['', '']);
+    expect(w.starts, 'no rm, nor any other program').toEqual([]);
+
+    // A line the gate kept: an empty mark read as a mark of no journals would hand it over as the call's.
+    fs.appendFileSync(w.journal, `${CALL_MS}\tissue\tedit\tacme/repo\t12\tstatus:qa\t\t\n`);
+    expect(await guards().callSince(w.io, w.env, 'toolu_1'), 'the next read: no marker, so no lines and no start').toEqual({ lines: [], since: null, began: null });
+    expect(w.starts, 'and still no program').toEqual([]);
+  });
+
+  // A journal line the gate writes, its cwd empty so the opt-in filter keeps it, and the line read back.
+  const lineOf = (n, repo) => `${CALL_MS + n}\tissue\tedit\t${repo}\t${n}\tstatus:qa\t\t\n`;
+  const parsed = (n, repo) => ({ ms: CALL_MS + n, verb: 'issue', sub: 'edit', repo, numbers: [String(n)], add: ['status:qa'], remove: [], cwd: '' });
+
+  test('a journal that grew after the mark: callSince reads the lines it gained, not those before the mark, and no program starts', async () => {
+    const w = diskWorld();
+    fs.writeFileSync(w.journal, lineOf(11, 'acme/repo'));
+    await guards().markCall(w.io, w.env, 'toolu_1', w.dir);
+    fs.appendFileSync(w.journal, lineOf(12, 'acme/repo'));
+    w.starts.length = 0;
+    expect(await guards().callSince(w.io, w.env, 'toolu_1'), 'the #12 line alone').toEqual({ lines: [parsed(12, 'acme/repo')], since: CALL_MS, began: null });
+    expect(w.starts, 'no tail, nor any other program').toEqual([]);
+  });
+
+  // One read answers at most 4 MiB. The line's two-byte character starts on the last byte of the first range past
+  // the mark, so a reader that decodes each range alone, or stops at the edge, breaks or loses the line.
+  test('case 14b: a journal grown past 4 MiB: the line across the range edge arrives whole, its two-byte character included', async () => {
+    const w = diskWorld();
+    await guards().markCall(w.io, w.env, 'toolu_1', w.dir);
+    const line = lineOf(12, 'acme/ré');
+    const before = Buffer.byteLength(line.slice(0, line.indexOf('é')));
+    const pad = 4 * 1024 * 1024 - 1 - before;
+    fs.appendFileSync(w.journal, `${'#'.repeat(pad - 1)}\n${line}`);
+    w.starts.length = 0;
+    expect(await guards().callSince(w.io, w.env, 'toolu_1'), 'the #12 line, whole').toEqual({ lines: [parsed(12, 'acme/ré')], since: CALL_MS, began: null });
+    expect(w.starts, 'and no program').toEqual([]);
+  });
+
+  test('case 14: journalSize is the journal\'s length in bytes off its stat, 0 for a missing journal, and starts no program', async () => {
+    const w = diskWorld();
+    fs.writeFileSync(w.journal, 'héllo\n');
+    expect(await guards().journalSize(w.io, w.journal), 'six characters, seven bytes').toBe(7);
+    expect(await guards().journalSize(w.io, `${w.home}/markers/claude-gh-journal/none`), 'a missing journal').toBe(0);
+    expect(w.starts, 'no wc, nor any other program').toEqual([]);
   });
 });
 
@@ -143,10 +232,11 @@ describe('markers: shellDirOf and tempDirOf, the folder Git Bash means by a path
     expect(markers().shellEnvOf({ TMPDIR: '/var/t', HOME: '/Users/x' }, 'darwin').HOME, 'off Windows as given').toBe('/Users/x');
   });
 
-  test('shellOnlyHomes: on Windows the home variables set to a folder only Git Bash can read; none off Windows', () => {
+  test('shellOnlyHomes: on Windows the home variables set to a folder only Git Bash can read, each spelled as given; none off Windows', () => {
     const { shellOnlyHomes } = markers();
-    expect(shellOnlyHomes({ WORKFLOW_HOME: '/home/x/.workkit', HOME: '/c/Users/x', ...WIN }, 'win32'), 'a /home path, beside a drive mount').toEqual(['WORKFLOW_HOME']);
-    expect(shellOnlyHomes({ HOME: '/cygdrive/c/x', ...WIN }, 'win32'), 'a /cygdrive path').toEqual(['HOME']);
+    expect(shellOnlyHomes({ WORKFLOW_HOME: '/home/x/.workkit', HOME: '/c/Users/x', ...WIN }, 'win32'), 'a /home path, beside a drive mount')
+      .toEqual([{ name: 'WORKFLOW_HOME', spelled: '/home/x/.workkit' }]);
+    expect(shellOnlyHomes({ HOME: '/cygdrive/c/x', ...WIN }, 'win32'), 'a /cygdrive path').toEqual([{ name: 'HOME', spelled: '/cygdrive/c/x' }]);
     for (const folder of ['/c/x', '/tmp/wk', 'C:/x', 'C:\\x', '//server/x']) {
       const all = { WORKFLOW_HOME: folder, WORKFLOW_CLAUDE_HOME: folder, HOME: folder, ...WIN };
       expect(shellOnlyHomes(all, 'win32'), `${folder} in each of the three, with a native TEMP`).toEqual([]);
@@ -154,6 +244,37 @@ describe('markers: shellDirOf and tempDirOf, the folder Git Bash means by a path
     expect(shellOnlyHomes({ ...WIN }, 'win32'), 'none set').toEqual([]);
     for (const platform of ['darwin', 'linux']) {
       expect(shellOnlyHomes({ HOME: '/home/x' }, platform), `${platform}: a /home path is any program's`).toEqual([]);
+    }
+  });
+
+  // The Windows folder Git Bash's / is, as a node started from Git Bash reads a /home value under it.
+  const SHELL_ROOT = 'C:/Program Files/Git';
+
+  test('shellOnlyHomes: on Windows a home variable inside the Git Bash root is named, however its spelling, and spelled as Git Bash spells it', () => {
+    const { shellOnlyHomes } = markers();
+    const named = (value, root, label) => expect(shellOnlyHomes({ WORKFLOW_HOME: value, ...WIN }, 'win32', root), label)
+      .toEqual([{ name: 'WORKFLOW_HOME', spelled: '/home/x' }]);
+    named('C:/Program Files/Git/home/x', SHELL_ROOT, 'a /home path as Git Bash hands it on');
+    named('C:\\Program Files\\Git\\home\\x', SHELL_ROOT, 'the same folder in backslashes');
+    named('c:/Program Files/Git/home/x', SHELL_ROOT, 'the same folder with a lower-case drive letter');
+    named('C:/Program Files/Git/home/x', `${SHELL_ROOT}/`, 'the root given with a closing slash');
+    expect(shellOnlyHomes({ HOME: 'C:/Program Files/Git', WORKFLOW_HOME: 'C:/Program Files/Git/home/x/.workkit', ...WIN }, 'win32', SHELL_ROOT), 'the root itself is /, in HOME_VARS order')
+      .toEqual([{ name: 'WORKFLOW_HOME', spelled: '/home/x/.workkit' }, { name: 'HOME', spelled: '/' }]);
+  });
+
+  test('shellOnlyHomes: on Windows a folder outside the Git Bash root is not named, nor one inside it with no root given', () => {
+    const { shellOnlyHomes } = markers();
+    expect(shellOnlyHomes({ WORKFLOW_HOME: 'C:/Users/x', ...WIN }, 'win32', SHELL_ROOT), 'a drive path elsewhere').toEqual([]);
+    expect(shellOnlyHomes({ WORKFLOW_HOME: 'C:/Program Files/Gitea/x', ...WIN }, 'win32', SHELL_ROOT), 'a folder sharing only the root\'s first letters').toEqual([]);
+    expect(shellOnlyHomes({ WORKFLOW_HOME: 'C:/Program Files/Git/home/x', ...WIN }, 'win32'), 'no root given').toEqual([]);
+  });
+
+  test('shellOnlyHomes: off Windows a root names nothing either', () => {
+    const { shellOnlyHomes } = markers();
+    const homes = { WORKFLOW_HOME: 'C:/Program Files/Git/home/x', HOME: '/home/x' };
+    for (const platform of ['darwin', 'linux']) {
+      expect(shellOnlyHomes(homes, platform, SHELL_ROOT), `${platform}: with the root`).toEqual([]);
+      expect(shellOnlyHomes(homes, platform), `${platform}: with no root`).toEqual([]);
     }
   });
 
