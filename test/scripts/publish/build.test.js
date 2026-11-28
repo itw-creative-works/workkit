@@ -15,7 +15,7 @@ const {
   recordArgvJs, readArgv, eqArgv, fmtCalls,
 } = require('../../lib/argv-log');
 const {
-  REPO_ROOT, omegaStub, readJson5, binDirWithout,
+  REPO_ROOT, omegaStub, readJson5, pathWithout,
 } = require('./helpers');
 
 const SCRIPT = path.join(REPO_ROOT, 'workflow', 'publish', 'build.js');
@@ -187,7 +187,7 @@ describe('workflow/publish/build.js: install', () => {
 
   test('with no npm on PATH, install names the program it could not start and answers 1', () => {
     const world = mkProject();
-    const { code, out, err } = build({ ...world, env: { ...world.env, PATH: binDirWithout('npm') } }, ['install', world.project]);
+    const { code, out, err } = build({ ...world, env: { ...world.env, PATH: pathWithout('npm') } }, ['install', world.project]);
     expect(code, `exit 1: ${out}${err}`).toBe(1);
     assertOneLine(err, 'build: could not start npm', 'the program that never started');
   });

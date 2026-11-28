@@ -23,6 +23,7 @@ Each entry is one short paragraph starting with its issue link; the depth lives 
 
 - (no issue) - On Windows `workkit doctor` names a home variable only Git Bash can read when it is started from Git Bash too. Git Bash rewrites `/home/name` into a folder under its own before the doctor reads it, so the warning never printed there.
 - (no issue) - The kit's own test suite starts no `jq` and no `sed`: its `gh` fakes answer `--jq` in Node. Running `npm test` in this repo no longer needs `jq`.
+- (no issue) - A CI step whose command cannot start (the repo's `ciSetup` or `ciPostInstall` hooks, or the suite) now fails on one line with exit 127, where it printed a stack trace.
 
 ## [0.106.0] - 2026-11-27
 

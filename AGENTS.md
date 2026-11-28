@@ -172,6 +172,7 @@
     - A stand-in records its arguments with `recordArgvJs(file)` of `test/lib/argv-log.js` (its own arguments unless a second expression names others), read back with `readArgv()`.
     - `handOverJs(file, lead)` is the source of one that only hands over: it starts the real program with the same arguments and streams and passes its exit code on (`nodeBin`, `linkTool`).
     - `writeGh()` of `test/lib/gh-stub.js` is the shared `gh` fake, answering `--jq` in process through `ghJq` (`test/lib/gh-jq.js`). `makeGhStub`, `commitGh` and `mkGhWorld` build on it; a suite with one answer writes its own through `stubToolJs`.
+      - Its answer runs from a `*-answers.js` module that loads no harness, platform or helpers file (`docs/tests.md` § The shape).
     - The test files that may still start a shell, each with its reason: `docs/tests.md` § The shape.
   - `test/lib/mods-inputs.js` is the one builder of the arguments the logic suites hand the `hooks/mods/` functions, so every suite spells a shape the same way.
     - Its exports: `mods(name)`, `textOf`, `stateFacts`, `reminderFacts`, `standardsState`, `runResult`, `sessionFacts`, `briefMarker`, `daysBefore`, `row` (`row.user`, `row.result`, `row.tool`), `ghEntry`, `MODELS`, `REMINDER_ROOT`.

@@ -13,7 +13,7 @@ const {
 const {
   recordArgvJs, readArgv, isCall, eqArgv, fmtCalls,
 } = require('../../lib/argv-log');
-const { git, binDirWithout } = require('./helpers');
+const { git, pathWithout } = require('./helpers');
 const { cleanup, writeJson, mkPublishWorld, publish, fromPages } = require('../publish-sync/helpers');
 
 const GONE = ['jq', 'awk', 'tar', 'find', 'cp'];
@@ -52,7 +52,7 @@ const mkBareWorld = () => {
     '}',
   ].join('\n'));
 
-  const PATH = joinPath(bin, binDirWithout(...GONE));
+  const PATH = joinPath(bin, pathWithout(...GONE));
   return {
     ...world,
     PATH,

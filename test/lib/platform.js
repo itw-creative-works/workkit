@@ -412,14 +412,65 @@ const nodeTempEnv = (dir, env = {}) => ({
 });
 
 /**
+ * Git's own bin folder, two up from SYSTEM_DIR: bash.exe, sh.exe and git.exe
+ * alone, none of usr\bin's tools. A Windows run without it there is broken.
+ * @returns {string}
+ */
+const gitBinDir = () => {
+  const dir = path.join(SYSTEM_DIR, '..', '..', 'bin');
+  if (!fs.existsSync(path.join(dir, 'bash.exe'))) throw new Error(`test/lib/platform: no bash.exe in ${dir}, Git's own bin`);
+  return dir;
+};
+
+/**
+ * The one mirror walk of a narrowed PATH: every entry of `dirs` linked into
+ * `out` (linkTool), first name wins like a PATH lookup, each of `excluded` left
+ * out under every spelling. A stand-in is no Git Bash to run.js, so on Windows
+ * Git's own bin goes last: a bare `bash` starts, and the mirror still wins by name.
+ * It throws unless `sh` is reachable (an empty mirror would pass an absence case
+ * for the wrong reason) and every excluded tool is gone.
+ * @param {string} out - the mirror folder, which must exist
+ * @param {string[]} dirs - the folders to mirror, in PATH order
+ * @param {string[]} excluded - the tools to leave out, without an extension
+ * @returns {string} the PATH: the mirror, then on Windows Git's own bin
+ */
+const mirrorPathWithout = (out, dirs, excluded) => {
+  const seen = new Set();
+  for (const entry of dirs) {
+    let names = [];
+    try { names = fs.readdirSync(entry); } catch { continue; }
+    for (const name of names) {
+      const tool = toolStem(name);
+      if (excluded.includes(tool) || seen.has(tool)) continue;
+      seen.add(tool);
+      linkTool(out, path.join(entry, name));
+    }
+  }
+  const searchPath = IS_WINDOWS ? joinPath(out, gitBinDir()) : out;
+  if (!which('sh', out)) throw new Error(`mirrorPathWithout built an unusable PATH at ${out}`);
+  for (const command of excluded) {
+    const left = which(command, searchPath);
+    if (left) throw new Error(`mirrorPathWithout left ${command} reachable at ${left}`);
+  }
+  return searchPath;
+};
+
+/**
+ * The mirror folder of a PATH mirrorPathWithout answered, its first entry: for
+ * a case that reads or changes the mirror itself, or removes it.
+ * @param {string} searchPath - mirrorPathWithout's or basePathWithout's answer
+ * @returns {string}
+ */
+const mirrorDirOf = (searchPath) => searchPath.split(path.delimiter)[0];
+
+/**
  * A mirror of the system PATH with one command left out: the machine without
  * `gh`, built rather than assumed, since many ship it in /usr/bin. It holds the
- * system directories plus wherever this machine keeps gh, git and node,
- * first-wins like a PATH lookup. It throws unless `sh` is reachable (an empty
- * mirror would pass an absence case for the wrong reason) and `command` is gone.
+ * system directories plus wherever this machine keeps gh, git and node
+ * (mirrorPathWithout's walk and checks).
  * @param {string} dir - where to build the mirror, which must exist
  * @param {string} command - the tool to leave out, without an extension
- * @returns {string} the mirror directory, a PATH entry of one
+ * @returns {string} the PATH: the mirror directory, then on Windows Git's own bin
  */
 const basePathWithout = (dir, command) => {
   const out = path.join(dir, `path-without-${command}`);
@@ -431,23 +482,7 @@ const basePathWithout = (dir, command) => {
     const real = which(tool);
     if (real) dirs.push(path.dirname(real));
   }
-  const seen = new Set();
-  for (const entry of dirs) {
-    let names = [];
-    try { names = fs.readdirSync(entry); } catch { continue; }
-    for (const name of names) {
-      // The tool a name is carries no extension, so the excluded one is missing
-      // under every spelling of itself.
-      const tool = toolStem(name);
-      if (tool === command || seen.has(tool)) continue;
-      seen.add(tool);
-      linkTool(out, path.join(entry, name));
-    }
-  }
-  if (!which('sh', out)) throw new Error(`basePathWithout built an unusable PATH at ${out}`);
-  const left = which(command, out);
-  if (left) throw new Error(`basePathWithout left ${command} reachable at ${left}`);
-  return out;
+  return mirrorPathWithout(out, dirs, [command]);
 };
 
 /**
@@ -605,7 +640,7 @@ const signalsRefused = (fn) => withKill(() => { throw noSuchProcess(); }, fn);
 module.exports = {
   IS_WINDOWS, BASH, SH, SYSTEM_PATH, NODE_DIR, NO_RC, EMPTY_PATH, WINDOWS_CSC, RUN_JS,
   shellPath, jsPath, gitPath, which, spawnBash, spawnSystemBash, toolStem, runsProgram, linkTool, stubToolJs, handOverJs,
-  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeTempEnv, basePathWithout,
+  cygpathStub, pathWith, systemPathWith, joinPath, homeEnv, nodeHomeEnv, nodeTempEnv, mirrorPathWithout, mirrorDirOf, basePathWithout,
   NO_EXEC_BIT, skipWithoutModes, skipWithoutFileLink, skipWithoutCaughtSignal, skipWithoutHomebrewPath, asWindows, samePath, recordingRun, signalsRefused,
   windowsTables, PS_HEADER,
   // run.js's own three, so a suite starts its children where the kit does.

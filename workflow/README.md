@@ -699,7 +699,7 @@
     - `exitOf(code, signal)` is a child's end as that code: its exit code, else `signalCode` of its signal. Every Node file that waits on a child reads it.
     - `startFailed` (127) is the code of a child that never started, beside it: the supervisor's, the jobs', the installer's, the script shell's, `prove`'s, the CI watch's, the red proof's, `runHere`'s, `bounded`'s and the token mint's pty.
     - `notRunnable` (126) is the code of a command found that cannot run, which the red proof and `runHere` give apart from `startFailed`.
-    - `codeOf(res)` is a `spawnSync` result read as that code: `startFailed` when it has no code and no signal, else `exitOf`. The jobs, the installer, `workflow/script-shell.js`, `.github/scripts/ci-install.js` and `.github/scripts/ci-changelog.js` read a sync child's end through it.
+    - `codeOf(res)` is a `spawnSync` result read as that code: `startFailed` when it has no code and no signal, else `exitOf`. The jobs, the installer, `workflow/script-shell.js`, `.github/scripts/ci-install.js`, `.github/scripts/ci-changelog.js`, `.github/scripts/ci-hooks.js` and `.github/scripts/ci-test.js` read a sync child's end through it.
   - `END_SIGNALS` are the three signals that end a run's caller (HUP, INT, TERM), and `INT_CODE` the code of an interrupted call.
   - The rule it runs (the checks, the verdicts, the evidence, the ends and every line they write): `../docs/tests.md` § The checks.
   - With `--root` the launcher first reads that root's `tests.check` (`checkMinutes` in `hooks/mods/settings.js`); a bad value exits 2 with nothing run.

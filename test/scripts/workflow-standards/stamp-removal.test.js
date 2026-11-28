@@ -5,10 +5,11 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  describe, test, expect, WORKKIT_DIR: W,
+  describe, test, expect, WORKKIT_DIR: W, mkTmp,
 } = require('../../lib/harness');
+const { mirrorDirOf } = require('../../lib/platform');
 const {
-  cleanup, makeRepo, makeGhStub, binDirWithout, heal, runScript, readFile,
+  cleanup, makeRepo, makeGhStub, pathWithout, heal, runScript, readFile,
 } = require('./helpers');
 
 const settingsOf = (dir) => path.join(dir, W, 'settings.json');
@@ -42,11 +43,12 @@ describe('standards.js: the version key is removed, never stamped', () => {
 
   test('no jq on PATH: the version key is removed and the file is otherwise as it was', () => {
     const dir = makeRepo({ settings: '{ "version": 9, "enabled": true, "tests": { "budget": 5 } }\n' });
-    const binDir = binDirWithout('jq');
-    const res = heal([dir], { PATH: binDir, WORKFLOW_HOME: path.join(binDir, 'wh'), WORKFLOW_CLAUDE_HOME: path.join(binDir, 'ch') });
+    const noJq = pathWithout('jq');
+    const scratch = mkTmp('wf-std-');
+    const res = heal([dir], { PATH: noJq, WORKFLOW_HOME: path.join(scratch, 'wh'), WORKFLOW_CLAUDE_HOME: path.join(scratch, 'ch') });
     const parsed = JSON.parse(readFile(settingsOf(dir)));
     expect(JSON.stringify(parsed), `the key is gone, the rest kept, got: ${res.stdout}${res.stderr}`)
       .toBe(JSON.stringify({ enabled: true, tests: { budget: 5 } }));
-    cleanup(dir); cleanup(binDir);
+    cleanup(dir); cleanup(mirrorDirOf(noJq)); cleanup(scratch);
   });
 });

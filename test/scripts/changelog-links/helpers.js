@@ -23,17 +23,10 @@ const makeGhStub = ({ login = 'who', fails = false } = {}) => {
   fs.mkdirSync(bin, { recursive: true });
   writeGh(bin, {
     log: path.join(dir, 'gh.log'),
-    answer: { module: __filename, name: 'answerLogin' },
+    answer: { module: require.resolve('./login-answers'), name: 'answerLogin' },
     config: { login, fails },
   });
   return { binDir: bin, dir };
-};
-
-/** makeGhStub's answer to every call: the login on its own line, or 1. */
-const answerLogin = ({ login, fails }) => {
-  if (fails) return 1;
-  process.stdout.write(`${login}\n`);
-  return 0;
 };
 
 // ` - ` in the fixtures below is the CHANGELOG entry separator (a spaced hyphen).
@@ -80,5 +73,5 @@ const runScript = (cwd, stub, args = []) => {
 const readLog = (dir) => fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
 
 module.exports = {
-  repoSlug, cleanup, git, makeGhStub, answerLogin, CHANGELOG, mkRepo, runScript, readLog,
+  repoSlug, cleanup, git, makeGhStub, CHANGELOG, mkRepo, runScript, readLog,
 };

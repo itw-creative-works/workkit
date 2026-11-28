@@ -1,10 +1,12 @@
 // The kit's three lists of what is not Node, each read against the tree's own text: the
 // test files that may use a shell, the programs a kit Node file may start, and the shell
 // files that stay. A use off a list fails its case by name; a listed test file that no
-// longer uses a shell fails too, so the list cannot rot.
+// longer uses a shell fails too, so the list cannot rot. Last, what a stand-in's answer
+// module may load, read the same way.
 
 const path = require('path');
 const fs = require('fs');
+const { isBuiltin } = require('module');
 const { describe, test, expect } = require('../lib/harness');
 const { spawnSync } = require('../lib/platform');
 
@@ -151,6 +153,33 @@ const SHELL_FILES = [
 const isShellFile = (rel) => /\.(sh|bash|zsh|cmd|bat|ps1|cs|exp)$/i.test(rel)
   || (/^#!/.test(firstLine(rel)) && !/^#!.*\bnode\b/.test(firstLine(rel)));
 
+// What a stand-in's answer module never loads, since the stand-in runs on the PATH of the
+// program under test: platform.js looks up Git Bash as it loads and throws without it on
+// Windows, and the harness and a suite's helpers.js load it or the whole library.
+const BARRED = (rel) => rel === 'test/lib/platform.js' || rel === 'test/lib/harness.js' || path.posix.basename(rel) === 'helpers.js';
+const REQUIRES = /\brequire\(\s*([^)]*?)\s*\)/g;
+const LITERAL = /^(['"`])([^'"`$]+)\1$/;
+// A stand-in written with an answer module, and the one form that module is named by.
+// A comment line (a JSDoc type among them) writes no stand-in.
+const ANSWERED = /\banswer:\s*\{[^}]*?\bmodule:\s*([^,}]+?)\s*[,}]/g;
+const ANSWER_FILE = /^require\.resolve\((['"])([^'"]*-answers(?:\.js)?)\1\)$/;
+const codeOf = (rel) => textOf(rel).split('\n').filter((line) => !/^\s*(?:\*|\/\/|\/\*)/.test(line)).join('\n');
+
+/** One line per require the last file of `chain` makes, or one it reaches makes, that breaks the rule. */
+const answerFaults = (chain, seen = new Set()) => {
+  const rel = chain.at(-1);
+  if (seen.has(rel)) return [];
+  seen.add(rel);
+  return [...textOf(rel).matchAll(REQUIRES)].flatMap(([, arg]) => {
+    const spec = LITERAL.exec(arg)?.[2];
+    if (spec === undefined) return [`${chain.join(' -> ')}: require(${arg}) names no literal, so it cannot be followed`];
+    if (!spec.startsWith('.')) return isBuiltin(spec) ? [] : [`${chain.join(' -> ')}: loads the package ${spec}`];
+    const next = path.relative(ROOT, require.resolve(path.resolve(ROOT, path.dirname(rel), spec))).split(path.sep).join('/');
+    if (BARRED(next)) return [[...chain, next].join(' -> ')];
+    return /\.c?js$/.test(next) ? answerFaults([...chain, next], seen) : [];
+  });
+};
+
 describe('shell list', () => {
   const files = treeFiles();
 
@@ -180,5 +209,17 @@ describe('shell list', () => {
     const found = files.filter(isShellFile).sort();
     expect(found.filter((rel) => !SHELL_FILES.includes(rel)), 'a shell file off the list').toEqual([]);
     expect(SHELL_FILES.filter((rel) => !found.includes(rel)), 'a listed shell file gone').toEqual([]);
+  });
+
+  test('an answer module loads no platform, harness or helpers.js file, directly or through what it loads', () => {
+    const answers = files.filter((rel) => rel.startsWith('test/') && rel.endsWith('-answers.js'));
+    expect(answers.flatMap((rel) => answerFaults([rel])), 'an answer module reaching what it must not load').toEqual([]);
+  });
+
+  test('a stand-in answers from a *-answers.js module', () => {
+    const named = files.filter((rel) => rel.startsWith('test/') && rel !== SELF && /\.c?js$/.test(rel))
+      .flatMap((rel) => [...codeOf(rel).matchAll(ANSWERED)].map(([, expr]) => ({ rel, expr })));
+    expect(named.filter(({ expr }) => !ANSWER_FILE.test(expr)).map(({ rel, expr }) => `${rel}: answers from ${expr}`),
+      'a stand-in answering from a module named otherwise').toEqual([]);
   });
 });

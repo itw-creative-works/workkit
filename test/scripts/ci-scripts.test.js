@@ -11,7 +11,7 @@ const {
   describe, test, expect, mkTmp, WORKKIT_DIR, SPAWN_DEADLINE,
 } = require('../lib/harness');
 const {
-  NODE_DIR, RUN_JS, shellPath, stubToolJs, joinPath, homeEnv, basePathWithout, spawnSync,
+  NODE_DIR, RUN_JS, EMPTY_PATH, shellPath, stubToolJs, joinPath, homeEnv, basePathWithout, spawnSync,
 } = require('../lib/platform');
 const {
   recordArgvJs, readArgv, eqArgv, fmtCalls,
@@ -420,6 +420,29 @@ describe('ci-test.js: the suite', () => {
       expect(all.trim() !== '', `${name}: a line, not silence`).toBeTruthy();
       expect(fmtCalls(xvfb.calls()), `${name}: xvfb-run never called`).toBe('');
     }
+  });
+});
+
+// A PATH where bash cannot start: nothing but this suite's node, which runs the script.
+const NO_BASH = joinPath(EMPTY_PATH, NODE_DIR);
+
+/** A run's stderr holds no detach: line and no stack frame. */
+const noStack = (err) => !err.split(/\r?\n/).some((line) => line.startsWith('detach:') || /^\s+at /.test(line));
+
+describe('ci-hooks.js and ci-test.js: a shell that cannot start fails the step on its own line', () => {
+  test('ci-hooks.js: exit 127, the line naming the command, no stack', () => {
+    const w = mkWorld({ [SETTINGS]: enabledWith({ ciSetup: ['echo one >> order.txt'] }) });
+    const { code, err, all } = hooks(w, 'ciSetup', { PATH: NO_BASH });
+    expect(code, `exit 127, got: ${all}`).toBe(127);
+    expect(all.split(/\r?\n/).includes('ci-setup: failed: echo one >> order.txt'), `the line naming the command, got: ${all}`).toBeTruthy();
+    expect(noStack(err), `no detach: line and no stack, got: ${err}`).toBeTruthy();
+  });
+
+  test('ci-test.js: exit 127, no stack', () => {
+    const w = mkWorld(withTestScript());
+    const { code, err, all } = run(w, 'ci-test.js', { PATH: NO_BASH });
+    expect(code, `exit 127, got: ${all}`).toBe(127);
+    expect(noStack(err), `no detach: line and no stack, got: ${err}`).toBeTruthy();
   });
 });
 

@@ -7,12 +7,12 @@ const {
   describe, test, expect, WORKKIT_DIR: W, mkTmp,
 } = require('../../lib/harness');
 const {
-  NODE_DIR, systemPathWith, joinPath, nodeHomeEnv,
+  NODE_DIR, systemPathWith, joinPath, nodeHomeEnv, mirrorDirOf,
 } = require('../../lib/platform');
 const { isCall } = require('../../lib/argv-log');
 const { linesOf } = require('../../lib/run-lists');
 const {
-  WORKFLOW_DIR, IGNORE_GLOB, cleanup, makeRepo, makeGhStub, readFile, ghCalls, binDirWithout, heal,
+  WORKFLOW_DIR, IGNORE_GLOB, cleanup, makeRepo, makeGhStub, readFile, ghCalls, pathWithout, heal,
   runScript, claudeHomeWith,
 } = require('./helpers');
 
@@ -22,11 +22,11 @@ describe('standards.js: offline and unauthenticated', () => {
     // Hand-built PATH, like the jq test below: `command -v gh` searches every
     // PATH entry, and a machine that keeps gh in /usr/bin (a CI runner does)
     // would otherwise reach the authentication check instead of this one.
-    const binDir = binDirWithout('gh');
+    const noGh = pathWithout('gh');
     // A scratch home holding its own ~/.claude, so the heal's engine link lands there.
     const { home, claude } = claudeHomeWith();
     const res = heal([repo], nodeHomeEnv(home, {
-      PATH: binDir, WORKFLOW_HOME: path.join(binDir, 'workflow-home'), WORKFLOW_CLAUDE_HOME: claude,
+      PATH: noGh, WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'workflow-home'), WORKFLOW_CLAUDE_HOME: claude,
     }));
     const code = res.status;
     const stdout = (res.stdout || '') + (res.stderr || '');
@@ -37,17 +37,17 @@ describe('standards.js: offline and unauthenticated', () => {
     expect(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed').toBeTruthy();
     expect(fs.realpathSync(path.join(claude, 'workkit')), 'the engine link is the case\'s own, in its scratch claude home')
       .toBe(fs.realpathSync(WORKFLOW_DIR));
-    cleanup(repo); cleanup(binDir); cleanup(home);
+    cleanup(repo); cleanup(mirrorDirOf(noGh)); cleanup(home);
   });
 
   test('no jq on PATH: the label step still runs, local heals run, the hook layer check is whole, and no line names jq', () => {
     const repo = makeRepo();
-    const binDir = binDirWithout('jq');
+    const noJq = pathWithout('jq');
     // The mirror keeps this machine's gh, so the stub goes ahead of it.
     const stub = makeGhStub();
     const res = heal([repo], {
-      PATH: joinPath(stub.binDir, binDir),
-      WORKFLOW_HOME: path.join(binDir, 'workflow-home'),
+      PATH: joinPath(stub.binDir, noJq),
+      WORKFLOW_HOME: path.join(mkTmp('wf-std-'), 'workflow-home'),
       WORKFLOW_CLAUDE_HOME: path.join(mkTmp('wf-std-'), 'claude-home'),
     });
     const stdout = (res.stdout || '') + (res.stderr || '');
@@ -58,7 +58,7 @@ describe('standards.js: offline and unauthenticated', () => {
     expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'templates still installed').toBeTruthy();
     expect(fs.existsSync(path.join(repo, W, 'capture.md')), 'the capture file is still created').toBeTruthy();
     expect(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), 'gitignore still healed').toBeTruthy();
-    cleanup(repo); cleanup(binDir); cleanup(stub.dir);
+    cleanup(repo); cleanup(mirrorDirOf(noJq)); cleanup(stub.dir);
   });
 
   test('gh present but unauthenticated: skipped without any label call', () => {

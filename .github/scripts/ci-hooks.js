@@ -10,7 +10,7 @@ const { spawnSync } = require('../../workflow/lib/run');
 const { readOrNull } = require('../../workflow/lib/read');
 const { isDir } = require('../../workflow/lib/lock');
 const { sayAs } = require('../../workflow/lib/say');
-const { exitOf } = require('../../workflow/lib/detach');
+const { codeOf } = require('../../workflow/lib/detach');
 const { HooksError, commandsOf } = require('../../workflow/ship/entries');
 const { isPlain } = require('../../hooks/mods/settings.js');
 
@@ -71,7 +71,7 @@ const main = (argv) => {
     // By name through a shell, so the command finds PATH's Node; stdin stays the step's own.
     const res = spawnSync('bash', ['-c', command], { cwd: root, stdio: 'inherit' });
     out('::endgroup::');
-    const code = exitOf(res.status, res.signal);
+    const code = codeOf(res);
     if (code !== 0) {
       say(`failed: ${command}`);
       return code;

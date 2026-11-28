@@ -9,7 +9,7 @@ const vm = require('vm');
 const { spawnSync } = require('child_process');
 const { expect, mkTmp, seeded, run } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, gitPath, toolStem, nodeHomeEnv, linkTool, stubToolJs, joinPath,
+  SYSTEM_PATH, NODE_DIR, gitPath, nodeHomeEnv, mirrorPathWithout, stubToolJs, joinPath,
 } = require('../../lib/platform');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
 const { copySettingsKit } = require('../../lib/settings-kit');
@@ -235,27 +235,12 @@ const mkWorld = ({
 };
 
 /**
- * A bin directory mirroring the real PATH with the named tools left out: the
- * suite's idiom for a machine that is missing them. The whole PATH is mirrored
- * rather than a hand-listed set, so the run never dies of some other utility
- * while claiming to prove something about the excluded ones.
+ * A PATH mirroring the system tools and this suite's node with the named tools
+ * left out (mirrorPathWithout): the suite's idiom for a machine that is missing
+ * them. The whole PATH is mirrored rather than a hand-listed set, so the run
+ * never dies of some other utility while claiming to prove something about the excluded ones.
  */
-const binDirWithout = (...excluded) => {
-  const binDir = mkTmp('workkit-publish-');
-  const seen = new Set();
-  for (const dir of [...SYSTEM_PATH.split(path.delimiter), NODE_DIR]) {
-    if (!fs.existsSync(dir)) continue;
-    for (const name of fs.readdirSync(dir)) {
-      // The tool a name is, whatever extension this platform gives it: an
-      // excluded one has to be missing under every spelling of itself.
-      const tool = toolStem(name);
-      if (excluded.includes(tool) || seen.has(tool)) continue;
-      seen.add(tool);
-      linkTool(binDir, path.join(dir, name));
-    }
-  }
-  return binDir;
-};
+const pathWithout = (...excluded) => mirrorPathWithout(mkTmp('workkit-publish-'), [...SYSTEM_PATH.split(path.delimiter), NODE_DIR], excluded);
 
 /** `node <copy>/workflow/publish.js <args>` under this suite's node, `preload` (a path) loaded first when given. */
 const publishArgv = (world, args = [], preload = null) => [
@@ -301,6 +286,6 @@ const readJson5 = (file) => JSON.parse(JSON.stringify(
 ));
 
 module.exports = {
-  REPO_ROOT, cleanup, git, omegaStub, copyEngine, mkTowerRemote, mkWorld, binDirWithout, publishArgv, publish, setSite, fromPages,
+  REPO_ROOT, cleanup, git, omegaStub, copyEngine, mkTowerRemote, mkWorld, pathWithout, publishArgv, publish, setSite, fromPages,
   onMain, readJson5,
 };

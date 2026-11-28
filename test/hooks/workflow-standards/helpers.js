@@ -9,7 +9,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { WORKKIT_DIR: W, mkTmp, run } = require('../../lib/harness');
 const {
-  SYSTEM_PATH, NODE_DIR, nodeHomeEnv, basePathWithout, joinPath,
+  SYSTEM_PATH, NODE_DIR, nodeHomeEnv, basePathWithout, mirrorDirOf, joinPath,
 } = require('../../lib/platform');
 const { mods, textOf, runResult, standardsState } = require('../../lib/mods-inputs');
 const { OPT_IN_SHAPES } = require('../../lib/git-repo');
@@ -38,7 +38,7 @@ const pathWithoutGh = () => {
   return noGhPath;
 };
 const dropPathWithoutGh = () => {
-  if (noGhPath) cleanup(path.dirname(noGhPath));
+  if (noGhPath) cleanup(path.dirname(mirrorDirOf(noGhPath)));
   noGhPath = null;
 };
 

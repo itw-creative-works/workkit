@@ -14,7 +14,7 @@ const {
 } = require('../../lib/platform');
 const { skipOnUsrLocalBin } = require('../../lib/job-path');
 const { mkKitRepo } = require('../../scripts/home/helpers');
-const { binDirWithout } = require('../../scripts/publish/helpers');
+const { pathWithout } = require('../../scripts/publish/helpers');
 
 const SCRIPT = path.join(__dirname, '..', '..', '..', 'jobs', 'morning.js');
 const { INSTRUCTION } = require(path.join(__dirname, '..', '..', '..', 'jobs', 'morning', 'brief', 'brief-payload.js'));
@@ -277,7 +277,7 @@ const SHELL_TOOLS = ['jq', 'awk', 'sed', 'base64', 'timeout'];
  * command does.
  */
 const withoutTools = (world, gone = SHELL_TOOLS) => {
-  world.env.PATH = joinPath(path.join(world.root, 'bin'), binDirWithout(...gone));
+  world.env.PATH = joinPath(path.join(world.root, 'bin'), pathWithout(...gone));
   for (const tool of gone) {
     stubToolJs(world.localBin, tool, `process.stderr.write(${JSON.stringify(`${tool}: command not found\n`)});\nprocess.exitCode = 127;`);
   }

@@ -76,6 +76,10 @@
 - A stand-in a case puts on a PATH is a Node program, built by `stubToolJs`, the one builder (`AGENTS.md` § Tests), so it needs no compiler on Windows.
   - It does a fake's file work in Node: a read, a write, a folder, a copy, a wait. No `cat`, `mkdir`, `cp`, `sleep`, `grep` or `tr` runs inside one.
   - A test file starts a shell only where a start from a shell is the case's subject: the `git` shim, git's hook files, npm's script shell, a skill line, the starter's `bash` name, a descriptor a shell hands over, a `run:` line.
+  - One that answers through a module is written by `writeAnswered(binDir, name, spec)` of `test/lib/gh-stub.js` (`writeGh` is it named `gh`), its `answer.module` a `*-answers.js` file beside the helper that writes it, named as `require.resolve('./<what>-answers')`.
+    - That file loads only Node's own modules, the kit's `workflow/lib` and plain test files, never `test/lib/platform.js`, `test/lib/harness.js` or a `helpers.js`, directly or through what it loads.
+    - The stand-in runs on the PATH of the program under test, and on Windows `platform.js` throws as it loads on a PATH with no Git Bash. A value the answer needs from the suite arrives in its `config`.
+    - The answer files today: `gh-stub-answers.js`, `commit-gh-answers.js` (`commitGh`) and `gh-world-answers.js` in `test/lib/`, and `home-answers.js`, `standards-answers.js` and `login-answers.js` beside the home, heal and changelog-links helpers.
 - `test/scripts/shell-list.test.js` holds three lists, each entry with its reason, read against the tree's own text:
   - the test files that may hold a shell `#!` line or start `bash` or `sh`;
   - the programs a kit Node file outside `test/` may start by name;
@@ -84,6 +88,7 @@
     - A start handed a function's parameter stays unseen.
   - the shell files that stay.
   - A use off a list fails its case, naming the file; so does a listed test file that no longer uses a shell, and a listed program no kit Node file is seen starting ("on the list, started nowhere"), so no list goes stale.
+  - It also holds the answer-module rule above: it follows each `*-answers.js` file's requires, and those of the files they reach, failing with the chain one that reaches a file it must not load or a require it cannot follow; and it fails a stand-in whose `answer.module` is named any other way.
 - Every scratch folder comes through one seam (`mkTmp()`), which removes them all when the process exits.
 - A suite or a case that cannot run here states a `skip` value, its reason, and the run lists every skip after the totals.
   - A whole file skips through its outer `describe`'s `skip` option: `describe('supervise', { skip: skipOnWindows() }, () => { ... })`, the kit's helper in `test/lib/supervise.js`. A suite that needs a tool states `needs` there (its bullets below).

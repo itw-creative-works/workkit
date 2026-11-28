@@ -5,12 +5,12 @@ const path = require('path');
 const fs = require('fs');
 const { describe, test, expect, WORKKIT_DIR: W, mkTmp } = require('../../lib/harness');
 const {
-  toolStem, which, joinPath, gitPath,
+  toolStem, which, joinPath, gitPath, mirrorDirOf,
 } = require('../../lib/platform');
 const { isCall, fmtCalls } = require('../../lib/argv-log');
 const { withSteps, OLD_CHECKS } = require('../../lib/checks-template');
 const {
-  IGNORE_GLOB, desiredLabels, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, binDirWithout,
+  IGNORE_GLOB, desiredLabels, cleanup, rosterOf, makeRepo, makeGhStub, readFile, ghCalls, pathWithout,
   runScript,
 } = require('./helpers');
 
@@ -21,9 +21,10 @@ const DROPPED = /^(jq|perl[\d.]*|[gmn]?awk|g?sed|gh)$/;
 
 /** The machine's own tools, git, node and bash among them, less the four and gh. */
 const toolsWithoutThem = () => {
-  const mirror = binDirWithout('jq');
-  for (const name of fs.readdirSync(mirror)) {
-    if (DROPPED.test(toolStem(name))) fs.rmSync(path.join(mirror, name), { force: true });
+  const mirror = pathWithout('jq');
+  const dir = mirrorDirOf(mirror);
+  for (const name of fs.readdirSync(dir)) {
+    if (DROPPED.test(toolStem(name))) fs.rmSync(path.join(dir, name), { force: true });
   }
   const left = [...LEFT_OUT, 'gh'].filter((tool) => which(tool, mirror));
   if (left.length) throw new Error(`the mirror still holds ${left.join(', ')}`);
@@ -67,6 +68,6 @@ describe('standards.js: a heal with no jq, perl, awk or sed', () => {
     expect(IGNORE_GLOB.test(readFile(path.join(repo, '.gitignore'))), `the ignore lines, got: ${output}`).toBeTruthy();
     expect(fs.existsSync(path.join(repo, '.github', 'ISSUE_TEMPLATE', 'bug.md')), 'the issue forms').toBeTruthy();
     expect(fs.existsSync(path.join(repo, W, 'capture.md')), 'and the working files').toBeTruthy();
-    cleanup(repo); cleanup(home); cleanup(stub.dir); cleanup(mirror);
+    cleanup(repo); cleanup(home); cleanup(stub.dir); cleanup(mirrorDirOf(mirror));
   });
 });

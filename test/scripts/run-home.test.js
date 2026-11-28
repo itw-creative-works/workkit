@@ -32,7 +32,6 @@ const STILL_IMPORTING = [
   'test/jobs/brief-payload/upstream-news.test.js',
   'test/jobs/install.test.js',
   'test/jobs/nightly-payload.test.js',
-  'test/lib/gh-world.js',
   'test/lib/git-repo.js',
   'test/lib/identity.js',
   'test/lib/platform.js',

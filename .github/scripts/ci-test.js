@@ -9,7 +9,7 @@ const { spawnSync } = require('../../workflow/lib/run');
 const { readJsonOrNull } = require('../../workflow/lib/read');
 const { isDir } = require('../../workflow/lib/lock');
 const { sayAs } = require('../../workflow/lib/say');
-const { exitOf } = require('../../workflow/lib/detach');
+const { codeOf } = require('../../workflow/lib/detach');
 const { hasTestScript } = require('../../hooks/mods/suite.js');
 
 // By name through a shell, so npm and the suite it starts are PATH's, never the kit's Node.
@@ -27,7 +27,7 @@ const main = (argv) => {
     return 0;
   }
   const res = spawnSync('bash', ['-c', SUITE], { cwd: root, stdio: 'inherit' });
-  return exitOf(res.status, res.signal);
+  return codeOf(res);
 };
 
 if (require.main === module) {
